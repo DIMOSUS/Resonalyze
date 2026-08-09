@@ -7,12 +7,15 @@ namespace Resonalyze.Dsp;
 /// A simple, self-describing CSV layout:
 /// <code>
 /// Preamp (dB),-6.0
-/// Filter,Frequency (Hz),Gain (dB),Q
-/// 1,600,6.0,4.0
+/// Filter,Frequency (Hz),Gain (dB),Q,Type
+/// 1,600,6.0,4.0,PK
+/// 2,80,3.0,0.7,LS
 /// </code>
 /// Import is tolerant: the header row and comments are skipped, the preamp row is
 /// recognised by its label, and each data row is read as frequency/gain/Q from its
-/// numeric fields (a leading index column is ignored).
+/// numeric fields (a leading index column is ignored). The type column is read from
+/// the row's non-numeric fields, so a file written before shelves existed — which
+/// has no such column — still reads, every row as a bell.
 /// </summary>
 public sealed class GenericCsvFormat : IEqProfileFormat
 {
@@ -27,7 +30,7 @@ public sealed class GenericCsvFormat : IEqProfileFormat
 
         var builder = new StringBuilder();
         builder.Append("Preamp (dB),").AppendLine(EqTextNumbers.Format(curve.PreampDb, "0.0"));
-        builder.AppendLine("Filter,Frequency (Hz),Gain (dB),Q");
+        builder.AppendLine("Filter,Frequency (Hz),Gain (dB),Q,Type");
         for (int i = 0; i < curve.Bands.Count; i++)
         {
             PeqBand band = curve.Bands[i];
@@ -38,7 +41,9 @@ public sealed class GenericCsvFormat : IEqProfileFormat
                 .Append(',')
                 .Append(EqTextNumbers.Format(band.GainDb, "0.0"))
                 .Append(',')
-                .AppendLine(EqTextNumbers.Format(band.Q, "0.0"));
+                .Append(EqTextNumbers.Format(band.Q, "0.0"))
+                .Append(',')
+                .AppendLine(TypeToken(band.Type));
         }
 
         return builder.ToString();
@@ -121,11 +126,40 @@ public sealed class GenericCsvFormat : IEqProfileFormat
                 continue;
             }
 
-            bands.Add(new PeqBand(frequencyHz, q, gainDb));
+            bands.Add(new PeqBand(frequencyHz, q, gainDb, ReadType(fields)));
             recognized = true;
         }
 
         curve = new EqualizationCurve(bands, preampDb);
         return recognized;
+    }
+
+    private static string TypeToken(PeqBandType type) => type switch
+    {
+        PeqBandType.LowShelf => "LS",
+        PeqBandType.HighShelf => "HS",
+        _ => "PK"
+    };
+
+    // The type is looked up by keyword rather than by column index, so it survives
+    // the leading-index column being present or absent — the same tolerance the
+    // numeric fields already get. An unreadable or missing type is a bell.
+    private static PeqBandType ReadType(string[] fields)
+    {
+        foreach (string field in fields)
+        {
+            string token = field.Trim();
+            if (token.Equals("LS", StringComparison.OrdinalIgnoreCase))
+            {
+                return PeqBandType.LowShelf;
+            }
+
+            if (token.Equals("HS", StringComparison.OrdinalIgnoreCase))
+            {
+                return PeqBandType.HighShelf;
+            }
+        }
+
+        return PeqBandType.Peaking;
     }
 }

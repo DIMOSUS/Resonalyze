@@ -36,7 +36,7 @@ public static class DigitalEqualizationResponse
         }
 
         double magnitude = BiquadResponse.Evaluate(
-            PeakingBiquad.Compute(band, sampleRateHz),
+            PeqBiquad.Compute(band, sampleRateHz),
             frequencyHz,
             sampleRateHz).Magnitude;
         return 20.0 * Math.Log10(Math.Max(magnitude, double.Epsilon));

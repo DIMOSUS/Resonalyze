@@ -64,7 +64,7 @@ public sealed record DspChannelChain(
                 }
 
                 response *= BiquadResponse.Evaluate(
-                    PeakingBiquad.Compute(band, sampleRateHz),
+                    PeqBiquad.Compute(band, sampleRateHz),
                     frequencyHz,
                     sampleRateHz);
             }

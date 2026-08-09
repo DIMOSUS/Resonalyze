@@ -106,7 +106,48 @@ internal sealed class PdfSheet : IDisposable
     /// the wrong channel's filters. Continuation blocks carry it too, marked as such,
     /// since a long bank can put them on a page of their own.
     /// </remarks>
+    /// <remarks>
+    /// Shelves are printed in a table of their own, after the bells. They are not
+    /// the same filter with a different number: their frequency is the middle of a
+    /// transition rather than a centre, their Q is a knee rather than a bandwidth
+    /// (so the DSP's Q convention does not restate it), and they need a row saying
+    /// which direction they shelve. Mixing them into the bell table would put four
+    /// meanings under three row labels. Both tables keep the filter's number in the
+    /// bank, so the sheet, the panel and an exported profile agree on what
+    /// "filter 5" is.
+    /// </remarks>
     public void AddFilterTable(IReadOnlyList<PeqBand> bands, string? caption = null)
+    {
+        ArgumentNullException.ThrowIfNull(bands);
+
+        (IReadOnlyList<NumberedBand> peaking, IReadOnlyList<NumberedBand> shelving) =
+            SplitByShape(bands);
+        AddBandTable(peaking, caption, shelving: false);
+        AddBandTable(shelving, ShelfCaption(caption), shelving: true);
+    }
+
+    /// <summary>
+    /// Splits a bank into the bells and the shelves, each entry keeping its number
+    /// in the bank rather than in its own table — the number is what the panel
+    /// shows and what an exported profile calls the filter.
+    /// </summary>
+    internal static (IReadOnlyList<NumberedBand> Peaking, IReadOnlyList<NumberedBand> Shelving)
+        SplitByShape(IReadOnlyList<PeqBand> bands)
+    {
+        ArgumentNullException.ThrowIfNull(bands);
+
+        List<NumberedBand> numbered = bands
+            .Select((band, index) => new NumberedBand(index + 1, band))
+            .ToList();
+        return (
+            numbered.Where(entry => entry.Band.Type == PeqBandType.Peaking).ToList(),
+            numbered.Where(entry => entry.Band.Type != PeqBandType.Peaking).ToList());
+    }
+
+    private void AddBandTable(
+        IReadOnlyList<NumberedBand> bands,
+        string? caption,
+        bool shelving)
     {
         for (int start = 0; start < bands.Count; start += FiltersPerTableBlock)
         {
@@ -119,7 +160,7 @@ internal sealed class PdfSheet : IDisposable
                 gap.Format.SpaceAfter = 0;
             }
 
-            AddFilterTableBlock(bands, start, BlockCaption(caption, start));
+            AddFilterTableBlock(bands, start, BlockCaption(caption, start), shelving);
         }
     }
 
@@ -128,7 +169,21 @@ internal sealed class PdfSheet : IDisposable
             ? caption
             : $"{caption} (cont.)";
 
-    private void AddFilterTableBlock(IReadOnlyList<PeqBand> bands, int start, string? caption)
+    // The shelf table always names itself, even where the bell table above it needs
+    // no caption: an unlabelled second table of filters reads as a continuation.
+    private static string ShelfCaption(string? caption) =>
+        string.IsNullOrWhiteSpace(caption)
+            ? "Shelving filters"
+            : $"{caption} — shelving filters";
+
+    /// <summary>A band together with its position in the bank it came from.</summary>
+    internal readonly record struct NumberedBand(int Number, PeqBand Band);
+
+    private void AddFilterTableBlock(
+        IReadOnlyList<NumberedBand> bands,
+        int start,
+        string? caption,
+        bool shelving)
     {
         var table = Section.AddTable();
         table.Borders.Width = 0.5;
@@ -161,32 +216,42 @@ internal sealed class PdfSheet : IDisposable
 
         int count = Math.Min(FiltersPerTableBlock, bands.Count - start);
 
-        // "PK" labels the numbers as peaking-filter slots — the type to select in the DSP
-        // alongside them. The three value rows are bound to this row so a block cannot be
-        // split from its own column headings.
+        // The corner cell labels what kind of filter the numbers below are — the type to
+        // select in the DSP alongside them. The value rows are bound to this row so a
+        // block cannot be split from its own column headings.
         Row header = table.AddRow();
         header.HeadingFormat = true;
-        header.KeepWith = 3;
-        WriteLabel(header.Cells[0], "PK", bold: true);
+        header.KeepWith = shelving ? 4 : 3;
+        WriteLabel(header.Cells[0], shelving ? "Shelf" : "PK", bold: true);
         for (int i = 0; i < count; i++)
         {
             Paragraph number = header.Cells[i + 1].AddParagraph(
-                (start + i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                bands[start + i].Number.ToString(System.Globalization.CultureInfo.InvariantCulture));
             number.Format.Font.Bold = true;
             number.Format.Font.Size = 10;
+        }
+
+        if (shelving)
+        {
+            // Which way the shelf runs is the first thing to dial in, and the one thing
+            // a bell table never has to say.
+            AddFilterValueRow(table, "Type", bands, start, count, bold: true,
+                value: band => band.Type == PeqBandType.LowShelf ? "LS" : "HS");
         }
 
         // Gain first: it is the value most often changed by ear once the sheet is in hand.
         // Q is restated in the target DSP's convention and says so on its own row, because
         // frequency and gain mean the same thing everywhere but Q does not — and a bank
         // running to several blocks must not rely on a note printed once in the subtitle.
+        // A shelf's Q is not a bandwidth and no convention restates it, so its row is
+        // labelled plainly rather than with a convention it does not follow.
         AddFilterValueRow(table, "Gain, dB", bands, start, count, bold: true,
             value: band => SheetFormat.Signed(band.GainDb));
         AddFilterValueRow(table, "F, Hz", bands, start, count, bold: false,
             value: band => SheetFormat.Number(band.FrequencyHz, "0"));
         AddFilterValueRow(
             table,
-            $"Q · {PeqQConventions.DescribeShort(qConvention)}",
+            shelving ? "Q" : $"Q · {PeqQConventions.DescribeShort(qConvention)}",
             bands, start, count, bold: false,
             value: band => SheetFormat.Number(band.Q, "0.0#"));
     }
@@ -194,7 +259,7 @@ internal sealed class PdfSheet : IDisposable
     private void AddFilterValueRow(
         Table table,
         string label,
-        IReadOnlyList<PeqBand> bands,
+        IReadOnlyList<NumberedBand> bands,
         int start,
         int count,
         bool bold,
@@ -207,7 +272,7 @@ internal sealed class PdfSheet : IDisposable
 
         for (int i = 0; i < count; i++)
         {
-            PeqBand band = PeqQConventions.ToConvention(bands[start + i], qConvention);
+            PeqBand band = PeqQConventions.ToConvention(bands[start + i].Band, qConvention);
             Paragraph paragraph = row.Cells[i + 1].AddParagraph(value(band));
             paragraph.Format.Font.Size = 10;
             paragraph.Format.Font.Bold = bold;

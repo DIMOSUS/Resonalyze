@@ -4,10 +4,12 @@ using YamlDotNet.Serialization;
 namespace Resonalyze.Dsp;
 
 /// <summary>
-/// CamillaDSP config (YAML). Exports each PEQ band as a Biquad/Peaking filter plus a
-/// Gain filter for the preamp, wired into a two-channel pipeline. Imports Peaking
-/// biquads and the first Gain filter; other filter types are skipped. Peaking filters
-/// sum commutatively, so filter order does not affect the result.
+/// CamillaDSP config (YAML). Exports each PEQ band as a Biquad — Peaking, Lowshelf
+/// or Highshelf, all of which take the same freq/gain/q triple — plus a Gain filter
+/// for the preamp, wired into a two-channel pipeline. Imports those three biquad
+/// types and the first Gain filter; anything else is skipped. The filters are
+/// cascaded, and a cascade of biquads commutes, so filter order does not affect the
+/// result.
 /// </summary>
 public sealed class CamillaDspYamlFormat : IEqProfileFormat
 {
@@ -38,13 +40,15 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
         for (int i = 0; i < curve.Bands.Count; i++)
         {
             PeqBand band = curve.Bands[i];
-            string key = $"peaking_{i:000}";
+            // The key names the slot, not the shape: a filter that changed type
+            // between two exports keeps its place in the pipeline list.
+            string key = $"band_{i:000}";
             filters[key] = new Dictionary<string, object?>
             {
                 ["type"] = "Biquad",
                 ["parameters"] = new Dictionary<string, object?>
                 {
-                    ["type"] = "Peaking",
+                    ["type"] = FilterTypeName(band.Type),
                     ["freq"] = EqTextNumbers.Format(band.FrequencyHz, "0.###"),
                     ["q"] = EqTextNumbers.Format(band.Q, "0.0"),
                     ["gain"] = EqTextNumbers.Format(band.GainDb, "0.0")
@@ -127,7 +131,7 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
             }
 
             string? subType = GetString(parameters, "type");
-            if (subType != null && !subType.Equals("Peaking", StringComparison.OrdinalIgnoreCase))
+            if (!TryReadFilterType(subType, out PeqBandType bandType))
             {
                 continue;
             }
@@ -140,12 +144,47 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
                 double.IsFinite(q) && q > 0 &&
                 double.IsFinite(bandGain))
             {
-                bands.Add(new PeqBand(frequencyHz, q, bandGain));
+                bands.Add(new PeqBand(frequencyHz, q, bandGain, bandType));
             }
         }
 
         curve = new EqualizationCurve(bands, preampDb);
         return true;
+    }
+
+    // CamillaDSP names the shelves Lowshelf/Highshelf and takes the same freq/gain/q
+    // triple for them as for Peaking (it also accepts a "slope" instead of "q";
+    // exports state q, which is what the library holds).
+    private static string FilterTypeName(PeqBandType type) => type switch
+    {
+        PeqBandType.LowShelf => "Lowshelf",
+        PeqBandType.HighShelf => "Highshelf",
+        _ => "Peaking"
+    };
+
+    // A biquad with no stated sub-type is a Peaking one; anything outside the three
+    // the library can hold (LowpassFO, Notch, the FO shelves, ...) is skipped.
+    private static bool TryReadFilterType(string? name, out PeqBandType type)
+    {
+        type = PeqBandType.Peaking;
+        if (name == null || name.Equals("Peaking", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (name.Equals("Lowshelf", StringComparison.OrdinalIgnoreCase))
+        {
+            type = PeqBandType.LowShelf;
+            return true;
+        }
+
+        if (name.Equals("Highshelf", StringComparison.OrdinalIgnoreCase))
+        {
+            type = PeqBandType.HighShelf;
+            return true;
+        }
+
+        return false;
     }
 
     private static IDictionary<object, object>? GetMap(IDictionary<object, object> map, string key) =>

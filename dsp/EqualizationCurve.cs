@@ -1,12 +1,22 @@
 namespace Resonalyze.Dsp;
 
 /// <summary>
-/// One parametric (peaking / bell) EQ band, described the way a PEQ slot exposes
-/// it: a centre frequency, a quality factor and a gain. The magnitude response is
-/// the analog peaking prototype, which is sample-rate independent and therefore
-/// suitable for plotting an EQ curve across the audible range.
+/// One EQ band, described the way a PEQ slot exposes it: a centre frequency, a
+/// quality factor, a gain and the shape those three describe (bell by default,
+/// or a shelf — see <see cref="PeqBandType"/>). The magnitude response is the
+/// analog prototype, which is sample-rate independent and therefore suitable for
+/// plotting an EQ curve across the audible range.
 /// </summary>
-public readonly record struct PeqBand(double FrequencyHz, double Q, double GainDb)
+/// <remarks>
+/// <see cref="Type"/> is the last parameter and defaults to
+/// <see cref="PeqBandType.Peaking"/>, so a three-argument band is still a bell and
+/// a settings or project file written before shelves existed reads back as one.
+/// </remarks>
+public readonly record struct PeqBand(
+    double FrequencyHz,
+    double Q,
+    double GainDb,
+    PeqBandType Type = PeqBandType.Peaking)
 {
     /// <summary>
     /// True for a band that contributes nothing: zero gain or degenerate frequency/Q
@@ -27,13 +37,23 @@ public readonly record struct PeqBand(double FrequencyHz, double Q, double GainD
             return 0;
         }
 
-        // Analog peaking prototype H(j2pi f); evaluating |H|^2 in normalised
-        // frequency x = f / f0 keeps it independent of any sample rate.
-        //   |H|^2 = ((1 - x^2)^2 + (A x / Q)^2) / ((1 - x^2)^2 + (x / (A Q))^2)
-        // with A = 10^(gain / 40). At x = 1 this evaluates to A^4, i.e. exactly the
-        // band gain in dB; far from f0 it tends to unity (0 dB).
         double a = Math.Pow(10.0, GainDb / 40.0);
         double x = frequencyHz / FrequencyHz;
+        return Type switch
+        {
+            PeqBandType.LowShelf => ShelfMagnitudeDb(a, x, low: true),
+            PeqBandType.HighShelf => ShelfMagnitudeDb(a, x, low: false),
+            _ => PeakingMagnitudeDb(a, x)
+        };
+    }
+
+    // Analog peaking prototype H(j2pi f); evaluating |H|^2 in normalised frequency
+    // x = f / f0 keeps it independent of any sample rate.
+    //   |H|^2 = ((1 - x^2)^2 + (A x / Q)^2) / ((1 - x^2)^2 + (x / (A Q))^2)
+    // with A = 10^(gain / 40). At x = 1 this evaluates to A^4, i.e. exactly the
+    // band gain in dB; far from f0 it tends to unity (0 dB).
+    private double PeakingMagnitudeDb(double a, double x)
+    {
         double oneMinusXSquared = 1.0 - x * x;
         double baseline = oneMinusXSquared * oneMinusXSquared;
 
@@ -43,6 +63,30 @@ public readonly record struct PeqBand(double FrequencyHz, double Q, double GainD
         double denominator = baseline + denominatorImag * denominatorImag;
 
         return 10.0 * Math.Log10(numerator / denominator);
+    }
+
+    // The RBJ shelving prototypes the cookbook's biquads are derived from, with
+    // s = jx normalised to f0:
+    //   low  shelf  H(s) = A (s^2 + (sqrt(A)/Q) s + A) / (A s^2 + (sqrt(A)/Q) s + 1)
+    //   high shelf  H(s) = A (A s^2 + (sqrt(A)/Q) s + 1) / (s^2 + (sqrt(A)/Q) s + A)
+    // The two are mirror images: the low shelf reaches the full gain at DC and unity
+    // far above f0, the high shelf the other way round, and both pass through half
+    // the gain in dB exactly at f0 — which is what makes f0 the middle of a shelf
+    // rather than its corner.
+    private double ShelfMagnitudeDb(double a, double x, bool low)
+    {
+        double xSquared = x * x;
+        double transition = Math.Sqrt(a) * x / Q;
+        double transitionSquared = transition * transition;
+
+        double lifted = a - xSquared;
+        double flat = 1.0 - a * xSquared;
+        double numeratorReal = low ? lifted : flat;
+        double denominatorReal = low ? flat : lifted;
+
+        double numerator = numeratorReal * numeratorReal + transitionSquared;
+        double denominator = denominatorReal * denominatorReal + transitionSquared;
+        return 20.0 * Math.Log10(a) + 10.0 * Math.Log10(numerator / denominator);
     }
 }
 

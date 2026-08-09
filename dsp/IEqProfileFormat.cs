@@ -17,6 +17,19 @@ public interface IEqProfileFormat
     bool CanImport { get; }
     bool CanExport { get; }
 
+    /// <summary>
+    /// Whether the format can carry a shelving band (<see cref="PeqBandType"/>) as
+    /// a shelf. False means the layout has no shelf of the same parameterisation,
+    /// so shelves must be dropped from an export rather than written as something
+    /// the target would realize differently — the caller is expected to say so.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to true: the formats that carry coefficients or a sampled curve
+    /// realize any band shape by construction, and the parametric ones that name a
+    /// shelf with a Q realize ours exactly.
+    /// </remarks>
+    bool SupportsShelvingFilters => true;
+
     /// <summary>Serialises the curve. Only valid when <see cref="CanExport"/>.</summary>
     string Export(EqualizationCurve curve);
 

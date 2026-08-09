@@ -173,7 +173,8 @@ public sealed class VirtualCrossoverChannelSettings
         {
             if (!double.IsFinite(band.FrequencyHz) || band.FrequencyHz <= 0 ||
                 !double.IsFinite(band.Q) || band.Q <= 0 ||
-                !double.IsFinite(band.GainDb))
+                !double.IsFinite(band.GainDb) ||
+                !Enum.IsDefined(band.Type))
             {
                 throw new InvalidDataException("A PEQ band is invalid.");
             }

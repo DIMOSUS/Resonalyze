@@ -20,6 +20,11 @@
                 // owned by the designer container and would otherwise leak its handle.
                 sourceMenu?.Dispose();
                 sourceMenu = null;
+                bandTypeMenu?.Dispose();
+                bandTypeMenu = null;
+                // Created in code (see EqWizardPanel.Bank.cs), so it is not in the
+                // designer container either.
+                bankEditTimer.Dispose();
             }
 
             base.Dispose(disposing);
@@ -66,6 +71,8 @@
             buttonImport = new Button();
             buttonExport = new Button();
             buttonResetBands = new Button();
+            buttonUndo = new Button();
+            buttonRedo = new Button();
             comboBoxQConvention = new DarkComboBox();
             labelQConvention = new Label();
             (NumericTargetOffset).BeginInit();
@@ -508,6 +515,30 @@
             buttonResetBands.Text = "Reset filters";
             buttonResetBands.UseVisualStyleBackColor = true;
             //
+            // buttonUndo
+            //
+            buttonUndo.Enabled = false;
+            buttonUndo.FlatStyle = FlatStyle.Popup;
+            buttonUndo.ForeColor = Color.White;
+            buttonUndo.Location = new Point(2, 335);
+            buttonUndo.Name = "buttonUndo";
+            buttonUndo.Size = new Size(87, 24);
+            buttonUndo.TabIndex = 62;
+            buttonUndo.Text = "Undo";
+            buttonUndo.UseVisualStyleBackColor = true;
+            //
+            // buttonRedo
+            //
+            buttonRedo.Enabled = false;
+            buttonRedo.FlatStyle = FlatStyle.Popup;
+            buttonRedo.ForeColor = Color.White;
+            buttonRedo.Location = new Point(101, 335);
+            buttonRedo.Name = "buttonRedo";
+            buttonRedo.Size = new Size(87, 24);
+            buttonRedo.TabIndex = 63;
+            buttonRedo.Text = "Redo";
+            buttonRedo.UseVisualStyleBackColor = true;
+            //
             // comboBoxQConvention
             //
             comboBoxQConvention.BackColor = Color.FromArgb(55, 60, 72);
@@ -539,6 +570,8 @@
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(labelQConvention);
             Controls.Add(comboBoxQConvention);
+            Controls.Add(buttonUndo);
+            Controls.Add(buttonRedo);
             Controls.Add(buttonResetBands);
             Controls.Add(buttonExport);
             Controls.Add(buttonImport);
@@ -611,6 +644,8 @@
         private Button buttonImport;
         private Button buttonExport;
         private Button buttonResetBands;
+        private Button buttonUndo;
+        private Button buttonRedo;
         private DarkComboBox comboBoxQConvention;
         private Label labelQConvention;
     }

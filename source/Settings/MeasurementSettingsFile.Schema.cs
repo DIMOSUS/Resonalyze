@@ -359,10 +359,24 @@ internal sealed partial class MeasurementSettingsFile
             double.IsFinite(value) ? Math.Clamp(value, min, max) : 0.0;
     }
 
+    // One PEQ filter of the persisted bank. Deliberately its own three numbers
+    // rather than a Dsp PeqBand: a settings file is a format with defaults and
+    // tolerance for missing fields, and PeqBand is the analysis type.
+    internal sealed class PeqBandSettings
+    {
+        public double FrequencyHz { get; set; } = 1000;
+        public double Q { get; set; } = 1;
+        public double GainDb { get; set; }
+
+        // Absent in a file written before shelves existed, which read back as the
+        // bells they were.
+        public PeqBandType Type { get; set; } = PeqBandType.Peaking;
+    }
+
     // Self-contained EQ Wizard state (the mode no longer derives anything from
-    // overlays or the current measurement): the isolated target curve, the gain
-    // range and band count of the fader bank, source smoothing and the microphone
-    // calibration applied to the loaded IR. The loaded IR itself is not persisted.
+    // overlays or the current measurement): the isolated target curve, the filter
+    // bank and its gain range, source smoothing and the microphone calibration
+    // applied to the loaded IR. The loaded IR itself is not persisted.
     internal sealed class EqWizardSettings
     {
         public TargetPreset Preset { get; set; } = TargetPreset.Flat;
@@ -385,7 +399,22 @@ internal sealed partial class MeasurementSettingsFile
         public double TargetOffsetDb { get; set; }
         public double GainMinDb { get; set; } = -15;
         public double GainMaxDb { get; set; } = 6;
-        public int BandCount { get; set; } = 1;
+        // The filter bank in slot order. The order is not decoration — it is what
+        // an exported profile numbers its filters by — so it is stored as written
+        // rather than re-derived on load. An empty list is a real state (a bank
+        // the user cleared) and restores as one.
+        //
+        // Null only in a file written before the bank was persisted (schema 9 and
+        // earlier). Such a file carries BandCount alone, and the bank is rebuilt
+        // as that many ISO-spread filters — exactly what those versions showed.
+        public List<PeqBandSettings>? Bands { get; set; }
+
+        // The EQ preamp, part of the bank rather than of the target.
+        public double PreampDb { get; set; }
+
+        // How many filters the bank holds. Kept in step with Bands and read only
+        // when Bands is absent (see above).
+        public int BandCount { get; set; }
         public int SourceSmoothingInverseOctaves { get; set; }
         public MicrophoneCalibrationMode CalibrationMode { get; set; } =
             MicrophoneCalibrationMode.Off;

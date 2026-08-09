@@ -306,7 +306,10 @@ the executable, nothing left on the machine — create an empty file named
 - EQ Wizard: equalize any measured frequency response — an impulse response from
   a file or History, a captured overlay slot, or a curve imported from text —
   toward its own target curve, designing an up-to-32-band parametric EQ (with
-  selectable microphone calibration), using a vertical fader bank, Auto Tune, a
+  selectable microphone calibration), using a vertical fader bank you add
+  filters — bells and low/high shelves — to one at a time and reorder or throw
+  away by dragging them, with undo/redo over the whole bank and the bank itself
+  kept between sessions, Auto Tune, a
   live results read-out, cross-tool PEQ import/export, and a printable
   tuning-sheet PDF. The car case it was built for is a **moving-microphone RTA in
   dB SPL**: no coherence, no impulse response, an absolute datum
@@ -340,9 +343,9 @@ the executable, nothing left on the machine — create an empty file named
       <h3>EQ Wizard</h3>
       <img src="assets/images/eq_wizard.png" alt="EQ Wizard mode">
       <p>Load an impulse response and design a parametric EQ toward its own target
-      curve with microphone calibration, Auto Tune, a 32-band fader bank, per-band
-      curves, a live results read-out, cross-tool import/export, and a
-      tuning-sheet PDF.</p>
+      curve with microphone calibration, Auto Tune, a drag-ordered fader bank of
+      up to 32 filters, per-band curves, a live results read-out, cross-tool
+      import/export, and a tuning-sheet PDF.</p>
     </td>
   </tr>
   <tr>

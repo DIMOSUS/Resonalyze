@@ -7,6 +7,12 @@ namespace Resonalyze.Dsp;
 /// greedily where the residual error is largest and stops once the remaining error
 /// is negligible or the band budget is exhausted.
 /// </summary>
+/// <remarks>
+/// Peaking bands only, by design: the fit places bells where the residual is worst,
+/// and a shelf is a decision about the whole top or bottom of the range that a
+/// tuner makes deliberately. Callers replace the whole bank with the result, so a
+/// shelf dialled in by hand does not survive a re-fit.
+/// </remarks>
 public static class EqAutoTuner
 {
     public sealed record Options

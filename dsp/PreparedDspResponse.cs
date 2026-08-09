@@ -65,7 +65,7 @@ public sealed class PreparedDspResponse
                     continue;
                 }
 
-                sections.Add(PeakingBiquad.Compute(band, sampleRate));
+                sections.Add(PeqBiquad.Compute(band, sampleRate));
             }
         }
 

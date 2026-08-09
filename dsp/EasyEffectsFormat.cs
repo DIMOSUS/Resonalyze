@@ -7,12 +7,20 @@ namespace Resonalyze.Dsp;
 /// other band types are skipped on import. The overall level maps to the
 /// equalizer's output gain.
 /// </summary>
+/// <remarks>
+/// EasyEffects does have "Low Shelf" / "High Shelf" band types, but its bands are
+/// LSP filters whose steepness is set by a mode and a slope multiplier alongside
+/// q — not the RBJ shelf Q this library holds — so writing our number into one
+/// would produce a differently-shaped shelf on the target. Shelves are therefore
+/// declared unsupported and dropped from an export instead.
+/// </remarks>
 public sealed class EasyEffectsFormat : IEqProfileFormat
 {
     public string Name => "EasyEffects";
     public string Extension => "json";
     public bool CanImport => true;
     public bool CanExport => true;
+    public bool SupportsShelvingFilters => false;
 
     public string Export(EqualizationCurve curve)
     {

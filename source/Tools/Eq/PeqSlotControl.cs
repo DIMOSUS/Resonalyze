@@ -279,6 +279,19 @@ public partial class PeqSlotControl : UserControl
         fader.Value = (double)gainInput.Value;
     }
 
+    /// <summary>
+    /// Lands text typed into any of the three fields without waiting for the focus
+    /// to leave it. A field commits on Leave or Enter, which is enough while the
+    /// application is running but not when it is being torn down with the caret
+    /// still in the box.
+    /// </summary>
+    internal void CommitPendingText()
+    {
+        frequencyInput.CommitText();
+        qInput.CommitText();
+        gainInput.CommitText();
+    }
+
     // The number strip, which doubles as the drag handle: the host tips it.
     internal Control SlotLabel => slotLabel;
 

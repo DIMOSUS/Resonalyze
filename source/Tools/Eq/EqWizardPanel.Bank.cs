@@ -541,11 +541,28 @@ public partial class EqWizardPanel
     }
 
     /// <summary>
-    /// Lands an edit that is still inside the coalescing pause, so a caller about
-    /// to persist the panel's settings reads the bank the user can see rather than
-    /// the one from before their last keystroke.
+    /// Lands an edit that is still in flight, so a caller about to persist the
+    /// panel's settings reads the bank the user can see rather than the one from
+    /// before their last keystroke.
     /// </summary>
-    internal void CommitPendingBankEdit() => CommitBankChange();
+    /// <remarks>
+    /// Two things can be pending, and the text is the earlier of them: a field
+    /// carries typed text until it loses focus or takes Enter, and only then does
+    /// the value change that starts the coalescing pause. An ordinary close
+    /// disables the form first, which takes the focus out of the field and commits
+    /// the text on the way; an OS shutdown flushes immediately, with the caret
+    /// still in the box. So the editors are landed first and the bank second.
+    /// </remarks>
+    internal void CommitPendingBankEdit()
+    {
+        NumericGain.CommitText();
+        foreach (PeqSlotControl slot in peqSlots)
+        {
+            slot.CommitPendingText();
+        }
+
+        CommitBankChange();
+    }
 
     // Adopts the current bank as the baseline with no history behind it — the
     // starting point after settings are restored, which is not an edit anyone

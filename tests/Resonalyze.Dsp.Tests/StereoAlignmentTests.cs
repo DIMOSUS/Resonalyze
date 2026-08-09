@@ -631,10 +631,10 @@ public sealed class StereoAlignmentTests
     [Fact]
     public void ComputeStereo_NearTheDelayCeilingTheSceneSurvives()
     {
-        // The left side is 26 ms late, parking the whole right side just
-        // under the 30 ms delay ceiling (real car DSPs cap per-channel delay
-        // around 30 ms — the ceiling is the transferable range, not an
-        // operating region). Every pass that adds delay from here — the
+        // The left side is 46 ms late, parking the whole right side just
+        // under the 50 ms delay ceiling (the ceiling is the transferable
+        // range a device could accept, not an operating region — real cabin
+        // spans run well under 10 ms). Every pass that adds delay from here — the
         // co-move above all — must bound its window by the remaining span UP
         // FRONT: clamping one side after the fact would move the two sides
         // unequally and silently bend the scene. Both linked pairs must still
@@ -648,13 +648,13 @@ public sealed class StereoAlignmentTests
                 sceneOffsetMs: 0.25,
                 rightLateMs: 0,
                 linkBands: UserLinkBands,
-                leftLateMs: 26.0);
+                leftLateMs: 46.0);
 
         Assert.Contains("Co-move", log.ToString());
         Assert.All(
             new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] },
             channel => Assert.True(
-                alignment.GetValueOrDefault(channel).DelayMs is >= 0 and <= 30));
+                alignment.GetValueOrDefault(channel).DelayMs is >= 0 and <= 50));
 
         double twrDelta =
             FinalBandArrivalMs(left[2], alignment, 2_500, 12_000) -

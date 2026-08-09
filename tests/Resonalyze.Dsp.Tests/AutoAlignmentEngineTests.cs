@@ -1153,11 +1153,11 @@ public sealed class AutoAlignmentEngineTests
         Assert.Equal(0.0, alignment[early].DelayMs, 2);
         Assert.Equal(20.0, alignment[late].DelayMs, 2);
 
-        // A span wider than the DSP's 30 ms delay range (real car processors
-        // cap there) cannot be realized by any uniform shift: the proposal
-        // must refuse loudly, not clamp silently.
+        // A span wider than the DSP's 50 ms delay range (no car processor
+        // reaches that far) cannot be realized by any uniform shift: the
+        // proposal must refuse loudly, not clamp silently.
         alignment[early] = new AlignmentOverride(0.0, false);
-        alignment[late] = new AlignmentOverride(45.0, false);
+        alignment[late] = new AlignmentOverride(65.0, false);
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => AutoAlignmentEngine.NormalizeAndVerifyFeasibility(
                 [earlySnapshot, lateSnapshot], alignment, new StringBuilder()));

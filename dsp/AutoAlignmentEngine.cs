@@ -204,12 +204,12 @@ public static class AutoAlignmentEngine
 
     // The delay ceiling an AUTO DELAY proposal may reach. Deliberately tighter
     // than the manual UI range (100 ms — the Virtual DSP may model whatever
-    // hardware the user owns): even top-end car processors cap per-channel
-    // delay around 30 ms (~10 m of path), so an automatic proposal past it
+    // hardware the user owns): car processors cap per-channel delay in the tens
+    // of milliseconds (~17 m of path here), so an automatic proposal past this
     // could never be transferred to a device. Real cabin spans run well under
     // 10 ms; the ceiling exists for the feasibility gate, not as an operating
     // region.
-    private const double MaxDelayMs = 30;
+    private const double MaxDelayMs = 50;
 
     // A deliberately wide fine-search window (many periods at a high crossover,
     // ~one at a low one). Its candidates are always logged, surfacing summation

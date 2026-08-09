@@ -2198,7 +2198,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // whose crossover has pathological group delay (a narrow or steep low-
     // frequency band-pass) arrives so late that Auto delay must push every other
     // driver out by this much to match it — a spread this large is the symptom.
-    private const double CrossoverGroupDelayWarningMs = 10.0;
+    private const double CrossoverGroupDelayWarningMs = 15.0;
 
     // Warns, live, when the alignment delays span more than the threshold: the
     // latest driver (the one the others are delayed to catch up to) lags by that

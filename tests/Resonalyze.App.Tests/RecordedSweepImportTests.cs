@@ -203,8 +203,13 @@ public sealed class RecordedSweepImportTests
         using (measurement.Claim())
         {
             Assert.True(measurement.InProgress);
-            // Nothing else may start a measurement while the claim is held.
+            // Nothing else may start a measurement while the claim is held. A run
+            // has to be refused by name: it does not consult InProgress, and its
+            // own completion would hand back the busy flag the import still owns.
             Assert.Throws<InvalidOperationException>(() => measurement.Init(Configuration()));
+            // Thrown synchronously, before there is any task to await.
+            Assert.Throws<InvalidOperationException>(() => { _ = measurement.RunAsync(); });
+            Assert.True(measurement.InProgress);
             // The import is what the claim was taken for, so it proceeds.
             measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
             Assert.True(measurement.HasImpulseResponse);

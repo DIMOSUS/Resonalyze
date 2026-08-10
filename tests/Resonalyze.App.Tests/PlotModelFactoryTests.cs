@@ -266,6 +266,80 @@ public sealed class PlotModelFactoryTests
                 tag.Kind == AnalysisCurveKind.ExcessGroupDelay);
     }
 
+    // An imported recording's time origin is its own arrival, so nothing that
+    // reads absolute time may be drawn beside a measurement that was referenced
+    // to a captured loopback. The minimum-phase curve is not such a statement —
+    // it is reconstructed from the gated magnitude and carries no bulk delay by
+    // construction — so it stays comparable, and hiding it would be hiding valid
+    // data rather than avoiding a wrong number.
+    [Theory]
+    [InlineData(TimingReference.SynchronizedLoopback, true)]
+    [InlineData(TimingReference.RecordedSweep, false)]
+    public void GroupDelay_TheTimeReadingCompareCurvesNeedOneClock(
+        TimingReference compareTiming,
+        bool sharesTheClock)
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference",
+                44_100,
+                compareIr,
+                64,
+                TimingReference: compareTiming));
+
+        List<AnalysisCurveKind> kinds = factory.CreateGroupDelay(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .Where(tag => tag.Source == CurveSource.Compare)
+            .Select(tag => tag.Kind)
+            .ToList();
+
+        Assert.Contains(AnalysisCurveKind.MinimumPhaseGroupDelay, kinds);
+        Assert.Equal(sharesTheClock, kinds.Contains(AnalysisCurveKind.Primary));
+        Assert.Equal(sharesTheClock, kinds.Contains(AnalysisCurveKind.ExcessGroupDelay));
+    }
+
+    [Theory]
+    [InlineData(TimingReference.SynchronizedLoopback, true)]
+    [InlineData(TimingReference.RecordedSweep, false)]
+    public void PhaseResponse_TheTimeReadingCompareCurvesNeedOneClock(
+        TimingReference compareTiming,
+        bool sharesTheClock)
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference",
+                44_100,
+                compareIr,
+                64,
+                TimingReference: compareTiming));
+
+        List<AnalysisCurveKind> kinds = factory.CreatePhaseResponse(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .Where(tag => tag.Source == CurveSource.Compare)
+            .Select(tag => tag.Kind)
+            .ToList();
+
+        Assert.Contains(AnalysisCurveKind.MinimumPhase, kinds);
+        Assert.Equal(sharesTheClock, kinds.Contains(AnalysisCurveKind.Primary));
+        Assert.Equal(sharesTheClock, kinds.Contains(AnalysisCurveKind.ExcessPhase));
+    }
+
     [Fact]
     public void GroupDelay_TagsMainAndCompareCurvesForLinkedOverlays()
     {

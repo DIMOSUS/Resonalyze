@@ -549,18 +549,24 @@ internal sealed class PlotModelFactory
             // left shoulder. The extraction re-references every spectrum to
             // absolute time and both curves share the one τ resolved above,
             // so their relative phase/delay survives the differing windows.
-            // Only when the two share a time reference: measured phase IS a
-            // time statement, and the shared detrend below exists precisely to
-            // preserve the relative delay between the curves.
-            if (compare is { } compareData && CompareSharesATimeReference())
+            // Per curve, because they do not all make the same claim. Measured
+            // phase IS a time statement — the shared detrend above exists
+            // precisely to preserve the relative delay — and the excess is what
+            // is left after removing the minimum-phase part of it, so both need
+            // the two records on one clock. Minimum phase is reconstructed from
+            // the magnitude alone (Bode), which is why the detrend cannot move
+            // it either: it says nothing about when anything arrived and stays
+            // comparable against an imported recording.
+            if (compare is { } compareData)
             {
+                bool sharesTimeReference = CompareSharesATimeReference();
                 PhaseAnalysisSettings comparePhaseSettings =
                     phaseResponseOptions.PhaseGateAutoFit &&
                     TransferIrStartCache.ResolveStartMs(compareData.Measurement)
                         is { } compareStartMs
                         ? phaseSettings with { GateOffsetMs = compareStartMs }
                         : phaseSettings;
-                if (phaseResponseVisibility.ShowMeasuredPhase)
+                if (phaseResponseVisibility.ShowMeasuredPhase && sharesTimeReference)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetPhase(
                         compareData.Measurement,
@@ -589,7 +595,7 @@ internal sealed class PlotModelFactory
                         phaseUnwrapped: true);
                 }
 
-                if (phaseResponseVisibility.ShowExcessPhase)
+                if (phaseResponseVisibility.ShowExcessPhase && sharesTimeReference)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetExcessPhase(
                         compareData.Measurement,
@@ -768,7 +774,14 @@ internal sealed class PlotModelFactory
                 // per-curve (each record's own IR start): group delay reads
                 // absolute from the IR start, so differently placed windows
                 // stay directly comparable while both direct arrivals survive.
-                if (CompareSharesATimeReference() &&
+                // Which of them may be drawn is per-curve: the measured and the
+                // excess read absolute from the IR start, so they only mean
+                // something when both records sit on one clock, while the
+                // minimum-phase curve comes from the gated magnitude and
+                // carries no bulk delay by construction.
+                bool sharesTimeReference = CompareSharesATimeReference();
+                if ((sharesTimeReference ||
+                        groupDelayVisibility.ShowMinimumPhaseGroupDelay) &&
                     TryCreateCompareMeasurement() is { } compare)
                 {
                     double compareGateOffsetMs =
@@ -793,7 +806,7 @@ internal sealed class PlotModelFactory
                     // extremes swing widely; folding them into the range makes the
                     // scale jump on every edit. Off-scale Compare points are simply
                     // clipped, like any overlay.
-                    if (groupDelayVisibility.ShowGroupDelay)
+                    if (groupDelayVisibility.ShowGroupDelay && sharesTimeReference)
                     {
                         AddCompareLineSeries(
                             model,
@@ -813,6 +826,7 @@ internal sealed class PlotModelFactory
                             Mode.GroupDelay);
                     }
                     if (groupDelayVisibility.ShowExcessGroupDelay &&
+                        sharesTimeReference &&
                         compareCurves.Excess is { } compareExcessCurve)
                     {
                         AddCompareLineSeries(

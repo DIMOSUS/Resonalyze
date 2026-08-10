@@ -292,6 +292,16 @@ namespace Resonalyze
                 {
                     throw new InvalidOperationException("Measurement is not initialized.");
                 }
+                // An outstanding claim owns this measurement for an operation
+                // that has no task to wait on — a file import spanning its
+                // decode. A run started underneath it would publish over the
+                // import's result, and its own completion would clear the busy
+                // flag the import is still holding.
+                if (claimed)
+                {
+                    throw new InvalidOperationException(
+                        "The measurement is already busy.");
+                }
 
                 cancellationTokenSource?.Dispose();
                 cancellationTokenSource = new CancellationTokenSource();

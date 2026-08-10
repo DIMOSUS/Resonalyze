@@ -52,6 +52,18 @@ internal static class RecordedSweepWindow
     // level would put the whole sweep below the threshold.
     private const double SustainSeconds = 0.1;
 
+    // How far over the recording's noise floor a window has to sit to count as
+    // something rather than nothing. Twenty decibels is comfortably below any
+    // usable excitation — the field takes stand 40 to 60 dB over their floors —
+    // and comfortably above the floor's own wander, so silence does not fuse into
+    // one stretch spanning the whole file.
+    private const double FloorThresholdRatio = 100.0;
+
+    // The share of windows taken to be the floor rather than content. A tenth is
+    // enough on a take that is mostly excitation and still right on one that is
+    // mostly silence, where nearly every window is floor anyway.
+    private const double FloorPercentile = 0.1;
+
     // Silence this long ends a stretch. Shorter drops (a pause between spoken
     // words, a dip in the sweep's fade) keep the stretch together.
     private const double GapSeconds = 0.2;
@@ -168,7 +180,20 @@ internal static class RecordedSweepWindow
             return [];
         }
 
-        double threshold = reference * ExcitationThresholdRatio;
+        // Two thresholds, and the LOWER wins — being generous costs candidates
+        // that the caller then verifies, while being strict costs the recording.
+        //
+        // One is relative to the loudest thing in the file. It fails exactly when
+        // something louder than the sweep shares the take: a door, a voice, a
+        // handling knock 30 dB up puts the whole excitation underneath it, and no
+        // amount of retrying helps because the sweep never becomes a candidate.
+        //
+        // The other is relative to the QUIETEST thing — the noise floor the
+        // recorder was sitting on between events — which the excitation stands
+        // over whatever else is in the file.
+        double threshold = Math.Min(
+            reference * ExcitationThresholdRatio,
+            QuietestSustainedPower(power) * FloorThresholdRatio);
         int gap = Math.Max(1, (int)(GapSeconds * sampleRate) / window);
         // (first window, last window, loud windows) per stretch, as they occur.
         var stretches = new List<(int Start, int End, int Loud)>();
@@ -210,6 +235,23 @@ internal static class RecordedSweepWindow
             .Take(maximumCandidates)
             .Select(stretch => (stretch.Start * window, (stretch.End + 1) * window))
             .ToList();
+    }
+
+    // The level the recording sits at when nothing is happening: a low percentile
+    // of the window powers, which is the noise floor on any take that holds some
+    // silence and an underestimate — harmlessly, since it only widens the search —
+    // on one that does not.
+    private static double QuietestSustainedPower(double[] power)
+    {
+        var sorted = new double[power.Length];
+        Array.Copy(power, sorted, power.Length);
+        Array.Sort(sorted);
+        double floor = sorted[Math.Min(
+            sorted.Length - 1, (int)(sorted.Length * FloorPercentile))];
+        // A digitally silent lead-in reads as an exact zero, which would put the
+        // threshold there and make every sample "loud". Fall back to the quietest
+        // level that is actually a level.
+        return floor > 0 ? floor : sorted.FirstOrDefault(value => value > 0);
     }
 
     // The loudest level the recording holds for a whole run of windows, which is

@@ -149,6 +149,33 @@ public sealed class RecordedSweepWindowTests
         Assert.True(span.Length <= 2 * SweepSamples + (int)(2.5 * SampleRate));
     }
 
+    // The case a threshold hung off the loudest thing in the file cannot survive:
+    // a door, a voice or a knock on the recorder 30 dB ABOVE a quiet measurement
+    // sweep. Twenty decibels under that interference is still well over the sweep,
+    // so the excitation never becomes a candidate at all and no amount of retrying
+    // reaches it. Measured against the noise floor instead, both are candidates.
+    [Theory]
+    [InlineData(10.0)]
+    [InlineData(30.0)]
+    public void InterferenceLouderThanTheSweepDoesNotHideIt(double interferenceOverSweepDb)
+    {
+        const int lead = 60 * SampleRate;
+        float[] samples = Recording(lead, SweepSamples, 10 * SampleRate, noise: 0.0002f);
+        double interference = 0.4 * Math.Pow(10.0, interferenceOverSweepDb / 20.0);
+        var random = new Random(5150);
+        for (int i = 0; i < SampleRate; i++)
+        {
+            samples[2 * SampleRate + i] +=
+                (float)((random.NextDouble() - 0.5) * 2 * interference);
+        }
+
+        IReadOnlyList<RecordedSweepSpan> candidates =
+            RecordedSweepWindow.LocateCandidates(samples, SampleRate, SweepSamples);
+
+        Assert.Contains(candidates, span =>
+            span.Start <= lead && span.Start + span.Length >= lead + SweepSamples);
+    }
+
     [Fact]
     public void ASilentRecordingFallsBackToTheBoundedHead()
     {

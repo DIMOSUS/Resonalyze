@@ -1,10 +1,18 @@
-namespace Resonalyze;
+﻿namespace Resonalyze;
 
 /// <summary>
 /// The stretch of a recorded sweep file that is worth analyzing: the excitation
 /// plus room for what arrives before and decays after it.
+/// <see cref="ExcitationStart"/> is where the excitation itself was found, which
+/// sits <em>inside</em> the span — the caller needs it to tell a complete take
+/// from one the file cuts short, since the span's own length counts the lead-in
+/// silence too.
 /// </summary>
-internal readonly record struct RecordedSweepSpan(int Start, int Length);
+internal readonly record struct RecordedSweepSpan(int Start, int Length, int ExcitationStart)
+{
+    /// <summary>Samples available from where the excitation begins.</summary>
+    public int ExcitationLength => Start + Length - ExcitationStart;
+}
 
 /// <summary>
 /// Finds the excitation inside a recording that may be far longer than it. The
@@ -74,29 +82,34 @@ internal static class RecordedSweepWindow
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumCandidates);
         if (sampleRate <= 0 || sweepSamples <= 0)
         {
-            return [new RecordedSweepSpan(0, samples.Length)];
+            return [new RecordedSweepSpan(0, samples.Length, 0)];
         }
 
+        List<int> onsets = FindExcitationStarts(
+            samples, sampleRate, sweepSamples, maximumCandidates);
         int lead = (int)(LeadInSeconds * sampleRate);
         int bound = sweepSamples + lead + (int)(TailSeconds * sampleRate);
+        // A recording that already fits the bound is analyzed whole — there is
+        // nothing to cut away — but it still needs the excitation start, or a take
+        // that holds a pre-roll and then RUNS OUT mid-sweep reads as long enough.
         if (samples.Length <= bound)
         {
-            return [new RecordedSweepSpan(0, samples.Length)];
+            return [new RecordedSweepSpan(
+                0, samples.Length, onsets.Count > 0 ? onsets[0] : 0)];
         }
 
         var spans = new List<RecordedSweepSpan>();
-        foreach (int onset in FindExcitationStarts(
-            samples, sampleRate, sweepSamples, maximumCandidates))
+        foreach (int onset in onsets)
         {
             int start = Math.Max(0, onset - lead);
             if (!spans.Exists(span => span.Start == start))
             {
                 spans.Add(new RecordedSweepSpan(
-                    start, Math.Min(bound, samples.Length - start)));
+                    start, Math.Min(bound, samples.Length - start), onset));
             }
         }
 
-        return spans.Count > 0 ? spans : [new RecordedSweepSpan(0, bound)];
+        return spans.Count > 0 ? spans : [new RecordedSweepSpan(0, bound, 0)];
     }
 
     // The starts of the loud stretches, longest first. The sweep is one

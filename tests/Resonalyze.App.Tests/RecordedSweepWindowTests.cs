@@ -33,6 +33,24 @@ public sealed class RecordedSweepWindowTests
         return samples;
     }
 
+    // A pre-roll followed by a sweep the file cuts short: the span is the whole
+    // (short) recording, but what is left of the excitation inside it is what
+    // decides whether the take is usable.
+    [Fact]
+    public void AShortRecordingStillReportsWhereTheExcitationBegins()
+    {
+        int preRoll = SampleRate / 2;
+        float[] samples = Recording(preRoll, (int)(SweepSamples * 0.85), 0, noise: 0.0005f);
+
+        RecordedSweepSpan span =
+            RecordedSweepWindow.LocateCandidates(samples, SampleRate, SweepSamples)[0];
+
+        Assert.Equal(0, span.Start);
+        Assert.Equal(samples.Length, span.Length);
+        Assert.InRange(span.ExcitationStart, preRoll - 480, preRoll + 480);
+        Assert.True(span.ExcitationLength < SweepSamples);
+    }
+
     [Fact]
     public void ShortRecordingsAreAnalyzedWhole()
     {

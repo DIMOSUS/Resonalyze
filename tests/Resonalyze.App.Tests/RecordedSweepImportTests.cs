@@ -208,18 +208,25 @@ public sealed class RecordedSweepImportTests
         Assert.False(measurement.CurrentLevels.Loopback.Available);
     }
 
-    // Absolute level is the recorder's business; the transfer estimate divides it
-    // out, so two takes of the same room at different gains must agree.
+    // An imported measurement is NOT scale-invariant, and the difference from a
+    // live run is worth pinning. There, the loopback carries the recording gain
+    // too and H1 divides it out; here the reference is generated, so the gain
+    // rides entirely on the target and multiplies the whole transfer. WHEN the
+    // arrival happens is unaffected; WHERE the magnitude curve sits vertically is
+    // the recorder's business, and two takes at different gains do not line up.
     [Fact]
-    public void ImportIsScaleInvariant()
+    public void ImportTimingIsLevelIndependentButItsMagnitudeIsNot()
     {
         using ExpSweepMeasurement loud = CreateMeasurement();
         using ExpSweepMeasurement quiet = CreateMeasurement();
 
         loud.ImportRecordedSweep(Configuration(), RecordSweep(loud, 1_500, gain: 0.5f), SampleRate);
-        quiet.ImportRecordedSweep(Configuration(), RecordSweep(quiet, 1_500, gain: 0.02f), SampleRate);
+        quiet.ImportRecordedSweep(Configuration(), RecordSweep(quiet, 1_500, gain: 0.05f), SampleRate);
 
         Assert.Equal(quiet.Transfer!.PeakIndex, loud.Transfer!.PeakIndex);
+        double loudPeak = Math.Abs(loud.TransferImpulseResponse![loud.Transfer.PeakIndex].Real);
+        double quietPeak = Math.Abs(quiet.TransferImpulseResponse![quiet.Transfer.PeakIndex].Real);
+        Assert.Equal(10.0, loudPeak / quietPeak, tolerance: 0.1);
     }
 
     // An import is a measurement like any other, so Save has to accept it: the
@@ -269,6 +276,46 @@ public sealed class RecordedSweepImportTests
         Assert.True(measurement.HasImpulseResponse);
         Assert.Equal(peakBefore, measurement.Transfer!.PeakIndex);
         Assert.Same(impulseResponseBefore, measurement.SweepDeconvolutionImpulseResponse);
+    }
+
+    // The take runs out mid-sweep after a pre-roll: the FILE is longer than the
+    // sweep, and so is the analyzed span, but the excitation inside it is not.
+    // Only counting from where the excitation begins catches this.
+    [Fact]
+    public void ImportRefusesATakeThatRunsOutMidSweep()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        int sweepSamples = measurement.Sweep!.SweepSamples;
+        float[] full = RecordSweep(measurement, SampleRate / 2, tail: 0);
+        // Keeps the half-second pre-roll and 85 % of the excitation, so the file
+        // still holds more samples than the sweep does.
+        float[] truncated = full[..(SampleRate / 2 + (int)(sweepSamples * 0.85))];
+        Assert.True(truncated.Length > sweepSamples);
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            measurement.ImportRecordedSweep(Configuration(), truncated, SampleRate));
+
+        Assert.Contains("cut short", exception.Message);
+    }
+
+    // Clipping is an unambiguous capture failure the live path refuses a run for,
+    // and a clipped sweep still deconvolves into a compact impulse response — full
+    // of harmonic products — so the shape gate cannot be what catches it.
+    [Fact]
+    public void ImportRefusesAClippedRecording()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        float[] recording = RecordSweep(measurement, 1_000, gain: 3.0f);
+        for (int i = 0; i < recording.Length; i++)
+        {
+            recording[i] = Math.Clamp(recording[i], -1.0f, 1.0f);
+        }
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            measurement.ImportRecordedSweep(Configuration(), recording, SampleRate));
+
+        Assert.Contains("clipped", exception.Message);
+        Assert.False(measurement.HasImpulseResponse);
     }
 
     [Fact]

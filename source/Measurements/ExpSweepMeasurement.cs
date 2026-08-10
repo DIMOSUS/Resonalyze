@@ -563,20 +563,42 @@ namespace Resonalyze
             // turn, because locating one by level alone cannot be certain.
             double bestCompactnessDb = double.NegativeInfinity;
             bool measurable = false;
-            int longestCandidate = 0;
+            int longestExcitation = 0;
+            IReadOnlyList<string>? captureIssues = null;
+            // The excitation is found by level, and a level crosses the detector's
+            // threshold INSIDE the fade-in rather than at the first sample, so the
+            // real start sits up to a fade-in (plus one detection window) earlier
+            // than the reported one. Without that slack a take holding exactly the
+            // sweep and no tail reads as cut short by the detector's own lateness.
+            int detectionSlack = sweep.Spec.FadeInSamples + sampleRate / 100;
             foreach (RecordedSweepSpan span in RecordedSweepWindow.LocateCandidates(
                 recordedSamples, sampleRate, sweep.SweepSamples))
             {
-                longestCandidate = Math.Max(longestCandidate, span.Length);
-                if (span.Length < sweep.SweepSamples)
+                // Measured from where the EXCITATION begins, not from the start of
+                // the span: the span counts its lead-in silence too, so a take that
+                // holds a pre-roll and then runs out mid-sweep would read as long
+                // enough and be analyzed against an excitation it never finished.
+                longestExcitation = Math.Max(longestExcitation, span.ExcitationLength);
+                if (span.ExcitationLength + detectionSlack < sweep.SweepSamples)
                 {
-                    // The excitation was found too close to the end to hold the
-                    // whole sweep; a later candidate may still fit.
+                    // Found too close to the end to hold the whole sweep; a later
+                    // candidate may still fit.
                     continue;
                 }
 
                 ImportedSweepAnalysis analysis = AnalyzeImportedSpan(
                     recordedSamples, span, sweep);
+                // The same unambiguous capture failures the live path refuses a run
+                // for. A clipped sweep still deconvolves into a compact impulse
+                // response — it is simply full of harmonic products — so the shape
+                // gate below cannot be what catches it.
+                IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
+                    analysis.Analyzed, loopback: null, sweep.SweepSamples);
+                if (issues.Count > 0)
+                {
+                    captureIssues ??= issues;
+                    continue;
+                }
                 TransferIrCompactness? compactness = TransferIrDiagnostics.MeasureCompactness(
                     analysis.TransferImpulseResponse, signal.SampleRate);
                 if (compactness is { } value && double.IsFinite(value.InsideOutsideDb))
@@ -591,10 +613,16 @@ namespace Resonalyze
                 }
             }
 
-            if (longestCandidate < sweep.SweepSamples)
+            if (longestExcitation + detectionSlack < sweep.SweepSamples)
             {
                 throw new InvalidOperationException(FormattableString.Invariant(
-                    $"The excitation starts {longestCandidate / (double)sampleRate:0.00} s before the end of the recording, which is less than the sweep's own {sweep.ComputedDuration:0.00} s. The take is cut short — record again with the whole sweep inside it."));
+                    $"The excitation starts {longestExcitation / (double)sampleRate:0.00} s before the end of the recording, which is less than the sweep's own {sweep.ComputedDuration:0.00} s. The take is cut short — record again with the whole sweep inside it."));
+            }
+            if (captureIssues is { Count: > 0 })
+            {
+                throw new InvalidOperationException(
+                    $"The recording cannot be measured: {string.Join("; ", captureIssues)}. " +
+                    "Record again at a level that leaves headroom.");
             }
 
             throw RefuseImportedRecording(measurable, bestCompactnessDb, sweep, sampleRate);

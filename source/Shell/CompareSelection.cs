@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.History;
 
 namespace Resonalyze;
@@ -53,11 +53,17 @@ internal sealed class CompareSelection
             selection.Snapshot.TransferCoherence,
             // Its OWN K, not the main measurement's: the two were captured at
             // different loopback levels unless they share a session.
-            selection.Snapshot.SplOffsetDb);
+            selection.Snapshot.SplOffsetDb,
+            selection.Snapshot.TimingReference);
     }
 
+    // Time Alignment compares one arrival against another, so a measurement
+    // imported from a recorded sweep cannot take part: its arrival is set by when
+    // the recorder was started. The curve comparison above is unaffected — a
+    // magnitude response does not care what time it arrived at.
     public TimeAlignmentCompareMeasurement? GetTimeAlignmentMeasurement() =>
-        current is not { } selection
+        current is not { } selection ||
+            selection.Snapshot.TimingReference == TimingReference.RecordedSweep
             ? null
             : new TimeAlignmentCompareMeasurement(
                 selection.DisplayName,
@@ -83,4 +89,5 @@ public readonly record struct CompareAnalysisSource(
     Complex[] TransferImpulseResponse,
     int TransferPeakIndex,
     double[]? TransferCoherence = null,
-    double? SplOffsetDb = null);
+    double? SplOffsetDb = null,
+    TimingReference TimingReference = TimingReference.SynchronizedLoopback);

@@ -1,3 +1,5 @@
+﻿using System.Numerics;
+
 namespace Resonalyze.Dsp.Tests;
 
 public sealed class TransferIrDiagnosticsTests
@@ -513,5 +515,80 @@ public sealed class TransferIrDiagnosticsTests
         }
         // And the original was not mutated.
         Assert.Equal(0.09, impulseResponse[30]);
+    }
+
+    // The measure that tells a matched excitation from a mismatched one: how far
+    // the arrival stands above its own two milliseconds.
+    [Fact]
+    public void ArrivalSharpness_IsHighForACleanArrival()
+    {
+        var impulseResponse = new Complex[1 << 14];
+        impulseResponse[4_000] = new Complex(1.0, 0);
+        impulseResponse[4_010] = new Complex(0.4, 0);
+        impulseResponse[4_060] = new Complex(0.2, 0);
+
+        double? sharpness = TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+            impulseResponse, SampleRate);
+
+        Assert.NotNull(sharpness);
+        Assert.True(
+            sharpness >= TransferIrDiagnostics.MinimumArrivalSharpnessDb,
+            $"sharpness was {sharpness}");
+    }
+
+    // A decay that runs for a quarter of a second still counts as an arrival:
+    // the floor has to pass a reverberant room, not just an anechoic one. This is
+    // the case that ruled out measuring the SHARE of energy near the arrival —
+    // this record keeps only 12 % of it there.
+    [Fact]
+    public void ArrivalSharpness_SurvivesALongDecay()
+    {
+        var impulseResponse = new Complex[1 << 15];
+        impulseResponse[8_000] = new Complex(1.0, 0);
+        var random = new Random(11);
+        for (int i = 1; i < SampleRate / 4; i++)
+        {
+            double decay = Math.Exp(-6.0 * i / (SampleRate / 4.0));
+            impulseResponse[8_000 + i] =
+                new Complex((random.NextDouble() - 0.5) * 0.5 * decay, 0);
+        }
+
+        double? sharpness = TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+            impulseResponse, SampleRate);
+
+        Assert.True(
+            sharpness >= TransferIrDiagnostics.MinimumArrivalSharpnessDb,
+            $"a reverberant record must pass; sharpness was {sharpness}");
+    }
+
+    // What a sweep deconvolved against the WRONG sweep looks like: the energy is
+    // spread over tens of milliseconds instead of landing.
+    [Fact]
+    public void ArrivalSharpness_IsLowForASmearedArrival()
+    {
+        var impulseResponse = new Complex[1 << 15];
+        var random = new Random(7);
+        for (int i = 0; i < SampleRate / 10; i++)
+        {
+            impulseResponse[8_000 + i] = new Complex(random.NextDouble() - 0.5, 0);
+        }
+
+        double? sharpness = TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+            impulseResponse, SampleRate);
+
+        Assert.True(
+            sharpness < TransferIrDiagnostics.MinimumArrivalSharpnessDb,
+            $"a smeared arrival must fail; sharpness was {sharpness}");
+    }
+
+    [Fact]
+    public void ArrivalSharpness_IsNullWhenThereIsNothingToMeasure()
+    {
+        Assert.Null(TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+            new Complex[1 << 12], SampleRate));
+        Assert.Null(TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+            [new Complex(double.NaN, 0), new Complex(1, 0)], SampleRate));
+        Assert.Null(TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+            [new Complex(1, 0)], sampleRate: 0));
     }
 }

@@ -124,6 +124,20 @@ internal sealed partial class MeasurementSettingsFile
 
         public void ApplyTo(ExpSweepMeasurement measurement)
         {
+            measurement.Init(BuildConfiguration());
+            // Metadata, applied after Init (which does not touch it).
+            measurement.SplCalibration = SplCalibration;
+        }
+
+        /// <summary>
+        /// These settings as the measurement configuration they describe, with
+        /// every value normalized against the devices actually present. Separate
+        /// from <see cref="ApplyTo"/> for the callers that need the configuration
+        /// without committing it — importing a recording resolves the sweep from it
+        /// first and only applies it once the analysis has succeeded.
+        /// </summary>
+        public SweepMeasurementConfiguration BuildConfiguration()
+        {
             AudioBackend backend = NormalizeAudioBackend(AudioBackend, AsioDriverName);
             string? captureEndpointId = NormalizeWasapiEndpointId(
                 WasapiCaptureEndpointId,
@@ -137,7 +151,7 @@ internal sealed partial class MeasurementSettingsFile
                 renderEndpointId,
                 Clamp(SampleRate, 44_100, 384_000));
             (double lowFrequencyHz, double highFrequencyHz) = ResolveBand(sampleRate);
-            measurement.Init(new SweepMeasurementConfiguration(
+            return new SweepMeasurementConfiguration(
                 new SweepSignalConfiguration(
                     lowFrequencyHz,
                     highFrequencyHz,
@@ -186,9 +200,7 @@ internal sealed partial class MeasurementSettingsFile
                     WasapiBufferMilliseconds: Clamp(WasapiBufferMilliseconds, 10, 100)),
                 new SweepAveragingConfiguration(
                     Clamp(AverageRunCount, 1, 64),
-                    ConfirmEachAverageRun)));
-            // Metadata, applied after Init (which does not touch it).
-            measurement.SplCalibration = SplCalibration;
+                    ConfirmEachAverageRun));
         }
     }
 

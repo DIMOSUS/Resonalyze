@@ -1293,9 +1293,12 @@ public partial class VirtualCrossoverPanel : UserControl
             if (policy == SourceConflictPolicy.Prompt)
             {
                 ShowError(
-                    "This measurement has no loopback transfer IR.",
-                    "The virtual crossover sums loopback-referenced responses; " +
-                    "re-measure with a loopback channel configured.");
+                    "This measurement cannot be summed.",
+                    "The virtual crossover sums loopback-referenced responses: it " +
+                    "needs a transfer IR whose arrival is the tract's real delay. " +
+                    "This one either has no transfer IR, or was imported from a " +
+                    "recorded sweep and carries no absolute time. Re-measure with a " +
+                    "loopback channel configured.");
             }
 
             return false;

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
@@ -15,10 +15,12 @@ public sealed class VirtualCrossoverSourceTests
         Complex[]? transferIr,
         int? transferPeak = null,
         int sampleRate = 48_000,
-        double[]? coherence = null) =>
+        double[]? coherence = null,
+        TimingReference timingReference = TimingReference.SynchronizedLoopback) =>
         new()
         {
             SampleRate = sampleRate,
+            TimingReference = timingReference,
             TransferImpulseResponse = transferIr,
             TransferPeakIndex = transferPeak,
             TransferCoherence = coherence,
@@ -34,6 +36,20 @@ public sealed class VirtualCrossoverSourceTests
     {
         Assert.Null(ResolvedVirtualDspSource.FromSnapshot(Snapshot(null)));
         Assert.Null(ResolvedVirtualDspSource.FromSnapshot(Snapshot([])));
+    }
+
+    // Summing two drivers is summing their arrivals, so a measurement imported
+    // from a recorded sweep cannot take part: its arrival is set by when the
+    // recorder was started, not by the tract.
+    [Fact]
+    public void FromSnapshot_ReturnsNull_ForAnImportedRecording()
+    {
+        Complex[] transferIr = [Complex.One, Complex.Zero];
+
+        Assert.Null(ResolvedVirtualDspSource.FromSnapshot(
+            Snapshot(transferIr, timingReference: TimingReference.RecordedSweep)));
+        Assert.NotNull(ResolvedVirtualDspSource.FromSnapshot(
+            Snapshot(transferIr, timingReference: TimingReference.SynchronizedLoopback)));
     }
 
     [Theory]

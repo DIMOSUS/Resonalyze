@@ -850,6 +850,19 @@ begin with. Absolute [dB SPL](#sound-pressure-level-db-spl) readings follow the
 real acoustic output as they always have: it is genuinely 6 dB lower until you
 turn the playback level up — which is now the headroom you have to spend.
 
+**Save sweep as WAV...** writes the sweep the panel currently describes to a
+24-bit WAV file: the same band, pace, sample rate and playback channel a
+measurement would play, at the same −6 dBFS. The playback channel is carried into
+the file's layout, so `Mono` writes one channel while `Left` and `Right` write a
+stereo file with the other side silent. A second of silence is written before and
+after the sweep — a file whose first sample is already the excitation loses its
+opening to whatever the playback chain does when audio begins, such as a
+Bluetooth link or a class-D amplifier coming out of mute, and the trailing second
+gives the room its decay before the file ends. Its purpose is measuring from a source
+that is not this computer — a phone, a head unit, a USB stick in the car — and
+the recording that comes back can be analyzed with
+[Load](#saving-and-loading-impulse-responses).
+
 Measurement options apply as you edit them — the band, the pace, the playback
 channel, the averaging — and touch the audio session only when its identity
 actually changed. The audio backend, the format the device is opened with and
@@ -1409,6 +1422,79 @@ current audio-device configuration in Record Settings. All analyses derived from
 an impulse response — frequency response, phase, group delay, waterfall, Burst
 Decay, autocorrelation, and loopback-based Time Alignment — can then be generated
 without repeating the measurement.
+
+### Importing a sweep recorded elsewhere
+
+**Load** also accepts a `.wav` file — a recording of the sweep made outside
+Resonalyze, by a phone, a handheld recorder or a DAW, while the excitation was
+played from something else (typically the file written by
+[Save sweep as WAV...](#sweep-band-and-duration)). The recording is deconvolved
+with the inverse filter of the sweep the **current settings** describe, and the
+transfer function is estimated against that same sweep standing in for the
+loopback reference — the excitation is known exactly, because it is the signal
+that was played. If the file has more than one channel, the loudest one by RMS is
+measured and Resonalyze reports which one that was.
+
+The recording may be far longer than the sweep — starting the recorder, walking
+to the listening position, playing the sweep and walking back is the normal way
+to make one. Resonalyze locates the excitation and analyzes it together with
+0.5 s before and 2 s of decay after, so the silence never reaches the analysis:
+on a 92-second take of a 2.15-second sweep that is 4.65 s of audio instead of the
+whole file, which cuts the work from 3.4 s and 1.9 GB of transient spectra to
+0.18 s and 100 MB, and the transfer IR the measurement then carries (and writes
+into a saved `.json`) from 268 MB to 8 MB. If a take holds the sweep more than
+once, the first one is measured.
+
+Whatever played the file and whatever recorded it run on their own clocks, so the
+sweep comes back slightly stretched or squeezed — and a per-octave time in whole
+milliseconds cannot always express the duration that produced a given file
+either. Both put the recording out of scale with the reference, both smear the
+arrival and the phase at the top of the band, and neither is visible in the
+result. Resonalyze finds the stretch that sharpens the arrival most and rebuilds
+the reference at that rate, reporting the correction when it applies one. On the
+field takes above that was 100 ppm, worth 4.7 dB of arrival sharpness.
+
+The settings must match the sweep the recording was made from, and Resonalyze
+checks that rather than trusting it: a recording analyzed against the wrong band
+or per-octave time deconvolves into a smear instead of an arrival, and the
+arrival's sharpness is what tells the two apart. On two field takes of the same
+exported sweep — a car cabin and a room — the correct settings read 15.5 dB and
+10.7 dB of sharpness while every neighbouring wrong pace read 3.1–6.3 dB.
+
+A file at another sample rate is refused outright, a take whose sweep runs past
+the end of the recording is refused as cut short, a clipped recording is refused
+the way a live run refuses one, and a recording that does not deconvolve into a
+credible impulse response is refused with what it measured instead of publishing
+the garbage — in every case the measurement already on screen is left untouched.
+
+Two things such a measurement cannot carry. There is no absolute time: where the
+arrival landed was decided by when the recorder was started, not by the acoustic
+path, so delays mean something only within one file — a reflection 8 ms after the
+direct sound really is 8 ms — and never between two of them. And there is no
+[dB SPL](#sound-pressure-level-db-spl) anchor, because the gain of the recording
+chain is unknown; for the same reason the vertical position of its dBr curve is
+the recorder's gain setting rather than anything about the system.
+
+Because the origin means nothing, it is chosen rather than inherited: the whole
+impulse response is shifted so the arrival lands at 10 ms. The shift is rigid, so
+every delay inside the measurement survives it — a reflection 8 ms behind the
+direct sound stays 8 ms behind — while the read-outs become what they always
+were, time relative to this measurement's own arrival. Left as recorded they were
+absolute nonsense: measured group delay is referenced to the start of the impulse
+response, and the two field takes above read 730 ms and 1220 ms of it on an axis
+that spans tens.
+
+That the timing is local is recorded in the measurement and travels with it into
+the saved `.json` and the history, so everything that compares one arrival
+against another refuses it by name instead of drawing a relationship nobody
+measured: [Time Alignment](#time-alignment) declines it as a source and as a
+Compare partner, [Virtual DSP](#virtual-dsp) will not sum it with another
+measurement, and in Phase, Group Delay and the impulse overlay the Compare curve
+is left out unless both measurements were referenced to their own captured
+loopback. Compare's magnitude curve is drawn as always. Everything that lives inside a single measurement —
+frequency response, phase, group delay, waterfall, Burst Decay, the EQ wizard —
+works as it does for a measured sweep, including Compare's curve overlay, and the
+result saves as a normal `.json` impulse response.
 
 Saving and loading are disabled while a measurement is running. The current file
 format identifier is `resonalyze-impulse-response`, version `7`. Files are meant

@@ -172,6 +172,91 @@ public sealed class AudioFileCodecTests : IDisposable
                 new AudioFileContent(Array.Empty<float[]>(), 48_000)));
     }
 
+    // WAVE_FORMAT_EXTENSIBLE (0xFFFE) is what most recorders and DAWs write for
+    // 24-bit and multichannel files. Read used to hand it to ACM as if it were
+    // compressed and fail with "NoDriver calling acmFormatSuggest" — an ordinary
+    // 24-bit recording, refused.
+    [Theory]
+    [InlineData(24)]
+    [InlineData(16)]
+    [InlineData(32)]
+    public void Read_DecodesExtensiblePcm(int bitsPerSample)
+    {
+        const int Rate = 44_100;
+        int[] values = [0, 1 << (bitsPerSample - 4), -(1 << (bitsPerSample - 4)), 12_345];
+        string path = PathFor($"extensible-{bitsPerSample}.wav");
+        WriteExtensiblePcm(path, Rate, channels: 2, bitsPerSample, values);
+
+        AudioFileContent read = AudioFileCodec.Read(path, TimeSpan.FromMinutes(1));
+
+        Assert.Equal(2, read.ChannelCount);
+        Assert.Equal(Rate, read.SampleRate);
+        Assert.Equal(values.Length / 2, read.FrameCount);
+        double full = 1L << (bitsPerSample - 1);
+        Assert.Equal(values[0] / full, read.Channels[0][0], tolerance: 1e-6);
+        Assert.Equal(values[1] / full, read.Channels[1][0], tolerance: 1e-6);
+        Assert.Equal(values[2] / full, read.Channels[0][1], tolerance: 1e-6);
+        Assert.Equal(values[3] / full, read.Channels[1][1], tolerance: 1e-6);
+    }
+
+    [Fact]
+    public void Probe_ReadsExtensiblePcmFormat()
+    {
+        string path = PathFor("extensible-probe.wav");
+        WriteExtensiblePcm(path, 96_000, channels: 2, bitsPerSample: 24, [0, 0, 0, 0]);
+
+        AudioFileInfo info = AudioFileCodec.Probe(path);
+
+        Assert.Equal(2, info.ChannelCount);
+        Assert.Equal(96_000, info.SampleRate);
+    }
+
+    // A 40-byte extensible fmt chunk with the PCM subformat GUID, plus a LIST
+    // chunk between fmt and data — both of which real recorders write.
+    private static void WriteExtensiblePcm(
+        string path,
+        int sampleRate,
+        int channels,
+        int bitsPerSample,
+        int[] values)
+    {
+        int bytesPerSample = bitsPerSample / 8;
+        int blockAlign = channels * bytesPerSample;
+        var data = new byte[values.Length * bytesPerSample];
+        for (int i = 0; i < values.Length; i++)
+        {
+            for (int b = 0; b < bytesPerSample; b++)
+            {
+                data[i * bytesPerSample + b] = (byte)(values[i] >> (8 * b));
+            }
+        }
+
+        byte[] list = "LIST"u8.ToArray();
+        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write);
+        using var writer = new BinaryWriter(stream);
+        writer.Write("RIFF"u8);
+        writer.Write(4 + 48 + 12 + 8 + data.Length);
+        writer.Write("WAVE"u8);
+        writer.Write("fmt "u8);
+        writer.Write(40);
+        writer.Write((ushort)0xFFFE);
+        writer.Write((ushort)channels);
+        writer.Write(sampleRate);
+        writer.Write(sampleRate * blockAlign);
+        writer.Write((ushort)blockAlign);
+        writer.Write((ushort)bitsPerSample);
+        writer.Write((ushort)22);
+        writer.Write((ushort)bitsPerSample);
+        writer.Write(channels == 2 ? 3 : 4);
+        writer.Write(new Guid("00000001-0000-0010-8000-00aa00389b71").ToByteArray());
+        writer.Write(list);
+        writer.Write(4);
+        writer.Write("INFO"u8);
+        writer.Write("data"u8);
+        writer.Write(data.Length);
+        writer.Write(data);
+    }
+
     [Fact]
     public void WriteWav_RefusesMismatchedChannelLengths()
     {

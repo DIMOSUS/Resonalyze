@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.Axes;
@@ -549,7 +549,10 @@ internal sealed class PlotModelFactory
             // left shoulder. The extraction re-references every spectrum to
             // absolute time and both curves share the one τ resolved above,
             // so their relative phase/delay survives the differing windows.
-            if (compare is { } compareData)
+            // Only when the two share a time reference: measured phase IS a
+            // time statement, and the shared detrend below exists precisely to
+            // preserve the relative delay between the curves.
+            if (compare is { } compareData && CompareSharesATimeReference())
             {
                 PhaseAnalysisSettings comparePhaseSettings =
                     phaseResponseOptions.PhaseGateAutoFit &&
@@ -765,7 +768,8 @@ internal sealed class PlotModelFactory
                 // per-curve (each record's own IR start): group delay reads
                 // absolute from the IR start, so differently placed windows
                 // stay directly comparable while both direct arrivals survive.
-                if (TryCreateCompareMeasurement() is { } compare)
+                if (CompareSharesATimeReference() &&
+                    TryCreateCompareMeasurement() is { } compare)
                 {
                     double compareGateOffsetMs =
                         groupDelayOptions.GroupDelayGateAutoFit &&
@@ -900,7 +904,8 @@ internal sealed class PlotModelFactory
             curve = DataHelper.GetImpulseFromStart(main, impulseResponseOptions);
             AddLineSeries(model, curve, impulseTracker, Mode.ImpulseResponse, ImpulseAxisKey);
 
-            if (TryCreateCompareMeasurement() is { } compare)
+            if (CompareSharesATimeReference() &&
+                TryCreateCompareMeasurement() is { } compare)
             {
                 compareCurve = DataHelper.GetImpulseFromStart(
                     compare.Measurement,
@@ -1582,6 +1587,20 @@ internal sealed class PlotModelFactory
         }
     }
 
+    /// <summary>
+    /// Whether the Main and Compare measurements can be read against ONE clock.
+    /// A magnitude does not care, but every curve that carries time — measured
+    /// phase, group delay, the impulse overlay, the vector sum — is a statement
+    /// about when one response arrived relative to the other. That statement only
+    /// exists when both were referenced to their own captured loopback: an
+    /// imported recording's origin is its own arrival by convention (see
+    /// <c>ExpSweepMeasurement.ImportedArrivalSeconds</c>), so putting it beside
+    /// another measurement would draw a relative delay nobody measured.
+    /// </summary>
+    private bool CompareSharesATimeReference() =>
+        expSweepMeasurement.TimingReference == TimingReference.SynchronizedLoopback &&
+        getCompareSource?.Invoke() is { TimingReference: TimingReference.SynchronizedLoopback };
+
     // Builds a view over the Compare transfer IR so the gated magnitude / phase /
     // group-delay math runs on it identically to the main curve (which is also
     // built from the transfer IR — loopback is mandatory for every measurement).
@@ -1633,7 +1652,12 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        if (getCompareSource?.Invoke() is not { } compare ||
+        // The sum is a sum of ARRIVALS — it is only the response two sources would
+        // produce together because both impulse responses sit on one time
+        // reference. An imported recording does not: adding it would predict an
+        // interference pattern from a delay nobody measured.
+        if (!CompareSharesATimeReference() ||
+            getCompareSource?.Invoke() is not { } compare ||
             compare.TransferImpulseResponse is not { Length: > 0 } compareIr ||
             compare.SampleRate != expSweepMeasurement.SampleRate)
         {

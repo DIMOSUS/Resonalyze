@@ -34,6 +34,11 @@ public static class AudioFileCodec
     // overhead disappears, small enough that the copy churn stays bounded.
     private const int ReadBlockFrames = 32_768;
 
+    // The subformat GUIDs of a WAVE_FORMAT_EXTENSIBLE header that carry ordinary
+    // uncompressed samples: KSDATAFORMAT_SUBTYPE_PCM and _IEEE_FLOAT.
+    private static readonly Guid PcmSubFormat = new("00000001-0000-0010-8000-00aa00389b71");
+    private static readonly Guid IeeeFloatSubFormat = new("00000003-0000-0010-8000-00aa00389b71");
+
     /// <summary>
     /// Reads a media file's format without decoding its samples, so a picker
     /// can report (or refuse) the file the moment it is chosen.
@@ -41,11 +46,107 @@ public static class AudioFileCodec
     public static AudioFileInfo Probe(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        using var reader = new AudioFileReader(path);
+        using AudioFileSource source = OpenSource(path);
         return new AudioFileInfo(
-            reader.WaveFormat.Channels,
-            reader.WaveFormat.SampleRate,
-            reader.TotalTime);
+            source.Format.Channels,
+            source.Format.SampleRate,
+            source.Duration);
+    }
+
+    /// <summary>A decoded file as float samples, with the reader that owns them.</summary>
+    private sealed record AudioFileSource(
+        ISampleProvider Samples,
+        WaveFormat Format,
+        TimeSpan Duration,
+        IDisposable Reader) : IDisposable
+    {
+        public void Dispose() => Reader.Dispose();
+    }
+
+    /// <summary>
+    /// Opens any readable file as float samples.
+    /// <para>
+    /// WAV goes through <see cref="WaveFileReader"/> rather than
+    /// <see cref="AudioFileReader"/> because of one format:
+    /// <c>WAVE_FORMAT_EXTENSIBLE</c> (0xFFFE), which is what most recorders and
+    /// DAWs write for 24-bit and multichannel files. <c>AudioFileReader</c>
+    /// treats anything that is not literally tagged PCM or IEEE float as
+    /// compressed and hands it to ACM, which has no driver for it and fails with
+    /// "NoDriver calling acmFormatSuggest" — a perfectly ordinary 24-bit
+    /// recording, refused. The header's subformat GUID says what the samples
+    /// really are, and for PCM or float that is a plain WaveFormat away.
+    /// </para>
+    /// </summary>
+    private static AudioFileSource OpenSource(string path)
+    {
+        if (!IsWaveFile(path))
+        {
+            var decoded = new AudioFileReader(path);
+            return new AudioFileSource(
+                decoded, decoded.WaveFormat, decoded.TotalTime, decoded);
+        }
+
+        var wave = new WaveFileReader(path);
+        try
+        {
+            if (StandardizeExtensible(wave.WaveFormat) is { } standard)
+            {
+                return new AudioFileSource(
+                    new RawSourceWaveStream(wave, standard).ToSampleProvider(),
+                    standard,
+                    wave.TotalTime,
+                    wave);
+            }
+
+            if (wave.WaveFormat.Encoding is WaveFormatEncoding.Pcm or WaveFormatEncoding.IeeeFloat)
+            {
+                return new AudioFileSource(
+                    wave.ToSampleProvider(), wave.WaveFormat, wave.TotalTime, wave);
+            }
+        }
+        catch
+        {
+            wave.Dispose();
+            throw;
+        }
+
+        // A genuinely compressed payload inside a .wav container (ADPCM, µ-law,
+        // MP3-in-WAV). ACM is what decodes those, so leave them to the reader
+        // that uses it.
+        wave.Dispose();
+        var file = new AudioFileReader(path);
+        return new AudioFileSource(file, file.WaveFormat, file.TotalTime, file);
+    }
+
+    // The plain WaveFormat an extensible header really describes, or null when it
+    // describes something else (a compressed subformat) or is not extensible at
+    // all. NAudio surfaces the extension as raw bytes on WaveFormatExtraData —
+    // NOT as WaveFormatExtensible, which a type test would miss — laid out as
+    // validBitsPerSample (2), channel mask (4), then the subformat GUID.
+    private static WaveFormat? StandardizeExtensible(WaveFormat format)
+    {
+        if (format.Encoding != WaveFormatEncoding.Extensible ||
+            format is not WaveFormatExtraData { ExtraData.Length: >= 22 } extensible)
+        {
+            return null;
+        }
+
+        var subFormat = new Guid(extensible.ExtraData.AsSpan(6, 16));
+        if (subFormat == PcmSubFormat)
+        {
+            return new WaveFormat(format.SampleRate, format.BitsPerSample, format.Channels);
+        }
+
+        return subFormat == IeeeFloatSubFormat && format.BitsPerSample == 32
+            ? WaveFormat.CreateIeeeFloatWaveFormat(format.SampleRate, format.Channels)
+            : null;
+    }
+
+    private static bool IsWaveFile(string path)
+    {
+        string extension = Path.GetExtension(path);
+        return extension.Equals(".wav", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".wave", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -93,9 +194,9 @@ public static class AudioFileCodec
             throw new ArgumentOutOfRangeException(nameof(maximumStoredBytes));
         }
 
-        using var reader = new AudioFileReader(path);
-        int channelCount = reader.WaveFormat.Channels;
-        int sampleRate = reader.WaveFormat.SampleRate;
+        using AudioFileSource source = OpenSource(path);
+        int channelCount = source.Format.Channels;
+        int sampleRate = source.Format.SampleRate;
         if (channelCount <= 0 || sampleRate <= 0)
         {
             throw new InvalidOperationException(
@@ -125,7 +226,7 @@ public static class AudioFileCodec
         long keptSamples = 0;
         int channelCursor = 0;
         int read;
-        while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+        while ((read = source.Samples.Read(buffer, 0, buffer.Length)) > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
             for (int i = 0; i < read; i++)

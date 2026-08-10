@@ -1,4 +1,4 @@
-using Resonalyze.History;
+﻿using Resonalyze.History;
 using Resonalyze.Ui.Dialogs;
 
 namespace Resonalyze;
@@ -231,7 +231,8 @@ public partial class Form1
             snapshot.AverageRunCount,
             snapshot.AcceptedAverageRunCount,
             achievedLowHz,
-            achievedHighHz);
+            achievedHighHz,
+            snapshot.TimingReference);
         expSweepMeasurement.RestoreLevelSnapshot(snapshot.MeterSnapshot);
         // Restore the anchor with the levels, exactly as opening the file would
         // (Form1.FileOperations): both halves of K travel with the entry, so a

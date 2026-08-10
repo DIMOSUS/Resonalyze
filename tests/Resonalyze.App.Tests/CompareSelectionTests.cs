@@ -115,16 +115,34 @@ public sealed class CompareSelectionTests
         Assert.NotNull(selection.GetTimeAlignmentMeasurement());
     }
 
+    // A measurement imported from a recorded sweep may be compared as a CURVE —
+    // a magnitude response does not care what time it arrived at — but never as a
+    // timing partner: Time Alignment compares one arrival against another, and
+    // this one's is set by when its recorder was started.
+    [Fact]
+    public void AnImportedMeasurementComparesAsACurveButNotAsATimingPartner()
+    {
+        var selection = new CompareSelection();
+        selection.Set("recorded.json", null, CreateSnapshot(
+            transferIr: [new(0.25, 0)],
+            timingReference: TimingReference.RecordedSweep));
+
+        Assert.NotNull(selection.GetAnalysisSource());
+        Assert.Null(selection.GetTimeAlignmentMeasurement());
+    }
+
     private static MeasurementHistorySnapshot CreateSnapshot(
         Complex[]? sweepIr = null,
         Complex[]? transferIr = null,
         int? transferPeakIndex = null,
         double[]? coherence = null,
         SplCalibration? calibration = null,
-        InputLevelMeterSnapshot? meterSnapshot = null) =>
+        InputLevelMeterSnapshot? meterSnapshot = null,
+        TimingReference timingReference = TimingReference.SynchronizedLoopback) =>
         new()
         {
             SampleRate = 48_000,
+            TimingReference = timingReference,
             SweepDeconvolutionImpulseResponse = sweepIr ?? [new(1, 0)],
             SweepDeconvolutionPeakIndex = 3,
             TransferImpulseResponse = transferIr,

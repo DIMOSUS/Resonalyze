@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 using static System.Math;
 
@@ -20,6 +20,8 @@ namespace Resonalyze
         private Task<bool>? measurementTask;
         private TaskCompletionSource<bool>? averageConfirmation;
         private volatile bool inProgress;
+        // Whether inProgress is held by an outstanding Claim rather than by a run.
+        private bool claimed;
         private volatile bool waitingForAverageConfirmation;
         private bool disposed;
         // Results are published from the measurement worker and read by the UI
@@ -54,6 +56,31 @@ namespace Resonalyze
         public float[]? LoopbackRecordedSamples { get; private set; }
         public SweepMeasurementMode MeasurementMode { get; private set; } =
             SweepMeasurementMode.SweepDeconvolution;
+
+        /// <summary>
+        /// What the current result's arrival time means. A measured sweep is
+        /// referenced to its own loopback and carries real delay; an imported
+        /// recording is referenced to nothing, and everything that compares delays
+        /// ACROSS measurements has to refuse it rather than show a number.
+        /// </summary>
+        public TimingReference TimingReference { get; private set; } =
+            TimingReference.SynchronizedLoopback;
+
+        /// <summary>
+        /// The time-scale correction the import applied, in parts per million, or
+        /// null when the result did not come from an import or needed none.
+        /// <para>
+        /// Two things put a recording out of scale with the sweep it is analyzed
+        /// against, and the data cannot tell them apart. One is the clocks:
+        /// whatever played the file and whatever recorded it are separate crystals,
+        /// tens of ppm apart. The other is the settings — the per-octave field is
+        /// whole milliseconds, so the duration that produced a given file often
+        /// cannot be typed back in exactly. Measured on a field pair: the sweep the
+        /// panel could express ran 489 ppm longer than the one the exported file
+        /// proves was played, while the two clocks agreed to within 25 ppm.
+        /// </para>
+        /// </summary>
+        public double? ImportedTimeScalePpm { get; private set; }
         public bool HasImpulseResponse => SweepDeconvolutionImpulseResponse != null;
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
@@ -164,6 +191,14 @@ namespace Resonalyze
                 throw new InvalidOperationException("Cannot reinitialize an active measurement.");
             }
 
+            InitCore(configuration);
+        }
+
+        // The body of Init without its guard, for the one caller that already
+        // holds the measurement busy itself (see ImportRecordedSweep) and would
+        // otherwise have to drop that claim across the call to re-enter here.
+        private void InitCore(SweepMeasurementConfiguration configuration)
+        {
             SweepSignalConfiguration signal = configuration.Signal;
             SweepAudioConfiguration audio = configuration.Audio;
             SweepAveragingConfiguration averaging = configuration.Averaging;
@@ -211,6 +246,8 @@ namespace Resonalyze
             MicrophoneRecordedSamples = null;
             LoopbackRecordedSamples = null;
             MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
+            TimingReference = TimingReference.SynchronizedLoopback;
+            ImportedTimeScalePpm = null;
             AverageRunCount = Math.Clamp(averaging.RunCount, 1, 64);
             AcceptedAverageRunCount = 0;
             ConfirmEachAverageRun = averaging.ConfirmEachRun;
@@ -268,6 +305,54 @@ namespace Resonalyze
                 CurrentLevels = InputLevelMeterSnapshot.Empty;
                 measurementTask = RunCoreAsync(cancellationTokenSource.Token);
                 return measurementTask;
+            }
+        }
+
+        /// <summary>
+        /// Claims the measurement for an operation that reaches beyond one call —
+        /// decoding a file and then importing it — so everything that gates on
+        /// <see cref="InProgress"/> (the record button, the settings panel's Apply)
+        /// stays out for the whole of it. Disposing the claim releases it.
+        /// </summary>
+        /// <remarks>
+        /// Without this the claim could only be taken once the samples were in
+        /// hand, leaving the decode — seconds, on a long recording — as a window
+        /// in which a measurement could be started and then quietly replaced by
+        /// the import that was already under way.
+        /// </remarks>
+        public IDisposable Claim()
+        {
+            ThrowIfDisposed();
+            lock (stateSync)
+            {
+                if (inProgress)
+                {
+                    throw new InvalidOperationException(
+                        "The measurement is already busy.");
+                }
+                inProgress = true;
+                claimed = true;
+            }
+
+            return new MeasurementClaim(this);
+        }
+
+        private void ReleaseClaim()
+        {
+            lock (stateSync)
+            {
+                claimed = false;
+                inProgress = false;
+            }
+        }
+
+        private sealed class MeasurementClaim(ExpSweepMeasurement measurement) : IDisposable
+        {
+            private ExpSweepMeasurement? owner = measurement;
+
+            public void Dispose()
+            {
+                Interlocked.Exchange(ref owner, null)?.ReleaseClaim();
             }
         }
 
@@ -344,7 +429,8 @@ namespace Resonalyze
             int averageRunCount = 1,
             int acceptedAverageRunCount = 1,
             double achievedLowFrequencyHz = 0.0,
-            double achievedHighFrequencyHz = 0.0)
+            double achievedHighFrequencyHz = 0.0,
+            TimingReference timingReference = TimingReference.SynchronizedLoopback)
         {
             ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(sweepDeconvolutionImpulseResponse);
@@ -438,6 +524,7 @@ namespace Resonalyze
             MicrophoneRecordedSamples = null;
             LoopbackRecordedSamples = null;
             MeasurementMode = measurementMode;
+            TimingReference = timingReference;
             AverageRunCount = Math.Clamp(averageRunCount, 1, 64);
             AcceptedAverageRunCount = Math.Clamp(
                 acceptedAverageRunCount,
@@ -445,6 +532,484 @@ namespace Resonalyze
                 AverageRunCount);
             LastError = null;
             Publish(ImpulseResponseChanged);
+        }
+
+        /// <summary>
+        /// Publishes a sweep recorded OUTSIDE Resonalyze as this measurement's
+        /// result. The sweep <paramref name="configuration"/> describes — the same
+        /// signal the options panel exports as a WAV file — stands in for the
+        /// loopback reference: the excitation is known exactly, because the
+        /// recording was made by playing that very signal. From there the analysis
+        /// is the live one: deconvolution against the inverse filter, and the H1
+        /// transfer estimate gated to the sweep's excitation band.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The configuration is applied only once the recording has been analyzed
+        /// and accepted, so a rejected import leaves the measurement currently on
+        /// screen alone — the same promise loading a file makes.
+        /// </para>
+        /// <para>
+        /// Only the excitation and its decay are analyzed, not the whole file: a
+        /// recorder is usually started well before the sweep is played and stopped
+        /// well after, and every FFT here is sized by what it is handed. Locating
+        /// the excitation by level cannot be certain — a passage of speech before
+        /// the sweep is loud and sustained too — so the candidates are analyzed in
+        /// order until one produces a credible impulse response. When a take holds
+        /// the sweep more than once, the first one is the one measured.
+        /// </para>
+        /// <para>
+        /// Such a result carries no absolute time. Where the arrival lands is
+        /// decided by when the recorder was started, not by the acoustic path, so
+        /// the delay read-outs mean something only within one file — two imported
+        /// recordings cannot be time-aligned against each other the way two
+        /// loopback-referenced runs can. It carries no SPL anchor either: the gain
+        /// of the recording chain is unknown, and <see cref="Init"/> clears
+        /// <see cref="MeasurementSplCalibration"/> for this result.
+        /// </para>
+        /// </remarks>
+        public void ImportRecordedSweep(
+            SweepMeasurementConfiguration configuration,
+            float[] recordedSamples,
+            int sampleRate)
+        {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(configuration);
+            ArgumentNullException.ThrowIfNull(recordedSamples);
+            // Held for the WHOLE import, not just checked on entry. The analysis
+            // runs off the UI thread, and every other way to reconfigure this
+            // measurement — the record button, the settings panel's Apply — is a
+            // click away and gates on exactly this flag. Without it, a click
+            // landing mid-import re-Inits the measurement underneath the analysis
+            // or has its fresh run overwritten by the import's result.
+            //
+            // A caller that already holds a Claim (the file import, which took one
+            // before it started decoding) keeps it: the busy state has to span the
+            // decode as well, and re-taking it here would refuse the very operation
+            // that owns it.
+            bool claimedHere = false;
+            lock (stateSync)
+            {
+                if (inProgress && !claimed)
+                {
+                    throw new InvalidOperationException(
+                        "Cannot import a recording while a measurement is running.");
+                }
+                if (!inProgress)
+                {
+                    inProgress = true;
+                    claimedHere = true;
+                }
+            }
+            try
+            {
+                ImportRecordedSweepCore(configuration, recordedSamples, sampleRate);
+            }
+            finally
+            {
+                if (claimedHere)
+                {
+                    lock (stateSync)
+                    {
+                        inProgress = false;
+                    }
+                }
+            }
+        }
+
+        private void ImportRecordedSweepCore(
+            SweepMeasurementConfiguration configuration,
+            float[] recordedSamples,
+            int sampleRate)
+        {
+            SweepSignalConfiguration signal = configuration.Signal;
+            if (sampleRate != signal.SampleRate)
+            {
+                throw new InvalidOperationException(
+                    $"The recording is {sampleRate} Hz while the measurement is configured " +
+                    $"for {signal.SampleRate} Hz. The sweep it would be deconvolved against " +
+                    "is generated at the configured rate, so the two do not describe the " +
+                    "same signal. Set the sample rate in Measurement Options to match the file.");
+            }
+
+            // Generated here rather than read off this.Sweep: the configuration is
+            // not applied until the analysis has succeeded, so at this point the
+            // measurement still holds the previous result and its sweep.
+            using var sweep = new ExponentialSineSweep();
+            sweep.FillData(
+                signal.LowFrequencyHz,
+                signal.HighFrequencyHz,
+                signal.RequestedDurationSeconds,
+                signal.Bits,
+                signal.SampleRate);
+            if (recordedSamples.Length < sweep.SweepSamples)
+            {
+                throw new InvalidOperationException(FormattableString.Invariant(
+                    $"The recording is {recordedSamples.Length / (double)sampleRate:0.00} s long while the sweep is {sweep.ComputedDuration:0.00} s, so it cannot hold the whole excitation. Check the band and the per-octave time in Measurement Options against the sweep this file was recorded from."));
+            }
+
+            // Every FFT below is sized by what it is handed, so the silence a
+            // recorder leaves around the excitation would decide the cost of the
+            // analysis and the length of the transfer IR it produces. Analyze the
+            // excitation and its decay instead — trying the candidate stretches in
+            // turn, because locating one by level alone cannot be certain.
+            double bestCompactnessDb = double.NegativeInfinity;
+            double bestSharpnessDb = double.NegativeInfinity;
+            bool measurable = false;
+            int longestExcitation = 0;
+            IReadOnlyList<string>? captureIssues = null;
+            // The excitation is found by level, and a level crosses the detector's
+            // threshold INSIDE the fade-in rather than at the first sample, so the
+            // real start sits up to a fade-in (plus one detection window) earlier
+            // than the reported one. Without that slack a take holding exactly the
+            // sweep and no tail reads as cut short by the detector's own lateness.
+            int detectionSlack = sweep.Spec.FadeInSamples + sampleRate / 100;
+            foreach (RecordedSweepSpan span in RecordedSweepWindow.LocateCandidates(
+                recordedSamples, sampleRate, sweep.SweepSamples))
+            {
+                // Measured from where the EXCITATION begins, not from the start of
+                // the span: the span counts its lead-in silence too, so a take that
+                // holds a pre-roll and then runs out mid-sweep would read as long
+                // enough and be analyzed against an excitation it never finished.
+                longestExcitation = Math.Max(longestExcitation, span.ExcitationLength);
+                if (span.ExcitationLength + detectionSlack < sweep.SweepSamples)
+                {
+                    // Found too close to the end to hold the whole sweep; a later
+                    // candidate may still fit.
+                    continue;
+                }
+
+                // The recording and the configured sweep can be slightly out of
+                // scale with each other — separate crystals, or a duration the
+                // per-octave field cannot express. Find the stretch that sharpens
+                // the arrival most, then analyze against a reference rebuilt there.
+                double timeScalePpm = EstimateTimeScalePpm(recordedSamples, span, sweep, sampleRate);
+                using var reference = new ExponentialSineSweep();
+                if (timeScalePpm != 0)
+                {
+                    reference.FillStretched(sweep.Spec, 1.0 + timeScalePpm * 1e-6, signal.Bits);
+                }
+                ImportedSweepAnalysis analysis = AnalyzeImportedSpan(
+                    recordedSamples, span, timeScalePpm == 0 ? sweep : reference);
+
+                // The same unambiguous capture failures the live path refuses a run
+                // for. A clipped sweep still deconvolves into a compact impulse
+                // response — it is simply full of harmonic products — so the shape
+                // gate below cannot be what catches it.
+                IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
+                    analysis.Analyzed, loopback: null, sweep.SweepSamples);
+                if (issues.Count > 0)
+                {
+                    captureIssues ??= issues;
+                    continue;
+                }
+                TransferIrCompactness? compactness = TransferIrDiagnostics.MeasureCompactness(
+                    analysis.TransferImpulseResponse, signal.SampleRate);
+                double? sharpness = TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+                    analysis.TransferImpulseResponse, signal.SampleRate);
+                if (compactness is { } value &&
+                    double.IsFinite(value.InsideOutsideDb) &&
+                    sharpness is { } arrival && double.IsFinite(arrival))
+                {
+                    measurable = true;
+                    bestCompactnessDb = Math.Max(bestCompactnessDb, value.InsideOutsideDb);
+                    bestSharpnessDb = Math.Max(bestSharpnessDb, arrival);
+                    if (value.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb &&
+                        arrival >= TransferIrDiagnostics.MinimumArrivalSharpnessDb)
+                    {
+                        PublishImportedSweep(configuration, analysis, timeScalePpm);
+                        return;
+                    }
+                }
+            }
+
+            if (longestExcitation + detectionSlack < sweep.SweepSamples)
+            {
+                throw new InvalidOperationException(FormattableString.Invariant(
+                    $"The excitation starts {longestExcitation / (double)sampleRate:0.00} s before the end of the recording, which is less than the sweep's own {sweep.ComputedDuration:0.00} s. The take is cut short — record again with the whole sweep inside it."));
+            }
+            if (captureIssues is { Count: > 0 })
+            {
+                throw new InvalidOperationException(
+                    $"The recording cannot be measured: {string.Join("; ", captureIssues)}. " +
+                    "Record again at a level that leaves headroom.");
+            }
+
+            throw RefuseImportedRecording(
+                measurable, bestCompactnessDb, bestSharpnessDb, sweep, sampleRate);
+        }
+
+        private sealed record ImportedSweepAnalysis(
+            float[] Analyzed,
+            Complex[] SweepImpulseResponse,
+            int SweepPeakIndex,
+            Complex[] TransferImpulseResponse,
+            int TransferPeakIndex,
+            double[]? TransferCoherence);
+
+        /// <summary>
+        /// How far out of scale the search may believe a recording is, in parts
+        /// per million. It has to cover both causes: two consumer crystals sit tens
+        /// of ppm apart, and a duration the per-octave field cannot express exactly
+        /// costs a few hundred (489 on the field pair this was calibrated against).
+        /// Wide enough for both, and far short of a neighbouring sweep rate, which
+        /// is percent away rather than ppm — the search must not be able to walk
+        /// into one and call it a fit.
+        /// </summary>
+        private const double MaximumTimeScalePpm = 800.0;
+
+        // Below this, a "better" fit is the metric's own noise: on a field take the
+        // sharpness wandered by a few tenths of a dB across +-50 ppm, where the
+        // arrival is already as sharp as the tract allows.
+        private const double MeaningfulScaleGainDb = 0.5;
+
+        // Where the search stops refining. Twelve ppm is a hundredth of a sample
+        // over a four-second sweep — past the point where the objective still
+        // carries information about the scale rather than about the room.
+        private const double FinestScaleStepPpm = 12.5;
+
+        // The coarse scan's step. The objective rises over roughly 200 ppm either
+        // side of the truth, so a hundred cannot step over the peak, and the whole
+        // scan plus its refinement is about two dozen deconvolutions of the
+        // analyzed window — a second or two on an import, which happens once.
+        private const double CoarseScaleStepPpm = 100.0;
+
+        /// <summary>
+        /// How far out of scale the recording is with the configured sweep, in
+        /// ppm: the stretch of the reference that makes the deconvolved arrival
+        /// sharpest. Zero when no stretch is meaningfully better than none — the
+        /// honest answer both when the two really agree and when the measure is
+        /// only wandering inside its own noise.
+        /// </summary>
+        /// <remarks>
+        /// Searched on the sweep deconvolution alone: half the cost of a full
+        /// analysis, and it is the deconvolution that a scale mismatch smears. The
+        /// objective is the arrival's SHARPNESS rather than its height, so a
+        /// recording whose level wanders cannot tilt the search.
+        /// </remarks>
+        private static double EstimateTimeScalePpm(
+            float[] recordedSamples,
+            RecordedSweepSpan span,
+            ExponentialSineSweep sweep,
+            int sampleRate)
+        {
+            float[] analyzed = span.Start == 0 && span.Length == recordedSamples.Length
+                ? recordedSamples
+                : recordedSamples[span.Start..(span.Start + span.Length)];
+            using var stretched = new ExponentialSineSweep();
+
+            double Sharpness(double ppm)
+            {
+                float[] inverse;
+                if (ppm == 0)
+                {
+                    inverse = sweep.InverseFilter;
+                }
+                else
+                {
+                    stretched.FillStretched(sweep.Spec, 1.0 + ppm * 1e-6, sweep.BitsPerSample);
+                    inverse = stretched.InverseFilter;
+                }
+
+                SweepDeconvolutionResult deconvolved = SweepAnalysis.DeconvolveWithInverseFilter(
+                    analyzed, inverse, 2.0 / inverse.Length);
+                return TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+                    Array.ConvertAll(deconvolved.ImpulseResponse, x => new Complex(x, 0.0)),
+                    sampleRate) ?? double.NegativeInfinity;
+            }
+
+            // A COARSE SCAN of the whole range first, then refinement around the
+            // winner. Walking downhill from zero does not work: the objective dips
+            // on the way to its peak — for a recording 500 ppm out of scale, the
+            // 200 ppm probe reads WORSE than no correction at all — so a search
+            // that only steps while it improves stops before it has started.
+            double baseline = Sharpness(0);
+            double bestPpm = 0;
+            double best = baseline;
+            for (double ppm = -MaximumTimeScalePpm;
+                ppm <= MaximumTimeScalePpm;
+                ppm += CoarseScaleStepPpm)
+            {
+                if (ppm == 0)
+                {
+                    continue;
+                }
+
+                double sharpness = Sharpness(ppm);
+                if (sharpness > best)
+                {
+                    best = sharpness;
+                    bestPpm = ppm;
+                }
+            }
+
+            for (double step = CoarseScaleStepPpm / 2; step >= FinestScaleStepPpm; step /= 2)
+            {
+                foreach (double ppm in new[] { bestPpm - step, bestPpm + step })
+                {
+                    if (Math.Abs(ppm) > MaximumTimeScalePpm)
+                    {
+                        continue;
+                    }
+
+                    double sharpness = Sharpness(ppm);
+                    if (sharpness > best)
+                    {
+                        best = sharpness;
+                        bestPpm = ppm;
+                    }
+                }
+            }
+
+            return best - baseline >= MeaningfulScaleGainDb ? bestPpm : 0.0;
+        }
+
+        private static ImportedSweepAnalysis AnalyzeImportedSpan(
+            float[] recordedSamples,
+            RecordedSweepSpan span,
+            ExponentialSineSweep sweep)
+        {
+            float[] analyzed = span.Start == 0 && span.Length == recordedSamples.Length
+                ? recordedSamples
+                : recordedSamples[span.Start..(span.Start + span.Length)];
+
+            SweepDeconvolutionResult deconvolved = SweepAnalysis.DeconvolveWithInverseFilter(
+                analyzed,
+                sweep.InverseFilter,
+                2.0 / sweep.InverseFilter.Length);
+
+            // The reference is the sweep laid at the START of a stretch as long as
+            // the analyzed window. The estimator truncates both signals to the
+            // shorter one, so handing it the bare sweep would cut the recording
+            // down to the sweep's own length and throw away everything the room did
+            // after the excitation stopped. Both sides are views rather than
+            // buffers: the estimator fills its own FFT arrays from them, and a
+            // materialized copy of each would be a second full-length signal beside
+            // spectra that already dominate the import.
+            TransferEstimateResult transfer = TransferFunction.ComputeAveragedRelativeIr(
+                [new TransferFunctionFrame(
+                    new PaddedExcitationView(sweep.SweepData, analyzed.Length),
+                    new RecordedSamplesView(analyzed))],
+                BuildExcitationGate(sweep));
+
+            return new ImportedSweepAnalysis(
+                analyzed,
+                Array.ConvertAll(
+                    deconvolved.ImpulseResponse,
+                    sample => new Complex(sample, 0.0)),
+                deconvolved.PeakIndex,
+                Array.ConvertAll(
+                    transfer.ImpulseResponse,
+                    sample => new Complex(sample, 0.0)),
+                transfer.PeakIndex,
+                transfer.Coherence);
+        }
+
+        /// <summary>
+        /// Where an imported measurement's arrival is placed on the time axis.
+        /// <para>
+        /// Its raw position is the recorder's start offset — 730 ms on one field
+        /// take, 1220 ms on another — and every absolute read-out inherits that:
+        /// measured group delay is referenced to the IR start, so those takes read
+        /// 730 ms and 1220 ms of group delay on an axis that spans tens. Since the
+        /// origin means nothing, it is chosen rather than inherited, and the whole
+        /// IR is rotated to put the arrival here. Delays WITHIN the measurement are
+        /// untouched — a rigid shift moves every reflection with the direct sound —
+        /// while the reading becomes what it always was: time relative to this
+        /// measurement's own arrival.
+        /// </para>
+        /// <para>
+        /// Not zero: the honest start of an arrival sits a little before its peak
+        /// (a low-frequency front can build for milliseconds), and at zero that
+        /// front would wrap to the far end of the buffer, where the automatic gate
+        /// would read it as a delay of nearly the whole record.
+        /// </para>
+        /// </summary>
+        private const double ImportedArrivalSeconds = 0.010;
+
+        private void PublishImportedSweep(
+            SweepMeasurementConfiguration configuration,
+            ImportedSweepAnalysis analysis,
+            double timeScalePpm)
+        {
+            InitCore(configuration);
+            // Init set the measured meaning; this result has the imported one.
+            TimingReference = TimingReference.RecordedSweep;
+            ImportedTimeScalePpm = timeScalePpm == 0 ? null : timeScalePpm;
+            int arrival = Math.Min(
+                (int)Math.Round(ImportedArrivalSeconds * SampleRate),
+                analysis.TransferImpulseResponse.Length - 1);
+            Complex[] transfer = RotateTo(
+                analysis.TransferImpulseResponse, analysis.TransferPeakIndex, arrival);
+            // No loopback entry: the reference is a generated signal, so metering it
+            // would report an input level for an input that recorded nothing.
+            ApplyAverageResult(new SweepAverageResult(
+                analysis.SweepImpulseResponse,
+                analysis.SweepPeakIndex,
+                transfer,
+                arrival,
+                analysis.TransferCoherence,
+                analysis.Analyzed,
+                LoopbackRecordedSamples: null,
+                CreateFinalLevelSnapshot([analysis.Analyzed], 0, loopbackIndex: null),
+                AcceptedRunCount: 1,
+                MicrophoneDistortion: null,
+                LoopbackDistortion: null,
+                LoopbackWorstRun: null));
+        }
+
+        // A circular rotation that carries `from` to `to`. Circular because the
+        // transfer IR already is: its acausal pre-ringing lives at the far end of
+        // the buffer, and a rotation that dropped samples off one edge would cut
+        // exactly that.
+        private static Complex[] RotateTo(Complex[] impulseResponse, int from, int to)
+        {
+            int shift = from - to;
+            if (shift == 0)
+            {
+                return impulseResponse;
+            }
+
+            int length = impulseResponse.Length;
+            var rotated = new Complex[length];
+            for (int i = 0; i < length; i++)
+            {
+                rotated[i] = impulseResponse[((i + shift) % length + length) % length];
+            }
+
+            return rotated;
+        }
+
+        // The imported counterpart of RequireCredibleTransferIr: the same shape
+        // gate, but none of its diagnosis applies — nothing was wired, levelled or
+        // recorded through Resonalyze here. What a shapeless transfer IR means for
+        // an import is that the file is not a recording of THIS sweep. The figure
+        // quoted is the best any candidate stretch reached.
+        private static InvalidOperationException RefuseImportedRecording(
+            bool measurable,
+            double bestCompactnessDb,
+            double bestSharpnessDb,
+            ExponentialSineSweep sweep,
+            int sampleRate)
+        {
+            if (!measurable)
+            {
+                return new InvalidOperationException(FormattableString.Invariant(
+                    $"The recording did not deconvolve into an impulse response whose shape could be measured at all: it is degenerate, or carries non-finite samples. The sweep it was analyzed against runs {sweep.ComputedDuration:0.00} s at {sampleRate} Hz."));
+            }
+
+            // WHICH gate failed decides what to say. Quoting the compactness figure
+            // for a sharpness failure is worse than useless: it reads "35 dB, where
+            // a real measurement reads 29-49" — a number inside the range it is
+            // being blamed for missing.
+            if (bestCompactnessDb >= TransferIrDiagnostics.MinimumCompactnessDb)
+            {
+                return new InvalidOperationException(FormattableString.Invariant(
+                    $"The recording deconvolves into a smeared arrival rather than an impulse response: its peak stands only {bestSharpnessDb:0.0} dB above the {TransferIrDiagnostics.ArrivalWindowSeconds * 1000:0} ms around it, where a real measurement reads 11-16 dB. The sweep in the file is not the one the settings describe — check the band and the per-octave time in Measurement Options against the sweep it was recorded from."));
+            }
+
+            return new InvalidOperationException(FormattableString.Invariant(
+                $"The recording did not deconvolve into a credible impulse response: the energy around its peak is only {bestCompactnessDb:0.0} dB above the rest of the recording, at best (a real measurement reads 29-49 dB). It is most likely not a recording of this sweep — check that the band, the per-octave time and the sample rate in Measurement Options are the ones the sweep was generated with."));
         }
 
         internal void RestoreLevelSnapshot(InputLevelMeterSnapshot snapshot)
@@ -628,9 +1193,12 @@ namespace Resonalyze
         // excited; the achieved band (sweep.*) additionally covers the fade
         // guard bands. Clamps keep the gate ordered even when a short sweep
         // could not open a guard band on some side.
-        private ExcitationBandGate BuildExcitationGate(ExponentialSineSweep sweep)
+        // Read off the sweep, not off this.SampleRate: the two are the same for a
+        // live run, but an import builds its gate before the configuration behind
+        // the sweep has been applied.
+        private static ExcitationBandGate BuildExcitationGate(ExponentialSineSweep sweep)
         {
-            double nyquist = SampleRate / 2.0;
+            double nyquist = sweep.SampleRate / 2.0;
             if (!(nyquist > 0))
             {
                 return ExcitationBandGate.FullBand;
@@ -1043,13 +1611,12 @@ namespace Resonalyze
                 loopbackIndex.Value,
                     $"{AudioBackend} loopback transfer");
 
-            double[] loopback = Array.ConvertAll(
-                sampleChannels[loopbackIndex.Value],
-                sample => (double)sample);
-            double[] microphone = Array.ConvertAll(
-                sampleChannels[microphoneIndex],
-                sample => (double)sample);
-            frame = new TransferFunctionFrame(loopback, microphone);
+            // Views, not copies: the estimator converts into its FFT buffers as it
+            // fills them, so a double[] per channel would be two more full-length
+            // copies of the capture for nothing.
+            frame = new TransferFunctionFrame(
+                new RecordedSamplesView(sampleChannels[loopbackIndex.Value]),
+                new RecordedSamplesView(sampleChannels[microphoneIndex]));
             return true;
         }
 

@@ -164,6 +164,14 @@ namespace Resonalyze
                 throw new InvalidOperationException("Cannot reinitialize an active measurement.");
             }
 
+            InitCore(configuration);
+        }
+
+        // The body of Init without its guard, for the one caller that already
+        // holds the measurement busy itself (see ImportRecordedSweep) and would
+        // otherwise have to drop that claim across the call to re-enter here.
+        private void InitCore(SweepMeasurementConfiguration configuration)
+        {
             SweepSignalConfiguration signal = configuration.Signal;
             SweepAudioConfiguration audio = configuration.Audio;
             SweepAveragingConfiguration averaging = configuration.Averaging;
@@ -465,8 +473,11 @@ namespace Resonalyze
         /// <para>
         /// Only the excitation and its decay are analyzed, not the whole file: a
         /// recorder is usually started well before the sweep is played and stopped
-        /// well after, and every FFT here is sized by what it is handed. When a
-        /// take holds the sweep more than once, the first one is the one measured.
+        /// well after, and every FFT here is sized by what it is handed. Locating
+        /// the excitation by level cannot be certain — a passage of speech before
+        /// the sweep is loud and sustained too — so the candidates are analyzed in
+        /// order until one produces a credible impulse response. When a take holds
+        /// the sweep more than once, the first one is the one measured.
         /// </para>
         /// <para>
         /// Such a result carries no absolute time. Where the arrival lands is
@@ -486,12 +497,39 @@ namespace Resonalyze
             ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(configuration);
             ArgumentNullException.ThrowIfNull(recordedSamples);
-            if (InProgress)
+            // Held for the WHOLE import, not just checked on entry. The analysis
+            // runs off the UI thread, and every other way to reconfigure this
+            // measurement — the record button, the settings panel's Apply — is a
+            // click away and gates on exactly this flag. Without it, a click
+            // landing mid-import re-Inits the measurement underneath the analysis
+            // or has its fresh run overwritten by the import's result.
+            lock (stateSync)
             {
-                throw new InvalidOperationException(
-                    "Cannot import a recording while a measurement is running.");
+                if (inProgress)
+                {
+                    throw new InvalidOperationException(
+                        "Cannot import a recording while a measurement is running.");
+                }
+                inProgress = true;
             }
+            try
+            {
+                ImportRecordedSweepCore(configuration, recordedSamples, sampleRate);
+            }
+            finally
+            {
+                lock (stateSync)
+                {
+                    inProgress = false;
+                }
+            }
+        }
 
+        private void ImportRecordedSweepCore(
+            SweepMeasurementConfiguration configuration,
+            float[] recordedSamples,
+            int sampleRate)
+        {
             SweepSignalConfiguration signal = configuration.Signal;
             if (sampleRate != signal.SampleRate)
             {
@@ -518,19 +556,63 @@ namespace Resonalyze
                     $"The recording is {recordedSamples.Length / (double)sampleRate:0.00} s long while the sweep is {sweep.ComputedDuration:0.00} s, so it cannot hold the whole excitation. Check the band and the per-octave time in Measurement Options against the sweep this file was recorded from."));
             }
 
-            // Every FFT below is sized by the recording, so the silence a recorder
-            // leaves around the excitation would decide the cost of the analysis
-            // and the length of the transfer IR it produces. Analyze the excitation
-            // and its decay instead.
-            RecordedSweepSpan span = RecordedSweepWindow.Locate(
-                recordedSamples,
-                sampleRate,
-                sweep.SweepSamples);
-            if (span.Length < sweep.SweepSamples)
+            // Every FFT below is sized by what it is handed, so the silence a
+            // recorder leaves around the excitation would decide the cost of the
+            // analysis and the length of the transfer IR it produces. Analyze the
+            // excitation and its decay instead — trying the candidate stretches in
+            // turn, because locating one by level alone cannot be certain.
+            double bestCompactnessDb = double.NegativeInfinity;
+            bool measurable = false;
+            int longestCandidate = 0;
+            foreach (RecordedSweepSpan span in RecordedSweepWindow.LocateCandidates(
+                recordedSamples, sampleRate, sweep.SweepSamples))
+            {
+                longestCandidate = Math.Max(longestCandidate, span.Length);
+                if (span.Length < sweep.SweepSamples)
+                {
+                    // The excitation was found too close to the end to hold the
+                    // whole sweep; a later candidate may still fit.
+                    continue;
+                }
+
+                ImportedSweepAnalysis analysis = AnalyzeImportedSpan(
+                    recordedSamples, span, sweep);
+                TransferIrCompactness? compactness = TransferIrDiagnostics.MeasureCompactness(
+                    analysis.TransferImpulseResponse, signal.SampleRate);
+                if (compactness is { } value && double.IsFinite(value.InsideOutsideDb))
+                {
+                    measurable = true;
+                    bestCompactnessDb = Math.Max(bestCompactnessDb, value.InsideOutsideDb);
+                    if (value.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb)
+                    {
+                        PublishImportedSweep(configuration, analysis);
+                        return;
+                    }
+                }
+            }
+
+            if (longestCandidate < sweep.SweepSamples)
             {
                 throw new InvalidOperationException(FormattableString.Invariant(
-                    $"The excitation starts {span.Length / (double)sampleRate:0.00} s before the end of the recording, which is less than the sweep's own {sweep.ComputedDuration:0.00} s. The take is cut short — record again with the whole sweep inside it."));
+                    $"The excitation starts {longestCandidate / (double)sampleRate:0.00} s before the end of the recording, which is less than the sweep's own {sweep.ComputedDuration:0.00} s. The take is cut short — record again with the whole sweep inside it."));
             }
+
+            throw RefuseImportedRecording(measurable, bestCompactnessDb, sweep, sampleRate);
+        }
+
+        private sealed record ImportedSweepAnalysis(
+            float[] Analyzed,
+            Complex[] SweepImpulseResponse,
+            int SweepPeakIndex,
+            Complex[] TransferImpulseResponse,
+            int TransferPeakIndex,
+            double[]? TransferCoherence);
+
+        private static ImportedSweepAnalysis AnalyzeImportedSpan(
+            float[] recordedSamples,
+            RecordedSweepSpan span,
+            ExponentialSineSweep sweep)
+        {
             float[] analyzed = span.Start == 0 && span.Length == recordedSamples.Length
                 ? recordedSamples
                 : recordedSamples[span.Start..(span.Start + span.Length)];
@@ -555,25 +637,36 @@ namespace Resonalyze
                     reference,
                     Array.ConvertAll(analyzed, sample => (double)sample))],
                 BuildExcitationGate(sweep));
-            Complex[] transferImpulseResponse = Array.ConvertAll(
-                transfer.ImpulseResponse,
-                sample => new Complex(sample, 0.0));
-            RequireCredibleImportedTransferIr(transferImpulseResponse, signal.SampleRate);
 
-            Init(configuration);
-            // No loopback entry: the reference is a generated signal, so metering it
-            // would report an input level for an input that recorded nothing.
-            ApplyAverageResult(new SweepAverageResult(
+            return new ImportedSweepAnalysis(
+                analyzed,
                 Array.ConvertAll(
                     deconvolved.ImpulseResponse,
                     sample => new Complex(sample, 0.0)),
                 deconvolved.PeakIndex,
-                transferImpulseResponse,
+                Array.ConvertAll(
+                    transfer.ImpulseResponse,
+                    sample => new Complex(sample, 0.0)),
                 transfer.PeakIndex,
-                transfer.Coherence,
-                analyzed,
+                transfer.Coherence);
+        }
+
+        private void PublishImportedSweep(
+            SweepMeasurementConfiguration configuration,
+            ImportedSweepAnalysis analysis)
+        {
+            InitCore(configuration);
+            // No loopback entry: the reference is a generated signal, so metering it
+            // would report an input level for an input that recorded nothing.
+            ApplyAverageResult(new SweepAverageResult(
+                analysis.SweepImpulseResponse,
+                analysis.SweepPeakIndex,
+                analysis.TransferImpulseResponse,
+                analysis.TransferPeakIndex,
+                analysis.TransferCoherence,
+                analysis.Analyzed,
                 LoopbackRecordedSamples: null,
-                CreateFinalLevelSnapshot([analyzed], 0, loopbackIndex: null),
+                CreateFinalLevelSnapshot([analysis.Analyzed], 0, loopbackIndex: null),
                 AcceptedRunCount: 1,
                 MicrophoneDistortion: null,
                 LoopbackDistortion: null,
@@ -583,30 +676,22 @@ namespace Resonalyze
         // The imported counterpart of RequireCredibleTransferIr: the same shape
         // gate, but none of its diagnosis applies — nothing was wired, levelled or
         // recorded through Resonalyze here. What a shapeless transfer IR means for
-        // an import is that the file is not a recording of THIS sweep.
-        private static void RequireCredibleImportedTransferIr(
-            Complex[] transfer,
+        // an import is that the file is not a recording of THIS sweep. The figure
+        // quoted is the best any candidate stretch reached.
+        private static InvalidOperationException RefuseImportedRecording(
+            bool measurable,
+            double bestCompactnessDb,
+            ExponentialSineSweep sweep,
             int sampleRate)
         {
-            TransferIrCompactness? compactness =
-                TransferIrDiagnostics.MeasureCompactness(transfer, sampleRate);
-            if (compactness is { } measured &&
-                double.IsFinite(measured.InsideOutsideDb) &&
-                measured.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb)
+            if (!measurable)
             {
-                return;
+                return new InvalidOperationException(FormattableString.Invariant(
+                    $"The recording did not deconvolve into an impulse response whose shape could be measured at all: it is degenerate, or carries non-finite samples. The sweep it was analyzed against runs {sweep.ComputedDuration:0.00} s at {sampleRate} Hz."));
             }
 
-            string shapeDiagnosis =
-                compactness is { } value && double.IsFinite(value.InsideOutsideDb)
-                    ? FormattableString.Invariant(
-                        $"the energy around its peak is only {value.InsideOutsideDb:0.0} dB above the rest of the recording (a real measurement reads 29-49 dB)")
-                    : "its shape could not be measured at all (the recording is degenerate or carries non-finite samples)";
-            throw new InvalidOperationException(
-                "The recording did not deconvolve into a credible impulse response: " +
-                $"{shapeDiagnosis}. It is most likely not a recording of this sweep — check " +
-                "that the band, the per-octave time and the sample rate in Measurement " +
-                "Options are the ones the sweep was generated with.");
+            return new InvalidOperationException(FormattableString.Invariant(
+                $"The recording did not deconvolve into a credible impulse response: the energy around its peak is only {bestCompactnessDb:0.0} dB above the rest of the recording, at best (a real measurement reads 29-49 dB). It is most likely not a recording of this sweep — check that the band, the per-octave time and the sample rate in Measurement Options are the ones the sweep was generated with."));
         }
 
         internal void RestoreLevelSnapshot(InputLevelMeterSnapshot snapshot)

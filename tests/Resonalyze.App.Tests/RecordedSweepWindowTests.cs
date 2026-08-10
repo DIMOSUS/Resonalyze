@@ -1,4 +1,4 @@
-namespace Resonalyze.App.Tests;
+﻿namespace Resonalyze.App.Tests;
 
 /// <summary>
 /// Locating the excitation inside a recording that is mostly silence — the shape
@@ -38,7 +38,7 @@ public sealed class RecordedSweepWindowTests
     {
         float[] samples = Recording(4_800, SweepSamples, 4_800);
 
-        RecordedSweepSpan span = RecordedSweepWindow.Locate(samples, SampleRate, SweepSamples);
+        RecordedSweepSpan span = RecordedSweepWindow.LocateCandidates(samples, SampleRate, SweepSamples)[0];
 
         Assert.Equal(0, span.Start);
         Assert.Equal(samples.Length, span.Length);
@@ -52,7 +52,7 @@ public sealed class RecordedSweepWindowTests
         const int lead = 60 * SampleRate;
         float[] samples = Recording(lead, SweepSamples, 60 * SampleRate, noise: 0.001f);
 
-        RecordedSweepSpan span = RecordedSweepWindow.Locate(samples, SampleRate, SweepSamples);
+        RecordedSweepSpan span = RecordedSweepWindow.LocateCandidates(samples, SampleRate, SweepSamples)[0];
 
         // Half a second of lead-in is kept before the excitation.
         Assert.InRange(span.Start, lead - SampleRate / 2 - 480, lead - SampleRate / 2 + 480);
@@ -73,9 +73,32 @@ public sealed class RecordedSweepWindowTests
         samples[SampleRate] = 1.0f;
         samples[SampleRate + 1] = -1.0f;
 
-        RecordedSweepSpan span = RecordedSweepWindow.Locate(samples, SampleRate, SweepSamples);
+        RecordedSweepSpan span = RecordedSweepWindow.LocateCandidates(samples, SampleRate, SweepSamples)[0];
 
         Assert.InRange(span.Start, lead - SampleRate, lead);
+    }
+
+    // Speech or handling noise before the sweep is loud AND sustained, so no
+    // level rule can rank it away with certainty — but the sweep must at least be
+    // among the candidates the caller then tries.
+    [Fact]
+    public void SustainedNoiseBeforeTheSweepStillOffersTheSweep()
+    {
+        const int lead = 60 * SampleRate;
+        float[] samples = Recording(lead, SweepSamples, 10 * SampleRate, noise: 0.001f);
+        // Four seconds of interference — longer than the sweep itself — starting
+        // one second in, at a level the sweep only just exceeds.
+        var random = new Random(99);
+        for (int i = 0; i < 4 * SampleRate; i++)
+        {
+            samples[SampleRate + i] += (float)((random.NextDouble() - 0.5) * 0.6);
+        }
+
+        IReadOnlyList<RecordedSweepSpan> candidates =
+            RecordedSweepWindow.LocateCandidates(samples, SampleRate, SweepSamples);
+
+        Assert.Contains(candidates, span =>
+            span.Start <= lead && span.Start + span.Length >= lead + SweepSamples);
     }
 
     [Fact]
@@ -83,7 +106,7 @@ public sealed class RecordedSweepWindowTests
     {
         var samples = new float[10 * 60 * SampleRate];
 
-        RecordedSweepSpan span = RecordedSweepWindow.Locate(samples, SampleRate, SweepSamples);
+        RecordedSweepSpan span = RecordedSweepWindow.LocateCandidates(samples, SampleRate, SweepSamples)[0];
 
         Assert.Equal(0, span.Start);
         Assert.Equal(Bound, span.Length);
@@ -96,7 +119,7 @@ public sealed class RecordedSweepWindowTests
     {
         float[] samples = Recording(0, 1_024, 0);
 
-        RecordedSweepSpan span = RecordedSweepWindow.Locate(samples, SampleRate, sweepSamples);
+        RecordedSweepSpan span = RecordedSweepWindow.LocateCandidates(samples, SampleRate, sweepSamples)[0];
 
         Assert.Equal(0, span.Start);
         Assert.Equal(samples.Length, span.Length);

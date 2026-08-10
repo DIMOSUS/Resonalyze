@@ -138,6 +138,44 @@ public sealed class RecordedSweepImportTests
         Assert.InRange(measurement.Transfer!.PeakIndex, SampleRate / 2 - 480, SampleRate / 2 + 480);
     }
 
+    // Ranking candidate stretches by level cannot be certain: a burst of speech or
+    // handling noise before the sweep is loud and sustained, and here it is longer
+    // than the sweep, so it ranks FIRST. The import has to fall through to the
+    // next candidate rather than refuse a usable recording.
+    [Fact]
+    public void ALouderInterferenceBeforeTheSweepDoesNotCostTheImport()
+    {
+        const int lead = 40 * SampleRate;
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        float[] recording = RecordSweep(measurement, lead, tail: 10 * SampleRate);
+        var random = new Random(1234);
+        for (int i = 0; i < 4 * SampleRate; i++)
+        {
+            recording[SampleRate + i] += (float)((random.NextDouble() - 0.5) * 0.6);
+        }
+
+        measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
+
+        Assert.True(measurement.HasImpulseResponse);
+        Assert.InRange(measurement.Transfer!.PeakIndex, SampleRate / 2 - 480, SampleRate / 2 + 480);
+    }
+
+    // Every other way to reconfigure the measurement gates on InProgress, so the
+    // import has to hold it for its whole run — and give it back either way.
+    [Fact]
+    public void ImportHoldsTheMeasurementBusyAndReleasesIt()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+
+        measurement.ImportRecordedSweep(
+            Configuration(), RecordSweep(measurement, 800), SampleRate);
+        Assert.False(measurement.InProgress);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            measurement.ImportRecordedSweep(Configuration(), Noise(measurement), SampleRate));
+        Assert.False(measurement.InProgress);
+    }
+
     // The obvious sanity check a user runs first: import the exported sweep file
     // itself. It is bit-identical to the reference, which the live path treats as
     // a duplicated mono input — an import must simply measure a flat, undelayed

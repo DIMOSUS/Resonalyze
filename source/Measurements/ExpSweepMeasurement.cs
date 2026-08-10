@@ -54,6 +54,15 @@ namespace Resonalyze
         public float[]? LoopbackRecordedSamples { get; private set; }
         public SweepMeasurementMode MeasurementMode { get; private set; } =
             SweepMeasurementMode.SweepDeconvolution;
+
+        /// <summary>
+        /// What the current result's arrival time means. A measured sweep is
+        /// referenced to its own loopback and carries real delay; an imported
+        /// recording is referenced to nothing, and everything that compares delays
+        /// ACROSS measurements has to refuse it rather than show a number.
+        /// </summary>
+        public TimingReference TimingReference { get; private set; } =
+            TimingReference.SynchronizedLoopback;
         public bool HasImpulseResponse => SweepDeconvolutionImpulseResponse != null;
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
@@ -219,6 +228,7 @@ namespace Resonalyze
             MicrophoneRecordedSamples = null;
             LoopbackRecordedSamples = null;
             MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
+            TimingReference = TimingReference.SynchronizedLoopback;
             AverageRunCount = Math.Clamp(averaging.RunCount, 1, 64);
             AcceptedAverageRunCount = 0;
             ConfirmEachAverageRun = averaging.ConfirmEachRun;
@@ -352,7 +362,8 @@ namespace Resonalyze
             int averageRunCount = 1,
             int acceptedAverageRunCount = 1,
             double achievedLowFrequencyHz = 0.0,
-            double achievedHighFrequencyHz = 0.0)
+            double achievedHighFrequencyHz = 0.0,
+            TimingReference timingReference = TimingReference.SynchronizedLoopback)
         {
             ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(sweepDeconvolutionImpulseResponse);
@@ -446,6 +457,7 @@ namespace Resonalyze
             MicrophoneRecordedSamples = null;
             LoopbackRecordedSamples = null;
             MeasurementMode = measurementMode;
+            TimingReference = timingReference;
             AverageRunCount = Math.Clamp(averageRunCount, 1, 64);
             AcceptedAverageRunCount = Math.Clamp(
                 acceptedAverageRunCount,
@@ -693,6 +705,8 @@ namespace Resonalyze
             ImportedSweepAnalysis analysis)
         {
             InitCore(configuration);
+            // Init set the measured meaning; this result has the imported one.
+            TimingReference = TimingReference.RecordedSweep;
             // No loopback entry: the reference is a generated signal, so metering it
             // would report an input level for an input that recorded nothing.
             ApplyAverageResult(new SweepAverageResult(

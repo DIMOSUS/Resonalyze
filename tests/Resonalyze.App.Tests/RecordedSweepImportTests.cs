@@ -230,13 +230,16 @@ public sealed class RecordedSweepImportTests
     }
 
     // An import is a measurement like any other, so Save has to accept it: the
-    // capture must validate and come back through the normal restore path.
+    // capture must validate and come back through the normal restore path. What it
+    // must NOT lose on the way is where its timing came from — that is the whole
+    // defence against a delay being compared against another measurement's.
     [Fact]
     public async Task ImportedMeasurementSurvivesASaveAndLoadRoundTrip()
     {
         const int startOffset = 900;
         using ExpSweepMeasurement measurement = CreateMeasurement();
         measurement.ImportRecordedSweep(Configuration(), RecordSweep(measurement, startOffset), SampleRate);
+        Assert.Equal(TimingReference.RecordedSweep, measurement.TimingReference);
         string path = Path.Combine(
             Path.GetTempPath(),
             "resonalyze-imported-" + Guid.NewGuid().ToString("N") + ".json");
@@ -247,13 +250,50 @@ public sealed class RecordedSweepImportTests
             ImpulseResponseFile reloaded = await ImpulseResponseFile.LoadAsync(path);
 
             Assert.Equal(SweepMeasurementMode.LoopbackTransfer, reloaded.MeasurementMode);
+            Assert.Equal(TimingReference.RecordedSweep, reloaded.TimingReference);
             Assert.Equal(SampleRate, reloaded.SampleRate);
             Assert.InRange(reloaded.TransferPeakIndex!.Value, startOffset - 2, startOffset + 2);
+
+            using var restored = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+            (double lowHz, double highHz) = reloaded.ResolveSweepBand();
+            restored.RestoreImpulseResponse(
+                lowHz,
+                highHz,
+                reloaded.SampleRate,
+                reloaded.Bits,
+                reloaded.SweepDurationSeconds,
+                reloaded.PlayChannel,
+                reloaded.GetSweepDeconvolutionImpulseResponse(),
+                reloaded.SweepDeconvolutionPeakIndex,
+                reloaded.MeasurementMode,
+                reloaded.GetTransferImpulseResponse(),
+                reloaded.TransferPeakIndex,
+                reloaded.TransferCoherence,
+                reloaded.AverageRunCount,
+                reloaded.AcceptedAverageRunCount,
+                timingReference: reloaded.TimingReference);
+            Assert.Equal(TimingReference.RecordedSweep, restored.TimingReference);
         }
         finally
         {
             File.Delete(path);
         }
+    }
+
+    // A measured sweep keeps the meaning it always had, and starting a new
+    // measurement clears the imported one rather than inheriting it.
+    [Fact]
+    public void AMeasuredSweepIsReferencedToItsOwnLoopback()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        Assert.Equal(TimingReference.SynchronizedLoopback, measurement.TimingReference);
+
+        measurement.ImportRecordedSweep(
+            Configuration(), RecordSweep(measurement, 700), SampleRate);
+        Assert.Equal(TimingReference.RecordedSweep, measurement.TimingReference);
+
+        measurement.Init(Configuration());
+        Assert.Equal(TimingReference.SynchronizedLoopback, measurement.TimingReference);
     }
 
     // The same promise loading a file makes: a rejected import must not take the

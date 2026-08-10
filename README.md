@@ -1460,12 +1460,21 @@ the garbage — in every case the measurement already on screen is left untouche
 
 Two things such a measurement cannot carry. There is no absolute time: where the
 arrival lands is decided by when the recorder was started, not by the acoustic
-path, so delay read-outs mean something only within one file and two imported
-recordings cannot be time-aligned against each other. And there is no
+path, so delays mean something only within one file — a reflection 8 ms after the
+direct sound really is 8 ms — and never between two of them. And there is no
 [dB SPL](#sound-pressure-level-db-spl) anchor, because the gain of the recording
-chain is unknown. Everything else — frequency response, phase, group delay,
-waterfall, Burst Decay, the EQ wizard — works as it does for a measured sweep,
-and the result can be saved as a normal `.json` impulse response.
+chain is unknown; for the same reason the vertical position of its dBr curve is
+the recorder's gain setting rather than anything about the system.
+
+The first of those is recorded in the measurement and travels with it into the
+saved `.json` and the history, so the modes that compare one arrival against
+another refuse it by name instead of showing a number that does not exist:
+[Time Alignment](#time-alignment) declines it as a source and as a Compare
+partner, and [Virtual DSP](#virtual-dsp) will not sum it
+with another measurement. Everything that lives inside a single measurement —
+frequency response, phase, group delay, waterfall, Burst Decay, the EQ wizard —
+works as it does for a measured sweep, including Compare's curve overlay, and the
+result saves as a normal `.json` impulse response.
 
 Saving and loading are disabled while a measurement is running. The current file
 format identifier is `resonalyze-impulse-response`, version `7`. Files are meant

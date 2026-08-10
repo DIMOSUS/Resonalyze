@@ -24,12 +24,16 @@ internal sealed class ResolvedVirtualDspSource
     /// <summary>
     /// Prepares a source from a measurement snapshot, or returns null when the
     /// snapshot has no loopback transfer IR — the virtual sum only has physical
-    /// meaning for loopback-referenced responses.
+    /// meaning for loopback-referenced responses — or when it was imported from a
+    /// recorded sweep, which is the same objection in a different form: summing
+    /// two drivers is summing their arrivals, and an imported measurement's
+    /// arrival is set by when its recorder was started.
     /// </summary>
     public static ResolvedVirtualDspSource? FromSnapshot(MeasurementHistorySnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        if (snapshot.TransferImpulseResponse is not { Length: > 0 } transferIr)
+        if (snapshot.TransferImpulseResponse is not { Length: > 0 } transferIr ||
+            snapshot.TimingReference == TimingReference.RecordedSweep)
         {
             return null;
         }

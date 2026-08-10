@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace Resonalyze.History;
 
@@ -232,6 +232,7 @@ internal sealed class MeasurementHistoryService
             SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
+            TimingReference = measurement.TimingReference,
             SweepDeconvolutionPeakIndex = sweepDeconvolution.PeakIndex,
             TransferPeakIndex = transferResult?.PeakIndex,
             AverageRunCount = measurement.AverageRunCount,
@@ -286,6 +287,7 @@ internal sealed class MeasurementHistoryService
             SweepDurationSeconds = file.SweepDurationSeconds,
             PlayChannel = file.PlayChannel,
             MeasurementMode = file.MeasurementMode,
+            TimingReference = file.TimingReference,
             SweepDeconvolutionPeakIndex = file.SweepDeconvolutionPeakIndex,
             TransferPeakIndex = file.TransferPeakIndex,
             AverageRunCount = file.AverageRunCount,

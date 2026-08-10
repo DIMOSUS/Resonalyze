@@ -64,6 +64,18 @@ internal static class RecordedSweepWindow
     /// certain (a passage of speech before the sweep is loud and sustained too),
     /// so the caller analyzes them in order and keeps the one that produces a
     /// credible impulse response instead of committing to the first.
+    /// <para>
+    /// A stretch SHORTER than the sweep is the interesting case: the excitation is
+    /// all there, but part of it sits under the detection threshold because the
+    /// system under test barely reproduces that end of the band — a car whose bass
+    /// is crossed out drops its first octaves by 30 dB, which reads as the sweep
+    /// starting a second late, and the analysis would then be built on an
+    /// excitation whose beginning is outside the window. Which end was lost cannot
+    /// be told from levels, so the span covers BOTH readings: early enough for a
+    /// sweep that ENDS where the loud audio ends, late enough for one that BEGINS
+    /// where it begins. That widens the span only when the stretch is shorter than
+    /// the sweep; for a stretch the sweep's own length it changes nothing.
+    /// </para>
     /// </summary>
     /// <remarks>
     /// Always returns at least one span. Degenerate cases — a silent file, no
@@ -85,41 +97,47 @@ internal static class RecordedSweepWindow
             return [new RecordedSweepSpan(0, samples.Length, 0)];
         }
 
-        List<int> onsets = FindExcitationStarts(
-            samples, sampleRate, sweepSamples, maximumCandidates);
+        List<(int Start, int End)> stretches = FindLoudStretches(
+            samples, sampleRate, maximumCandidates);
         int lead = (int)(LeadInSeconds * sampleRate);
-        int bound = sweepSamples + lead + (int)(TailSeconds * sampleRate);
+        int tail = (int)(TailSeconds * sampleRate);
+        int bound = sweepSamples + lead + tail;
         // A recording that already fits the bound is analyzed whole — there is
         // nothing to cut away — but it still needs the excitation start, or a take
         // that holds a pre-roll and then RUNS OUT mid-sweep reads as long enough.
         if (samples.Length <= bound)
         {
             return [new RecordedSweepSpan(
-                0, samples.Length, onsets.Count > 0 ? onsets[0] : 0)];
+                0, samples.Length, stretches.Count > 0 ? stretches[0].Start : 0)];
         }
 
         var spans = new List<RecordedSweepSpan>();
-        foreach (int onset in onsets)
+        foreach ((int stretchStart, int stretchEnd) in stretches)
         {
-            int start = Math.Max(0, onset - lead);
+            int earliest = Math.Min(stretchStart, stretchEnd - sweepSamples);
+            int latest = Math.Max(stretchEnd, stretchStart + sweepSamples);
+            int start = Math.Clamp(earliest - lead, 0, samples.Length);
+            int end = Math.Clamp(latest + tail, start, samples.Length);
             if (!spans.Exists(span => span.Start == start))
             {
-                spans.Add(new RecordedSweepSpan(
-                    start, Math.Min(bound, samples.Length - start), onset));
+                // The DETECTED start, not the earliest possible one, is what the
+                // caller measures the take's completeness against: it is where the
+                // excitation was actually heard, so a take that runs out mid-sweep
+                // still reads as short while a quiet first octave does not.
+                spans.Add(new RecordedSweepSpan(start, end - start, stretchStart));
             }
         }
 
         return spans.Count > 0 ? spans : [new RecordedSweepSpan(0, bound, 0)];
     }
 
-    // The starts of the loud stretches, longest first. The sweep is one
-    // uninterrupted stretch as long as itself; speech, footsteps and handling
-    // noise are shorter ones, so this usually ranks the excitation first — and
-    // when it does not, the caller falls through to the next candidate.
-    private static List<int> FindExcitationStarts(
+    // The loud stretches, the one carrying the most loud audio first. The sweep is
+    // one uninterrupted stretch; speech, footsteps and handling noise are shorter
+    // ones, so this usually ranks the excitation first — and when it does not, the
+    // caller falls through to the next candidate.
+    private static List<(int Start, int End)> FindLoudStretches(
         float[] samples,
         int sampleRate,
-        int sweepSamples,
         int maximumCandidates)
     {
         int window = Math.Max(1, (int)(WindowSeconds * sampleRate));
@@ -152,9 +170,10 @@ internal static class RecordedSweepWindow
 
         double threshold = reference * ExcitationThresholdRatio;
         int gap = Math.Max(1, (int)(GapSeconds * sampleRate) / window);
-        // (start, loud windows) per stretch, in the order they occur.
-        var stretches = new List<(int Start, int Loud)>();
+        // (first window, last window, loud windows) per stretch, as they occur.
+        var stretches = new List<(int Start, int End, int Loud)>();
         int stretchStart = -1;
+        int stretchEnd = -1;
         int loud = 0;
         int silent = 0;
         for (int index = 0; index < windowCount; index++)
@@ -166,6 +185,7 @@ internal static class RecordedSweepWindow
                     stretchStart = index;
                     loud = 0;
                 }
+                stretchEnd = index;
                 loud++;
                 silent = 0;
                 continue;
@@ -173,13 +193,13 @@ internal static class RecordedSweepWindow
 
             if (stretchStart >= 0 && ++silent >= gap)
             {
-                stretches.Add((stretchStart, loud));
+                stretches.Add((stretchStart, stretchEnd, loud));
                 stretchStart = -1;
             }
         }
         if (stretchStart >= 0)
         {
-            stretches.Add((stretchStart, loud));
+            stretches.Add((stretchStart, stretchEnd, loud));
         }
 
         // Longest first, earliest among equals — so a take holding the same sweep
@@ -188,7 +208,7 @@ internal static class RecordedSweepWindow
             .OrderByDescending(stretch => stretch.Loud)
             .ThenBy(stretch => stretch.Start)
             .Take(maximumCandidates)
-            .Select(stretch => stretch.Start * window)
+            .Select(stretch => (stretch.Start * window, (stretch.End + 1) * window))
             .ToList();
     }
 

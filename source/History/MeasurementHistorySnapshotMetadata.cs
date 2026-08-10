@@ -9,6 +9,8 @@ internal sealed class MeasurementHistorySnapshotMetadata
     public double SweepDurationSeconds { get; init; }
     public PlaybackChannel PlayChannel { get; init; }
     public SweepMeasurementMode MeasurementMode { get; init; }
+
+    public TimingReference TimingReference { get; init; }
     public int SweepDeconvolutionPeakIndex { get; init; }
     public int? TransferPeakIndex { get; init; }
     public int AverageRunCount { get; init; } = 1;
@@ -28,6 +30,7 @@ internal sealed class MeasurementHistorySnapshotMetadata
             SweepDurationSeconds = snapshot.SweepDurationSeconds,
             PlayChannel = snapshot.PlayChannel,
             MeasurementMode = snapshot.MeasurementMode,
+            TimingReference = snapshot.TimingReference,
             SweepDeconvolutionPeakIndex = snapshot.SweepDeconvolutionPeakIndex,
             TransferPeakIndex = snapshot.TransferPeakIndex,
             AverageRunCount = snapshot.AverageRunCount,

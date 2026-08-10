@@ -252,6 +252,22 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         out TimeAlignmentAnalysisSource source,
         out string message)
     {
+        // An imported recording has no absolute time: nothing tied the recorder's
+        // start to the playback, so its arrival sits wherever the record button
+        // was pressed. Every delay this mode reports is a comparison against
+        // another arrival, which makes those numbers meaningless here — and a
+        // meaningless delay presented as a measurement is worse than no mode.
+        if (measurement.TimingReference == TimingReference.RecordedSweep)
+        {
+            source = default;
+            message =
+                "This measurement was imported from a recorded sweep.\r\n" +
+                "Its arrival time is set by when the recorder was started, not by " +
+                "the tract, so delays cannot be compared across measurements.\r\n" +
+                "Time Alignment needs a sweep measured against its own loopback.";
+            return false;
+        }
+
         if (measurement.TransferImpulseResponse is { Length: > 0 } transferImpulseResponse)
         {
             source = new TimeAlignmentAnalysisSource(

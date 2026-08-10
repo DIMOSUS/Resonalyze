@@ -119,6 +119,36 @@ public sealed class RecordedSweepWindowTests
             span.Start <= lead && span.Start + span.Length >= lead + SweepSamples);
     }
 
+    // The system under test barely reproduces one end of the band — a car whose
+    // bass is crossed out drops its first octaves by 30 dB — so the excitation is
+    // only heard from part-way in. The window must still hold ALL of it: analyzing
+    // from where the level rose would build the result on an excitation whose
+    // beginning is outside the window, and nothing downstream would notice.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AQuietEndOfTheBandDoesNotPushTheExcitationOutOfTheWindow(bool quietHead)
+    {
+        const int lead = 30 * SampleRate;
+        float[] samples = Recording(lead, SweepSamples, 30 * SampleRate, noise: 0.0005f);
+        int quiet = (int)(SweepSamples * 0.4);
+        for (int i = 0; i < quiet; i++)
+        {
+            int at = quietHead ? lead + i : lead + SweepSamples - 1 - i;
+            samples[at] *= 0.0316f;
+        }
+
+        RecordedSweepSpan span =
+            RecordedSweepWindow.LocateCandidates(samples, SampleRate, SweepSamples)[0];
+
+        Assert.True(span.Start <= lead, $"the window starts at {span.Start}, after the excitation at {lead}");
+        Assert.True(
+            span.Start + span.Length >= lead + SweepSamples,
+            $"the window ends at {span.Start + span.Length}, before the excitation ends at {lead + SweepSamples}");
+        // Widened, but still bounded by the sweep's own length.
+        Assert.True(span.Length <= 2 * SweepSamples + (int)(2.5 * SampleRate));
+    }
+
     [Fact]
     public void ASilentRecordingFallsBackToTheBoundedHead()
     {

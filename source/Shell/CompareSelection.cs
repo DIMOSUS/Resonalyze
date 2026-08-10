@@ -56,8 +56,13 @@ internal sealed class CompareSelection
             selection.Snapshot.SplOffsetDb);
     }
 
+    // Time Alignment compares one arrival against another, so a measurement
+    // imported from a recorded sweep cannot take part: its arrival is set by when
+    // the recorder was started. The curve comparison above is unaffected — a
+    // magnitude response does not care what time it arrived at.
     public TimeAlignmentCompareMeasurement? GetTimeAlignmentMeasurement() =>
-        current is not { } selection
+        current is not { } selection ||
+            selection.Snapshot.TimingReference == TimingReference.RecordedSweep
             ? null
             : new TimeAlignmentCompareMeasurement(
                 selection.DisplayName,

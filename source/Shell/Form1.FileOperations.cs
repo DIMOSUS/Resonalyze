@@ -1,4 +1,4 @@
-namespace Resonalyze;
+﻿namespace Resonalyze;
 
 public partial class Form1
 {
@@ -167,7 +167,8 @@ public partial class Form1
             file.AverageRunCount,
             file.AcceptedAverageRunCount,
             achievedLowHz,
-            achievedHighHz);
+            achievedHighHz,
+            file.TimingReference);
         expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
         // The loaded file's own calibration is this result's snapshot (what
         // it was measured under), so it can be shown in dB SPL. The configured

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.History;
@@ -42,6 +42,14 @@ public sealed class ImpulseResponseFile
     public PlaybackChannel PlayChannel { get; set; }
     public SweepMeasurementMode MeasurementMode { get; set; } =
         SweepMeasurementMode.SweepDeconvolution;
+
+    /// <summary>
+    /// What this result's arrival time is referenced to. Absent from files
+    /// written before sweeps could be imported, and the default is right for
+    /// every one of them: they were all measured against their own loopback.
+    /// </summary>
+    public TimingReference TimingReference { get; set; } =
+        TimingReference.SynchronizedLoopback;
     public int SweepDeconvolutionPeakIndex { get; set; }
     public int AverageRunCount { get; set; } = 1;
     public int AcceptedAverageRunCount { get; set; } = 1;
@@ -132,6 +140,7 @@ public sealed class ImpulseResponseFile
             SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
+            TimingReference = measurement.TimingReference,
             SweepDeconvolutionPeakIndex = sweepDeconvolution.PeakIndex,
             AverageRunCount = measurement.AverageRunCount,
             AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
@@ -391,6 +400,10 @@ public sealed class ImpulseResponseFile
         if (!Enum.IsDefined(MeasurementMode))
         {
             throw new InvalidDataException("The measurement mode is invalid.");
+        }
+        if (!Enum.IsDefined(TimingReference))
+        {
+            throw new InvalidDataException("The timing reference is invalid.");
         }
         if (SweepDeconvolutionRealSamples.Length == 0)
         {

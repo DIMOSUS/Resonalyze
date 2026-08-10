@@ -401,6 +401,60 @@ public sealed class ExponentialSineSweep : IDisposable
         inverseFilter = Array.Empty<float>();
     }
 
+    /// <summary>
+    /// Configures this sweep as <paramref name="reference"/> stretched in time by
+    /// <paramref name="timeScale"/>: the same phase trajectory — the same
+    /// whole-cycle endpoints — laid over proportionally more or fewer samples.
+    /// <para>
+    /// That is exactly what an independent clock does to a played sweep. A phone
+    /// playing at 44 100 Hz nominal and a recorder sampling at its own 44 100 Hz
+    /// are two crystals, tens of parts per million apart, so the recording holds
+    /// the sweep slightly stretched or squeezed. Rebuilding the reference that way
+    /// is exact and needs no resampling filter: the trajectory is analytic, so the
+    /// stretched sweep is generated rather than interpolated.
+    /// </para>
+    /// </summary>
+    public void FillStretched(ExpSweepSpec reference, double timeScale, int bitsPerSample = 24)
+    {
+        ThrowIfDisposed();
+        if (!reference.IsValid)
+        {
+            throw new ArgumentException("The reference sweep is not resolved.", nameof(reference));
+        }
+        if (!double.IsFinite(timeScale) || timeScale is <= 0.5 or >= 2.0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeScale));
+        }
+        if (bitsPerSample is not (16 or 24))
+        {
+            throw new NotSupportedException($"Unsupported sample size: {bitsPerSample} bits.");
+        }
+
+        int sampleCount = Math.Max(2, (int)Math.Round(reference.SampleCount * timeScale));
+        // The band moves with the stretch, and it has to: a sweep that takes
+        // longer to cover the same cycles passes each frequency later and reaches
+        // proportionally lower ones per sample.
+        double beta = Math.Log((double)reference.EndCycles / reference.StartCycles);
+        double low = (double)reference.SampleRate * reference.StartCycles * beta / sampleCount;
+        double high = (double)reference.SampleRate * reference.EndCycles * beta / sampleCount;
+        int maxFade = Math.Max(0, (sampleCount - 1) / 2);
+        spec = new ExpSweepSpec(
+            low,
+            high,
+            sampleCount,
+            reference.SampleRate,
+            reference.StartCycles,
+            reference.EndCycles,
+            Math.Clamp((int)Math.Round(reference.FadeInSamples * timeScale), 0, maxFade),
+            Math.Clamp((int)Math.Round(reference.FadeOutSamples * timeScale), 0, maxFade));
+        BitsPerSample = bitsPerSample;
+        RequestedDuration = spec.ComputedDurationSeconds;
+
+        generated = false;
+        sweepData = Array.Empty<float>();
+        inverseFilter = Array.Empty<float>();
+    }
+
     private void EnsureGenerated()
     {
         ThrowIfDisposed();

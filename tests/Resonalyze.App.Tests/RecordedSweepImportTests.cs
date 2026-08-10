@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using Resonalyze.Audio;
+using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
@@ -175,6 +176,66 @@ public sealed class RecordedSweepImportTests
             measurement.ImportRecordedSweep(Configuration(), Noise(measurement), SampleRate));
         Assert.False(measurement.InProgress);
     }
+
+    // A recording out of scale with the sweep it is analyzed against — separate
+    // crystals in the player and the recorder, or a duration the per-octave field
+    // cannot express exactly. Either way the deconvolution smears, and neither the
+    // shape gate nor the sharpness gate refuses it: the result just quietly loses
+    // its timing and its top-end phase. The import has to find the stretch.
+    [Theory]
+    [InlineData(-500.0)]
+    [InlineData(-100.0)]
+    [InlineData(-50.0)]
+    [InlineData(50.0)]
+    [InlineData(500.0)]
+    public void ImportFindsAndCorrectsARecordingOutOfScale(double ppm)
+    {
+        // Long enough for the stretch to be worth samples: 50 ppm of a two-second
+        // sweep is five samples, of a fifth of a second it is half of one.
+        SweepMeasurementConfiguration configuration = LongConfiguration();
+        using var played = new ExponentialSineSweep();
+        played.FillData(20, 20_000, configuration.Signal.RequestedDurationSeconds, 24, SampleRate);
+        using var stretched = new ExponentialSineSweep();
+        stretched.FillStretched(played.Spec, 1.0 + ppm * 1e-6);
+        float[] excitation = stretched.SweepData;
+        var recording = new float[SampleRate / 2 + excitation.Length + SampleRate];
+        for (int i = 0; i < excitation.Length; i++)
+        {
+            recording[SampleRate / 2 + i] = excitation[i] * 0.35f;
+        }
+
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.Init(configuration);
+        measurement.ImportRecordedSweep(configuration, recording, SampleRate);
+
+        Assert.NotNull(measurement.ImportedTimeScalePpm);
+        Assert.Equal(ppm, measurement.ImportedTimeScalePpm!.Value, tolerance: 25.0);
+        // And the correction is what makes the arrival readable again.
+        double sharpness = TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+            measurement.TransferImpulseResponse!, SampleRate) ?? double.NaN;
+        Assert.True(sharpness >= 20.0, $"sharpness after correction was {sharpness:0.0} dB");
+    }
+
+    // And it does not invent one: a recording of the very sweep the settings
+    // describe needs no stretch, and saying it did would be a claim about the
+    // user's two devices that the data does not support.
+    [Fact]
+    public void ImportReportsNoScaleCorrectionWhenNoneIsNeeded()
+    {
+        SweepMeasurementConfiguration configuration = LongConfiguration();
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.Init(configuration);
+        float[] recording = RecordSweep(measurement, SampleRate / 2);
+
+        measurement.ImportRecordedSweep(configuration, recording, SampleRate);
+
+        Assert.Null(measurement.ImportedTimeScalePpm);
+    }
+
+    private static SweepMeasurementConfiguration LongConfiguration() =>
+        new(new SweepSignalConfiguration(20, 20_000, SampleRate, 24, 2.0, PlaybackChannel.Mono),
+            Configuration().Audio,
+            Configuration().Averaging);
 
     // The obvious sanity check a user runs first: import the exported sweep file
     // itself. It is bit-identical to the reference, which the live path treats as

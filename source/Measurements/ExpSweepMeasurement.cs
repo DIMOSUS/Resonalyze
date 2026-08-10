@@ -63,6 +63,22 @@ namespace Resonalyze
         /// </summary>
         public TimingReference TimingReference { get; private set; } =
             TimingReference.SynchronizedLoopback;
+
+        /// <summary>
+        /// The time-scale correction the import applied, in parts per million, or
+        /// null when the result did not come from an import or needed none.
+        /// <para>
+        /// Two things put a recording out of scale with the sweep it is analyzed
+        /// against, and the data cannot tell them apart. One is the clocks:
+        /// whatever played the file and whatever recorded it are separate crystals,
+        /// tens of ppm apart. The other is the settings — the per-octave field is
+        /// whole milliseconds, so the duration that produced a given file often
+        /// cannot be typed back in exactly. Measured on a field pair: the sweep the
+        /// panel could express ran 489 ppm longer than the one the exported file
+        /// proves was played, while the two clocks agreed to within 25 ppm.
+        /// </para>
+        /// </summary>
+        public double? ImportedTimeScalePpm { get; private set; }
         public bool HasImpulseResponse => SweepDeconvolutionImpulseResponse != null;
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
@@ -229,6 +245,7 @@ namespace Resonalyze
             LoopbackRecordedSamples = null;
             MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
             TimingReference = TimingReference.SynchronizedLoopback;
+            ImportedTimeScalePpm = null;
             AverageRunCount = Math.Clamp(averaging.RunCount, 1, 64);
             AcceptedAverageRunCount = 0;
             ConfirmEachAverageRun = averaging.ConfirmEachRun;
@@ -599,8 +616,18 @@ namespace Resonalyze
                     continue;
                 }
 
+                // The recording and the configured sweep can be slightly out of
+                // scale with each other — separate crystals, or a duration the
+                // per-octave field cannot express. Find the stretch that sharpens
+                // the arrival most, then analyze against a reference rebuilt there.
+                double timeScalePpm = EstimateTimeScalePpm(recordedSamples, span, sweep, sampleRate);
+                using var reference = new ExponentialSineSweep();
+                if (timeScalePpm != 0)
+                {
+                    reference.FillStretched(sweep.Spec, 1.0 + timeScalePpm * 1e-6, signal.Bits);
+                }
                 ImportedSweepAnalysis analysis = AnalyzeImportedSpan(
-                    recordedSamples, span, sweep);
+                    recordedSamples, span, timeScalePpm == 0 ? sweep : reference);
 
                 // The same unambiguous capture failures the live path refuses a run
                 // for. A clipped sweep still deconvolves into a compact impulse
@@ -627,7 +654,7 @@ namespace Resonalyze
                     if (value.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb &&
                         arrival >= TransferIrDiagnostics.MinimumArrivalSharpnessDb)
                     {
-                        PublishImportedSweep(configuration, analysis);
+                        PublishImportedSweep(configuration, analysis, timeScalePpm);
                         return;
                     }
                 }
@@ -656,6 +683,123 @@ namespace Resonalyze
             Complex[] TransferImpulseResponse,
             int TransferPeakIndex,
             double[]? TransferCoherence);
+
+        /// <summary>
+        /// How far out of scale the search may believe a recording is, in parts
+        /// per million. It has to cover both causes: two consumer crystals sit tens
+        /// of ppm apart, and a duration the per-octave field cannot express exactly
+        /// costs a few hundred (489 on the field pair this was calibrated against).
+        /// Wide enough for both, and far short of a neighbouring sweep rate, which
+        /// is percent away rather than ppm — the search must not be able to walk
+        /// into one and call it a fit.
+        /// </summary>
+        private const double MaximumTimeScalePpm = 800.0;
+
+        // Below this, a "better" fit is the metric's own noise: on a field take the
+        // sharpness wandered by a few tenths of a dB across +-50 ppm, where the
+        // arrival is already as sharp as the tract allows.
+        private const double MeaningfulScaleGainDb = 0.5;
+
+        // Where the search stops refining. Twelve ppm is a hundredth of a sample
+        // over a four-second sweep — past the point where the objective still
+        // carries information about the scale rather than about the room.
+        private const double FinestScaleStepPpm = 12.5;
+
+        // The coarse scan's step. The objective rises over roughly 200 ppm either
+        // side of the truth, so a hundred cannot step over the peak, and the whole
+        // scan plus its refinement is about two dozen deconvolutions of the
+        // analyzed window — a second or two on an import, which happens once.
+        private const double CoarseScaleStepPpm = 100.0;
+
+        /// <summary>
+        /// How far out of scale the recording is with the configured sweep, in
+        /// ppm: the stretch of the reference that makes the deconvolved arrival
+        /// sharpest. Zero when no stretch is meaningfully better than none — the
+        /// honest answer both when the two really agree and when the measure is
+        /// only wandering inside its own noise.
+        /// </summary>
+        /// <remarks>
+        /// Searched on the sweep deconvolution alone: half the cost of a full
+        /// analysis, and it is the deconvolution that a scale mismatch smears. The
+        /// objective is the arrival's SHARPNESS rather than its height, so a
+        /// recording whose level wanders cannot tilt the search.
+        /// </remarks>
+        private static double EstimateTimeScalePpm(
+            float[] recordedSamples,
+            RecordedSweepSpan span,
+            ExponentialSineSweep sweep,
+            int sampleRate)
+        {
+            float[] analyzed = span.Start == 0 && span.Length == recordedSamples.Length
+                ? recordedSamples
+                : recordedSamples[span.Start..(span.Start + span.Length)];
+            using var stretched = new ExponentialSineSweep();
+
+            double Sharpness(double ppm)
+            {
+                float[] inverse;
+                if (ppm == 0)
+                {
+                    inverse = sweep.InverseFilter;
+                }
+                else
+                {
+                    stretched.FillStretched(sweep.Spec, 1.0 + ppm * 1e-6, sweep.BitsPerSample);
+                    inverse = stretched.InverseFilter;
+                }
+
+                SweepDeconvolutionResult deconvolved = SweepAnalysis.DeconvolveWithInverseFilter(
+                    analyzed, inverse, 2.0 / inverse.Length);
+                return TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+                    Array.ConvertAll(deconvolved.ImpulseResponse, x => new Complex(x, 0.0)),
+                    sampleRate) ?? double.NegativeInfinity;
+            }
+
+            // A COARSE SCAN of the whole range first, then refinement around the
+            // winner. Walking downhill from zero does not work: the objective dips
+            // on the way to its peak — for a recording 500 ppm out of scale, the
+            // 200 ppm probe reads WORSE than no correction at all — so a search
+            // that only steps while it improves stops before it has started.
+            double baseline = Sharpness(0);
+            double bestPpm = 0;
+            double best = baseline;
+            for (double ppm = -MaximumTimeScalePpm;
+                ppm <= MaximumTimeScalePpm;
+                ppm += CoarseScaleStepPpm)
+            {
+                if (ppm == 0)
+                {
+                    continue;
+                }
+
+                double sharpness = Sharpness(ppm);
+                if (sharpness > best)
+                {
+                    best = sharpness;
+                    bestPpm = ppm;
+                }
+            }
+
+            for (double step = CoarseScaleStepPpm / 2; step >= FinestScaleStepPpm; step /= 2)
+            {
+                foreach (double ppm in new[] { bestPpm - step, bestPpm + step })
+                {
+                    if (Math.Abs(ppm) > MaximumTimeScalePpm)
+                    {
+                        continue;
+                    }
+
+                    double sharpness = Sharpness(ppm);
+                    if (sharpness > best)
+                    {
+                        best = sharpness;
+                        bestPpm = ppm;
+                    }
+                }
+            }
+
+            return best - baseline >= MeaningfulScaleGainDb ? bestPpm : 0.0;
+        }
 
         private static ImportedSweepAnalysis AnalyzeImportedSpan(
             float[] recordedSamples,
@@ -702,11 +846,13 @@ namespace Resonalyze
 
         private void PublishImportedSweep(
             SweepMeasurementConfiguration configuration,
-            ImportedSweepAnalysis analysis)
+            ImportedSweepAnalysis analysis,
+            double timeScalePpm)
         {
             InitCore(configuration);
             // Init set the measured meaning; this result has the imported one.
             TimingReference = TimingReference.RecordedSweep;
+            ImportedTimeScalePpm = timeScalePpm == 0 ? null : timeScalePpm;
             // No loopback entry: the reference is a generated signal, so metering it
             // would report an input level for an input that recorded nothing.
             ApplyAverageResult(new SweepAverageResult(

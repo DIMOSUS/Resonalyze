@@ -210,22 +210,39 @@ public partial class Form1
         // — so an open panel has to re-evaluate dB SPL availability downward.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
-        NotifyImportedChannelChoice(recording);
+        NotifyImportDecisions(recording);
     }
 
-    // Which channel of a multi-channel recording was measured. Silent for a mono
-    // file, where there was no choice to report.
-    private void NotifyImportedChannelChoice(RecordedSweepChannel recording)
+    // The decisions the import made on the user's behalf: which channel it
+    // measured, and whether it had to stretch the reference to match the
+    // recording. Silent when there was nothing to decide — a mono file that
+    // needed no correction says nothing at all.
+    private void NotifyImportDecisions(RecordedSweepChannel recording)
     {
-        if (recording.ChannelCount < 2 || closingInProgress)
+        if (closingInProgress)
+        {
+            return;
+        }
+
+        var notes = new List<string>();
+        if (recording.ChannelCount > 1)
+        {
+            notes.Add(FormattableString.Invariant(
+                $"The recording has {recording.ChannelCount} channels; the loudest one ({RecordedSweepFile.DescribeChannel(recording.ChannelIndex, recording.ChannelCount)}) was measured — {recording.RmsDbFs:0.0} dBFS RMS, peak {recording.PeakDbFs:0.0} dBFS."));
+        }
+        if (expSweepMeasurement.ImportedTimeScalePpm is { } scalePpm)
+        {
+            notes.Add(FormattableString.Invariant(
+                $"The recording ran {Math.Abs(scalePpm):0} ppm {(scalePpm > 0 ? "slower" : "faster")} than the configured sweep, and the reference was rebuilt to match. That is what two devices with their own clocks do — and what a per-octave time in whole milliseconds cannot always express. Left uncorrected it smears the arrival and the phase at the top of the band."));
+        }
+        if (notes.Count == 0)
         {
             return;
         }
 
         MessageBox.Show(
             this,
-            FormattableString.Invariant(
-                $"The recording has {recording.ChannelCount} channels; the loudest one ({RecordedSweepFile.DescribeChannel(recording.ChannelIndex, recording.ChannelCount)}) was measured — {recording.RmsDbFs:0.0} dBFS RMS, peak {recording.PeakDbFs:0.0} dBFS."),
+            string.Join("\r\n\r\n", notes),
             "Recorded sweep",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);

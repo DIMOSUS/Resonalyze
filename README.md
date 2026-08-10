@@ -1445,6 +1445,15 @@ whole file, which cuts the work from 3.4 s and 1.9 GB of transient spectra to
 into a saved `.json`) from 268 MB to 8 MB. If a take holds the sweep more than
 once, the first one is measured.
 
+Whatever played the file and whatever recorded it run on their own clocks, so the
+sweep comes back slightly stretched or squeezed — and a per-octave time in whole
+milliseconds cannot always express the duration that produced a given file
+either. Both put the recording out of scale with the reference, both smear the
+arrival and the phase at the top of the band, and neither is visible in the
+result. Resonalyze finds the stretch that sharpens the arrival most and rebuilds
+the reference at that rate, reporting the correction when it applies one. On the
+field takes above that was 100 ppm, worth 4.7 dB of arrival sharpness.
+
 The settings must match the sweep the recording was made from, and Resonalyze
 checks that rather than trusting it: a recording analyzed against the wrong band
 or per-octave time deconvolves into a smear instead of an arrival, and the

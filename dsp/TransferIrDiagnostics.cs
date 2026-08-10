@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp;
@@ -84,6 +84,33 @@ public static class TransferIrDiagnostics
     /// </summary>
     public const double MinimumCompactnessDb = 22.0;
 
+    /// <summary>
+    /// Half-width of the neighbourhood <see cref="MeasureArrivalSharpnessDb"/>
+    /// compares the arrival against: long enough to span a smear from the wrong
+    /// excitation, short enough that a room's decay contributes little of it.
+    /// </summary>
+    public const double ArrivalWindowSeconds = 0.002;
+
+    /// <summary>
+    /// The sharpness floor below which a transfer IR is not a measurement of the
+    /// sweep it was analyzed against.
+    /// <para>
+    /// Calibrated on two field takes of one exported sweep — a car cabin and a
+    /// room — each analyzed against its own (correct) parameters and against six
+    /// neighbouring wrong ones: correct reads 15.5 dB (cabin) and 10.7 dB (room),
+    /// while every mismatched pace reads 3.1-6.3 dB. Eight sits 1.7 dB above the
+    /// worst mismatch, on the garbage side of the gap, in the same spirit as
+    /// <see cref="MinimumCompactnessDb"/>.
+    /// </para>
+    /// <para>
+    /// Sharpness rather than the share of energy near the arrival, which was
+    /// tried first and rejected: a synthetic record with a quarter-second decay
+    /// held only 12 % of its energy within the arrival window — indistinguishable
+    /// from a smear — so that measure would refuse a reverberant room outright.
+    /// </para>
+    /// </summary>
+    public const double MinimumArrivalSharpnessDb = 8.0;
+
     // The compactness window around the peak, CIRCULAR because the window
     // must follow the buffer's topology: a zero-phase excitation gate turns
     // even an ideal H(f)=1 into a symmetric band-limited kernel whose
@@ -96,6 +123,64 @@ public static class TransferIrDiagnostics
     private const double CompactnessPreSeconds = 0.100;
     private const double CompactnessPostSeconds = 0.500;
     private const int CompactnessMinimumSamples = 256;
+
+    /// <summary>
+    /// How far (dB) a transfer IR's strongest sample stands above the RMS of its
+    /// own neighbourhood, <see cref="ArrivalWindowSeconds"/> either side and
+    /// measured circularly. Null when there is nothing (or nothing finite) to
+    /// measure.
+    /// <para>
+    /// This answers a question <see cref="MeasureCompactness"/> cannot: whether
+    /// the excitation the IR was derived from is the one that was actually
+    /// played. A sweep deconvolved against a DIFFERENT sweep still produces a
+    /// localized-looking result on the compactness window — its ±100/+500 ms
+    /// span happily contains a smear a hundred milliseconds wide — so a
+    /// mismatched band or per-octave pace passes that gate, and on field takes it
+    /// sometimes scored HIGHER than the correct one. A peak, unlike a smear,
+    /// stands above its own immediate surroundings, and a room's decay barely
+    /// enters those two milliseconds.
+    /// </para>
+    /// </summary>
+    public static double? MeasureArrivalSharpnessDb(
+        IReadOnlyList<Complex> impulseResponse,
+        int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        int length = impulseResponse.Count;
+        if (length == 0 || sampleRate <= 0)
+        {
+            return null;
+        }
+
+        double total = 0;
+        double peak = 0;
+        int peakIndex = 0;
+        for (int i = 0; i < length; i++)
+        {
+            double sample = impulseResponse[i].Real;
+            total += sample * sample;
+            if (Math.Abs(sample) > peak)
+            {
+                peak = Math.Abs(sample);
+                peakIndex = i;
+            }
+        }
+        if (!double.IsFinite(total) || total <= 0)
+        {
+            return null;
+        }
+
+        int half = Math.Min((int)(ArrivalWindowSeconds * sampleRate), length / 2);
+        double near = 0;
+        for (int k = -half; k <= half; k++)
+        {
+            double sample = impulseResponse[((peakIndex + k) % length + length) % length].Real;
+            near += sample * sample;
+        }
+
+        double rms = Math.Sqrt(near / (2 * half + 1));
+        return rms > 0 ? 20.0 * Math.Log10(peak / rms) : null;
+    }
 
     /// <summary>
     /// Measures the time-compactness of a transfer IR (see

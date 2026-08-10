@@ -1445,12 +1445,18 @@ whole file, which cuts the work from 3.4 s and 1.9 GB of transient spectra to
 into a saved `.json`) from 268 MB to 8 MB. If a take holds the sweep more than
 once, the first one is measured.
 
-The settings must match the sweep the recording was made from. A file at another
-sample rate is refused outright, a take whose sweep runs past the end of the
-recording is refused as cut short, and a recording that does not deconvolve into
-a credible impulse response is refused with what it measured instead of
-publishing the garbage — in every case the measurement already on screen is left
-untouched.
+The settings must match the sweep the recording was made from, and Resonalyze
+checks that rather than trusting it: a recording analyzed against the wrong band
+or per-octave time deconvolves into a smear instead of an arrival, and the
+arrival's sharpness is what tells the two apart. On two field takes of the same
+exported sweep — a car cabin and a room — the correct settings read 15.5 dB and
+10.7 dB of sharpness while every neighbouring wrong pace read 3.1–6.3 dB.
+
+A file at another sample rate is refused outright, a take whose sweep runs past
+the end of the recording is refused as cut short, a clipped recording is refused
+the way a live run refuses one, and a recording that does not deconvolve into a
+credible impulse response is refused with what it measured instead of publishing
+the garbage — in every case the measurement already on screen is left untouched.
 
 Two things such a measurement cannot carry. There is no absolute time: where the
 arrival lands is decided by when the recorder was started, not by the acoustic

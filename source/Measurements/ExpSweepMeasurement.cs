@@ -562,6 +562,7 @@ namespace Resonalyze
             // excitation and its decay instead — trying the candidate stretches in
             // turn, because locating one by level alone cannot be certain.
             double bestCompactnessDb = double.NegativeInfinity;
+            double bestSharpnessDb = double.NegativeInfinity;
             bool measurable = false;
             int longestExcitation = 0;
             IReadOnlyList<string>? captureIssues = null;
@@ -588,6 +589,7 @@ namespace Resonalyze
 
                 ImportedSweepAnalysis analysis = AnalyzeImportedSpan(
                     recordedSamples, span, sweep);
+
                 // The same unambiguous capture failures the live path refuses a run
                 // for. A clipped sweep still deconvolves into a compact impulse
                 // response — it is simply full of harmonic products — so the shape
@@ -601,11 +603,17 @@ namespace Resonalyze
                 }
                 TransferIrCompactness? compactness = TransferIrDiagnostics.MeasureCompactness(
                     analysis.TransferImpulseResponse, signal.SampleRate);
-                if (compactness is { } value && double.IsFinite(value.InsideOutsideDb))
+                double? sharpness = TransferIrDiagnostics.MeasureArrivalSharpnessDb(
+                    analysis.TransferImpulseResponse, signal.SampleRate);
+                if (compactness is { } value &&
+                    double.IsFinite(value.InsideOutsideDb) &&
+                    sharpness is { } arrival && double.IsFinite(arrival))
                 {
                     measurable = true;
                     bestCompactnessDb = Math.Max(bestCompactnessDb, value.InsideOutsideDb);
-                    if (value.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb)
+                    bestSharpnessDb = Math.Max(bestSharpnessDb, arrival);
+                    if (value.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb &&
+                        arrival >= TransferIrDiagnostics.MinimumArrivalSharpnessDb)
                     {
                         PublishImportedSweep(configuration, analysis);
                         return;
@@ -625,7 +633,8 @@ namespace Resonalyze
                     "Record again at a level that leaves headroom.");
             }
 
-            throw RefuseImportedRecording(measurable, bestCompactnessDb, sweep, sampleRate);
+            throw RefuseImportedRecording(
+                measurable, bestCompactnessDb, bestSharpnessDb, sweep, sampleRate);
         }
 
         private sealed record ImportedSweepAnalysis(
@@ -709,6 +718,7 @@ namespace Resonalyze
         private static InvalidOperationException RefuseImportedRecording(
             bool measurable,
             double bestCompactnessDb,
+            double bestSharpnessDb,
             ExponentialSineSweep sweep,
             int sampleRate)
         {

@@ -345,6 +345,33 @@ public sealed class RecordedSweepImportTests
         Assert.False(measurement.HasImpulseResponse);
     }
 
+    // A recording of a REAL sweep, analyzed against a sweep 5 % longer. It is the
+    // likeliest mistake a user makes — the per-octave time is a free-text field —
+    // and the shape gate alone does not catch it: on both field takes a mismatched
+    // pace scored AS HIGH as the correct one for compactness while its arrival was
+    // smeared over thousands of samples.
+    [Fact]
+    public void ImportRefusesASweepTheSettingsDoNotDescribe()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        float[] recording = RecordSweep(measurement, 1_200);
+        SweepSignalConfiguration signal = Configuration().Signal;
+        var mismatched = new SweepMeasurementConfiguration(
+            signal with { RequestedDurationSeconds = signal.RequestedDurationSeconds * 1.05 },
+            Configuration().Audio,
+            Configuration().Averaging);
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            measurement.ImportRecordedSweep(mismatched, recording, SampleRate));
+
+        // Either gate may be the one that speaks: on this ideal synthetic take the
+        // shape gate fails too, while on the field takes it passed — sometimes
+        // scoring the mismatch higher than the truth — and only the arrival's
+        // sharpness told them apart. Both name the setting to go and check.
+        Assert.Contains("per-octave time", exception.Message);
+        Assert.False(measurement.HasImpulseResponse);
+    }
+
     // The honest refusal for the wrong file: noise deconvolves into nothing that
     // looks like an impulse response, and the message has to say so instead of
     // publishing the garbage.

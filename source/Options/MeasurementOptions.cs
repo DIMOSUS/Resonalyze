@@ -205,6 +205,12 @@ namespace Resonalyze.Options
             deviceToolTip.SetToolTip(
                 buttonDeviceSettings,
                 "Opens Windows Sound settings for the selected WASAPI endpoints.");
+            deviceToolTip.SetToolTip(
+                buttonSaveSweepFile,
+                "Writes the sweep above to a 24-bit WAV file, exactly as a " +
+                "measurement would play it: same band, pace, sample rate and " +
+                "playback channel, and the same 6 dB of headroom (-6 dBFS peak), " +
+                "with a second of silence before and after it.");
         }
 
         internal void Init(
@@ -938,6 +944,72 @@ namespace Resonalyze.Options
                 $"{requestedLowHz:0.#} Hz already takes " +
                 $"{1000.0 / Math.Max(requestedLowHz, 1e-9):0} ms. Raise the " +
                 "per-octave time to reach the requested band.";
+        }
+
+        // Writes the sweep the panel currently describes — the same samples the
+        // next measurement would play, on the channels the playback selection
+        // routes them to — so it can be played from something that is not
+        // Resonalyze (a phone, a head unit, a test disc) while this still
+        // records. The band and pace are read from the controls; the sample rate
+        // is the SELECTED one, matching the achieved-range line above the button
+        // rather than whatever the last Apply committed.
+        private void buttonSaveSweepFile_Click(object? sender, EventArgs e)
+        {
+            double lowFrequencyHz = (double)numericUpDownLowFrequency.Value;
+            double highFrequencyHz = (double)numericUpDownHighFrequency.Value;
+            int sampleRate = GetSelectedSampleRate();
+            double totalSeconds = GetRequestedDurationSeconds(sampleRate);
+
+            using var dialog = new SaveFileDialog
+            {
+                AddExtension = true,
+                DefaultExt = "wav",
+                FileName = SweepWavExport.SuggestFileName(
+                    lowFrequencyHz,
+                    highFrequencyHz,
+                    totalSeconds,
+                    sampleRate),
+                Filter = "WAV audio (*.wav)|*.wav",
+                OverwritePrompt = true,
+                Title = "Save the sweep signal"
+            };
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            UseWaitCursor = true;
+            try
+            {
+                // A sweep of its own, not the live measurement's: generating into
+                // that one would discard the result currently on screen.
+                using var sweep = new ExponentialSineSweep();
+                sweep.FillData(
+                    lowFrequencyHz,
+                    highFrequencyHz,
+                    totalSeconds,
+                    (int)numericUpDownBits.Value,
+                    sampleRate);
+                AudioFileCodec.WriteWav(
+                    dialog.FileName,
+                    SweepWavExport.BuildContent(
+                        sweep.SweepData,
+                        sampleRate,
+                        GetSelectedPlaybackChannel()));
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "Save sweep",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                UseWaitCursor = false;
+            }
         }
 
         private void comboBoxAudioBackend_SelectedIndexChanged(object sender, EventArgs e) =>

@@ -33,6 +33,7 @@
         private void InitializeComponent()
         {
             sweepPanel = new Panel();
+            buttonSaveSweepFile = new Button();
             labelActualRangeCaption = new Label();
             numericUpDownRequestedDuration = new DarkNumericUpDown();
             label4 = new Label();
@@ -77,6 +78,7 @@
             // 
             sweepPanel.BackColor = Color.FromArgb(50, 55, 66);
             sweepPanel.BorderStyle = BorderStyle.FixedSingle;
+            sweepPanel.Controls.Add(buttonSaveSweepFile);
             sweepPanel.Controls.Add(labelActualRangeCaption);
             sweepPanel.Controls.Add(numericUpDownRequestedDuration);
             sweepPanel.Controls.Add(label4);
@@ -86,8 +88,20 @@
             sweepPanel.Controls.Add(labelLowFrequency);
             sweepPanel.Location = new Point(8, 6);
             sweepPanel.Name = "sweepPanel";
-            sweepPanel.Size = new Size(322, 108);
+            sweepPanel.Size = new Size(322, 134);
             sweepPanel.TabIndex = 0;
+            //
+            // buttonSaveSweepFile
+            //
+            buttonSaveSweepFile.FlatStyle = FlatStyle.Popup;
+            buttonSaveSweepFile.ForeColor = Color.White;
+            buttonSaveSweepFile.Location = new Point(8, 103);
+            buttonSaveSweepFile.Name = "buttonSaveSweepFile";
+            buttonSaveSweepFile.Size = new Size(307, 23);
+            buttonSaveSweepFile.TabIndex = 22;
+            buttonSaveSweepFile.Text = "Save sweep as WAV...";
+            buttonSaveSweepFile.UseVisualStyleBackColor = true;
+            buttonSaveSweepFile.Click += buttonSaveSweepFile_Click;
             //
             // labelActualRangeCaption
             //
@@ -238,7 +252,7 @@
             // 
             comboBoxChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxChannel.ForeColor = Color.White;
-            comboBoxChannel.Location = new Point(154, 122);
+            comboBoxChannel.Location = new Point(154, 148);
             comboBoxChannel.Margin = new Padding(0);
             comboBoxChannel.MinimumSize = new Size(36, 19);
             comboBoxChannel.Name = "comboBoxChannel";
@@ -250,7 +264,7 @@
             // 
             label3.AutoSize = true;
             label3.ForeColor = SystemColors.ControlLight;
-            label3.Location = new Point(17, 130);
+            label3.Location = new Point(17, 156);
             label3.Name = "label3";
             label3.Size = new Size(51, 15);
             label3.TabIndex = 5;
@@ -269,7 +283,7 @@
             audioBackendPanel.Controls.Add(label2);
             audioBackendPanel.Controls.Add(comboBoxSampleRate);
             audioBackendPanel.Controls.Add(label1);
-            audioBackendPanel.Location = new Point(8, 278);
+            audioBackendPanel.Location = new Point(8, 304);
             audioBackendPanel.Name = "audioBackendPanel";
             audioBackendPanel.Size = new Size(322, 368);
             audioBackendPanel.TabIndex = 39;
@@ -312,7 +326,7 @@
             // 
             labelAverageRunCount.AutoSize = true;
             labelAverageRunCount.ForeColor = SystemColors.ControlLight;
-            labelAverageRunCount.Location = new Point(17, 156);
+            labelAverageRunCount.Location = new Point(17, 182);
             labelAverageRunCount.Name = "labelAverageRunCount";
             labelAverageRunCount.Size = new Size(85, 15);
             labelAverageRunCount.TabIndex = 27;
@@ -324,7 +338,7 @@
             numericUpDownAverageRunCount.DecimalPlaces = 0;
             numericUpDownAverageRunCount.ForeColor = Color.White;
             numericUpDownAverageRunCount.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericUpDownAverageRunCount.Location = new Point(154, 152);
+            numericUpDownAverageRunCount.Location = new Point(154, 178);
             numericUpDownAverageRunCount.Maximum = new decimal(new int[] { 64, 0, 0, 0 });
             numericUpDownAverageRunCount.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             numericUpDownAverageRunCount.MinimumSize = new Size(36, 19);
@@ -340,7 +354,7 @@
             // 
             checkBoxConfirmEachAverageRun.AutoSize = true;
             checkBoxConfirmEachAverageRun.ForeColor = SystemColors.ControlLight;
-            checkBoxConfirmEachAverageRun.Location = new Point(154, 176);
+            checkBoxConfirmEachAverageRun.Location = new Point(154, 202);
             checkBoxConfirmEachAverageRun.Name = "checkBoxConfirmEachAverageRun";
             checkBoxConfirmEachAverageRun.Size = new Size(119, 19);
             checkBoxConfirmEachAverageRun.TabIndex = 29;
@@ -352,7 +366,7 @@
             // 
             labelCalibration0.AutoSize = true;
             labelCalibration0.ForeColor = SystemColors.ControlLight;
-            labelCalibration0.Location = new Point(17, 206);
+            labelCalibration0.Location = new Point(17, 232);
             labelCalibration0.Name = "labelCalibration0";
             labelCalibration0.Size = new Size(100, 15);
             labelCalibration0.TabIndex = 30;
@@ -362,7 +376,7 @@
             // 
             buttonCalibration0.FlatStyle = FlatStyle.Popup;
             buttonCalibration0.ForeColor = Color.White;
-            buttonCalibration0.Location = new Point(154, 201);
+            buttonCalibration0.Location = new Point(154, 227);
             buttonCalibration0.Name = "buttonCalibration0";
             buttonCalibration0.Size = new Size(143, 23);
             buttonCalibration0.TabIndex = 31;
@@ -374,7 +388,7 @@
             // 
             buttonClearCalibration0.FlatStyle = FlatStyle.Popup;
             buttonClearCalibration0.ForeColor = Color.White;
-            buttonClearCalibration0.Location = new Point(300, 201);
+            buttonClearCalibration0.Location = new Point(300, 227);
             buttonClearCalibration0.Name = "buttonClearCalibration0";
             buttonClearCalibration0.Size = new Size(24, 23);
             buttonClearCalibration0.TabIndex = 34;
@@ -386,7 +400,7 @@
             // 
             labelCalibration90.AutoSize = true;
             labelCalibration90.ForeColor = SystemColors.ControlLight;
-            labelCalibration90.Location = new Point(17, 231);
+            labelCalibration90.Location = new Point(17, 257);
             labelCalibration90.Name = "labelCalibration90";
             labelCalibration90.Size = new Size(106, 15);
             labelCalibration90.TabIndex = 32;
@@ -396,7 +410,7 @@
             // 
             buttonCalibration90.FlatStyle = FlatStyle.Popup;
             buttonCalibration90.ForeColor = Color.White;
-            buttonCalibration90.Location = new Point(154, 226);
+            buttonCalibration90.Location = new Point(154, 252);
             buttonCalibration90.Name = "buttonCalibration90";
             buttonCalibration90.Size = new Size(143, 23);
             buttonCalibration90.TabIndex = 33;
@@ -408,7 +422,7 @@
             // 
             buttonClearCalibration90.FlatStyle = FlatStyle.Popup;
             buttonClearCalibration90.ForeColor = Color.White;
-            buttonClearCalibration90.Location = new Point(300, 226);
+            buttonClearCalibration90.Location = new Point(300, 252);
             buttonClearCalibration90.Name = "buttonClearCalibration90";
             buttonClearCalibration90.Size = new Size(24, 23);
             buttonClearCalibration90.TabIndex = 35;
@@ -420,7 +434,7 @@
             // 
             labelSplCalibration.AutoSize = true;
             labelSplCalibration.ForeColor = SystemColors.ControlLight;
-            labelSplCalibration.Location = new Point(17, 256);
+            labelSplCalibration.Location = new Point(17, 282);
             labelSplCalibration.Name = "labelSplCalibration";
             labelSplCalibration.Size = new Size(85, 15);
             labelSplCalibration.TabIndex = 36;
@@ -430,7 +444,7 @@
             // 
             buttonSplCalibration.FlatStyle = FlatStyle.Popup;
             buttonSplCalibration.ForeColor = Color.White;
-            buttonSplCalibration.Location = new Point(154, 251);
+            buttonSplCalibration.Location = new Point(154, 277);
             buttonSplCalibration.Name = "buttonSplCalibration";
             buttonSplCalibration.Size = new Size(143, 23);
             buttonSplCalibration.TabIndex = 37;
@@ -442,7 +456,7 @@
             // 
             buttonClearSplCalibration.FlatStyle = FlatStyle.Popup;
             buttonClearSplCalibration.ForeColor = Color.White;
-            buttonClearSplCalibration.Location = new Point(300, 251);
+            buttonClearSplCalibration.Location = new Point(300, 277);
             buttonClearSplCalibration.Name = "buttonClearSplCalibration";
             buttonClearSplCalibration.Size = new Size(24, 23);
             buttonClearSplCalibration.TabIndex = 38;
@@ -471,7 +485,7 @@
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(334, 652);
+            ClientSize = new Size(334, 678);
             Controls.Add(audioBackendPanel);
             Controls.Add(buttonClearSplCalibration);
             Controls.Add(buttonSplCalibration);
@@ -524,6 +538,7 @@
         private DarkNumericUpDown numericUpDownHighFrequency;
         private Label labelHighFrequency;
         private Label labelActualRangeCaption;
+        private Button buttonSaveSweepFile;
         private Label labelAudioBackend;
         private DarkComboBox comboBoxAudioBackend;
         private Label labelAverageRunCount;

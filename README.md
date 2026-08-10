@@ -850,6 +850,19 @@ begin with. Absolute [dB SPL](#sound-pressure-level-db-spl) readings follow the
 real acoustic output as they always have: it is genuinely 6 dB lower until you
 turn the playback level up — which is now the headroom you have to spend.
 
+**Save sweep as WAV...** writes the sweep the panel currently describes to a
+24-bit WAV file: the same band, pace, sample rate and playback channel a
+measurement would play, at the same −6 dBFS. The playback channel is carried into
+the file's layout, so `Mono` writes one channel while `Left` and `Right` write a
+stereo file with the other side silent. A second of silence is written before and
+after the sweep — a file whose first sample is already the excitation loses its
+opening to whatever the playback chain does when audio begins, such as a
+Bluetooth link or a class-D amplifier coming out of mute, and the trailing second
+gives the room its decay before the file ends. Its purpose is measuring from a source
+that is not this computer — a phone, a head unit, a USB stick in the car — and
+the recording that comes back can be analyzed with
+[Load](#saving-and-loading-impulse-responses).
+
 Measurement options apply as you edit them — the band, the pace, the playback
 channel, the averaging — and touch the audio session only when its identity
 actually changed. The audio backend, the format the device is opened with and
@@ -1409,6 +1422,44 @@ current audio-device configuration in Record Settings. All analyses derived from
 an impulse response — frequency response, phase, group delay, waterfall, Burst
 Decay, autocorrelation, and loopback-based Time Alignment — can then be generated
 without repeating the measurement.
+
+### Importing a sweep recorded elsewhere
+
+**Load** also accepts a `.wav` file — a recording of the sweep made outside
+Resonalyze, by a phone, a handheld recorder or a DAW, while the excitation was
+played from something else (typically the file written by
+[Save sweep as WAV...](#sweep-band-and-duration)). The recording is deconvolved
+with the inverse filter of the sweep the **current settings** describe, and the
+transfer function is estimated against that same sweep standing in for the
+loopback reference — the excitation is known exactly, because it is the signal
+that was played. If the file has more than one channel, the loudest one by RMS is
+measured and Resonalyze reports which one that was.
+
+The recording may be far longer than the sweep — starting the recorder, walking
+to the listening position, playing the sweep and walking back is the normal way
+to make one. Resonalyze locates the excitation and analyzes it together with
+0.5 s before and 2 s of decay after, so the silence never reaches the analysis:
+on a 92-second take of a 2.15-second sweep that is 4.65 s of audio instead of the
+whole file, which cuts the work from 3.4 s and 1.9 GB of transient spectra to
+0.18 s and 100 MB, and the transfer IR the measurement then carries (and writes
+into a saved `.json`) from 268 MB to 8 MB. If a take holds the sweep more than
+once, the first one is measured.
+
+The settings must match the sweep the recording was made from. A file at another
+sample rate is refused outright, a take whose sweep runs past the end of the
+recording is refused as cut short, and a recording that does not deconvolve into
+a credible impulse response is refused with what it measured instead of
+publishing the garbage — in every case the measurement already on screen is left
+untouched.
+
+Two things such a measurement cannot carry. There is no absolute time: where the
+arrival lands is decided by when the recorder was started, not by the acoustic
+path, so delay read-outs mean something only within one file and two imported
+recordings cannot be time-aligned against each other. And there is no
+[dB SPL](#sound-pressure-level-db-spl) anchor, because the gain of the recording
+chain is unknown. Everything else — frequency response, phase, group delay,
+waterfall, Burst Decay, the EQ wizard — works as it does for a measured sweep,
+and the result can be saved as a normal `.json` impulse response.
 
 Saving and loading are disabled while a measurement is running. The current file
 format identifier is `resonalyze-impulse-response`, version `7`. Files are meant

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 using static System.Math;
 
@@ -447,6 +447,168 @@ namespace Resonalyze
             Publish(ImpulseResponseChanged);
         }
 
+        /// <summary>
+        /// Publishes a sweep recorded OUTSIDE Resonalyze as this measurement's
+        /// result. The sweep <paramref name="configuration"/> describes — the same
+        /// signal the options panel exports as a WAV file — stands in for the
+        /// loopback reference: the excitation is known exactly, because the
+        /// recording was made by playing that very signal. From there the analysis
+        /// is the live one: deconvolution against the inverse filter, and the H1
+        /// transfer estimate gated to the sweep's excitation band.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The configuration is applied only once the recording has been analyzed
+        /// and accepted, so a rejected import leaves the measurement currently on
+        /// screen alone — the same promise loading a file makes.
+        /// </para>
+        /// <para>
+        /// Only the excitation and its decay are analyzed, not the whole file: a
+        /// recorder is usually started well before the sweep is played and stopped
+        /// well after, and every FFT here is sized by what it is handed. When a
+        /// take holds the sweep more than once, the first one is the one measured.
+        /// </para>
+        /// <para>
+        /// Such a result carries no absolute time. Where the arrival lands is
+        /// decided by when the recorder was started, not by the acoustic path, so
+        /// the delay read-outs mean something only within one file — two imported
+        /// recordings cannot be time-aligned against each other the way two
+        /// loopback-referenced runs can. It carries no SPL anchor either: the gain
+        /// of the recording chain is unknown, and <see cref="Init"/> clears
+        /// <see cref="MeasurementSplCalibration"/> for this result.
+        /// </para>
+        /// </remarks>
+        public void ImportRecordedSweep(
+            SweepMeasurementConfiguration configuration,
+            float[] recordedSamples,
+            int sampleRate)
+        {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(configuration);
+            ArgumentNullException.ThrowIfNull(recordedSamples);
+            if (InProgress)
+            {
+                throw new InvalidOperationException(
+                    "Cannot import a recording while a measurement is running.");
+            }
+
+            SweepSignalConfiguration signal = configuration.Signal;
+            if (sampleRate != signal.SampleRate)
+            {
+                throw new InvalidOperationException(
+                    $"The recording is {sampleRate} Hz while the measurement is configured " +
+                    $"for {signal.SampleRate} Hz. The sweep it would be deconvolved against " +
+                    "is generated at the configured rate, so the two do not describe the " +
+                    "same signal. Set the sample rate in Measurement Options to match the file.");
+            }
+
+            // Generated here rather than read off this.Sweep: the configuration is
+            // not applied until the analysis has succeeded, so at this point the
+            // measurement still holds the previous result and its sweep.
+            using var sweep = new ExponentialSineSweep();
+            sweep.FillData(
+                signal.LowFrequencyHz,
+                signal.HighFrequencyHz,
+                signal.RequestedDurationSeconds,
+                signal.Bits,
+                signal.SampleRate);
+            if (recordedSamples.Length < sweep.SweepSamples)
+            {
+                throw new InvalidOperationException(FormattableString.Invariant(
+                    $"The recording is {recordedSamples.Length / (double)sampleRate:0.00} s long while the sweep is {sweep.ComputedDuration:0.00} s, so it cannot hold the whole excitation. Check the band and the per-octave time in Measurement Options against the sweep this file was recorded from."));
+            }
+
+            // Every FFT below is sized by the recording, so the silence a recorder
+            // leaves around the excitation would decide the cost of the analysis
+            // and the length of the transfer IR it produces. Analyze the excitation
+            // and its decay instead.
+            RecordedSweepSpan span = RecordedSweepWindow.Locate(
+                recordedSamples,
+                sampleRate,
+                sweep.SweepSamples);
+            if (span.Length < sweep.SweepSamples)
+            {
+                throw new InvalidOperationException(FormattableString.Invariant(
+                    $"The excitation starts {span.Length / (double)sampleRate:0.00} s before the end of the recording, which is less than the sweep's own {sweep.ComputedDuration:0.00} s. The take is cut short — record again with the whole sweep inside it."));
+            }
+            float[] analyzed = span.Start == 0 && span.Length == recordedSamples.Length
+                ? recordedSamples
+                : recordedSamples[span.Start..(span.Start + span.Length)];
+
+            SweepDeconvolutionResult deconvolved = SweepAnalysis.DeconvolveWithInverseFilter(
+                analyzed,
+                sweep.InverseFilter,
+                2.0 / sweep.InverseFilter.Length);
+
+            // The reference is the sweep laid at the START of a buffer as long as
+            // the analyzed window. The estimator truncates both signals to the
+            // shorter one, so handing it the bare sweep would cut the recording
+            // down to the sweep's own length and throw away everything the room did
+            // after the excitation stopped.
+            var reference = new double[analyzed.Length];
+            for (int i = 0; i < sweep.SweepSamples; i++)
+            {
+                reference[i] = sweep.SweepData[i];
+            }
+            TransferEstimateResult transfer = TransferFunction.ComputeAveragedRelativeIr(
+                [new TransferFunctionFrame(
+                    reference,
+                    Array.ConvertAll(analyzed, sample => (double)sample))],
+                BuildExcitationGate(sweep));
+            Complex[] transferImpulseResponse = Array.ConvertAll(
+                transfer.ImpulseResponse,
+                sample => new Complex(sample, 0.0));
+            RequireCredibleImportedTransferIr(transferImpulseResponse, signal.SampleRate);
+
+            Init(configuration);
+            // No loopback entry: the reference is a generated signal, so metering it
+            // would report an input level for an input that recorded nothing.
+            ApplyAverageResult(new SweepAverageResult(
+                Array.ConvertAll(
+                    deconvolved.ImpulseResponse,
+                    sample => new Complex(sample, 0.0)),
+                deconvolved.PeakIndex,
+                transferImpulseResponse,
+                transfer.PeakIndex,
+                transfer.Coherence,
+                analyzed,
+                LoopbackRecordedSamples: null,
+                CreateFinalLevelSnapshot([analyzed], 0, loopbackIndex: null),
+                AcceptedRunCount: 1,
+                MicrophoneDistortion: null,
+                LoopbackDistortion: null,
+                LoopbackWorstRun: null));
+        }
+
+        // The imported counterpart of RequireCredibleTransferIr: the same shape
+        // gate, but none of its diagnosis applies — nothing was wired, levelled or
+        // recorded through Resonalyze here. What a shapeless transfer IR means for
+        // an import is that the file is not a recording of THIS sweep.
+        private static void RequireCredibleImportedTransferIr(
+            Complex[] transfer,
+            int sampleRate)
+        {
+            TransferIrCompactness? compactness =
+                TransferIrDiagnostics.MeasureCompactness(transfer, sampleRate);
+            if (compactness is { } measured &&
+                double.IsFinite(measured.InsideOutsideDb) &&
+                measured.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb)
+            {
+                return;
+            }
+
+            string shapeDiagnosis =
+                compactness is { } value && double.IsFinite(value.InsideOutsideDb)
+                    ? FormattableString.Invariant(
+                        $"the energy around its peak is only {value.InsideOutsideDb:0.0} dB above the rest of the recording (a real measurement reads 29-49 dB)")
+                    : "its shape could not be measured at all (the recording is degenerate or carries non-finite samples)";
+            throw new InvalidOperationException(
+                "The recording did not deconvolve into a credible impulse response: " +
+                $"{shapeDiagnosis}. It is most likely not a recording of this sweep — check " +
+                "that the band, the per-octave time and the sample rate in Measurement " +
+                "Options are the ones the sweep was generated with.");
+        }
+
         internal void RestoreLevelSnapshot(InputLevelMeterSnapshot snapshot)
         {
             ThrowIfDisposed();
@@ -628,9 +790,12 @@ namespace Resonalyze
         // excited; the achieved band (sweep.*) additionally covers the fade
         // guard bands. Clamps keep the gate ordered even when a short sweep
         // could not open a guard band on some side.
-        private ExcitationBandGate BuildExcitationGate(ExponentialSineSweep sweep)
+        // Read off the sweep, not off this.SampleRate: the two are the same for a
+        // live run, but an import builds its gate before the configuration behind
+        // the sweep has been applied.
+        private static ExcitationBandGate BuildExcitationGate(ExponentialSineSweep sweep)
         {
-            double nyquist = SampleRate / 2.0;
+            double nyquist = sweep.SampleRate / 2.0;
             if (!(nyquist > 0))
             {
                 return ExcitationBandGate.FullBand;

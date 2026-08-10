@@ -878,20 +878,18 @@ namespace Resonalyze
                 sweep.InverseFilter,
                 2.0 / sweep.InverseFilter.Length);
 
-            // The reference is the sweep laid at the START of a buffer as long as
+            // The reference is the sweep laid at the START of a stretch as long as
             // the analyzed window. The estimator truncates both signals to the
             // shorter one, so handing it the bare sweep would cut the recording
             // down to the sweep's own length and throw away everything the room did
-            // after the excitation stopped.
-            var reference = new double[analyzed.Length];
-            for (int i = 0; i < sweep.SweepSamples; i++)
-            {
-                reference[i] = sweep.SweepData[i];
-            }
+            // after the excitation stopped. Both sides are views rather than
+            // buffers: the estimator fills its own FFT arrays from them, and a
+            // materialized copy of each would be a second full-length signal beside
+            // spectra that already dominate the import.
             TransferEstimateResult transfer = TransferFunction.ComputeAveragedRelativeIr(
                 [new TransferFunctionFrame(
-                    reference,
-                    Array.ConvertAll(analyzed, sample => (double)sample))],
+                    new PaddedExcitationView(sweep.SweepData, analyzed.Length),
+                    new RecordedSamplesView(analyzed))],
                 BuildExcitationGate(sweep));
 
             return new ImportedSweepAnalysis(
@@ -1613,13 +1611,12 @@ namespace Resonalyze
                 loopbackIndex.Value,
                     $"{AudioBackend} loopback transfer");
 
-            double[] loopback = Array.ConvertAll(
-                sampleChannels[loopbackIndex.Value],
-                sample => (double)sample);
-            double[] microphone = Array.ConvertAll(
-                sampleChannels[microphoneIndex],
-                sample => (double)sample);
-            frame = new TransferFunctionFrame(loopback, microphone);
+            // Views, not copies: the estimator converts into its FFT buffers as it
+            // fills them, so a double[] per channel would be two more full-length
+            // copies of the capture for nothing.
+            frame = new TransferFunctionFrame(
+                new RecordedSamplesView(sampleChannels[loopbackIndex.Value]),
+                new RecordedSamplesView(sampleChannels[microphoneIndex]));
             return true;
         }
 

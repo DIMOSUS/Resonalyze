@@ -194,7 +194,7 @@ public partial class Form1
     // it enters the history the way a finished sweep does.
     private async Task ImportRecordedSweepAsync(string path)
     {
-        RecordedSweepChannel recording;
+        AudioFileContent recording;
         // Claimed BEFORE the decode, which on a long recording is seconds of its
         // own: the record button gates on the measurement being busy, and without
         // the claim a run started during the decode would finish and then be
@@ -205,12 +205,14 @@ public partial class Form1
             recording = await Task.Run(() => RecordedSweepFile.Load(path));
             // The current settings decide the excitation, exactly as they would for
             // the next sweep. They are handed over rather than applied first: a
-            // rejected recording must leave the measurement on screen alone.
+            // rejected recording must leave the measurement on screen alone. Every
+            // channel goes over: which one holds the measurement is decided by
+            // matching them against the sweep, which is the measurement's job.
             SweepMeasurementConfiguration configuration =
                 measurementSettings.Measurement.BuildConfiguration();
             await Task.Run(() => expSweepMeasurement.ImportRecordedSweep(
                 configuration,
-                recording.Samples,
+                recording.Channels,
                 recording.SampleRate));
         }
 
@@ -227,7 +229,7 @@ public partial class Form1
     // measured, and whether it had to stretch the reference to match the
     // recording. Silent when there was nothing to decide — a mono file that
     // needed no correction says nothing at all.
-    private void NotifyImportDecisions(RecordedSweepChannel recording)
+    private void NotifyImportDecisions(AudioFileContent recording)
     {
         if (closingInProgress)
         {
@@ -237,8 +239,11 @@ public partial class Form1
         var notes = new List<string>();
         if (recording.ChannelCount > 1)
         {
+            int chosen = expSweepMeasurement.ImportedChannelIndex;
+            AudioChannelLevel level = RecordedLevelMetering.MeasureSamples(
+                recording.Channels[chosen]);
             notes.Add(FormattableString.Invariant(
-                $"The recording has {recording.ChannelCount} channels; the loudest one ({RecordedSweepFile.DescribeChannel(recording.ChannelIndex, recording.ChannelCount)}) was measured — {recording.RmsDbFs:0.0} dBFS RMS, peak {recording.PeakDbFs:0.0} dBFS."));
+                $"The recording has {recording.ChannelCount} channels; the one matching the sweep ({RecordedSweepFile.DescribeChannel(chosen, recording.ChannelCount)}) was measured — {level.RmsDbFs:0.0} dBFS RMS, peak {level.PeakDbFs:0.0} dBFS."));
         }
         if (expSweepMeasurement.ImportedTimeScalePpm is { } scalePpm)
         {

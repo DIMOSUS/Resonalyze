@@ -89,6 +89,28 @@ public sealed class RecordedSweepImportTests
         Assert.Equal(1, measurement.AcceptedAverageRunCount);
     }
 
+    // Which channel holds the measurement is a question about the sweep, not
+    // about loudness: a dead input is rarely silent, and hum or hiss on it can
+    // easily out-measure a quiet microphone that actually recorded the take.
+    [Fact]
+    public void ImportMeasuresTheChannelThatMatchesRatherThanTheLoudest()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        float[] sweepChannel = RecordSweep(measurement, 1_500, gain: 0.02f);
+        var humChannel = new float[sweepChannel.Length];
+        for (int i = 0; i < humChannel.Length; i++)
+        {
+            humChannel[i] = (float)(0.5 * Math.Sin(2.0 * Math.PI * 50.0 * i / SampleRate));
+        }
+
+        measurement.ImportRecordedSweep(
+            Configuration(), [humChannel, sweepChannel], SampleRate);
+
+        Assert.Equal(1, measurement.ImportedChannelIndex);
+        Assert.True(measurement.HasImpulseResponse);
+        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
+    }
+
     // The point of the transfer estimate: what comes back is the PATH the sweep
     // travelled, not just where it started. A recording of the sweep through a
     // direct arrival plus one reflection must come back as those two arrivals,

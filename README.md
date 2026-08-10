@@ -1468,19 +1468,30 @@ credible impulse response is refused with what it measured instead of publishing
 the garbage — in every case the measurement already on screen is left untouched.
 
 Two things such a measurement cannot carry. There is no absolute time: where the
-arrival lands is decided by when the recorder was started, not by the acoustic
+arrival landed was decided by when the recorder was started, not by the acoustic
 path, so delays mean something only within one file — a reflection 8 ms after the
 direct sound really is 8 ms — and never between two of them. And there is no
 [dB SPL](#sound-pressure-level-db-spl) anchor, because the gain of the recording
 chain is unknown; for the same reason the vertical position of its dBr curve is
 the recorder's gain setting rather than anything about the system.
 
-The first of those is recorded in the measurement and travels with it into the
-saved `.json` and the history, so the modes that compare one arrival against
-another refuse it by name instead of showing a number that does not exist:
-[Time Alignment](#time-alignment) declines it as a source and as a Compare
-partner, and [Virtual DSP](#virtual-dsp) will not sum it
-with another measurement. Everything that lives inside a single measurement —
+Because the origin means nothing, it is chosen rather than inherited: the whole
+impulse response is shifted so the arrival lands at 10 ms. The shift is rigid, so
+every delay inside the measurement survives it — a reflection 8 ms behind the
+direct sound stays 8 ms behind — while the read-outs become what they always
+were, time relative to this measurement's own arrival. Left as recorded they were
+absolute nonsense: measured group delay is referenced to the start of the impulse
+response, and the two field takes above read 730 ms and 1220 ms of it on an axis
+that spans tens.
+
+That the timing is local is recorded in the measurement and travels with it into
+the saved `.json` and the history, so everything that compares one arrival
+against another refuses it by name instead of drawing a relationship nobody
+measured: [Time Alignment](#time-alignment) declines it as a source and as a
+Compare partner, [Virtual DSP](#virtual-dsp) will not sum it with another
+measurement, and in Phase, Group Delay and the impulse overlay the Compare curve
+is left out unless both measurements were referenced to their own captured
+loopback. Compare's magnitude curve is drawn as always. Everything that lives inside a single measurement —
 frequency response, phase, group delay, waterfall, Burst Decay, the EQ wizard —
 works as it does for a measured sweep, including Compare's curve overlay, and the
 result saves as a normal `.json` impulse response.

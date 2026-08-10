@@ -20,6 +20,8 @@ namespace Resonalyze
         private Task<bool>? measurementTask;
         private TaskCompletionSource<bool>? averageConfirmation;
         private volatile bool inProgress;
+        // Whether inProgress is held by an outstanding Claim rather than by a run.
+        private bool claimed;
         private volatile bool waitingForAverageConfirmation;
         private bool disposed;
         // Results are published from the measurement worker and read by the UI
@@ -306,6 +308,54 @@ namespace Resonalyze
             }
         }
 
+        /// <summary>
+        /// Claims the measurement for an operation that reaches beyond one call —
+        /// decoding a file and then importing it — so everything that gates on
+        /// <see cref="InProgress"/> (the record button, the settings panel's Apply)
+        /// stays out for the whole of it. Disposing the claim releases it.
+        /// </summary>
+        /// <remarks>
+        /// Without this the claim could only be taken once the samples were in
+        /// hand, leaving the decode — seconds, on a long recording — as a window
+        /// in which a measurement could be started and then quietly replaced by
+        /// the import that was already under way.
+        /// </remarks>
+        public IDisposable Claim()
+        {
+            ThrowIfDisposed();
+            lock (stateSync)
+            {
+                if (inProgress)
+                {
+                    throw new InvalidOperationException(
+                        "The measurement is already busy.");
+                }
+                inProgress = true;
+                claimed = true;
+            }
+
+            return new MeasurementClaim(this);
+        }
+
+        private void ReleaseClaim()
+        {
+            lock (stateSync)
+            {
+                claimed = false;
+                inProgress = false;
+            }
+        }
+
+        private sealed class MeasurementClaim(ExpSweepMeasurement measurement) : IDisposable
+        {
+            private ExpSweepMeasurement? owner = measurement;
+
+            public void Dispose()
+            {
+                Interlocked.Exchange(ref owner, null)?.ReleaseClaim();
+            }
+        }
+
         public void ContinueAverageRun()
         {
             lock (stateSync)
@@ -532,14 +582,24 @@ namespace Resonalyze
             // click away and gates on exactly this flag. Without it, a click
             // landing mid-import re-Inits the measurement underneath the analysis
             // or has its fresh run overwritten by the import's result.
+            //
+            // A caller that already holds a Claim (the file import, which took one
+            // before it started decoding) keeps it: the busy state has to span the
+            // decode as well, and re-taking it here would refuse the very operation
+            // that owns it.
+            bool claimedHere = false;
             lock (stateSync)
             {
-                if (inProgress)
+                if (inProgress && !claimed)
                 {
                     throw new InvalidOperationException(
                         "Cannot import a recording while a measurement is running.");
                 }
-                inProgress = true;
+                if (!inProgress)
+                {
+                    inProgress = true;
+                    claimedHere = true;
+                }
             }
             try
             {
@@ -547,9 +607,12 @@ namespace Resonalyze
             }
             finally
             {
-                lock (stateSync)
+                if (claimedHere)
                 {
-                    inProgress = false;
+                    lock (stateSync)
+                    {
+                        inProgress = false;
+                    }
                 }
             }
         }
@@ -844,6 +907,28 @@ namespace Resonalyze
                 transfer.Coherence);
         }
 
+        /// <summary>
+        /// Where an imported measurement's arrival is placed on the time axis.
+        /// <para>
+        /// Its raw position is the recorder's start offset — 730 ms on one field
+        /// take, 1220 ms on another — and every absolute read-out inherits that:
+        /// measured group delay is referenced to the IR start, so those takes read
+        /// 730 ms and 1220 ms of group delay on an axis that spans tens. Since the
+        /// origin means nothing, it is chosen rather than inherited, and the whole
+        /// IR is rotated to put the arrival here. Delays WITHIN the measurement are
+        /// untouched — a rigid shift moves every reflection with the direct sound —
+        /// while the reading becomes what it always was: time relative to this
+        /// measurement's own arrival.
+        /// </para>
+        /// <para>
+        /// Not zero: the honest start of an arrival sits a little before its peak
+        /// (a low-frequency front can build for milliseconds), and at zero that
+        /// front would wrap to the far end of the buffer, where the automatic gate
+        /// would read it as a delay of nearly the whole record.
+        /// </para>
+        /// </summary>
+        private const double ImportedArrivalSeconds = 0.010;
+
         private void PublishImportedSweep(
             SweepMeasurementConfiguration configuration,
             ImportedSweepAnalysis analysis,
@@ -853,13 +938,18 @@ namespace Resonalyze
             // Init set the measured meaning; this result has the imported one.
             TimingReference = TimingReference.RecordedSweep;
             ImportedTimeScalePpm = timeScalePpm == 0 ? null : timeScalePpm;
+            int arrival = Math.Min(
+                (int)Math.Round(ImportedArrivalSeconds * SampleRate),
+                analysis.TransferImpulseResponse.Length - 1);
+            Complex[] transfer = RotateTo(
+                analysis.TransferImpulseResponse, analysis.TransferPeakIndex, arrival);
             // No loopback entry: the reference is a generated signal, so metering it
             // would report an input level for an input that recorded nothing.
             ApplyAverageResult(new SweepAverageResult(
                 analysis.SweepImpulseResponse,
                 analysis.SweepPeakIndex,
-                analysis.TransferImpulseResponse,
-                analysis.TransferPeakIndex,
+                transfer,
+                arrival,
                 analysis.TransferCoherence,
                 analysis.Analyzed,
                 LoopbackRecordedSamples: null,
@@ -868,6 +958,28 @@ namespace Resonalyze
                 MicrophoneDistortion: null,
                 LoopbackDistortion: null,
                 LoopbackWorstRun: null));
+        }
+
+        // A circular rotation that carries `from` to `to`. Circular because the
+        // transfer IR already is: its acausal pre-ringing lives at the far end of
+        // the buffer, and a rotation that dropped samples off one edge would cut
+        // exactly that.
+        private static Complex[] RotateTo(Complex[] impulseResponse, int from, int to)
+        {
+            int shift = from - to;
+            if (shift == 0)
+            {
+                return impulseResponse;
+            }
+
+            int length = impulseResponse.Length;
+            var rotated = new Complex[length];
+            for (int i = 0; i < length; i++)
+            {
+                rotated[i] = impulseResponse[((i + shift) % length + length) % length];
+            }
+
+            return rotated;
         }
 
         // The imported counterpart of RequireCredibleTransferIr: the same shape
@@ -886,6 +998,16 @@ namespace Resonalyze
             {
                 return new InvalidOperationException(FormattableString.Invariant(
                     $"The recording did not deconvolve into an impulse response whose shape could be measured at all: it is degenerate, or carries non-finite samples. The sweep it was analyzed against runs {sweep.ComputedDuration:0.00} s at {sampleRate} Hz."));
+            }
+
+            // WHICH gate failed decides what to say. Quoting the compactness figure
+            // for a sharpness failure is worse than useless: it reads "35 dB, where
+            // a real measurement reads 29-49" — a number inside the range it is
+            // being blamed for missing.
+            if (bestCompactnessDb >= TransferIrDiagnostics.MinimumCompactnessDb)
+            {
+                return new InvalidOperationException(FormattableString.Invariant(
+                    $"The recording deconvolves into a smeared arrival rather than an impulse response: its peak stands only {bestSharpnessDb:0.0} dB above the {TransferIrDiagnostics.ArrivalWindowSeconds * 1000:0} ms around it, where a real measurement reads 11-16 dB. The sweep in the file is not the one the settings describe — check the band and the per-octave time in Measurement Options against the sweep it was recorded from."));
             }
 
             return new InvalidOperationException(FormattableString.Invariant(

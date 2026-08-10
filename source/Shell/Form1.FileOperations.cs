@@ -194,16 +194,26 @@ public partial class Form1
     // it enters the history the way a finished sweep does.
     private async Task ImportRecordedSweepAsync(string path)
     {
-        RecordedSweepChannel recording = await Task.Run(() => RecordedSweepFile.Load(path));
-        // The current settings decide the excitation, exactly as they would for the
-        // next sweep. They are handed over rather than applied first: a rejected
-        // recording must leave the measurement on screen alone.
-        SweepMeasurementConfiguration configuration =
-            measurementSettings.Measurement.BuildConfiguration();
-        await Task.Run(() => expSweepMeasurement.ImportRecordedSweep(
-            configuration,
-            recording.Samples,
-            recording.SampleRate));
+        RecordedSweepChannel recording;
+        // Claimed BEFORE the decode, which on a long recording is seconds of its
+        // own: the record button gates on the measurement being busy, and without
+        // the claim a run started during the decode would finish and then be
+        // replaced by the import landing on top of it. Released before the redraw
+        // below — a busy measurement draws no curves.
+        using (expSweepMeasurement.Claim())
+        {
+            recording = await Task.Run(() => RecordedSweepFile.Load(path));
+            // The current settings decide the excitation, exactly as they would for
+            // the next sweep. They are handed over rather than applied first: a
+            // rejected recording must leave the measurement on screen alone.
+            SweepMeasurementConfiguration configuration =
+                measurementSettings.Measurement.BuildConfiguration();
+            await Task.Run(() => expSweepMeasurement.ImportRecordedSweep(
+                configuration,
+                recording.Samples,
+                recording.SampleRate));
+        }
+
         ApplyLoadedImpulseResponseState(path);
         sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
         // An import carries no SPL anchor — the recording chain's gain is unknown

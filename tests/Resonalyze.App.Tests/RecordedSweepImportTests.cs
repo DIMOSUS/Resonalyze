@@ -13,6 +13,10 @@ public sealed class RecordedSweepImportTests
 {
     private const int SampleRate = 48_000;
 
+    // Where an import puts its arrival: 10 ms, by convention, because the
+    // recorder's start offset is not a time anybody measured.
+    private const int Arrival = SampleRate / 100;
+
     private static SweepMeasurementConfiguration Configuration() =>
         new(new SweepSignalConfiguration(
                 200,
@@ -65,10 +69,14 @@ public sealed class RecordedSweepImportTests
         return noise;
     }
 
-    [Fact]
-    public void ImportProducesATransferIrAtTheRecordedArrival()
+    // Wherever the excitation sat in the file, the published arrival lands on the
+    // convention: the recorder's start offset is not a time anybody measured, and
+    // leaving it in place put 730 ms of "group delay" on an axis that spans tens.
+    [Theory]
+    [InlineData(2_400)]
+    [InlineData(40_000)]
+    public void ImportPlacesTheArrivalAtItsOwnReference(int startOffset)
     {
-        const int startOffset = 2_400;
         using ExpSweepMeasurement measurement = CreateMeasurement();
         float[] recording = RecordSweep(measurement, startOffset);
 
@@ -77,9 +85,7 @@ public sealed class RecordedSweepImportTests
         Assert.True(measurement.HasImpulseResponse);
         Assert.Equal(SweepMeasurementMode.LoopbackTransfer, measurement.MeasurementMode);
         Assert.NotNull(measurement.Transfer);
-        // The whole path is a pure delay, so the transfer IR is one arrival at
-        // the offset the excitation entered the recording at.
-        Assert.InRange(measurement.Transfer!.PeakIndex, startOffset - 2, startOffset + 2);
+        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
         Assert.Equal(1, measurement.AcceptedAverageRunCount);
     }
 
@@ -110,7 +116,9 @@ public sealed class RecordedSweepImportTests
 
         Complex[] transfer = measurement.TransferImpulseResponse!;
         int peak = measurement.Transfer!.PeakIndex;
-        Assert.InRange(peak, startOffset - 2, startOffset + 2);
+        // The shift that places the arrival is rigid, so the reflection is still
+        // exactly its own delay behind the direct sound.
+        Assert.Equal(Arrival, peak);
         double directLevel = Math.Abs(transfer[peak].Real);
         double reflectionLevel = Math.Abs(transfer[peak + reflectionDelay].Real);
         Assert.Equal(reflectionGain, reflectionLevel / directLevel, tolerance: 0.02);
@@ -136,7 +144,7 @@ public sealed class RecordedSweepImportTests
             measurement.MicrophoneRecordedSamples!.Length <= sweepSamples + (int)(2.5 * SampleRate),
             $"analyzed {measurement.MicrophoneRecordedSamples.Length} samples of {recording.Length}");
         // The excitation sits behind the kept lead-in, wherever it was in the file.
-        Assert.InRange(measurement.Transfer!.PeakIndex, SampleRate / 2 - 480, SampleRate / 2 + 480);
+        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
     }
 
     // Ranking candidate stretches by level cannot be certain: a burst of speech or
@@ -158,7 +166,35 @@ public sealed class RecordedSweepImportTests
         measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
 
         Assert.True(measurement.HasImpulseResponse);
-        Assert.InRange(measurement.Transfer!.PeakIndex, SampleRate / 2 - 480, SampleRate / 2 + 480);
+        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
+    }
+
+    // The busy state has to span the DECODE too, which happens before any samples
+    // exist to import: a claim taken first keeps the record button out for the
+    // whole operation, and the import must run inside it rather than refuse it.
+    [Fact]
+    public void AClaimCoversTheDecodeAndTheImportTogether()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        float[] recording = RecordSweep(measurement, 900);
+
+        using (measurement.Claim())
+        {
+            Assert.True(measurement.InProgress);
+            // Nothing else may start a measurement while the claim is held.
+            Assert.Throws<InvalidOperationException>(() => measurement.Init(Configuration()));
+            // The import is what the claim was taken for, so it proceeds.
+            measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
+            Assert.True(measurement.HasImpulseResponse);
+            Assert.True(measurement.InProgress);
+        }
+
+        Assert.False(measurement.InProgress);
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            using IDisposable first = measurement.Claim();
+            using IDisposable second = measurement.Claim();
+        });
     }
 
     // Every other way to reconfigure the measurement gates on InProgress, so the
@@ -250,7 +286,7 @@ public sealed class RecordedSweepImportTests
         measurement.ImportRecordedSweep(Configuration(), exported, SampleRate);
 
         Assert.True(measurement.HasImpulseResponse);
-        Assert.InRange(measurement.Transfer!.PeakIndex, 0, 2);
+        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
     }
 
     [Fact]
@@ -313,7 +349,7 @@ public sealed class RecordedSweepImportTests
             Assert.Equal(SweepMeasurementMode.LoopbackTransfer, reloaded.MeasurementMode);
             Assert.Equal(TimingReference.RecordedSweep, reloaded.TimingReference);
             Assert.Equal(SampleRate, reloaded.SampleRate);
-            Assert.InRange(reloaded.TransferPeakIndex!.Value, startOffset - 2, startOffset + 2);
+            Assert.Equal(Arrival, reloaded.TransferPeakIndex!.Value);
 
             using var restored = new ExpSweepMeasurement(new FakeAudioSessionFactory());
             (double lowHz, double highHz) = reloaded.ResolveSweepBand();

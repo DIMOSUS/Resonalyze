@@ -61,7 +61,9 @@ public sealed class RecordedSweepDetectorTests : IDisposable
         Assert.Equal(start, matches[0].Start);
     }
 
-    // Two attempts in one take: both are reported, and the better one leads.
+    // Two attempts in one take: both are reported. Neither is the worse match for
+    // being quieter — quality is a correlation, so halving a take's level halves
+    // the numerator and the denominator alike.
     [Fact]
     public void ReportsEveryTakeInTheRecording()
     {
@@ -76,9 +78,33 @@ public sealed class RecordedSweepDetectorTests : IDisposable
             RecordedSweepDetector.FindSweeps(samples, Excitation, 2);
 
         Assert.Equal(2, matches.Count);
+        Assert.Contains(matches, match => match.Start == SampleRate);
+        Assert.Contains(matches, match => match.Start == SampleRate + second);
+        Assert.All(matches, match => Assert.Equal(1.0, match.Quality, tolerance: 0.01));
+    }
+
+    // What DOES separate them is how well each one matches. The take buried in
+    // noise is the weaker match and has to rank below the clean one, because the
+    // caller analyzes them in that order.
+    [Fact]
+    public void RanksTheCleanerTakeFirst()
+    {
+        int second = Excitation.Length + 3 * SampleRate;
+        float[] samples = Take(SampleRate, second + SampleRate);
+        var random = new Random(11);
+        for (int i = 0; i < Excitation.Length; i++)
+        {
+            samples[SampleRate + second + i] +=
+                Excitation[i] * 0.5f + (float)((random.NextDouble() - 0.5) * 0.8);
+        }
+
+        IReadOnlyList<SweepMatch> matches =
+            RecordedSweepDetector.FindSweeps(samples, Excitation, 2);
+
         Assert.Equal(SampleRate, matches[0].Start);
-        Assert.Equal(SampleRate + second, matches[1].Start);
-        Assert.True(matches[0].Quality > matches[1].Quality);
+        Assert.True(
+            matches[0].Quality > matches[1].Quality,
+            $"clean {matches[0].Quality:0.000} against noisy {matches[1].Quality:0.000}");
     }
 
     // A take that stopped mid-sweep: its true start is only among the placements

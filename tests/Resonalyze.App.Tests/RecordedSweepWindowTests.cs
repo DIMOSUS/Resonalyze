@@ -67,6 +67,33 @@ public sealed class RecordedSweepWindowTests : IDisposable
         Assert.True(span.ExcitationLength < SweepSamples);
     }
 
+    // A short take can hold a complete sweep and the louder beginning of a second
+    // attempt that the file then cut off. Answering with only the strongest match
+    // would refuse the file over the one that was cut short, so every match is
+    // offered and the caller can fall through to the complete one.
+    [Fact]
+    public void AShortRecordingOffersEveryTakeItHolds()
+    {
+        // The second attempt starts a quarter of a second after the first ends and
+        // keeps most of the sweep — enough of it to be a candidate at all — and it
+        // is the louder of the two.
+        int second = SweepSamples + SampleRate / 4;
+        float[] samples = Recording(0, 2 * SampleRate, sweepGain: 0.2f, noise: 0.0005f);
+        for (int i = 0; i < samples.Length - second; i++)
+        {
+            samples[second + i] += Sweep[i];
+        }
+
+        IReadOnlyList<RecordedSweepSpan> spans = Locate(samples);
+
+        Assert.All(spans, span => Assert.Equal(0, span.Start));
+        Assert.Contains(spans, span => span.ExcitationStart == 0);
+        Assert.Contains(spans, span => span.ExcitationStart == second);
+        // And the complete one is the usable candidate.
+        Assert.True(spans.First(span => span.ExcitationStart == 0).ExcitationLength >= SweepSamples);
+        Assert.True(spans.First(span => span.ExcitationStart == second).ExcitationLength < SweepSamples);
+    }
+
     [Fact]
     public void ShortRecordingsAreAnalyzedWhole()
     {

@@ -48,6 +48,11 @@ internal static class RecordedSweepDetector
 
     private const int MaximumDecimation = 32;
 
+    // The least a search chunk may be. Large enough that the transform inside it
+    // is efficient, small enough that what the search holds stays a few megabytes
+    // whatever the recording and the sweep turn out to be.
+    private const int MinimumSearchChunk = 1 << 18;
+
     // How far the full-rate refinement looks either side of the decimated answer:
     // two decimated samples, which is the most the coarse peak can be out by.
     private const int RefinementSteps = 2;
@@ -73,76 +78,117 @@ internal static class RecordedSweepDetector
         int decimation = ChooseDecimation(samples.Length, sweep.Length);
         float[] coarseSamples = Decimate(samples, decimation);
         float[] coarseSweep = Decimate(sweep, decimation);
+        int kernel = coarseSweep.Length;
 
-        // Correlation is convolution with the kernel reversed, and the app's
-        // overlap-add convolution already does the long-signal case in bounded
-        // blocks — the whole point of not transforming a whole recording in one
-        // piece.
-        var reversed = new double[coarseSweep.Length];
-        for (int i = 0; i < coarseSweep.Length; i++)
+        // Correlation is convolution with the kernel reversed.
+        var reversed = new double[kernel];
+        for (int i = 0; i < kernel; i++)
         {
-            reversed[i] = coarseSweep[coarseSweep.Length - 1 - i];
+            reversed[i] = coarseSweep[kernel - 1 - i];
         }
 
-        float[] correlation = FastConvolution.Convolve(coarseSamples, reversed);
-        // Cumulative energies, so every placement can be normalized in constant
-        // time. Judging the match on SHAPE rather than on level is what lets a
-        // quiet channel that holds the sweep outrank a loud one full of hum.
-        double[] recordingEnergy = CumulativeEnergy(coarseSamples);
         double[] excitationEnergy = CumulativeEnergy(coarseSweep);
-
         // Placements where the sweep runs off the end of the recording are
         // included, down to half of it overlapping. A take that stopped mid-sweep
         // has its true start ONLY among those, and leaving them out does not make
         // the take usable — it makes the detector answer with the best of the
         // wrong positions, which then reads as a complete take.
-        int lastStart = coarseSamples.Length - coarseSweep.Length / 2;
-        int separation = Math.Max(1, (int)(coarseSweep.Length * SeparationShare));
-        var matches = new List<SweepMatch>();
-        var taken = new List<int>();
-        for (int match = 0; match < maximumMatches; match++)
-        {
-            int best = -1;
-            double bestQuality = 0;
-            for (int start = 0; start <= lastStart; start++)
-            {
-                if (taken.Exists(other => Math.Abs(other - start) < separation))
-                {
-                    continue;
-                }
+        int lastStart = coarseSamples.Length - kernel / 2;
+        int separation = Math.Max(1, (int)(kernel * SeparationShare));
 
-                int overlap = Math.Min(coarseSweep.Length, coarseSamples.Length - start);
-                double energy =
-                    excitationEnergy[overlap] *
-                    (recordingEnergy[start + overlap] - recordingEnergy[start]);
+        // Searched in chunks, so what the search holds is set by the chunk rather
+        // than by the recording. Decimation alone cannot promise that: a sweep can
+        // be short enough (5 ms per octave is 53 ms of signal) that thinning it
+        // any further would leave nothing to correlate, and then a ten-minute file
+        // would materialize a correlation and a cumulative energy over all of it.
+        int chunk = Math.Min(
+            coarseSamples.Length, Math.Max(kernel * 4, MinimumSearchChunk));
+        int advance = Math.Max(1, chunk - kernel + 1);
+        var pooled = new List<SweepMatch>();
+        for (int chunkStart = 0; chunkStart <= lastStart; chunkStart += advance)
+        {
+            int available = Math.Min(chunk, coarseSamples.Length - chunkStart);
+            var block = new float[available];
+            Array.Copy(coarseSamples, chunkStart, block, 0, available);
+            float[] correlation = FastConvolution.Convolve(block, reversed);
+            // Cumulative energy over the chunk, so every placement normalizes in
+            // constant time. Judging the match on SHAPE rather than on level is
+            // what lets a quiet channel that holds the sweep outrank a loud one
+            // full of hum.
+            double[] blockEnergy = CumulativeEnergy(block);
+            // Interior chunks only own the placements whose window they hold whole;
+            // the last one also owns those running past the end of the recording.
+            bool last = chunkStart + available >= coarseSamples.Length;
+            int localLast = last
+                ? lastStart - chunkStart
+                : Math.Min(available - kernel, advance - 1);
+            for (int local = 0; local <= localLast; local++)
+            {
+                int overlap = Math.Min(kernel, available - local);
+                double energy = excitationEnergy[overlap] *
+                    (blockEnergy[local + overlap] - blockEnergy[local]);
                 if (energy <= 0)
                 {
                     continue;
                 }
 
-                // Convolution output index start + kernel - 1 is the sum of the
-                // recording from `start` against the sweep from its own zero.
+                // Convolution output index local + kernel - 1 is the sum of the
+                // chunk from `local` against the sweep from its own zero.
                 double quality =
-                    Math.Abs(correlation[start + coarseSweep.Length - 1]) / Math.Sqrt(energy);
-                if (quality > bestQuality)
-                {
-                    bestQuality = quality;
-                    best = start;
-                }
+                    Math.Abs(correlation[local + kernel - 1]) / Math.Sqrt(energy);
+                Offer(pooled, new SweepMatch(chunkStart + local, quality), separation);
             }
 
-            if (best < 0)
+            // The last chunk owns every remaining placement, including the ones
+            // that run past the end. Without this the loop keeps stepping toward
+            // lastStart re-transforming the same tail — and when the whole
+            // recording fits one chunk, `advance` is a single sample, so it does
+            // that thousands of times.
+            if (last)
             {
                 break;
             }
+        }
 
-            taken.Add(best);
+        var matches = new List<SweepMatch>();
+        foreach (SweepMatch match in pooled.OrderByDescending(candidate => candidate.Quality))
+        {
+            if (matches.Count == maximumMatches)
+            {
+                break;
+            }
+            if (matches.Exists(other => Math.Abs(other.Start - match.Start) < separation))
+            {
+                continue;
+            }
+
             matches.Add(decimation == 1
-                ? new SweepMatch(best, bestQuality)
-                : Refine(samples, sweep, best * decimation, decimation * RefinementSteps));
+                ? match
+                : Refine(samples, sweep, match.Start * decimation, decimation * RefinementSteps));
         }
 
         return matches;
+    }
+
+    // Keeps the pooled candidates to one entry per neighbourhood: without it a
+    // strong arrival contributes thousands of near-identical placements and the
+    // pool grows with the recording, which is what the chunking is avoiding.
+    private static void Offer(List<SweepMatch> pooled, SweepMatch candidate, int separation)
+    {
+        for (int i = 0; i < pooled.Count; i++)
+        {
+            if (Math.Abs(pooled[i].Start - candidate.Start) < separation)
+            {
+                if (candidate.Quality > pooled[i].Quality)
+                {
+                    pooled[i] = candidate;
+                }
+
+                return;
+            }
+        }
+
+        pooled.Add(candidate);
     }
 
     // The coarse answer is out by up to a decimated sample, so the neighbourhood

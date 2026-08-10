@@ -73,16 +73,26 @@ internal static class RecordedSweepWindow
             RecordedSweepDetector.FindSweeps(samples, sweep, maximumCandidates);
         int lead = (int)(LeadInSeconds * sampleRate);
         int bound = sweep.Length + lead + (int)(TailSeconds * sampleRate);
+        var spans = new List<RecordedSweepSpan>();
         // A recording that already fits the bound is analyzed whole — there is
         // nothing to cut away — but it still needs the excitation start, or a take
         // that holds a pre-roll and then RUNS OUT mid-sweep reads as long enough.
+        // Every match is still offered: a short take can hold a complete sweep and
+        // a louder half of a second attempt, and answering with only the strongest
+        // would refuse the file over the one that was cut short.
         if (samples.Length <= bound)
         {
-            return [new RecordedSweepSpan(
-                0, samples.Length, matches.Count > 0 ? matches[0].Start : 0)];
+            foreach (SweepMatch match in matches)
+            {
+                if (!spans.Exists(span => span.ExcitationStart == match.Start))
+                {
+                    spans.Add(new RecordedSweepSpan(0, samples.Length, match.Start));
+                }
+            }
+
+            return spans.Count > 0 ? spans : [new RecordedSweepSpan(0, samples.Length, 0)];
         }
 
-        var spans = new List<RecordedSweepSpan>();
         foreach (SweepMatch match in matches)
         {
             int start = Math.Clamp(match.Start - lead, 0, samples.Length);

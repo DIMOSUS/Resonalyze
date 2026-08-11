@@ -35,6 +35,12 @@ internal sealed class InputLevelMeterPanel : Control
     // single tick drop the peak hold by tens of dB.
     private const double MaximumStepSeconds = 0.25;
     private readonly System.Windows.Forms.Timer animationTimer;
+    // The newest snapshot as received: the current level, which stands until the
+    // next one replaces it.
+    private InputLevelMeterEntry microphoneLevel = InputLevelMeterEntry.Unavailable;
+    private InputLevelMeterEntry loopbackLevel = InputLevelMeterEntry.Unavailable;
+    // The same, folded with the peaks and full-scale flags no frame has latched
+    // yet. Animate reads these, then drops them back to the level above.
     private InputLevelMeterEntry microphoneTarget = InputLevelMeterEntry.Unavailable;
     private InputLevelMeterEntry loopbackTarget = InputLevelMeterEntry.Unavailable;
     private MeterVisualState microphoneState = MeterVisualState.CreateUnavailable();
@@ -65,12 +71,21 @@ internal sealed class InputLevelMeterPanel : Control
 
     public void SetLevels(InputLevelMeterSnapshot levels)
     {
-        microphoneTarget = levels.Microphone;
-        loopbackTarget = levels.Loopback;
+        // Fold rather than overwrite. Several dispatcher drains can land between
+        // two animation ticks — they arrive as posted callbacks, which outrank
+        // the low-priority WM_TIMER the animation runs on — and the peak of a
+        // window the timer never got to look at is exactly the one worth
+        // keeping. Animate consumes the fold once it has latched it.
+        microphoneLevel = levels.Microphone;
+        loopbackLevel = levels.Loopback;
+        microphoneTarget = microphoneTarget.Merge(levels.Microphone);
+        loopbackTarget = loopbackTarget.Merge(levels.Loopback);
     }
 
     public void ClearLevels()
     {
+        microphoneLevel = InputLevelMeterEntry.Unavailable;
+        loopbackLevel = InputLevelMeterEntry.Unavailable;
         microphoneTarget = InputLevelMeterEntry.Unavailable;
         loopbackTarget = InputLevelMeterEntry.Unavailable;
         microphoneState = MeterVisualState.CreateUnavailable();
@@ -288,6 +303,12 @@ internal sealed class InputLevelMeterPanel : Control
             AdvanceState(microphoneState, microphoneTarget, now, dt);
         MeterVisualState newLoopbackState =
             AdvanceState(loopbackState, loopbackTarget, now, dt);
+        // Drop back to the plain level, unconditionally — including on the idle
+        // path below. A peak left in the fold would latch again on some later
+        // tick, once the hold had decayed past it, and report an event that is
+        // seconds old.
+        microphoneTarget = microphoneLevel;
+        loopbackTarget = loopbackLevel;
         if (newMicrophoneState == microphoneState &&
             newLoopbackState == loopbackState)
         {

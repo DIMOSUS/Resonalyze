@@ -81,6 +81,13 @@ namespace Resonalyze
         /// </para>
         /// </summary>
         public double? ImportedTimeScalePpm { get; private set; }
+
+        /// <summary>
+        /// Which channel of an imported recording was measured — the one whose
+        /// match against the sweep was strongest. Zero for a mono file and for
+        /// every result that did not come from a multi-channel import.
+        /// </summary>
+        public int ImportedChannelIndex { get; private set; }
         public bool HasImpulseResponse => SweepDeconvolutionImpulseResponse != null;
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
@@ -248,6 +255,7 @@ namespace Resonalyze
             MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
             TimingReference = TimingReference.SynchronizedLoopback;
             ImportedTimeScalePpm = null;
+            ImportedChannelIndex = 0;
             AverageRunCount = Math.Clamp(averaging.RunCount, 1, 64);
             AcceptedAverageRunCount = 0;
             ConfirmEachAverageRun = averaging.ConfirmEachRun;
@@ -283,6 +291,16 @@ namespace Resonalyze
                 if (Sweep == null)
                 {
                     throw new InvalidOperationException("Measurement is not initialized.");
+                }
+                // An outstanding claim owns this measurement for an operation
+                // that has no task to wait on — a file import spanning its
+                // decode. A run started underneath it would publish over the
+                // import's result, and its own completion would clear the busy
+                // flag the import is still holding.
+                if (claimed)
+                {
+                    throw new InvalidOperationException(
+                        "The measurement is already busy.");
                 }
 
                 cancellationTokenSource?.Dispose();
@@ -568,6 +586,60 @@ namespace Resonalyze
         /// <see cref="MeasurementSplCalibration"/> for this result.
         /// </para>
         /// </remarks>
+        /// <summary>
+        /// The same import over a multi-channel recording, measuring the channel
+        /// that best MATCHES the sweep (see <see cref="RecordedSweepChannels"/>).
+        /// Only for callers with no one to ask: when more than one channel
+        /// plausibly holds the sweep the best match is not the answer — a DAW's
+        /// reference track is a copy of the excitation and beats the microphone
+        /// every time — so the UI ranks the channels itself and imports the one
+        /// the user picks. The chosen one is reported through
+        /// <see cref="ImportedChannelIndex"/>.
+        /// </summary>
+        public void ImportRecordedSweep(
+            SweepMeasurementConfiguration configuration,
+            float[][] channels,
+            int sampleRate)
+        {
+            ArgumentNullException.ThrowIfNull(configuration);
+            ArgumentNullException.ThrowIfNull(channels);
+            if (channels.Length == 0)
+            {
+                throw new InvalidOperationException("The recording has no channels.");
+            }
+
+            ImportRecordedSweep(
+                configuration,
+                channels,
+                sampleRate,
+                channels.Length > 1
+                    ? RecordedSweepChannels.Best(
+                        RecordedSweepChannels.Rank(configuration, channels))
+                    : 0);
+        }
+
+        /// <summary>
+        /// The import over a named channel of a multi-channel recording.
+        /// </summary>
+        public void ImportRecordedSweep(
+            SweepMeasurementConfiguration configuration,
+            float[][] channels,
+            int sampleRate,
+            int channel)
+        {
+            ArgumentNullException.ThrowIfNull(configuration);
+            ArgumentNullException.ThrowIfNull(channels);
+            if (channels.Length == 0)
+            {
+                throw new InvalidOperationException("The recording has no channels.");
+            }
+            ArgumentOutOfRangeException.ThrowIfNegative(channel);
+            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(channel, channels.Length);
+
+            ImportRecordedSweep(configuration, channels[channel], sampleRate);
+            ImportedChannelIndex = channel;
+        }
+
         public void ImportRecordedSweep(
             SweepMeasurementConfiguration configuration,
             float[] recordedSamples,
@@ -658,21 +730,17 @@ namespace Resonalyze
             bool measurable = false;
             int longestExcitation = 0;
             IReadOnlyList<string>? captureIssues = null;
-            // The excitation is found by level, and a level crosses the detector's
-            // threshold INSIDE the fade-in rather than at the first sample, so the
-            // real start sits up to a fade-in (plus one detection window) earlier
-            // than the reported one. Without that slack a take holding exactly the
-            // sweep and no tail reads as cut short by the detector's own lateness.
-            int detectionSlack = sweep.Spec.FadeInSamples + sampleRate / 100;
             foreach (RecordedSweepSpan span in RecordedSweepWindow.LocateCandidates(
-                recordedSamples, sampleRate, sweep.SweepSamples))
+                recordedSamples, sweep.SweepData, sampleRate))
             {
                 // Measured from where the EXCITATION begins, not from the start of
                 // the span: the span counts its lead-in silence too, so a take that
                 // holds a pre-roll and then runs out mid-sweep would read as long
                 // enough and be analyzed against an excitation it never finished.
+                // No slack: the sweep is located by matching it, so its start is a
+                // sample rather than the moment a level crossed a threshold.
                 longestExcitation = Math.Max(longestExcitation, span.ExcitationLength);
-                if (span.ExcitationLength + detectionSlack < sweep.SweepSamples)
+                if (span.ExcitationLength < sweep.SweepSamples)
                 {
                     // Found too close to the end to hold the whole sweep; a later
                     // candidate may still fit.
@@ -723,10 +791,16 @@ namespace Resonalyze
                 }
             }
 
-            if (longestExcitation + detectionSlack < sweep.SweepSamples)
+            if (longestExcitation < sweep.SweepSamples)
             {
+                // Two readings fit this, and the data does not choose between
+                // them: a normalized match separates a clean take (1.0) from
+                // noise (0.02) easily, but a noisy real take reads 0.06 and a
+                // recording of a DIFFERENT sweep reads 0.21 — they overlap. So
+                // the message names both rather than picking one on a threshold
+                // that would be wrong as often as right.
                 throw new InvalidOperationException(FormattableString.Invariant(
-                    $"The excitation starts {longestExcitation / (double)sampleRate:0.00} s before the end of the recording, which is less than the sweep's own {sweep.ComputedDuration:0.00} s. The take is cut short — record again with the whole sweep inside it."));
+                    $"The excitation was found only {longestExcitation / (double)sampleRate:0.00} s before the end of the recording, less than the sweep's own {sweep.ComputedDuration:0.00} s. Either the take is cut short — record again with the whole sweep inside it — or this is not a recording of this sweep, in which case check the band and the per-octave time in Measurement Options."));
             }
             if (captureIssues is { Count: > 0 })
             {

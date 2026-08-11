@@ -1432,18 +1432,28 @@ played from something else (typically the file written by
 with the inverse filter of the sweep the **current settings** describe, and the
 transfer function is estimated against that same sweep standing in for the
 loopback reference — the excitation is known exactly, because it is the signal
-that was played. If the file has more than one channel, the loudest one by RMS is
-measured and Resonalyze reports which one that was.
+that was played. If the file has more than one channel, the one whose content
+actually matches the sweep is measured — not the loudest, because a dead input is
+rarely silent and its hum can easily out-measure a quiet microphone — and
+Resonalyze reports which one that was.
 
 The recording may be far longer than the sweep — starting the recorder, walking
 to the listening position, playing the sweep and walking back is the normal way
-to make one. Resonalyze locates the excitation and analyzes it together with
-0.5 s before and 2 s of decay after, so the silence never reaches the analysis:
-on a 92-second take of a 2.15-second sweep that is 4.65 s of audio instead of the
-whole file, which cuts the work from 3.4 s and 1.9 GB of transient spectra to
-0.18 s and 100 MB, and the transfer IR the measurement then carries (and writes
-into a saved `.json`) from 268 MB to 8 MB. If a take holds the sweep more than
-once, the first one is measured.
+to make one. The excitation is found by matching the sweep against the recording
+rather than by looking for something loud, which answers the question that
+matters ("where is THIS sweep") instead of a proxy that content can defeat: a
+system whose bass is crossed out is quiet for its first octaves, and a door or a
+voice is louder than a careful measurement. Matching also reaches much further
+down — it concentrates the whole excitation into one peak, worth about 46 dB for
+a two-second sweep — so a take that sounds empty still resolves to the sample.
+
+What is then analyzed is the excitation with 0.5 s before it and 2 s of decay
+after, so the silence never reaches the analysis: on a 92-second take of a
+2.15-second sweep that is 4.65 s of audio instead of the whole file, which cuts
+the work from 3.4 s and 1.9 GB of transient spectra to 0.18 s and 100 MB, and the
+transfer IR the measurement then carries (and writes into a saved `.json`) from
+268 MB to 8 MB. If a take holds the sweep more than once, every occurrence is a
+candidate and the best is measured.
 
 Whatever played the file and whatever recorded it run on their own clocks, so the
 sweep comes back slightly stretched or squeezed — and a per-octave time in whole

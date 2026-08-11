@@ -149,6 +149,45 @@ public sealed class RecordedSweepDetectorTests : IDisposable
             $"sweep {sweepQuality:0.000} against hum {humQuality:0.000}");
     }
 
+    // Long enough that the search decimates, which is where the pool and the
+    // refined answers stop being the same unit. A coarse start compared against
+    // an already-refined one measures a distance in two scales at once, and here
+    // the second take's COARSE index lands on the first take's FULL-RATE index —
+    // so it reads as the same arrival reported twice and disappears.
+    [Fact]
+    public void ReportsEveryTakeOnceTheSearchDecimates()
+    {
+        const int rate = 48_000;
+        const int first = 12_000;
+        using var shortSweep = new ExponentialSineSweep();
+        shortSweep.FillData(20, 20_000, 0.25, 24, rate);
+        float[] excitation = shortSweep.SweepData;
+        // Back to back, so the takes never overlap: 2 x (first / decimation) is
+        // exactly the second take's coarse index.
+        int second = first + excitation.Length;
+        // Past the search ceiling, which is what turns decimation on.
+        var samples = new float[1_200_000];
+        var random = new Random(99);
+        for (int i = 0; i < samples.Length; i++)
+        {
+            samples[i] = (float)((random.NextDouble() - 0.5) * 1e-4);
+        }
+        for (int i = 0; i < excitation.Length; i++)
+        {
+            samples[first + i] += excitation[i];
+            // The second take is the noisier one, so the clean take ranks first
+            // and the comparison happens in the order that loses it.
+            samples[second + i] +=
+                excitation[i] * 0.5f + (float)((random.NextDouble() - 0.5) * 0.05);
+        }
+
+        IReadOnlyList<SweepMatch> matches =
+            RecordedSweepDetector.FindSweeps(samples, excitation, 3);
+
+        Assert.Contains(matches, match => match.Start == first);
+        Assert.Contains(matches, match => match.Start == second);
+    }
+
     [Fact]
     public void ReportsNothingWhenThereIsNothingToMatch()
     {

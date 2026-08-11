@@ -47,7 +47,8 @@ internal static class RecordedSweepWindow
     /// loud. More than one is offered because a take can hold more than one
     /// attempt, and because a match is evidence rather than proof — the caller
     /// analyzes them in order and keeps the one that produces a credible impulse
-    /// response.
+    /// response. Each span covers ONE attempt: the others are cut away, or they
+    /// would read as reflections of it.
     /// </summary>
     /// <remarks>
     /// Always returns at least one span. Degenerate cases — a silent file, no
@@ -74,35 +75,41 @@ internal static class RecordedSweepWindow
         int lead = (int)(LeadInSeconds * sampleRate);
         int bound = sweep.Length + lead + (int)(TailSeconds * sampleRate);
         var spans = new List<RecordedSweepSpan>();
-        // A recording that already fits the bound is analyzed whole — there is
-        // nothing to cut away — but it still needs the excitation start, or a take
-        // that holds a pre-roll and then RUNS OUT mid-sweep reads as long enough.
-        // Every match is still offered: a short take can hold a complete sweep and
-        // a louder half of a second attempt, and answering with only the strongest
-        // would refuse the file over the one that was cut short.
-        if (samples.Length <= bound)
+        foreach (SweepMatch match in matches)
         {
-            foreach (SweepMatch match in matches)
+            // Kept clear of the OTHER takes the file holds. A second attempt
+            // inside the analyzed stretch is a second excitation, and the
+            // transfer estimate has no way to read it as anything but an
+            // enormous reflection of the one being measured — which fails the
+            // shape gate and refuses a file that holds a perfectly good take, or
+            // wins the arrival outright. Only takes that finish before this one
+            // starts, or start after it finishes, are cut on: matches sit at
+            // least half a sweep apart, and trimming on a closer one would cut
+            // into the excitation itself.
+            int head = 0;
+            int limit = samples.Length;
+            foreach (SweepMatch other in matches)
             {
-                if (!spans.Exists(span => span.ExcitationStart == match.Start))
+                if (other.Start >= match.Start + sweep.Length)
                 {
-                    spans.Add(new RecordedSweepSpan(0, samples.Length, match.Start));
+                    limit = Math.Min(limit, other.Start);
+                }
+                else if (other.Start + sweep.Length <= match.Start)
+                {
+                    head = Math.Max(head, other.Start + sweep.Length);
                 }
             }
 
-            return spans.Count > 0 ? spans : [new RecordedSweepSpan(0, samples.Length, 0)];
-        }
-
-        foreach (SweepMatch match in matches)
-        {
-            int start = Math.Clamp(match.Start - lead, 0, samples.Length);
-            int length = Math.Min(bound, samples.Length - start);
-            if (!spans.Exists(span => span.Start == start))
+            int start = Math.Clamp(match.Start - lead, head, samples.Length);
+            int length = Math.Min(bound, limit - start);
+            if (length > 0)
             {
                 spans.Add(new RecordedSweepSpan(start, length, match.Start));
             }
         }
 
-        return spans.Count > 0 ? spans : [new RecordedSweepSpan(0, bound, 0)];
+        return spans.Count > 0
+            ? spans
+            : [new RecordedSweepSpan(0, Math.Min(bound, samples.Length), 0)];
     }
 }

@@ -70,7 +70,9 @@ public sealed class RecordedSweepWindowTests : IDisposable
     // A short take can hold a complete sweep and the louder beginning of a second
     // attempt that the file then cut off. Answering with only the strongest match
     // would refuse the file over the one that was cut short, so every match is
-    // offered and the caller can fall through to the complete one.
+    // offered and the caller can fall through to the complete one — each on a
+    // span that holds its own attempt and not the other, which would otherwise
+    // read as an enormous reflection of it.
     [Fact]
     public void AShortRecordingOffersEveryTakeItHolds()
     {
@@ -86,12 +88,18 @@ public sealed class RecordedSweepWindowTests : IDisposable
 
         IReadOnlyList<RecordedSweepSpan> spans = Locate(samples);
 
-        Assert.All(spans, span => Assert.Equal(0, span.Start));
         Assert.Contains(spans, span => span.ExcitationStart == 0);
         Assert.Contains(spans, span => span.ExcitationStart == second);
-        // And the complete one is the usable candidate.
-        Assert.True(spans.First(span => span.ExcitationStart == 0).ExcitationLength >= SweepSamples);
-        Assert.True(spans.First(span => span.ExcitationStart == second).ExcitationLength < SweepSamples);
+        // The complete one is the usable candidate, and its span stops where the
+        // second attempt begins.
+        RecordedSweepSpan complete = spans.First(span => span.ExcitationStart == 0);
+        Assert.True(complete.ExcitationLength >= SweepSamples);
+        Assert.Equal(0, complete.Start);
+        Assert.Equal(second, complete.Start + complete.Length);
+        // And the cut-short one starts after the first attempt has finished.
+        RecordedSweepSpan truncated = spans.First(span => span.ExcitationStart == second);
+        Assert.True(truncated.ExcitationLength < SweepSamples);
+        Assert.Equal(SweepSamples, truncated.Start);
     }
 
     [Fact]

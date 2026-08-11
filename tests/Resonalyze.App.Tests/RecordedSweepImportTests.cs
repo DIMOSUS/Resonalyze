@@ -146,6 +146,58 @@ public sealed class RecordedSweepImportTests
         Assert.Equal(reflectionGain, reflectionLevel / directLevel, tolerance: 0.02);
     }
 
+    // Two attempts in one file, the second one louder and cut off by the end of
+    // the recording. The complete take is the usable one, and it has to be
+    // measured on its own: a second excitation inside the analyzed stretch is
+    // indistinguishable from an enormous reflection of the first, which either
+    // fails the shape gate — refusing a file that holds a perfectly good take —
+    // or wins the arrival outright. Each take carries its own reflection, so the
+    // result says which one was measured.
+    [Fact]
+    public void ASecondLouderAttemptDoesNotCostTheCompleteTake()
+    {
+        const int lead = 2_000;
+        const int firstReflection = 300;
+        const int secondReflection = 700;
+        const float reflectionGain = 0.5f;
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        float[] sweep = measurement.Sweep!.SweepData;
+        int second = lead + sweep.Length + (SampleRate / 4);
+        var recording = new float[second + (int)(sweep.Length * 0.85)];
+
+        // The complete take, 17 dB below the second one.
+        for (int i = 0; i < sweep.Length; i++)
+        {
+            recording[lead + i] += sweep[i] * 0.14f;
+            recording[lead + firstReflection + i] += sweep[i] * 0.14f * reflectionGain;
+        }
+        // The second attempt: louder, and the file stops partway through it.
+        for (int i = 0; i < sweep.Length && second + i < recording.Length; i++)
+        {
+            recording[second + i] += sweep[i];
+        }
+        for (int i = 0; i < sweep.Length && second + secondReflection + i < recording.Length; i++)
+        {
+            recording[second + secondReflection + i] += sweep[i] * reflectionGain;
+        }
+
+        measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
+
+        Complex[] transfer = measurement.TransferImpulseResponse!;
+        int peak = measurement.Transfer!.PeakIndex;
+        Assert.Equal(Arrival, peak);
+        // The complete take's own reflection, at its own spacing and strength —
+        // and nothing at the second take's spacing.
+        double direct = Math.Abs(transfer[peak].Real);
+        Assert.Equal(
+            reflectionGain,
+            Math.Abs(transfer[peak + firstReflection].Real) / direct,
+            tolerance: 0.05);
+        Assert.True(
+            Math.Abs(transfer[peak + secondReflection].Real) / direct < 0.1,
+            $"the second take's reflection came through at {Math.Abs(transfer[peak + secondReflection].Real) / direct:0.000}");
+    }
+
     // A take made the way people actually make them: recorder started, walk to the
     // seat, play the sweep, walk back, stop. The minutes of silence must not reach
     // the FFTs — they would size every spectrum and the stored transfer IR with

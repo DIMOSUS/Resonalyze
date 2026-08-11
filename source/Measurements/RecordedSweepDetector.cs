@@ -37,13 +37,15 @@ internal static class RecordedSweepDetector
     // rides beside the direct sound).
     private const double SeparationShare = 0.5;
 
-    // The search runs on a decimated copy. Correlating a ten-minute recording at
-    // full rate is exact but costs gigabytes of transient spectra — 5.9 GB, more
-    // than the analysis it exists to set up — while the position it finds is then
-    // refined at full rate anyway. Both signals are averaged and thinned the SAME
-    // way, so the correlation stays a matched filter for the pair: the peak keeps
-    // its place, it only gets broader, and some of the 46 dB of processing gain
-    // goes with the bandwidth.
+    // How many coarse samples the search aims to work in. Correlating a
+    // ten-minute recording at full rate is exact but costs far more than the
+    // analysis it exists to set up, while the position it finds is then refined
+    // at full rate anyway. Both signals are averaged and thinned the SAME way, so
+    // the correlation stays a matched filter for the pair: the peak keeps its
+    // place, it only gets broader, and some of the 46 dB of processing gain goes
+    // with the bandwidth. It is an aim rather than a guarantee — thinning stops
+    // while the sweep is still long enough to correlate — which is why the search
+    // is also chunked.
     private const int SearchSampleCeiling = 1 << 20;
 
     private const int MaximumDecimation = 32;
@@ -76,9 +78,9 @@ internal static class RecordedSweepDetector
         }
 
         int decimation = ChooseDecimation(samples.Length, sweep.Length);
-        float[] coarseSamples = Decimate(samples, decimation);
         float[] coarseSweep = Decimate(sweep, decimation);
         int kernel = coarseSweep.Length;
+        int coarseLength = samples.Length / decimation;
 
         // Correlation is convolution with the kernel reversed.
         var reversed = new double[kernel];
@@ -93,23 +95,23 @@ internal static class RecordedSweepDetector
         // has its true start ONLY among those, and leaving them out does not make
         // the take usable — it makes the detector answer with the best of the
         // wrong positions, which then reads as a complete take.
-        int lastStart = coarseSamples.Length - kernel / 2;
+        int lastStart = coarseLength - kernel / 2;
         int separation = Math.Max(1, (int)(kernel * SeparationShare));
 
-        // Searched in chunks, so what the search holds is set by the chunk rather
-        // than by the recording. Decimation alone cannot promise that: a sweep can
-        // be short enough (5 ms per octave is 53 ms of signal) that thinning it
-        // any further would leave nothing to correlate, and then a ten-minute file
-        // would materialize a correlation and a cumulative energy over all of it.
-        int chunk = Math.Min(
-            coarseSamples.Length, Math.Max(kernel * 4, MinimumSearchChunk));
+        // Searched in chunks, and each chunk is thinned straight out of the
+        // recording, so what the search holds is set by the chunk rather than by
+        // the recording. Decimation alone cannot promise that: a sweep can be
+        // short enough (5 ms per octave is 53 ms of signal) that thinning it any
+        // further would leave nothing to correlate, and then a ten-minute file
+        // would hold a correlation, a cumulative energy and a decimated copy of
+        // itself all at once.
+        int chunk = Math.Min(coarseLength, Math.Max(kernel * 4, MinimumSearchChunk));
         int advance = Math.Max(1, chunk - kernel + 1);
         var pooled = new List<SweepMatch>();
         for (int chunkStart = 0; chunkStart <= lastStart; chunkStart += advance)
         {
-            int available = Math.Min(chunk, coarseSamples.Length - chunkStart);
-            var block = new float[available];
-            Array.Copy(coarseSamples, chunkStart, block, 0, available);
+            int available = Math.Min(chunk, coarseLength - chunkStart);
+            float[] block = DecimateRange(samples, decimation, chunkStart, available);
             float[] correlation = FastConvolution.Convolve(block, reversed);
             // Cumulative energy over the chunk, so every placement normalizes in
             // constant time. Judging the match on SHAPE rather than on level is
@@ -118,7 +120,7 @@ internal static class RecordedSweepDetector
             double[] blockEnergy = CumulativeEnergy(block);
             // Interior chunks only own the placements whose window they hold whole;
             // the last one also owns those running past the end of the recording.
-            bool last = chunkStart + available >= coarseSamples.Length;
+            bool last = chunkStart + available >= coarseLength;
             int localLast = last
                 ? lastStart - chunkStart
                 : Math.Min(available - kernel, advance - 1);
@@ -150,6 +152,12 @@ internal static class RecordedSweepDetector
             }
         }
 
+        // Thinned to one match per neighbourhood BEFORE refining, because the pool
+        // and `separation` are both in decimated samples: a refined start is a
+        // full-rate one, and comparing it against a coarse candidate would measure
+        // a distance in two different units and suppress nothing. Offer() cannot
+        // stand in for this pass — replacing a pooled candidate can leave the
+        // replacement within `separation` of another one.
         var matches = new List<SweepMatch>();
         foreach (SweepMatch match in pooled.OrderByDescending(candidate => candidate.Quality))
         {
@@ -162,30 +170,39 @@ internal static class RecordedSweepDetector
                 continue;
             }
 
-            matches.Add(decimation == 1
-                ? match
-                : Refine(samples, sweep, match.Start * decimation, decimation * RefinementSteps));
+            matches.Add(match);
         }
 
-        return matches;
+        return decimation == 1
+            ? matches
+            : matches.ConvertAll(match =>
+                Refine(samples, sweep, match.Start * decimation, decimation * RefinementSteps));
     }
 
     // Keeps the pooled candidates to one entry per neighbourhood: without it a
     // strong arrival contributes thousands of near-identical placements and the
     // pool grows with the recording, which is what the chunking is avoiding.
+    //
+    // Only the most recent entry is examined, because placements arrive in
+    // increasing position — within a chunk and from one chunk to the next.
+    // Scanning the whole pool instead made the search quadratic in a way only a
+    // SHORT sweep shows: separation is half a sweep, so a 36 ms one leaves tens
+    // of thousands of neighbourhoods in a ten-minute recording, and each of the
+    // twenty-six million placements walked all of them. That cost 143 s where
+    // this costs a fraction of a second.
+    //
+    // A replacement can leave the entry within `separation` of the one before it;
+    // the final pass over the pool is what settles that.
     private static void Offer(List<SweepMatch> pooled, SweepMatch candidate, int separation)
     {
-        for (int i = 0; i < pooled.Count; i++)
+        if (pooled.Count > 0 && candidate.Start - pooled[^1].Start < separation)
         {
-            if (Math.Abs(pooled[i].Start - candidate.Start) < separation)
+            if (candidate.Quality > pooled[^1].Quality)
             {
-                if (candidate.Quality > pooled[i].Quality)
-                {
-                    pooled[i] = candidate;
-                }
-
-                return;
+                pooled[^1] = candidate;
             }
+
+            return;
         }
 
         pooled.Add(candidate);
@@ -243,6 +260,39 @@ internal static class RecordedSweepDetector
         }
 
         return decimation;
+    }
+
+    // One chunk's worth of coarse samples, averaged straight out of the recording
+    // so the whole decimated copy is never materialized. On a short sweep the
+    // ceiling cannot thin the recording far — a 53 ms sweep stops it at two — and
+    // a ten-minute file would then carry tens of megabytes of coarse copy for the
+    // whole search, beside the chunk that is the only part being read.
+    private static float[] DecimateRange(
+        float[] samples,
+        int decimation,
+        int coarseStart,
+        int count)
+    {
+        var block = new float[count];
+        if (decimation <= 1)
+        {
+            Array.Copy(samples, coarseStart, block, 0, count);
+            return block;
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            double sum = 0;
+            int offset = (coarseStart + i) * decimation;
+            for (int k = 0; k < decimation; k++)
+            {
+                sum += samples[offset + k];
+            }
+
+            block[i] = (float)(sum / decimation);
+        }
+
+        return block;
     }
 
     // Averaged, then thinned. The average is the anti-alias filter — crude, but

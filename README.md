@@ -36,28 +36,24 @@
 [![Release](https://img.shields.io/github/v/release/DIMOSUS/Resonalyze?display_name=tag)](https://github.com/DIMOSUS/Resonalyze/releases/latest)
 
 **Resonalyze** is an open-source desktop application for measuring and tuning
-multi-way loudspeaker systems — with a special focus on the hardest room of
-all: the **car cabin**. It generates test signals, records the response through
-a Windows audio device, and turns the captured data into engineering-focused
-plots and concrete DSP settings: crossover corners, per-driver delays,
-polarity, and PEQ. The same toolset measures rooms, home loudspeakers,
-headphones, microphones, and complete signal paths.
+multi-way loudspeaker systems — with a special focus on the hardest room of all:
+the **car cabin**. It generates test signals, records the response through a
+Windows audio device, and turns the captured data into engineering-focused plots
+and concrete DSP settings: crossover corners, per-driver delays, polarity, and
+PEQ. The same toolset measures rooms, home loudspeakers, headphones, microphones,
+and complete signal paths.
 
-Resonalyze's center of gravity is the step most measurement workflows leave
-to you: turning a set of per-driver measurements into one coherent system.
-**Auto delay** and **Auto crossover** search the actual settings against the
-phase-aware predicted sum, and every automatic result comes with an honest
-verdict — the engine reports *why* it trusts an arrival, and refuses loudly
-instead of fabricating a number when the measurement cannot support one.
+Its center of gravity is the step most measurement workflows leave to you:
+turning a set of per-driver measurements into one coherent system. **Auto delay**
+and **Auto crossover** search the actual settings against the phase-aware
+predicted sum, and every automatic result comes with an honest verdict — the
+engine reports *why* it trusts an arrival, and refuses loudly instead of
+fabricating a number when the measurement cannot support one.
 
 > Resonalyze is under active development. Treat its results as diagnostic
 > measurements, not as certified laboratory data.
 
 ## Project Showcase
-
-Resonalyze is built around a practical loudspeaker workflow: measure real
-drivers, inspect timing, design EQ and DSP settings virtually, then apply the
-result with fewer blind tuning passes.
 
 <p align="center">
   <img src="assets/images/visual_dsp.png" alt="Virtual DSP crossover design and summation prediction">
@@ -74,12 +70,12 @@ result with fewer blind tuning passes.
 </p>
 
 <p align="center">
-  <strong>Does the automation actually help?</strong> Sum loss — how many dB
-  the real phase-aware sum falls short of a phase-blind magnitude addition at
-  each crossover junction (average / worst dip). Left: a three-way system
-  tuned by ear over years. Right: the same system after one
-  <strong>Auto&nbsp;crossover</strong> + <strong>Auto&nbsp;delay</strong> pass —
-  the worst junction dip shrinks from −8.0 to −2.3&nbsp;dB.
+  <strong>Does the automation actually help?</strong> Sum loss — how many dB the
+  real phase-aware sum falls short of a phase-blind magnitude addition at each
+  junction (average / worst dip). Left: a three-way system tuned by ear over
+  years. Right: the same system after one <strong>Auto&nbsp;crossover</strong> +
+  <strong>Auto&nbsp;delay</strong> pass — the worst dip shrinks from −8.0 to
+  −2.3&nbsp;dB.
 </p>
 
 <table>
@@ -88,119 +84,54 @@ result with fewer blind tuning passes.
       <img src="assets/images/eq_wizard.png" alt="EQ Wizard parametric EQ tuning">
       <p><strong>EQ Wizard</strong> equalizes any measured response — an impulse
       response, a captured overlay curve, or a moving-microphone RTA in dB SPL —
-      designing an up-to-32-band PEQ toward its own target curve, with microphone
-      calibration, Auto Tune, a vertical fader bank, import/export, and printable
-      tuning sheets.</p>
+      toward its own target curve.</p>
     </td>
     <td width="50%">
       <img src="assets/images/time-alignment.png" alt="Time Alignment delay measurement">
-      <p><strong>Time Alignment</strong> estimates loopback-referenced delay
-      from the transfer impulse response and shows confidence, levels, distance,
-      and the arrival envelope.</p>
+      <p><strong>Time Alignment</strong> estimates loopback-referenced delay from
+      the transfer impulse response, with confidence, levels, distance, and the
+      arrival envelope.</p>
     </td>
   </tr>
 </table>
 
 ## Why Resonalyze?
 
-If you already use tools like REW, OpenSoundMeter, or Smaart, the obvious
-question is: why install another analyzer?
+If you already use REW, OpenSoundMeter, or Smaart: those are broad measurement
+toolboxes; Resonalyze is a focused, end-to-end tuning workflow for **active
+multi-way systems**. REW's alignment tool sums a pair of measurements and its EQ
+module corrects a response; Resonalyze operates one level up — separate
+per-driver measurements on one absolute time base, complete virtual DSP chains, a
+phase-aware sum of the whole system, and optimizers that work every crossover
+junction and both stereo sides at once. Its home turf is the car, and its output
+is not just a plot but the DSP settings themselves:
 
-The short answer: those are broad measurement toolboxes; Resonalyze is a
-focused, end-to-end tuning workflow for **active multi-way systems**. It is
-not that the classics lack EQ or alignment features — REW's alignment tool
-sums a pair of measurements, and its EQ module corrects a response. Resonalyze
-operates one level up: separate per-driver measurements on one absolute time
-base, complete virtual DSP chains, a phase-aware sum of the whole system, and
-optimizers that work every crossover junction and both stereo sides at once.
-Its home turf is the car, where every driver sits at a different distance,
-doors leak and resonate, and the "room" fights back — and its output is not
-just a plot but the DSP settings themselves:
+- **Built for multi-way active systems** — measure each driver separately, then
+  design the whole system virtually: crossover corners, slopes and families,
+  per-driver delay and polarity, all-pass stages, and PEQ, tuned against the
+  phase-aware predicted sum. **Auto crossover** and **Auto delay** search these
+  settings automatically, across both stereo sides in one run.
+- **Honest automation** — an automatic tuner that guesses is worse than none.
+  Arrival estimates carry confidence and verdicts, modal build-up latches and
+  playback crosstalk are detected instead of aligned to, and when a measurement
+  cannot support a decision the engine says so.
+- **Loopback-referenced timing** — a recorded loopback channel is the time
+  reference, so delay and transfer-function analysis are tied to the actual
+  playback path, and separate measurements share one absolute time base.
+- **Repeatable, calibrated measurements** — average up to 64 sweeps into one
+  cross-spectrum transfer estimate with a per-frequency **coherence** (γ²) curve,
+  and put the response in real **dB SPL** from an acoustic 1 kHz calibrator.
+- **Crossover summation prediction** — the true **complex (vector) sum** of two
+  measurements accounts for relative delay, polarity and phase the way dB-curve
+  arithmetic cannot, with a companion **sum-loss** curve; Virtual DSP takes this
+  to its conclusion with complete virtual chains per driver.
+- **Fast compare-and-adjust work** — persistent and calculated overlays, target
+  curves, on-plot labels, and a measurement history that keeps each entry's whole
+  working state.
 
-- **Built for multi-way active systems**
-  Measure each driver separately, then design the whole system virtually:
-  crossover corners, slopes and filter families, per-driver delay and polarity,
-  all-pass stages, and PEQ — tuned against the phase-aware predicted sum, and
-  only then written into the hardware DSP. **Auto crossover** and **Auto
-  delay** search these settings automatically, across both stereo sides in one
-  run.
-- **Honest automation**
-  An automatic tuner that guesses is worse than none. Resonalyze's engines
-  certify their evidence: arrival estimates carry confidence and verdicts,
-  modal build-up latches are detected and flagged instead of aligned to,
-  playback-crosstalk contamination is detected and removed from the analysis,
-  and when a measurement cannot support a decision the engine says so out loud
-  instead of returning a plausible-looking number.
-- **Loopback-referenced timing**
-  Measurements can use a recorded loopback channel as the time reference, so
-  delay and transfer-function analysis are tied to the actual playback path
-  instead of to guesswork.
-- **Repeatable, confidence-scored measurements**
-  Average up to 64 sweeps into one cross-spectrum transfer estimate to pull the
-  response out of the noise, and read a per-frequency **coherence** (γ²) curve
-  that flags exactly which bands are trustworthy. An optional
-  confirm-between-runs pause turns the same path into spatial averaging across
-  microphone positions.
-- **Absolute, calibrated levels**
-  Calibrate the microphone against an acoustic 1 kHz calibrator and read the
-  Frequency Response and the live RTA in real **dB SPL**, not just relative dB. The
-  anchor is stored as its ingredients and re-validated against every measurement,
-  so a reading is shown as absolute only when it is genuinely backed — otherwise
-  the plot falls back to relative dB and says so.
-- **Crossover summation prediction**
-  Measure each driver once, then virtually align, combine, and optimize your
-  loudspeaker system before applying a single change to the DSP.
-  Because every measurement carries a loopback transfer IR, Resonalyze can
-  compute the true **complex (vector) sum** of two measurements — `Main ⊕
-  Compare` — summing their impulse responses sample-by-sample so relative delay,
-  polarity, and phase are all accounted for. That predicts how two drivers (or
-  the two sides of a crossover) actually combine, which arithmetic on dB curves
-  cannot. Compare-side **delay** and **polarity** controls let you tune the
-  alignment live, and a companion **sum-loss** curve shows exactly how many dB
-  the real phase-aware sum falls short of a phase-blind magnitude addition — a
-  direct read-out of the summation loss you are dialing out. The **Virtual
-  DSP** tool takes this to its conclusion: complete virtual DSP chains
-  (gain, delay, polarity, crossover filters, all-pass, PEQ) per driver, tuned against the
-  live predicted sum before a single setting is applied to the hardware. Two
-  auto-fit modes do the tedious part: an **Auto crossover** optimizer searches
-  the crossover frequencies, filter families, slopes, and cut-only gains that
-  flatten the summed magnitude (favoring tight, minimally overlapping splits),
-  and **Auto delay** aligns each junction's delay and polarity against the
-  phase-aware sum — across both stereo sides in one run, holding a
-  configurable L/R scene offset between the sides. The search level-matches
-  each junction internally, so the result does not follow the channel gains;
-  still, set the gains at least approximately first — past ±30 dB of in-band
-  imbalance the correction saturates and the log will ask you to level the
-  gains and re-run.
-- **Practical loudspeaker alignment**
-  Time Alignment reports first arrival and strongest peak, each refined to
-  sub-sample precision by a GCC-PHAT cross-correlation, plus distance at 20 °C,
-  confidence, signal levels, and a visible envelope around the detected arrival.
-- **Fast compare-and-adjust work**
-  Persistent overlays, calculated overlays, target curves, and on-plot labels
-  make it quick to compare measurements, tuning passes, channels, listening
-  positions, or before/after changes.
-- **Live transfer-function analysis**
-  Live Spectrum drives the system with a selectable excitation signal — including
-  a leakage-free periodic pink noise — and uses a loopback reference, coherence,
-  overlap, averaging, peak hold, and overload detection to show the driven
-  response rather than only the raw microphone spectrum.
-- **Measurement history as a working shelf**
-  Recent captures stay available in memory, saved files are remembered across
-  launches, and each entry has a frequency-response preview. Entries also
-  remember their full working state — active mode, per-mode settings, and shown
-  overlays — so switching between measurements restores the whole context, and a
-  one-click reset starts a fresh session from defaults.
-- **Developer-friendly, inspectable data**
-  IR files, overlays, settings, and history metadata are stored as readable
-  JSON where practical, making measurements easy to archive, diff, and debug.
-
-Resonalyze does not try to be every acoustic tool at once. Its sweet spot is
-measurement-driven multi-way tuning — above all in the car — where timing,
-repeatability, quick comparison, and transparent data matter more than a large
-legacy feature set. For room EQ at home, REW remains excellent; when the
-question is *"what delays, crossovers, and polarities do I put into this
-six-channel DSP"*, that is what Resonalyze is for.
+Resonalyze does not try to be every acoustic tool at once. For room EQ at home,
+REW remains excellent; when the question is *"what delays, crossovers, and
+polarities do I put into this six-channel DSP"*, that is what Resonalyze is for.
 
 ## Demo
 
@@ -220,219 +151,115 @@ Download the latest ready-to-run build from
 - `Resonalyze-vX.Y.Z-win-arm64.zip` — for Windows on ARM
 
 The `.zip` builds are self-contained and do not require a separate .NET
-installation. The installer adds shortcuts, uninstall support, and automatic
-in-app updates for the installed x64 build. A SHA-256 checksum file is provided
-with every release.
+installation; the installer adds shortcuts, uninstall support, and automatic
+in-app updates for the installed x64 build, and a SHA-256 checksum file is
+provided with every release. "Self-contained" refers to the runtime, not to your
+data: by default every build keeps settings, history, overlays, Virtual DSP state
+and logs in `%LocalAppData%\Resonalyze`. To make a `.zip` build fully portable,
+create an empty file named `portable.flag` next to `Resonalyze.exe`. When a newer
+release is detected, the version label in the title bar changes to **Update
+available**: installed builds can start an **Automatic Update**, portable builds
+offer a manual download.
 
-Note that "self-contained" refers to the runtime, not to your data: by default
-every build keeps settings, history, overlays, Virtual DSP state and logs in
-`%LocalAppData%\Resonalyze`. To make a `.zip` build fully portable — data beside
-the executable, nothing left on the machine — create an empty file named
-`portable.flag` next to `Resonalyze.exe`.
-
-> **Windows SmartScreen note:** the builds are not code-signed (signing
-> certificates are expensive for a free open-source project), so the first
-> launch may show a *"Windows protected your PC"* dialog. Click **More info →
-> Run anyway**, or verify the download first against the published SHA-256
-> checksum. The full source code is right here if you prefer to build it
-> yourself.
+> **Windows SmartScreen note:** the builds are not code-signed (certificates are
+> expensive for a free open-source project), so the first launch may show a
+> *"Windows protected your PC"* dialog. Click **More info → Run anyway**, or
+> verify the download against the published SHA-256 checksum.
 
 ## Highlights
 
-- Exponential sine sweep measurement with impulse-response JSON save/load
-- **Band-defined sweep**: set the low and high frequency the sweep must cover
-  (20 Hz – 20 kHz) and a per-octave pace instead of an octave count pinned to
-  Nyquist. The panel reports the range it can actually deliver, and the transfer
-  estimate is gated to the excited band, so a band-limited sweep no longer shows
-  noise spikes just below its low edge
-- Mandatory loopback-referenced sweep processing: every measurement captures a
-  loopback reference, and all analysis is derived from the resulting transfer
+- **Band-defined exponential sweep** — the low and high frequency it must cover
+  (20 Hz – 20 kHz) plus a per-octave pace, with the transfer estimate gated to
+  the excited band, and impulse-response JSON save/load
+- **Mandatory loopback reference** — all analysis is derived from the transfer
   function (harmonics and THD+N stay on the sweep deconvolution)
-- Multi-sweep averaging (1–64 runs) combined as a cross-spectrum transfer
-  estimate to lift the signal-to-noise ratio, with a per-frequency **coherence**
-  (γ²) curve in the Frequency Response, Phase, and Group Delay views and an
-  optional confirm-between-runs pause for spatial averaging
-- Noise-robust **reliability-anchored phase unwrapping**: deep nulls and
-  low-coherence bands are bridged by a slope prediction instead of anchoring
-  the unwrap, so one noisy bin can no longer throw the whole phase tail off by
-  a multiple of 360°
-- Selectable phase windowing: the original fixed Tukey gate or a
-  frequency-dependent window (**FDW**, 4 / 6 / 8 cycles) that progressively
-  removes late reflections at mid and high frequencies while retaining the
-  fixed gate and useful resolution at low frequencies
-- Selectable microphone calibration profiles (**0°** / **90°**) applied per view,
-  with lenient parsing of common `.txt` / `.cal` / `.frd` / `.csv` correction files
-- **Absolute dB SPL**: calibrate against an acoustic 1 kHz calibrator (94 / 104 /
-  114 dB) and read the Frequency Response and the Live Spectrum RTA on a true
-  dB SPL axis. The anchor is stored as its ingredients (reference and measured
-  levels, tone frequency, capture identity) and re-validated against each
-  measurement, quietly falling back to relative dB with a note when it does not
-  apply
-- Time Alignment with sub-sample delay estimation from the transfer IR, refined
-  by a GCC-PHAT cross-correlation
-- Crossover summation prediction: the true **complex (vector) sum** of two
-  measurements (`Main ⊕ Compare`) with Compare delay/polarity controls, plus a
-  **sum-loss** curve — accounts for delay, polarity, and phase the way dB-curve
-  math cannot
-- **Virtual DSP** tool: run up to eight measured L/R driver pairs (with mono
-  channels for a shared subwoofer) through virtual DSP chains — gain, delay,
-  polarity, Butterworth / Linkwitz-Riley / Bessel / Chebyshev crossovers, an
-  all-pass stage, and imported
-  PEQ — and see their complex sum, sum loss, the opposite side's sum, phase
-  tracking, a per-junction phase read-out (phase at the crossover, the
-  coherence-maximizing delay fix and its lobe margin), per-pair Δ L−R timing,
-  auto crossover proposals, a stereo-aware
-  auto delay with a scene offset, gated phase view, overlay capture, a
-  headphone track audition (your own music rendered through the tune to a WAV),
-  sessions, and tuning-sheet export
-- Live Spectrum: real-time loopback transfer function with selectable excitation
-  (leakage-free periodic pink, pink, brown/red, white noise) and coherence, plus
-  a Silent mode that measures the ambient room with no excitation at all
-- Frequency response, phase, group delay, waterfall, Burst Decay, and
-  autocorrelation
-- Compare a second measurement (from a file or History) against the current one
-  across Time Alignment, Phase, Group Delay, Frequency Response, and Impulse
-  Response, with matching analysis settings and per-metric deltas
-- Minimum-phase / excess-phase decomposition from the same selected Fixed/FDW
-  spectrum, with **Off / Auto / Manual** τ detrending and one shared Auto
-  reference when Main and Compare are shown together
-- Per-curve visibility toggles in every analysis view; curves redraw on the fly
-  with no separate draw/clear step
-- Harmonic distortion, THD, and THD+N analysis
-- Persistent comparison overlays with labels, styling, curve math over captured
-  or live plot curves, targets, import/export, and saved per-mode state
-- Live overlay preview: captured, calculated, and target overlay dialogs redraw
-  the candidate curve on the plot as you edit, and revert on Cancel
-- EQ Wizard: equalize any measured frequency response — an impulse response from
-  a file or History, a captured overlay slot, or a curve imported from text —
-  toward its own target curve, designing an up-to-32-band parametric EQ (with
-  selectable microphone calibration), using a vertical fader bank you add
-  filters — bells and low/high shelves — to one at a time and reorder or throw
-  away by dragging them, with undo/redo over the whole bank and the bank itself
-  kept between sessions, Auto Tune, a
-  live results read-out, cross-tool PEQ import/export, and a printable
-  tuning-sheet PDF. The car case it was built for is a **moving-microphone RTA in
-  dB SPL**: no coherence, no impulse response, an absolute datum
-- Signal Generator: play pink (periodic and continuous), brown/red, white noise,
-  or a sine tone through the configured playback device for level setting and
-  channel checks
-- Measurement History with in-memory snapshots, saved-file recall, FR previews,
-  per-entry working state (mode, settings, active overlays), and a one-click
-  new-session reset
-- Four audio backends — MME Compatibility, ASIO, WASAPI Shared, and WASAPI
-  Exclusive — with device-aware sample-rate selection and backend-specific
-  channel routing
-- Compact Mic/Loop input level meter with Peak, RMS, Peak Hold, and stored
-  measurement levels
-- Docked, non-modal settings panels with live previews and instant graph
-  updates
-- Auto-update support for installed builds through a signed NetSparkle appcast
+- **Multi-sweep averaging** (1–64 runs) as a cross-spectrum estimate with a
+  per-frequency **coherence** (γ²) curve, and an optional confirm-between-runs
+  pause for spatial averaging
+- **Analysis views** — frequency response, phase, group delay, waterfall, Burst
+  Decay, autocorrelation, harmonic distortion, THD and THD+N, with
+  reliability-anchored phase unwrapping, Fixed/**FDW** phase windowing, and
+  minimum/excess-phase decomposition
+- **Calibration** — microphone profiles (0° / 90°) from `.txt` / `.cal` / `.frd`
+  / `.csv` files, and **absolute dB SPL** from an acoustic 1 kHz calibrator
+- **Time Alignment** — sub-sample delay from the transfer IR, refined by a
+  GCC-PHAT cross-correlation, and a **complex (vector) sum** of two measurements
+  (`Main ⊕ Compare`) with delay/polarity controls and a **sum-loss** curve
+- **Virtual DSP** — up to eight L/R driver pairs (plus mono channels) through
+  virtual chains: gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel /
+  Chebyshev crossovers, all-pass and PEQ, with the complex sum, sum loss, phase
+  tracking, junction read-outs, Δ L−R timing, **Auto crossover**, a stereo-aware
+  **Auto delay**, a headphone audition, sessions and tuning-sheet export
+- **Live Spectrum** — real-time loopback transfer function with selectable
+  excitation (leakage-free periodic pink, pink, brown/red, white) and coherence,
+  plus a Silent mode that measures the ambient room
+- **Compare** a second measurement (file or History) across Time Alignment,
+  Phase, Group Delay, Frequency Response and Impulse Response, and **overlays** —
+  captured, calculated and target curves with styling, curve math,
+  import/export, saved per-mode state, and a live editing preview
+- **EQ Wizard** — up to 32 PEQ bands toward its own target, from an IR, an
+  overlay slot or a text curve, with Auto Tune, cross-tool import/export and a
+  printable tuning-sheet PDF
+- **Signal Generator**, **Measurement History** with per-entry working state, a
+  compact Mic/Loop level meter, and four audio backends (MME Compatibility, ASIO,
+  WASAPI Shared and Exclusive) with backend-specific channel routing
 
 ## Gallery
+
+Virtual DSP, the EQ Wizard, and Time Alignment are shown in the
+[showcase](#project-showcase) above; the analysis views:
 
 <table>
   <tr>
     <td width="50%">
-      <h3>Virtual DSP</h3>
-      <img src="assets/images/visual_dsp.png" alt="Virtual DSP crossover design">
-      <p>Measure each driver once, then design gain, delay, polarity,
-      crossover filters, an all-pass stage, PEQ, and the complex acoustic sum
-      before applying settings to the real DSP.</p>
-    </td>
-    <td width="50%">
-      <h3>EQ Wizard</h3>
-      <img src="assets/images/eq_wizard.png" alt="EQ Wizard mode">
-      <p>Load an impulse response and design a parametric EQ toward its own target
-      curve with microphone calibration, Auto Tune, a drag-ordered fader bank of
-      up to 32 filters, per-band curves, a live results read-out, cross-tool
-      import/export, and a tuning-sheet PDF.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h3>Time Alignment</h3>
-      <img src="assets/images/time-alignment.png" alt="Time Alignment measurement">
-      <p>Sub-sample delay estimation from a loopback-referenced transfer
-      impulse response, with confidence, levels, distance, and envelope view.</p>
-    </td>
-    <td width="50%">
-      <h3>Frequency Response</h3>
       <img src="assets/images/fr.jpg" alt="Frequency response plot">
-      <p>One-click loudspeaker response measurement with smoothing,
-      calibration, an optional dB SPL scale, distortion curves, overlays, target
-      comparison, and an optional coherence curve from averaged sweeps.</p>
+      <p><strong>Frequency Response</strong> — smoothing, calibration, an optional
+      dB SPL scale, distortion curves, overlays, targets, and coherence.</p>
     </td>
-  </tr>
-  <tr>
     <td width="50%">
-      <h3>Live Spectrum</h3>
       <img src="assets/images/noise.jpg" alt="Live Spectrum plot">
-      <p>Real-time loopback transfer-function analyzer with selectable excitation
-      noise, coherence, averaging, overlap, peak hold, unreliable-band marking, and
-      an absolute dB SPL RTA from an acoustic calibrator.</p>
-    </td>
-    <td width="50%">
-      <h3>Impulse Response</h3>
-      <img src="assets/images/impulse.jpg" alt="Impulse response plot">
-      <p>Inspect the measured impulse response, save it as readable JSON, load
-      it later, and reuse it across analysis modes without re-measuring.</p>
+      <p><strong>Live Spectrum</strong> — loopback transfer function with
+      selectable excitation noise, coherence, peak hold, and a dB SPL RTA.</p>
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <h3>Group Delay</h3>
-      <img src="assets/images/gd.jpg" alt="Group delay plot">
-      <p>Analyze timing behavior from the loopback-referenced transfer IR, with a
-      millisecond gate, gate offset, and a live impulse-window preview.</p>
+      <img src="assets/images/impulse.jpg" alt="Impulse response plot">
+      <p><strong>Impulse Response</strong> — inspect it, save it as readable JSON,
+      and reuse it across analysis modes without re-measuring.</p>
     </td>
     <td width="50%">
-      <h3>Waterfall and Burst Decay</h3>
-      <img src="assets/images/waterfall.jpg" alt="Waterfall plot">
-      <p>Visualize frequency decay and stored energy with the Fourier waterfall
-      and Burst Decay views.</p>
+      <img src="assets/images/gd.jpg" alt="Group delay plot">
+      <p><strong>Group Delay</strong> — timing from the transfer IR, with a
+      millisecond gate, gate offset, and a live impulse-window preview.</p>
     </td>
   </tr>
 </table>
 
 <details>
-<summary><strong>More plots</strong></summary>
+<summary><strong>More plots</strong> — waterfall, phase, Burst Decay, overlays</summary>
 
-### Phase response
-
+![Waterfall plot](assets/images/waterfall.jpg)
 ![Phase response plot](assets/images/phase.jpg)
-
-### Burst Decay
-
 ![Burst Decay plot](assets/images/burst.jpg)
-
-### Overlays
-
 ![Calculated overlay settings](assets/images/calc_overlay.jpg)
 
 </details>
 
 ## Requirements
 
-To run a release build:
+To run a release build: Windows 10 or later, working playback and recording
+devices, a suitable loopback and microphone connection, and optionally an ASIO
+driver. The self-contained release archives include the .NET runtime.
 
-- Windows 10 or later
-- Working Windows playback and recording devices
-- An optional ASIO driver for low-latency audio interfaces
-- A suitable loopback, microphone, or other measurement connection
+To build from source: Windows 10 or later, the
+[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) — `global.json`
+pins the exact version (`rollForward: latestPatch`), so an older feature band
+fails restore even though it is also .NET 10 — and Visual Studio 2026 with the
+**.NET desktop development** workload, or the .NET CLI.
 
-The self-contained release archives include the required .NET runtime.
-
-To build Resonalyze from source:
-
-- Windows 10 or later
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) — `global.json`
-  pins the exact version (`rollForward: latestPatch`), so an older feature band
-  fails restore even though it is also .NET 10
-- Visual Studio 2026 with the **.NET desktop development** workload, or the
-  .NET CLI
-
-Use conservative playback levels when connecting physical equipment. Start with
-the output turned down and verify the signal path before running a measurement.
+Use conservative playback levels when connecting physical equipment: start with
+the output turned down and verify the signal path before measuring.
 
 ## Your First Measurement
 
@@ -441,18 +268,15 @@ If you are starting from zero, this is the minimal hardware path — roughly
 
 - **A USB audio interface with at least two inputs** (any entry-level
   two-channel interface with phantom power works). Two inputs matter because
-  every Resonalyze measurement records a **loopback reference** alongside the
-  microphone — that is what makes the timing analysis absolute.
-  Community-verified so far: **Focusrite Scarlett Solo** (the developer's own
-  rig). Confirmed another interface working? Open an issue and it will be
-  listed here.
-- **An analog measurement microphone** (an inexpensive electret measurement
-  mic with an individual calibration file is ideal; Resonalyze imports the
-  calibration text file). A USB measurement mic such as the UMIK-1 will
-  **not** work — see the [FAQ](#faq) for why.
+  every measurement records a **loopback reference** alongside the microphone —
+  that is what makes the timing analysis absolute. Community-verified so far:
+  **Focusrite Scarlett Solo** (the developer's own rig).
+- **An analog measurement microphone** (an inexpensive electret measurement mic
+  with an individual calibration file is ideal). A USB measurement mic such as
+  the UMIK-1 will **not** work — see the [FAQ](#faq) for why.
 - **Two cables**: one to feed the system under test from the interface's
-  output 1, and one short cable from the interface's output 2 straight back
-  into input 2 — that is the loopback.
+  output 1, and one short cable from output 2 straight back into input 2 —
+  that is the loopback.
 
 Then, in about ten minutes:
 
@@ -460,17 +284,15 @@ Then, in about ten minutes:
    system's input (in a car: the DSP's aux/optical input, with only the driver
    under test unmuted).
 2. Start Resonalyze, open the measurement settings, select the interface, and
-   assign the **input** and **loopback** channels. The measurement will not
-   start without a loopback — that is by design. Set **Measurements** to at
-   least `4`: the sweeps are averaged into one cross-spectrum estimate, which
-   lifts the response out of the cabin's noise floor and produces the
-   per-frequency coherence curve that tells you which bands to trust.
+   assign the **input** and **loopback** channels. The measurement will not start
+   without a loopback — that is by design. Set **Measurements** to at least `4`:
+   the averaged sweeps lift the response out of the cabin's noise floor and
+   produce the coherence curve that tells you which bands to trust.
 3. Turn the playback level well down, place the mic at the listening position,
-   and run the sweeps. Watch the input level meter for microphone level,
-   loopback presence, and headroom.
-4. Explore the views: Frequency Response, Time Alignment (arrival, delay,
-   distance), Phase, Impulse. **Save** the impulse response — saved
-   measurements are the raw material for everything else.
+   and run the sweeps, watching the input level meter.
+4. Explore the views: Frequency Response, Time Alignment, Phase, Impulse.
+   **Save** the impulse response — saved measurements are the raw material for
+   everything else.
 5. Measure each driver the same way, then open [Virtual DSP](#virtual-dsp) and
    let **Auto crossover** and **Auto delay** design the tune against the
    phase-aware predicted sum before you touch the hardware.
@@ -482,57 +304,41 @@ described in [Measurement Workflow](#measurement-workflow).
 
 **Can I use a UMIK-1 or another USB microphone?**
 
-No — and it is physics, not stubbornness. Every Resonalyze measurement records
-a loopback reference next to the microphone signal, and the two streams must
-share **one hardware clock** to stay sample-accurate. A USB microphone is its
-own audio device with its own free-running clock; pairing it with a separate
+No — and it is physics, not stubbornness. Every measurement records a loopback
+reference next to the microphone signal, and the two streams must share **one
+hardware clock** to stay sample-accurate. A USB microphone is its own audio
+device with its own free-running clock; pairing it with a separate
 playback/loopback device gives two streams with an unknown run-to-run start
-offset plus continuous drift — which silently corrupts every timing-sensitive
-result: phase, group delay, and above all automatic delay alignment. This is
-also why the settings deliberately do not offer a separate loopback device.
-Use an analog measurement microphone through a two-input interface instead
-(see [Your First Measurement](#your-first-measurement)).
+offset plus continuous drift, which silently corrupts every timing-sensitive
+result. This is also why the settings do not offer a separate loopback device.
 
 **Why is the loopback mandatory? REW works without one.**
 
-The loopback records what actually left the playback chain and exactly when it
-left, so every analysis is derived from the mic-vs-loopback **transfer
-function** — timing becomes absolute rather than relative to an arbitrary
-trigger. That absolute time base is what allows separate measurements, taken
-minutes apart, to be combined later: it is the foundation of the whole
-measure-once-tune-at-your-desk workflow, of the complex (vector) sum
-prediction, and of automatic delay alignment. Without a shared reference none
-of those operations would be honest.
+The loopback records what actually left the playback chain and exactly when, so
+every analysis is derived from the mic-vs-loopback **transfer function** — timing
+becomes absolute rather than relative to an arbitrary trigger. That absolute time
+base is what allows separate measurements, taken minutes apart, to be combined
+later: it is the foundation of the measure-once-tune-at-your-desk workflow, of
+the complex (vector) sum prediction, and of automatic delay alignment.
 
 **Is one microphone position enough to tune a whole car?**
 
 At that one point, yes, and exactly: sound pressure sums linearly, so the
-predicted combination of individually measured drivers is the physics of what
-the microphone would record — not an approximation. The honest boundaries are
-the ones any single-point method has: the prediction holds at the microphone
-position (put it where your head is), in the linear non-clipping regime,
-with the same playback chain and mic position for every measurement in the
-set, and at a roughly stable cabin temperature. For frequency-response work
-you can go further with spatial averaging (**Confirm each run** pauses between
-sweeps so you can move the microphone). And the final judge of a tune is
-still your ears — the tool's job is to make the version you audition worth
-auditioning.
+predicted combination of individually measured drivers is the physics of what the
+microphone would record — not an approximation. The honest boundaries are the
+ones any single-point method has: the prediction holds at the microphone position
+(put it where your head is), in the linear non-clipping regime, with the same
+playback chain and mic position for every measurement, and at a roughly stable
+cabin temperature. For frequency-response work you can go further with spatial
+averaging. And the final judge of a tune is still your ears.
 
 ## Building from Source
-
-Clone the repository:
 
 ```powershell
 git clone https://github.com/DIMOSUS/Resonalyze.git
 ```
 
-Then open:
-
-```text
-source/Resonalyze.sln
-```
-
-Or build and run it from the command line:
+Then open `source/Resonalyze.sln`, or build and run from the command line:
 
 ```powershell
 dotnet restore source/Resonalyze.sln
@@ -546,93 +352,60 @@ Run all application and deterministic DSP tests with:
 dotnet test source/Resonalyze.sln -c Release --filter "Category!=Hardware"
 ```
 
-That covers three test projects: `Resonalyze.Dsp.Tests` (deterministic and
-synthetic), `Resonalyze.App.Tests` (file formats and non-UI application logic
-against a fake audio factory) and `Resonalyze.Audio.Tests` (audio internals —
-PCM decoding, capture sessions, WASAPI configuration). The filter drops the
-hardware smoke tests, which need real WASAPI endpoints named through the
-`RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID` and `RESONALYZE_WASAPI_RENDER_ENDPOINT_ID`
-environment variables; without those they report as skipped rather than passed.
+That covers `Resonalyze.Dsp.Tests` (deterministic and synthetic),
+`Resonalyze.App.Tests` (file formats and non-UI application logic against a fake
+audio factory) and `Resonalyze.Audio.Tests` (PCM decoding, capture sessions,
+WASAPI configuration). The filter drops the hardware smoke tests, which need real
+WASAPI endpoints named through the `RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID` and
+`RESONALYZE_WASAPI_RENDER_ENDPOINT_ID` environment variables.
 
-For local performance profiling, build the dedicated Tracy configuration:
+For local performance profiling, build the dedicated Tracy configuration
+(`dotnet run --project source/Resonalyze.csproj -c Tracy`), which defines
+`TRACY_ENABLE` and references `Tracy-CSharp`. Add instrumentation through
+`AppProfiler.Zone(...)`, `AppProfiler.FrameMark(...)` and
+`AppProfiler.SetThreadName(...)`; zones are thread-bound and strictly LIFO, so
+never let one span an `await`.
 
-```powershell
-dotnet run --project source/Resonalyze.csproj -c Tracy
-```
-
-This configuration defines `TRACY_ENABLE` and references `Tracy-CSharp`; normal
-Debug and Release builds do not load Tracy. Add instrumentation through
-`AppProfiler.Zone(...)`, `AppProfiler.FrameMark(...)`, and
-`AppProfiler.SetThreadName(...)` so profiling code stays isolated behind the
-build flag. Tracy zones are thread-bound and strictly LIFO: never let a zone
-span an `await` (Tracy terminates the session with "Invalid order of zone
-begin and end events") — zone the synchronous sections, including inside
-`Task.Run` bodies.
-
-The Release executable is produced at:
-
-```text
-source/bin/Release/net10.0-windows/Resonalyze.exe
-```
-
-Tagged GitHub releases also produce:
-
-- portable self-contained `.zip` packages for `win-x64` and `win-arm64`
-- an x64 `Setup.exe` installer with uninstall support
-- NetSparkle appcast files that the installed build uses for automatic updates
-
-The `build.yml` workflow runs on every push to `main` and every pull request. It
-builds the solution, runs all three test projects — application, audio and DSP —
-each with `--filter "Category!=Hardware"`, then proves the release path still
-works by producing the single-file self-contained publish and compiling
-`installer/Resonalyze.iss`. Warnings are errors, so a new one fails the build.
+The Release executable is produced at
+`source/bin/Release/net10.0-windows/Resonalyze.exe`; tagged releases also produce
+portable `.zip` packages for `win-x64` and `win-arm64`, an x64 `Setup.exe`
+installer, and NetSparkle appcast files. The `build.yml` workflow runs on every
+push to `main` and every pull request: it builds the solution, runs all three
+test projects, then proves the release path still works by producing the
+single-file publish and compiling `installer/Resonalyze.iss`. Warnings are
+errors.
 
 ## Measurement Workflow
 
 This workflow covers impulse-response (IR) based analysis: a swept-sine
 measurement is captured once and then inspected across the frequency-response,
 phase, group-delay, impulse, waterfall, and burst-decay views. For continuous,
-real-time analysis without capturing an IR, use the additional
-[Live Spectrum](#live-spectrum) mode instead.
+real-time analysis without capturing an IR, use [Live Spectrum](#live-spectrum).
 
 1. Connect the output of the device under test to the selected input, either
    directly or through a microphone and a suitable interface.
-2. Start Resonalyze and open the measurement settings.
-3. Select the audio backend, sample rate, devices or backend-specific input and
-   loopback channels, the [sweep band and pace](#sweep-band-and-duration),
-   playback channel, and analysis
-   parameters. A **loopback reference channel is required** — all analysis is
-   derived from the transfer IR it produces, so the settings panel flags an
-   unset loopback and the measurement will not start without one. To average
+2. Start Resonalyze, open the measurement settings, and select the audio backend,
+   sample rate, devices or backend-specific input and loopback channels, the
+   [sweep band and pace](#sweep-band-and-duration), playback channel, and
+   analysis parameters. A **loopback reference channel is required**. To average
    several sweeps, set **Measurements** above `1`; enable **Confirm each run** to
-   pause before each sweep so you can reposition the microphone for spatial
-   averaging.
-4. Start a recording to generate and capture the exponential sine sweep. With
-   averaging enabled the runs are combined into one transfer IR and a coherence
-   (γ²) curve, debiased by the number of runs: the raw estimate over K averages
-   reads 1/K even for pure noise (0.5 at two runs — estimator bias, not
-   information), so the stored figure maps that null expectation to 0 and stays
-   comparable across run counts.
-5. Watch the compact input level meter to confirm microphone level, loopback
-   presence, and headroom before trusting the measurement.
-6. Select the analysis view you need.
-7. Adjust smoothing, windows, offsets, and display options as needed. Mode
-   settings open in a docked, non-modal panel attached to the plot, so the main
-   window stays usable while the settings are visible. Changes apply on the fly
-   and update the active graph without closing the panel or resetting the
-   current zoom/pan.
-8. Capture and compare with [overlays](#plot-overlays): store the current curve
-   in an overlay slot, import a reference from text, or combine slots with curve
-   math. When tuning home or car systems, add a **target curve** overlay (a
-   parametric house/Harman-style target with presets) and switch its deviation
-   readout to **EQ correction** to see how much to dial into an equalizer.
-9. Pin a second measurement with [**Compare**](#compare) to overlay a reference
-   from a file or a History entry across Time Alignment, Phase, Group Delay,
-   Frequency Response, and Impulse Response.
-10. Use **Save** to keep the captured impulse response for later analysis or
-    comparison.
-11. Use **History** to review recent measurements, preview their frequency
-    response, reload an older snapshot, or save an in-memory capture to disk.
+   pause before each sweep so you can reposition the microphone.
+3. Start a recording to capture the sweep. With averaging the runs are combined
+   into one transfer IR and a coherence (γ²) curve, debiased by the number of
+   runs: the raw estimate over K averages reads 1/K even for pure noise, so the
+   stored figure maps that null expectation to 0 and stays comparable across run
+   counts.
+4. Watch the input level meter to confirm microphone level, loopback presence,
+   and headroom before trusting the measurement.
+5. Select the analysis view you need and adjust smoothing, windows, offsets and
+   display options.
+6. Capture and compare with [overlays](#plot-overlays): store the current curve
+   in a slot, import a reference from text, or combine slots with curve math. Add
+   a **target curve** overlay and switch its deviation readout to **EQ
+   correction** to see how much to dial into an equalizer.
+7. Pin a second measurement with [**Compare**](#compare), use **Save** to keep
+   the captured impulse response, and **History** to review recent measurements
+   or reload an older snapshot.
 
 For acoustic measurements, microphone placement and room conditions strongly
 affect the result. For electrical loopback measurements, make sure the signal
@@ -640,171 +413,89 @@ levels and impedances are safe for both devices.
 
 ## Mode Settings
 
-The **Mode Settings...** button opens the settings for the current analysis
-mode in a docked panel aligned to the plot area. The panel has no title bar, can
-stay open while the main window has focus, and switches automatically to the
-matching panel when you change modes.
-
-Settings apply on the fly: changing a value immediately redraws the current
-analysis while preserving the visible plot range. This makes it easier to tune
-smoothing, FFT windows, Tukey fades, offsets, and display options without losing
-the area you were inspecting.
-
-Each curve-based view groups its plotted curves under a **Curves:** heading with
-one checkbox per curve — for example Primary / HD2–HD4 / THD+N in Frequency
-Response, or measured / minimum / excess in Phase. Toggling a curve redraws
-immediately; there is no separate draw or clear step. Numeric and dropdown
-settings carry a small **R** button that resets them to the built-in default,
-and double-clicking a plot axis restores its default scale.
-
-The Frequency Response, Phase, Group Delay, Waterfall, and Burst settings
-include a compact impulse-window preview where applicable. The preview shows the
-impulse response used by that mode together with the selected Tukey window. Phase
-and Group Delay analyze the loopback transfer IR and are only drawn when the
-active record provides one; their preview marks the gate position used for the
-analysis.
-
-Live Spectrum has its own docked settings panel. It lets you choose the
-**Signal Type** (excitation noise), a **Scale** (relative dB or dB SPL, when an
-[SPL anchor](#sound-pressure-level-db-spl) applies), a microphone **calibration**
-profile (Off / 0° / 90°), and a **Sequence Length** from a power-of-two list. The
-sequence length is the FFT block size used by the live analyzer and is preserved
-between sessions.
+The **Mode Settings...** button opens the current mode's settings in a docked,
+title-bar-less panel aligned to the plot area, which stays open while the main
+window has focus and switches automatically when you change modes. Settings apply
+on the fly, redrawing the analysis while preserving the visible plot range. Each
+curve-based view groups its plotted curves under a **Curves:** heading with one
+checkbox per curve — Primary / HD2–HD4 / THD+N in Frequency Response, or
+measured / minimum / excess in Phase. Numeric and dropdown settings carry a small
+**R** button that resets them to the built-in default, double-clicking a plot
+axis restores its default scale, and the Frequency Response, Phase, Group Delay,
+Waterfall and Burst panels include a compact impulse-window preview.
 
 ## Phase and Group Delay
 
-Phase and group-delay analysis run on the **loopback transfer impulse response**:
-both views need the common timing reference it provides, so they are only drawn
-when the active record contains a transfer IR. Without one, the plot says that
-loopback is required instead of showing a misleading curve.
+Phase and group-delay analysis run on the **loopback transfer impulse
+response**, so they are only drawn when the active record contains one. Both use
+a millisecond-based fixed gate built from a left Tukey fade, a flat plateau, and
+a right Tukey fade. A **Gate offset** positions the end of the left fade inside
+the analysis frame, and the **Auto** checkbox (on by default) keeps that offset
+snapped to the detected start of the impulse response — the band-limited
+first-arrival front, not the peak — falling back to the transfer-IR peak when the
+detector cannot get a trustworthy reading. A read-only readout shows the gate's
+lowest reliable frequency (≈ 1 / gate length).
 
-Both modes use a millisecond-based fixed gate built from a left Tukey fade, a
-flat plateau, and a right Tukey fade. A **Gate offset** positions the end of the
-left fade inside the analysis frame, and the **Auto** checkbox beside it keeps
-that offset snapped to the detected start of the impulse response — the
-band-limited first-arrival front, not the peak — re-snapping on every new
-measurement and making the field read-only while it is checked. It is on by
-default; release it to place the gate by hand. (When the detector cannot get a
-trustworthy reading from a record it falls back to the transfer-IR peak, which
-is what older releases always used.) The docked preview draws the impulse
-response, the fixed gate, and a
-marker at the gate offset. A read-only readout shows its lowest reliable
-frequency (≈ 1 / gate length), so it is clear where the gated curve stops being
-trustworthy.
+Phase additionally offers **Window: Fixed / FDW**. Fixed is the single Tukey gate
+across the whole spectrum; **FDW** builds a bank of time-aligned spectra whose
+effective right-side duration follows `cycles / frequency`, so low frequencies
+retain the long window while mid and high frequencies progressively reject the
+late reflection tail. **FDW cycles** selects 4 (strongest suppression), 6 (the
+recommended balance), or 8 (more late detail).
 
-Phase additionally offers **Window: Fixed / FDW**. Fixed reproduces the original
-single Tukey gate across the whole spectrum. **FDW** builds a small bank of
-time-aligned spectra whose effective right-side duration follows
-`cycles / frequency`: the fixed gate is the maximum, so low frequencies retain
-the long window, while mid and high frequencies progressively reject the late
-reflection tail. **FDW cycles** selects 4, 6, or 8 periods: 4 gives the strongest
-reflection suppression, 6 is the recommended balance, and 8 retains more late
-detail. Every bank spectrum is referenced to the same absolute sample origin
-before interpolation, so changing cycle count does not create an artificial
-time shift.
-
-The Phase view can show four independently toggled curves:
-
-- **Measured phase** — the raw response, including delay and reflections.
-- **Minimum phase** — the part tied to the magnitude (correctable with EQ),
-  reconstructed with a real-cepstrum method.
-- **Excess phase** — measured minus minimum: the all-pass part (pure delay and
-  reflections) that an equalizer cannot fix.
-- **Coherence (γ²)** — drawn when the impulse response was captured with two or
-  more averaged runs, to show which frequencies the phase traces can be trusted at.
-
-**Detrend** removes one constant delay before phase unwrapping:
-
-- **Auto** estimates the slope-based excess delay from the same Fixed/FDW
-  spectrum being displayed. The resolved read-only value appears directly in
-  **τ (ms)**.
-- **Manual** uses the editable τ value. Switching through Auto does not overwrite
-  the stored Manual value.
-- **Off** applies no additional detrend and keeps the absolute phase slope.
-
-When Main and Compare are displayed together, Auto is resolved once from Main
-and that common reference is applied to both measurements. Their real relative
-delay therefore remains visible as a linear phase difference instead of each
-curve being flattened independently. The same common reference is used for
-measured and excess phase.
+The Phase view shows four independently toggled curves: **measured phase**,
+**minimum phase** (the part tied to the magnitude and correctable with EQ),
+**excess phase** (measured minus minimum — the all-pass part an equalizer cannot
+fix), and **coherence (γ²)** from averaged runs. **Detrend** removes one constant
+delay before unwrapping: **Auto** estimates the slope-based excess delay from the
+displayed spectrum and shows it in **τ (ms)**, **Manual** uses the editable
+value, **Off** keeps the absolute slope. With Main and Compare together, Auto is
+resolved once from Main and applied to both, so their real relative delay stays
+visible as a linear phase difference.
 
 Unwrapped phase uses a **reliability-anchored** algorithm instead of naive
 bin-to-bin accumulation: each bin takes the 360° branch closest to a phase
-predicted from the last trustworthy bin and the running phase slope. Bins well
-below the local magnitude envelope (so one tall resonance cannot disqualify a
-quieter but repeatable band) — or with low **coherence**, when the measurement
-carries a γ² estimate from averaged runs — are still displayed but never
-trusted as anchors, so deep nulls, reflection notches, and masked bands are
-bridged cleanly and a single bad bin can no longer shift the entire remaining
-curve by a multiple of 360°. A dead stretch too long to bridge honestly (the
-turn count inside it is genuinely unknowable) is blanked instead of guessed,
-and the curve restarts as a fresh segment after it. On clean data the result
-is identical to the classic unwrap.
-
-Measured, minimum, and excess phase are internally consistent: minimum phase is
-derived from the magnitude of the selected Fixed/FDW analysis spectrum, and
-excess phase subtracts that curve from measured phase without smoothing across
-NaN segment breaks.
+predicted from the last trustworthy bin and the running slope. Bins well below
+the local magnitude envelope — or with low coherence — are still displayed but
+never trusted as anchors, so deep nulls and masked bands are bridged cleanly,
+while a stretch too long to bridge honestly is blanked instead of guessed.
 
 Group Delay reads absolute delay referenced to the start of the transfer IR, so a
-peak well into the impulse response reports its true arrival time. The curve is
-computed energy-weighted: the numerator and the energy of the per-bin group-delay
-ratio are smoothed separately and divided afterwards, so near-null bins — where
-the raw ratio legitimately spikes to tens of milliseconds while carrying almost
-no energy — follow the delay of the dominant energy instead of the singularity.
-The smoothing window never narrows below the gate's own spectral resolution
-(features finer than 1/T cannot be resolved by a gate of duration T anyway), so
-interference-null spikes stay suppressed even with display smoothing off.
-FDW is deliberately not applied to Group Delay in this version: Group Delay
-continues to use the fixed Tukey gate. Consequently an FDW phase curve is a
-direct-sound-oriented representation and is not the exact integral of the
-currently displayed fixed-gate Group Delay. Selecting Fixed phase restores the
-mathematically compatible phase/group-delay pair.
+peak well into the impulse response reports its true arrival time, and the curve
+is computed energy-weighted so near-null bins follow the dominant energy instead
+of the singularity. FDW is deliberately not applied here: an FDW phase curve is
+direct-sound-oriented and is not the exact integral of the displayed fixed-gate
+Group Delay, so selecting Fixed phase restores the compatible pair.
 
 ## Audio Backends
 
-Resonalyze can run measurements through four backends, chosen in the
-measurement settings dialog:
+Resonalyze can run measurements through four backends, chosen in the measurement
+settings dialog:
 
 | Backend | Use it for |
 |---------|------------|
 | **MME Compatibility** | Ordinary Windows playback and recording devices. The most compatible option and the fallback when nothing else works. |
 | **ASIO** | Audio interfaces with a native ASIO driver: lowest latency and arbitrary multi-channel routing. |
 | **WASAPI Shared** | Windows endpoints without an ASIO driver, while other applications keep using the device. The endpoint's own mix format applies, so Windows may resample. |
-| **WASAPI Exclusive** | The same endpoints taken exclusively: no Windows mixer in the path, and the requested sample rate and bit depth reach the hardware unresampled. Nothing else can play while a measurement runs. |
+| **WASAPI Exclusive** | The same endpoints taken exclusively: no Windows mixer in the path, and the requested sample rate and bit depth reach the hardware unresampled. |
 
 Both WASAPI modes address devices by endpoint id rather than by index, so a
-chosen device survives reboots and device reordering. The two subsections below
-cover the MME and ASIO settings in detail; the WASAPI modes use the same
+chosen device survives reboots and device reordering, and they use the same
 microphone and loopback channel selection as MME.
 
 ![Measurement settings](assets/images/measurement-options.png)
 
-The microphone input is the primary measurement channel, and a loopback
-reference channel is **required** for every measurement. Resonalyze records both
-channels simultaneously and derives the main impulse response as a transfer
-function from the loopback reference to the microphone response, which removes
-the playback path (DAC, amplifier, output routing) from the analysis. All
-IR-based views — frequency response, phase, group delay, impulse response,
-waterfall, Burst Decay, and autocorrelation — are computed from this transfer
-IR. Harmonic distortion, THD, and THD+N curves use the ordinary
-sweep-deconvolution response instead, because the harmonic separation belongs to
-the sweep analysis itself. The HD2–HD4 curves draw at the **excitation**
-frequency (a second-harmonic hump caused by a 1 kHz drive appears at 1 kHz,
-not at its 2 kHz product; microphone calibration is applied at the product
-frequency first), so each curve ends at Nyquist/n. Note the harmonic curves
-are on the sweep-deconvolution scale while the primary curve is
-loopback-normalized — their vertical distance is not yet a calibrated
-distortion percentage.
-
-The group-delay reference is the start of the transfer IR, so reported delay is
-absolute rather than relative to a response peak.
-
-Because the loopback is mandatory, a measurement will not start until a loopback
-channel is selected for the active backend; the settings panel flags an unset
-loopback in place. Records loaded from older files that were captured without a
-transfer IR still open, but their transfer-IR views show a "requires loopback
-transfer IR" note instead of a misleading curve.
+The microphone input is the primary measurement channel, and a loopback reference
+channel is **required** for every measurement. Both are recorded simultaneously
+and the main impulse response is derived as a transfer function from the loopback
+reference to the microphone response, which removes the playback path (DAC,
+amplifier, output routing) from the analysis. All IR-based views come from this
+transfer IR; harmonic distortion, THD and THD+N use the ordinary
+sweep-deconvolution response instead, drawing HD2–HD4 at the **excitation**
+frequency (a second-harmonic hump from a 1 kHz drive appears at 1 kHz, not at
+2 kHz) so each ends at Nyquist/n. Because those curves sit on the
+sweep-deconvolution scale while the primary curve is loopback-normalized, their
+vertical distance is not yet a calibrated distortion percentage.
 
 ### Sweep band and duration
 
@@ -812,616 +503,253 @@ The exponential sweep is described by the band it must cover: a **Low frequency
 (Hz)** and a **High frequency (Hz)** anywhere between 20 Hz and 20 kHz, plus a
 **Per octave (ms)** pace that sets the duration. Measuring a tweeter through a
 2 kHz crossover no longer means sweeping from 20 Hz and pinning the top to
-Nyquist — sweep the band the driver actually plays, and spend the whole
-excitation there.
+Nyquist — sweep the band the driver actually plays. Phase alignment is preserved
+by rounding the band outward to whole start and end cycles, so the achieved range
+always encloses the one you asked for and the fades live in guard bands outside
+it; the **Actual range** line reports what the settings really deliver instead of
+quietly shortening the sweep at run time, and the transfer estimate is gated to
+the excited band, because outside it the transfer function is only microphone
+noise divided by the reference's leakage skirt.
 
-Phase alignment is preserved by rounding the band outward to whole start and end
-cycles, so the achieved range always encloses the one you asked for, and the
-fade-in and fade-out live in the guard bands outside it rather than eating into
-the band under test. The **Actual range** line reports what the current settings
-really deliver: where a short sweep cannot honour the request — one cycle at
-20 Hz alone takes 50 ms — it says so instead of quietly shortening the sweep at
-run time. The duration is capped by one length limit that the preview, the
-generator and the stored settings all resolve through, so the panel cannot
-promise a sweep the measurement then fails to play.
-
-The transfer estimate is gated to the excited band: full weight between the
-points where the sweep envelope is actually open, raised-cosine ramps across the
-fades, zero outside. Outside the swept band the transfer function is microphone
-noise divided by the reference's leakage skirt, which used to surface as +15 dB
-spikes just below the start of a band-limited sweep; those bins are now excluded
-rather than half-passed.
-
-The excitation plays at a fixed **−6 dBFS**, not at full scale, and there is no
-control for it. That is the level the [Signal Generator](#signal-generator) at
-its default **Level, %** of `50` and the [Live Spectrum](#live-spectrum) noise
-already play at, so an output level dialled in with either of those still holds
-when the sweep runs — a full-scale sweep was 6 dB hotter than the tone used to
-set it and clipped the interface's output stage. A full-scale sine sweep is also
-the worst case for the converter itself: the analog waveform overshoots the
-samples between them, so it can clip on reconstruction even when no sample
-exceeds full scale.
-
-The headroom costs 6 dB of signal-to-noise ratio and nothing else. The inverse
-filter carries the reciprocal scale, so the deconvolved impulse response comes
-back at the level a full-scale excitation would have produced, and the transfer
-function the analysis is built on (microphone ÷ loopback) is scale-invariant to
-begin with. Absolute [dB SPL](#sound-pressure-level-db-spl) readings follow the
-real acoustic output as they always have: it is genuinely 6 dB lower until you
-turn the playback level up — which is now the headroom you have to spend.
+The excitation plays at a fixed **−6 dBFS**, and there is no control for it. That
+is the level the [Signal Generator](#signal-generator) at its default **Level, %**
+of `50` and the [Live Spectrum](#live-spectrum) noise already play at, so an
+output level dialled in with either still holds when the sweep runs; a full-scale
+sine sweep is also the worst case for the converter, which can clip on
+reconstruction even when no sample exceeds full scale. The headroom costs 6 dB of
+signal-to-noise ratio and nothing else, since the inverse filter carries the
+reciprocal scale and the transfer function is scale-invariant.
 
 **Save sweep as WAV...** writes the sweep the panel currently describes to a
-24-bit WAV file: the same band, pace, sample rate and playback channel a
-measurement would play, at the same −6 dBFS. The playback channel is carried into
-the file's layout, so `Mono` writes one channel while `Left` and `Right` write a
-stereo file with the other side silent. A second of silence is written before and
-after the sweep — a file whose first sample is already the excitation loses its
-opening to whatever the playback chain does when audio begins, such as a
-Bluetooth link or a class-D amplifier coming out of mute, and the trailing second
-gives the room its decay before the file ends. Its purpose is measuring from a source
-that is not this computer — a phone, a head unit, a USB stick in the car — and
-the recording that comes back can be analyzed with
-[Load](#saving-and-loading-impulse-responses).
-
-Measurement options apply as you edit them — the band, the pace, the playback
-channel, the averaging — and touch the audio session only when its identity
-actually changed. The audio backend, the format the device is opened with and
-its device panel are the exception: they sit in their own bordered panel and
-commit together with **Apply settings**.
+24-bit WAV file — the same band, pace, sample rate, playback channel and level a
+measurement would play, with a second of silence before and after — for measuring
+from a source that is not this computer, such as a phone, a head unit or a USB
+stick in the car. Measurement options otherwise apply as you edit them and touch
+the audio session only when its identity changed; the audio backend, the device
+format and its device panel commit together with **Apply settings**.
 
 ### MME Compatibility
 
 Use **MME Compatibility** for ordinary Windows playback and recording devices.
-(Older releases and the settings file call this backend `Wave`; the dropdown
-entry is "MME Compatibility".) The measurement settings dialog lets you choose:
-
-- playback device
-- recording device (microphone)
-- sample rate from the values supported by the current configuration
-- playback channel
-- microphone input channel (`Left` or `Right`)
-- loopback input channel (`Left` or `Right`) — required
+(Older releases and the settings file call this backend `Wave`.) You choose the
+playback device, the recording device, the sample rate, the playback channel, and
+the microphone and loopback input channels (`Left` / `Right`, loopback required).
 
 The loopback is captured from a second channel of the **same** recording device
 as the microphone, so both signals share one hardware clock and stay
-sample-accurate — the timing every phase, group-delay and time-alignment result
-relies on. This is deliberate: capturing the loopback from a second input
-device would put the two streams on independent clocks with an unknown,
-run-to-run start offset plus drift, silently degrading every timing-sensitive
-result. Resonalyze therefore does not offer a separate loopback device at all;
-loopback is mandatory, so the recording device must expose a stereo input (or
-use ASIO).
+sample-accurate; a second input device would put the two streams on independent
+clocks with an unknown offset plus drift, so Resonalyze does not offer a separate
+loopback device at all.
 
 ### ASIO
 
-Use **ASIO** for audio interfaces that provide a native ASIO driver. The
-measurement settings dialog lets you choose:
+Use **ASIO** for audio interfaces with a native ASIO driver. You choose the
+driver, the sample rate, the microphone and loopback input channels (loopback
+required), the output channel pair, and the routing within it: `Mono` sends the
+signal to both channels of the pair, `Left` and `Right` to one of them, `Stereo`
+to both. Before applying, Resonalyze checks whether the driver supports the
+current sample rate, showing its playback latency and a
+"supported / not supported" line; a driver already in use by another application
+is reported before the measurement starts.
 
-- ASIO driver
-- sample rate from the values supported by the selected driver
-- ASIO input channel used for the microphone
-- ASIO loopback input channel — required
-- ASIO output channel pair used for playback
-- playback routing within the selected output pair
-
-ASIO output routing works as follows:
-
-- `Mono` sends the same signal to both channels of the selected output pair
-- `Left` sends the signal only to the first channel of the pair
-- `Right` sends the signal only to the second channel of the pair
-- `Stereo` sends the signal to both channels of the pair
-
-Before applying ASIO settings, Resonalyze checks whether the selected driver
-supports the current sample rate: the dialog shows the driver's playback latency
-in samples and a "supported / not supported" line for the chosen rate.
-
-Click **ASIO Control Panel** to open the driver's native control panel. Use it
-to configure driver-level settings such as buffer size, clock source, or sample
-rate when the driver requires those to be set outside the application.
-
-Click **Test ASIO Inputs** to capture a short diagnostic snapshot of the
-available ASIO inputs. This helps verify that the microphone and loopback
-channels are truly separate and are not being mono-summed by the driver or the
-audio-interface control software.
-
-ASIO support depends on the installed driver. If a driver is already in use by
-another application or refuses the selected sample rate, Resonalyze reports the
-driver error before starting the measurement.
+**ASIO Control Panel** opens the driver's own panel for buffer size or clock
+source; **Test ASIO Inputs** captures a short diagnostic snapshot that verifies
+the microphone and loopback channels are truly separate and not mono-summed by
+the driver or the interface's control software.
 
 ## Input Level Meter
 
 The right-side control column includes a compact two-channel input meter for
-`Mic` and `Loop`. It is designed to stay useful — while routing, checking
-loopback, or validating a completed measurement — without opening extra dialogs.
-
-- the bar shows a filtered RMS level
-- the bright vertical marker shows Peak Hold
-- the text shows `Peak / RMS` in `dBFS`
-- after a sweep or time-alignment measurement completes, the meter retains the
-  final levels from the last valid capture instead of dropping back to idle
-
-This makes it easy to spot missing loopback, a weak microphone level, overload,
-or an unexpectedly hot reference path before you start analyzing the curves.
+`Mic` and `Loop`: the bar shows a filtered RMS level, the bright vertical marker
+Peak Hold, and the text `Peak / RMS` in `dBFS`. After a measurement completes it
+retains the final levels from the last valid capture, which makes it easy to spot
+missing loopback, a weak microphone level, or overload.
 
 What a level meter **cannot** show is analog distortion: an input stage driven
 past its limit distorts long before its digital level reaches full scale, so a
-loopback reading a comfortable −15 dBFS can still be delivering a badly
-misshapen copy of the sweep. That matters more for the reference than for
-anything else, because every analysis is the microphone divided by it — a
-nonlinear reference produces a wrong answer, not a noisy one, and coherence
-stays high while it happens (the distortion is deterministic, so it repeats
-identically run to run).
-
-Resonalyze therefore measures each channel's own harmonic content when a
-measurement is refused. The sweep's inverse filter sorts harmonic distortion
-into packets that sit ahead of the direct arrival in time, so the level of those
-packets is read directly per channel, and the refusal names the offender:
+loopback reading a comfortable −15 dBFS can still deliver a badly misshapen copy
+of the sweep. That matters most for the reference, because every analysis is the
+microphone divided by it — a nonlinear reference produces a wrong answer, not a
+noisy one, and coherence stays high while it happens. Resonalyze therefore reads
+each channel's own harmonic content and names the offender when it refuses a
+measurement:
 
 > The LOOPBACK REFERENCE is distorting: its harmonic packets read −8.1 dB
 > relative to the direct one, where the microphone reads −40.6 dB, and it peaked
 > at only −18.1 dBFS, so the input meter had nothing to show.
 
-The fix for that case is to attenuate what reaches the loopback **input** — a
-line input instead of an instrument one where the interface offers both, a pad
-in the loopback cable, or a lower playback level. Attenuate only as far as it
-takes to leave the input's linear region: the transfer estimate is
-scale-invariant, so a moderately padded reference measures as well as a hot one
-— but a pad attenuates the signal, not the input's own noise, so a reference
-driven far down toward the noise floor pays for it in coherence (the estimate's
-denominator gets noisier, and its reference-power gate and regularization exist
-precisely because that matters). Keeping the playback level down to protect the
-reference is the costliest option, because it spends the whole measurement's
-signal-to-noise ratio.
+The fix is to attenuate what reaches the loopback **input** — a line input
+instead of an instrument one, a pad in the cable, or a lower playback level — but
+only as far as it takes to leave the input's linear region, since a pad
+attenuates the signal and not the input's own noise and a reference driven toward
+the noise floor pays for it in coherence.
 
 ## Live Spectrum
 
 The **Live Spectrum** mode is a live, dual-FFT **transfer-function** analyzer. It
 plays a continuous excitation signal, uses the configured loopback channel as a
-reference, and shows the real-time frequency-domain relationship from loopback to
-microphone. Because the estimate is referenced to loopback rather than to the
-microphone alone, it suppresses noise and other input-side content that is not
-correlated with the playback signal.
-
-Alongside the transfer function, Resonalyze draws a **coherence** curve (γ²) on a
-secondary right-hand axis scaled from 0 to 1. Coherence shows how much of the
-measured response is linearly correlated with the loopback reference: values
-near 1 mark frequencies where the transfer-function estimate is trustworthy,
-while low values flag bands dominated by noise, reflections, or non-linear
-behavior.
-
-The live estimate averages in the power domain, which avoids the downward bias
-that magnitude averaging introduces on noise-like signals. The level is
-calibrated for tones rather than as a power spectral density. On-screen smoothing
-is referenced to wall-clock time, so the response stays consistent regardless of
-the chosen overlap and sequence length, and the display refreshes at roughly 30
-frames per second.
-
-Live Spectrum works with any backend. Configure a loopback input in **Record
-Settings**, on a separate channel from the microphone, to get the full
-loopback-referenced transfer function with coherence.
+reference, and shows the real-time relationship from loopback to microphone,
+which suppresses input-side content not correlated with the playback signal.
+Alongside it a **coherence** curve (γ²) is drawn on a secondary 0-to-1 axis:
+values near 1 mark trustworthy frequencies, low values flag bands dominated by
+noise, reflections, or non-linear behavior. The estimate averages in the power
+domain, and on-screen smoothing is referenced to wall-clock time, so the response
+stays consistent regardless of overlap and sequence length.
 
 Without a loopback it still runs, as a single-channel RTA: the microphone's own
 spectrum, with no transfer function and no coherence. That is the mode the car
 workflow actually wants — a moving-microphone average in dB SPL, where there is
-no reference signal to divide by.
+no reference to divide by. A **Scale** control switches between relative dB and
+**dB SPL** (offered only while a matching
+[SPL anchor](#sound-pressure-level-db-spl) applies). In dB SPL the transfer
+function is hidden — a dimensionless ratio has no absolute level under noise
+excitation — and the whole plot becomes the microphone **RTA** on a true dB SPL
+axis, integrated as power per fractional-octave band. Because dB SPL needs no
+excitation, it also unlocks a **Silent** signal type — an ambient RTA.
 
-In practice, referencing to loopback is far more stable than viewing the raw
-microphone spectrum when the room or measurement chain contains unrelated noise.
-It is not a magic denoiser, but it lets you focus on the driven response rather
-than on whatever the microphone happens to hear.
+**Signal Type** selects the excitation: **Pink noise (periodic)** (the default —
+one FFT-length period of exactly pink noise, looped; being periodic with the
+analysis block it is measured **leakage-free** with a rectangular window and
+converges almost instantly, so **Window** is forced to `Rectangular` and
+**Overlap** to `Off`), **Pink noise** (continuous random, −3 dB/octave), **Brown
+/ red noise** (−6 dB/octave, for subwoofer and room-mode work), or **White
+noise** (flat energy per hertz).
 
-A **Scale** control switches the plot between relative dB and **dB SPL** (offered
-only while a matching [SPL anchor](#sound-pressure-level-db-spl) applies to the
-live input). In dB SPL the transfer function is hidden — a dimensionless ratio has
-no absolute level under noise excitation — and the whole plot becomes the
-microphone **RTA** on a true dB SPL axis. That RTA level is integrated as power
-per fractional-octave band, so the absolute reading is independent of the FFT size
-*above* the analysis resolution limit. Below it — where a single FFT can no longer
-resolve that band — the integration band is floored to the window's main lobe,
-which does narrow as the FFT lengthens, so a broadband level there reads roughly
-3 dB lower per doubling of the FFT size. That is the unavoidable resolution limit
-of a single FFT, shared by every FFT RTA; use a longer FFT to push it lower.
-Because dB SPL needs no
-excitation, it also unlocks a **Silent** signal type — an ambient RTA that plays
-nothing and simply measures what the microphone hears — while the periodic pink
-noise, which exists only to converge the transfer function, is dropped from the
-list.
+Further settings: **Sequence Length** (the FFT block size), **Overlap** (`Off` /
+`50%` / `75%`, reclaiming the samples a tapering window attenuates at the block
+edges), **Smoothing**, **Window** (`Hann`, `Flat Top` for amplitude accuracy on
+tones, `Blackman-Harris` for leakage suppression, or `Rectangular`), and
+**Averaging** (`Fast` / `Medium` / `Slow` time constants, or `Infinite`, with
+**Reset Average**). The drawn curves are the **Main curve**, **Peak Hold**,
+**Coherence**, and **RTA (input)** — the plain magnitude spectrum of the
+microphone alone, which under dB SPL becomes calibrated absolute sound pressure
+and the only curve, and which can be captured into an overlay slot and equalized
+in the [EQ Wizard](#choosing-what-to-equalize). **Coherence Limit** draws any
+frequency below the chosen percentage (default `25%`) dimmed and dashed, and a
+**processing overload** warning appears if the CPU cannot keep up.
 
-**Signal Type** selects the excitation noise, ordered by usefulness:
-
-- **Pink noise (periodic)** — the default. One FFT-length period of exactly pink
-  noise, synthesised in the frequency domain and looped. Because it is periodic
-  with the analysis block, every frame captures a whole period, so it is measured
-  **leakage-free** with a rectangular window and perfect bin resolution, and the
-  average converges almost instantly. When it is selected, **Window** is forced to
-  `Rectangular` and **Overlap** to `Off` (both would only add correlated frames
-  that do not improve the estimate); your own picks are restored for other signals.
-- **Pink noise** — continuous random pink noise, −3 dB/octave.
-- **Brown / red noise** — −6 dB/octave, with more low-frequency drive for
-  subwoofer and room-mode work.
-- **White noise** — flat energy per hertz.
-
-The Live Spectrum settings panel also exposes **Sequence Length**, the FFT block
-size used by the live analyzer. Only power-of-two values are offered, to keep the
-live FFT path efficient and predictable.
-
-It also exposes **Overlap** (`Off`, `50%`, or `75%`), which slides the analysis
-window by a fraction of its size instead of advancing in non-overlapping blocks.
-With a tapering window (the usual case) overlap reclaims the samples the window
-attenuates at the block edges, giving faster, smoother averaging and a more
-responsive display at the cost of more FFTs per second. It is disabled for
-periodic pink noise, where overlapped frames are correlated and add no averaging.
-
-**Smoothing** applies fractional-octave smoothing (`Off`, `1/1` … `1/48`) to the
-displayed curve, using the same presets as the Frequency Response mode.
-
-Every magnitude-smoothing selector (Frequency Response, Live Spectrum,
-Fourier Waterfall, Virtual DSP, EQ Wizard, magnitude overlays) also offers
-**Psychoacoustic**: smoothing whose width follows frequency instead of staying
-constant — 1/3 octave at and below 100 Hz, narrowing smoothly to 1/6 octave from
-1 kHz upward. That is roughly how hearing resolution varies: broad in the bass,
-where room modes dominate and fine structure is neither audible nor fixable, and
-finer in the midrange and treble, where real resonances live and are worth
-seeing. It shapes magnitude curves only:
-phase, group-delay and coherence traces (including captured overlays of them)
-and the harmonic widths fall back to the plain 1/6-octave width, Burst Decay
-does not offer the mode at all (its per-band envelope pipeline has no
-magnitude grid to floor), and the Auto delay engine never reads the display
-smoothing — the drawn curve and the panel's Sum-loss read-outs follow the
-selection, the proposed delays do not. Files that store a smoothing choice (overlays, Virtual
-DSP sessions) save the mode as a plain 1/6-octave width plus a separate flag,
-so older builds open them with plain smoothing instead of rejecting them.
-
-**Window** selects the analysis window applied before the FFT: `Hann` (a good
-general default), `Flat Top` (maximum amplitude accuracy for tones),
-`Blackman-Harris` (strong spectral-leakage suppression), or `Rectangular`
-(unwindowed). It is forced to `Rectangular` for periodic pink noise, which is
-already leakage-free.
-
-**Averaging** sets how quickly the trace responds: `Fast`, `Medium`, and `Slow`
-select exponential time constants (referenced to wall-clock time, so they are
-independent of overlap and sequence length), while `Infinite` integrates a
-cumulative average indefinitely. **Reset Average** clears the running average and
-peak-hold envelope without restarting the measurement.
-
-**Main curve** (on by default) shows the primary live trace itself; turning it
-off leaves only the optional RTA, peak-hold, and coherence curves.
-
-**RTA (input)** (off by default) overlays a reference-free real-time analyzer
-curve: the plain magnitude spectrum of the microphone input **alone**, with no
-division by the loopback reference. It is what a classic RTA shows — the actual
-spectral content the microphone hears — and is drawn on the same dB axis as the
-transfer function. Coherence does not apply to it, so it is never dimmed by the
-**Coherence Limit**, and its level is normalized by the analysis window's coherent
-gain, so switching windows does not shift it. In relative dB it is a single-channel
-level whose vertical position floats with input gain; with the **Scale** set to
-**dB SPL** it becomes calibrated absolute sound pressure (and the only curve —
-see [Sound Pressure Level](#sound-pressure-level-db-spl)). Captured into an
-overlay slot, an RTA trace — typically a microphone moved slowly around the
-listening area — can be equalized directly in the
-[EQ Wizard](#choosing-what-to-equalize).
-
-**Peak Hold** overlays a second curve that retains the maximum level seen on the
-trace until it is reset. **Coherence** (on by default) toggles the γ² curve
-shown on a secondary 0-to-1 axis.
-
-**Coherence Limit** marks unreliable parts of the transfer-function curve: any
-frequency whose coherence falls below the chosen percentage (default `25%`) is
-drawn dimmed and dashed, so it is immediately clear which portions of the trace
-should not be trusted. Set it to `Off` to draw the whole curve uniformly.
-
-If the CPU cannot keep up with the chosen settings, captured blocks are dropped
-rather than allowed to stall the measurement, and a **processing overload**
-warning appears at the top of the plot, making the cause of a stuttering display
-clear.
-
-Switching to another analysis mode and back restores the last Live Spectrum
-curve, its peak-hold envelope, and any active overlays, so a captured trace is
-not lost when you step away to inspect a different view. Press **Start** to
-resume live capture; starting a new capture replaces the remembered trace
-automatically.
+Every magnitude-smoothing selector (Frequency Response, Live Spectrum, Fourier
+Waterfall, Virtual DSP, EQ Wizard, magnitude overlays) also offers
+**Psychoacoustic**: smoothing whose width follows frequency — 1/3 octave at and
+below 100 Hz, narrowing smoothly to 1/6 octave from 1 kHz upward. It shapes
+magnitude curves only; phase, group-delay and coherence traces fall back to the
+plain 1/6-octave width, and the Auto delay engine never reads display smoothing.
 
 ## Measurement History
 
-The **History** button opens a docked measurement-history panel with:
+The **History** button opens a docked panel with a list of recent snapshots, a
+compact frequency-response preview for the selected row, and row tooltips
+carrying capture metadata (time, mode, sample rate, duration, channel, peak
+index, stored meter levels). Entries come in two kinds: `RAM` for in-memory
+snapshots from the current session, and `FILE` for saved IR files remembered
+across launches; the newest appear at the top, in a stable chronological order.
 
-- a list of recent measurement snapshots
-- a compact frequency-response preview for the selected row
-- row tooltips with capture metadata such as time, mode, sample rate, duration,
-  channel, peak index, and stored mic/loopback meter levels
+Double-click a row to load it. Use **Save** to turn an in-memory snapshot into a
+regular IR JSON file, **Delete** to remove an item from history without deleting
+the file from disk, and **New session (reset to defaults)** to start clean — all
+per-mode settings return to their defaults and the current measurement and
+overlays are cleared, while audio device and routing settings, the history list
+and saved files are left intact.
 
-History entries come in two kinds:
-
-- `RAM` for in-memory snapshots from the current session
-- `FILE` for saved IR files remembered across launches, as long as the files
-  still exist on disk
-
-The newest entries appear at the top of the list. Column-header sorting is
-intentionally disabled, so the history keeps a stable chronological order and
-the row actions always match the visible item.
-
-The currently active loaded snapshot stays highlighted in the list, even when
-you click another row only to inspect its preview. This makes it easier to
-compare entries without losing track of which measurement is actually driving
-the main plots.
-
-Double-click a row to load it into the main workspace. Use:
-
-- **Save** to turn an in-memory snapshot into a regular IR JSON file
-- **Delete** to remove an item from history without deleting the underlying file
-  from disk
-- **New session (reset to defaults)** to start with a clean slate: all per-mode
-  settings return to their defaults, and the current measurement and overlays
-  are cleared. Audio device and routing settings are kept, and the history list
-  and saved files are left intact. The active entry's working state is saved
-  first, so nothing is lost.
-
-### Working state remembered per entry
-
-Each history entry remembers the working state it was last used with: the active
-mode, every per-mode setting (frequency response, phase, group delay, impulse
-response, waterfall, burst decay, live spectrum, time alignment), and which
-overlay slots were shown. Switching to another entry and back therefore restores
-not just the impulse response but the whole working context.
-
-This state is kept current as you work — it is written back into the active entry
-whenever you switch to another entry and when you close the app — so it reflects
-what you were actually doing, not just the moment of capture. Audio device and
-routing settings are never changed by switching entries. Overlays keep their own
-separate on-disk storage; the history records only which slots were active and
-reloads their contents from there.
-
-Saving an in-memory snapshot turns that row into a file-backed history entry and
-updates the visible name to the chosen file name. Loaded IR files appear in the
-same list as fresh captures, so History works as a practical short-term
-measurement shelf rather than as a separate file browser.
-
-To keep memory use predictable, Resonalyze retains only a small rolling set of
-unsaved in-memory snapshots. Saved file-backed entries are persisted separately.
+Each entry also remembers the working state it was last used with: the active
+mode, every per-mode setting, and which overlay slots were shown — so switching
+to another entry and back restores the whole working context, not just the
+impulse response. Only a small rolling set of unsaved in-memory snapshots is
+retained.
 
 ## Compare
 
-The **Compare** button in the action panel overlays a second measurement on top
-of the current one, so two responses can be read side by side with the *same*
-analysis settings. Choose the reference from a file (**Choose file…**) or from a
-**History** entry; the button then shows its name, and **Clear** removes it.
-
-Compare is applied everywhere it is meaningful, always recomputed with the
-current mode's settings so the two curves stay directly comparable:
+The **Compare** button overlays a second measurement on top of the current one,
+so two responses can be read side by side with the *same* analysis settings.
+Choose the reference from a file (**Choose file…**) or from a **History** entry;
+the button then shows its name, and **Clear** removes it. Compare is applied
+everywhere it is meaningful, always recomputed with the current mode's settings:
 
 - **Time Alignment** — the reference envelope is overlaid on the peak preview
-  with its own first-arrival and strongest-peak markers, and the delay table
-  gains a second block whose every value shows the delta against the source in
-  parentheses (for example `1.006 (+0.010)`).
-- **Phase** and **Group Delay** — the reference curves are computed with the
-  identical gate/window and smoothing and drawn dashed and dimmed. Phase Auto
-  detrend is resolved once from Main and reused for Compare, preserving their
-  relative delay; the gated IR preview shows the reference impulse as well.
-- **Frequency Response** — the reference magnitude is overlaid (harmonics stay
-  source-only to keep the plot readable).
-- **Impulse Response** — the reference impulse is drawn alongside the source
-  with the axis fitting both curves. When the record contains a transfer IR,
-  the plot uses an absolute sample timeline from sample 0 to the IR peak plus
-  the configured **Length**, so the arrival positions of the two impulses can
-  be compared directly.
+  with its own markers, and the delay table gains a second block whose every
+  value shows the delta against the source (for example `1.006 (+0.010)`).
+- **Phase** and **Group Delay** — the reference curves use the identical
+  gate/window and smoothing, drawn dashed and dimmed; Phase Auto detrend is
+  resolved once from Main and reused, preserving their relative delay.
+- **Frequency Response** and **Impulse Response** — the reference magnitude and
+  impulse are drawn alongside the source (harmonics stay source-only), and with a
+  transfer IR an absolute sample timeline lets the two arrivals be compared.
 
-A reference is only drawn when its sample rate matches the current measurement:
-Time Alignment states the mismatch explicitly, the other modes simply omit the
-curve. Because Compare applies the same settings to both measurements, adjusting
-a window or gate updates both curves at once — the intended way to compare two
-phase or group-delay responses fairly. The source and Compare curves are also
-selectable as live operands in a [calculated overlay](#plot-overlays), so their
-difference can be plotted and watched live while you tune the analysis window.
+A reference is only drawn when its sample rate matches the current measurement.
+The source and Compare curves are also selectable as live operands in a
+[calculated overlay](#plot-overlays), so their difference can be watched live
+while you tune the analysis window.
 
 ## Time Alignment
 
 The **Time Alignment** mode analyzes acoustic delay from the currently active
-measurement record. It is designed for practical loudspeaker, microphone, and
-channel alignment work, where the result has to be more precise than a single
-audio sample.
+measurement record, for practical loudspeaker, microphone, and channel alignment
+work where the result has to be more precise than a single audio sample.
 
 ![Time Alignment measurement](assets/images/time-alignment.png)
 
-Time Alignment no longer runs its own separate capture path. Instead, it reads
-the active **transfer impulse response** already stored in the current record.
-That means it works immediately after:
+It reads the **transfer impulse response** already stored in the current record,
+so it works immediately after a sweep captured with loopback or after loading an
+IR JSON file with transfer-response data. The delay estimator uses a robust
+two-stage chain: the transfer IR, through an optional raised-cosine bandpass
+window, gives an analytic-signal envelope whose first arrival and strongest peak
+are the coarse, polarity-blind anchors; a **GCC-PHAT** (phase-transform)
+correlation from the same spectrum then refines each to sub-sample precision.
 
-- a new sweep measurement captured with loopback enabled
-- loading an IR JSON file that contains transfer-response data
+The first-arrival search rejects **pre-ringing sidelobes** by testing every
+candidate against the analysis kernel's own envelope — an arrival can pre-ring no
+louder than that allows at a given distance, so a candidate above the ceiling is
+a genuine arrival no matter how the surroundings look (which keeps weak direct
+sound alive in reverberant bass), and one at or below it is confirmed as pre-ring
+by its mirror twin.
 
-If the active record does not contain a transfer IR, the mode clearly reports
-that the measurement was captured without loopback and does not attempt to
-estimate delay from the ordinary sweep-deconvolution response.
-
-The transfer IR itself comes from the same loopback-based sweep measurement
-pipeline used elsewhere in the app: Resonalyze plays the exponential sweep,
-records the microphone and loopback simultaneously, and computes the microphone
-response relative to the loopback reference path. This removes unknown playback
-latency from the response used for timing analysis. With ASIO, both recorded
-channels also stay locked to the same hardware clock, which gives the most
-repeatable result.
-
-The delay estimator uses a deliberately robust two-stage chain:
-
-- the active transfer impulse response from the current record
-- an optional raised-cosine bandpass window around the frequency range of
-  interest
-- the analytic-signal envelope of that impulse response, whose first arrival and
-  strongest peak are detected robustly — this is the coarse, polarity-blind anchor
-- a **GCC-PHAT** (phase-transform) correlation, computed from the transfer IR's
-  own spectrum, that refines each anchor to sub-sample precision
-
-The first-arrival search rejects **pre-ringing sidelobes**: the zero-phase
-stages of the chain (the bandpass window and the Hilbert envelope itself) ring
-exactly symmetrically around each arrival, and the stronger of those early
-lobes clear the arrival threshold — on a clean measurement they used to read as
-an arrival up to several milliseconds before the true wavefront, and the better
-the SNR, the more of them survived the noise gate. The kernel that makes the
-ringing is known, so each candidate is tested against physics rather than
-heuristics: an arrival can pre-ring at a given distance no louder than the
-analysis kernel's own envelope allows there. A candidate above that ceiling is
-a genuine arrival no matter how the surroundings look — which is what keeps
-weak direct sound alive in reverberant bass, where everything around a
-reflection cluster is energized. A candidate at or below the ceiling is
-confirmed as pre-ring by its mirror twin: an exactly even kernel puts an equal
-lobe at the mirrored position after the peak, and room decay only adds energy
-on the late side, so the mirror cannot hide a lobe.
-
-That second stage is what makes the numbers trustworthy. The transfer IR's
+The second stage is what makes the numbers trustworthy. The transfer IR's
 spectrum already carries the microphone-to-loopback cross-phase, so whitening it
-to unit magnitude over a soft band mask (built from where the response actually
-has energy) collapses the correlation to a sharp peak at the true broadband delay
-— independent of the driver's own magnitude shape, which would otherwise pull an
-envelope peak off the real arrival. A short search window keeps the refinement on
-the arrival the envelope found, a windowed-sinc plus parabolic interpolation reads
-the peak between samples, and the search runs on peak magnitude so a
-polarity-inverted arrival (a trough) is located just as reliably as a normal one.
-When the whitened peak is weak or pinned to the window edge, the estimate falls
-back to the envelope's own fractional peak, so the result is never worse than the
-plain envelope.
-
-When the record was captured with averaging and carries a coherence (γ²) curve,
-the whitening is additionally weighted by it: bands whose phase does not repeat
-across the averages — noise, level- or drift-varying distortion, non-averaging
-reflections —
-get less say in the correlation than clean, repeatable bands, while every in-band
-bin keeps at least a quarter of its weight so the occupied bandwidth (and the peak
-sharpness that follows from it) is preserved. Repeatable content, including
-harmonic distortion, reads as coherent and is not suppressed.
-
-The payoff is delay estimates such as `87.0 samples` or `1.972 ms` resolved to a
-hundredth of a sample instead of a coarse integer, and refined against the true
-acoustic arrival rather than the driver-tinted envelope shape. For time
-alignment, this is a serious practical upgrade: smaller timing adjustments become
-visible, repeatable, and easier to trust.
-
-The first arrival — the one the panel aligns by — also shows a GCC-PHAT
-**alignment confidence**: the normalized height of the whitened correlation peak,
-displayed as `Alignment: NN%`, together with whether the sub-sample position came
-from the correlation (`GCC-PHAT`) or fell back to the envelope. It is separate from the meter-based signal-quality readout: a high
-signal level with a low alignment confidence means the level was fine but the delay
-itself is only coarsely located.
+to unit magnitude over a soft band mask (weighted by coherence where the record
+has it) collapses the correlation to a sharp peak at the true broadband delay,
+independent of the driver's own magnitude shape. The search runs on peak
+magnitude, so a polarity-inverted arrival is located just as reliably. The payoff
+is delay estimates such as `87.0 samples` or `1.972 ms` resolved to a hundredth
+of a sample, with a GCC-PHAT **alignment confidence** shown as `Alignment: NN%`.
 
 When the strongest peak lands well after the first arrival — the classic
-narrowband-subwoofer case, where room modes ring louder than the direct sound
-long after it — Time Alignment flags it and points you at the first arrival, so a
-modal or reflected peak is not mistaken for the driver's real timing. The flag
-requires a real valley (6 dB) between the two peaks: a low-frequency driver's
-direct sound can keep rising for milliseconds, and a shoulder of that one wave
-packet peaking later is its rise time, not a reflection.
+narrowband-subwoofer case — Time Alignment flags it and points you at the first
+arrival, so a modal or reflected peak is not mistaken for the driver's real
+timing; the flag requires a real valley (6 dB) between the two peaks, since a
+low-frequency driver's direct sound can keep rising for milliseconds.
 
-The mode recalculates immediately when you switch into **Time Alignment**, and
-also updates live as soon as you change the bandpass settings.
+The mode recalculates when you switch into it and as you change the bandpass
+settings, and reports signal quality from the analysis envelope and the stored
+meter snapshot: a color-coded `Excellent` / `Good` / `Fair` / `Poor` **signal
+grade** from the recording's SNR; the **first-arrival prominence** relative to
+the strongest peak (a low value means the pick sits on a broad leading edge —
+normal for band-limited low-frequency drivers); peak and RMS levels in dBFS; a
+`CLIP` warning; and a `FULL SCALE` marker for a loopback reference at 0 dBFS.
 
-It reports signal quality using the analysis envelope and the stored meter
-snapshot from the same measurement record:
-
-- a color-coded `Excellent`, `Good`, `Fair`, or `Poor` **signal grade** from the
-  recording's SNR — the strongest envelope peak against the record's noise
-  floor (the RMS of its quietest quarter, so reflections and modal decay do
-  not count as noise the way an average over the whole record would)
-- the **first-arrival prominence** — the first arrival's envelope level relative
-  to the strongest peak. A low value means the pick sits on a broad leading
-  edge (normal physics for band-limited low-frequency drivers), so its exact
-  position is less sharply defined; it says nothing bad about the recording
-  itself, which is why it is reported separately instead of being folded into
-  the signal grade
-- microphone peak and RMS levels in dBFS
-- loopback peak and RMS levels in dBFS
-- a `CLIP` warning for an overloaded microphone input
-- a `FULL SCALE` marker for a digital loopback reference running at 0 dBFS
-
-The compact input level meter remains useful here too: it preserves the final
-captured levels from the last valid sweep measurement or loaded file, so the
-Time Alignment readout still has the signal context that produced the current
-transfer IR.
-
-The measured time, distance, and sample count are clickable. Click one of those
-result lines to copy just the numeric value to the clipboard, which is
-convenient when pasting delay values into another tool or a spreadsheet.
-
-When the bandpass window is enabled, Resonalyze shows a small frequency-domain
-preview of the selected pass band. It also shows the envelope around the
-detected peak, making it easy to see whether the reported delay comes from a
-clean dominant arrival or from a noisy or ambiguous response.
-
-Selecting a [Compare](#compare) reference overlays its envelope on the same
-preview and adds a second delay-table block whose values carry the delta against
-the source, which turns Time Alignment into a direct A/B of two arrivals.
-
-Time Alignment therefore depends on how the underlying sweep record was
-captured. To produce a usable transfer IR, the sweep measurement itself must be
-run with a configured loopback input channel. That loopback-enabled sweep can be
-captured through:
-
-- **ASIO**, the recommended path for the best timing accuracy
-- **Wave**, if the selected recording device exposes a stereo input and one side
-  can be dedicated to loopback
-
-Wave loopback is supported for convenience, but ASIO remains the preferred path
-for serious timing work because the capture chain is more tightly controlled.
-
-## Installer and Updates
-
-Resonalyze supports two release styles:
-
-- **Portable `.zip` builds**
-  Extract and run `Resonalyze.exe` directly. This is convenient for quick
-  testing or for keeping multiple versions side by side.
-- **Installed `Setup.exe` build**
-  Installs to the current user's local Programs folder, creates shortcuts, and
-  registers an uninstaller.
-
-When the application detects a newer GitHub release, the version label in the
-custom title bar changes to **Update available**. Clicking it opens a focused
-update dialog:
-
-- installed builds can either start an **Automatic Update** or open the GitHub
-  releases page for a manual download
-- portable builds offer a manual download only, because they are not tied to a
-  managed install location
-
-Automatic update currently targets the installed x64 build distributed through
-`Setup.exe`. Portable `.zip` builds remain fully supported, but they are updated
-manually by downloading a newer archive.
+The measured time, distance, and sample count are clickable: click a result line
+to copy just the numeric value to the clipboard. With the bandpass window
+enabled, a frequency-domain preview of the pass band is shown along with the
+envelope around the detected peak; selecting a [Compare](#compare) reference
+overlays its envelope there and adds a second delay-table block.
 
 ## Saving and Loading Impulse Responses
 
-After a sweep measurement completes, click **Save** to store the measured
-impulse-response data. Resonalyze proposes a timestamped file name such as:
+After a sweep completes, click **Save** to store the measured impulse-response
+data under a timestamped name such as `Resonalyze-IR-2026-06-15_14-30-00.json`.
+Files are indented, human-readable JSON containing the format and schema version,
+save time, sample rate and bit depth; the requested and achieved sweep band with
+its duration and sample count; the playback channel and measurement mode; the
+sweep-deconvolution samples plus the optional loopback transfer-function samples;
+optional coherence (γ²) data with the run counts; the stored meter values; an
+optional [SPL calibration anchor](#sound-pressure-level-db-spl); and embedded
+preview frequency-response data for the History panel.
 
-```text
-Resonalyze-IR-2026-06-15_14-30-00.json
-```
-
-Files are saved as indented, human-readable JSON. Each file contains:
-
-- format and schema version
-- save time in UTC
-- sample rate and bit depth
-- the requested sweep band and the band the sweep achieved, plus its duration
-  and sample count (files written before the band settings carry an octave count
-  instead and are migrated on load)
-- playback channel
-- measurement mode (`SweepDeconvolution` or `LoopbackTransfer`)
-- sweep-deconvolution impulse-response samples and peak index
-- optional loopback transfer-function impulse-response samples and peak index
-  when loopback was enabled
-- optional transfer-function coherence (γ²) data when two or more sweeps were
-  averaged, plus the requested and accepted run counts
-- stored microphone and loopback Peak/RMS meter values from the measurement
-- an optional [SPL calibration anchor](#sound-pressure-level-db-spl) when one was
-  configured, so the measurement can be placed on a dB SPL axis after reloading
-- embedded preview frequency-response data for the Measurement History panel
-
-Click **Load** to open a previously saved response. Resonalyze validates the
-file before using it, rejects files below `44100 Hz`, restores the associated
-measurement metadata into the active record, stays in the current analysis view,
-and redraws it from the loaded data. Loading an IR does **not** rewrite the
-current audio-device configuration in Record Settings. All analyses derived from
-an impulse response — frequency response, phase, group delay, waterfall, Burst
-Decay, autocorrelation, and loopback-based Time Alignment — can then be generated
-without repeating the measurement.
+Click **Load** to open a previously saved response. Resonalyze validates the file
+first, rejects files below `44100 Hz`, restores the measurement metadata into the
+active record, and redraws the current view from the loaded data — without
+rewriting the audio-device configuration. Saving and loading are disabled while a
+measurement is running. The current file format identifier is
+`resonalyze-impulse-response`, version `7`.
 
 ### Importing a sweep recorded elsewhere
 
@@ -1431,394 +759,194 @@ played from something else (typically the file written by
 [Save sweep as WAV...](#sweep-band-and-duration)). The recording is deconvolved
 with the inverse filter of the sweep the **current settings** describe, and the
 transfer function is estimated against that same sweep standing in for the
-loopback reference — the excitation is known exactly, because it is the signal
-that was played. If the file has more than one channel, the one whose content
-actually matches the sweep is measured — not the loudest, because a dead input is
-rarely silent and its hum can easily out-measure a quiet microphone — and
-Resonalyze reports which one that was.
+loopback reference. If the file has more than one channel, the one whose content
+actually matches the sweep is measured — not the loudest, because a dead input's
+hum can easily out-measure a quiet microphone.
 
-The recording may be far longer than the sweep — starting the recorder, walking
-to the listening position, playing the sweep and walking back is the normal way
-to make one. The excitation is found by matching the sweep against the recording
-rather than by looking for something loud, which answers the question that
-matters ("where is THIS sweep") instead of a proxy that content can defeat: a
-system whose bass is crossed out is quiet for its first octaves, and a door or a
-voice is louder than a careful measurement. Matching also reaches much further
-down — it concentrates the whole excitation into one peak, worth about 46 dB for
-a two-second sweep — so a take that sounds empty still resolves to the sample.
+The recording may be far longer than the sweep. The excitation is found by
+matching the sweep against the recording rather than by looking for something
+loud, which reaches much further down since matching concentrates the whole
+excitation into one peak (~46 dB for a two-second sweep); only the excitation
+plus 0.5 s before and 2 s of decay after is then analyzed. Player and recorder
+run on their own clocks, so the sweep comes back slightly stretched or squeezed:
+Resonalyze finds the stretch that sharpens the arrival most and rebuilds the
+reference at that rate. The settings must match the sweep the recording was made
+from, and Resonalyze checks that rather than trusting it — against the wrong band
+or pace a recording deconvolves into a smear instead of an arrival, and arrival
+sharpness tells the two apart. A wrong sample rate, a sweep running past the end
+of the recording, a clipped take, and one that does not deconvolve credibly are
+all refused, leaving the measurement on screen untouched.
 
-What is then analyzed is the excitation with 0.5 s before it and 2 s of decay
-after, so the silence never reaches the analysis: on a 92-second take of a
-2.15-second sweep that is 4.65 s of audio instead of the whole file, which cuts
-the work from 3.4 s and 1.9 GB of transient spectra to 0.18 s and 100 MB, and the
-transfer IR the measurement then carries (and writes into a saved `.json`) from
-268 MB to 8 MB. If a take holds the sweep more than once, every occurrence is a
-candidate and the best is measured.
-
-Whatever played the file and whatever recorded it run on their own clocks, so the
-sweep comes back slightly stretched or squeezed — and a per-octave time in whole
-milliseconds cannot always express the duration that produced a given file
-either. Both put the recording out of scale with the reference, both smear the
-arrival and the phase at the top of the band, and neither is visible in the
-result. Resonalyze finds the stretch that sharpens the arrival most and rebuilds
-the reference at that rate, reporting the correction when it applies one. On the
-field takes above that was 100 ppm, worth 4.7 dB of arrival sharpness.
-
-The settings must match the sweep the recording was made from, and Resonalyze
-checks that rather than trusting it: a recording analyzed against the wrong band
-or per-octave time deconvolves into a smear instead of an arrival, and the
-arrival's sharpness is what tells the two apart. On two field takes of the same
-exported sweep — a car cabin and a room — the correct settings read 15.5 dB and
-10.7 dB of sharpness while every neighbouring wrong pace read 3.1–6.3 dB.
-
-A file at another sample rate is refused outright, a take whose sweep runs past
-the end of the recording is refused as cut short, a clipped recording is refused
-the way a live run refuses one, and a recording that does not deconvolve into a
-credible impulse response is refused with what it measured instead of publishing
-the garbage — in every case the measurement already on screen is left untouched.
-
-Two things such a measurement cannot carry. There is no absolute time: where the
-arrival landed was decided by when the recorder was started, not by the acoustic
-path, so delays mean something only within one file — a reflection 8 ms after the
-direct sound really is 8 ms — and never between two of them. And there is no
-[dB SPL](#sound-pressure-level-db-spl) anchor, because the gain of the recording
-chain is unknown; for the same reason the vertical position of its dBr curve is
-the recorder's gain setting rather than anything about the system.
-
-Because the origin means nothing, it is chosen rather than inherited: the whole
-impulse response is shifted so the arrival lands at 10 ms. The shift is rigid, so
-every delay inside the measurement survives it — a reflection 8 ms behind the
-direct sound stays 8 ms behind — while the read-outs become what they always
-were, time relative to this measurement's own arrival. Left as recorded they were
-absolute nonsense: measured group delay is referenced to the start of the impulse
-response, and the two field takes above read 730 ms and 1220 ms of it on an axis
-that spans tens.
-
-That the timing is local is recorded in the measurement and travels with it into
-the saved `.json` and the history, so everything that compares one arrival
-against another refuses it by name instead of drawing a relationship nobody
-measured: [Time Alignment](#time-alignment) declines it as a source and as a
-Compare partner, [Virtual DSP](#virtual-dsp) will not sum it with another
-measurement, and in Phase, Group Delay and the impulse overlay the Compare curve
-is left out unless both measurements were referenced to their own captured
-loopback. Compare's magnitude curve is drawn as always. Everything that lives inside a single measurement —
-frequency response, phase, group delay, waterfall, Burst Decay, the EQ wizard —
-works as it does for a measured sweep, including Compare's curve overlay, and the
-result saves as a normal `.json` impulse response.
-
-Saving and loading are disabled while a measurement is running. The current file
-format identifier is `resonalyze-impulse-response`, version `7`. Files are meant
-to stay human-readable, but editing the sample arrays by hand may make a file
-invalid or produce misleading analysis results. Files that do not yet contain
-the embedded preview-frequency-response section can still be loaded; Resonalyze
-rebuilds the preview when needed.
+Two things such a measurement cannot carry: absolute time, since where the
+arrival landed was decided by when the recorder was started, and a
+[dB SPL](#sound-pressure-level-db-spl) anchor, since the recording chain's gain
+is unknown. Because the origin means nothing it is chosen rather than inherited —
+the impulse response is rigidly shifted so the arrival lands at 10 ms, preserving
+every delay inside the measurement. That the timing is local travels with the
+measurement into the saved `.json` and the history, so everything comparing one
+arrival against another refuses it by name: [Time Alignment](#time-alignment)
+declines it as a source and as a Compare partner, and
+[Virtual DSP](#virtual-dsp) will not sum it with another measurement.
 
 ## Plot Overlays
 
-Each supported overlay view provides twelve universal overlay slots. Every slot
-can hold one of three kinds, chosen from the numbered capture-button menu (or
-from the settings dialog):
+Each supported overlay view provides twelve universal slots, each holding one of
+three kinds: a **Captured** snapshot of a curve currently on the plot; an
+**Operation** between two operands, each a live plot curve or a captured slot
+(`A - B`, `B - A`, `A + B`, `(A + B) / 2`, `|A - B|`, or a frequency blend), plus
+the **complex (vector) sum** described below; or a parametric **Target** compared
+against a source.
 
-- **Captured** — a snapshot of a curve currently on the plot.
-- **Operation** — a calculation between two operands, each either a live plot
-  curve or a captured slot (`A - B`, `B - A`, `A + B`, `(A + B) / 2`, `|A - B|`,
-  or a frequency blend), plus a **complex (vector) sum** of the Main and Compare
-  transfer IRs in Frequency Response (see below).
-- **Target** — a parametric target curve compared against a source.
+Slots are stored automatically as human-readable JSON under the application data
+directory, as `overlays/<AnalysisMode>/overlay-01.json`. The numbered button
+opens a menu to **Capture curve**, **Import from text**, **Export to text**, or
+switch the slot to a **Calculated overlay** or **Target**; the checkbox shows or
+hides it, the numeric control applies a vertical offset, and **⚙ Settings…**
+opens its dialog. A live-curve operand re-reads the plot on every rebuild, so a
+calculation over it — for example the difference between the source and a Compare
+curve — updates live as the analysis settings change.
 
-Overlay slots are stored automatically as human-readable JSON under the
-application data directory — `%LocalAppData%\Resonalyze` for an installed
-build, or beside the executable in a portable one (see
-[Download](#download)):
+![Ordinary overlay](assets/images/regular_overlay.jpg)
+![Calculated overlay](assets/images/calc_overlay.jpg)
 
-```text
-overlays/<AnalysisMode>/overlay-01.json
-```
-
-The numbered button opens a menu to **Capture curve**, **Import from text**,
-**Export to text**, or switch the slot to a **Calculated overlay** or **Target**.
-The checkbox shows or hides the slot and the numeric control applies a vertical
-offset; the slot's settings dialog opens from **⚙ Settings…** in the same
-numbered-button menu. A Target slot references a captured
-slot or the current measurement; an Operation slot references two operands that
-are each a live plot curve or a captured slot. A live-curve operand re-reads the
-plot on every rebuild, so a calculation over it — for example the difference
-between the source and a Compare curve — updates live as the analysis settings
-change.
-
-Visible overlay names are drawn directly over the plot as a compact legend. Each
-entry uses the same color and line style as the curve itself, so exported
-screenshots and day-to-day comparisons stay readable even when many curves are
-active.
+Captured overlay settings cover a name, line color, thickness, style and opacity,
+optional `1/48` … `1/3` octave smoothing, and a **Clear** action for that slot
+alone; calculated overlays add the operands, the operation, optional
+amplitude-space math for dB views, and independent smoothing applied afterwards.
+In **Phase Response** the difference operations are phase-aware: a wrapped
+operand makes the difference take the shortest angular distance so it never jumps
+by ±360°. Overlay JSON always stores the unsmoothed source points, so changing
+smoothing is lossless, and operations are applied to the displayed Y values after
+source offsets — so addition and averaging on a decibel plot are arithmetic on dB
+coordinates, not physical summation of acoustic power.
 
 ### Target curves
 
 A **Target** overlay compares a source against a parametric target shape and
 draws two curves from the one slot: the **target** itself and the **deviation**
 (source minus target), plus an optional shaded **tolerance band** (±dB). The
-source is either a captured slot or the **current measurement** (the main
-Frequency Response curve, or the Live Spectrum main trace — including the running
-trace, which the target and deviation follow frame by frame).
+source is either a captured slot or the current measurement — the Frequency
+Response curve, or the Live Spectrum trace, which target and deviation follow
+frame by frame.
 
-The target shape and its tolerance band are parametric over frequency, so they
-are drawn whenever the slot is enabled even if no measurement is on the plot yet;
-only the deviation curve waits for an incoming source.
-
-The target shape is built from four editable terms: an overall **tilt** around a
-1 kHz pivot, a **bass shelf**, a **treble shelf**, and a **presence** bump/dip.
-This covers room, car, home-theater, and voicing targets. Presets fill in the
-parameters and remain fully editable:
-
-- `Flat`, `Room (gentle)`, `Harman room`, `Warm`
-- `Car`, `Car (mild)`, `House / bass boost`
-- `X-curve (cinema)`, `Smiley`, `BBC dip`, `Custom`
-
-The deviation curve has selectable modes: **Deviation** (`measurement − target`,
-how far the response sits from the target), **EQ correction**
-(`target − measurement`, the gain to dial into an equalizer to reach the
-target), or **None** to hide it.
-
-The settings dialog shows a live preview of the target shape, and the shared
-slot offset moves the target up or down (the deviation follows automatically).
-Target overlays are available in Frequency Response and Live Spectrum (both the
-running and the paused trace).
+The shape is built from four editable terms — an overall **tilt** around a 1 kHz
+pivot, a **bass shelf**, a **treble shelf**, and a **presence** bump/dip — with
+editable presets: `Flat`, `Room (gentle)`, `Harman room`, `Warm`, `Car`,
+`Car (mild)`, `House / bass boost`, `X-curve (cinema)`, `Smiley`, `BBC dip`,
+`Custom`. The deviation curve is **Deviation** (`measurement − target`), **EQ
+correction** (`target − measurement`, the gain to dial into an equalizer), or
+**None**. Target overlays are available in Frequency Response and Live Spectrum.
 
 ![Target overlay settings](assets/images/target_overlay.jpg)
 
 ### Import and export
 
 **Import from text** loads a captured overlay from a plain-text file of `X Y`
-pairs (for example, `123.4 -5.5`), one per line. Parsing is lenient: values may
-be separated by spaces, tabs, commas, or semicolons; extra columns are ignored;
-and any line that is not a valid number pair (comments, headers, blanks) is
-skipped. **Export to text** writes the slot's current curve in the same format.
-For a Target slot, **Export deviation** writes the deviation or EQ-correction
-curve, which is handy for transferring corrections into an equalizer or another
-tool.
-
-Exported files open with a commented `# resonalyze-curve` metadata header that
-records what the curve is — the analysis it came from, its role (a measured
-response, a deviation, a target), and the sample rate where one applies. Foreign
-files without the header still import exactly as before; the header only lets
-Resonalyze recognize its own curves on the way back in, so that, for example, the
-[EQ Wizard](#eq-wizard) can tell a measured response from an EQ-correction curve
-that must never be equalized as if it were one.
-
-Captured overlay settings include:
-
-![Ordinary overlay](assets/images/regular_overlay.jpg)
-- a user-defined name
-- line color, thickness, style, and opacity
-- optional `1/48`, `1/24`, `1/12`, `1/6`, or `1/3` octave smoothing in
-  frequency-based views
-- a **Clear** action that removes only that slot in the current analysis mode
-
-Calculated overlay settings additionally include:
-
-![Calculated overlay](assets/images/calc_overlay.jpg)
-- two operands (Curve A and Curve B), each selected from the live plot curves or
-  the captured overlay slots
-- operations `A - B`, `B - A`, `A + B`, `(A + B) / 2`, and `|A - B|`
-- a blend operation with a user-defined crossover frequency and transition width
-- a **complex (vector) sum** (`Main ⊕ Compare`), available in Frequency Response
-  when a Compare measurement is set and both records have a transfer IR (see
-  below)
-- a **sum loss** curve (`complex − magnitude`), the companion to the complex sum,
-  showing how many dB the real phase-aware sum falls short of a phase-blind
-  magnitude addition (see below)
-- optional amplitude-space math for dB-based views, which converts both curves to
-  linear amplitude before the operation and back to dB afterward
-- independent octave smoothing applied after the selected operation
-
-In **Phase Response**, the difference operations (`A - B`, `B - A`, `|A - B|`) are
-phase-aware. Each phase curve — captured or live — remembers whether it is an
-unwrapped (continuous) or wrapped (-180..180) representation: measured phase follows the
-**Unwrap** option in effect when it was captured, while minimum and excess phase are
-always continuous. When either operand is wrapped, the difference uses the shortest
-angular distance (`atan2(sin Δ, cos Δ)`) so it never jumps by ±360° across the
-branch cut. When both are unwrapped it stays a plain subtraction, preserving the
-accumulated slope (and therefore the delay) of the two curves. Imported text curves
-have no wrap hint and are treated as unwrapped.
-
-Octave smoothing is available only for Frequency Response, Phase Response, Group
-Delay, and paused Live Spectrum. Impulse Response and Autocorrelation keep their
-original time-domain samples. Overlay JSON always stores the unsmoothed source
-points, so changing or disabling smoothing is lossless.
-
-Calculated results use the same axes, units, zoom, and vertical pan as the
-ordinary overlays. Operations are applied to the displayed Y values after source
-offsets. As a result, addition and averaging on a decibel plot are arithmetic
-operations on dB coordinates, not physical summation of acoustic power.
+pairs (for example, `123.4 -5.5`), one per line, parsed leniently: any separator,
+extra columns ignored, non-numeric lines skipped. **Export to text** writes the
+slot's current curve in the same format; for a Target slot, **Export deviation**
+writes the deviation or EQ-correction curve. Exported files open with a commented
+`# resonalyze-curve` header recording what the curve is — the analysis it came
+from, its role, and the sample rate where one applies. Foreign files without the
+header still import as before; the header only lets Resonalyze recognize its own
+curves on the way back in, so that the [EQ Wizard](#eq-wizard) can tell a
+measured response from an EQ-correction curve that must never be equalized as if
+it were one.
 
 ### Complex (vector) sum
 
 In Frequency Response, a calculated overlay can compute the **complex (vector)
 sum** of the Main and Compare transfer impulse responses (`Main ⊕ Compare`).
-Both transfer IRs share the same sample-0 time reference, so summing them
-sample-by-sample and taking the magnitude gives the *physically correct* summed
-response of two sources — it accounts for their relative delay, polarity, and
-phase, unlike arithmetic on dB magnitudes. This predicts how two drivers, or the
-two sides of a crossover, actually combine.
-
-Two Compare-side controls make it a DSP-style alignment tool:
-
-- **Time offset** — a fractional-sample delay applied to the Compare IR
-  (interpolated between samples), mirroring a delay you would dial into a DSP
-  channel.
-- **Invert polarity** — flips the Compare IR, to check a polarity swap at the
-  crossover.
-
-Both update the summed curve live as you turn the field or toggle the checkbox.
-The operation needs a Compare measurement with a transfer IR at the same sample
-rate; it stays armed and redraws automatically once that data is available.
+Both share the same sample-0 time reference, so summing them sample-by-sample and
+taking the magnitude gives the *physically correct* summed response of two
+sources — accounting for relative delay, polarity, and phase, unlike arithmetic
+on dB magnitudes. Two Compare-side controls make it a DSP-style alignment tool:
+**Time offset**, a fractional-sample delay applied to the Compare IR, and
+**Invert polarity**, both updating the summed curve live.
 
 A companion **sum loss** operation (`complex − magnitude`) plots the difference
-between the complex sum and a phase-blind magnitude addition (`|Main| +
-|Compare|`). By the triangle inequality it is always **≤ 0 dB**: it shows how
-many decibels the real, phase-aware sum falls short of what naive dB/amplitude
-addition would predict — zero where the two sources are perfectly in phase, and
-dropping into deep negatives toward cancellation. Because the magnitude sum
-ignores delay and polarity, only the complex side moves as you tune **Time
-offset** and **Invert polarity**, so the curve rises back toward 0 dB as you
-bring the sources into phase — a direct read-out of the summation loss you are
-dialing out. It shares the same requirements and live behavior as the complex
-sum.
+against a phase-blind magnitude addition. By the triangle inequality it is always
+**≤ 0 dB**: zero where the two sources are perfectly in phase, dropping into deep
+negatives toward cancellation. Only the complex side moves as you tune the offset
+and polarity, so the curve rises back toward 0 dB as you bring the sources into
+phase — a direct read-out of the summation loss you are dialing out.
 
-### Live overlay preview
-
-The captured, calculated, and target overlay settings dialogs preview their
-result on the plot while you edit. Every control change — name, color, style,
-opacity, smoothing, operands, the complex-sum delay/polarity, and the whole
-target shape, tolerance band, and deviation curve — redraws the candidate curve
-immediately, using the same rendering path as the committed overlay, so you see
-exactly what **Save** will keep. Closing with **Cancel** (or `Esc`) restores the
-previous state.
-
-Overlay files are separated by analysis mode and restored automatically when the
-application starts or the active view changes. Changes to any source overlay
-immediately update the visible calculated overlays.
-
-All overlay slots use a single file format, `resonalyze-overlay`, version `5`,
-with a `kind` field selecting captured / operation / target. Older overlay
-schema versions are intentionally not loaded.
-
-Overlays are available in the Impulse Response, Frequency Response, Phase
-Response, Group Delay, paused Live Spectrum, and Autocorrelation views. A
-**Show all** / **Hide all** pair above the overlay panel toggles every active
-overlay for the current mode at once, without deleting any saved JSON file.
+The captured, calculated, and target settings dialogs preview their result on the
+plot while you edit, and **Cancel** (or `Esc`) restores the previous state.
+Overlay files are separated by analysis mode and restored automatically; all
+slots use one file format, `resonalyze-overlay`, version `5` (older schema
+versions are intentionally not loaded). Overlays are available in the Impulse
+Response, Frequency Response, Phase Response, Group Delay, paused Live Spectrum,
+and Autocorrelation views, with a **Show all** / **Hide all** pair.
 
 ## EQ Wizard
 
 The **EQ Wizard** (under the **Tools** tab) designs a parametric equalizer — up
 to 32 peaking (PK) bands plus a preamp — that moves a measured response toward a
-target. Open it from the **Tools** tab. It owns its own target curve, edited
-through the same dialog the Target overlays use but stored with the wizard's own
-settings — so tuning here never disturbs your overlay slots, and changing an
-overlay never moves the wizard's target.
+target. It owns its own target curve, edited through the same dialog the Target
+overlays use but stored with the wizard's own settings, so tuning here never
+disturbs your overlay slots.
 
 ![EQ Wizard mode](assets/images/eq_wizard.png)
 
 ### Choosing what to equalize
 
 The **Source…** button picks the curve to tune, and it does not have to be an
-impulse response:
+impulse response: an **impulse response from file or history**, a **curve from an
+overlay slot** (a snapshot, with no live link back), or a **curve from a text
+file**. The case this was built for is a **moving-microphone RTA in dB SPL**:
+park the Live Spectrum RTA on a car's listening area, capture it into an overlay
+slot, and equalize that — such a curve has no impulse response and no coherence
+behind it, and its datum is absolute rather than relative. Only measured
+responses can enter: a harmonic, THD, phase, deviation, EQ-correction, target or
+calculated curve is refused, and imported curves carry their own **Calibration**
+choice, because a curve captured through a calibrated RTA must not be calibrated
+a second time.
 
-- **Impulse response from file…** or **from history** — the loopback-referenced
-  measurement, the same source the analysis views use
-- **Curve from overlay slot** — any captured frequency-response slot, imported
-  as a snapshot with no live link back to the slot
-- **Curve from text file…** — a response exported from Resonalyze or produced
-  elsewhere
-
-The case this was built for is a **moving-microphone RTA in dB SPL**: park the
-Live Spectrum RTA on a car's listening area, capture it into an overlay slot,
-and equalize that. Such a curve has no impulse response and no coherence behind
-it, and its datum is absolute rather than relative — so the wizard treats the RTA
-as a first-class analysis curve rather than something to be reconstructed from an
-IR. Only measured responses can enter: a harmonic, THD, phase, deviation,
-EQ-correction, target or calculated curve is refused, including through a text
-round trip.
-
-Imported curves carry their own **Calibration** choice, independent of the
-microphone-calibration preference used for impulse responses, because a curve
-captured through a calibrated RTA must not be calibrated a second time. The
-filter response is drawn against its own right-hand dB axis, scaled to the summed
-filter curve.
-
-The plot shows, on shared frequency/dB axes:
-
-- **Source** — the captured reference measurement (with optional extra smoothing)
-- **Target** — the parametric target shape (colour, thickness and line style are
-  yours to set in the target dialog)
-- **Source + EQ** — the source with the current EQ applied
-- **EQ** — the filter response itself (all bands, without the preamp) in white
-- a shaded **error fill** between Source + EQ and Target, so the remaining
-  deviation is visible at a glance
-
-Click a band card (or any of its fields) to overlay that band's individual
-contribution as a dashed curve relative to the target; click empty space to clear
-it. Each band card carries its **frequency**, **Q**, and **gain**, and the panel
-adds a **Target Level** (target offset), a **Gain** (preamp), a **Bands** count,
-source **Smoothing** (`1/N` octave), and a **Bypass** toggle that draws the curves
-without the EQ. An overlay-settings shortcut reopens the underlying target.
+The plot shows, on shared frequency/dB axes: **Source** (with optional extra
+smoothing), **Target**, **Source + EQ**, the **EQ** filter response itself (on
+its own right-hand dB axis), and a shaded **error fill**. Click a band card to
+overlay that band's contribution as a dashed curve. Each card carries its
+**frequency**, **Q**, and **gain**, and the panel adds a **Target Level**, a
+**Gain** (preamp), a **Bands** count, source **Smoothing**, and **Bypass**.
 
 ### Auto Tune
 
-**Auto Tune** fits the whole EQ automatically. It works on the error between the
-target and the (smoothed) source, sets a preamp for the broadband level, then adds
-peaking bands greedily where the residual error is largest — choosing each band's
-frequency, gain, and the Q that reduces the error the most. It **chooses the band
-count itself**, up to the **Max Filters** limit (4–32). A cumulative-boost cap and
-minimum band spacing keep it from stacking many maxed-out bands where the response
-simply cannot be corrected (for example a deep-bass roll-off).
+**Auto Tune** fits the whole EQ automatically: it works on the error between the
+target and the (smoothed) source, sets a preamp for the broadband level, then
+adds peaking bands greedily where the residual error is largest, choosing each
+band's frequency, gain, and the Q that reduces the error the most. It **chooses
+the band count itself**, up to the **Max Filters** limit (4–32), while a
+cumulative-boost cap and minimum band spacing keep it from stacking maxed-out
+bands where the response simply cannot be corrected.
 
-**Cuts only** (on by default) is the safe choice for a car tune: Auto Tune places
-only cut bands and never boosts. A boost cannot fill a reflective cabin's
-interference null — it just burns amplifier headroom on a dip that shifts the moment
-the microphone moves. Unticking it lets Auto Tune boost too, but only where boosting
-is trustworthy: high measured coherence (when the source is a loopback-transfer
-measurement) and not inside a narrow, deep null. Every boost still obeys the Max Gain
-limit and the total-gain ceiling.
-
-A **From / To** frequency window limits where bands are placed; it is drawn on the
-plot as a shaded band between dashed guides, and the same window bounds the error
-metrics in the results panel.
-
-### Results
-
-Replacing the overlay panel in this mode, a colour-coded **Tuning results** panel
-reports the fit quality and the EQ's own extents:
-
-- **RMS error** and **Max error** between Source + EQ and Target, measured inside
-  the From / To window
-- **Filters used**, the number of active bands
-- **Peak boost** and **Peak cut** of the combined EQ
-- **Headroom** — the margin to 0 dB (red when the EQ nets a boost that could clip)
+**Cuts only** (on by default) is the safe choice for a car tune: a boost cannot
+fill a reflective cabin's interference null — it just burns amplifier headroom on
+a dip that shifts the moment the microphone moves. Unticking it lets Auto Tune
+boost where boosting is trustworthy: high measured coherence and not inside a
+narrow, deep null, still obeying the Max Gain and total-gain limits. A **From /
+To** window limits where bands are placed and bounds the error metrics in the
+colour-coded **Tuning results** panel, which reports **RMS error** and **Max
+error** between Source + EQ and Target, **Filters used**, **Peak boost** and
+**Peak cut**, and **Headroom** (red when the EQ nets a boost that could clip).
 
 ### Import, export, and tuning sheet
 
-The wizard imports and exports PEQ profiles in several formats, so tunings move
-between tools and DSPs:
-
-- **Import + export:** Equalizer APO, REW filter settings, Generic CSV,
-  EasyEffects (JSON), CamillaDSP (YAML)
-- **Export only:** miniDSP biquads (RBJ coefficients, at 44.1 / 48 / 96 kHz to
-  match the DSP's internal rate), GraphicEQ (Wavelet / JamesDSP)
-
+PEQ profiles move both ways for Equalizer APO, REW filter settings, Generic CSV,
+EasyEffects (JSON) and CamillaDSP (YAML), and export-only for miniDSP biquads
+(RBJ coefficients at 44.1 / 48 / 96 kHz) and GraphicEQ (Wavelet / JamesDSP).
 Import is deliberately lenient: comments, blank lines, disabled (`OFF`) filters,
-non-peaking filter types, and malformed entries are skipped rather than rejected.
-
+non-peaking types, and malformed entries are skipped rather than rejected.
 **Export as tuning sheet** produces a phone-friendly PDF for reading next to the
-car or speaker: the product banner, a title from the file name, the date and fit
-range, a small EQ preview graph with the fit window shaded, the tuning statistics,
-the preamp, and one large card per filter.
+car: the banner, a title, the date and fit range, an EQ preview graph with the
+fit window shaded, the tuning statistics, the preamp, and one card per filter.
 
 ### DSP Q convention
 
 Processors do not agree on what the **Q** of a peaking band means, and the
 disagreement is invisible until you cut deep. Every convention states the
 bandwidth between the half-gain points as `BW = m · Fc / Q` and differs only in
-the multiplier, so the same three numbers produce different filters:
+the multiplier:
 
 | Convention | Bandwidth at half gain | Behaviour | Seen on |
 | --- | --- | --- | --- |
@@ -1827,475 +955,230 @@ the multiplier, so the same three numbers produce different filters:
 | **Classic** | `sqrt(gain) · Fc / Q` | Asymmetric — boost wider, cut *narrower* | JL Audio TwK-88 |
 
 Resonalyze fits, plots and exports RBJ filters throughout. Hand a Q of 5.8 at
-−15 dB to a Symmetric processor and it realizes a band over twice as wide — an
-EQ that measures much broader than it was designed, over-correcting its
-neighbours.
-
-The **DSP Q** selector in the EQ Wizard states which convention the processor
-being tuned uses. It moves the Q printed on the tuning sheets — the EQ Wizard's
-PDF and the Virtual DSP sheet, both of which name the convention they were
-written for — and nothing else: the fit, the curve on screen and the exported
-profile files stay RBJ. The conventions are exactly reconcilable, being one
-filter family reached through different Q scales, so a restated band reproduces
-the designed response on the device rather than approximating it:
+−15 dB to a Symmetric processor and it realizes a band over twice as wide. The
+**DSP Q** selector states which convention the processor being tuned uses; it
+moves the Q printed on the tuning sheets (which name the convention they were
+written for) and nothing else — the fit, the curve on screen and the exported
+profiles stay RBJ. The conventions are exactly reconcilable:
 
 ```
 Q_symmetric = Q_rbj × 10^( |gain| / 40)     ±3 dB ×1.19   ±12 dB ×2.00   ±15 dB ×2.37
 Q_classic   = Q_rbj × 10^(  gain  / 40)     +12 dB ×2.00   −12 dB ×0.50
 ```
 
-The lists above follow [REW's equaliser
-reference](https://www.roomeqwizard.com/help/help_en-GB/html/equaliser.html),
-which states each supported processor's half-gain bandwidth formula. Note that
-these are conventions of a **model**, not of a manufacturer or a chip: JL Audio's
-TwK-88 and VXi disagree with each other behind the same tuning software, and a
-SHARC or SigmaDSP part is handed finished coefficients, so it implies nothing
-about Q. If your processor is not listed above, measure it: set
-one band to Fc 1 kHz and Q 4, at +12 dB and then at −12 dB, and read the
-bandwidth between the ±6 dB points off a sweep. RBJ gives ~250 Hz both times,
-Symmetric ~499 Hz both times, Classic ~499 Hz and ~125 Hz. The spread is far too
-large to confuse with measurement error.
+The lists follow [REW's equaliser
+reference](https://www.roomeqwizard.com/help/help_en-GB/html/equaliser.html), and
+are conventions of a **model**, not of a manufacturer or a chip — JL Audio's
+TwK-88 and VXi disagree behind the same tuning software. If your processor is not
+listed, measure it: set one band to Fc 1 kHz and Q 4, at +12 dB and then −12 dB,
+and read the bandwidth between the ±6 dB points off a sweep. RBJ gives ~250 Hz
+both times, Symmetric ~499 Hz both times, Classic ~499 Hz and ~125 Hz.
 
 ## Signal Generator
 
 The **Signal Generator** (under the **Tools** tab) plays a continuous test signal
-through the current playback device, independent of any measurement. It is handy
-for setting output levels, checking channel routing and polarity, exercising a
+through the current playback device, independent of any measurement — handy for
+setting output levels, checking channel routing and polarity, exercising a
 loudspeaker, or feeding an external analyzer.
 
-**Signal type** offers the same excitation options as Live Spectrum plus a tone:
-
-- **Pink noise (periodic)** — the default; one period of exactly pink noise
-  looped seamlessly.
-- **Pink noise** — continuous random pink noise, −3 dB/octave.
-- **Brown / red noise** — −6 dB/octave, weighted toward low frequencies.
-- **White noise** — flat energy per hertz.
-- **Sine** — a pure tone; the **Frequency, Hz** field is only enabled for this
-  type.
-
-**Duration, s** sets how long the signal plays, and **Level, %** scales its
-amplitude against full scale — the default `50` is −6 dBFS, which is exactly the
-level a [measurement sweep](#sweep-band-and-duration) plays at. Setting the
-output level with the generator therefore transfers to the measurement: what you
-hear here is what the sweep will deliver. **Play** starts playback and **Stop**
-ends it; a status line reports whether the generator is `Ready`, `Playing`, or
-shows any playback error.
-
-The generator reuses the audio configuration from **Record Settings** — backend
-(MME, ASIO, WASAPI Shared or WASAPI Exclusive), sample rate, bit depth, playback
-channel, and the output device, WASAPI render endpoint or ASIO output channel
-pair — and displays the resolved settings so you can confirm where the signal is
-going before pressing **Play**.
+**Signal type** offers the same excitation options as Live Spectrum plus a
+**Sine** tone, **Duration, s** sets how long it plays, and **Level, %** scales
+its amplitude — the default `50` is −6 dBFS, exactly the level a
+[measurement sweep](#sweep-band-and-duration) plays at, so setting the output
+level here transfers to the measurement. The generator reuses the audio
+configuration from **Record Settings** and displays the resolved settings before
+you press **Play**.
 
 ## Virtual DSP
 
 The **Virtual DSP** (under the **Tools** tab) is the summation-prediction
-workflow taken to its conclusion: measure each driver once, then design the
-whole DSP setup virtually. Channels (A, B, C, …) are stereo **L/R pairs**: each
-side picks its own measurement — from a file or from History — and runs its own
-virtual DSP chain. Tight **L / R** selector radios switch which side the block's
-controls edit (the plots follow), **L→R** / **R→L** buttons copy chain settings
-across sides for the channels you tick in a small dialog, and a **Mono**
-checkbox turns a pair into a single shared driver — the typical one-subwoofer
-car layout — that feeds both sides' sums. **Add channel** / **Remove channel**
-grow the setup from two up to eight pairs; the blocks live in a scrolling list,
-so a many-way system stays in one window without crowding the plots. The **+/−**
-button in a block folds it down to its header — source, gain, delay, polarity
-stay visible and the filter chain is hidden — so an eight-way setup can show
-only the chain being tuned; folded blocks are remembered with the session and
-nothing about the channel changes while it is folded. Every
-channel in a project must share one sample rate — a measurement recorded at a
-different rate is refused; clear the existing sources first to switch the whole
-project to a new rate.
+workflow taken to its conclusion: measure each driver once, then design the whole
+DSP setup virtually. Channels (A, B, C, …) are stereo **L/R pairs**, each side
+picking its own measurement and running its own chain. **L / R** radios switch
+which side the controls edit, **L→R** / **R→L** copy chain settings across sides,
+and a **Mono** checkbox turns a pair into a single shared driver — the typical
+one-subwoofer car layout — feeding both sides' sums. The setup grows from two up
+to eight pairs, and **+/−** folds a block down to its header. Every channel in a
+project must share one sample rate.
 
 Each channel runs through:
 
-- **Gain** (dB) — relative levels are only honest when the measurements share
-  one playback chain; compensate any difference here
+- **Gain** (dB) — relative levels are only honest when the measurements share one
+  playback chain; compensate any difference here
 - **Delay** (ms) with a live **mm** read-out — the ruler check against the
   physical driver offset (343 m/s)
 - **Invert** — the DSP polarity switch
 - **Crossover** — Off, low-pass, high-pass, or band-pass; each edge picks
   **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/48 dB/oct),
   **Bessel** (6–48 dB/oct, near-constant group delay), or **Chebyshev**
-  (6–48 dB/oct, with a selectable passband **ripple** for a steeper knee) with
-  its own corner frequency
-- **All-pass** — 1st order (180° of phase swing, −90° at the corner) or 2nd
-  order (360°, −180° at the corner, with a **Q** setting how abruptly it turns).
-  Magnitude is untouched; only phase moves, which makes it the tool for lining
-  drivers up through a crossover where a delay (constant everywhere) and a
-  polarity flip (180° everywhere) are both too blunt — a sub-to-midbass hand-off
-  at 60–100 Hz is the classic case. It runs as its own stage, so it applies with
-  the crossover off, and a live read-out shows the **group delay** it adds at its
-  corner (≈ 4Q/ω₀) — the reason it works, and on a low corner its main risk
-- **PEQ** — load a parametric EQ profile (any format the EQ Wizard imports) into
-  the chain
-- **Mute** — temporarily remove a channel from the plots, sum, loss metric,
-  overlay capture, and Auto delay without clearing its source or settings
-- **Bypass** — feed the channel's raw measured signal into the sum with the
-  whole chain skipped (no gain, delay, polarity, crossover, all-pass, or PEQ), for an A/B
-  against the processed result; unlike Mute, the channel stays in the sum.
-  Auto delay refuses to run while any participating channel is bypassed — the
-  proposed delay and polarity could not act on the raw signal, yet the channel
-  would still steer every other channel's alignment
-- **IR polarity** — a measured Normal / Inverted / Unknown indicator read from
-  the transfer IR, independent of the virtual polarity switch
+  (6–48 dB/oct, with a selectable passband **ripple**) with its own corner
+- **All-pass** — 1st order (180° of phase swing) or 2nd order (360°, with a **Q**
+  setting how abruptly it turns). Only phase moves, which makes it the tool for
+  lining drivers up where a delay and a polarity flip are both too blunt — a
+  sub-to-midbass hand-off at 60–100 Hz is the classic case — with a live read-out
+  of the group delay it adds (≈ 4Q/ω₀)
+- **PEQ** — load a parametric EQ profile (any format the EQ Wizard imports)
+- **Mute** and **Bypass** — Mute removes a channel from the plots, sum, loss
+  metric and Auto delay; Bypass keeps it in the sum but feeds its raw measured
+  signal, for an A/B against the processed result (Auto delay refuses to run
+  while any participant is bypassed)
+- **IR polarity** — a measured Normal / Inverted / Unknown indicator read from the
+  transfer IR, independent of the virtual polarity switch
 
 Because every stage is linear and the measurements are loopback-referenced
 transfer IRs, multiplying each measurement by its chain and summing the results
 as complex responses predicts the **linear** response the microphone would
-capture after dialing those settings into the hardware — the same math used by
-crossover design tools, applied to your own in-room measurements.
-
-The filters are evaluated as the **digital biquad cascades a real DSP runs**
-(bilinear transform at the measurement sample rate), so the prediction matches
+capture after dialing those settings into the hardware. The filters are evaluated
+as the **digital biquad cascades a real DSP runs**, so the prediction matches
 miniDSP-class hardware up to Nyquist, not just an analog textbook curve.
 
-The acoustic plot shows raw and processed curves per channel for the active
-side, the complex **Sum**, the **opposite side's Sum** as a dashed translucent
-curve (so the two sides' tunes compare at a glance without flipping back and
-forth), and the **Sum loss** curve (blanked where every channel is filtered
-more than 30 dB below the loudest level within an octave — out there the "loss"
-would be the phase arithmetic of noise floors, not audible summation; measuring
-against the local level rather than one global peak keeps a tilted in-room curve
-readable up top instead of blanking the treble), with a **Phase view**
-toggle to check that
-the channels track each other through the crossover region. Its **Gate...**
-dialog exposes **Fixed / FDW**, 4 / 6 / 8 cycles, and **Off / Auto / Manual**
-detrend alongside the IR preview, Tukey left / plateau / right controls, and
-gate offset. Where the gate SITS — its offset and the detrend τ — belongs to the
-side you are viewing: the left and right drivers sit at different distances, so their
-arrivals and their first reflections do not land together, and fitting the gate on one
-side no longer disturbs the other's traces. Everything that decides how the phase is
-READ stays project-wide — the Tukey lengths (they set the frequency resolution), the
-window mode, the detrend mode and the FDW cycle count — because two sides read through
-different windows could not be compared, which is what the view is for.
-Virtual DSP deliberately keeps phase wrapped to -180..+180 degrees.
-Auto chooses one common reference channel, displays the resolved τ, and applies
-that exact value to every driver and the complex sum; it never independently
-flattens the channels, so their relative phase and timing remain intact. A
-second plot shows each DSP chain's own
-magnitude and phase (without the driver) — or, on its **Corr** mode, the
-junction-correlation view of one adjacent channel pair (picked in the selector
-beside the mode switch): the pair's band-limited cross-correlation, raw and
-GCC-PHAT-whitened, drawn over ±1.5 crossover periods of extra delay on the
-upper channel — positive lobes are normal-polarity alignments, negative lobes
-the same alignments with the channel inverted — together with the
-junction's **prior-free acoustic score** for both polarities — the
-dip-penalized summation loss, honestly re-gated at every point (the same
-figure the engine's own lobe-hop and promotion gates compare). This is
-deliberately the acoustics ALONE: the searches additionally weigh the
-arrival prior and the lobe/onset/scene locks, so Auto delay's pick may
-sit off this curve's deepest lobe on purpose — the gap between the solid
-and dashed markers is exactly that envelope-versus-summation trade, drawn.
-The channels enter fully processed, so 0 ms is the alignment as it currently
-stands (the solid marker), the dashed marker is the band-limited
-envelope-arrival estimate the searches anchor on, and every near-tied comb
-lobe the log's `[corr]`/`[phat]` lines enumerate is visible as such. A **Sum loss** read-out (avg / dip
-per junction plus a total) turns tuning into numbers you can minimize.
+The acoustic plot shows raw and processed curves per channel for the active side,
+the complex **Sum**, the **opposite side's Sum** as a dashed translucent curve,
+and the **Sum loss** curve, with a **Phase view** toggle and a **Sum loss**
+read-out (avg / dip per junction plus a total). Its **Gate...** dialog exposes
+**Fixed / FDW**, 4 / 6 / 8 cycles, and **Off / Auto / Manual** detrend alongside
+the IR preview, Tukey controls, and gate offset. Where the gate SITS belongs to
+the side you are viewing, since the two sides' drivers sit at different
+distances; how the phase is READ stays project-wide, because two sides read
+through different windows could not be compared.
 
-A **Junction phase** block below it reads each adjacent pair's steady-state
-cross-phase — the regime sustained program material actually sums in.
-(Deliberately NOT the direct-sound / FDW phase: on field measurements the
-room adds several milliseconds of apparent group delay at subwoofer
-frequencies, so a direct-sound read would recommend a confidently wrong
-delay.) The read-out is analyzed in a time-sized window (~0.68 s of the processed
-IR), so the physical horizon — and the fix it recommends — does not change
-when the same measurement is captured at a different sample rate. Three
-figures per junction: **φfc** — the phase of the lower
-channel minus the upper AT the crossover: a weighted circular mean over a
-narrow (±1/6-octave) window around fc, deliberately a local measurement —
-a straight-line fit's intercept extrapolates through whatever interference
-notches and spectral gaps bend the band's phase, and on a real mid/tweeter
-junction read +158° where the handover itself stood near −15°. Its
-consistency R (how much the window's bins agree, shown in the tooltip)
-gates the figure: a low R dashes the column instead of presenting mush
-(≈0° means the handover is phase-aligned). A φ near ±180° does **not** by
-itself call for a polarity flip — an inverted channel and a half-period
-delay are identical at fc — so that decision comes from a whole-band
-score comparison, not from the angle;
-**fix ms** — the extra delay on the pair's LOWER channel that would maximize
-the overlap-band phase score, relative to the current settings (positive:
-delay it further; a negative fix advances the lower channel, so apply it as
-a +delay on the upper one when the lower is already at 0). A trailing mark
-carries the polarity call: `i` recommends flipping the lower channel (a
-whole-band score comparison, not the angle — an inverted channel and a
-half-period delay are identical at fc), `~` keeps the current polarity but
-warns that a flip nearly ties (an inversion and a half-period delay sum
-alike, common at a sub, so summation cannot settle the polarity). And
-**lobe** — how decisively that best delay beats the nearest **same-polarity**
-whole-period rival; below 0.10 it is flagged `!` (the band is too narrow to
-rule the period hop out, so don't trust the fix). Read the columns right to
-left — lobe says whether to trust the delay, φfc says how the junction
-stands, fix says where to move — and treat fixes under ~0.1–0.2 ms as noise.
-The score is a phase-alignment measure (Σw·cos Δφ / Σw, −1…+1), not the
-magnitude coherence γ². The block is purely informative (nothing feeds back
-into Auto delay), and its tooltip — pinned while the mouse stays on the
-read-out — carries the full fit per junction: the phase score now and at the
-optimum, how close a flip scores, the rival and margin, the residual slope
-Δτ and the fit rms over the band.
+A second plot shows each DSP chain's own magnitude and phase (without the
+driver) — or, on its **Corr** mode, one adjacent pair's band-limited
+cross-correlation, raw and GCC-PHAT whitened, plus the junction's **prior-free
+acoustic score** for both polarities. That score is the acoustics alone, while
+the searches also weigh the arrival prior and the lobe/onset/scene locks, so the
+gap between the solid marker (the current alignment) and the dashed one (the
+envelope-arrival estimate) is that trade, drawn.
 
-A **Δ L−R** block below reports each stereo pair's final inter-side state:
-the two sides' band-limited envelope arrivals in the pair's shared band
-(fully processed chains included) with their difference — positive means the
-right side leads, the same sign convention as the scene offset, so after a
-stereo Auto delay every row should read the offset — and, below the timing, a
-**Level Δ L−R** row per pair: the gated band-level asymmetry of the two sides
-(positive: left louder). Timing (ITD) and level (ILD) steer the image
-together, so this is the read-out for the by-ear gain trim that finishes the
-centering; note a single microphone underestimates the binaural difference
-(no head shadow), so expect to trim a little more than it shows. A side whose
-arrival cannot be measured reliably (a silent band, or a near-noise record)
-shows an honest dash instead of a precise-looking number, and a side whose
-full-band envelope timed the room's modal build-up rather than the direct
-rise (its upper-half read lands much earlier — the same detection the
-alignment engine's cross-side links run) is marked with `~`: the number is
-what the envelope measured, but the sides then compare different features
-and the Δ overstates the true skew, so trust the engine's log over that row.
+A **Junction phase** block reads each adjacent pair's steady-state cross-phase in
+a time-sized window (~0.68 s of the processed IR) — the regime sustained program
+material actually sums in, deliberately not the direct-sound phase, because the
+room adds several milliseconds of apparent group delay down low. Per junction it
+shows **φfc**, the lower channel's phase minus the upper at the crossover (≈0°
+means phase-aligned; ±180° does not by itself call for a flip, since an inverted
+channel and a half-period delay are identical at fc); **fix ms**, the extra delay
+on the lower channel that would maximize the overlap-band phase score, with `i`
+recommending a flip and `~` warning that a flip nearly ties; and **lobe**, how
+decisively that delay beats the nearest same-polarity rival. A **Δ L−R** block
+below reports each pair's inter-side state — the two sides' band-limited envelope
+arrivals with their difference (positive means the right side leads, the scene
+offset's convention), plus a **Level Δ L−R** row for the by-ear gain trim that
+finishes the centering.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
-gain, delay, or crossover value stays responsive even with several channels
-loaded; a burst of rapid edits is coalesced into a single trailing redraw that
-always lands on the latest settings, and the previous curves stay on screen
-until the new frame is ready.
-
-A **calibration** selector (Off / 0° / 90°) applies your microphone correction to
-the magnitude curves, drawing on the same profiles configured in Record Settings;
-it defaults to Off because the measurements are loopback-referenced.
+value stays responsive with several channels loaded. A **calibration** selector
+(Off / 0° / 90°) applies your microphone correction to the magnitude curves; it
+defaults to Off because the measurements are loopback-referenced.
 
 - **Auto crossover...** estimates each channel's usable band and driver type
-  (subwoofer, woofer, midbass, midrange, or tweeter) — the band read is the most
-  prominent contiguous segment of the response, and when the measurement carries
-  coherence (γ²), a frequency the measurement did not trust cannot anchor a band
-  edge, so a noisy or non-linear resonance can't stretch the band. It then asks
-  which filter
-  families to allow (Butterworth / Linkwitz-Riley / Bessel), the
-  crossover-frequency window, and whether the two sides of a junction may take
-  independent slopes (on by default: a driver's high-pass and low-pass may
-  differ, so a woofer can low-pass steeply to the midrange while high-passing
-  gently from the sub; turn it off to tie each driver's two shoulders to one
-  slope). Different drivers always stay free to take different slopes.
-  It searches the crossover frequency, family, and slope to flatten the summed
-  magnitude (a plain amplitude sum — the assumption that Auto delay will bring
-  each junction to its best alignment), penalizing wide band overlap and
-  keeping a practical minimum slope, so it lands on a tight, engineer-sensible
-  split rather than shallow filters that only look flat by overlapping widely.
-  The gains, though, follow a car target curve rather than a flat sum: the
-  midrange and tweeter are levelled to each other (the louder attenuated), and
-  the lowest bass driver — the subwoofer, or the woofer/midbass in a system
-  without one — anchors the bass at a chosen elevation over that reference —
-  the **Bass level over mid/treble** field defaults to (and is capped at) the
-  measured elevation, so out of the box the bass keeps its own level and you
-  only trim the field down if you want less bass. The remaining drivers are fit
-  onto the resulting slope cut-only (a driver already below the target keeps
-  its level — no measured dip is boosted), and every gain is a cut, so the
-  result is headroom-safe. Handovers stay within the sensible
-  range for the two driver types (so a woofer is not crossed up in its
-  roll-off), land on human-friendly frequencies (5 Hz steps below 100 Hz,
-  10 Hz below 1 kHz, 50 Hz above), and a slope is allowed only while the
-  filter's peak group delay stays within 10 ms — a bound on the delay itself,
-  not the frequency, so the same steep slope is fine at a 250 Hz woofer/mid
-  handover (~5 ms) but excluded at a 75 Hz sub/woofer one (~17 ms), and a
-  low-group-delay family (Bessel) can go steeper down low than a Linkwitz-Riley
-  can. The budget caps how much steeper than the practical floor the search may
-  go; the floor itself — 12 dB/oct, the gentlest slope every family offers — is
-  always kept, since anything gentler would break the overlap rule, so at a very
-  low junction the floor's larger group delay is inherent to crossing there. Group delay is identical for the low-pass and
-  high-pass sides, so with matched slopes a driver is held to the gentler of its
-  two junctions; a steep woofer low-pass paired with a gentle high-pass needs
-  independent slopes on.
-  A shallow filter that lets a driver bleed into a non-adjacent driver's band is
-  still heavily penalized (a woofer should not be audible up at the tweeter). Placement heuristics steer the
-  handovers further: a junction landing in the ear's most sensitive band
-  (2–4 kHz) is penalized, and two drivers that share a wide band are crossed
-  low — letting the upper (smaller) driver take over as early as it cleanly
-  can, for better dispersion and less excursion on the lower driver — except
-  the subwoofer, which is nudged UP toward the ~80 Hz localization limit rather
-  than pulled low. So a capable tweeter is crossed down toward its 1.7 kHz
-  sensible floor (out of the ear band) when its measured band supports it, and
-  a low tweeter handover has to earn its slope against the driver's resonance:
-  the high-pass must give at least 22 dB of attenuation at the tweeter's
-  estimated Fs, so the closer the crossover sits to that resonance, the steeper
-  the filter the wizard demands. The same low-handover logic applies below: a midrange
-  with headroom down to its 200 Hz sensible floor lets the woofer/midbass hand
-  over early, before its cone-breakup region, so the wide woofer/mid overlap
-  does not linger up where it interferes badly. In a stereo system both sides of a driver get the same
-  crossover — a crossover is one electrical filter, so only delay and level
-  differ per side. Narrowing the window past an outer driver adds a subsonic /
-  brickwall band-limit on that channel.
-  Apply does more than take the flattest magnitude candidate: the wizard
-  expands ~50 near-optimal variants (always including the conventional
-  all-LR24 setup) and re-ranks them by the junction loss actually achievable
-  after the best per-junction delay, measured on your impulse responses with
-  the same alignment search Auto delay runs — so a candidate whose slopes
-  cannot phase-align at the handover loses to one that can, before you ever
-  run Auto delay. Ties go to the conventional 24 dB/oct proposal.
-- **Auto delay** aligns in two stages: band-limited first arrivals — refined by a
-  GCC-PHAT cross-correlation where its dominant extremum, of either polarity,
-  is a reliable, unambiguous read: a genuinely inverted junction (a subwoofer
-  against its midbass is the classic) seeds from the trough's position exactly
-  as a normal one seeds from the peak's, with the polarity decision left to
-  the sum search. A junction whose corners leave a spectral gap degenerates
-  the correlation into near-equal lobes, and a near-tie — peak against trough,
-  or against the same-polarity lobe one period over — sends the seed back to
-  the arrival estimate. The coarse offsets set, a
-  fractional-delay search minimizes the sum-loss metric at each junction,
-  reading the same direct-sound gate as the displayed metric so late room
-  reflections the alignment cannot change do not steer it. At mid/tweeter-class
-  junctions with sharp impulse fronts, the search is additionally **locked to
-  the drivers' broadband IR onsets** — the wavefronts you would align by eye on
-  the impulse plot — so the summation comb (whose near-equal lobes repeat every
-  crossover period) can fine-tune only within the physically correct lobe and
-  can never walk a driver a whole cycle off its neighbor. Each candidate is
-  scored by its in-band average loss *and* how far
-  its deepest smoothed notch falls below that average, so a solution that only
-  looks good on average while hiding a sharp cancellation at the crossover
-  loses to a slightly lossier but flat one. It weighs every near-optimal
-  candidate against an arrival-based prior and a physical tie-break — a score
-  near-tie goes to the candidate nearest the measured arrival regardless of
-  polarity, because fractions of a dB can never choose between comb lobes —
-  so it does not add delay or flip polarity without a real improvement,
-  sidestepping the flip-plus-half-period impostor a steep crossover can
-  otherwise hide. Where an untrusted coarse seed widens a low junction's search
-  window toward a half period, the window itself spans foreign comb lobes, and
-  fractions of a dB slip past both the prior and the tie-break — so a pick
-  beyond the trusted window's own reach is held to the promotion standard: the
-  hop must be plainly better on the prior-free score, or the best
-  arrival-adjacent candidate stands. Each
-  polarity seeds its own candidates, so the non-inverted optimum is always on
-  the table for that preference even where the inverted curve edges it
-  everywhere. The search runs on a background task with a busy
-  indicator, so the window stays responsive during the few seconds it takes. If
-  the resulting delays span more than ~10 ms — usually a sign that one channel's
-  crossover has excessive group delay (a narrow or steep low-frequency band-pass)
-  — a banner flags the lagging driver so you can soften its filter instead of
-  dialing in an absurd bulk delay.
+  (subwoofer, woofer, midbass, midrange, tweeter), asks which filter families to
+  allow, the crossover-frequency window, and whether the two sides of a junction
+  may take independent slopes, then searches frequency, family and slope to
+  flatten the summed magnitude — penalizing wide band overlap and keeping a
+  practical minimum slope, so it lands on a tight, engineer-sensible split rather
+  than shallow filters that only look flat by overlapping widely.
+  The gains follow a car target curve rather than a flat sum: midrange and
+  tweeter are levelled to each other, the lowest bass driver anchors the bass at
+  a chosen elevation over that reference (**Bass level over mid/treble**, capped
+  at the measured elevation), and the rest are fit onto that slope cut-only, so
+  the result is headroom-safe. Handovers land on human-friendly frequencies, stay
+  in the sensible range for the two driver types, and may only use a slope whose
+  peak group delay stays within 10 ms — fine at a 250 Hz woofer/mid handover
+  (~5 ms), excluded at a 75 Hz sub/woofer one (~17 ms). Heuristics also penalize
+  junctions in the ear's most sensitive band (2–4 kHz), cross two drivers sharing
+  a wide band low (except the subwoofer, nudged UP toward ~80 Hz), and make a low
+  tweeter handover earn its slope against the driver's resonance. Apply then
+  expands ~50 near-optimal variants and re-ranks them by the junction loss
+  actually achievable after the best per-junction delay.
+- **Auto delay** aligns in two stages: band-limited first arrivals, refined by a
+  GCC-PHAT cross-correlation whose dominant extremum of either polarity seeds the
+  junction (an inverted junction — a subwoofer against its midbass is the classic
+  — seeds from the trough, with the polarity decision left to the sum search);
+  then a fractional-delay search minimizing the sum-loss metric at each junction,
+  through the same direct-sound gate as the displayed metric so late room
+  reflections do not steer it. At mid/tweeter-class junctions the search is
+  additionally **locked to the drivers' broadband IR onsets**, so the summation
+  comb can fine-tune only within the physically correct lobe. Candidates are
+  scored by in-band average loss *and* the depth of the deepest smoothed notch,
+  and weighed against an arrival-based prior, so the search does not add delay or
+  flip polarity without a real improvement. If the resulting delays span more
+  than ~10 ms — usually one channel's crossover having excessive group delay — a
+  banner flags the lagging driver.
   With stereo pairs, Auto delay tunes **both sides in one run**, and an
   **LHD / RHD** toggle says which seat you are tuning for. The driver's side is
   the reference: it aligns first, the top pair is bridged to it by band-limited
-  envelope arrivals, its polarity is matched, and the far side then descends
-  junction by junction from that bridge. On LHD that reference is the left side
-  and the right leads; on RHD it is mirrored. The **scene offset** is entered as
-  a non-negative magnitude — how far the far side leads — so switching LHD/RHD
-  never means re-entering a sign, and the level tilt is entered the same way, as
-  a cut on the near side. Pairs whose shared band reaches the localization
-  region are pinned to the scene: the far channel lands exactly the offset ahead
-  of its near counterpart (±0.05 ms of junction fine-tuning), because the stereo
-  image outranks the handover there. Pairs living entirely below that region are
-  pinned too, but only loosely — to the arrival's lobe — and fall back to a free
-  junction search when no reliable cross-side arrival exists. A
-  final scene-preserving pass may then shift BOTH sides of a pair by one shared
-  delta — which cannot touch the image — to recover junction summation the pin
-  cost. A **Mono** channel (the shared subwoofer) is walked by the left pass;
-  its junction against the right side is measured and reported. A final mono
-  co-move then gives that right junction its vote: one shared channel's delay
-  and polarity cannot touch the L/R scene, so the pass sweeps both across half
-  a junction period and keeps the best mean of the two handovers — the
-  compromise that previously had to be dialed in by hand when the sides
-  disagreed about the sub.
+  envelope arrivals, and the far side descends junction by junction. The **scene
+  offset** is entered as a non-negative magnitude — how far the far side leads —
+  so switching LHD/RHD never means re-entering a sign, and the level tilt is
+  entered the same way, as a cut on the near side. Pairs whose shared band
+  reaches the localization region are pinned to the scene, because the image
+  outranks the handover there; a final scene-preserving pass may then shift both
+  sides of a pair by one shared delta to recover what the pin cost.
 - **Capture to overlay** saves the predicted sum as a Captured overlay in
-  Frequency Response — compare it against real measurements and target curves,
-  or feed it onward to the EQ Wizard.
-- **Audition track…** renders a music file (wav/mp3/flac/m4a and friends)
-  through the tune and writes a stereo WAV: each program channel is convolved
-  with the summed processed response of its side — left sum to channel 1,
-  right sum to channel 2 — with the microphone calibration optionally baked in
-  as a linear-phase FIR, so what you hear matches the calibrated curves on
-  screen. The track is converted to the project's sample rate when needed (the
-  measured responses are never resampled), both channels share one
-  normalization gain so the L/R balance survives, and re-rendering with a
-  different calibration or after a settings tweak is one click — a quick A/B
-  between tune variants. **Subtract cabin** optionally removes a typical
-  body-style cabin transfer function (average sedan, hatchback, SUV, and
-  friends — the pressure-zone bass rise that reaches +15…+27 dB at 20 Hz) as
-  an inverse linear-phase FIR in both kernels (folded into the calibration FIR,
-  so both corrections cost one filter): the raw render reproduces the full
-  in-car bass rise as headphone boom the in-car listener never perceives, while
-  the subtracted render leaves this car's deviation from the typical curve
-  audible. The subtracted render is level-matched to the same tune without the
-  subtraction, so an A/B between cabin choices differs in tone, not loudness —
-  the removed bass reads as quieter bass, not a track the normalizer turned back
-  up. Listen through **headphones only**: each ear gets the
-  measured acoustic path of its side at the microphone position (drivers,
-  cabin, and capsule included) — a stereo auralization of the two sides, not a
-  binaural head simulation — and playing it back through the car would
-  convolve the cabin twice.
+  Frequency Response — compare it against real measurements and target curves, or
+  feed it onward to the EQ Wizard.
+- **Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
+  the tune into a stereo WAV: each program channel is convolved with the summed
+  processed response of its side, with the microphone calibration optionally
+  baked in and one shared normalization gain so the L/R balance survives.
+  **Subtract cabin** optionally removes a typical body-style cabin transfer
+  function (the pressure-zone bass rise reaching +15…+27 dB at 20 Hz),
+  level-matched so an A/B differs in tone, not loudness: the raw render
+  reproduces the in-car bass rise as headphone boom the in-car listener never
+  perceives, while the subtracted one leaves this car's own deviation audible.
+  Listen through **headphones only** — it is a stereo auralization of the two
+  sides, not a binaural head simulation.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
-  text): for every side of every pair (a mono pair prints once) the gain, delay
-  in ms and mm, polarity, crossover filters, the all-pass stage, and PEQ bands —
-  exactly the list you type into the DSP, both sides in one sheet.
-- **Save session... / Load session...** exports or imports the complete session
-  JSON (sources, chains, gate, and view state) for sharing or archiving.
+  text): for every side of every pair (a mono pair prints once) the gain, delay in
+  ms and mm, polarity, crossover filters, the all-pass stage, and PEQ bands.
+  **Save session... / Load session...** export and import the complete session
+  JSON for sharing or archiving.
 
-The tool's autosaved state (sources, chains, gate, and view flags) persists in
-`tools/virtual-crossover.json` and survives restarts. Accuracy holds within the
-usual physics: one microphone position, the same playback chain for every
-measurement, and the linear (non-clipping) regime.
+The tool's autosaved state persists in `tools/virtual-crossover.json` and
+survives restarts. Accuracy holds within the usual physics: one microphone
+position, the same playback chain for every measurement, and the linear
+(non-clipping) regime.
 
 ## Calibration
 
 Resonalyze applies a microphone (or measurement-chain) frequency-response
-correction during logarithmic resampling. Configure up to two calibration
-profiles in **Record Settings** — one for **0°** (on-axis) and one for **90°**
-(grazing) measurements — by browsing to a correction file for each.
-
-Correction files are read leniently in the common plain-text formats
-(`.txt`, `.cal`, `.frd`, `.csv`): `frequency level` pairs, with comments,
-headers, a decimal comma, comma / semicolon / tab delimiters, and extra columns
+correction during logarithmic resampling. Configure up to two profiles in
+**Record Settings** — one for **0°** (on-axis) and one for **90°** (grazing) — by
+browsing to a correction file for each. Files are read leniently in the common
+plain-text formats (`.txt`, `.cal`, `.frd`, `.csv`): `frequency level` pairs,
+with comments, headers, a decimal comma, various delimiters, and extra columns
 all handled.
 
-In the **Frequency Response** and **Live Spectrum** settings a calibration
-selector picks which profile to apply — **Off**, **0 degrees**, or
-**90 degrees**. A profile is offered once a file exists for it, with one
-deliberate exception: **90 degrees** is also offered when only a 0° file is
-configured, in which case the 90° curve is *approximated* from the 0° one rather
-than measured. The selector does not currently distinguish the two cases, so if
-you never supplied a 90° file, treat that entry as an estimate.
-The selected mode is saved with the measurement settings, and every plot is
-routed through the matching file.
-
-For a source checkout, a legacy `source/calibration.txt` beside the executable
-is still honored as the 0° profile when no 0° file is configured; the project
-copies it to the build and publish output automatically. Replace its example
-data with the correction curve for your microphone, or point the 0° / 90°
-profiles at your own files.
+In the **Frequency Response** and **Live Spectrum** settings a selector picks the
+profile — **Off**, **0 degrees**, or **90 degrees** — offered once a file exists
+for it, with one deliberate exception: **90 degrees** is also offered when only a
+0° file is configured, in which case the 90° curve is *approximated* rather than
+measured, so treat that entry as an estimate. For a source checkout, a legacy
+`source/calibration.txt` beside the executable is still honored as the 0°
+profile.
 
 ## Sound Pressure Level (dB SPL)
 
 The microphone calibration above corrects the response *shape*; an **SPL
-calibration** anchors its absolute *level*, so the Frequency Response and the Live
-Spectrum RTA can be read directly in dB SPL instead of relative dB.
+calibration** anchors its absolute *level*, so the Frequency Response and the
+Live Spectrum RTA can be read directly in dB SPL.
 
-In **Record Settings**, next to the microphone-calibration files, a **Calibrate**
-button listens to an external acoustic calibrator (a 94 / 104 / 114 dB tone at
-1 kHz) and records the microphone's digital level at that known pressure. The
-listen is capture-only — it plays nothing — and the tone level is read from a
-flat-top power spectrum, whose peak bin holds the true amplitude within
-hundredths of a dB wherever the tone lands between bins (a Hann or rectangular
-window would read a few dB low). The capture rejects anything that is not a clean,
-dominant, on-frequency tone, and fails on clipping or an unsteady level rather
-than storing a wrong number.
-
-What is stored is the anchor's *ingredients* — the reference and measured levels,
-the tone frequency, and the digital capture identity — not a baked "shift by N dB"
-value. The Frequency Response is a loopback-referenced transfer function, so
+In **Record Settings**, a **Calibrate** button listens to an external acoustic
+calibrator (a 94 / 104 / 114 dB tone at 1 kHz) and records the microphone's
+digital level at that known pressure; anything that is not a clean, dominant,
+on-frequency tone is rejected rather than stored as a wrong number. What is
+stored is the anchor's *ingredients* — the reference and measured levels, the
+tone frequency, and the digital capture identity — not a baked "shift by N dB"
+value: the Frequency Response is a loopback-referenced transfer function, so
 turning the anchor into an SPL shift also uses each measurement's own loopback
-level; the Live Spectrum RTA is the plain microphone spectrum, so it needs only
-`SPL = mic level + anchor offset`, with no loopback term.
+level, while the Live Spectrum RTA needs only `SPL = mic level + anchor offset`.
 
-The anchor is valid only at the gain it was captured at. Resonalyze records the
-digital input identity so a changed input is flagged — the **Calibrate** button
-turns gold — and the dialog warns that the analog preamp gain, which software
-cannot see, must not move after calibrating. Where an SPL reading cannot be
-honored (no anchor, or one captured on a different input), the plot silently
-falls back to relative dB and says so, instead of showing an unbacked absolute
-scale.
-
-In the **Frequency Response** and **Live Spectrum** settings a **Scale** control
-then switches between relative dB and **dB SPL**; the dB SPL option is offered
-only while a matching anchor applies to the current measurement or live input. The
-anchor is saved with the measurement settings and stamped onto every captured
-impulse response, so a saved measurement keeps its absolute reference.
+The anchor is valid only at the gain it was captured at, so a changed digital
+input is flagged (the **Calibrate** button turns gold) and the dialog warns that
+the analog preamp gain must not move after calibrating. Where an SPL reading
+cannot be honored the plot falls back to relative dB and says so. The anchor is
+saved with the measurement settings and stamped onto every captured impulse
+response.
 
 ## Architecture
 
@@ -2303,7 +1186,6 @@ impulse response, so a saved measurement keeps its absolute reference.
 Resonalyze/
 |-- source/                 WinForms application: composition root, measurement
 |   |                       lifecycle, and plot presentation
-|   |-- Diagnostics/        Profiling hooks (Tracy build configuration)
 |   |-- History/            Measurement history snapshots and persistence
 |   |-- LiveSpectrum/       Live analyzer orchestration
 |   |-- Measurements/       Sweep/noise orchestration, signal generation, IR files
@@ -2313,19 +1195,12 @@ Resonalyze/
 |   |-- Plotting/           OxyPlot model creation, annotations, and adapters
 |   |-- Settings/           Settings file, schema migrations, update checking
 |   |-- Shell/              Main form, title bar, commands, and docked settings
-|   |-- Storage/            Application data paths and safe file writing
 |   |-- TimeAlignment/      Loopback delay measurement UI and orchestration
-|   |-- Tools/              EQ Wizard, Signal Generator, Virtual DSP, PEQ import/export, tuning sheets
-|   |-- Ui/                 Reusable WinForms controls and dialogs
-|   `-- Resonalyze.csproj
+|   |-- Tools/              EQ Wizard, Signal Generator, Virtual DSP, PEQ import/export
+|   `-- Ui/                 Reusable WinForms controls and dialogs
 |-- dsp/                    Reusable signal-processing library (no UI, no audio)
-|   `-- Resonalyze.Dsp.csproj
 |-- audio/                  Audio drivers and device access (NAudio lives here)
-|   `-- Resonalyze.Audio.csproj
-|-- tests/
-|   |-- Resonalyze.App.Tests/    File-format and application tests
-|   |-- Resonalyze.Audio.Tests/  Audio internals: PCM decoding, sessions, WASAPI
-|   `-- Resonalyze.Dsp.Tests/    Synthetic DSP tests
+|-- tests/                  App, audio, and synthetic DSP test projects
 |-- installer/              Inno Setup script for the Windows installer
 |-- assets/                 Images used by the README and the application
 |-- .github/workflows/      CI builds and automated tagged releases
@@ -2336,23 +1211,22 @@ Resonalyze/
 The three projects have deliberate boundaries. `Resonalyze.Audio` owns every
 audio driver — MME, ASIO and both WASAPI modes — along with device enumeration,
 format negotiation and capture lifecycle; NAudio is confined to it and is not
-even referenceable from the application at compile time. `Resonalyze.Dsp` is
-pure signal processing with no UI and no audio dependency: FFT analysis,
-windowing, calibration, smoothing, logarithmic resampling, impulse processing,
-phase analysis, group delay, crossover and EQ design. The application project
-wires the two together and owns the measurement lifecycle and plot presentation.
+even referenceable from the application at compile time. `Resonalyze.Dsp` is pure
+signal processing with no UI and no audio dependency: FFT analysis, windowing,
+calibration, smoothing, impulse processing, phase analysis, group delay,
+crossover and EQ design. The application project wires the two together.
 
 ## Technology
 
-- [.NET 10](https://dotnet.microsoft.com/)
-- [Windows Forms](https://learn.microsoft.com/dotnet/desktop/winforms/)
-- [NAudio](https://github.com/naudio/NAudio)
-- [NAudio.Asio](https://www.nuget.org/packages/NAudio.Asio)
+- [.NET 10](https://dotnet.microsoft.com/), [Windows
+  Forms](https://learn.microsoft.com/dotnet/desktop/winforms/),
+  [OxyPlot](https://oxyplot.github.io/)
+- [NAudio](https://github.com/naudio/NAudio) and
+  [NAudio.Asio](https://www.nuget.org/packages/NAudio.Asio)
 - [Math.NET Numerics](https://numerics.mathdotnet.com/)
-- [OxyPlot](https://oxyplot.github.io/)
 - [NetSparkle](https://github.com/NetSparkleUpdater/NetSparkle) — in-app updates
-- [YamlDotNet](https://github.com/aaubry/YamlDotNet) — CamillaDSP profile import/export
-- [PDFsharp / MigraDoc](https://github.com/empira/PDFsharp) — tuning-sheet PDF export
+- [YamlDotNet](https://github.com/aaubry/YamlDotNet) — CamillaDSP profiles
+- [PDFsharp / MigraDoc](https://github.com/empira/PDFsharp) — tuning-sheet PDFs
 
 Third-party package licenses are listed in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
@@ -2360,20 +1234,12 @@ Third-party package licenses are listed in
 ## Contributing
 
 Bug reports, reproducible measurement cases, DSP corrections, and focused pull
-requests are welcome. Known technical debt and improvement ideas are collected
-in [TODO.md](TODO.md) — a good place to look for a first contribution.
-
-When reporting a measurement issue, include:
-
-- audio interface and driver
-- sample rate and bit depth
-- measurement mode
-- relevant analysis settings
-- expected and actual behavior
-- a screenshot or exception stack trace — unexpected errors are appended to
-  `crash.log` in the application data directory (`%LocalAppData%\Resonalyze`,
-  or beside the executable in a portable build), so check there for the full
-  stack trace
+requests are welcome. Known technical debt and improvement ideas are collected in
+[TODO.md](TODO.md) — a good place to look for a first contribution. When
+reporting a measurement issue, include the audio interface and driver, the sample
+rate and bit depth, the measurement mode, the relevant analysis settings, the
+expected and actual behavior, and a screenshot or exception stack trace —
+unexpected errors are appended to `crash.log` in the application data directory.
 
 ## License
 

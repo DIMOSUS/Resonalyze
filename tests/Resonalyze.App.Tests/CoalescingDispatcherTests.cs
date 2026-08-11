@@ -114,6 +114,54 @@ public sealed class CoalescingDispatcherTests
     }
 
     [Fact]
+    public void Offer_FoldsSupersededValuesWhenGivenAMerge()
+    {
+        var posted = new List<Action>();
+        var applied = new List<int>();
+        var dispatcher = new CoalescingDispatcher<int>(
+            drain =>
+            {
+                posted.Add(drain);
+                return true;
+            },
+            applied.Add,
+            (superseded, newest) => superseded + newest);
+
+        dispatcher.Offer(1);
+        dispatcher.Offer(2);
+        dispatcher.Offer(3);
+        posted[0]();
+
+        // Still one dispatch, but nothing the dropped offers carried is lost.
+        Assert.Single(posted);
+        Assert.Equal(new[] { 6 }, applied);
+    }
+
+    [Fact]
+    public void Offer_DoesNotFoldAnAlreadyDeliveredValue()
+    {
+        var posted = new List<Action>();
+        var applied = new List<int>();
+        var dispatcher = new CoalescingDispatcher<int>(
+            drain =>
+            {
+                posted.Add(drain);
+                return true;
+            },
+            applied.Add,
+            (superseded, newest) => superseded + newest);
+
+        dispatcher.Offer(1);
+        posted[0]();
+        dispatcher.Offer(2);
+        posted[1]();
+
+        // The drained value stays in the field; folding it into the next offer
+        // would report a level twice.
+        Assert.Equal(new[] { 1, 2 }, applied);
+    }
+
+    [Fact]
     public void Offer_IsSafeUnderConcurrentProducers()
     {
         var applied = new List<int>();

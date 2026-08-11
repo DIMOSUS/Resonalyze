@@ -6,9 +6,11 @@ internal sealed class InputLevelMeterController : IDisposable
     private readonly InputLevelMeterPanel panel;
     private readonly ExpSweepMeasurement sweepMeasurement;
     private readonly NoiseMeasurement noiseMeasurement;
-    // Levels arrive on audio worker threads on every buffer, which outpaces the
-    // message pump at small ASIO buffer sizes; coalesce to a single queued UI
-    // update carrying the newest snapshot.
+    // Levels arrive on audio worker threads, already throttled to 30 Hz by
+    // AudioLevelAccumulator; a busy message pump still falls behind that, so
+    // coalesce to a single queued UI update. Fold rather than drop: each
+    // snapshot is the peak of its own window, and the loudest one is usually
+    // the one the pump was too busy to take.
     private readonly CoalescingDispatcher<InputLevelMeterSnapshot> dispatcher;
     private bool disposed;
 
@@ -24,7 +26,8 @@ internal sealed class InputLevelMeterController : IDisposable
         this.noiseMeasurement = noiseMeasurement;
         dispatcher = new CoalescingDispatcher<InputLevelMeterSnapshot>(
             TryPostToOwner,
-            ApplyOnUiThread);
+            ApplyOnUiThread,
+            static (superseded, newest) => superseded.Merge(newest));
 
         sweepMeasurement.LevelsAvailable += HandleLevels;
         noiseMeasurement.LevelsAvailable += HandleLevels;

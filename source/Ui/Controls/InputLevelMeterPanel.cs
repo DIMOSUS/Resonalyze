@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 
 namespace Resonalyze;
 
@@ -15,20 +15,16 @@ internal sealed class InputLevelMeterPanel : Control
     private static readonly Color TextColor = UiPalette.MeterText;
     private static readonly Color MutedTextColor = UiPalette.MeterMutedText;
     private static readonly Color PeakHoldColor = UiPalette.MeterPeakHold;
-    private static readonly Color FullScaleColor = UiPalette.MeterFullScale;
-    private static readonly Color DimFillColor = UiPalette.MeterDimFill;
-    private const long PeakHoldDurationMs = 700;
-    private const long TextUpdateIntervalMs = 500;
-    private const double MinimumDecibels = -60;
-    private const double MaximumDecibels = 0;
-    private const double AttackFactor = 0.42;
-    private const double ReleaseFactor = 0.12;
-    private const double PeakHoldFallDbPerSecond = 24;
+    private const double MinimumDecibels = InputLevelMeterBallistics.MinimumDecibels;
+    private const double MaximumDecibels = InputLevelMeterBallistics.MaximumDecibels;
+    // Fill colour steps, read off the held peak.
+    private const double HotDecibels = -12;
+    private const double LoudDecibels = -24;
     private readonly System.Windows.Forms.Timer animationTimer;
-    private InputLevelMeterEntry microphoneTarget = InputLevelMeterEntry.Unavailable;
-    private InputLevelMeterEntry loopbackTarget = InputLevelMeterEntry.Unavailable;
-    private MeterVisualState microphoneState = MeterVisualState.CreateUnavailable();
-    private MeterVisualState loopbackState = MeterVisualState.CreateUnavailable();
+    private InputLevelMeterTarget microphoneTarget = InputLevelMeterTarget.Unavailable;
+    private InputLevelMeterTarget loopbackTarget = InputLevelMeterTarget.Unavailable;
+    private InputLevelMeterState microphoneState = InputLevelMeterState.CreateUnavailable();
+    private InputLevelMeterState loopbackState = InputLevelMeterState.CreateUnavailable();
     // Monotonic clock: a wall-clock (NTP/DST) step must not distort the
     // animation delta or the peak-hold timing.
     private long lastAnimationTickMs = Environment.TickCount64;
@@ -44,7 +40,6 @@ internal sealed class InputLevelMeterPanel : Control
 
         BackColor = SurfaceColor;
         ForeColor = TextColor;
-        Font = new Font("Segoe UI", 8.75f, FontStyle.Bold, GraphicsUnit.Point);
 
         animationTimer = new System.Windows.Forms.Timer
         {
@@ -56,16 +51,16 @@ internal sealed class InputLevelMeterPanel : Control
 
     public void SetLevels(InputLevelMeterSnapshot levels)
     {
-        microphoneTarget = levels.Microphone;
-        loopbackTarget = levels.Loopback;
+        microphoneTarget = microphoneTarget.Fold(levels.Microphone);
+        loopbackTarget = loopbackTarget.Fold(levels.Loopback);
     }
 
     public void ClearLevels()
     {
-        microphoneTarget = InputLevelMeterEntry.Unavailable;
-        loopbackTarget = InputLevelMeterEntry.Unavailable;
-        microphoneState = MeterVisualState.CreateUnavailable();
-        loopbackState = MeterVisualState.CreateUnavailable();
+        microphoneTarget = InputLevelMeterTarget.Unavailable;
+        loopbackTarget = InputLevelMeterTarget.Unavailable;
+        microphoneState = InputLevelMeterState.CreateUnavailable();
+        loopbackState = InputLevelMeterState.CreateUnavailable();
         Invalidate();
     }
 
@@ -107,7 +102,7 @@ internal sealed class InputLevelMeterPanel : Control
     private void DrawRow(
         Graphics graphics,
         string label,
-        MeterVisualState state,
+        InputLevelMeterState state,
         Rectangle rowRectangle)
     {
         int padding = ScaleValue(2);
@@ -177,23 +172,36 @@ internal sealed class InputLevelMeterPanel : Control
 
         for (int db = (int)MinimumDecibels + 5; db < MaximumDecibels; db += 5)
         {
-            int x = innerRectangle.Left + (int)Math.Round((innerRectangle.Width - 1) * Normalize(db));
+            int x = GetTrackX(innerRectangle, db);
             graphics.DrawLine(tickPen, x, innerRectangle.Top, x, innerRectangle.Bottom);
         }
     }
 
+    /// <summary>
+    /// The one dB→pixel mapping of the track. Fill, ticks and the peak marker
+    /// all read the same scale, so the edge of the fill lines up with the tick
+    /// it has just reached.
+    /// </summary>
+    private static int GetTrackX(Rectangle innerRectangle, double valueDbFs) =>
+        innerRectangle.Left + (int)Math.Round((innerRectangle.Width - 1) * Normalize(valueDbFs));
+
     private static void DrawRmsFill(
         Graphics graphics,
         Rectangle rectangle,
-        MeterVisualState state)
+        InputLevelMeterState state)
     {
-        int width = (int)Math.Round(rectangle.Width * Normalize(state.DisplayedRmsDbFs));
+        Rectangle innerRectangle = Rectangle.Inflate(rectangle, -1, -1);
+        int width = GetTrackX(innerRectangle, state.DisplayedRmsDbFs) - innerRectangle.Left;
         if (width <= 0)
         {
             return;
         }
 
-        Rectangle fillRectangle = new(rectangle.X + 1, rectangle.Y + 1, Math.Min(width, rectangle.Width - 2), rectangle.Height - 2);
+        Rectangle fillRectangle = new(
+            innerRectangle.Left,
+            innerRectangle.Top,
+            width,
+            innerRectangle.Height);
         using var brush = new SolidBrush(GetRmsColor(state));
         graphics.FillRectangle(brush, fillRectangle);
     }
@@ -201,45 +209,34 @@ internal sealed class InputLevelMeterPanel : Control
     private static void DrawPeakMarker(
         Graphics graphics,
         Rectangle rectangle,
-        MeterVisualState state)
+        InputLevelMeterState state)
     {
         Rectangle innerRectangle = Rectangle.Inflate(rectangle, -1, -1);
-        int x = innerRectangle.Left + (int)Math.Round((innerRectangle.Width - 1) * Normalize(state.HoldPeakDbFs));
+        int x = GetTrackX(innerRectangle, state.HoldPeakDbFs);
         using var markerPen = new Pen(GetPeakMarkerColor(state), 2);
         graphics.DrawLine(markerPen, x, rectangle.Top - 1, x, rectangle.Bottom + 1);
     }
 
-    private static Color GetRmsColor(MeterVisualState state)
+    private static Color GetRmsColor(InputLevelMeterState state)
     {
-        if (state.Clipped || state.DisplayedPeakDbFs >= -3)
+        if (state.IsAlarming)
         {
             return UiPalette.WarningRed;
         }
-        if (state.DisplayedPeakDbFs >= -12)
+        if (state.HoldPeakDbFs >= HotDecibels)
         {
             return UiPalette.WarningOrange;
         }
-        if (state.DisplayedPeakDbFs >= -24)
-        {
-            return UiPalette.SuccessGreenAlt;
-        }
 
-        return state.Available
-            ? UiPalette.MeterLowAccent
-            : DimFillColor;
+        return state.HoldPeakDbFs >= LoudDecibels
+            ? UiPalette.SuccessGreenAlt
+            : UiPalette.MeterLowAccent;
     }
 
-    private static Color GetPeakMarkerColor(MeterVisualState state)
-    {
-        if (state.FullScaleReference)
-        {
-            return PeakHoldColor;
-        }
-
-        return state.Clipped || state.HoldPeakDbFs >= -3
+    private static Color GetPeakMarkerColor(InputLevelMeterState state) =>
+        state.IsAlarming
             ? UiPalette.ErrorSoftTint
             : PeakHoldColor;
-    }
 
     private static double Normalize(double valueDbFs)
     {
@@ -261,10 +258,14 @@ internal sealed class InputLevelMeterPanel : Control
         double dt = Math.Max((now - lastAnimationTickMs) / 1000.0, 0.001);
         lastAnimationTickMs = now;
 
-        MeterVisualState newMicrophoneState =
-            AdvanceState(microphoneState, microphoneTarget, now, dt);
-        MeterVisualState newLoopbackState =
-            AdvanceState(loopbackState, loopbackTarget, now, dt);
+        InputLevelMeterState newMicrophoneState = InputLevelMeterBallistics.Advance(
+            microphoneState, microphoneTarget.Pending, now, dt);
+        InputLevelMeterState newLoopbackState = InputLevelMeterBallistics.Advance(
+            loopbackState, loopbackTarget.Pending, now, dt);
+        // Unconditionally, including on the idle path below: this frame has
+        // latched whatever the fold was carrying.
+        microphoneTarget = microphoneTarget.Consume();
+        loopbackTarget = loopbackTarget.Consume();
         if (newMicrophoneState == microphoneState &&
             newLoopbackState == loopbackState)
         {
@@ -275,72 +276,6 @@ internal sealed class InputLevelMeterPanel : Control
         microphoneState = newMicrophoneState;
         loopbackState = newLoopbackState;
         Invalidate();
-    }
-
-    private static MeterVisualState AdvanceState(
-        MeterVisualState state,
-        InputLevelMeterEntry target,
-        long nowMs,
-        double dt)
-    {
-        if (!target.Available)
-        {
-            // Keep the existing unavailable state so idle ticks compare equal.
-            return state.Available ? MeterVisualState.CreateUnavailable() : state;
-        }
-
-        if (!state.Available)
-        {
-            return MeterVisualState.CreateActive(target, nowMs);
-        }
-
-        double displayedPeak = Smooth(state.DisplayedPeakDbFs, target.PeakDbFs);
-        double displayedRms = Smooth(state.DisplayedRmsDbFs, target.RmsDbFs);
-
-        double holdPeak = state.HoldPeakDbFs;
-        long holdTimestamp = state.HoldTimestampMs;
-        // Strictly greater: at equality (a fully converged meter) re-stamping
-        // the hold would make every tick "change" the state and defeat the
-        // idle repaint skip in Animate.
-        if (displayedPeak > holdPeak)
-        {
-            holdPeak = displayedPeak;
-            holdTimestamp = nowMs;
-        }
-        else if (nowMs - holdTimestamp > PeakHoldDurationMs)
-        {
-            holdPeak = Math.Max(
-                displayedPeak,
-                holdPeak - PeakHoldFallDbPerSecond * dt);
-        }
-
-        double textPeak = state.TextPeakDbFs;
-        double textRms = state.TextRmsDbFs;
-        long textTimestamp = state.LastTextUpdateMs;
-        if (nowMs - state.LastTextUpdateMs >= TextUpdateIntervalMs)
-        {
-            textPeak = displayedPeak;
-            textRms = displayedRms;
-            textTimestamp = nowMs;
-        }
-
-        return new MeterVisualState(
-            true,
-            displayedPeak,
-            displayedRms,
-            holdPeak,
-            holdTimestamp,
-            textPeak,
-            textRms,
-            textTimestamp,
-            target.Clipped,
-            target.FullScaleReference);
-    }
-
-    private static double Smooth(double current, double target)
-    {
-        double factor = target > current ? AttackFactor : ReleaseFactor;
-        return current + (target - current) * factor;
     }
 
     private (Rectangle Mic, Rectangle Loop) GetRowRectangles()
@@ -363,7 +298,7 @@ internal sealed class InputLevelMeterPanel : Control
         return (mic, loop);
     }
 
-    private string FormatValueText(MeterVisualState state, int availableWidth)
+    private string FormatValueText(InputLevelMeterState state, int availableWidth)
     {
         if (!state.Available)
         {
@@ -382,43 +317,4 @@ internal sealed class InputLevelMeterPanel : Control
 
     private int ScaleValue(int value) =>
         (int)Math.Round(value * DeviceDpi / 96.0);
-
-    private readonly record struct MeterVisualState(
-        bool Available,
-        double DisplayedPeakDbFs,
-        double DisplayedRmsDbFs,
-        double HoldPeakDbFs,
-        long HoldTimestampMs,
-        double TextPeakDbFs,
-        double TextRmsDbFs,
-        long LastTextUpdateMs,
-        bool Clipped,
-        bool FullScaleReference)
-    {
-        public static MeterVisualState CreateUnavailable() => new(
-            false,
-            MinimumDecibels,
-            MinimumDecibels,
-            MinimumDecibels,
-            0,
-            MinimumDecibels,
-            MinimumDecibels,
-            0,
-            false,
-            false);
-
-        public static MeterVisualState CreateActive(
-            InputLevelMeterEntry target,
-            long nowMs) => new(
-            true,
-            target.PeakDbFs,
-            target.RmsDbFs,
-            target.PeakDbFs,
-            nowMs,
-            target.PeakDbFs,
-            target.RmsDbFs,
-            nowMs,
-            target.Clipped,
-            target.FullScaleReference);
-    }
 }

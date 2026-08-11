@@ -171,8 +171,9 @@ offer a manual download.
 - **Band-defined exponential sweep** — the low and high frequency it must cover
   (20 Hz – 20 kHz) plus a per-octave pace, with the transfer estimate gated to
   the excited band, and impulse-response JSON save/load
-- **Mandatory loopback reference** — all analysis is derived from the transfer
-  function (harmonics and THD+N stay on the sweep deconvolution)
+- **Mandatory loopback for sweep/IR analysis** — every IR-based view is derived
+  from the transfer function (harmonics and THD+N stay on the sweep
+  deconvolution); Live Spectrum can additionally run as a reference-free RTA
 - **Multi-sweep averaging** (1–64 runs) as a cross-spectrum estimate with a
   per-frequency **coherence** (γ²) curve, and an optional confirm-between-runs
   pause for spatial averaging
@@ -183,8 +184,10 @@ offer a manual download.
 - **Calibration** — microphone profiles (0° / 90°) from `.txt` / `.cal` / `.frd`
   / `.csv` files, and **absolute dB SPL** from an acoustic 1 kHz calibrator
 - **Time Alignment** — sub-sample delay from the transfer IR, refined by a
-  GCC-PHAT cross-correlation, and a **complex (vector) sum** of two measurements
-  (`Main ⊕ Compare`) with delay/polarity controls and a **sum-loss** curve
+  GCC-PHAT cross-correlation
+- **Crossover summation prediction** — in Frequency Response, the true **complex
+  (vector) sum** of two measurements (`Main ⊕ Compare`) with Compare
+  delay/polarity controls, plus a **sum-loss** curve
 - **Virtual DSP** — up to eight L/R driver pairs (plus mono channels) through
   virtual chains: gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel /
   Chebyshev crossovers, all-pass and PEQ, with the complex sum, sum loss, phase
@@ -694,7 +697,8 @@ IR JSON file with transfer-response data. The delay estimator uses a robust
 two-stage chain: the transfer IR, through an optional raised-cosine bandpass
 window, gives an analytic-signal envelope whose first arrival and strongest peak
 are the coarse, polarity-blind anchors; a **GCC-PHAT** (phase-transform)
-correlation from the same spectrum then refines each to sub-sample precision.
+correlation from the same spectrum then refines each anchor to sub-sample
+precision wherever its own peak is trustworthy.
 
 The first-arrival search rejects **pre-ringing sidelobes** by testing every
 candidate against the analysis kernel's own envelope — an arrival can pre-ring no
@@ -708,9 +712,13 @@ spectrum already carries the microphone-to-loopback cross-phase, so whitening it
 to unit magnitude over a soft band mask (weighted by coherence where the record
 has it) collapses the correlation to a sharp peak at the true broadband delay,
 independent of the driver's own magnitude shape. The search runs on peak
-magnitude, so a polarity-inverted arrival is located just as reliably. The payoff
-is delay estimates such as `87.0 samples` or `1.972 ms` resolved to a hundredth
-of a sample, with a GCC-PHAT **alignment confidence** shown as `Alignment: NN%`.
+magnitude, so a polarity-inverted arrival is located just as reliably. Where the
+whitened peak is too weak to trust, the estimate falls back to the envelope's own
+interpolated peak instead — and says so: the **alignment confidence** read-out
+gives the normalized height of the whitened correlation peak as `Alignment: NN%`
+and names the method that placed the sub-sample position, `GCC-PHAT` or
+`envelope fallback`. The payoff is delay estimates such as `87.0 samples` or
+`1.972 ms` resolved to a hundredth of a sample.
 
 When the strongest peak lands well after the first arrival — the classic
 narrowband-subwoofer case — Time Alignment flags it and points you at the first

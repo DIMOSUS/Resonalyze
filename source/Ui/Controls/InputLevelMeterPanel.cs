@@ -31,9 +31,12 @@ internal sealed class InputLevelMeterPanel : Control
     private const double RmsAttackSeconds = 0.060;
     private const double RmsReleaseSeconds = 0.260;
     private const double PeakHoldFallDbPerSecond = 24;
-    // Upper bound on one animation step: a stalled message pump must not let a
-    // single tick drop the peak hold by tens of dB.
-    private const double MaximumStepSeconds = 0.25;
+    // The hold's fall is a display rate, not a physical one, so it alone is
+    // rate-limited: after a stalled message pump, settling seconds of decay in
+    // a single frame would teleport the marker across the track. Everything
+    // else advances on true elapsed time — RMS is a level, and the level the
+    // input is at now is the honest thing to show once the pump recovers.
+    private const double MaximumHoldFallSeconds = 0.25;
     private readonly System.Windows.Forms.Timer animationTimer;
     // The newest snapshot as received: the current level, which stands until the
     // next one replaces it.
@@ -293,10 +296,7 @@ internal sealed class InputLevelMeterPanel : Control
     private void Animate()
     {
         long now = Environment.TickCount64;
-        double dt = Math.Clamp(
-            (now - lastAnimationTickMs) / 1000.0,
-            0.001,
-            MaximumStepSeconds);
+        double dt = Math.Max((now - lastAnimationTickMs) / 1000.0, 0.001);
         lastAnimationTickMs = now;
 
         MeterVisualState newMicrophoneState =
@@ -364,7 +364,7 @@ internal sealed class InputLevelMeterPanel : Control
         {
             holdPeak = Math.Max(
                 target.PeakDbFs,
-                holdPeak - PeakHoldFallDbPerSecond * dt);
+                holdPeak - PeakHoldFallDbPerSecond * Math.Min(dt, MaximumHoldFallSeconds));
         }
 
         if (holdPeak < WarningDecibels)

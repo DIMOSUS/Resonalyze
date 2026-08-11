@@ -42,7 +42,6 @@ internal static class UiPalette
     public static Color MeterText => Color.FromArgb(225, 230, 240);
     public static Color MeterMutedText => Color.FromArgb(128, 135, 150);
     public static Color MeterPeakHold => Color.FromArgb(248, 248, 252);
-    public static Color MeterFullScale => Color.FromArgb(95, 200, 255);
     public static Color MeterLowAccent => Color.FromArgb(88, 182, 255);
     public static Color MeterDimFill => Color.FromArgb(80, 86, 100);
     public static Color MeterTrackInactive => Color.FromArgb(30, 34, 42);

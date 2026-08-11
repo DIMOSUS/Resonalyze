@@ -15,15 +15,25 @@ internal sealed class InputLevelMeterPanel : Control
     private static readonly Color TextColor = UiPalette.MeterText;
     private static readonly Color MutedTextColor = UiPalette.MeterMutedText;
     private static readonly Color PeakHoldColor = UiPalette.MeterPeakHold;
-    private static readonly Color FullScaleColor = UiPalette.MeterFullScale;
-    private static readonly Color DimFillColor = UiPalette.MeterDimFill;
-    private const long PeakHoldDurationMs = 700;
+    private const long PeakHoldDurationMs = 1050;
     private const long TextUpdateIntervalMs = 500;
     private const double MinimumDecibels = -60;
     private const double MaximumDecibels = 0;
-    private const double AttackFactor = 0.42;
-    private const double ReleaseFactor = 0.12;
+    // Fill colour steps, read off the held peak.
+    private const double WarningDecibels = -3;
+    private const double HotDecibels = -12;
+    private const double LoudDecibels = -24;
+    // RMS ballistics as time constants rather than per-tick fractions: a fixed
+    // fraction makes the meter's speed depend on how often the timer actually
+    // fires, and WM_TIMER coalesces whenever the UI thread is busy — which it is
+    // during a measurement. These match the previous factors at a nominal
+    // 33 ms tick (0.42 attack, 0.12 release), so the meter still looks the same.
+    private const double RmsAttackSeconds = 0.060;
+    private const double RmsReleaseSeconds = 0.260;
     private const double PeakHoldFallDbPerSecond = 24;
+    // Upper bound on one animation step: a stalled message pump must not let a
+    // single tick drop the peak hold by tens of dB.
+    private const double MaximumStepSeconds = 0.25;
     private readonly System.Windows.Forms.Timer animationTimer;
     private InputLevelMeterEntry microphoneTarget = InputLevelMeterEntry.Unavailable;
     private InputLevelMeterEntry loopbackTarget = InputLevelMeterEntry.Unavailable;
@@ -44,7 +54,6 @@ internal sealed class InputLevelMeterPanel : Control
 
         BackColor = SurfaceColor;
         ForeColor = TextColor;
-        Font = new Font("Segoe UI", 8.75f, FontStyle.Bold, GraphicsUnit.Point);
 
         animationTimer = new System.Windows.Forms.Timer
         {
@@ -177,23 +186,36 @@ internal sealed class InputLevelMeterPanel : Control
 
         for (int db = (int)MinimumDecibels + 5; db < MaximumDecibels; db += 5)
         {
-            int x = innerRectangle.Left + (int)Math.Round((innerRectangle.Width - 1) * Normalize(db));
+            int x = GetTrackX(innerRectangle, db);
             graphics.DrawLine(tickPen, x, innerRectangle.Top, x, innerRectangle.Bottom);
         }
     }
+
+    /// <summary>
+    /// The one dB→pixel mapping of the track. Fill, ticks and the peak marker
+    /// all read the same scale, so the edge of the fill lines up with the tick
+    /// it has just reached.
+    /// </summary>
+    private static int GetTrackX(Rectangle innerRectangle, double valueDbFs) =>
+        innerRectangle.Left + (int)Math.Round((innerRectangle.Width - 1) * Normalize(valueDbFs));
 
     private static void DrawRmsFill(
         Graphics graphics,
         Rectangle rectangle,
         MeterVisualState state)
     {
-        int width = (int)Math.Round(rectangle.Width * Normalize(state.DisplayedRmsDbFs));
+        Rectangle innerRectangle = Rectangle.Inflate(rectangle, -1, -1);
+        int width = GetTrackX(innerRectangle, state.DisplayedRmsDbFs) - innerRectangle.Left;
         if (width <= 0)
         {
             return;
         }
 
-        Rectangle fillRectangle = new(rectangle.X + 1, rectangle.Y + 1, Math.Min(width, rectangle.Width - 2), rectangle.Height - 2);
+        Rectangle fillRectangle = new(
+            innerRectangle.Left,
+            innerRectangle.Top,
+            width,
+            innerRectangle.Height);
         using var brush = new SolidBrush(GetRmsColor(state));
         graphics.FillRectangle(brush, fillRectangle);
     }
@@ -204,42 +226,40 @@ internal sealed class InputLevelMeterPanel : Control
         MeterVisualState state)
     {
         Rectangle innerRectangle = Rectangle.Inflate(rectangle, -1, -1);
-        int x = innerRectangle.Left + (int)Math.Round((innerRectangle.Width - 1) * Normalize(state.HoldPeakDbFs));
+        int x = GetTrackX(innerRectangle, state.HoldPeakDbFs);
         using var markerPen = new Pen(GetPeakMarkerColor(state), 2);
         graphics.DrawLine(markerPen, x, rectangle.Top - 1, x, rectangle.Bottom + 1);
     }
 
+    /// <summary>
+    /// Whether the held peak is the kind of hot the user has to act on. A
+    /// reference channel sitting at full scale is the expected condition, not a
+    /// fault, so it alarms on nothing but the microphone's own clipping.
+    /// </summary>
+    private static bool IsAlarming(MeterVisualState state) =>
+        state.HoldClipped ||
+        (state.HoldPeakDbFs >= WarningDecibels && !state.HoldFullScaleReference);
+
     private static Color GetRmsColor(MeterVisualState state)
     {
-        if (state.Clipped || state.DisplayedPeakDbFs >= -3)
+        if (IsAlarming(state))
         {
             return UiPalette.WarningRed;
         }
-        if (state.DisplayedPeakDbFs >= -12)
+        if (state.HoldPeakDbFs >= HotDecibels)
         {
             return UiPalette.WarningOrange;
         }
-        if (state.DisplayedPeakDbFs >= -24)
-        {
-            return UiPalette.SuccessGreenAlt;
-        }
 
-        return state.Available
-            ? UiPalette.MeterLowAccent
-            : DimFillColor;
+        return state.HoldPeakDbFs >= LoudDecibels
+            ? UiPalette.SuccessGreenAlt
+            : UiPalette.MeterLowAccent;
     }
 
-    private static Color GetPeakMarkerColor(MeterVisualState state)
-    {
-        if (state.FullScaleReference)
-        {
-            return PeakHoldColor;
-        }
-
-        return state.Clipped || state.HoldPeakDbFs >= -3
+    private static Color GetPeakMarkerColor(MeterVisualState state) =>
+        IsAlarming(state)
             ? UiPalette.ErrorSoftTint
             : PeakHoldColor;
-    }
 
     private static double Normalize(double valueDbFs)
     {
@@ -258,7 +278,10 @@ internal sealed class InputLevelMeterPanel : Control
     private void Animate()
     {
         long now = Environment.TickCount64;
-        double dt = Math.Max((now - lastAnimationTickMs) / 1000.0, 0.001);
+        double dt = Math.Clamp(
+            (now - lastAnimationTickMs) / 1000.0,
+            0.001,
+            MaximumStepSeconds);
         lastAnimationTickMs = now;
 
         MeterVisualState newMicrophoneState =
@@ -294,53 +317,75 @@ internal sealed class InputLevelMeterPanel : Control
             return MeterVisualState.CreateActive(target, nowMs);
         }
 
-        double displayedPeak = Smooth(state.DisplayedPeakDbFs, target.PeakDbFs);
-        double displayedRms = Smooth(state.DisplayedRmsDbFs, target.RmsDbFs);
+        double displayedRms = SmoothRms(state.DisplayedRmsDbFs, target.RmsDbFs, dt);
 
+        // The peak latches instantly. target.PeakDbFs is already the true
+        // maximum of one 30 Hz meter window, so easing towards it would report a
+        // transient tens of dB below the sample that caused it — a single loud
+        // window would never be shown at all.
         double holdPeak = state.HoldPeakDbFs;
         long holdTimestamp = state.HoldTimestampMs;
-        // Strictly greater: at equality (a fully converged meter) re-stamping
-        // the hold would make every tick "change" the state and defeat the
-        // idle repaint skip in Animate.
-        if (displayedPeak > holdPeak)
+        // The full-scale flags describe the peak being held, not the newest
+        // window: re-reading them every tick turns a reference channel red the
+        // moment it steps off full scale, while its own peak is still on screen.
+        bool holdClipped = state.HoldClipped || target.Clipped;
+        bool holdFullScale = state.HoldFullScaleReference || target.FullScaleReference;
+        // Strictly greater: at equality — digital silence pinned to the dB
+        // floor, or a loopback pinned to full scale — re-stamping the hold would
+        // make every tick "change" the state and defeat the idle repaint skip in
+        // Animate.
+        if (target.PeakDbFs > holdPeak)
         {
-            holdPeak = displayedPeak;
+            holdPeak = target.PeakDbFs;
             holdTimestamp = nowMs;
         }
         else if (nowMs - holdTimestamp > PeakHoldDurationMs)
         {
             holdPeak = Math.Max(
-                displayedPeak,
+                target.PeakDbFs,
                 holdPeak - PeakHoldFallDbPerSecond * dt);
+        }
+
+        if (holdPeak < WarningDecibels)
+        {
+            // The peak that earned the flags has decayed out of the warning
+            // zone; they expire with it.
+            holdClipped = false;
+            holdFullScale = false;
         }
 
         double textPeak = state.TextPeakDbFs;
         double textRms = state.TextRmsDbFs;
         long textTimestamp = state.LastTextUpdateMs;
-        if (nowMs - state.LastTextUpdateMs >= TextUpdateIntervalMs)
+        // The readout quotes the hold, not the live window: the hold outlives
+        // the text interval by design (1050 > 500 ms), so every latched peak is
+        // still standing when the next update samples it. Re-stamping only on a
+        // real change keeps a settled meter comparing equal — see Animate.
+        if (nowMs - textTimestamp >= TextUpdateIntervalMs &&
+            (holdPeak != textPeak || displayedRms != textRms))
         {
-            textPeak = displayedPeak;
+            textPeak = holdPeak;
             textRms = displayedRms;
             textTimestamp = nowMs;
         }
 
         return new MeterVisualState(
             true,
-            displayedPeak,
             displayedRms,
             holdPeak,
             holdTimestamp,
+            holdClipped,
+            holdFullScale,
             textPeak,
             textRms,
-            textTimestamp,
-            target.Clipped,
-            target.FullScaleReference);
+            textTimestamp);
     }
 
-    private static double Smooth(double current, double target)
+    private static double SmoothRms(double current, double target, double dt)
     {
-        double factor = target > current ? AttackFactor : ReleaseFactor;
-        return current + (target - current) * factor;
+        double seconds = target > current ? RmsAttackSeconds : RmsReleaseSeconds;
+        double alpha = 1.0 - Math.Exp(-dt / seconds);
+        return current + (target - current) * alpha;
     }
 
     private (Rectangle Mic, Rectangle Loop) GetRowRectangles()
@@ -383,42 +428,44 @@ internal sealed class InputLevelMeterPanel : Control
     private int ScaleValue(int value) =>
         (int)Math.Round(value * DeviceDpi / 96.0);
 
+    /// <summary>
+    /// What one row draws. There is a single peak here — the held one — because
+    /// with an instant attack a separately smoothed "current" peak would only
+    /// ever read lower than the hold it is derived from.
+    /// </summary>
     private readonly record struct MeterVisualState(
         bool Available,
-        double DisplayedPeakDbFs,
         double DisplayedRmsDbFs,
         double HoldPeakDbFs,
         long HoldTimestampMs,
+        bool HoldClipped,
+        bool HoldFullScaleReference,
         double TextPeakDbFs,
         double TextRmsDbFs,
-        long LastTextUpdateMs,
-        bool Clipped,
-        bool FullScaleReference)
+        long LastTextUpdateMs)
     {
         public static MeterVisualState CreateUnavailable() => new(
             false,
             MinimumDecibels,
             MinimumDecibels,
-            MinimumDecibels,
-            0,
-            MinimumDecibels,
-            MinimumDecibels,
             0,
             false,
-            false);
+            false,
+            MinimumDecibels,
+            MinimumDecibels,
+            0);
 
         public static MeterVisualState CreateActive(
             InputLevelMeterEntry target,
             long nowMs) => new(
             true,
-            target.PeakDbFs,
             target.RmsDbFs,
             target.PeakDbFs,
-            nowMs,
-            target.PeakDbFs,
-            target.RmsDbFs,
             nowMs,
             target.Clipped,
-            target.FullScaleReference);
+            target.FullScaleReference,
+            target.PeakDbFs,
+            target.RmsDbFs,
+            nowMs);
     }
 }

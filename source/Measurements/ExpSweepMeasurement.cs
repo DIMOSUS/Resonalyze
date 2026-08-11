@@ -587,12 +587,13 @@ namespace Resonalyze
         /// </para>
         /// </remarks>
         /// <summary>
-        /// The same import over a multi-channel recording, choosing the channel
-        /// that best MATCHES the sweep rather than the loudest one. A recorder
-        /// routinely delivers one live microphone beside a dead input, and a dead
-        /// input is rarely silent — hum, a preamp hiss, a plugged-in cable picking
-        /// up the car — so "loudest" can name the channel with no measurement in
-        /// it. The chosen one is reported through
+        /// The same import over a multi-channel recording, measuring the channel
+        /// that best MATCHES the sweep (see <see cref="RecordedSweepChannels"/>).
+        /// Only for callers with no one to ask: when more than one channel
+        /// plausibly holds the sweep the best match is not the answer — a DAW's
+        /// reference track is a copy of the excitation and beats the microphone
+        /// every time — so the UI ranks the channels itself and imports the one
+        /// the user picks. The chosen one is reported through
         /// <see cref="ImportedChannelIndex"/>.
         /// </summary>
         public void ImportRecordedSweep(
@@ -607,33 +608,36 @@ namespace Resonalyze
                 throw new InvalidOperationException("The recording has no channels.");
             }
 
-            int chosen = 0;
-            if (channels.Length > 1)
-            {
-                using var probe = new ExponentialSineSweep();
-                SweepSignalConfiguration signal = configuration.Signal;
-                probe.FillData(
-                    signal.LowFrequencyHz,
-                    signal.HighFrequencyHz,
-                    signal.RequestedDurationSeconds,
-                    signal.Bits,
-                    signal.SampleRate);
-                double best = -1;
-                for (int channel = 0; channel < channels.Length; channel++)
-                {
-                    double quality = RecordedSweepDetector
-                        .FindSweeps(channels[channel], probe.SweepData, 1)
-                        .FirstOrDefault().Quality;
-                    if (quality > best)
-                    {
-                        best = quality;
-                        chosen = channel;
-                    }
-                }
-            }
+            ImportRecordedSweep(
+                configuration,
+                channels,
+                sampleRate,
+                channels.Length > 1
+                    ? RecordedSweepChannels.Best(
+                        RecordedSweepChannels.Rank(configuration, channels))
+                    : 0);
+        }
 
-            ImportRecordedSweep(configuration, channels[chosen], sampleRate);
-            ImportedChannelIndex = chosen;
+        /// <summary>
+        /// The import over a named channel of a multi-channel recording.
+        /// </summary>
+        public void ImportRecordedSweep(
+            SweepMeasurementConfiguration configuration,
+            float[][] channels,
+            int sampleRate,
+            int channel)
+        {
+            ArgumentNullException.ThrowIfNull(configuration);
+            ArgumentNullException.ThrowIfNull(channels);
+            if (channels.Length == 0)
+            {
+                throw new InvalidOperationException("The recording has no channels.");
+            }
+            ArgumentOutOfRangeException.ThrowIfNegative(channel);
+            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(channel, channels.Length);
+
+            ImportRecordedSweep(configuration, channels[channel], sampleRate);
+            ImportedChannelIndex = channel;
         }
 
         public void ImportRecordedSweep(

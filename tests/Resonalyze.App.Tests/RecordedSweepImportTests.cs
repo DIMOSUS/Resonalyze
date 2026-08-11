@@ -5,9 +5,9 @@ using Resonalyze.Dsp;
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// Importing a sweep recorded outside Resonalyze: the file's loudest channel is
-/// what gets measured, and the analysis runs against the configured sweep
-/// standing in for the loopback reference.
+/// Importing a sweep recorded outside Resonalyze: the channel that matches the
+/// configured sweep is what gets measured, and the analysis runs against that
+/// sweep standing in for the loopback reference.
 /// </summary>
 public sealed class RecordedSweepImportTests
 {
@@ -108,6 +108,73 @@ public sealed class RecordedSweepImportTests
 
         Assert.Equal(1, measurement.ImportedChannelIndex);
         Assert.True(measurement.HasImpulseResponse);
+        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
+    }
+
+    // A dead input is no competition, whatever it is doing: the choice is not
+    // ambiguous and the import makes it on its own, as it did before there was
+    // anything to ask about.
+    [Fact]
+    public void ADeadInputIsNoCompetitionForTheChannelHoldingTheTake()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        float[] sweepChannel = RecordSweep(measurement, 1_500, gain: 0.02f);
+        var humChannel = new float[sweepChannel.Length];
+        for (int i = 0; i < humChannel.Length; i++)
+        {
+            humChannel[i] = (float)(0.5 * Math.Sin(2.0 * Math.PI * 50.0 * i / SampleRate));
+        }
+
+        double[] qualities =
+            RecordedSweepChannels.Rank(Configuration(), [humChannel, sweepChannel]);
+
+        Assert.Equal(1, RecordedSweepChannels.Best(qualities));
+        Assert.False(
+            RecordedSweepChannels.IsAmbiguous(qualities),
+            $"hum {qualities[0]:0.000} against the take {qualities[1]:0.000}");
+    }
+
+    // The case no ranking can settle: a DAW wrote the played sweep to a reference
+    // track beside the microphone. The reference is a COPY of the excitation, so
+    // it matches better than any acoustic take ever will — it would win, measure
+    // as a flat response and pass every credibility check on the way out. The
+    // import has to notice that it cannot choose.
+    [Fact]
+    public void AReferenceTrackBesideTheMicrophoneIsNotTheImportsChoiceToMake()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        // The reference track: the played sweep, nothing else on it.
+        float[] reference = RecordSweep(measurement, 1_500, gain: 0.5f);
+        // The microphone: direct sound a few ms later, two reflections, some room.
+        float[] sweep = measurement.Sweep!.SweepData;
+        var microphone = new float[reference.Length];
+        var random = new Random(77);
+        for (int i = 0; i < microphone.Length; i++)
+        {
+            microphone[i] = (float)((random.NextDouble() - 0.5) * 1e-3);
+        }
+        int[] taps = [1_500 + 144, 1_500 + 346, 1_500 + 677];
+        float[] gains = [0.35f, -0.18f, 0.11f];
+        for (int tap = 0; tap < taps.Length; tap++)
+        {
+            for (int i = 0; i < sweep.Length && taps[tap] + i < microphone.Length; i++)
+            {
+                microphone[taps[tap] + i] += sweep[i] * gains[tap];
+            }
+        }
+
+        double[] qualities =
+            RecordedSweepChannels.Rank(Configuration(), [reference, microphone]);
+
+        // The copy does win — that is the whole problem.
+        Assert.Equal(0, RecordedSweepChannels.Best(qualities));
+        Assert.True(
+            RecordedSweepChannels.IsAmbiguous(qualities),
+            $"reference {qualities[0]:0.000} against the microphone {qualities[1]:0.000}");
+        // And the caller can then measure the channel it was told to.
+        measurement.ImportRecordedSweep(
+            Configuration(), [reference, microphone], SampleRate, channel: 1);
+        Assert.Equal(1, measurement.ImportedChannelIndex);
         Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
     }
 

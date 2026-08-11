@@ -205,15 +205,38 @@ public partial class Form1
             recording = await Task.Run(() => RecordedSweepFile.Load(path));
             // The current settings decide the excitation, exactly as they would for
             // the next sweep. They are handed over rather than applied first: a
-            // rejected recording must leave the measurement on screen alone. Every
-            // channel goes over: which one holds the measurement is decided by
-            // matching them against the sweep, which is the measurement's job.
+            // rejected recording must leave the measurement on screen alone.
             SweepMeasurementConfiguration configuration =
                 measurementSettings.Measurement.BuildConfiguration();
+            // Which channel holds the measurement is a question about the sweep,
+            // not about loudness — but matching only answers it when ONE channel
+            // holds the sweep. A recorder that also wrote the played signal to a
+            // reference track put a copy of the excitation in the file, and a copy
+            // matches better than any acoustic take: it would win, measure flat,
+            // and pass every credibility check on the way. Nothing in the numbers
+            // says which track the microphone was on, so that choice is asked for.
+            double[] qualities = recording.ChannelCount > 1
+                ? await Task.Run(() =>
+                    RecordedSweepChannels.Rank(configuration, recording.Channels))
+                : [0.0];
+            int channel = RecordedSweepChannels.Best(qualities);
+            if (RecordedSweepChannels.IsAmbiguous(qualities))
+            {
+                using var dialog = new Options.RecordedSweepChannelDialog(
+                    recording.Channels, qualities);
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                channel = dialog.SelectedChannel;
+            }
+
             await Task.Run(() => expSweepMeasurement.ImportRecordedSweep(
                 configuration,
                 recording.Channels,
-                recording.SampleRate));
+                recording.SampleRate,
+                channel));
         }
 
         ApplyLoadedImpulseResponseState(path);
@@ -243,7 +266,7 @@ public partial class Form1
             AudioChannelLevel level = RecordedLevelMetering.MeasureSamples(
                 recording.Channels[chosen]);
             notes.Add(FormattableString.Invariant(
-                $"The recording has {recording.ChannelCount} channels; the one matching the sweep ({RecordedSweepFile.DescribeChannel(chosen, recording.ChannelCount)}) was measured — {level.RmsDbFs:0.0} dBFS RMS, peak {level.PeakDbFs:0.0} dBFS."));
+                $"The recording has {recording.ChannelCount} channels; {RecordedSweepFile.DescribeChannel(chosen, recording.ChannelCount)} was measured — {level.RmsDbFs:0.0} dBFS RMS, peak {level.PeakDbFs:0.0} dBFS."));
         }
         if (expSweepMeasurement.ImportedTimeScalePpm is { } scalePpm)
         {

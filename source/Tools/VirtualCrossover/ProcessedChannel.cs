@@ -16,6 +16,17 @@ internal sealed record ProcessedChannel(
     OxyColor Color);
 
 /// <summary>
+/// One gated magnitude curve at the two widths the tool needs, from a single gate
+/// and FFT. <see cref="Display"/> carries the chosen smoothing and is what the plot
+/// draws; <see cref="Unsmoothed"/> is what the summation loss is divided out of,
+/// because smoothing the operands before the division inflates a steep crossover
+/// skirt far more than the (flat) sum and invents a dip at every corner — see
+/// <see cref="VirtualCrossoverAnalysis.SumLossCurve"/>. The two are the same
+/// instance when no smoothing is selected.
+/// </summary>
+internal sealed record GatedMagnitude(AnalysisCurve Display, AnalysisCurve Unsmoothed);
+
+/// <summary>
 /// One side of the car summed: the complex sum of its participating channels'
 /// processed responses, the earliest arrival among them (the window anchor every
 /// curve built from this sum must share) and the project rate they were measured

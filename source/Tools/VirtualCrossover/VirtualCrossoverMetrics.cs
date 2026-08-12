@@ -15,26 +15,30 @@ namespace Resonalyze;
 internal sealed class VirtualCrossoverMetrics
 {
     private readonly VirtualCrossoverProcessingCoordinator coordinator;
-    private readonly Func<Complex[], int, int, AnalysisCurve> buildMagnitudeCurve;
+    private readonly Func<Complex[], int, int, GatedMagnitude> buildMagnitudeCurve;
 
     public VirtualCrossoverMetrics(
         VirtualCrossoverProcessingCoordinator coordinator,
-        Func<Complex[], int, int, AnalysisCurve> buildMagnitudeCurve)
+        Func<Complex[], int, int, GatedMagnitude> buildMagnitudeCurve)
     {
         this.coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         this.buildMagnitudeCurve = buildMagnitudeCurve
             ?? throw new ArgumentNullException(nameof(buildMagnitudeCurve));
     }
 
-    // The magnitude curves and complex sum the metric reads, built the same way
-    // for the on-screen redraw and for a synchronous read (e.g. the Auto delay
-    // log) so the two never disagree. Fewer than two channels yield no metric.
-    public (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum) BuildCurves(
-        List<ProcessedChannel> processed)
+    // The magnitude curves, complex sum and summation loss the metric reads,
+    // built the same way for the on-screen redraw and for a synchronous read
+    // (e.g. the Auto delay log) so the two never disagree. The drawn magnitudes
+    // carry the display smoothing; the loss is divided out of the UNSMOOTHED
+    // pair and smoothed afterwards (see VirtualCrossoverAnalysis.SumLossCurve),
+    // which is why the builder hands back both widths.
+    // Fewer than two channels yield no metric.
+    public (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum, List<SignalPoint>? Loss)
+        BuildCurves(List<ProcessedChannel> processed, int smoothingInverseOctaves)
     {
         if (processed.Count < 2)
         {
-            return (null, null);
+            return (null, null, null);
         }
 
         // Every curve — the channels AND the sum — shares one window anchor
@@ -49,11 +53,11 @@ internal sealed class VirtualCrossoverMetrics
         // FDW would need per-channel windows here, exactly what the shared
         // window exists to prevent — so FDW shapes the phase view only.)
         int anchor = processed.Min(item => item.PeakIndex);
-        // One gated build + resample per channel; the panel's magnitude builder
-        // reads only its immutable UI-thread snapshots and the calibration, so
-        // the channels' spectra compute across cores. AsOrdered keeps the
-        // result aligned with the channel list.
-        List<AnalysisCurve> magnitudes = processed
+        // One gated build per channel, resampled at both widths; the panel's
+        // magnitude builder reads only its immutable UI-thread snapshots and the
+        // calibration, so the channels' spectra compute across cores. AsOrdered
+        // keeps the result aligned with the channel list.
+        List<GatedMagnitude> magnitudes = processed
             .AsParallel()
             .AsOrdered()
             .Select(item => buildMagnitudeCurve(
@@ -61,28 +65,34 @@ internal sealed class VirtualCrossoverMetrics
             .ToList();
         Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
             processed.Select(item => item.ImpulseResponse).ToList());
-        AnalysisCurve sumCurve = buildMagnitudeCurve(
+        GatedMagnitude sumCurve = buildMagnitudeCurve(
             sum, anchor, processed[0].Channel.SampleRate);
-        return (magnitudes, sumCurve);
+        List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
+            sumCurve.Unsmoothed.Points,
+            magnitudes
+                .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
+                .ToList(),
+            smoothingInverseOctaves);
+        return (
+            magnitudes.Select(curve => curve.Display).ToList(),
+            sumCurve.Display,
+            loss);
     }
 
     // Builds the sum-loss read-outs for a processed set without touching any
     // control, so they can feed the label, its tooltip, and the Auto delay log
-    // from one computation. Empty when there is no metric (fewer than two channels).
+    // from one computation. Reads the very curve the plot draws, so the label
+    // and the trace can never quote different numbers. Empty when there is no
+    // metric (fewer than two channels).
     public List<VirtualCrossoverMetric.Entry> BuildEntries(
         List<ProcessedChannel> processed,
-        List<AnalysisCurve>? magnitudes,
-        AnalysisCurve? sumCurve)
+        List<SignalPoint>? lossCurve)
     {
         var entries = new List<VirtualCrossoverMetric.Entry>();
-        if (magnitudes == null || sumCurve == null)
+        if (lossCurve == null)
         {
             return entries;
         }
-
-        List<IReadOnlyList<SignalPoint>> channelPoints = magnitudes
-            .Select(curve => (IReadOnlyList<SignalPoint>)curve.Points)
-            .ToList();
 
         // Per-junction read-outs first, so an improvement at one crossover is
         // not averaged away by the other. Each junction reads the full sum
@@ -92,9 +102,9 @@ internal sealed class VirtualCrossoverMetrics
             ProcessedChannels.OrderByBand(processed)))
         {
             double? pairLoss = VirtualCrossoverAnalysis.AverageSumLossDb(
-                sumCurve.Points, channelPoints, pair.BandLowHz, pair.BandHighHz);
+                lossCurve, pair.BandLowHz, pair.BandHighHz);
             double? pairDip = VirtualCrossoverAnalysis.MinimumSumLossDb(
-                sumCurve.Points, channelPoints, pair.BandLowHz, pair.BandHighHz);
+                lossCurve, pair.BandLowHz, pair.BandHighHz);
             if (pairLoss.HasValue)
             {
                 entries.Add(new VirtualCrossoverMetric.Entry(
@@ -110,9 +120,9 @@ internal sealed class VirtualCrossoverMetrics
 
         (double minHz, double maxHz) = ProcessedChannels.GetCrossoverWindow(processed);
         double? loss = VirtualCrossoverAnalysis.AverageSumLossDb(
-            sumCurve.Points, channelPoints, minHz, maxHz);
+            lossCurve, minHz, maxHz);
         double? dip = VirtualCrossoverAnalysis.MinimumSumLossDb(
-            sumCurve.Points, channelPoints, minHz, maxHz);
+            lossCurve, minHz, maxHz);
         if (loss.HasValue)
         {
             entries.Add(new VirtualCrossoverMetric.Entry(

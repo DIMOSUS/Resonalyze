@@ -474,6 +474,85 @@ public sealed class LogarithmicPowerBandResampleTests
         Assert.Equal(80, smoothed[101].Y, 6);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SmoothRatioLevels_AveragesDecibelsWithoutTheMagnitudeBias(bool psychoacoustic)
+    {
+        // A ratio curve is not a level: across a -6 dB step it must read the mean of
+        // DECIBELS, near the -3 dB middle. A power mean of the same window — the
+        // magnitude path — would read about -2.0 dB there, and the cubic peak
+        // weighting higher still. Gaps stay gaps and are excluded from their
+        // neighbours' means.
+        var ratio = new List<SignalPoint>();
+        for (int i = 0; i < 400; i++)
+        {
+            double f = 100 * Math.Pow(2, i / 40.0);
+            ratio.Add(new SignalPoint(f, i == 300 ? double.NaN : i < 200 ? 0 : -6));
+        }
+
+        List<SignalPoint> smoothed =
+            DataHelper.SmoothRatioLevels(ratio, 1.0 / 3.0, psychoacoustic);
+
+        Assert.InRange(smoothed[199].Y, -3.2, -2.4);
+        Assert.Equal(0, smoothed[100].Y, 6);
+        Assert.Equal(-6, smoothed[380].Y, 6);
+        Assert.True(double.IsNaN(smoothed[300].Y));
+        Assert.Equal(-6, smoothed[299].Y, 6);
+        Assert.Equal(-6, smoothed[301].Y, 6);
+    }
+
+    [Fact]
+    public void SmoothRatioLevels_KeepsThePsychoacousticBandwidth()
+    {
+        // Dropping the cubic weighting must not drop the WIDTH schedule with it: the
+        // psychoacoustic mode is 1/3 octave below 100 Hz, narrowing to its 1/6-octave
+        // base by 1 kHz. A one-point notch therefore smooths away harder than a plain
+        // 1/6 octave does in the bass, and no harder than it in the treble — which is
+        // exactly what a caller that flattened the mode to a fixed 1/6 would lose.
+        List<SignalPoint> WithNotchAt(double frequency)
+        {
+            var curve = new List<SignalPoint>();
+            for (int i = 0; i < 600; i++)
+            {
+                double f = 20 * Math.Pow(2, i / 60.0);
+                curve.Add(new SignalPoint(
+                    f, Math.Abs(Math.Log2(f / frequency)) < 1.0 / 120 ? -12 : 0));
+            }
+
+            return curve;
+        }
+
+        static double DepthAt(List<SignalPoint> curve, double frequency, bool psychoacoustic)
+        {
+            List<SignalPoint> smoothed = DataHelper.SmoothRatioLevels(
+                curve,
+                psychoacoustic
+                    ? SpectrumSmoothing.SmoothingOctaves(SpectrumSmoothing.PsychoacousticCode)
+                    : 1.0 / 6.0,
+                psychoacoustic);
+            return smoothed
+                .Where(point => Math.Abs(Math.Log2(point.X / frequency)) < 1.0 / 120)
+                .Min(point => point.Y);
+        }
+
+        List<SignalPoint> bassNotch = WithNotchAt(50);
+        List<SignalPoint> trebleNotch = WithNotchAt(4_000);
+
+        // 50 Hz: the psychoacoustic window is twice as wide, so the notch is spread
+        // thinner and reads shallower than under a fixed 1/6 octave.
+        Assert.True(
+            DepthAt(bassNotch, 50, psychoacoustic: true) >
+            DepthAt(bassNotch, 50, psychoacoustic: false) + 0.3,
+            "the psychoacoustic mode must smooth wider than 1/6 octave in the bass");
+
+        // 4 kHz: both are 1/6 octave wide, so the two agree within the kernel shape.
+        Assert.Equal(
+            DepthAt(trebleNotch, 4_000, psychoacoustic: false),
+            DepthAt(trebleNotch, 4_000, psychoacoustic: true),
+            1);
+    }
+
     private static float[] CreateSine(int length, int bin)
     {
         var samples = new float[length];

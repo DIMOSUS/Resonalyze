@@ -805,6 +805,51 @@ public sealed class PlotModelFactoryTests
         Assert.All(loss.Points, point => Assert.True(point.Y < -40.0));
     }
 
+    [Fact]
+    public void ComplexSumLoss_WithAnExplicitWidth_IgnoresThePlotsOwnSmoothing()
+    {
+        // An overlay slot asks for the loss at ITS width. The plot's smoothing must
+        // not reach the curve at all: it neither bakes into the operands (they are
+        // divided unsmoothed) nor smooths the ratio, so switching the plot from
+        // psychoacoustic to 1/6 octave leaves the slot's curve bit-identical — and
+        // a slot set to Off gets a genuinely unsmoothed ratio.
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var options = new FrequencyResponseOptions
+        {
+            SmoothingInverseOctaves = SpectrumSmoothing.PsychoacousticCode
+        };
+        PlotModelFactory factory = CreateFactory(
+            measurement, noiseMeasurement, frequencyResponseOptions: options);
+        var compareIr = new Complex[2048];
+        compareIr[70] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource("Reference", 44_100, compareIr, 70));
+
+        AnalysisCurve? underPsychoacoustic =
+            factory.TryBuildComplexSumLossCurve(smoothingInverseOctaves: 0);
+        options.SmoothingInverseOctaves = 6;
+        AnalysisCurve? underSixth =
+            factory.TryBuildComplexSumLossCurve(smoothingInverseOctaves: 0);
+
+        Assert.NotNull(underPsychoacoustic);
+        Assert.NotNull(underSixth);
+        Assert.Equal(underPsychoacoustic.Points.Count, underSixth.Points.Count);
+        for (int i = 0; i < underSixth.Points.Count; i++)
+        {
+            Assert.Equal(underPsychoacoustic.Points[i].Y, underSixth.Points[i].Y, 12);
+        }
+
+        // And the width that IS asked for still acts: the same curve smoothed
+        // psychoacoustically differs from the unsmoothed one.
+        AnalysisCurve? smoothed = factory.TryBuildComplexSumLossCurve(
+            smoothingInverseOctaves: SpectrumSmoothing.PsychoacousticCode);
+        Assert.NotNull(smoothed);
+        Assert.Contains(
+            smoothed.Points.Zip(underSixth.Points),
+            pair => Math.Abs(pair.First.Y - pair.Second.Y) > 0.01);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

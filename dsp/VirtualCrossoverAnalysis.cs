@@ -2434,10 +2434,22 @@ public static class VirtualCrossoverAnalysis
     /// drawn "Sum loss" curve, <see cref="AverageSumLossDb"/> and
     /// <see cref="MinimumSumLossDb"/> all read, so the drawn and measured loss
     /// cannot drift apart.
+    /// <para>
+    /// The operands must be UNSMOOTHED, and any display smoothing asked for through
+    /// <paramref name="smoothingInverseOctaves"/> applies HERE, to the finished
+    /// ratio. Smoothing the two curves first does not commute with the division: a
+    /// fractional-octave window straddling a steep crossover skirt pulls that
+    /// channel's level up toward its own passband — several dB on a 36 dB/octave
+    /// slope, and more again under the psychoacoustic mode's peak-weighted cubic
+    /// mean — while the (flat) sum barely moves. Σ|H| then inflates faster than
+    /// |ΣH| and the curve draws a dip at every corner frequency: a measured 70 Hz
+    /// junction losing a true 0.2 dB read as a 1.6 dB dip that way.
+    /// </para>
     /// </summary>
     public static List<SignalPoint> SumLossCurve(
         IReadOnlyList<SignalPoint> sumCurve,
-        IReadOnlyList<IReadOnlyList<SignalPoint>> channelCurves)
+        IReadOnlyList<IReadOnlyList<SignalPoint>> channelCurves,
+        double smoothingInverseOctaves = 0)
     {
         ArgumentNullException.ThrowIfNull(sumCurve);
         ArgumentNullException.ThrowIfNull(channelCurves);
@@ -2475,7 +2487,12 @@ public static class VirtualCrossoverAnalysis
                     : double.NaN));
         }
 
-        return points;
+        return smoothingInverseOctaves != 0
+            ? DataHelper.SmoothRatioLevels(
+                points,
+                SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves),
+                SpectrumSmoothing.IsPsychoacoustic(smoothingInverseOctaves))
+            : points;
     }
 
     /// <summary>
@@ -2653,25 +2670,20 @@ public static class VirtualCrossoverAnalysis
 
     /// <summary>
     /// The average summation loss (dB, &lt;= 0) inside the frequency window: how
-    /// far the complex sum falls short of the phase-blind magnitude sum. The
-    /// curves must share one frequency grid (index-aligned).
+    /// far the complex sum falls short of the phase-blind magnitude sum, averaged
+    /// over a curve <see cref="SumLossCurve"/> already built — the read-out and the
+    /// drawn curve are then the same numbers by construction, smoothing included.
     /// </summary>
     public static double? AverageSumLossDb(
-        IReadOnlyList<SignalPoint> sumCurve,
-        IReadOnlyList<IReadOnlyList<SignalPoint>> channelCurves,
+        IReadOnlyList<SignalPoint> lossCurve,
         double minFrequencyHz,
         double maxFrequencyHz)
     {
-        ArgumentNullException.ThrowIfNull(sumCurve);
-        ArgumentNullException.ThrowIfNull(channelCurves);
-        if (channelCurves.Count == 0)
-        {
-            return null;
-        }
+        ArgumentNullException.ThrowIfNull(lossCurve);
 
         double total = 0;
         int samples = 0;
-        foreach (SignalPoint point in SumLossCurve(sumCurve, channelCurves))
+        foreach (SignalPoint point in lossCurve)
         {
             if (point.X < minFrequencyHz || point.X > maxFrequencyHz)
             {
@@ -2692,24 +2704,19 @@ public static class VirtualCrossoverAnalysis
     /// The deepest summation-loss point (dB, &lt;= 0) inside the frequency
     /// window — the companion to <see cref="AverageSumLossDb"/> that a narrow
     /// cancellation notch cannot hide from: the average barely moves on a
-    /// sharp dip that is plainly audible. The curves must share one frequency
-    /// grid (index-aligned) and are expected to be display-smoothed already.
+    /// sharp dip that is plainly audible. Reads a curve
+    /// <see cref="SumLossCurve"/> already built, whose display smoothing decides
+    /// how narrow a notch still counts.
     /// </summary>
     public static double? MinimumSumLossDb(
-        IReadOnlyList<SignalPoint> sumCurve,
-        IReadOnlyList<IReadOnlyList<SignalPoint>> channelCurves,
+        IReadOnlyList<SignalPoint> lossCurve,
         double minFrequencyHz,
         double maxFrequencyHz)
     {
-        ArgumentNullException.ThrowIfNull(sumCurve);
-        ArgumentNullException.ThrowIfNull(channelCurves);
-        if (channelCurves.Count == 0)
-        {
-            return null;
-        }
+        ArgumentNullException.ThrowIfNull(lossCurve);
 
         double? minimum = null;
-        foreach (SignalPoint point in SumLossCurve(sumCurve, channelCurves))
+        foreach (SignalPoint point in lossCurve)
         {
             if (point.X < minFrequencyHz || point.X > maxFrequencyHz)
             {

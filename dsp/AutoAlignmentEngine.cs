@@ -353,6 +353,17 @@ public static class AutoAlignmentEngine
     private const double OnsetLockMaxSpreadPeriods = 0.5;
 
     /// <summary>
+    /// The sample every junction measurement of a run anchors its direct-sound
+    /// gate on: the earliest peak across ALL the run's channels — the whole
+    /// system's first arrival, the same anchor the metric read-out uses. Taken
+    /// over a snapshot set rendered in one frame, so every junction of a run is
+    /// judged through the same window and the search cannot rank alignments
+    /// differently from the panel that displays them.
+    /// </summary>
+    private static int SystemGateAnchor(IEnumerable<AlignmentSnapshot> scope) =>
+        scope.Min(item => item.PeakIndex);
+
+    /// <summary>
     /// The minimum envelope peak-to-noise grade (dB) both channels' onset
     /// estimates must carry before the lock trusts them. The spread gate alone
     /// cannot refuse a noise-only record: random crossings can look stable
@@ -1157,7 +1168,7 @@ public static class AutoAlignmentEngine
             // the delay to add to the upper channel, i.e. that quantity negated.
             double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
             double centerLagMs = lowerArrival - upperArrival;
-            CorrelationAlignmentResult phat =
+            CorrelationAlignmentResult Correlate(double centerMs) =>
                 VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
                     pair.Lower.ImpulseResponse,
                     pair.Upper.ImpulseResponse,
@@ -1165,8 +1176,75 @@ public static class AutoAlignmentEngine
                     pair.CrossoverHz,
                     passOctaves,
                     SeedCorrelationRangeMs(pair.CrossoverHz),
-                    centerLagMs,
+                    centerMs,
                     phaseTransform: true);
+            CorrelationAlignmentResult phat = Correlate(centerLagMs);
+
+            // The lobe-boundary conviction. Where the pair anchor disagrees
+            // with its own predicted fronts by more than the measured half
+            // lobe spacing, it cannot say WHICH lobe the junction sits on —
+            // and an anchor that cannot resolve lobes must not be the thing
+            // that resolves this one. It used to only VETO the extremum here
+            // and then seed the timeline from that same anchor, prior and
+            // all: the field case that exposed the asymmetry (a 55 Hz sub
+            // junction whose envelope read sat 8.7 ms past its predicted
+            // front, 0.96 of an allowance — under every conviction bar,
+            // because the allowance IS half a period at fc and therefore
+            // cannot be tighter than the lobe spacing it would have to
+            // resolve) parked the whole stack a half period late while a
+            // whitened extremum at r 0.99 stood refused. So convict the
+            // anchor instead: move both sides to their predicted fronts, like
+            // the upper-half probe's conviction does, re-center the
+            // correlation on the corrected lag, and let the extremum be
+            // judged on its own quality below.
+            double LobeBoundaryMs(CorrelationAlignmentResult result)
+            {
+                CorrelationDelayCandidate best = result.BestByMagnitude;
+                CorrelationDelayCandidate? adjacent = best.InvertPolarity
+                    ? result.NegativeOppositeNeighbor
+                    : result.PositiveOppositeNeighbor;
+                return adjacent is { EdgePinned: false } neighbour
+                    ? Math.Abs(neighbour.DelayMs - best.DelayMs) / 2.0
+                    : 0;
+            }
+
+            // Only where the anchor is still the RAW read and the disagreement
+            // is real. A pair the prediction already convicted upstream carries
+            // its replacement anchor and a stand-in disagreement figure (twice
+            // the allowance, not a measurement), and a disagreement inside the
+            // predictor's own accuracy floor is estimator noise — convicting on
+            // either would lift the seed-reach veto at junctions that never
+            // asked for it, on numbers that say nothing.
+            if (!arrivalReanchored && pairPredictionGradeable &&
+                !lowerLatchedByPrediction && !upperLatchedByPrediction &&
+                predictionDisagreementMs >= PredictedArrivalAccuracyMs)
+            {
+                double boundaryMs = LobeBoundaryMs(phat);
+                if (!(boundaryMs > 0) || predictionDisagreementMs >= boundaryMs)
+                {
+                    log.AppendLine(
+                        $"  {pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
+                        $"the arrival anchor disagrees with the predicted fronts " +
+                        $"by {predictionDisagreementMs:0.000} ms against a " +
+                        (boundaryMs > 0
+                            ? $"{boundaryMs:0.000} ms lobe boundary"
+                            : "lobe boundary the correlation does not show") +
+                        $" — it cannot place the junction inside a lobe, so both " +
+                        $"sides re-anchor on their predicted fronts " +
+                        $"({lowerArrival:0.000}/{upperArrival:0.000} -> " +
+                        $"{lowerPrediction:0.000}/{upperPrediction:0.000} ms)");
+                    lowerArrival = lowerPrediction;
+                    upperArrival = upperPrediction;
+                    arrivalReanchored = true;
+                    centerLagMs = lowerArrival - upperArrival;
+                    // Re-centered ONCE, never iterated: the window is period-wide
+                    // and the corrected lag is where the extremum should be read
+                    // from, but a second conviction pass off the new reading would
+                    // be a loop with no fixed point.
+                    phat = Correlate(centerLagMs);
+                }
+            }
+
             CorrelationDelayCandidate seed = phat.BestByMagnitude;
             CorrelationDelayCandidate? sameSignRival =
                 seed.InvertPolarity ? phat.NegativeRival : phat.PositiveRival;
@@ -1228,25 +1306,15 @@ public static class AutoAlignmentEngine
                 // pinned to the window edge (its position then an artifact),
                 // there is no spacing to reason from and a gradeable pair
                 // refuses the seed rather than guessing at one.
-                CorrelationDelayCandidate? neighbor = seed.InvertPolarity
-                    ? phat.NegativeOppositeNeighbor
-                    : phat.PositiveOppositeNeighbor;
-                double lobeBoundaryMs = neighbor is { EdgePinned: false } adjacent
-                    ? Math.Abs(adjacent.DelayMs - seed.DelayMs) / 2.0
-                    : 0;
+                double lobeBoundaryMs = LobeBoundaryMs(phat);
                 //
-                // Gated on !arrivalReanchored like the offset test below it:
-                // once the upper-half probe has thrown the full-band arrivals
-                // away, the uncertainty measured against the DISCARDED anchor
-                // describes nothing, and vetoing on it would veto by a number
-                // that refers to nothing.
-                if (!arrivalReanchored && pairPredictionGradeable &&
-                    (!(lobeBoundaryMs > 0) ||
-                        predictionDisagreementMs >= lobeBoundaryMs))
-                {
-                    return "arrival uncertain past the lobe boundary";
-                }
-
+                // A pair whose anchor could not place it inside a lobe has
+                // already been convicted and re-anchored above, which clears
+                // both arrival-relative tests here: measuring the extremum
+                // against an anchor just found incapable of resolving lobes
+                // (or against a discarded one, after the upper-half probe's
+                // conviction) would veto by a number that refers to nothing.
+                //
                 // Only ever TIGHTER than the standing rule: the disagreement
                 // figure above is not a proven bound, so it may restrict the
                 // seed further but never license a reach the conservative rule
@@ -1382,6 +1450,13 @@ public static class AutoAlignmentEngine
         AlignmentSnapshot primaryNeighborSnapshot =
             current.First(item => item.Channel == neighborChannel);
         Complex[] variableIr = variableSnapshot.ImpulseResponse;
+        // The gate anchor of every loss measurement below: the whole system's
+        // first arrival, NOT this pair's (see the gate remarks in
+        // VirtualCrossoverAnalysis). The metric read-out the user tunes by
+        // anchors there, and a pair-anchored window at a sub/woofer junction
+        // starts inside the sub's own rise and ranks the pair's alignments
+        // differently from what the panel then shows.
+        int gateAnchor = SystemGateAnchor(current);
         var neighborIrs = new List<Complex[]>
         {
             primaryNeighborSnapshot.ImpulseResponse
@@ -1527,7 +1602,8 @@ public static class AutoAlignmentEngine
                     // Search-side level match: the lobe choice must not depend
                     // on the channels' playback gains (see BuildAlignmentBins).
                     levelMatch: true,
-                    out IReadOnlyList<AlignmentCandidate> allOptima);
+                    out IReadOnlyList<AlignmentCandidate> allOptima,
+                    gateAnchorSample: gateAnchor);
             return (candidates, allOptima, windowLowMs, windowHighMs);
         }
 
@@ -3640,7 +3716,12 @@ public static class AutoAlignmentEngine
                         lowHz,
                         highHz,
                         levelMatch: true,
-                        requireDelayEvidence);
+                        requireDelayEvidence,
+                        // One system-anchored window, like the searches above:
+                        // the co-move compares cells of a grid, and a window
+                        // that moved with each cell's own pair would compare
+                        // them through different measurements.
+                        SystemGateAnchor(current));
                 return loss is { } value
                     ? value.LossDb +
                         VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
@@ -3913,7 +3994,8 @@ public static class AutoAlignmentEngine
             new List<Complex[]> { other },
             monoChannel.SampleRate,
             pair.BandLowHz,
-            pair.BandHighHz);
+            pair.BandHighHz,
+            gateAnchorSample: SystemGateAnchor(current));
         if (loss is not { } measured)
         {
             log.AppendLine(

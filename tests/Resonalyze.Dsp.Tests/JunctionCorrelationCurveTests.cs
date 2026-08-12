@@ -175,6 +175,85 @@ public sealed class JunctionCorrelationCurveTests
         return ir;
     }
 
+    private static Complex[] Filtered(CrossoverSpec crossover) =>
+        VirtualCrossoverAnalysis.ApplyChain(
+            ImpulseAtMs(0), new DspChannelChain(Crossover: crossover), SampleRate);
+
+    [Fact]
+    public void AlignmentCandidates_JudgeTheJunctionThroughTheGivenSystemAnchor()
+    {
+        // A subwoofer and its woofer partner fired from the SAME impulse
+        // through the field cabin's edges (55 Hz, 36 dB/oct Butterworth; the
+        // woofer's own 180 Hz low-pass is what puts the optimum a couple of
+        // milliseconds early). Two filtered copies of one impulse in a silent
+        // record CAN sum flat: at the right delay and polarity the junction is
+        // arithmetic, with no room to blame. The system-anchored window finds
+        // exactly that; the pair-anchored one — its fade-in cutting into both
+        // drivers' rise — cannot see a flat sum anywhere.
+        Complex[] sub = Filtered(new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
+        Complex[] woofer = Filtered(new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 180, 36),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
+
+        AlignmentCandidate Best(int? anchor) => VirtualCrossoverAnalysis
+            .FindAlignmentCandidates(
+                woofer, [sub], SampleRate, 27.5, 110, -9, 9,
+                priorDelayMs: null, priorSigmaMs: 0, forcedPolarity: null,
+                levelMatch: true, out _, gateAnchorSample: anchor)[0];
+
+        AlignmentCandidate systemAnchored = Best(BasePosition);
+        Assert.True(
+            systemAnchored.InvertPolarity,
+            "36 dB/oct edges at one corner hand over inverted");
+        Assert.InRange(systemAnchored.DelayMs, -4.5, -2.5);
+        Assert.InRange(systemAnchored.LossDb, -0.02, 0.0);
+        Assert.InRange(systemAnchored.DipDb, -0.05, 0.0);
+
+        AlignmentCandidate pairAnchored = Best(null);
+        Assert.True(
+            pairAnchored.LossDb < -0.10 && pairAnchored.DipDb < -0.3,
+            $"the pair-anchored window cannot read the flat sum: " +
+            $"avg {pairAnchored.LossDb:0.00}, dip {pairAnchored.DipDb:0.00} dB");
+    }
+
+    [Fact]
+    public void AlignmentCandidates_PairAnchoredWindowMisreadsTheSameJunction()
+    {
+        // The same junction with the anchor left to the pair: the window then
+        // starts inside the drivers' own rise and the surface it measures is
+        // not the one the read-out shows — this is what let a field sub/woofer
+        // junction (55 Hz, 36 dB/oct) be settled a half period out. Pinned so
+        // the two anchors cannot silently converge and hide the distinction.
+        Complex[] sub = Filtered(new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
+        Complex[] woofer = Filtered(new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 180, 36),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
+
+        // The true alignment itself — zero delay, the woofer inverted — read
+        // through each window.
+        Complex[] inverted = woofer.Select(value => -value).ToArray();
+        (double LossDb, double DipDb)? pairAnchored =
+            VirtualCrossoverAnalysis.MeasureSumLoss(
+                inverted, [sub], SampleRate, 27.5, 110, levelMatch: true);
+        (double LossDb, double DipDb)? systemAnchored =
+            VirtualCrossoverAnalysis.MeasureSumLoss(
+                inverted, [sub], SampleRate, 27.5, 110, levelMatch: true,
+                gateAnchorSample: BasePosition);
+
+        Assert.NotNull(pairAnchored);
+        Assert.NotNull(systemAnchored);
+        Assert.True(
+            systemAnchored.Value.LossDb > pairAnchored.Value.LossDb + 0.05,
+            $"the system-anchored window must read the truth more honestly: " +
+            $"{systemAnchored.Value.LossDb:0.00} vs {pairAnchored.Value.LossDb:0.00} dB");
+    }
+
     [Fact]
     public void JunctionLossSweep_InvertedPolarityShiftsTheCombByHalfAPeriod()
     {

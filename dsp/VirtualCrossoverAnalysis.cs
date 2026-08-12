@@ -375,6 +375,15 @@ public static class VirtualCrossoverAnalysis
     /// exposing both lets the caller disambiguate with evidence this search
     /// cannot see — typically the channel's other crossover junction.
     /// </summary>
+    /// <param name="gateAnchorSample">
+    /// The sample the shared direct-sound gate anchors on. Null takes the
+    /// earliest peak of the responses passed in — right for a standalone
+    /// two-response question, WRONG for one junction of a multiway system,
+    /// where the pair's own peak places the window later than the read-out's
+    /// and can rank the junction's alignments differently (see the gate
+    /// constants' remarks). A caller aligning a system passes the whole
+    /// system's first arrival, the same anchor the metric read-out uses.
+    /// </param>
     public static IReadOnlyList<AlignmentCandidate> FindAlignmentCandidates(
         Complex[] variableImpulseResponse,
         IReadOnlyList<Complex[]> fixedImpulseResponses,
@@ -386,11 +395,13 @@ public static class VirtualCrossoverAnalysis
         double? priorDelayMs = null,
         double priorSigmaMs = 0,
         bool? forcedPolarity = null,
-        bool levelMatch = false) =>
+        bool levelMatch = false,
+        int? gateAnchorSample = null) =>
         FindAlignmentCandidates(
             variableImpulseResponse, fixedImpulseResponses, sampleRate,
             minFrequencyHz, maxFrequencyHz, minDelayMs, maxDelayMs,
-            priorDelayMs, priorSigmaMs, forcedPolarity, levelMatch, out _);
+            priorDelayMs, priorSigmaMs, forcedPolarity, levelMatch, out _,
+            gateAnchorSample);
 
     /// <summary>
     /// The overload that also reports EVERY refined local optimum (best
@@ -413,7 +424,8 @@ public static class VirtualCrossoverAnalysis
         double priorSigmaMs,
         bool? forcedPolarity,
         bool levelMatch,
-        out IReadOnlyList<AlignmentCandidate> allOptima)
+        out IReadOnlyList<AlignmentCandidate> allOptima,
+        int? gateAnchorSample = null)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -423,7 +435,8 @@ public static class VirtualCrossoverAnalysis
             maxFrequencyHz,
             minDelayMs,
             maxDelayMs,
-            levelMatch);
+            levelMatch,
+            gateAnchorSample);
         if (bins.Count == 0 || !HoldsDelayEvidence(bins))
         {
             allOptima = Array.Empty<AlignmentCandidate>();
@@ -1145,7 +1158,8 @@ public static class VirtualCrossoverAnalysis
         double startDelayMs,
         double endDelayMs,
         double stepMs,
-        bool invertVariable)
+        bool invertVariable,
+        int? gateAnchorSample = null)
     {
         ArgumentNullException.ThrowIfNull(variableImpulseResponse);
         ArgumentNullException.ThrowIfNull(fixedImpulseResponse);
@@ -1204,7 +1218,12 @@ public static class VirtualCrossoverAnalysis
                 new List<Complex[]> { fixedFrame },
                 sampleRate,
                 bandLowHz,
-                bandHighHz);
+                bandHighHz,
+                // The frame shifted both responses by the guard, so a caller's
+                // anchor (stated in the responses' own coordinates) shifts with
+                // them; without the guard offset the window would sit that far
+                // early and fade over content it must not touch.
+                gateAnchorSample: gateAnchorSample + guardSamples);
             if (loss is { } value)
             {
                 points.Add(new JunctionSweepPoint(
@@ -1472,6 +1491,21 @@ public static class VirtualCrossoverAnalysis
     // displays the gated direct sound. One gate shared by all channels, like
     // the metric's shared anchor, so the loss keeps its 0 dB ceiling.
     //
+    // WHICH channels set that anchor is a decision the caller owns
+    // (gateAnchorSample). Measuring one junction of a multiway system with an
+    // anchor taken from the PAIR alone places the window tens of milliseconds
+    // later than a window anchored on the whole system's first arrival — the
+    // placement the metric read-out uses (VirtualCrossoverMetrics.BuildCurves)
+    // — and at a sub/woofer junction the two then rank the same alignments
+    // differently:
+    // on a field cabin (LP/HP 55 Hz, 36 dB/oct) the pair-anchored window read
+    // the tuned alignment at -0.44 dB and preferred one 2 ms later, while the
+    // system-anchored window read it at -0.02 dB, the sharpest optimum of the
+    // sweep, agreeing with the panel and with the whitened correlation
+    // (r 0.99). A window whose fade-in cuts into the slow channel's own rise
+    // shifts that channel's apparent phase, and the junction search must not
+    // decide a lobe on an artifact of where the window happened to start.
+    //
     // The window is sized in TIME, not samples. A fixed 4096 samples is ~85 ms
     // at 48 kHz but only 43 ms at 96 kHz and 21 ms at 192 kHz — the higher the
     // rate, the shorter the physical window — and the delay estimate is flat for
@@ -1556,7 +1590,8 @@ public static class VirtualCrossoverAnalysis
         double maxFrequencyHz,
         double minDelayMs,
         double maxDelayMs,
-        bool levelMatch = false)
+        bool levelMatch = false,
+        int? gateAnchorSample = null)
     {
         ArgumentNullException.ThrowIfNull(variableImpulseResponse);
         ArgumentNullException.ThrowIfNull(fixedImpulseResponses);
@@ -1574,10 +1609,18 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentException("The search window is invalid.");
         }
 
-        int anchor = FindPeakIndex(variableImpulseResponse);
-        foreach (Complex[] ir in fixedImpulseResponses)
+        int anchor;
+        if (gateAnchorSample is { } shared)
         {
-            anchor = Math.Min(anchor, FindPeakIndex(ir));
+            anchor = Math.Clamp(shared, 0, variableImpulseResponse.Length - 1);
+        }
+        else
+        {
+            anchor = FindPeakIndex(variableImpulseResponse);
+            foreach (Complex[] ir in fixedImpulseResponses)
+            {
+                anchor = Math.Min(anchor, FindPeakIndex(ir));
+            }
         }
 
         // The earliest arrival must land on the window's plateau, never inside
@@ -2199,7 +2242,8 @@ public static class VirtualCrossoverAnalysis
         double minFrequencyHz,
         double maxFrequencyHz,
         bool levelMatch = false,
-        bool requireDelayEvidence = false)
+        bool requireDelayEvidence = false,
+        int? gateAnchorSample = null)
     {
         // The delay window only gates parameter validation here — the
         // measurement itself evaluates the responses exactly as given.
@@ -2211,7 +2255,8 @@ public static class VirtualCrossoverAnalysis
             maxFrequencyHz,
             minDelayMs: -1,
             maxDelayMs: 1,
-            levelMatch);
+            levelMatch,
+            gateAnchorSample);
         // A caller COMPARING alignments across this band (rather than
         // reporting what a sum happens to measure) must not read a verdict
         // off a band where the delay is not observable: with one side only a
@@ -2344,7 +2389,8 @@ public static class VirtualCrossoverAnalysis
             double minFrequencyHz,
             double maxFrequencyHz,
             bool levelMatch = false,
-            bool requireDelayEvidence = false)
+            bool requireDelayEvidence = false,
+            int? gateAnchorSample = null)
         {
             List<AlignmentBin> bins = BuildAlignmentBins(
                 variableImpulseResponse,
@@ -2354,7 +2400,8 @@ public static class VirtualCrossoverAnalysis
                 maxFrequencyHz,
                 minDelayMs: -1,
                 maxDelayMs: 1,
-                levelMatch);
+                levelMatch,
+                gateAnchorSample);
             if (bins.Count == 0 ||
                 (requireDelayEvidence && !HoldsDelayEvidence(bins)))
             {

@@ -1031,6 +1031,139 @@ public sealed class AutoAlignmentEngineTests
                 latched, latchedMs, 100, 400, out _));
     }
 
+    // The sub/woofer field shape at a low junction: the sub's own front plus a
+    // late in-cabin build-up BELOW the corner. Its steep low-pass concentrates
+    // the junction band's energy exactly there, so the PROCESSED envelope
+    // fronts on the build-up while the driver's own (un-crossovered) front is
+    // still where it was — the read then sits several ms past what the chain
+    // can explain, without reaching the modal-latch conviction bar.
+    private static Complex[] LowFrontUnderCabinBuildUp(
+        int length, double buildUpMs, double amplitude)
+    {
+        Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
+            SingleImpulse(length, BasePosition),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 24),
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 25, 24))),
+            SampleRate);
+        int start = BasePosition + (int)Math.Round(buildUpMs / 1000.0 * SampleRate);
+        const double AttackSeconds = 0.002;
+        const double DecaySeconds = 0.06;
+        foreach (double modeHz in new[] { 33.0, 38.0, 44.0 })
+        {
+            for (int i = start; i < ir.Length; i++)
+            {
+                double t = (i - start) / (double)SampleRate;
+                ir[i] += amplitude *
+                    (1 - Math.Exp(-t / AttackSeconds)) *
+                    Math.Exp(-t / DecaySeconds) *
+                    Math.Sin(2 * Math.PI * modeHz * t);
+            }
+        }
+
+        return ir;
+    }
+
+    private static Complex[] SingleImpulse(int length, int position)
+    {
+        var ir = new Complex[length];
+        ir[position] = Complex.One;
+        return ir;
+    }
+
+    [Fact]
+    public void Compute_KeepsTheConservativePathWhenTheLobeGeometryIsUnmeasured()
+    {
+        // 55 Hz junction, 36 dB/oct both sides: the lobes sit ~9 ms apart, and
+        // the arrival allowance (half a period at the band centre) is exactly
+        // that — so a read dragged a lobe late by an in-cabin build-up passes
+        // every conviction bar the predictor has. The lobe-boundary conviction
+        // catches that class, but only where the boundary is MEASURED; this
+        // fixture is the other case, and the assertions below say which.
+        const int Length = 32_768;
+        var subChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
+        var wooferChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 180, 36),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
+        Complex[] subBypassed = LowFrontUnderCabinBuildUp(Length, 2.0, 0.02);
+        // The woofer fires 23 ms after the sub's front, which only re-centres
+        // the correlation window (a pure delay moves a channel's read and its
+        // prediction together, so the pair's disagreement is untouched) — far
+        // enough from the window edge that the seed's neighbouring lobe is
+        // measured rather than edge-pinned.
+        Complex[] wooferBypassed = SingleImpulse(
+            Length, BasePosition + 23 * SampleRate / 1000);
+
+        AlignmentSnapshot Snapshot(string name, Complex[] bypassed, DspChannelChain chain)
+        {
+            Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                bypassed, chain, SampleRate, out ValidSampleRange range);
+            return new AlignmentSnapshot(
+                new TestChannel(name, processed), processed,
+                VirtualCrossoverAnalysis.FindPeakIndex(processed), range,
+                chain, bypassed);
+        }
+
+        AlignmentSnapshot sub = Snapshot("SUB", subBypassed, subChain);
+        AlignmentSnapshot woofer = Snapshot("W", wooferBypassed, wooferChain);
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
+        {
+            AlignmentSnapshot One(AlignmentSnapshot side, Complex[] bypassed, DspChannelChain chain)
+            {
+                AlignmentOverride over = overrides.GetValueOrDefault(side.Channel);
+                Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                    bypassed,
+                    chain with { DelayMs = over.DelayMs, InvertPolarity = over.InvertPolarity },
+                    SampleRate,
+                    out ValidSampleRange range);
+                return side with
+                {
+                    ImpulseResponse = processed,
+                    PeakIndex = VirtualCrossoverAnalysis.FindPeakIndex(processed),
+                    ValidRange = range
+                };
+            }
+
+            return [One(sub, subBypassed, subChain), One(woofer, wooferBypassed, wooferChain)];
+        }
+
+        var log = new StringBuilder();
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        AutoAlignmentEngine.Compute(
+            [sub, woofer],
+            [new AlignmentJunction(sub, woofer, 55, 27.5, 110)],
+            Reprocess,
+            alignment,
+            log);
+
+        // This pair's whitened correlation shows no INTERIOR lobe beside its
+        // seed — the nearest opposite extremum is pinned to the window edge,
+        // so its position is an artifact and the lobe spacing the conviction
+        // reasons from was never measured. Absence of that evidence may not
+        // license re-anchoring (and with it the lifting of the seed-reach
+        // veto): the pair keeps the conservative path instead, which is the
+        // reach rule refusing the extremum on a zero-floored reach.
+        //
+        // The conviction's other half — an anchor convicted where the geometry
+        // IS measured — is validated on the field cabin the fix came from
+        // (55 Hz junction, a 6.82 ms disagreement against a measured 4.13 ms
+        // lobe boundary), where the corrected anchor lands the junction on the
+        // hand-tuned delay, 5.29 ms against 5.23 by hand, at 0.0 dB average
+        // summation loss. A synthetic pair rich enough to show interior lobes
+        // AND carry a lobe-sized arrival error has no arithmetically known
+        // answer to assert against, so it is not faked here.
+        string trace = log.ToString();
+        Assert.DoesNotContain("cannot place the junction inside a lobe", trace);
+        Assert.True(
+            trace.Contains("beyond the arrival's reach"),
+            $"the seed should have been refused conservatively:\r\n{trace}");
+    }
+
     [Fact]
     public void PredictedArrival_GradesEveryState()
     {

@@ -3816,7 +3816,10 @@ public partial class VirtualCrossoverPanel : UserControl
         JunctionCorrelationView? data = null;
         try
         {
-            data = await Task.Run(() => BuildCorrelationView(pair));
+            List<ProcessedChannel> scope = lastProcessedRender is { } render
+                ? render.Channels.ToList()
+                : [pair.Lower, pair.Upper];
+            data = await Task.Run(() => BuildCorrelationView(pair, scope));
         }
         catch (Exception exception)
         {
@@ -3842,24 +3845,31 @@ public partial class VirtualCrossoverPanel : UserControl
     // The off-thread compute of one junction's correlation view. Both
     // channels enter PROCESSED (delays, polarity, filters applied), so lag 0
     // is the current alignment and every reading is a correction to the
-    // UPPER channel. The pair is cropped to the alignment engine's own
-    // direct-sound window first: the correlation and the honest loss sweep
-    // then read the same basis Auto delay searches, and the sweep's per-point
+    // UPPER channel. The WHOLE side is cropped and anchored, not just the
+    // pair: crop and gate follow the alignment engine's own basis, so the
+    // drawn score is the surface Auto delay searches and the read-out
+    // reports — a pair-anchored window would draw a different one (see the
+    // gate remarks in VirtualCrossoverAnalysis). The sweep's per-point
     // inverse FFTs shrink from the capture length to the crop.
-    private static JunctionCorrelationView BuildCorrelationView(AdjacentPair pair)
+    private static JunctionCorrelationView BuildCorrelationView(
+        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildCorrelationView");
         int sampleRate = pair.Lower.Channel.SampleRate;
+        List<ProcessedChannel> all = scope.Contains(pair.Lower)
+            ? scope.ToList()
+            : [pair.Lower, pair.Upper];
         Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
-            new List<Complex[]>
-            {
-                pair.Lower.ImpulseResponse,
-                pair.Upper.ImpulseResponse
-            },
+            all.Select(item => item.ImpulseResponse).ToList(),
             AutoDelaySearchCropLength,
             AutoDelaySearchCropPrePeakSamples);
-        Complex[] lower = cropped[0];
-        Complex[] upper = cropped[1];
+        Complex[] lower = cropped[all.IndexOf(pair.Lower)];
+        Complex[] upper = cropped[all.IndexOf(pair.Upper)];
+        // The displayed side's first arrival — the same placement rule the
+        // read-out beside this plot uses, over the same channel set and the
+        // same applied delays, so the drawn score and the read-out's numbers
+        // come from one window.
+        int gateAnchor = cropped.Min(VirtualCrossoverAnalysis.FindPeakIndex);
 
         // The window spans 1.5 crossover periods to each side (floored at the
         // fixed diagnostic span), so the neighboring comb lobes both ways are
@@ -3888,7 +3898,7 @@ public partial class VirtualCrossoverPanel : UserControl
             VirtualCrossoverAnalysis.JunctionLossSweep(
                 upper, lower, sampleRate,
                 pair.BandLowHz, pair.BandHighHz,
-                -windowMs, windowMs, stepMs, invert)
+                -windowMs, windowMs, stepMs, invert, gateAnchor)
             .Select(point => new SignalPoint(
                 point.DelayMs,
                 point.LossDb +

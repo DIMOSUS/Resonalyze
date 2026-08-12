@@ -3865,8 +3865,10 @@ public partial class VirtualCrossoverPanel : UserControl
             AutoDelaySearchCropPrePeakSamples);
         Complex[] lower = cropped[all.IndexOf(pair.Lower)];
         Complex[] upper = cropped[all.IndexOf(pair.Upper)];
-        // The system's first arrival, the anchor the metric read-out and the
-        // alignment search share.
+        // The displayed side's first arrival — the same placement rule the
+        // read-out beside this plot uses, over the same channel set and the
+        // same applied delays, so the drawn score and the read-out's numbers
+        // come from one window.
         int gateAnchor = cropped.Min(VirtualCrossoverAnalysis.FindPeakIndex);
 
         // The window spans 1.5 crossover periods to each side (floored at the

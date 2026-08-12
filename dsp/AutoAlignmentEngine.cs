@@ -354,11 +354,22 @@ public static class AutoAlignmentEngine
 
     /// <summary>
     /// The sample every junction measurement of a run anchors its direct-sound
-    /// gate on: the earliest peak across ALL the run's channels — the whole
-    /// system's first arrival, the same anchor the metric read-out uses. Taken
-    /// over a snapshot set rendered in one frame, so every junction of a run is
-    /// judged through the same window and the search cannot rank alignments
-    /// differently from the panel that displays them.
+    /// gate on: the earliest peak across ALL the run's channels, rendered in
+    /// one frame. Two properties matter and neither is the pair's own peak.
+    ///
+    /// It is EARLY — no channel's own rise can fall inside the window's
+    /// fade-in, which is what made a pair-anchored window misjudge a slow
+    /// channel's phase (see the gate remarks in VirtualCrossoverAnalysis).
+    ///
+    /// It is SHARED — one window for every junction, side and probe of a run,
+    /// so candidates, co-move cells and cross-side comparisons are all
+    /// measured through the same one. This is the same PLACEMENT RULE the
+    /// metric read-out follows (VirtualCrossoverMetrics.BuildCurves anchors on
+    /// its channel set's earliest peak), not the same sample: the read-out
+    /// runs on the applied delays and on the displayed side alone, so its
+    /// anchor lands wherever those put it. Matching it exactly is not the
+    /// goal and is not achievable mid-cascade — being early enough for every
+    /// channel, and the same for every comparison, is.
     /// </summary>
     private static int SystemGateAnchor(IEnumerable<AlignmentSnapshot> scope) =>
         scope.Min(item => item.PeakIndex);
@@ -1208,29 +1219,35 @@ public static class AutoAlignmentEngine
                     : 0;
             }
 
-            // Only where the anchor is still the RAW read and the disagreement
-            // is real. A pair the prediction already convicted upstream carries
-            // its replacement anchor and a stand-in disagreement figure (twice
-            // the allowance, not a measurement), and a disagreement inside the
-            // predictor's own accuracy floor is estimator noise — convicting on
-            // either would lift the seed-reach veto at junctions that never
-            // asked for it, on numbers that say nothing.
+            // Only on MEASURED lobe geometry, only where the anchor is still
+            // the RAW read, and only on a disagreement the predictor can call
+            // real:
+            //  - no separated opposite-sign structure in the window (or an
+            //    edge-pinned one) means the spacing this conviction reasons
+            //    from was never measured, and absence of evidence may not
+            //    license re-anchoring plus the lifting of the seed-reach veto.
+            //    Those junctions keep the conservative path: the reach rule
+            //    below already refuses an extremum there, since a zero
+            //    boundary floors its reach at zero;
+            //  - a pair the prediction already convicted upstream carries its
+            //    replacement anchor and a stand-in disagreement figure (twice
+            //    the allowance, not a measurement);
+            //  - a disagreement inside the predictor's own accuracy floor is
+            //    estimator noise.
             if (!arrivalReanchored && pairPredictionGradeable &&
                 !lowerLatchedByPrediction && !upperLatchedByPrediction &&
                 predictionDisagreementMs >= PredictedArrivalAccuracyMs)
             {
                 double boundaryMs = LobeBoundaryMs(phat);
-                if (!(boundaryMs > 0) || predictionDisagreementMs >= boundaryMs)
+                if (boundaryMs > 0 && predictionDisagreementMs >= boundaryMs)
                 {
                     log.AppendLine(
                         $"  {pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
                         $"the arrival anchor disagrees with the predicted fronts " +
                         $"by {predictionDisagreementMs:0.000} ms against a " +
-                        (boundaryMs > 0
-                            ? $"{boundaryMs:0.000} ms lobe boundary"
-                            : "lobe boundary the correlation does not show") +
-                        $" — it cannot place the junction inside a lobe, so both " +
-                        $"sides re-anchor on their predicted fronts " +
+                        $"{boundaryMs:0.000} ms lobe boundary — it cannot place " +
+                        $"the junction inside a lobe, so both sides re-anchor on " +
+                        $"their predicted fronts " +
                         $"({lowerArrival:0.000}/{upperArrival:0.000} -> " +
                         $"{lowerPrediction:0.000}/{upperPrediction:0.000} ms)");
                     lowerArrival = lowerPrediction;
@@ -3361,6 +3378,13 @@ public static class AutoAlignmentEngine
             IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
             Complex[] IrOf(IAlignmentChannel channel) =>
                 current.First(item => item.Channel == channel).ImpulseResponse;
+            // The same window the searches were decided through. Without it
+            // this pass would re-judge settled pairs on a pair-anchored
+            // surface — the very measurement the cascade stopped using — and
+            // it moves channels for as little as the co-move threshold, so a
+            // fraction-of-a-dB difference between the two windows is exactly
+            // the size of change it can make.
+            int gateAnchor = SystemGateAnchor(current);
 
             // One evaluator per junction: the pair member is the rotated
             // (moving) channel, its junction neighbor stays fixed. A junction
@@ -3385,7 +3409,8 @@ public static class AutoAlignmentEngine
                         junction.BandLowHz,
                         junction.BandHighHz,
                         levelMatch: true,
-                        requireDelayEvidence: true);
+                        requireDelayEvidence: true,
+                        gateAnchor);
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);

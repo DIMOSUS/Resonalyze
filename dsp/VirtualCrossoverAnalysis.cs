@@ -1494,9 +1494,10 @@ public static class VirtualCrossoverAnalysis
     // WHICH channels set that anchor is a decision the caller owns
     // (gateAnchorSample). Measuring one junction of a multiway system with an
     // anchor taken from the PAIR alone places the window tens of milliseconds
-    // later than the read-out's — the metric anchors on the whole system's
-    // first arrival (VirtualCrossoverMetrics.BuildCurves) — and at a
-    // sub/woofer junction the two then rank the same alignments differently:
+    // later than a window anchored on the whole system's first arrival — the
+    // placement the metric read-out uses (VirtualCrossoverMetrics.BuildCurves)
+    // — and at a sub/woofer junction the two then rank the same alignments
+    // differently:
     // on a field cabin (LP/HP 55 Hz, 36 dB/oct) the pair-anchored window read
     // the tuned alignment at -0.44 dB and preferred one 2 ms later, while the
     // system-anchored window read it at -0.02 dB, the sharpest optimum of the
@@ -2388,7 +2389,8 @@ public static class VirtualCrossoverAnalysis
             double minFrequencyHz,
             double maxFrequencyHz,
             bool levelMatch = false,
-            bool requireDelayEvidence = false)
+            bool requireDelayEvidence = false,
+            int? gateAnchorSample = null)
         {
             List<AlignmentBin> bins = BuildAlignmentBins(
                 variableImpulseResponse,
@@ -2398,7 +2400,8 @@ public static class VirtualCrossoverAnalysis
                 maxFrequencyHz,
                 minDelayMs: -1,
                 maxDelayMs: 1,
-                levelMatch);
+                levelMatch,
+                gateAnchorSample);
             if (bins.Count == 0 ||
                 (requireDelayEvidence && !HoldsDelayEvidence(bins)))
             {

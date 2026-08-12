@@ -1073,16 +1073,14 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
-    public void Compute_ConvictsAnAnchorThatCannotPlaceTheJunctionInsideALobe()
+    public void Compute_KeepsTheConservativePathWhenTheLobeGeometryIsUnmeasured()
     {
         // 55 Hz junction, 36 dB/oct both sides: the lobes sit ~9 ms apart, and
         // the arrival allowance (half a period at the band centre) is exactly
         // that — so a read dragged a lobe late by an in-cabin build-up passes
-        // every conviction bar the predictor has. What still catches it is the
-        // pair's own geometry: the read disagrees with the predicted fronts by
-        // more than the measured half lobe spacing, i.e. it cannot say WHICH
-        // lobe the junction is on, and an anchor that cannot resolve lobes must
-        // not be the thing that resolves this one.
+        // every conviction bar the predictor has. The lobe-boundary conviction
+        // catches that class, but only where the boundary is MEASURED; this
+        // fixture is the other case, and the assertions below say which.
         const int Length = 32_768;
         var subChain = new DspChannelChain(Crossover: new CrossoverSpec(
             CrossoverKind.LowPass,
@@ -1092,7 +1090,13 @@ public sealed class AutoAlignmentEngineTests
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 180, 36),
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
         Complex[] subBypassed = LowFrontUnderCabinBuildUp(Length, 2.0, 0.02);
-        Complex[] wooferBypassed = SingleImpulse(Length, BasePosition);
+        // The woofer fires 23 ms after the sub's front, which only re-centres
+        // the correlation window (a pure delay moves a channel's read and its
+        // prediction together, so the pair's disagreement is untouched) — far
+        // enough from the window edge that the seed's neighbouring lobe is
+        // measured rather than edge-pinned.
+        Complex[] wooferBypassed = SingleImpulse(
+            Length, BasePosition + 23 * SampleRate / 1000);
 
         AlignmentSnapshot Snapshot(string name, Complex[] bypassed, DspChannelChain chain)
         {
@@ -1137,18 +1141,27 @@ public sealed class AutoAlignmentEngineTests
             alignment,
             log);
 
-        // What this pins is the RULE: the pair is convicted and re-anchored on
-        // its predicted fronts instead of the seed being vetoed by the very
-        // anchor that cannot resolve lobes (which is what the trace said
-        // before — "seed arrival (arrival uncertain past the lobe boundary)").
-        // The fixture cannot also pin the resulting delay: one side carries a
-        // synthetic build-up, so its honest alignment is not arithmetic. That
-        // half is validated on the field cabin the fix came from, where the
-        // corrected anchor lands the junction on the hand-tuned delay
-        // (5.29 ms against 5.23 by hand) at 0.0 dB average summation loss.
+        // This pair's whitened correlation shows no INTERIOR lobe beside its
+        // seed — the nearest opposite extremum is pinned to the window edge,
+        // so its position is an artifact and the lobe spacing the conviction
+        // reasons from was never measured. Absence of that evidence may not
+        // license re-anchoring (and with it the lifting of the seed-reach
+        // veto): the pair keeps the conservative path instead, which is the
+        // reach rule refusing the extremum on a zero-floored reach.
+        //
+        // The conviction's other half — an anchor convicted where the geometry
+        // IS measured — is validated on the field cabin the fix came from
+        // (55 Hz junction, a 6.82 ms disagreement against a measured 4.13 ms
+        // lobe boundary), where the corrected anchor lands the junction on the
+        // hand-tuned delay, 5.29 ms against 5.23 by hand, at 0.0 dB average
+        // summation loss. A synthetic pair rich enough to show interior lobes
+        // AND carry a lobe-sized arrival error has no arithmetically known
+        // answer to assert against, so it is not faked here.
         string trace = log.ToString();
-        Assert.Contains("cannot place the junction inside a lobe", trace);
-        Assert.DoesNotContain("arrival uncertain past the lobe boundary", trace);
+        Assert.DoesNotContain("cannot place the junction inside a lobe", trace);
+        Assert.True(
+            trace.Contains("beyond the arrival's reach"),
+            $"the seed should have been refused conservatively:\r\n{trace}");
     }
 
     [Fact]

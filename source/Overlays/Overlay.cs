@@ -2450,9 +2450,11 @@ public sealed class Overlay
     private DataPoint[]? BuildOperationPointsFor(OverlayOperationPreview settings)
     {
         // Complex sum is computed from the Main and Compare transfer IRs by the
-        // measurement pipeline (identical FR window / calibration / smoothing — the
-        // sum-loss variant divides its operands unsmoothed and smooths the gap), not
-        // from operand curves; only the overlay's own smoothing and offset apply here.
+        // measurement pipeline (identical FR window / calibration / smoothing), not
+        // from operand curves; only the overlay's own smoothing and offset apply
+        // here. The sum-LOSS variant divides unsmoothed operands and is smoothed
+        // once, down in the pipeline, at this slot's width — a ratio has no business
+        // carrying the plot's smoothing (see BuildComplexSumPoints).
         if (settings.Operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss)
         {
             return BuildComplexSumPoints(
@@ -2508,21 +2510,26 @@ public sealed class Overlay
         int smoothing,
         bool showLoss = false)
     {
+        // The loss curve is a RATIO of two responses, not a level: it is divided out
+        // of unsmoothed operands and smoothed once, by the measurement pipeline, at
+        // THIS slot's width (see DataHelper.SmoothRatioLevels). Handing that width
+        // down instead of smoothing the returned curve here keeps the plot's own
+        // smoothing out of the slot and avoids a second pass; it also keeps the
+        // psychoacoustic mode's variable bandwidth, which the overlay smoother —
+        // magnitude-only by construction — would flatten to a fixed 1/6 octave.
         OverlayPoint[]? sumPoints = collection.Form.BuildComplexSumOverlayPoints(
             delayMs,
             invertPolarity,
-            showLoss);
+            showLoss,
+            showLoss ? smoothing : null);
         if (sumPoints == null || sumPoints.Length < 2)
         {
             return null;
         }
 
-        // The loss curve is a RATIO of two responses, not a level: the slot's own
-        // smoothing must average its decibels plainly. The psychoacoustic cubic
-        // mean is a magnitude weighting and biases a ratio (see
-        // DataHelper.SmoothRatioLevels).
-        OverlayPoint[] smoothed = OverlayMath.SmoothByOctaves(
-            sumPoints, smoothing, psychoacousticMagnitude: !showLoss);
+        OverlayPoint[] smoothed = showLoss
+            ? sumPoints
+            : OverlayMath.SmoothByOctaves(sumPoints, smoothing);
         double offset = (double)offsetControl.Value;
         return smoothed
             .Select(point => new DataPoint(point.X, point.Y + offset))

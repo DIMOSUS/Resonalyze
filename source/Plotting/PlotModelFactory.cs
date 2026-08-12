@@ -1731,9 +1731,14 @@ internal sealed class PlotModelFactory
     // are perfectly in phase, dropping toward deep cancellation). The magnitude sum ignores
     // delay/polarity, so as those are tuned only the complex sum moves and the gap closes
     // toward 0 as the sources come into phase.
+    // smoothingInverseOctaves is the width the finished gap is smoothed at. It
+    // defaults to the plot's own, which is what the Compare curve wants; an
+    // overlay slot passes ITS width instead, so the slot owns its smoothing
+    // outright rather than inheriting the plot's and adding a second pass.
     internal AnalysisCurve? TryBuildComplexSumLossCurve(
         double compareDelayMs = 0,
-        bool invertComparePolarity = false)
+        bool invertComparePolarity = false,
+        double? smoothingInverseOctaves = null)
     {
         // All three curves are built UNSMOOTHED and the display smoothing applies to
         // the finished gap: a fractional-octave window straddling a steep skirt lifts
@@ -1786,7 +1791,8 @@ internal sealed class PlotModelFactory
                 complexCurve.Points[i].Y - magnitudeSumDb));
         }
 
-        double smoothing = frequencyResponseOptions.SmoothingInverseOctaves;
+        double smoothing = smoothingInverseOctaves
+            ?? frequencyResponseOptions.SmoothingInverseOctaves;
         return new AnalysisCurve(
             "Complex Sum Loss",
             smoothing != 0

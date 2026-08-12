@@ -144,14 +144,18 @@ public partial class Form1
     // polarity flip apply to the Compare response, mirroring a DSP channel setup.
     // When showLoss is set, returns the signed dB gap of the complex sum relative to the
     // magnitude sum (<= 0: how much the real phase-aware sum falls short of the phase-blind
-    // addition) instead of the sum itself.
+    // addition) instead of the sum itself, smoothed at lossSmoothingInverseOctaves — the
+    // asking slot's own width, applied to the finished ratio, so the loss overlay neither
+    // inherits the plot's smoothing nor takes a second pass on top of it.
     internal OverlayPoint[]? BuildComplexSumOverlayPoints(
         double compareDelayMs,
         bool invertComparePolarity,
-        bool showLoss = false)
+        bool showLoss = false,
+        double? lossSmoothingInverseOctaves = null)
     {
         Resonalyze.Dsp.AnalysisCurve? curve = showLoss
-            ? plotModelFactory.TryBuildComplexSumLossCurve(compareDelayMs, invertComparePolarity)
+            ? plotModelFactory.TryBuildComplexSumLossCurve(
+                compareDelayMs, invertComparePolarity, lossSmoothingInverseOctaves)
             : plotModelFactory.TryBuildComplexSumCurve(compareDelayMs, invertComparePolarity);
         return curve?.Points
             .Select(point => new OverlayPoint(point.X, point.Y))

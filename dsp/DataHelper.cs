@@ -90,6 +90,20 @@ namespace Resonalyze.Dsp
         public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
         public PhaseDetrendMode PhaseDetrendMode { get; set; } = PhaseDetrendMode.Auto;
 
+        /// <summary>
+        /// A copy of these options reading a different display smoothing — for a
+        /// caller that needs one curve at two widths (the Compare view's summation
+        /// loss, which must divide UNSMOOTHED curves and smooth the result; see
+        /// <see cref="VirtualCrossoverAnalysis.SumLossCurve"/>) without mutating the
+        /// shared, UI-owned instance.
+        /// </summary>
+        public FrequencyResponseOptions WithSmoothing(double smoothingInverseOctaves)
+        {
+            var copy = (FrequencyResponseOptions)MemberwiseClone();
+            copy.SmoothingInverseOctaves = smoothingInverseOctaves;
+            return copy;
+        }
+
         public PhaseAnalysisSettings CreatePhaseAnalysisSettings() => new(
             PhaseWindowMode,
             PhaseFdwCycles,

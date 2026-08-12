@@ -649,6 +649,152 @@ namespace Resonalyze.Dsp
                 : Math.Sqrt(Math.Max(0.0, bandPowers[centerIndex]));
         }
 
+        /// <summary>
+        /// Smooths a RATIO curve that already sits on the logarithmic display grid —
+        /// a per-point dB difference between two responses, such as the Virtual DSP
+        /// summation loss — with a plain arithmetic mean of its decibels.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A ratio is not a level, so it must never take the magnitude path
+        /// (<see cref="SmoothBandLevels"/>, <see cref="LogarithmicResample"/>): those
+        /// average POWER and weight peaks with a cubic mean, which on a ratio reads as
+        /// a bias toward whichever side of the window is closer to 0 dB. More
+        /// importantly the smoothing has to happen HERE, on the finished ratio, and not
+        /// on the two operands before they are divided — see
+        /// <see cref="VirtualCrossoverAnalysis.SumLossCurve"/> for what that order costs.
+        /// </para>
+        /// <para>
+        /// The psychoacoustic mode keeps its frequency-dependent WIDTH (and its Gaussian
+        /// kernel), only dropping the magnitude weighting. Non-finite points — gated-out
+        /// gaps — pass through and are excluded from their neighbours' means, so a gap
+        /// neither spreads nor fills. Points must be ascending and logarithmically
+        /// spaced, as the display grid is.
+        /// </para>
+        /// </remarks>
+        public static List<SignalPoint> SmoothRatioLevels(
+            IReadOnlyList<SignalPoint> ratioDb,
+            double smoothingOctaves,
+            bool psychoacoustic)
+        {
+            ArgumentNullException.ThrowIfNull(ratioDb);
+
+            int steps = ratioDb.Count;
+            var result = new List<SignalPoint>(steps);
+            if (steps < 2 || ratioDb[0].X <= 0 || ratioDb[^1].X <= ratioDb[0].X)
+            {
+                result.AddRange(ratioDb);
+                return result;
+            }
+
+            double octavesPerStep = Math.Log2(ratioDb[^1].X / ratioDb[0].X) / (steps - 1);
+            int smoothingHalfSteps = smoothingOctaves > 0.0 && octavesPerStep > 0.0
+                ? (int)Math.Round(smoothingOctaves * 0.5 / octavesPerStep)
+                : 0;
+            // Matches the resampler and SmoothBandLevels, which also leave the curve
+            // alone when the requested width does not reach a whole grid step.
+            if (!psychoacoustic && smoothingHalfSteps <= 0)
+            {
+                result.AddRange(ratioDb);
+                return result;
+            }
+
+            for (int i = 0; i < steps; i++)
+            {
+                if (!double.IsFinite(ratioDb[i].Y))
+                {
+                    result.Add(ratioDb[i]);
+                    continue;
+                }
+
+                result.Add(new SignalPoint(
+                    ratioDb[i].X,
+                    psychoacoustic
+                        ? GaussianDecibelMean(
+                            ratioDb,
+                            i,
+                            SpectrumSmoothing.PsychoacousticOctaves(ratioDb[i].X),
+                            octavesPerStep)
+                        : BoxDecibelMean(ratioDb, i, smoothingHalfSteps)));
+            }
+
+            return result;
+        }
+
+        // The plain-width mean: every measured point within +/- half the requested
+        // width counts once. Gaps are skipped, so the mean is over what was measured.
+        private static double BoxDecibelMean(
+            IReadOnlyList<SignalPoint> curve,
+            int centerIndex,
+            int halfSteps)
+        {
+            int firstIndex = Math.Max(0, centerIndex - halfSteps);
+            int lastIndex = Math.Min(curve.Count - 1, centerIndex + halfSteps);
+            double total = 0.0;
+            int count = 0;
+            for (int index = firstIndex; index <= lastIndex; index++)
+            {
+                if (double.IsFinite(curve[index].Y))
+                {
+                    total += curve[index].Y;
+                    count++;
+                }
+            }
+
+            return count > 0 ? total / count : curve[centerIndex].Y;
+        }
+
+        // The psychoacoustic width's kernel, shaped exactly like the magnitude one
+        // (Gaussian of the given FWHM, tapered to zero at three sigma) but averaging
+        // decibels linearly instead of cubing powers.
+        private static double GaussianDecibelMean(
+            IReadOnlyList<SignalPoint> curve,
+            int centerIndex,
+            double smoothingOctaves,
+            double octavesPerStep)
+        {
+            const double GaussianFwhmToSigma = 1.0 / 2.354820045;
+            const double GaussianRadiusSigma = 3.0;
+            const double GaussianTaperStartSigma = 2.5;
+            double sigmaSteps = smoothingOctaves * GaussianFwhmToSigma / octavesPerStep;
+            if (!(sigmaSteps > 0.0))
+            {
+                return curve[centerIndex].Y;
+            }
+
+            int radius = Math.Max(1, (int)Math.Ceiling(GaussianRadiusSigma * sigmaSteps));
+            int firstIndex = Math.Max(0, centerIndex - radius);
+            int lastIndex = Math.Min(curve.Count - 1, centerIndex + radius);
+            double weightSum = 0.0;
+            double weightedSum = 0.0;
+            for (int index = firstIndex; index <= lastIndex; index++)
+            {
+                if (!double.IsFinite(curve[index].Y))
+                {
+                    continue;
+                }
+
+                double normalized = (index - centerIndex) / sigmaSteps;
+                double absoluteNormalized = Math.Abs(normalized);
+                if (absoluteNormalized >= GaussianRadiusSigma)
+                {
+                    continue;
+                }
+
+                double taper = absoluteNormalized <= GaussianTaperStartSigma
+                    ? 1.0
+                    : 0.5 * (1.0 + Math.Cos(
+                        Math.PI *
+                        (absoluteNormalized - GaussianTaperStartSigma) /
+                        (GaussianRadiusSigma - GaussianTaperStartSigma)));
+                double weight = Math.Exp(-0.5 * normalized * normalized) * taper;
+                weightedSum += curve[index].Y * weight;
+                weightSum += weight;
+            }
+
+            return weightSum > 1e-12 ? weightedSum / weightSum : curve[centerIndex].Y;
+        }
+
         public static List<SignalPoint> SmoothLinear(List<SignalPoint> input, double smoothingOctaves = 1.0 / 6.0)
         {
             if (input.Count < 2)

@@ -1656,10 +1656,13 @@ internal sealed class PlotModelFactory
     //
     // compareDelayMs and invertComparePolarity mirror the per-channel delay and
     // polarity switch a DSP would apply to the Compare source, so the predicted sum
-    // can be tuned before touching the hardware.
+    // can be tuned before touching the hardware. options overrides the plot's own
+    // FR options for callers that need a different width (the sum-loss curve builds
+    // its operands unsmoothed).
     internal AnalysisCurve? TryBuildComplexSumCurve(
         double compareDelayMs = 0,
-        bool invertComparePolarity = false)
+        bool invertComparePolarity = false,
+        FrequencyResponseOptions? options = null)
     {
         if (expSweepMeasurement.TransferImpulseResponse is not { Length: > 0 } mainIr)
         {
@@ -1711,10 +1714,11 @@ internal sealed class PlotModelFactory
             length - 1);
         int peakIndex = Math.Min(mainPeak, comparePeak);
 
+        FrequencyResponseOptions curveOptions = options ?? frequencyResponseOptions;
         return DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(sum, peakIndex, expSweepMeasurement.SampleRate),
-            frequencyResponseOptions,
-            GetCalibration(frequencyResponseOptions));
+            curveOptions,
+            GetCalibration(curveOptions));
     }
 
     private static Complex SampleAt(Complex[] source, int index) =>
@@ -1731,7 +1735,14 @@ internal sealed class PlotModelFactory
         double compareDelayMs = 0,
         bool invertComparePolarity = false)
     {
-        if (TryBuildComplexSumCurve(compareDelayMs, invertComparePolarity) is not { } complexCurve)
+        // All three curves are built UNSMOOTHED and the display smoothing applies to
+        // the finished gap: a fractional-octave window straddling a steep skirt lifts
+        // the rolling-off source's level several dB while the flat sum barely moves,
+        // so smoothing the operands first draws summation loss that is not there (see
+        // VirtualCrossoverAnalysis.SumLossCurve).
+        FrequencyResponseOptions rawOptions = frequencyResponseOptions.WithSmoothing(0);
+        if (TryBuildComplexSumCurve(compareDelayMs, invertComparePolarity, rawOptions)
+            is not { } complexCurve)
         {
             return null;
         }
@@ -1751,15 +1762,15 @@ internal sealed class PlotModelFactory
                 mainIr,
                 Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, mainIr.Length - 1),
                 expSweepMeasurement.SampleRate),
-            frequencyResponseOptions,
-            GetCalibration(frequencyResponseOptions));
+            rawOptions,
+            GetCalibration(rawOptions));
         AnalysisCurve compareMagnitude = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(
                 compareIr,
                 Math.Clamp(compare.TransferPeakIndex, 0, compareIr.Length - 1),
                 compare.SampleRate),
-            frequencyResponseOptions,
-            GetCalibration(frequencyResponseOptions));
+            rawOptions,
+            GetCalibration(rawOptions));
 
         int count = Math.Min(
             complexCurve.Points.Count,
@@ -1775,7 +1786,15 @@ internal sealed class PlotModelFactory
                 complexCurve.Points[i].Y - magnitudeSumDb));
         }
 
-        return new AnalysisCurve("Complex Sum Loss", points);
+        double smoothing = frequencyResponseOptions.SmoothingInverseOctaves;
+        return new AnalysisCurve(
+            "Complex Sum Loss",
+            smoothing != 0
+                ? DataHelper.SmoothRatioLevels(
+                    points,
+                    SpectrumSmoothing.SmoothingOctaves(smoothing),
+                    SpectrumSmoothing.IsPsychoacoustic(smoothing))
+                : points);
     }
 
     // A harmonic order the user asked for can be missing from the plot: its packet

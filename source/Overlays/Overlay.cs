@@ -2450,7 +2450,8 @@ public sealed class Overlay
     private DataPoint[]? BuildOperationPointsFor(OverlayOperationPreview settings)
     {
         // Complex sum is computed from the Main and Compare transfer IRs by the
-        // measurement pipeline (identical FR window / calibration / smoothing), not
+        // measurement pipeline (identical FR window / calibration / smoothing — the
+        // sum-loss variant divides its operands unsmoothed and smooths the gap), not
         // from operand curves; only the overlay's own smoothing and offset apply here.
         if (settings.Operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss)
         {
@@ -2516,7 +2517,12 @@ public sealed class Overlay
             return null;
         }
 
-        OverlayPoint[] smoothed = OverlayMath.SmoothByOctaves(sumPoints, smoothing);
+        // The loss curve is a RATIO of two responses, not a level: the slot's own
+        // smoothing must average its decibels plainly. The psychoacoustic cubic
+        // mean is a magnitude weighting and biases a ratio (see
+        // DataHelper.SmoothRatioLevels).
+        OverlayPoint[] smoothed = OverlayMath.SmoothByOctaves(
+            sumPoints, smoothing, psychoacousticMagnitude: !showLoss);
         double offset = (double)offsetControl.Value;
         return smoothed
             .Select(point => new DataPoint(point.X, point.Y + offset))

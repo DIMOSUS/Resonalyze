@@ -571,9 +571,13 @@ public sealed class VirtualCrossoverAnalysisTests
         };
 
         double? zeroLoss = VirtualCrossoverAnalysis.AverageSumLossDb(
-            coherentSum, [channel, channel], 100, 10_000);
+            VirtualCrossoverAnalysis.SumLossCurve(coherentSum, [channel, channel]),
+            100,
+            10_000);
         double? loss = VirtualCrossoverAnalysis.AverageSumLossDb(
-            degradedSum, [channel, channel], 100, 10_000);
+            VirtualCrossoverAnalysis.SumLossCurve(degradedSum, [channel, channel]),
+            100,
+            10_000);
 
         Assert.NotNull(zeroLoss);
         Assert.Equal(0.0, zeroLoss.Value, 3);
@@ -596,7 +600,9 @@ public sealed class VirtualCrossoverAnalysisTests
         };
 
         double? dip = VirtualCrossoverAnalysis.MinimumSumLossDb(
-            sum, [channel, channel], 100, 10_000);
+            VirtualCrossoverAnalysis.SumLossCurve(sum, [channel, channel]),
+            100,
+            10_000);
 
         Assert.NotNull(dip);
         Assert.Equal(-12.0, dip.Value, 3);
@@ -609,7 +615,9 @@ public sealed class VirtualCrossoverAnalysisTests
         var sum = new List<SignalPoint> { new(100, -20.0), new(1_000, 6.0206) };
 
         double? loss = VirtualCrossoverAnalysis.AverageSumLossDb(
-            sum, [channel, channel], 500, 2_000);
+            VirtualCrossoverAnalysis.SumLossCurve(sum, [channel, channel]),
+            500,
+            2_000);
 
         Assert.NotNull(loss);
         Assert.Equal(0.0, loss.Value, 3);
@@ -637,6 +645,82 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.Equal(-6.0206, loss[1].Y, 3);
         Assert.Equal(0.0, loss[2].Y, 3);
     }
+
+    [Fact]
+    public void SumLossCurve_SmoothsTheRatio_NotTheOperands()
+    {
+        // An ideal complementary crossover at 70 Hz: the two amplitudes are in
+        // phase and add to exactly 1 at every frequency, each rolling off at
+        // 48 dB/octave past the corner. The sum is therefore flat 0 dB and the
+        // honest loss is 0 dB everywhere — flat sum, steep operands, which is the
+        // geometry of every real crossover corner. 70 Hz is also where the
+        // psychoacoustic window is at its widest. Any dip here is invented.
+        static double Complementary(double frequency)
+        {
+            double ratio = Math.Pow(frequency / 70.0, 8);
+            return 1.0 / (1.0 + ratio);
+        }
+
+        List<SignalPoint> lowPass = LinearBins(frequency => Math.Max(
+            -120.0, DataHelper.AmplitudeToDecibels(Complementary(frequency))));
+        List<SignalPoint> highPass = LinearBins(frequency => Math.Max(
+            -120.0, DataHelper.AmplitudeToDecibels(1.0 - Complementary(frequency))));
+        List<SignalPoint> together = LinearBins(_ => 0.0);
+
+        double psycho = SpectrumSmoothing.PsychoacousticCode;
+        List<SignalPoint> honest = VirtualCrossoverAnalysis.SumLossCurve(
+            Resample(together, 0),
+            [Resample(lowPass, 0), Resample(highPass, 0)],
+            psycho);
+
+        // Smoothing the finished ratio cannot move a curve that is flat at 0 dB.
+        Assert.All(
+            honest.Where(point => point.X is >= 50 and <= 15_000),
+            point => Assert.Equal(0.0, point.Y, 2));
+
+        // The order the panel used to run — smooth the operands, then divide.
+        // The wide low-frequency window pulls the skirt up toward its own
+        // passband while the flat sum barely moves, and the difference draws a
+        // dip at the corner that no measurement contains.
+        List<SignalPoint> fromSmoothedOperands = VirtualCrossoverAnalysis.SumLossCurve(
+            Resample(together, psycho),
+            [Resample(lowPass, psycho), Resample(highPass, psycho)]);
+
+        double invented = fromSmoothedOperands
+            .Where(point => point.X is >= 50 and <= 100)
+            .Min(point => point.Y);
+        Assert.True(
+            invented < -0.5,
+            $"the operand-first order should invent a dip at the corner: {invented}");
+    }
+
+    // A 2 Hz linear grid standing in for the FFT bins the display resamples.
+    private static List<SignalPoint> LinearBins(Func<double, double> decibelsAt)
+    {
+        var bins = new List<SignalPoint>(10_000);
+        for (int i = 1; i <= 10_000; i++)
+        {
+            double frequency = i * 2.0;
+            bins.Add(new SignalPoint(frequency, decibelsAt(frequency)));
+        }
+
+        return bins;
+    }
+
+    private static double At(List<SignalPoint> bins, double frequency) =>
+        bins[Math.Clamp((int)Math.Round(frequency / 2.0) - 1, 0, bins.Count - 1)].Y;
+
+    private static List<SignalPoint> Resample(
+        List<SignalPoint> bins,
+        double smoothingInverseOctaves) =>
+        DataHelper.LogarithmicResample(
+            bins,
+            20,
+            20_000,
+            1024,
+            null,
+            SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves),
+            psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(smoothingInverseOctaves));
 
     [Fact]
     public void SumLossCurve_TruncatesToTheShortestGrid()
@@ -676,8 +760,7 @@ public sealed class VirtualCrossoverAnalysisTests
         // 6 kHz is quiet in absolute terms, but no louder neighbor sits within an
         // octave (nearest is 1.5 kHz, further down and quieter), so it is kept.
         Assert.Equal(0.0, loss[3].Y, 3);
-        double? dip = VirtualCrossoverAnalysis.MinimumSumLossDb(
-            sum, [channel], 20, 8_000);
+        double? dip = VirtualCrossoverAnalysis.MinimumSumLossDb(loss, 20, 8_000);
         Assert.NotNull(dip);
         Assert.Equal(0.0, dip.Value, 3);
     }

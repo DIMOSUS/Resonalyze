@@ -128,17 +128,52 @@ namespace Resonalyze.Dsp
             double smoothingInverseOctaves)
         {
             Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
-            List<SignalPoint> data = LogarithmicResample(
+            return ResampleGatedMagnitude(
                 GatedMagnitudePoints(spectrum, measurement.SampleRate),
-                20,
-                20000,
-                1024,
                 calibration,
-                SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves),
-                psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
-                    smoothingInverseOctaves));
-            return new AnalysisCurve("Frequency Response", data);
+                smoothingInverseOctaves);
         }
+
+        /// <summary>
+        /// <see cref="GetGatedPrimarySpectrum"/> at two smoothing widths from ONE
+        /// gate and one FFT: the display curve and the unsmoothed curve. A caller
+        /// that both draws a curve and divides it into another one (the Virtual DSP
+        /// summation loss) needs both, and the gated FFT — not the resample — is
+        /// what costs; see <see cref="VirtualCrossoverAnalysis.SumLossCurve"/> for
+        /// why the division must read the unsmoothed pair.
+        /// </summary>
+        public static (AnalysisCurve Display, AnalysisCurve Unsmoothed)
+            GetGatedPrimarySpectrumPair(
+                IImpulseMeasurement measurement,
+                PhaseAnalysisSettings settings,
+                CalibrationFile? calibration,
+                double smoothingInverseOctaves)
+        {
+            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
+            List<SignalPoint> bins = GatedMagnitudePoints(spectrum, measurement.SampleRate);
+            AnalysisCurve unsmoothed = ResampleGatedMagnitude(bins, calibration, 0);
+            return (
+                smoothingInverseOctaves == 0
+                    ? unsmoothed
+                    : ResampleGatedMagnitude(bins, calibration, smoothingInverseOctaves),
+                unsmoothed);
+        }
+
+        private static AnalysisCurve ResampleGatedMagnitude(
+            List<SignalPoint> bins,
+            CalibrationFile? calibration,
+            double smoothingInverseOctaves) =>
+            new(
+                "Frequency Response",
+                LogarithmicResample(
+                    bins,
+                    20,
+                    20000,
+                    1024,
+                    calibration,
+                    SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves),
+                    psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
+                        smoothingInverseOctaves)));
 
         // The magnitude bins of a gated analysis spectrum as ascending (Hz, dB)
         // points on its linear grid — the resample-ready form every gated

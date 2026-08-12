@@ -2013,14 +2013,16 @@ public partial class VirtualCrossoverPanel : UserControl
         using var _ = AppProfiler.Zone("VirtualDSP.RedrawMainPlot");
         List<AnalysisCurve>? magnitudes;
         AnalysisCurve? sumCurve;
+        List<SignalPoint>? lossCurve;
         using (AppProfiler.Zone("VirtualDSP.BuildCurves"))
         {
-            (magnitudes, sumCurve) = metrics.BuildCurves(processed);
+            (magnitudes, sumCurve, lossCurve) = metrics.BuildCurves(
+                processed, magnitudeGate.SmoothingInverseOctaves);
         }
 
         using (AppProfiler.Zone("VirtualDSP.UpdateMetric"))
         {
-            UpdateMetric(processed, magnitudes, sumCurve, stereoDeltas);
+            UpdateMetric(processed, lossCurve, stereoDeltas);
         }
 
         using (AppProfiler.Zone("VirtualDSP.UpdateCrossoverWarning"))
@@ -2034,7 +2036,8 @@ public partial class VirtualCrossoverPanel : UserControl
         AcousticRender acousticRender;
         using (AppProfiler.Zone("VirtualDSP.BuildAcousticRender"))
         {
-            acousticRender = BuildAcousticRender(processed, magnitudes, sumCurve, oppositeSum);
+            acousticRender = BuildAcousticRender(
+                processed, magnitudes, sumCurve, lossCurve, oppositeSum);
         }
 
         using (AppProfiler.Zone("VirtualDSP.AcousticPlotDraw"))
@@ -2051,6 +2054,7 @@ public partial class VirtualCrossoverPanel : UserControl
         List<ProcessedChannel> processed,
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
+        List<SignalPoint>? lossCurve,
         AnalysisCurve? oppositeSum)
     {
         string hint = loadingProject
@@ -2070,13 +2074,16 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         return new AcousticRender(
-            hint, BuildMagnitudeCurves(processed, magnitudes, sumCurve, oppositeSum), null);
+            hint,
+            BuildMagnitudeCurves(processed, magnitudes, sumCurve, lossCurve, oppositeSum),
+            null);
     }
 
     private List<AcousticCurve> BuildMagnitudeCurves(
         List<ProcessedChannel> processed,
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
+        List<SignalPoint>? lossCurve,
         AnalysisCurve? oppositeSumCurve)
     {
         // The processed curves arrive prebuilt from BuildCurves, but a shown RAW
@@ -2105,7 +2112,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 AnalysisCurve curve = magnitudes != null
                     ? magnitudes[i]
                     : BuildMagnitudeCurve(
-                        item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate);
+                        item.ImpulseResponse,
+                        item.PeakIndex,
+                        item.Channel.SampleRate).Display;
                 curves.Add(new AcousticCurve(
                     item.Channel.Name, curve.Points, item.Color, 1.8, LineStyle.Solid));
             }
@@ -2133,17 +2142,16 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        if (checkBoxShowLoss.Checked)
+        if (checkBoxShowLoss.Checked && lossCurve != null)
         {
             // The signed dB gap between the complex sum and the phase-blind
             // magnitude sum of the processed channels (<= 0 by the triangle
-            // inequality); shares the one SumLossCurve definition with the metric,
-            // so the drawn curve and the measured loss cannot drift apart.
-            List<SignalPoint> points = VirtualCrossoverAnalysis.SumLossCurve(
-                sumCurve.Points,
-                magnitudes.Select(curve => curve.Points).ToList());
+            // inequality), built once in BuildCurves out of the UNSMOOTHED
+            // magnitudes and smoothed as a ratio afterwards — the very list the
+            // read-out averages, so the drawn curve and the measured loss cannot
+            // drift apart.
             curves.Add(new AcousticCurve(
-                "Sum loss", points, LossColor, 1.8, LineStyle.Dash));
+                "Sum loss", lossCurve, LossColor, 1.8, LineStyle.Dash));
         }
 
         return curves;
@@ -2153,8 +2161,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void UpdateMetric(
         List<ProcessedChannel> processed,
-        List<AnalysisCurve>? magnitudes,
-        AnalysisCurve? sumCurve,
+        List<SignalPoint>? lossCurve,
         IReadOnlyList<VirtualCrossoverMetric.StereoDelta>? stereoDeltas = null)
     {
         // The read-out lives in the host's right-side panel (where overlays sit in
@@ -2166,7 +2173,7 @@ public partial class VirtualCrossoverPanel : UserControl
         List<VirtualCrossoverMetric.Entry> entries;
         using (AppProfiler.Zone("VirtualDSP.BuildEntries"))
         {
-            entries = metrics.BuildEntries(processed, magnitudes, sumCurve);
+            entries = metrics.BuildEntries(processed, lossCurve);
         }
 
         // The junction phase block is informative only: it renders alongside
@@ -2666,12 +2673,12 @@ public partial class VirtualCrossoverPanel : UserControl
         bool metricSideRight = project.ActiveSideRight;
         ProcessedRender? render = await ProcessChannelsAsync();
         List<ProcessedChannel> outcomeChannels = render?.Channels ?? [];
-        (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
-            metrics.BuildCurves(outcomeChannels);
+        (_, _, List<SignalPoint>? outcomeLoss) =
+            metrics.BuildCurves(outcomeChannels, magnitudeGate.SmoothingInverseOctaves);
         result.Log.AppendLine(
             $"Metric ({(metricSideRight ? "R" : "L")} side):");
         result.Log.AppendLine(VirtualCrossoverMetric.FormatDetail(
-            metrics.BuildEntries(outcomeChannels, outcomeMagnitudes, outcomeSum)));
+            metrics.BuildEntries(outcomeChannels, outcomeLoss)));
         WriteAlignmentLog(result.Log.ToString());
     }
 
@@ -3218,7 +3225,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // sum-loss under its 0 dB ceiling; see VirtualCrossoverMetrics.BuildCurves)
     // and the raw curve's own peak. Runs on PLINQ worker threads: reads only
     // the immutable snapshot RequestRedraw refreshed.
-    private AnalysisCurve BuildMagnitudeCurve(
+    private GatedMagnitude BuildMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
         int sampleRate)
@@ -3244,7 +3251,7 @@ public partial class VirtualCrossoverPanel : UserControl
             side.AnchorIndex,
             side.SampleRate,
             snapshot.ResolveGateOffsetMs(
-                oppositeSide: true, side.AnchorIndex, side.SampleRate));
+                oppositeSide: true, side.AnchorIndex, side.SampleRate)).Display;
     }
 
     // A RAW channel curve lives in its own time: its arrival predates the
@@ -3261,10 +3268,13 @@ public partial class VirtualCrossoverPanel : UserControl
             impulseResponse,
             peakIndex,
             sampleRate,
-            peakIndex * 1_000.0 / sampleRate);
+            peakIndex * 1_000.0 / sampleRate).Display;
     }
 
-    private AnalysisCurve BuildGatedMagnitudeCurve(
+    // Both widths of one gated build: the smoothed curve the plot draws and the
+    // unsmoothed one the summation loss divides (see GatedMagnitude). One gate,
+    // one FFT, two resamples — the second resample is the cheap half.
+    private GatedMagnitude BuildGatedMagnitudeCurve(
         MagnitudeGateSnapshot snapshot,
         Complex[] impulseResponse,
         int peakIndex,
@@ -3275,11 +3285,13 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             GateOffsetMs = gateOffsetMs
         };
-        return DataHelper.GetGatedPrimarySpectrum(
-            new ImpulseMeasurementView(impulseResponse, peakIndex, sampleRate),
-            gate,
-            Calibration,
-            snapshot.SmoothingInverseOctaves);
+        (AnalysisCurve display, AnalysisCurve unsmoothed) =
+            DataHelper.GetGatedPrimarySpectrumPair(
+                new ImpulseMeasurementView(impulseResponse, peakIndex, sampleRate),
+                gate,
+                Calibration,
+                snapshot.SmoothingInverseOctaves);
+        return new GatedMagnitude(display, unsmoothed);
     }
 
     private List<AcousticCurve> BuildPhaseCurves(List<ProcessedChannel> processed)
@@ -3926,7 +3938,7 @@ public partial class VirtualCrossoverPanel : UserControl
         AnalysisCurve sumCurve = BuildMagnitudeCurve(
             sum,
             processed.Min(item => item.PeakIndex),
-            processed[0].Channel.SampleRate);
+            processed[0].Channel.SampleRate).Display;
 
         string title = "vDSP Sum " + string.Join(
             "+",
@@ -3979,10 +3991,10 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
         List<ProcessedChannel> metricChannels = render.Channels;
-        (List<AnalysisCurve>? metricMagnitudes, AnalysisCurve? metricSum) =
-            metrics.BuildCurves(metricChannels);
+        (_, _, List<SignalPoint>? metricLoss) =
+            metrics.BuildCurves(metricChannels, magnitudeGate.SmoothingInverseOctaves);
         string metricLine = VirtualCrossoverMetric.FormatLabel(
-            metrics.BuildEntries(metricChannels, metricMagnitudes, metricSum));
+            metrics.BuildEntries(metricChannels, metricLoss));
         // The sheet prints BOTH sides, so the rate comes from any physically
         // resolved side — reading only the active side through the delegating
         // properties would fall back to 48 kHz when, say, the shown left side

@@ -474,6 +474,34 @@ public sealed class LogarithmicPowerBandResampleTests
         Assert.Equal(80, smoothed[101].Y, 6);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SmoothRatioLevels_AveragesDecibelsWithoutTheMagnitudeBias(bool psychoacoustic)
+    {
+        // A ratio curve is not a level: across a -6 dB step it must read the mean of
+        // DECIBELS, near the -3 dB middle. A power mean of the same window — the
+        // magnitude path — would read about -2.0 dB there, and the cubic peak
+        // weighting higher still. Gaps stay gaps and are excluded from their
+        // neighbours' means.
+        var ratio = new List<SignalPoint>();
+        for (int i = 0; i < 400; i++)
+        {
+            double f = 100 * Math.Pow(2, i / 40.0);
+            ratio.Add(new SignalPoint(f, i == 300 ? double.NaN : i < 200 ? 0 : -6));
+        }
+
+        List<SignalPoint> smoothed =
+            DataHelper.SmoothRatioLevels(ratio, 1.0 / 3.0, psychoacoustic);
+
+        Assert.InRange(smoothed[199].Y, -3.2, -2.4);
+        Assert.Equal(0, smoothed[100].Y, 6);
+        Assert.Equal(-6, smoothed[380].Y, 6);
+        Assert.True(double.IsNaN(smoothed[300].Y));
+        Assert.Equal(-6, smoothed[299].Y, 6);
+        Assert.Equal(-6, smoothed[301].Y, 6);
+    }
+
     private static float[] CreateSine(int length, int bin)
     {
         var samples = new float[length];

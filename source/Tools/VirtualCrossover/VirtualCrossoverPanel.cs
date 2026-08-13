@@ -3301,33 +3301,17 @@ public partial class VirtualCrossoverPanel : UserControl
         using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseCurves");
         // One shared absolute τ reference (the earliest arrival) keeps the
         // curves' relative phase intact — that relative alignment through the
-        // crossover region is exactly what this view is for. The WINDOWS need
-        // not share a position for that: BuildMeasuredPhase re-references every
-        // extraction to the common absolute τ.
+        // crossover region is exactly what this view is for. The WINDOWS may
+        // still follow each channel's own arrival: BuildMeasuredPhase
+        // re-references every extraction to the common absolute τ, which is
+        // exact as long as no window cuts into its own channel — the condition
+        // ResolvePhaseGateOffsets enforces before it hands out per-curve
+        // placements.
         int sampleRate = processed[0].Channel.SampleRate;
         double referenceOffsetMs = gatePreview?.OffsetMs
             ?? ResolveGateOffsetMs(processed, sampleRate);
         double detrendMs = ResolveCommonDetrendMs(
             processed, referenceOffsetMs, sampleRate);
-
-        // Read the gate and project state ONCE, here on the UI thread —
-        // including each curve's own gate placement: pinned, every curve
-        // shares one absolute window; unpinned (Auto), each IR gates at its
-        // own arrival PEAK, so FDW's short high-frequency windows keep a late
-        // channel's treble instead of silently excluding it. The peak, not the
-        // estimated IR start: the start estimator is unvalidated on virtually
-        // crossovered responses and can place the window off the energy (see
-        // BuildMagnitudeCurve). The workers below must not reach back into
-        // gatePreview or project.
-        double? pinnedOffsetMs = PinnedGateOffsetMs;
-        PhaseAnalysisSettings SettingsFor(int ownPeak) =>
-            CreateVirtualPhaseSettings(
-                pinnedOffsetMs ?? ownPeak * 1_000.0 / sampleRate,
-                PhaseDetrendMode.Manual,
-                detrendMs);
-        double referenceSamples = detrendMs * sampleRate / 1_000.0;
-
-        bool includeSum = processed.Count >= 2 && checkBoxShowSum.Checked;
 
         // The gated spectra are built ONCE per redraw and feed both the shown
         // channels' curves and the Sum — building them twice was possible
@@ -3335,25 +3319,34 @@ public partial class VirtualCrossoverPanel : UserControl
         // the bank computation itself, so a channel job and the Sum job racing
         // on a cold cache could each run the same FFTs. The Sum needs every
         // processed channel (hidden or not, matching the magnitude Sum); with
-        // the Sum off, hidden channels' banks are skipped entirely. Settings
-        // resolve here on the UI thread; only the bank work fans out.
-        List<(ProcessedChannel Item, PhaseAnalysisSettings Settings)> spectrumInputs =
-            processed
-                .Where(item => includeSum || item.Channel.Settings.ShowProcessedCurve)
-                .Select(item => (item, SettingsFor(item.PeakIndex)))
-                .ToList();
+        // the Sum off, hidden channels' banks are skipped entirely.
+        bool includeSum = processed.Count >= 2 && checkBoxShowSum.Checked;
+        List<ProcessedChannel> gatedChannels = processed
+            .Where(item => includeSum || item.Channel.Settings.ShowProcessedCurve)
+            .ToList();
+
+        // Read the gate and project state ONCE, here on the UI thread; the
+        // workers below must not reach back into gatePreview or project. The
+        // placements are resolved over the gated set only, so hiding a curve
+        // cannot move the window of the ones still drawn.
+        List<double> offsets = ResolvePhaseGateOffsets(
+            gatedChannels, referenceOffsetMs, sampleRate);
+        double referenceSamples = detrendMs * sampleRate / 1_000.0;
+
         List<(ProcessedChannel Item, Complex[] Spectrum, int ExtractionStart)> gated =
-            spectrumInputs
+            gatedChannels
+                .Select((item, index) => (item, Settings: CreateVirtualPhaseSettings(
+                    offsets[index], PhaseDetrendMode.Manual, detrendMs)))
                 .AsParallel()
                 .AsOrdered()
                 .Select(input =>
                 {
                     Complex[] spectrum = DataHelper.GetPhaseAnalysisSpectrum(
                         new ImpulseMeasurementView(
-                            input.Item.ImpulseResponse, 0, sampleRate),
+                            input.item.ImpulseResponse, 0, sampleRate),
                         input.Settings,
                         out int extractionStart);
-                    return (input.Item, spectrum, extractionStart);
+                    return (input.item, spectrum, extractionStart);
                 })
                 .ToList();
 
@@ -3372,13 +3365,12 @@ public partial class VirtualCrossoverPanel : UserControl
         if (includeSum)
         {
             // The Sum is the vector sum of the individually gated channel
-            // SPECTRA, not a gated summed IR: with per-curve Auto windows a
-            // single window over the summed IR would exclude late channels'
-            // treble that their own traces keep (FDW windows at high
-            // frequencies are shorter than the arrival spread), and the drawn
-            // Sum would silently stop being the sum of the drawn channels.
+            // SPECTRA, not a gate over the summed IR: under Auto the windows
+            // follow each channel's own arrival, and no single window over one
+            // summed IR could hold every channel's treble at once (FDW's
+            // high-frequency windows are shorter than the arrival spread).
             // Summing the spectra keeps superposition exact by construction,
-            // and with a pinned gate reduces to the gated summed IR by
+            // and with one shared window reduces to the gated summed IR by
             // linearity.
             int targetExtractionStart = gated.Min(part => part.ExtractionStart);
             Complex[] combined = DataHelper.SumGatedSpectra(
@@ -3474,16 +3466,105 @@ public partial class VirtualCrossoverPanel : UserControl
     // The one pinned absolute gate offset, or null when the gate is unpinned
     // (Auto) — in the dialog preview and in the committed state alike. Null
     // means automatic placement, which differs by view: the magnitude anchors
-    // ONE shared window at the earliest processed arrival (keeping the drawn
-    // Sum the exact vector sum of the drawn channels), while each PHASE curve
-    // gates at its own arrival peak — FDW's high-frequency windows are
-    // shorter than the channels' arrival spread, and a shared window silently
-    // excluded late channels' treble. The phase stays comparable because its
-    // τ reference is common and absolute regardless of where each extraction
-    // started.
+    // ONE shared window at the earliest processed PEAK (keeping the drawn Sum
+    // the exact vector sum of the drawn channels), while the PHASE curves each
+    // follow their own estimated arrival START so FDW's short high-frequency
+    // windows land on the right channel's first cycles — see
+    // ResolvePhaseGateOffsets for the condition that keeps those curves
+    // comparable, and what happens when it does not hold.
     private double? PinnedGateOffsetMs => gatePreview is { } preview
         ? preview.AutoOffset ? null : preview.OffsetMs
         : ActiveGate.OffsetMs;
+
+    /// <summary>
+    /// The ceiling on <see cref="DataHelper.GateLeadingEdgeLossDb"/> for a
+    /// per-curve phase window: above it the window is cutting into its own
+    /// channel's leading edge and the curve stops being comparable with its
+    /// neighbours.
+    /// <para>
+    /// Measured on the v5 field session (four processed channels, gate
+    /// 5/50/20 ms): windows placed on each channel's own arrival START read
+    /// -28.4 to -72.2 dB, while the arrival-PEAK placement that drew a
+    /// summing pair as antiphase read -3.5 to -10.8 dB — it discards a fifth
+    /// to nearly half of a steeply low-passed channel's own energy. -20 dB
+    /// sits in the middle of that 17.6 dB gap.
+    /// </para>
+    /// </summary>
+    private const double MaxPhaseGateLeadingEdgeLossDb = -20.0;
+
+    /// <summary>
+    /// Whether a per-curve window may be used for a channel, from what it
+    /// discards ahead of its plateau against what the shared window would.
+    /// <para>
+    /// The ceiling alone is not the question, because a gate can be too short
+    /// to hold a channel's leading edge WHEREVER it is placed: the project
+    /// default (0.5/4/1.5 ms) cannot contain one period of a 55 Hz subwoofer,
+    /// and on the field session it read -19.4 dB at the channel's own arrival
+    /// and -19.4 dB at the shared one — identical. Refusing there buys no
+    /// accuracy and costs the per-curve placement that keeps a late channel
+    /// inside FDW's short windows, so the shared window has to be the better
+    /// placement for this channel before it is worth taking. The arrival-PEAK
+    /// placements this guard exists to catch are 25.7 to 61.4 dB worse than
+    /// the shared window, so both conditions hold there with room to spare.
+    /// </para>
+    /// </summary>
+    internal static bool AllowsPerCurvePhaseGate(
+        double perCurveLossDb,
+        double sharedLossDb) =>
+        perCurveLossDb <= MaxPhaseGateLeadingEdgeLossDb ||
+        perCurveLossDb <= sharedLossDb;
+
+    /// <summary>
+    /// Where each phase curve's window sits, aligned with
+    /// <paramref name="gatedChannels"/> — the channels that are actually
+    /// gated, so a hidden curve can never move the placement of the drawn
+    /// ones.
+    /// <para>
+    /// A pinned gate is one absolute window for every curve. Auto gives each
+    /// channel its OWN estimated arrival, which is what lets FDW's short
+    /// high-frequency windows sit on that channel's own first cycles instead
+    /// of on whichever channel happened to arrive first — the whole point of
+    /// reading phase through FDW. Per-curve placement is only comparable while
+    /// every window opens before its channel's response does, so each one is
+    /// put to <see cref="AllowsPerCurvePhaseGate"/> and the whole set drops
+    /// back to the shared window if any fails: mixing the two placements would
+    /// be worse than either.
+    /// </para>
+    /// </summary>
+    private List<double> ResolvePhaseGateOffsets(
+        IReadOnlyList<ProcessedChannel> gatedChannels,
+        double sharedOffsetMs,
+        int sampleRate)
+    {
+        List<double> Shared() => gatedChannels.Select(_ => sharedOffsetMs).ToList();
+        if (PinnedGateOffsetMs is not null)
+        {
+            return Shared();
+        }
+
+        double leftMs = gatePreview?.LeftMs ?? project.PhaseGateLeftMs;
+        double plateauMs = gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs;
+        double rightMs = gatePreview?.RightMs ?? project.PhaseGateRightMs;
+        var perCurve = new List<double>(gatedChannels.Count);
+        foreach (ProcessedChannel item in gatedChannels)
+        {
+            var view = new ImpulseMeasurementView(item.ImpulseResponse, 0, sampleRate);
+            double startMs = TransferIrStartCache.ResolveStartMs(
+                item.ImpulseResponse, sampleRate, item.PeakIndex);
+            if (!AllowsPerCurvePhaseGate(
+                    DataHelper.GateLeadingEdgeLossDb(
+                        view, startMs, leftMs, plateauMs, rightMs),
+                    DataHelper.GateLeadingEdgeLossDb(
+                        view, sharedOffsetMs, leftMs, plateauMs, rightMs)))
+            {
+                return Shared();
+            }
+
+            perCurve.Add(startMs);
+        }
+
+        return perCurve;
+    }
 
     // A stored gate offset is used as-is; an unconfigured side (Auto) follows
     // the earliest ESTIMATED IR START of the processed channels — the

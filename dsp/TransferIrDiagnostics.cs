@@ -451,7 +451,10 @@ public static class TransferIrDiagnostics
     /// <summary>
     /// Estimates where the IR's honest acoustic content starts: the rising-front
     /// crossings of the first credible arrival's Hilbert envelope, read inside
-    /// the record's DOMINANT band. The band-pass is what makes the figure robust
+    /// the record's DOMINANT band, taken at
+    /// <see cref="IrStartBandThresholdDb"/> rather than the tighter content
+    /// floor (a band too narrow cannot resolve the time being read — see that
+    /// constant). The band-pass is what makes the figure robust
     /// on real cabin records — a playback-crosstalk click or other broadband head
     /// garbage carries almost no energy inside a band-limited driver's working
     /// band, so the in-band envelope never sees it and no head-cleaning pass is
@@ -497,7 +500,8 @@ public static class TransferIrDiagnostics
             impulseResponse = head;
         }
 
-        DominantBand band = DetectDominantBand(impulseResponse, sampleRate);
+        DominantBand band = DetectDominantBand(
+            impulseResponse, sampleRate, IrStartBandThresholdDb);
         TimeAlignmentAnalysisResult inBand = TimeAlignmentAnalysis.Analyze(
             impulseResponse, sampleRate, new TimeAlignmentAnalysisOptions
             {
@@ -517,6 +521,35 @@ public static class TransferIrDiagnostics
             ? CrossingsOf(fullBand, band, sampleRate, dominantBandLimited: false)
             : null;
     }
+
+    /// <summary>
+    /// How far below the smoothed spectrum's peak the band
+    /// <see cref="EstimateIrStart"/> reads the arrival in extends. Wider than
+    /// <see cref="DominantBandThresholdDb"/> on purpose: that floor answers
+    /// "where does this driver's energy live", which the crosstalk complement
+    /// band needs answered tightly, while a TIME can only be read as finely as
+    /// the analysis band's own resolution (~1/bandwidth) allows. A 15 dB floor
+    /// around a cabin mode can collapse to a single octave — field case, a door
+    /// woofer at the listening position reading 75-155 Hz, its cancellation
+    /// notches on both sides just too wide to bridge — and in that band nothing
+    /// shorter than ~12 ms resolves: the envelope's only maximum is the mode's
+    /// build-up 8.4 ms past the arrival, and the 25 % crossing walked back from
+    /// it lands at 3.00 ms — 2.5 ms before the record leaves its noise floor,
+    /// 3.4 ms before its peak.
+    /// <para>
+    /// Calibrated across the field sets (v2-v5, 23 records) at 15/20/25/30 dB.
+    /// 25 and 30 agree on the collapsed record (5.64 ms, against a 6.42 ms peak
+    /// and a front at ~5.6 ms) while 20 is still transitional (4.46 ms), so 25
+    /// sits at the near edge of the plateau. Every record whose 15 dB band
+    /// already spanned four octaves or more moves by at most 0.5 ms; the rest
+    /// (subwoofers included, and they stay 2.8 octaves even at this floor) move
+    /// 0.3-1.7 ms later — towards their arrival, and on all 23 still short of
+    /// the record's own peak. None falls back onto the head burst the
+    /// band-limiting exists to reject: every v3/v4 read stays in the 5.2-7.5 ms
+    /// front range.
+    /// </para>
+    /// </summary>
+    private const double IrStartBandThresholdDb = 25.0;
 
     // Below this length the spectral analysis behind the estimate is
     // degenerate (no dominant band to speak of, no quantile noise floor).
@@ -591,7 +624,14 @@ public static class TransferIrDiagnostics
 
         double below = envelope[i];
         double above = envelope[i + 1];
-        double fraction = above > below ? (threshold - below) / (above - below) : 0.0;
+        // The walk can stop at index 0 with the envelope still ABOVE the
+        // threshold — a front that runs off the head of the record. The
+        // interpolation would then extrapolate backwards without bound
+        // (field: a subwoofer's 10 % crossing read -1.5 ms), so it is floored
+        // at the record start, which is as early as the crossing can be.
+        double fraction = above > below
+            ? Math.Max(0.0, (threshold - below) / (above - below))
+            : 0.0;
         return (i + fraction) * 1_000.0 / sampleRate;
     }
 

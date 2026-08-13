@@ -45,6 +45,144 @@ namespace Resonalyze.Dsp
         private static int MillisecondsToSamples(double milliseconds, int sampleRate) =>
             (int)Math.Round(Math.Max(0.0, milliseconds) * sampleRate / 1000.0);
 
+        // One gate placement resolved to samples: where the extraction starts
+        // (a left shoulder before the offset), where the plateau begins (the
+        // offset itself) and the Tukey shape over the gate's own length.
+        private readonly record struct GatePlacement(
+            int ExtractionStart,
+            int PlateauStart,
+            double[] Window);
+
+        // The gate's sample geometry. Everything that needs to know where the
+        // window sits goes through here, so a caller judging a placement can
+        // never be looking at a different window than the one that gets used.
+        private static GatePlacement ResolveGatePlacement(
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs,
+            int sampleRate)
+        {
+            int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
+            int left = MillisecondsToSamples(leftMs, sampleRate);
+            int plateau = MillisecondsToSamples(plateauMs, sampleRate);
+            int right = MillisecondsToSamples(rightMs, sampleRate);
+
+            int gate = Math.Clamp(left + plateau + right, 1, GatedFftLength);
+            // Keep the fades coherent if the clamp had to trim the gate.
+            left = Math.Min(left, gate);
+            right = Math.Min(right, gate - left);
+
+            double leftNorm = (double)left / gate * 2.0;
+            double rightNorm = (double)right / gate * 2.0;
+            // Left shoulder ends at the gate offset, so extraction starts a shoulder
+            // earlier; the time correction downstream keeps readings absolute.
+            return new GatePlacement(
+                gateOffset - left,
+                gateOffset,
+                Windowing.TukeyWindow(gate, leftNorm, rightNorm));
+        }
+
+        /// <summary>
+        /// How much of a response's own energy a gate placement throws away
+        /// AHEAD of its plateau, against the energy it keeps (dB, so −∞ means
+        /// nothing was lost, 0 dB means as much was discarded as kept, and +∞
+        /// means the window holds none of the channel at all).
+        /// <para>
+        /// This is the test for whether a window may be placed per curve. Two
+        /// curves gated at different absolute positions stay comparable only
+        /// while each window opens before its own channel's response does: a
+        /// window is not a time shift, and re-referencing the extraction to a
+        /// common τ rotates a spectrum but cannot put back a leading edge the
+        /// window removed. The figure deliberately looks only AHEAD of the
+        /// plateau — truncating the decay tail behind it is what a gate is
+        /// for, and every placement does it.
+        /// </para>
+        /// <para>
+        /// Measured on the nominal gate, not on FDW's per-band windows: those
+        /// are shorter by construction and always truncate, so they answer a
+        /// different question. What this one asks is whether the PLACEMENT is
+        /// sane for the channel.
+        /// </para>
+        /// </summary>
+        public static double GateLeadingEdgeLossDb(
+            IImpulseMeasurement measurement,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs)
+        {
+            ArgumentNullException.ThrowIfNull(measurement);
+            if (measurement.ImpulseResponse is not { Length: > 0 } impulseResponse ||
+                measurement.SampleRate <= 0)
+            {
+                return double.NegativeInfinity;
+            }
+
+            GatePlacement placement = ResolveGatePlacement(
+                gateOffsetMs, leftMs, plateauMs, rightMs, measurement.SampleRate);
+            double[] window = placement.Window;
+            int length = impulseResponse.Length;
+
+            // The extraction's own addressing (ExtractWindow with wrap): a gate
+            // whose shoulder reaches before the record reads the circular
+            // buffer's tail, which is where a transfer IR's negative-time
+            // content lives. Judging that stretch as empty would pass a
+            // placement whose window is full of content the guard never saw.
+            double Energy(int position)
+            {
+                int index = position % length;
+                double sample = impulseResponse[index < 0 ? index + length : index].Real;
+                return sample * sample;
+            }
+
+            double kept = 0;
+            for (int i = 0; i < window.Length; i++)
+            {
+                kept += window[i] * window[i] * Energy(placement.ExtractionStart + i);
+            }
+
+            // Everything ahead of the plateau, weighted by what the window
+            // takes away from it: all of it before the gate opens, the
+            // fade-in's own shape once inside.
+            double lost = 0;
+            for (int position = Math.Min(0, placement.ExtractionStart);
+                position < placement.PlateauStart;
+                position++)
+            {
+                int inWindow = position - placement.ExtractionStart;
+                double weight = inWindow >= 0 && inWindow < window.Length
+                    ? window[inWindow]
+                    : 0.0;
+                lost += (1.0 - weight * weight) * Energy(position);
+            }
+
+            if (kept > 0)
+            {
+                return 10.0 * Math.Log10(Math.Max(double.Epsilon, lost) / kept);
+            }
+
+            // The window kept nothing of the channel — it sits entirely before
+            // the response or entirely after it. That is the worst a placement
+            // can do, and it must read that way round: as a ratio it IS
+            // infinite loss, and reporting the other infinity would make a
+            // window that misses the channel altogether look like the safest
+            // placement on offer, so a caller comparing two placements would
+            // take it over one that actually holds the channel. Note the
+            // leading-edge sum cannot answer this on its own: a window sitting
+            // entirely BEFORE the response has nothing ahead of its plateau
+            // either. Silence is the one case with no response to misplace.
+            foreach (Complex sample in impulseResponse)
+            {
+                if (sample.Real != 0.0)
+                {
+                    return double.PositiveInfinity;
+                }
+            }
+
+            return double.NegativeInfinity;
+        }
+
         // Builds a zero-padded, gated windowed impulse (time domain). The Tukey gate
         // spans left + plateau + right samples; the end of its left shoulder (the
         // fade-in/plateau boundary) is placed at gateOffsetMs from the IR start. Wrap
@@ -58,27 +196,13 @@ namespace Resonalyze.Dsp
             bool wrap,
             out int extractionStart)
         {
-            int sampleRate = measurement.SampleRate;
-            int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
-            int left = MillisecondsToSamples(leftMs, sampleRate);
-            int plateau = MillisecondsToSamples(plateauMs, sampleRate);
-            int right = MillisecondsToSamples(rightMs, sampleRate);
-
-            int gate = Math.Clamp(left + plateau + right, 1, GatedFftLength);
-            // Keep the fades coherent if the clamp had to trim the gate.
-            left = Math.Min(left, gate);
-            right = Math.Min(right, gate - left);
-
-            double leftNorm = (double)left / gate * 2.0;
-            double rightNorm = (double)right / gate * 2.0;
-            double[] tukey = Windowing.TukeyWindow(gate, leftNorm, rightNorm);
+            GatePlacement placement = ResolveGatePlacement(
+                gateOffsetMs, leftMs, plateauMs, rightMs, measurement.SampleRate);
 
             double[] window = new double[GatedFftLength];
-            Array.Copy(tukey, window, gate);
+            Array.Copy(placement.Window, window, placement.Window.Length);
 
-            // Left shoulder ends at the gate offset, so extraction starts a shoulder
-            // earlier; the time correction downstream keeps readings absolute.
-            extractionStart = gateOffset - left;
+            extractionStart = placement.ExtractionStart;
             return ExtractWindow(measurement, extractionStart, GatedFftLength, window, wrap);
         }
 
@@ -694,8 +818,13 @@ namespace Resonalyze.Dsp
         /// signal's spectrum) and accumulated, so the result reads exactly like
         /// one spectrum extracted there. This is how a multi-channel Sum stays
         /// the vector sum of individually gated channels when their windows do
-        /// not share a position (the Virtual DSP Auto gate). The inputs are not
-        /// modified and must share one FFT length.
+        /// not share a position (the Virtual DSP Auto gate, where each channel
+        /// is gated on its own arrival). Note what the re-reference is: it
+        /// moves a spectrum's time ORIGIN and nothing else, so it cannot make
+        /// spectra comparable whose windows kept different stretches of their
+        /// signals — that condition is the caller's to enforce (see
+        /// <see cref="GateLeadingEdgeLossDb"/>). The inputs are not modified
+        /// and must share one FFT length.
         /// </summary>
         public static Complex[] SumGatedSpectra(
             IReadOnlyList<(Complex[] Spectrum, int ExtractionStart)> spectra,

@@ -1,5 +1,7 @@
-﻿using System.Numerics;
+﻿using System.Globalization;
+using System.Numerics;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -402,6 +404,49 @@ public sealed class AutoAlignmentEngineTests
         Assert.Contains("phat trough", pairLine);
         Assert.Contains("-> seed phat", pairLine);
         Assert.DoesNotContain("WIDE SEED", TestLog.Line(text, "Channel C:"));
+    }
+
+    [Fact]
+    public void Compute_TrustedSeedAtALowJunction_KeepsBothPolaritiesInTheWindow()
+    {
+        // An 85 Hz junction: the polarity partner sits a half period — 5.9 ms —
+        // from the seed, well past the fixed 2.5 ms cap a trusted seed's fine
+        // window used to carry. A trusted seed fixes WHERE the adjacent lobes
+        // sit, not WHICH one is right (the peak-vs-trough margin measures the
+        // band's width), so the loss search settles the polarity — and it can
+        // only settle what its window contains. The window therefore reaches
+        // the MEASURED partner distance, and both polarities must appear as
+        // candidates. Without it a hundredth of PHAT coefficient would decide
+        // the junction outright: the diagnostic sweep sees the partner, but
+        // reaching it there costs a 1.6 dB promotion margin no near-tie pays.
+        var midbass = new TestChannel("B", DelayedImpulse(15.2));
+        var mid = new TestChannel("C", DelayedImpulse(0.0, invert: true));
+        var log = new StringBuilder();
+
+        Run([midbass, mid], [85], log);
+
+        string channelLine = TestLog.Line(log.ToString(), "Channel C:");
+        // The premise: a trusted seed, so the wide-seed machinery is not what
+        // opened the window.
+        Assert.DoesNotContain("WIDE SEED", channelLine);
+        Match window = Regex.Match(
+            channelLine.Replace(',', '.'),
+            @"window (-?\d+\.\d+)\.\.(-?\d+\.\d+) ms");
+        Assert.True(window.Success, channelLine);
+        double low = double.Parse(
+            window.Groups[1].Value, CultureInfo.InvariantCulture);
+        double high = double.Parse(
+            window.Groups[2].Value, CultureInfo.InvariantCulture);
+        // The pick sits at 15.2 ms; its polarity partners are a half period
+        // (5.88 ms) to each side, and at least one of them must be reachable —
+        // the fixed 2.5 ms cap reached neither.
+        Assert.True(
+            high - 15.2 >= 5.0 || 15.2 - low >= 5.0,
+            $"the polarity partner is out of the search window:\r\n{channelLine}");
+        // ...and never as far as the same-polarity rival a full period out.
+        Assert.True(
+            high - low < 2.0 * 1000.0 / 85.0,
+            $"the window must stay inside one period:\r\n{channelLine}");
     }
 
     [Fact]
@@ -1193,13 +1238,23 @@ public sealed class AutoAlignmentEngineTests
             alignment,
             log);
 
-        string pairLine = TestLog.Line(log.ToString(), "Pair B/C");
+        string text = log.ToString();
+        string pairLine = TestLog.Line(text, "Pair B/C");
         // The fixture must actually reach the state under test: a near-tied
         // extremum (and, as in the field, a pair anchor the prediction had to
         // replace — the case where believing the arrival instead cost most).
-        Assert.Contains("modal latch behind the crossover", log.ToString());
+        Assert.Contains("modal latch behind the crossover", text);
         Assert.Matches(@"dom 0,0\d\d", pairLine.Replace('.', ','));
         Assert.Contains("seed phat", pairLine);
+
+        // The half period the near-tie leaves open reaches the loss search:
+        // both polarities are candidates, which is the whole reason a near-tied
+        // extremum is allowed to seed. (Here the partner sits inside the fixed
+        // cap; Compute_TrustedSeedAtALowJunction_KeepsBothPolaritiesInTheWindow
+        // covers the low junctions where it does not.)
+        string channelLine = TestLog.Line(text, "Channel C:");
+        Assert.Contains(" inv (", channelLine);
+        Assert.Contains("; ", channelLine);
     }
 
     [Fact]

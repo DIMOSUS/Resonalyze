@@ -46,4 +46,21 @@ public sealed class VirtualCrossoverPhaseGatePlacementTests
         // Equally bad is allowed; measurably worse is not.
         Assert.False(VirtualCrossoverPanel.AllowsPerCurvePhaseGate(-12.7, -12.8));
     }
+
+    [Fact]
+    public void ASharedWindowHoldingNoneOfTheChannelNeverTakesItsPlacement()
+    {
+        // The case that would put the late-channel omission back: channels at
+        // 0 ms and 20 ms with the default 6 ms gate, the shared window on the
+        // early one. The late channel is nowhere inside that window, so
+        // falling back to it would delete the channel from the phase view and
+        // from Sum - the exact defect per-curve placement exists to prevent.
+        // GateLeadingEdgeLossDb reports such a window as infinite loss, so
+        // however poorly the channel's own placement scores, it is still the
+        // better of the two and is kept.
+        Assert.True(VirtualCrossoverPanel.AllowsPerCurvePhaseGate(
+            -10.0, double.PositiveInfinity));
+        Assert.True(VirtualCrossoverPanel.AllowsPerCurvePhaseGate(
+            0.0, double.PositiveInfinity));
+    }
 }

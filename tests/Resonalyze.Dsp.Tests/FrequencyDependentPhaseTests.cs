@@ -279,6 +279,33 @@ public sealed class FrequencyDependentPhaseTests
     }
 
     [Fact]
+    public void GateLeadingEdgeLoss_AWindowHoldingNoneOfTheChannelReadsAsUnsafe()
+    {
+        // The degenerate placement: a 6 ms window at 0 ms against a channel
+        // that arrives at 20 ms. Everything the channel has is ahead of the
+        // plateau and nothing is kept, which is the WORST a placement can do —
+        // so it has to read that way. Reading it as "nothing lost" would make
+        // a window that contains none of the channel look like the safest
+        // placement on offer, and a caller comparing two placements would then
+        // pick it over one that actually holds the channel.
+        var samples = new Complex[4_096];
+        samples[SampleRate * 20 / 1_000] = Complex.One;
+        var channel = new SyntheticMeasurement(
+            samples, SampleRate, SampleRate * 20 / 1_000);
+
+        double missed = DataHelper.GateLeadingEdgeLossDb(
+            channel, gateOffsetMs: 0.0, leftMs: 0.5, plateauMs: 4.0, rightMs: 1.5);
+        double onTheArrival = DataHelper.GateLeadingEdgeLossDb(
+            channel, gateOffsetMs: 20.0, leftMs: 0.5, plateauMs: 4.0, rightMs: 1.5);
+
+        Assert.True(
+            missed > onTheArrival,
+            $"a window holding none of the channel read {missed:0.0} dB against " +
+            $"{onTheArrival:0.0} dB for one placed on its arrival");
+        Assert.False(double.IsNegativeInfinity(missed));
+    }
+
+    [Fact]
     public void AGuardedPerCurvePlacement_ReadsTheSamePhaseAsAContainingSharedOne()
     {
         // What the guard buys: once a placement passes it, moving the window

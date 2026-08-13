@@ -86,7 +86,8 @@ namespace Resonalyze.Dsp
         /// <summary>
         /// How much of a response's own energy a gate placement throws away
         /// AHEAD of its plateau, against the energy it keeps (dB, so −∞ means
-        /// nothing was lost and 0 dB means as much was discarded as kept).
+        /// nothing was lost, 0 dB means as much was discarded as kept, and +∞
+        /// means the window holds none of the channel at all).
         /// <para>
         /// This is the test for whether a window may be placed per curve. Two
         /// curves gated at different absolute positions stay comparable only
@@ -156,9 +157,30 @@ namespace Resonalyze.Dsp
                 lost += (1.0 - weight * weight) * Energy(position);
             }
 
-            return kept > 0
-                ? 10.0 * Math.Log10(Math.Max(double.Epsilon, lost) / kept)
-                : double.NegativeInfinity;
+            if (kept > 0)
+            {
+                return 10.0 * Math.Log10(Math.Max(double.Epsilon, lost) / kept);
+            }
+
+            // The window kept nothing of the channel — it sits entirely before
+            // the response or entirely after it. That is the worst a placement
+            // can do, and it must read that way round: as a ratio it IS
+            // infinite loss, and reporting the other infinity would make a
+            // window that misses the channel altogether look like the safest
+            // placement on offer, so a caller comparing two placements would
+            // take it over one that actually holds the channel. Note the
+            // leading-edge sum cannot answer this on its own: a window sitting
+            // entirely BEFORE the response has nothing ahead of its plateau
+            // either. Silence is the one case with no response to misplace.
+            foreach (Complex sample in impulseResponse)
+            {
+                if (sample.Real != 0.0)
+                {
+                    return double.PositiveInfinity;
+                }
+            }
+
+            return double.NegativeInfinity;
         }
 
         // Builds a zero-padded, gated windowed impulse (time domain). The Tukey gate

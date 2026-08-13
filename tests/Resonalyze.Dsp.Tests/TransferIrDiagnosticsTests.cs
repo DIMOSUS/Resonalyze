@@ -215,6 +215,55 @@ public sealed class TransferIrDiagnosticsTests
     }
 
     [Fact]
+    public void EstimateIrStart_ACabinModeDoesNotDragTheReadOffTheArrival()
+    {
+        // The field failure behind the arrival band's wider floor: a door
+        // woofer at the listening position, where one cabin mode towers ~20 dB
+        // over the driver's own working band. Read at the 15 dB CONTENT floor
+        // the band collapses around that mode — and a band that narrow cannot
+        // resolve anything shorter than its own ~8 ms, so the crossing walked
+        // back from its smeared envelope read 15.9 ms for an arrival at 20 ms,
+        // milliseconds before the record leaves its noise floor. The arrival
+        // band has to reach past the mode into the content the driver has.
+        var impulseResponse = new double[65_536];
+        int arrival = SampleRate * 20 / 1000;
+        double decay = 30.0 * SampleRate / 1000.0;
+        for (int i = 0; arrival + i < impulseResponse.Length && i < 12 * decay; i++)
+        {
+            impulseResponse[arrival + i] += Math.Exp(-i / decay) *
+                Math.Sin(Math.Tau * 123.0 * i / SampleRate);
+        }
+        // The driver's own front: wideband and brief, so it stands 20 dB below
+        // the mode across the spectrum however tall its samples are.
+        int front = (int)Math.Round(0.4 * SampleRate / 1000.0);
+        for (int i = 0; i < front; i++)
+        {
+            impulseResponse[arrival + i] +=
+                10.0 * (0.5 - 0.5 * Math.Cos(Math.Tau * i / front));
+        }
+
+        // The premise: at the content floor this record's band IS the mode.
+        DominantBand contentBand = TransferIrDiagnostics.DetectDominantBand(
+            impulseResponse, SampleRate);
+        Assert.True(
+            contentBand.HighHz < 300,
+            $"content band {contentBand.LowHz:0}-{contentBand.HighHz:0} Hz no longer collapses");
+
+        IrStartEstimate? start = TransferIrDiagnostics.EstimateIrStart(
+            impulseResponse, SampleRate);
+
+        Assert.NotNull(start);
+        Assert.True(start.Value.DominantBandLimited);
+        Assert.True(
+            start.Value.BandHighHz > 1_000,
+            $"the arrival band stopped at {start.Value.BandHighHz:0} Hz, inside the mode");
+        Assert.InRange(start.Value.StartMs, 19.0, 20.05);
+        Assert.True(
+            start.Value.EarlyMs >= 18.5,
+            $"even the 10 % crossing must hug the arrival; it read {start.Value.EarlyMs:0.00} ms");
+    }
+
+    [Fact]
     public void EstimateIrStart_ReadsASharpBroadbandFrontTightly()
     {
         var impulseResponse = new double[32_768];
@@ -231,6 +280,32 @@ public sealed class TransferIrDiagnosticsTests
         Assert.InRange(start.Value.StartMs, 19.5, 20.05);
         Assert.InRange(
             start.Value.LateMs - start.Value.EarlyMs, 0.0, 0.5);
+    }
+
+    [Fact]
+    public void EstimateIrStart_AFrontRunningOffTheRecordHeadStaysAtZero()
+    {
+        // A narrowband arrival that begins before the record does: the
+        // envelope is already well above the low crossings at sample 0, so
+        // the backward walk runs out of record. The crossings must stop at
+        // the record start rather than extrapolate into negative time.
+        var impulseResponse = new double[65_536];
+        double decay = 40.0 * SampleRate / 1000.0;
+        for (int i = 0; i < impulseResponse.Length; i++)
+        {
+            impulseResponse[i] =
+                Math.Exp(-i / decay) * Math.Sin(Math.Tau * 45.0 * i / SampleRate);
+        }
+
+        IrStartEstimate? start = TransferIrDiagnostics.EstimateIrStart(
+            impulseResponse, SampleRate);
+
+        Assert.NotNull(start);
+        Assert.True(
+            start.Value.EarlyMs >= 0.0,
+            $"the 10 % crossing read {start.Value.EarlyMs:0.00} ms");
+        Assert.True(start.Value.StartMs >= 0.0);
+        Assert.True(start.Value.LateMs >= 0.0);
     }
 
     [Fact]

@@ -1076,7 +1076,7 @@ public partial class VirtualCrossoverPanel : UserControl
         });
 
         UpdateSourceButton(channel);
-        UpdatePeqLabel(channel);
+        UpdatePeqReadouts(channel);
     }
 
     private void ReadControlIntoSettings(VirtualCrossoverChannel channel)
@@ -1542,7 +1542,7 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
         channel.Settings.PeqPreampDb = curve.PreampDb;
         channel.Settings.PeqSourceName = Path.GetFileName(dialog.FileName);
-        UpdatePeqLabel(channel);
+        UpdatePeqReadouts(channel);
         ScheduleSave();
         RedrawAll();
     }
@@ -1552,12 +1552,12 @@ public partial class VirtualCrossoverPanel : UserControl
         channel.Settings.PeqBands = new List<PeqBand>();
         channel.Settings.PeqPreampDb = 0;
         channel.Settings.PeqSourceName = null;
-        UpdatePeqLabel(channel);
+        UpdatePeqReadouts(channel);
         ScheduleSave();
         RedrawAll();
     }
 
-    private void UpdatePeqLabel(VirtualCrossoverChannel channel)
+    private void UpdatePeqReadouts(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
         bool noPeq = settings.PeqBands.Count == 0 && settings.PeqPreampDb == 0;
@@ -1565,7 +1565,12 @@ public partial class VirtualCrossoverPanel : UserControl
             ? "No PEQ"
             : $"{settings.PeqSourceName ?? "PEQ"}: {settings.PeqBands.Count} bands, " +
               $"preamp {settings.PeqPreampDb:0.0} dB";
-        Label peqInfoLabel = ControlFor(channel).PeqInfoLabel;
+        // The preamp also lands in the block's gain row, which reads out the level the
+        // two stages come to together; the block keeps that readout in step with its
+        // own gain field, so the preamp is all it needs from here.
+        VirtualCrossoverChannelControl control = ControlFor(channel);
+        control.PeqPreampDb = settings.PeqPreampDb;
+        Label peqInfoLabel = control.PeqInfoLabel;
         peqInfoLabel.Text = text;
         // The label is narrow and clips the file name; the full text lives in the
         // tooltip. Nothing worth hovering when there is no PEQ.

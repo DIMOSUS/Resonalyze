@@ -66,6 +66,7 @@ namespace Resonalyze
             numericAllPassFreq = new DarkNumericUpDown();
             numericAllPassQ = new DarkNumericUpDown();
             labelAllpassBand = new Label();
+            labelTotalGain = new Label();
             (numericGain).BeginInit();
             (numericDelay).BeginInit();
             (numericHighPassHz).BeginInit();
@@ -135,7 +136,7 @@ namespace Resonalyze
             numericGain.Minimum = new decimal(new int[] { 60, 0, 0, int.MinValue });
             numericGain.MinimumSize = new Size(36, 19);
             numericGain.Name = "numericGain";
-            numericGain.Size = new Size(66, 19);
+            numericGain.Size = new Size(55, 19);
             numericGain.TabIndex = 3;
             numericGain.TextAlign = HorizontalAlignment.Right;
             numericGain.ThousandsSeparator = false;
@@ -146,11 +147,11 @@ namespace Resonalyze
             labelDelay.AutoSize = true;
             labelDelay.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelDelay.ForeColor = Color.FromArgb(210, 214, 222);
-            labelDelay.Location = new Point(152, 35);
+            labelDelay.Location = new Point(212, 35);
             labelDelay.Name = "labelDelay";
-            labelDelay.Size = new Size(56, 15);
+            labelDelay.Size = new Size(37, 15);
             labelDelay.TabIndex = 4;
-            labelDelay.Text = "Delay ms";
+            labelDelay.Text = "Delay";
             // 
             // numericDelay
             // 
@@ -158,7 +159,7 @@ namespace Resonalyze
             numericDelay.DecimalPlaces = 2;
             numericDelay.ForeColor = Color.White;
             numericDelay.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
-            numericDelay.Location = new Point(220, 33);
+            numericDelay.Location = new Point(252, 33);
             numericDelay.Maximum = new decimal(new int[] { 100, 0, 0, 0 });
             numericDelay.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             numericDelay.MinimumSize = new Size(36, 19);
@@ -173,7 +174,7 @@ namespace Resonalyze
             // 
             labelDelayMm.AutoSize = true;
             labelDelayMm.ForeColor = Color.FromArgb(170, 176, 190);
-            labelDelayMm.Location = new Point(220, 54);
+            labelDelayMm.Location = new Point(252, 54);
             labelDelayMm.Name = "labelDelayMm";
             labelDelayMm.Size = new Size(49, 15);
             labelDelayMm.TabIndex = 6;
@@ -538,12 +539,23 @@ namespace Resonalyze
             labelAllpassBand.TabIndex = 36;
             labelAllpassBand.Text = "= 0.00 ms";
             // 
+            // labelTotalGain
+            // 
+            labelTotalGain.AutoSize = true;
+            labelTotalGain.ForeColor = Color.FromArgb(170, 176, 190);
+            labelTotalGain.Location = new Point(131, 35);
+            labelTotalGain.Name = "labelTotalGain";
+            labelTotalGain.Size = new Size(56, 15);
+            labelTotalGain.TabIndex = 37;
+            labelTotalGain.Text = "All +0.0";
+            // 
             // VirtualCrossoverChannelControl
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(46, 51, 62);
             BorderStyle = BorderStyle.FixedSingle;
+            Controls.Add(labelTotalGain);
             Controls.Add(labelAllpassBand);
             Controls.Add(numericAllPassQ);
             Controls.Add(numericAllPassFreq);
@@ -638,5 +650,6 @@ namespace Resonalyze
         private DarkNumericUpDown numericAllPassFreq;
         private DarkNumericUpDown numericAllPassQ;
         private Label labelAllpassBand;
+        private Label labelTotalGain;
     }
 }

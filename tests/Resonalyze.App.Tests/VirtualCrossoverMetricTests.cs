@@ -38,9 +38,11 @@ public sealed class VirtualCrossoverMetricTests
         {
             string text = VirtualCrossoverMetric.FormatCompact([Junction, Total]);
 
-            Assert.StartsWith("Sum loss (dB)\r\n  avg / dip\r\n\r\n", text);
-            Assert.Contains("A/B    -1.2 / -6.5", text);
-            Assert.Contains("Total  -0.8 /    —", text);
+            // Two decimals: lobe alternatives differ by hundredths of a dB,
+            // and the columns line up under the header at that width.
+            Assert.StartsWith("Sum loss (dB)\r\n         avg /   dip\r\n\r\n", text);
+            Assert.Contains("A/B    -1.23 / -6.50", text);
+            Assert.Contains("Total  -0.80 /     —", text);
         });
     }
 
@@ -52,7 +54,7 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatDetail([Junction]);
 
             Assert.Equal(
-                "Sum loss avg\r\nA/B: -1.2 dB avg, dip -6.5 dB " +
+                "Sum loss avg\r\nA/B: -1.23 dB avg, dip -6.50 dB " +
                 "(900 Hz – 3.6 kHz)",
                 text);
         });

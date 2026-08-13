@@ -45,22 +45,26 @@ internal static class VirtualCrossoverMetric
     /// <summary>
     /// Compact per-junction column for the narrow host read-out panel: a
     /// monospace "name  avg / dip" line each, no frequency ranges (those are
-    /// on hover).
+    /// on hover). Two decimals, like the arrival and junction-phase blocks
+    /// below it: genuine lobe alternatives differ by hundredths here (the v5
+    /// cabin's 150 Hz junction separates its two candidates by 0.08 dB), and
+    /// at one decimal the read-out cannot show which of two settings is
+    /// better — the very comparison this column exists for.
     /// </summary>
     public static string FormatCompact(IReadOnlyList<Entry> entries)
     {
+        const string Header = "Sum loss (dB)\r\n         avg /   dip\r\n\r\n";
         if (entries.Count == 0)
         {
-            return "Sum loss (dB)\r\n  avg / dip\r\n\r\n—";
+            return Header + "—";
         }
 
-        var builder = new System.Text.StringBuilder(
-            "Sum loss (dB)\r\n  avg / dip\r\n\r\n");
+        var builder = new System.Text.StringBuilder(Header);
         foreach (Entry entry in entries)
         {
             string name = (entry.IsTotal ? "Total" : entry.Junction).PadRight(6);
-            string dip = entry.DipDb.HasValue ? $"{entry.DipDb.Value,5:0.0}" : "    —";
-            builder.AppendLine($"{name}{entry.AverageDb,5:0.0} /{dip}");
+            string dip = entry.DipDb.HasValue ? $"{entry.DipDb.Value,6:0.00}" : "     —";
+            builder.AppendLine($"{name}{entry.AverageDb,6:0.00} /{dip}");
         }
 
         return builder.ToString().TrimEnd();
@@ -342,7 +346,8 @@ internal static class VirtualCrossoverMetric
 
     /// <summary>
     /// Full multi-line breakdown for the tooltip and the Auto delay log, one
-    /// read-out per line, including the band each was measured over.
+    /// read-out per line, including the band each was measured over. Two
+    /// decimals, like the column it explains (see <see cref="FormatCompact"/>).
     /// </summary>
     public static string FormatDetail(IReadOnlyList<Entry> entries)
     {
@@ -354,8 +359,8 @@ internal static class VirtualCrossoverMetric
         return "Sum loss avg\r\n" + string.Join("\r\n", entries.Select(entry =>
         {
             string name = entry.IsTotal ? "Total" : entry.Junction;
-            string dip = entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.0} dB" : "";
-            return $"{name}: {entry.AverageDb:0.0} dB avg{dip} " +
+            string dip = entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.00} dB" : "";
+            return $"{name}: {entry.AverageDb:0.00} dB avg{dip} " +
                 $"({FrequencyText.Format(entry.LowHz)} – {FrequencyText.Format(entry.HighHz)})";
         }));
     }

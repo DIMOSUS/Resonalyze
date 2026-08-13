@@ -195,6 +195,23 @@ public static class AutoAlignmentEngine
     // AlignmentSelection tie-breaks resolve what remains.
     private const double LowJunctionReachFraction = 0.97;
 
+    /// <summary>
+    /// How far past the MEASURED distance to the seed's opposite-polarity
+    /// partner a trusted junction's fine window may reach, so the partner's own
+    /// loss optimum lands inside it as an interior point rather than pinned to
+    /// the edge (an edge pin triggers the retry path instead of a comparison).
+    /// </summary>
+    private const double SeedPartnerReachFactor = 1.2;
+
+    /// <summary>
+    /// And the ceiling on that reach, in crossover periods: three quarters sits
+    /// between the polarity partner a half period out — which the window must
+    /// contain — and the same-polarity rival a full period out, which it must
+    /// not. The same bound, for the same reason, as
+    /// <see cref="OnsetLockReachPeriods"/>.
+    /// </summary>
+    private const double SeedPartnerMaxReachPeriods = 0.75;
+
     // The delay ceiling an AUTO DELAY proposal may reach — tighter than the
     // manual UI range (100 ms, since the Virtual DSP may model any hardware).
     // Car processors cap per-channel delay in the tens of milliseconds (~17 m
@@ -254,17 +271,32 @@ public static class AutoAlignmentEngine
     // search and the wide-window promotion below it.
     private const double PhatSeedMinCoefficient = 0.15;
 
-    // The minimum dominance (Confidence: |best extremum| minus |its rival|) the
-    // PHAT correlation must show before its extremum position is trusted as the
-    // seed. A junction whose corners leave a spectral gap (e.g. LP 1300 /
-    // HP 1800) narrows the effective overlap and the whitened correlation
-    // degenerates into a comb of near-equal lobes: the peak coefficient still
-    // looks healthy, but which lobe it sits on is decided by noise — trusting
-    // it can move the seed whole periods off the arrival estimate (a cycle skip
-    // the prior then cements). Peak-vs-trough closeness is exactly that lobe
-    // ambiguity, so a near-tie sends the seed back to the polarity-blind
-    // arrival envelope.
-    private const double PhatSeedMinDominance = 0.1;
+    /// <summary>
+    /// The margin by which the seed extremum must beat the SAME-POLARITY rival
+    /// one period over before its position is trusted. This is the whole-period
+    /// cycle skip — the error the fine window cannot undo, since its reach is
+    /// capped below a period — so it keeps a gate of its own.
+    ///
+    /// The peak-vs-trough margin does NOT. It used to gate the seed by the same
+    /// figure, and measurement killed that: on a PERFECT synthetic junction —
+    /// two filters off one impulse, no room, no noise, perfectly aligned — the
+    /// peak/trough margin is 0.167 at a two-octave band and falls to 0.100 /
+    /// 0.049 / 0.012 at 1.5 / 1.0 / 0.5 octaves, at every fc, family and slope.
+    /// It measures how wide the analysed band is, not whether the extremum can
+    /// be believed, and the old 0.1 therefore demanded 60 % of what a flawless
+    /// junction can even produce: across the archived cabins it refused 34 of
+    /// 40 junctions, including every one whose extremum the owner's hand tune
+    /// then landed on. What it flags — a half-period ambiguity — is also the
+    /// one the fine window spans and the loss search settles by polarity, so
+    /// the peak-vs-trough figure now only informs the log.
+    ///
+    /// The rival margin is a different statistic on the same scale: the perfect
+    /// junction shows 0.534 of it, so 0.05 is a tenth of the ideal rather than
+    /// the old 0.1 = a fifth. Field: the archived cabins' true rivals sit
+    /// 0.09-0.53 apart, and the junctions that fail this gate are the ones with
+    /// no separated structure at all.
+    /// </summary>
+    private const double PhatSeedMinRivalDominance = 0.05;
 
     // The sub-precedence margin: at a junction with the shared mono sub, a
     // near-tie between the comb lobe that leaves the sub TRAILING the stack and
@@ -835,7 +867,10 @@ public static class AutoAlignmentEngine
         AppendCorrelationAlignmentDiagnostics(log, pairs);
 
         Dictionary<IAlignmentChannel, double> timeline =
-            BuildArrivalTimeline(byBand, pairs, log, out HashSet<AlignmentJunction> untrustedSeeds);
+            BuildArrivalTimeline(
+                byBand, pairs, log,
+                out HashSet<AlignmentJunction> untrustedSeeds,
+                out Dictionary<AlignmentJunction, double> seedPartnerReach);
 
         // The relatively latest channel is the fixed reference; everyone else is
         // delayed toward it, so the coarse deltas are non-negative.
@@ -867,6 +902,7 @@ public static class AutoAlignmentEngine
                 byBand[i].Channel, byBand[i + 1].Channel, pairs[i],
                 timeline, byBand, reprocess, alignment, log,
                 untrustedSeedJunctions: untrustedSeeds,
+                seedPartnerDistanceMs: seedPartnerReach,
                 onsetLocks: onsetLocks,
                 decisions: decisions,
                 monoChannels: monoChannels);
@@ -877,6 +913,7 @@ public static class AutoAlignmentEngine
                 byBand[i].Channel, byBand[i - 1].Channel, pairs[i - 1],
                 timeline, byBand, reprocess, alignment, log,
                 untrustedSeedJunctions: untrustedSeeds,
+                seedPartnerDistanceMs: seedPartnerReach,
                 onsetLocks: onsetLocks,
                 decisions: decisions,
                 monoChannels: monoChannels);
@@ -895,7 +932,8 @@ public static class AutoAlignmentEngine
         IReadOnlyList<AlignmentSnapshot> byBand,
         IReadOnlyList<AlignmentJunction> pairs,
         StringBuilder log,
-        out HashSet<AlignmentJunction> untrustedSeedJunctions)
+        out HashSet<AlignmentJunction> untrustedSeedJunctions,
+        out Dictionary<AlignmentJunction, double> seedPartnerDistanceMs)
     {
         // Junctions whose coarse seed fell back to the arrival envelope because
         // the PHAT peak was untrusted (a low junction with too few in-band
@@ -907,6 +945,11 @@ public static class AutoAlignmentEngine
         // from and never leaks onto a channel's OTHER, phat-trusted junction.
         untrustedSeedJunctions =
             new HashSet<AlignmentJunction>(ReferenceEqualityComparer.Instance);
+        // And, for the TRUSTED ones, how far the seed's opposite-polarity
+        // partner was measured to sit — the reach the fine window owes it.
+        seedPartnerDistanceMs =
+            new Dictionary<AlignmentJunction, double>(
+                ReferenceEqualityComparer.Instance);
         var timeline = new Dictionary<IAlignmentChannel, double>
         {
             [byBand[0].Channel] = 0
@@ -1277,13 +1320,14 @@ public static class AutoAlignmentEngine
                 {
                     return $"{seedLabel} too weak";
                 }
-                if (phat.Confidence < PhatSeedMinDominance)
-                {
-                    return "peak-trough near-tie";
-                }
+                // There is deliberately NO peak-vs-trough gate here: that margin
+                // measures the analysed band's width, not the extremum's
+                // credibility (see PhatSeedMinRivalDominance), and the half
+                // period it leaves ambiguous is the one the fine window spans
+                // and the loss search settles by polarity.
                 if (sameSignRival is { } rival &&
                     Math.Abs(seed.Coefficient) - Math.Abs(rival.Coefficient) <
-                        PhatSeedMinDominance)
+                        PhatSeedMinRivalDominance)
                 {
                     return "same-polarity rival near-tie";
                 }
@@ -1296,52 +1340,29 @@ public static class AutoAlignmentEngine
                 // distant modal peak found there is exactly the skip candidate
                 // the veto guards.
                 //
-                // Where the pair can be GRADED against its prediction, an extra
-                // restriction applies on top. Only ever a restriction: the
-                // disagreement figure it keys on is not a bound (see there), so
-                // the clamp below lets it narrow the reach and never widen it.
-                //
-                // It narrows toward comb geometry. The neighbouring
-                // opposite-polarity lobe sits a half spacing H away; with the
-                // anchor off by U toward it the true lobe lies U away and the
-                // neighbour H - U, so a reach R admits the true lobe and
-                // excludes the neighbour only while U <= R < H - U — solvable
-                // only for U < H/2. Past that the neighbour can sit CLOSER to
-                // the anchor than the truth does and no window separates them,
-                // so the seed is refused rather than given a wider one.
-                //
-                // H is MEASURED, not assumed. Half a period at fc describes a
-                // monochromatic comb, but this correlation runs over two octaves
-                // of two real responses and its extrema do not sit where that
-                // idealization says — at the v4 cabin's 180 Hz corner the
-                // whitened peak and trough are 2.665 ms apart against a nominal
-                // half period of 2.778 (2.537 for a flat two-octave window).
-                //
-                // ADJACENCY, not strength: the window's strongest peak and
-                // trough can sit several lobes apart, so the spacing is taken to
-                // the extremum NEIGHBOURING the seed. Without one, or with one
-                // pinned to the window edge (its position then an artifact),
-                // there is no spacing to reason from and a gradeable pair
-                // refuses the seed rather than guessing at one.
-                double lobeBoundaryMs = LobeBoundaryMs(phat);
-                //
                 // A pair whose anchor could not place it inside a lobe has
                 // already been convicted and re-anchored above, which clears
-                // both arrival-relative tests here: measuring the extremum
-                // against an anchor just found incapable of resolving lobes
-                // (or against a discarded one, after the upper-half probe's
-                // conviction) would veto by a number that refers to nothing.
-                //
-                // Only ever TIGHTER than the standing rule: the disagreement
-                // figure above is not a proven bound, so it may restrict the
-                // seed further but never license a reach the conservative rule
-                // would not already have allowed. Otherwise a mis-measured
-                // spacing, or a bias shared by the measurement and the
-                // prediction, would loosen the gate on an agreement that proves
+                // this arrival-relative test: measuring the extremum against an
+                // anchor just found incapable of resolving lobes (or against a
+                // discarded one, after the upper-half probe's or the predicted
+                // front's conviction) would veto by a number that refers to
                 // nothing.
-                double reachMs = pairPredictionGradeable
-                    ? Math.Min(SeedReachMs(pair.CrossoverHz), lobeBoundaryMs)
-                    : SeedReachMs(pair.CrossoverHz);
+                //
+                // A prediction-GRADEABLE pair used to have its reach clamped
+                // further, to the measured half lobe spacing. The arithmetic
+                // retired that clamp. The certificate it rested on resolves
+                // PredictedArrivalAllowanceMs — max(2.5 ms, half a period at the
+                // band centre) — while the boundary it clamped to is half the
+                // peak-trough spacing, a QUARTER period. A quarter period is
+                // never as coarse as either term of that maximum, so the
+                // certificate could not resolve the reach it was certifying: at
+                // the v5 cabin's 1500 Hz junction a ±2.5 ms "verified" read
+                // enforced a 0.167 ms reach and refused an extremum (r 0.587)
+                // that the panel then measured 0.13 dB better on average and
+                // 2.7 dB shallower in the dip than the lobe the arrival chose.
+                // A gate must not be tightened by evidence fifteen times coarser
+                // than the distance it decides.
+                double reachMs = SeedReachMs(pair.CrossoverHz);
                 // At the boundary itself the two lobes are equidistant, so
                 // the extremum is refused rather than admitted.
                 if (!arrivalReanchored && Math.Abs(seedOffsetMs) >= reachMs)
@@ -1358,6 +1379,22 @@ public static class AutoAlignmentEngine
             if (!trustPhat)
             {
                 untrustedSeedJunctions.Add(pair);
+            }
+            else if (LobeBoundaryMs(phat) is > 0 and { } halfSpacingMs)
+            {
+                // A trusted seed fixes WHERE the pair of adjacent lobes sits,
+                // not WHICH of them is right: the peak-vs-trough margin is a
+                // statement about the band's width, so the polarity partner a
+                // half period away is still a live candidate and the loss
+                // search is what settles it (see PhatSeedMinRivalDominance).
+                // That only holds if the fine window can reach the partner, and
+                // the fixed ±2.5 ms cap cannot below ~200 Hz: measured across
+                // the archived cabins, 10 of 13 junctions under 400 Hz put
+                // their partner OUTSIDE it (7.57 ms out at 60 Hz, 3.18 at 150
+                // against a 2.5 ms reach). So a trusted junction records how
+                // far its partner actually sits and the fine window grows to
+                // cover it.
+                seedPartnerDistanceMs[pair] = 2.0 * halfSpacingMs;
             }
 
             // Full-band processed-IR peak times, a detector-independent arrival
@@ -1420,7 +1457,8 @@ public static class AutoAlignmentEngine
         IReadOnlySet<AlignmentJunction>? untrustedSeedJunctions = null,
         Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks = null,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
-        IReadOnlyCollection<IAlignmentChannel>? monoChannels = null)
+        IReadOnlyCollection<IAlignmentChannel>? monoChannels = null,
+        IReadOnlyDictionary<AlignmentJunction, double>? seedPartnerDistanceMs = null)
     {
         // Widen the window when the coarse seed ACROSS this junction (or its
         // secondary, for a joint two-neighbour search) was the untrusted arrival
@@ -1511,8 +1549,20 @@ public static class AutoAlignmentEngine
         // scene lock outranks: the image pin already IS the window.
         double? onsetAnchorMs = null;
         double onsetCapMs = 0;
+        // ... and only where the ANCHOR is the arrival envelope, which is what
+        // the lock exists to replace (see the onset-lock constants). A trusted
+        // whitened extremum is the better witness of the two — it times the
+        // two responses against each other in the junction's own band, where a
+        // threshold onset reads each driver's broadband front separately and
+        // differences their rise times: at the v5 cabin's 1500 Hz junction the
+        // mid's front rises over 0.274 ms and the tweeter's over 0.037, so the
+        // onset difference moved 0.237 ms (0.4 period) across the 10/25/50 %
+        // thresholds and its anchor landed on the weakest lobe of the comb.
+        // Pinning a trusted seed to that would overrule the stronger evidence
+        // with the weaker.
         if (secondaryNeighbor == null &&
             sceneLockToleranceMs == null &&
+            wideSeed &&
             pair.CrossoverHz >= OnsetLockMinCrossoverHz)
         {
             BroadbandOnsetEstimate own =
@@ -1575,14 +1625,34 @@ public static class AutoAlignmentEngine
             double WindowLowMs, double WindowHighMs)
             SearchJunction(double? windowOverrideMs = null)
         {
-            // Only where the coarse seed was untrusted (arrival fallback at a
-            // low junction) let the cap grow toward a half period so the window
-            // can reach a half-period-away flip partner the fixed cap would
-            // hide. A trusted seed already sits on the right lobe, and widening
-            // there would only invite the impostor the tight window excludes.
+            // Where the coarse seed was untrusted (arrival fallback at a low
+            // junction) the cap grows toward a half period so the window can
+            // reach a half-period-away flip partner the fixed cap would hide.
+            //
+            // A TRUSTED seed needs the same reach, for a different reason. It
+            // fixes where the pair of adjacent lobes sits but not which of them
+            // is right — the peak-vs-trough margin measures the band's width,
+            // not the polarity (see PhatSeedMinRivalDominance) — so the loss
+            // search is what settles that, and it can only settle what the
+            // window contains. The reach is the MEASURED distance to the
+            // partner rather than half a period: the real correlation's extrema
+            // do not sit where a monochromatic comb says (3.18 ms at the v5
+            // cabin's 150 Hz junction against a nominal 3.33). Without it the
+            // fixed 2.5 ms cap excluded the partner at 10 of the 13 junctions
+            // under 400 Hz across the archived cabins, and a hundredth of PHAT
+            // coefficient would have decided the polarity with no way back:
+            // the wide diagnostic sweep sees the partner, but reaching it there
+            // costs the 1.6 dB promotion margin a near-tie cannot pay.
+            double partnerReachMs =
+                !wideSeed &&
+                seedPartnerDistanceMs?.TryGetValue(pair, out double partnerMs) == true
+                    ? Math.Min(
+                        SeedPartnerReachFactor * partnerMs,
+                        SeedPartnerMaxReachPeriods * 2.0 * halfPeriodMs)
+                    : 0;
             double maxRangeMs = wideSeed
                 ? Math.Max(MaxFineAlignmentRangeMs, LowJunctionReachFraction * halfPeriodMs)
-                : MaxFineAlignmentRangeMs;
+                : Math.Max(MaxFineAlignmentRangeMs, partnerReachMs);
             double rangeMs = windowOverrideMs ?? Math.Clamp(
                 halfPeriodMs, MinFineAlignmentRangeMs, maxRangeMs);
             double windowLowMs = Math.Min(primaryBase, secondaryBase) - rangeMs;
@@ -1644,6 +1714,12 @@ public static class AutoAlignmentEngine
                 (onsetAnchorMs is { } onsetForLog
                     ? $", ONSET-LOCKED {onsetForLog:0.000} \u00b1{onsetCapMs:0.000} ms"
                     : "") +
+                // The window itself, not just its inputs: which lobes the loss
+                // search could even compare is the first thing to check when a
+                // junction settles on a surprising one, and it is not derivable
+                // from the base and the crossover alone (a trusted seed's reach
+                // follows the MEASURED polarity-partner distance).
+                $", window {windowLow:0.000}..{windowHigh:0.000} ms" +
                 ", candidates " +
                 string.Join("; ", candidates.Select(item =>
                     $"{item.DelayMs:0.000} ms" +
@@ -2488,7 +2564,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, double> rightTimeline =
             BuildArrivalTimeline(
                 rightByBand, plan.RightPairs, log,
-                out HashSet<AlignmentJunction> rightUntrustedSeeds);
+                out HashSet<AlignmentJunction> rightUntrustedSeeds,
+                out Dictionary<AlignmentJunction, double> rightSeedPartnerReach);
 
         // The delay that Δ-aligns this right channel to its settled left
         // counterpart — landing its arrival exactly the scene offset ahead,
@@ -2940,7 +3017,8 @@ public static class AutoAlignmentEngine
                 channel, neighbor, pair,
                 rightTimeline, allChannels, reprocess, alignment, log,
                 secondary, secondaryPair, crossTarget, sceneLock, inheritedPolarity,
-                rightUntrustedSeeds, onsetLocks, decisions, plan.MonoChannels);
+                rightUntrustedSeeds, onsetLocks, decisions, plan.MonoChannels,
+                rightSeedPartnerReach);
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {
@@ -3307,11 +3385,13 @@ public static class AutoAlignmentEngine
 
     // Moves both sides of one linked pair by the same delta — the pair's L-R
     // timing (the scene) is invariant under a co-move — searching for the
-    // delta that minimizes the MEAN loss of every junction adjacent to the
-    // pair on either side. The left side may get slightly worse: by the scene
-    // mandate the pinned right channel could not chase its own junction
-    // optimum, and this is the only lever that can recover junction quality
-    // without touching the image. Top pair first, so lower pairs re-balance
+    // delta that minimizes the mean loss of the REFERENCE side's junctions
+    // adjacent to the pair, bounded by the junctions of both sides. The far
+    // side is what the scene mandate pinned off its own junction optimum, and
+    // this is the only lever that can recover junction quality without
+    // touching the image — but it may not buy that recovery with the near
+    // side's alignment (see the evaluator loop). Top pair first, so lower
+    // pairs re-balance
     // against the already-settled uppers. The scan is analytic: ONE reprocess
     // fixes the pair's current responses, each junction gets its gated
     // spectra built once, and every probed delta is an e^{-jωΔ} rotation of
@@ -3350,15 +3430,21 @@ public static class AutoAlignmentEngine
             AlignmentOverride leftOverride = alignment.GetValueOrDefault(link.Left);
             AlignmentOverride rightOverride = alignment.GetValueOrDefault(link.Right);
 
-            // Every junction the pair's channels take part in, on either side.
-            List<AlignmentJunction> adjacent = plan.LeftPairs
+            // Every junction the pair's channels take part in, on either side:
+            // BOTH sides bound how far the shared delta may travel (a move that
+            // leaves the far side a lobe off its own neighbour is not a
+            // candidate at all), while only the reference side's junctions
+            // score it — see the evaluator loop below.
+            List<AlignmentJunction> referenceAdjacent = plan.LeftPairs
                 .Where(pair => pair.Lower.Channel == link.Left ||
                     pair.Upper.Channel == link.Left)
+                .ToList();
+            List<AlignmentJunction> adjacent = referenceAdjacent
                 .Concat(plan.RightPairs.Where(pair =>
                     pair.Lower.Channel == link.Right ||
                     pair.Upper.Channel == link.Right))
                 .ToList();
-            if (adjacent.Count == 0)
+            if (referenceAdjacent.Count == 0)
             {
                 continue;
             }
@@ -3386,15 +3472,22 @@ public static class AutoAlignmentEngine
             // the size of change it can make.
             int gateAnchor = SystemGateAnchor(current);
 
-            // One evaluator per junction: the pair member is the rotated
-            // (moving) channel, its junction neighbor stays fixed. A junction
-            // between the pair and its neighbor never has both ends moving —
-            // the pair's two channels sit on different sides.
+            // One evaluator per junction of the REFERENCE side. The move is
+            // shared, so its criterion is a choice, and a mean over both sides
+            // buys the far side's junction with the near one's: the delta that
+            // wins the average can leave the reference side worse than the
+            // cascade left it. The reference side is the one whose drivers sit
+            // closest to the listener, where a timing error is easiest to hear,
+            // so it is the side the shared move must not spend. The far side
+            // still follows the delta (the scene is preserved either way) and
+            // is still BOUNDED by its own junctions below — it just does not
+            // get a vote on where the pair lands.
             var evaluators = new List<VirtualCrossoverAnalysis.SumLossEvaluator>();
-            foreach (AlignmentJunction junction in adjacent)
+            foreach (AlignmentJunction junction in referenceAdjacent)
             {
-                bool lowerMoves = junction.Lower.Channel == link.Left ||
-                    junction.Lower.Channel == link.Right;
+                // These are the reference side's junctions, so the moving end
+                // is always the link's reference-side member.
+                bool lowerMoves = junction.Lower.Channel == link.Left;
                 IAlignmentChannel mover = lowerMoves
                     ? junction.Lower.Channel
                     : junction.Upper.Channel;
@@ -3578,8 +3671,8 @@ public static class AutoAlignmentEngine
                 log.AppendLine(
                     $"Co-move {link.Left.Name}+{link.Right.Name}: " +
                     $"{bestDelta:+0.00;-0.00} ms to both sides " +
-                    $"(mean dip-penalized junction loss {baseline:0.00} -> " +
-                    $"{bestScore:0.00} dB; scene untouched)");
+                    $"(reference-side dip-penalized junction loss " +
+                    $"{baseline:0.00} -> {bestScore:0.00} dB; scene untouched)");
                 // The move is a bounded in-lobe polish (the lobe decision the
                 // recorded confidence describes stands), but the final delays
                 // differ from the walk's — the report must say so.

@@ -629,6 +629,50 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
+    public void ComputeStereo_ReferenceSideProposal_IsIndependentOfTheFarSide()
+    {
+        // The reference side is settled first and only the pair co-move can
+        // move it afterwards — and that co-move is judged on the REFERENCE
+        // side's junctions alone, so the near side's relations cannot depend
+        // on the far side's acoustics at all. Derange the far mid (a strong
+        // second lobe 0.7 ms behind its arrival) and every relation on the
+        // reference side must come out identical. The far side still BOUNDS
+        // the shared delta — it can veto one that would leave it a lobe out —
+        // it just cannot ask for one. (This pins the invariant, not the
+        // criterion: the two criteria happen to agree on this fixture. The
+        // criterion's evidence is the archived-cabin battery, where judging
+        // by the mean cost the reference side up to 0.03 dB of junction loss
+        // it had already won.)
+        (_, TestChannel[] left, _,
+            Dictionary<IAlignmentChannel, AlignmentOverride> plain, _) = RunStereo(
+                sceneOffsetMs: 0.25, linkBands: UserLinkBands);
+        (_, TestChannel[] derangedLeft, _,
+            Dictionary<IAlignmentChannel, AlignmentOverride> deranged,
+            StringBuilder derangedLog) = RunStereo(
+                sceneOffsetMs: 0.25, linkBands: UserLinkBands, rightMidEchoMs: 0.7);
+
+        // The premise: a co-move actually ran on the deranged pair, so the
+        // criterion had something to decide.
+        Assert.Contains("Co-move L mid+R mid: ", derangedLog.ToString());
+
+        // Compared RELATIVE to the reference side's own bottom channel: the
+        // mono co-move and the final normalization both shift every channel
+        // uniformly, which changes no relation and is not what this pins.
+        for (int i = 1; i < left.Length; i++)
+        {
+            Assert.Equal(
+                plain.GetValueOrDefault(left[i]).DelayMs -
+                    plain.GetValueOrDefault(left[0]).DelayMs,
+                deranged.GetValueOrDefault(derangedLeft[i]).DelayMs -
+                    deranged.GetValueOrDefault(derangedLeft[0]).DelayMs,
+                2);
+            Assert.Equal(
+                plain.GetValueOrDefault(left[i]).InvertPolarity,
+                deranged.GetValueOrDefault(derangedLeft[i]).InvertPolarity);
+        }
+    }
+
+    [Fact]
     public void ComputeStereo_NearTheDelayCeilingTheSceneSurvives()
     {
         // The left side is 46 ms late, parking the whole right side just
@@ -703,14 +747,21 @@ public sealed class StereoAlignmentTests
         //  - woof's trusted junction stays narrow even though woof is the untrusted
         //    UPPER of sub/woof — the channel-keyed version would have leaked the wide
         //    window onto this unrelated, trusted junction.
-        var sub = new TestChannel("sub", ImpulseWithEcho(1.0, 0.9, 5.0, 0.85));
+        // The sub's echo sits a full 80 Hz period out and all but matches the
+        // direct copy, so its whitened correlation carries two same-polarity
+        // lobes a period apart that the RIVAL gate cannot separate — the
+        // whole-period ambiguity the fine window cannot undo, and the one
+        // remaining reason to fall back to the arrival. Its junction band is
+        // widened like the sibling rival tests', so the kernel's own trough
+        // stays shallow and the rival rule is what refuses the seed.
+        var sub = new TestChannel("sub", ImpulseWithEcho(1.0, 0.995, 12.5, 1.0));
         var woof = new TestChannel("woof", ImpulseAtMs(3.0));
         var mid = new TestChannel("mid", ImpulseAtMs(6.0));
         TestChannel[] all = [sub, woof, mid];
         List<AlignmentSnapshot> snapshots = all.Select(c => Snapshot(c, default)).ToList();
         var pairs = new List<AlignmentJunction>
         {
-            Junction(snapshots[0], snapshots[1], 80),
+            new(snapshots[0], snapshots[1], 80, 30, 340),
             Junction(snapshots[1], snapshots[2], 120)
         };
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();

@@ -514,9 +514,11 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         TargetPreset.Warm =>
             "Warm — steeper downslope with a modest bass lift.",
         TargetPreset.Car =>
-            "Car — strong bass lift and ≈-1 dB/oct slope for car cabins.",
+            "Car — in-car target: ≈+9 dB bass shelf, flat 400 Hz…5 kHz, and a gentle rolloff reaching ≈3 dB by 20 kHz.",
         TargetPreset.CarMild =>
-            "Car (mild) — moderate bass lift for car cabins.",
+            "Car (mild) — the same in-car shape with a moderate ≈+6 dB bass lift.",
+        TargetPreset.CarBass =>
+            "Car (bass) — the same in-car shape with a ≈+12 dB bass lift, for driving with road noise or for bass-forward taste.",
         TargetPreset.House =>
             "House / bass boost — flat overall with an elevated low end.",
         TargetPreset.XCurve =>
@@ -544,6 +546,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         TargetPreset.Warm => "Warm",
         TargetPreset.Car => "Car",
         TargetPreset.CarMild => "Car (mild)",
+        TargetPreset.CarBass => "Car (bass)",
         TargetPreset.House => "House / bass boost",
         TargetPreset.XCurve => "X-curve (cinema)",
         TargetPreset.Smiley => "Smiley",

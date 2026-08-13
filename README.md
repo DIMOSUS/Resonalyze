@@ -840,10 +840,12 @@ frame by frame.
 The shape is built from four editable terms — an overall **tilt** around a 1 kHz
 pivot, a **bass shelf**, a **treble shelf**, and a **presence** bump/dip — with
 editable presets: `Flat`, `Room (gentle)`, `Harman room`, `Warm`, `Car`,
-`Car (mild)`, `House / bass boost`, `X-curve (cinema)`, `Smiley`, `BBC dip`,
-`Custom`. The deviation curve is **Deviation** (`measurement − target`), **EQ
-correction** (`target − measurement`, the gain to dial into an equalizer), or
-**None**. Target overlays are available in Frequency Response and Live Spectrum.
+`Car (mild)`, `Car (bass)`, `House / bass boost`, `X-curve (cinema)`, `Smiley`,
+`BBC dip`, `Custom`. The three car presets share one in-car shape — a bass shelf
+over a flat 400 Hz…5 kHz band, then a gentle rolloff reaching ≈3 dB by 20 kHz —
+and differ only in how much bass they lift (+6, +9 or +12 dB). The deviation curve
+is **Deviation** (`measurement − target`), **EQ correction** (`target −
+measurement`, the gain to dial into an equalizer), or **None**. Target overlays are available in Frequency Response and Live Spectrum.
 
 ![Target overlay settings](assets/images/target_overlay.jpg)
 

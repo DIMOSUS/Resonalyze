@@ -252,6 +252,33 @@ public sealed class FrequencyDependentPhaseTests
     }
 
     [Fact]
+    public void GateLeadingEdgeLoss_SeesTheWrappedContentAGateReachingBeforeZeroReads()
+    {
+        // A gate offset smaller than its left shoulder — legal, and reachable
+        // now that the crossing walk is floored at the record start. The phase
+        // path extracts with wrap, so that shoulder reads the circular
+        // buffer's tail; the guard has to read the same samples or it would
+        // judge a window it never saw. Here the tail carries a full-scale
+        // sample inside the fade-in: treating the stretch before zero as empty
+        // would report nothing lost at all.
+        var samples = new Complex[4_096];
+        samples[0] = Complex.One;      // the arrival, at the plateau
+        samples[^12] = Complex.One;    // negative time, inside the fade-in
+        var channel = new SyntheticMeasurement(samples, SampleRate, 0);
+
+        double loss = DataHelper.GateLeadingEdgeLossDb(
+            channel, gateOffsetMs: 0.0, leftMs: 0.5, plateauMs: 4.0, rightMs: 1.5);
+
+        Assert.True(
+            double.IsFinite(loss),
+            "the wrapped shoulder read as empty, so nothing counted as lost");
+        // And it is enough content to refuse the placement, not a rounding
+        // artefact: this reads -2.2 dB against the guard's -20 dB ceiling,
+        // where ignoring the wrap reports -3233 dB, i.e. nothing lost at all.
+        Assert.True(loss > -20.0, $"the wrapped content only read {loss:0.0} dB");
+    }
+
+    [Fact]
     public void AGuardedPerCurvePlacement_ReadsTheSamePhaseAsAContainingSharedOne()
     {
         // What the guard buys: once a placement passes it, moving the window

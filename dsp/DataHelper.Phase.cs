@@ -97,6 +97,12 @@ namespace Resonalyze.Dsp
         /// plateau — truncating the decay tail behind it is what a gate is
         /// for, and every placement does it.
         /// </para>
+        /// <para>
+        /// Measured on the nominal gate, not on FDW's per-band windows: those
+        /// are shorter by construction and always truncate, so they answer a
+        /// different question. What this one asks is whether the PLACEMENT is
+        /// sane for the channel.
+        /// </para>
         /// </summary>
         public static double GateLeadingEdgeLossDb(
             IImpulseMeasurement measurement,
@@ -115,24 +121,39 @@ namespace Resonalyze.Dsp
             GatePlacement placement = ResolveGatePlacement(
                 gateOffsetMs, leftMs, plateauMs, rightMs, measurement.SampleRate);
             double[] window = placement.Window;
-            int end = Math.Min(
-                impulseResponse.Length, placement.ExtractionStart + window.Length);
+            int length = impulseResponse.Length;
 
-            double lost = 0;
-            double kept = 0;
-            for (int i = 0; i < end; i++)
+            // The extraction's own addressing (ExtractWindow with wrap): a gate
+            // whose shoulder reaches before the record reads the circular
+            // buffer's tail, which is where a transfer IR's negative-time
+            // content lives. Judging that stretch as empty would pass a
+            // placement whose window is full of content the guard never saw.
+            double Energy(int position)
             {
-                double sample = impulseResponse[i].Real;
-                double energy = sample * sample;
-                int inWindow = i - placement.ExtractionStart;
+                int index = position % length;
+                double sample = impulseResponse[index < 0 ? index + length : index].Real;
+                return sample * sample;
+            }
+
+            double kept = 0;
+            for (int i = 0; i < window.Length; i++)
+            {
+                kept += window[i] * window[i] * Energy(placement.ExtractionStart + i);
+            }
+
+            // Everything ahead of the plateau, weighted by what the window
+            // takes away from it: all of it before the gate opens, the
+            // fade-in's own shape once inside.
+            double lost = 0;
+            for (int position = Math.Min(0, placement.ExtractionStart);
+                position < placement.PlateauStart;
+                position++)
+            {
+                int inWindow = position - placement.ExtractionStart;
                 double weight = inWindow >= 0 && inWindow < window.Length
                     ? window[inWindow]
                     : 0.0;
-                kept += weight * weight * energy;
-                if (i < placement.PlateauStart)
-                {
-                    lost += (1.0 - weight * weight) * energy;
-                }
+                lost += (1.0 - weight * weight) * Energy(position);
             }
 
             return kept > 0

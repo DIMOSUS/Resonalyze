@@ -181,14 +181,15 @@ public sealed class AutoAlignmentEngineTests
         Assert.Equal(AlignmentDecisionKind.Reference, decisions[woofer].Kind);
         Assert.Null(decisions[woofer].Confidence);
         Assert.Contains("reference", decisions[woofer].Detail);
-        // The clean synthetic junction has razor-sharp fronts, so the onset
-        // lock pins the tweeter: the decision reports the Locked kind (the
-        // constraint chose, not the acoustics) with no confidence, naming the
-        // junction and the constraint in the detail.
-        Assert.Equal(AlignmentDecisionKind.Locked, decisions[tweeter].Kind);
-        Assert.Null(decisions[tweeter].Confidence);
+        // The clean synthetic junction's whitened extremum is unambiguous, so
+        // the seed is trusted and the onset lock stands down (it exists to
+        // replace an arrival-envelope anchor, not a measured one): the tweeter
+        // reports a free Search, naming its junction and carrying the rival
+        // margin as confidence.
+        Assert.Equal(AlignmentDecisionKind.Search, decisions[tweeter].Kind);
+        Assert.NotNull(decisions[tweeter].Confidence);
         Assert.Contains("vs W", decisions[tweeter].Detail);
-        Assert.Contains("onset-locked", decisions[tweeter].Detail);
+        Assert.DoesNotContain("onset-locked", decisions[tweeter].Detail);
     }
 
     [Fact]
@@ -342,19 +343,25 @@ public sealed class AutoAlignmentEngineTests
     [Fact]
     public void Compute_SeedErrorAtASharpJunction_OnsetLockRecoversDirectly()
     {
-        // A 2 kHz junction: the stage-1 seed says 1.0 ms but the search-time
-        // optimum is +0.4 ms — 1.2 periods off, beyond the fine window around
-        // the seed. Above the lock's frequency gate the broadband onsets of
+        // A 2 kHz junction whose seed is NOT trusted — the tweeter carries a
+        // near-equal copy a full period out, so the whitened correlation's
+        // same-polarity rival ties and the coarse offset falls back to the
+        // arrival envelope. That envelope says 1.0 ms while the search-time
+        // optimum is +0.4 ms, 1.2 periods off and beyond the fine window
+        // around it. Above the lock's frequency gate the broadband onsets of
         // the search-time IRs re-anchor the window on the true front, so the
         // optimum is found directly: no edge retry, no promotion, and the
-        // chosen delay lands on the front-aligned lobe.
+        // chosen delay lands on the front-aligned lobe. (With a TRUSTED seed
+        // the lock stands down — it replaces an arrival anchor, and a measured
+        // extremum is the better witness; see Compute_ReportsPerChannelDecisions.)
         var woofer = new TestChannel("W", DelayedImpulse(1.0));
         var tweeter = new TestChannel(
-            "T", DelayedImpulse(0.0), reprocessIr: DelayedImpulse(0.6));
+            "T", ImpulseWithEcho(0.0, 0.995, 0.5, 1.0),
+            reprocessIr: DelayedImpulse(0.6));
         var log = new StringBuilder();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
-            Run([woofer, tweeter], [2_000], log);
+            Run([woofer, tweeter], [2_000], log, bands: [(700, 5_600)]);
 
         Assert.InRange(alignment[tweeter].DelayMs, 0.35, 0.45);
         Assert.Contains("ONSET-LOCKED", log.ToString());
@@ -611,7 +618,7 @@ public sealed class AutoAlignmentEngineTests
         // the ones refusing this seed; the rival rule must.
         var midbass = new TestChannel("B", DelayedImpulse(15.0));
         var mid = new TestChannel(
-            "C", ImpulseWithEcho(0.0, 0.97, 11.76, 1.0));
+            "C", ImpulseWithEcho(0.0, 0.995, 11.76, 1.0));
         var log = new StringBuilder();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
@@ -636,7 +643,7 @@ public sealed class AutoAlignmentEngineTests
         // near-tie must send the seed back to the arrival envelope.
         var midbass = new TestChannel("B", DelayedImpulse(15.0));
         var mid = new TestChannel(
-            "C", ImpulseWithEcho(0.0, -0.97, 11.76, -1.0));
+            "C", ImpulseWithEcho(0.0, -0.995, 11.76, -1.0));
         var log = new StringBuilder();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
@@ -1070,6 +1077,129 @@ public sealed class AutoAlignmentEngineTests
         var ir = new Complex[length];
         ir[position] = Complex.One;
         return ir;
+    }
+
+    // A midbass whose own front is followed by a strong late in-cabin build-up
+    // INSIDE a 150 Hz junction's band: the channel's steep low-pass leaves the
+    // band's energy sitting on the build-up, so the PROCESSED envelope fronts
+    // on it while the driver's un-crossovered front stays where it was. That
+    // is the predicted-arrival probe's conviction shape one junction up from
+    // LowFrontUnderCabinBuildUp, whose sub-corner modes fall outside this band.
+    private static Complex[] FrontUnderInBandBuildUp(
+        int length, double buildUpMs, double amplitude)
+    {
+        Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
+            SingleImpulse(length, BasePosition),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 400, 24),
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 40, 24))),
+            SampleRate);
+        int start = BasePosition + (int)Math.Round(buildUpMs / 1000.0 * SampleRate);
+        const double AttackSeconds = 0.004;
+        const double DecaySeconds = 0.05;
+        foreach (double modeHz in new[] { 85.0, 95.0, 108.0 })
+        {
+            for (int i = start; i < ir.Length; i++)
+            {
+                double t = (i - start) / (double)SampleRate;
+                ir[i] += amplitude *
+                    (1 - Math.Exp(-t / AttackSeconds)) *
+                    Math.Exp(-t / DecaySeconds) *
+                    Math.Sin(2 * Math.PI * modeHz * t);
+            }
+        }
+
+        return ir;
+    }
+
+    [Fact]
+    public void Compute_NearTiedPeakAndTrough_StillSeedFromTheExtremum()
+    {
+        // The v5 cabin's 150 Hz junction, where the peak-vs-trough gate used to
+        // refuse the seed. Steep corners leave a narrow effective overlap, so
+        // the whitened correlation's envelope barely decays over a half period
+        // and its peak and trough come within a few hundredths — which says how
+        // wide the band is, not whether the extremum can be believed (a PERFECT
+        // synthetic junction only reaches 0.167 there). The extremum must seed
+        // the search anyway: the half period it leaves ambiguous is the one the
+        // fine window spans and the loss search settles by polarity. The field
+        // cost of the old refusal: the mid parked a lobe off, at -0.22 dB
+        // average junction loss where the extremum's lobe read -0.14 dB and
+        // matched the owner's hand tune to 0.02 ms.
+        const int Length = 32_768;
+        var midbassChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 130, 36),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 60, 36)));
+        var midChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1700, 48),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 170, 36)));
+        Complex[] midbassBypassed = FrontUnderInBandBuildUp(Length, 9.0, 0.25);
+        Complex[] midBypassed = SingleImpulse(
+            Length, BasePosition + 4 * SampleRate / 1000);
+
+        AlignmentSnapshot Snapshot(
+            string name, Complex[] bypassed, DspChannelChain chain)
+        {
+            Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                bypassed, chain, SampleRate, out ValidSampleRange range);
+            return new AlignmentSnapshot(
+                new TestChannel(name, processed), processed,
+                VirtualCrossoverAnalysis.FindPeakIndex(processed), range,
+                chain, bypassed);
+        }
+
+        AlignmentSnapshot midbass = Snapshot("B", midbassBypassed, midbassChain);
+        AlignmentSnapshot mid = Snapshot("C", midBypassed, midChain);
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
+        {
+            AlignmentSnapshot One(
+                AlignmentSnapshot side, Complex[] bypassed, DspChannelChain chain)
+            {
+                AlignmentOverride over = overrides.GetValueOrDefault(side.Channel);
+                Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                    bypassed,
+                    chain with
+                    {
+                        DelayMs = over.DelayMs,
+                        InvertPolarity = over.InvertPolarity
+                    },
+                    SampleRate,
+                    out ValidSampleRange range);
+                return side with
+                {
+                    ImpulseResponse = processed,
+                    PeakIndex = VirtualCrossoverAnalysis.FindPeakIndex(processed),
+                    ValidRange = range
+                };
+            }
+
+            return
+            [
+                One(midbass, midbassBypassed, midbassChain),
+                One(mid, midBypassed, midChain)
+            ];
+        }
+
+        var log = new StringBuilder();
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        AutoAlignmentEngine.Compute(
+            [midbass, mid],
+            [new AlignmentJunction(midbass, mid, 150, 75, 300)],
+            Reprocess,
+            alignment,
+            log);
+
+        string pairLine = TestLog.Line(log.ToString(), "Pair B/C");
+        // The fixture must actually reach the state under test: a near-tied
+        // extremum (and, as in the field, a pair anchor the prediction had to
+        // replace — the case where believing the arrival instead cost most).
+        Assert.Contains("modal latch behind the crossover", log.ToString());
+        Assert.Matches(@"dom 0,0\d\d", pairLine.Replace('.', ','));
+        Assert.Contains("seed phat", pairLine);
     }
 
     [Fact]

@@ -26,6 +26,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private bool muted;
     private bool collapsed;
     private double sampleRateHz = DefaultSampleRateHz;
+    private double peqPreampDb;
     private int expandedHeight;
 
     public VirtualCrossoverChannelControl()
@@ -50,6 +51,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         UpdateAllPassAvailability();
         UpdateAllPassGroupDelay();
         UpdateDelayDistance();
+        UpdateTotalGain();
     }
 
     /// <summary>
@@ -74,6 +76,28 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
             sampleRateHz = value;
             UpdateAllPassGroupDelay();
+        }
+    }
+
+    /// <summary>
+    /// The preamp of the PEQ loaded into this channel (dB), pushed by the host — the
+    /// bands themselves stay with the project, but their broadband offset is part of
+    /// the level the user has to dial in, so the block folds it into the gain readout.
+    /// </summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public double PeqPreampDb
+    {
+        get => peqPreampDb;
+        set
+        {
+            if (peqPreampDb == value)
+            {
+                return;
+            }
+
+            peqPreampDb = value;
+            UpdateTotalGain();
         }
     }
 
@@ -127,6 +151,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal Button MuteButton => buttonMute;
     internal Button CollapseButton => buttonCollapse;
     internal Label PeqInfoLabel => labelPeqInfo;
+    internal Label TotalGainLabel => labelTotalGain;
     internal CheckBox ShowRawCheckBox => checkBoxShowRaw;
     internal CheckBox ShowProcessedCheckBox => checkBoxShowProcessed;
     internal CheckBox BypassCheckBox => checkBoxBypass;
@@ -317,6 +342,13 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "were captured through the same playback chain;\r\n" +
             "compensate any difference here.");
         toolTip.SetToolTip(
+            labelTotalGain,
+            "Channel gain with the loaded PEQ's preamp folded in —\r\n" +
+            "the single level to dial in on a DSP whose equalizer\r\n" +
+            "has no preamp of its own.\r\n" +
+            "Shown only when the PEQ carries a preamp; the bands\r\n" +
+            "themselves are frequency-dependent and not part of it.");
+        toolTip.SetToolTip(
             checkBoxInvert,
             "Invert the channel polarity — the DSP polarity switch.\r\n" +
             "Also the null test: with polarity flipped, the deepest\r\n" +
@@ -472,6 +504,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         UpdateAllPassAvailability();
         UpdateAllPassGroupDelay();
         UpdateDelayDistance();
+        UpdateTotalGain();
     }
 
     private void PopulateCrossoverCombos()
@@ -596,7 +629,11 @@ public partial class VirtualCrossoverChannelControl : UserControl
         buttonPeqLoad.Click += (_, _) => PeqLoadClicked?.Invoke(this, EventArgs.Empty);
         buttonPeqClear.Click += (_, _) => PeqClearClicked?.Invoke(this, EventArgs.Empty);
 
-        numericGain.ValueChanged += (_, _) => RaiseSettingsChanged();
+        numericGain.ValueChanged += (_, _) =>
+        {
+            UpdateTotalGain();
+            RaiseSettingsChanged();
+        };
         numericDelay.ValueChanged += (_, _) =>
         {
             UpdateDelayDistance();
@@ -725,6 +762,22 @@ public partial class VirtualCrossoverChannelControl : UserControl
         labelAllpassBand.Text = milliseconds >= 100
             ? $"= {milliseconds:0} ms"
             : $"= {milliseconds:0.00} ms";
+    }
+
+    // The one level to dial in: many DSPs have no separate preamp for their equalizer,
+    // so the PEQ's preamp has to be folded into the channel gain when the tune is typed
+    // in — the same sum the tuning sheets print. Blank without a preamp, where it would
+    // only repeat the Gain field it sits next to.
+    private void UpdateTotalGain()
+    {
+        if (peqPreampDb == 0)
+        {
+            labelTotalGain.Text = string.Empty;
+            return;
+        }
+
+        double totalDb = (double)numericGain.Value + peqPreampDb;
+        labelTotalGain.Text = $"All {totalDb:+0.0;-0.0;0.0}";
     }
 
     // The ruler-check readout: the delay expressed as a distance in air.

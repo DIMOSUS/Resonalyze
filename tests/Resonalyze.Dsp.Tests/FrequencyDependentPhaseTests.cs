@@ -135,14 +135,17 @@ public sealed class FrequencyDependentPhaseTests
     }
 
     [Fact]
-    public void PerCurveGates_WithACommonReference_PreserveRelativePhase()
+    public void DifferentGatePositions_ThatBothContainTheWholeResponse_AgreeOnRelativePhase()
     {
-        // The Virtual DSP Auto gate places each channel's WINDOW on its own
-        // arrival (so FDW keeps a late channel's treble) while every curve
-        // shares one absolute τ. The relative phase must survive exactly as
-        // with a shared window: BuildMeasuredPhase re-references each
-        // extraction to the absolute τ, so where the window sits must not
-        // matter — only what it contains.
+        // The re-reference contract, stated on the case where it holds: two
+        // window POSITIONS whose plateaus both contain the whole (here
+        // one-sample) response. BuildMeasuredPhase moves each extraction to the
+        // absolute τ, so the placement cancels and only the content counts.
+        // This is what lets the Virtual DSP phase view gate each curve on its
+        // own arrival — but ONLY while the condition holds, which is why the
+        // placement is measured first (GateLeadingEdgeLossDb). The two tests
+        // below are its other half: what a window that cuts into its channel
+        // does, and that the guard sees the difference.
         SyntheticMeasurement first = DelayedImpulse(480); // 10 ms
         SyntheticMeasurement second = DelayedImpulse(576); // 12 ms
         PhaseAnalysisSettings sharedReference = Settings(
@@ -170,6 +173,160 @@ public sealed class FrequencyDependentPhaseTests
             Assert.True(Math.Abs(error) < 1e-5,
                 $"Relative-phase error {error:e} at {a.X:0.#} Hz with per-curve gates.");
         }
+    }
+
+    [Fact]
+    public void AGatePlacedOnTheArrivalPeak_TruncatesALowPassedChannelAndMovesItsPhase()
+    {
+        // Why the Virtual DSP phase view cannot gate each curve at its own
+        // arrival PEAK. A steeply low-passed channel peaks long after it
+        // starts, so a window whose plateau begins at the peak keeps only a
+        // short shoulder of the rise; the response the FFT sees is no longer
+        // the channel's, and the common τ cannot restore it. The same IR read
+        // through a window that contains it and through one placed on its peak
+        // must therefore DISAGREE: this shape reads 177° apart, the field pair
+        // 176°.
+        SyntheticMeasurement channel = LowPassedArrival(startSample: 480);
+        // The field session's gate: long enough that, placed on the arrival, it
+        // holds the whole channel — so only the PLACEMENT differs below.
+        PhaseAnalysisSettings containing = Settings(
+            PhaseWindowMode.FrequencyDependent,
+            6,
+            PhaseDetrendMode.Manual,
+            manualMs: 10.0,
+            gateOffsetMs: 10.0) with
+        {
+            LeftMs = 5.0,
+            PlateauMs = 50.0,
+            RightMs = 20.0
+        };
+        PhaseAnalysisSettings onThePeak = containing with
+        {
+            GateOffsetMs = FindPeakMs(channel)
+        };
+
+        List<SignalPoint> whole = DataHelper.GetGatedPhaseData(channel, containing);
+        List<SignalPoint> truncated = DataHelper.GetGatedPhaseData(channel, onThePeak);
+
+        double worstDegrees = 0;
+        foreach ((SignalPoint a, SignalPoint b) in whole.Zip(truncated)
+                     .Where(pair => pair.First.X is >= 40 and <= 120))
+        {
+            worstDegrees = Math.Max(
+                worstDegrees,
+                Math.Abs(Math.IEEERemainder(b.Y - a.Y, Math.Tau)) / Math.PI * 180.0);
+        }
+
+        Assert.True(
+            worstDegrees > 45.0,
+            $"the peak-placed window changed the read by only {worstDegrees:0.0}°; " +
+            "if placement no longer matters here, the guard can be revisited");
+    }
+
+    [Fact]
+    public void GateLeadingEdgeLoss_SeparatesAContainingPlacementFromATruncatingOne()
+    {
+        // The guard the per-curve placement rests on. It must read the same
+        // channel as safe when the window opens before its response and unsafe
+        // when the plateau starts on its peak — the two placements the test
+        // above showed 177° apart. Field figures at the same gate: own-arrival
+        // placements -28.4 to -72.2 dB, peak placements -3.5 to -10.8 dB.
+        SyntheticMeasurement channel = LowPassedArrival(startSample: 480);
+
+        double containing = DataHelper.GateLeadingEdgeLossDb(
+            channel, gateOffsetMs: 10.0, leftMs: 5.0, plateauMs: 50.0, rightMs: 20.0);
+        double onThePeak = DataHelper.GateLeadingEdgeLossDb(
+            channel, FindPeakMs(channel), leftMs: 5.0, plateauMs: 50.0, rightMs: 20.0);
+
+        Assert.True(
+            containing < -20.0,
+            $"a window opening on the arrival lost {containing:0.0} dB ahead of its plateau");
+        Assert.True(
+            onThePeak > -20.0,
+            $"a window opening on the peak lost only {onThePeak:0.0} dB ahead of its plateau");
+        // And the two verdicts must not sit next to each other: the whole point
+        // is a gap wide enough to put a ceiling in.
+        Assert.True(
+            onThePeak - containing > 15.0,
+            $"the guard separated the placements by only {onThePeak - containing:0.0} dB");
+    }
+
+    [Fact]
+    public void AGuardedPerCurvePlacement_ReadsTheSamePhaseAsAContainingSharedOne()
+    {
+        // What the guard buys: once a placement passes it, moving the window
+        // from a shared position to the channel's own arrival must not move the
+        // curve where the channel actually plays. That is the invariant the
+        // Virtual DSP phase view relies on to give each channel its own FDW
+        // window without making the curves incomparable.
+        SyntheticMeasurement channel = LowPassedArrival(startSample: 480);
+        PhaseAnalysisSettings shared = Settings(
+            PhaseWindowMode.FrequencyDependent,
+            6,
+            PhaseDetrendMode.Manual,
+            manualMs: 10.0,
+            gateOffsetMs: 8.0) with
+        {
+            LeftMs = 5.0,
+            PlateauMs = 50.0,
+            RightMs = 20.0
+        };
+        PhaseAnalysisSettings ownArrival = shared with { GateOffsetMs = 10.0 };
+        Assert.True(
+            DataHelper.GateLeadingEdgeLossDb(channel, 8.0, 5.0, 50.0, 20.0) < -20.0);
+        Assert.True(
+            DataHelper.GateLeadingEdgeLossDb(channel, 10.0, 5.0, 50.0, 20.0) < -20.0);
+
+        List<SignalPoint> sharedPhase = DataHelper.GetGatedPhaseData(channel, shared);
+        List<SignalPoint> ownPhase = DataHelper.GetGatedPhaseData(channel, ownArrival);
+
+        // Judged where this channel plays — a 55 Hz ring decaying over 25 ms
+        // carries its energy within roughly ±15 Hz of that, and a phase
+        // difference read where there is no output is noise, not a defect.
+        // (Field corroboration on the real channels, each inside its own
+        // passband: 0.2-1.5° between the shared and the own-arrival placement.)
+        foreach ((SignalPoint a, SignalPoint b) in sharedPhase.Zip(ownPhase)
+                     .Where(pair => pair.First.X is >= 45 and <= 70))
+        {
+            double degrees =
+                Math.Abs(Math.IEEERemainder(b.Y - a.Y, Math.Tau)) / Math.PI * 180.0;
+            Assert.True(
+                degrees < 5.0,
+                $"a guarded placement moved the read {degrees:0.0}° at {a.X:0.#} Hz");
+        }
+    }
+
+    // A band-limited arrival that keeps rising for some 15 ms after it starts —
+    // the shape a steep low-pass gives a subwoofer channel, where the peak the
+    // Auto gate used to anchor on sits nowhere near the arrival. Field figures
+    // for scale: start 15.6 ms, peak 36.7 ms.
+    private static SyntheticMeasurement LowPassedArrival(int startSample)
+    {
+        const double CyclesHz = 55.0;
+        double rise = 15.0 * SampleRate / 1000.0;
+        double decay = 25.0 * SampleRate / 1000.0;
+        var samples = new Complex[4_096];
+        for (int i = 0; startSample + i < samples.Length; i++)
+        {
+            double envelope = (1.0 - Math.Exp(-i / rise)) * Math.Exp(-i / decay);
+            samples[startSample + i] =
+                envelope * Math.Sin(Math.Tau * CyclesHz * i / SampleRate);
+        }
+        return new SyntheticMeasurement(samples, SampleRate, startSample);
+    }
+
+    private static double FindPeakMs(SyntheticMeasurement measurement)
+    {
+        Complex[] samples = measurement.ImpulseResponse!;
+        int peak = 0;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            if (Math.Abs(samples[i].Real) > Math.Abs(samples[peak].Real))
+            {
+                peak = i;
+            }
+        }
+        return peak * 1_000.0 / measurement.SampleRate;
     }
 
     [Fact]

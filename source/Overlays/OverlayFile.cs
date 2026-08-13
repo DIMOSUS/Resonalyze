@@ -603,6 +603,7 @@ public enum TargetPreset
     Warm,
     Car,
     CarMild,
+    CarBass,
     House,
     XCurve,
     Smiley,
@@ -637,8 +638,18 @@ public sealed record TargetCurveSpec(
         TargetPreset.HarmanRoom => new(-0.8, 4, 105, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.RoomGentle => new(-0.5, 2, 120, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.Warm => new(-1.0, 3, 110, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
-        TargetPreset.Car => new(-1.0, 8, 80, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
-        TargetPreset.CarMild => new(-0.8, 6, 75, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
+        // The car targets are not a tilt: in-car preference research puts a bass
+        // shelf on top of a FLAT 400 Hz…5 kHz band, then a gentle high-frequency
+        // rolloff — roughly 3 dB spread over the 5 kHz…20 kHz decade rather than
+        // a downslope that starts in the midrange. Car fits that shape to within
+        // 0.2 dB (see OverlayTargetTests.CarTargetTable); the other two move the
+        // bass shelf GAIN only, because raising its corner instead would drag up
+        // 150…300 Hz, which is where cabin boom lives. The +6/+9/+12 dB spread
+        // covers the published spread of listener bass preference, and the extra
+        // lift also stands in for road noise, which masks the low end at speed.
+        TargetPreset.Car => new(0, 9.2, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
+        TargetPreset.CarMild => new(0, 6, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
+        TargetPreset.CarBass => new(0, 12, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
         TargetPreset.House => new(0, 6, 120, 1.0, 0, 5_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.XCurve => new(0, 0, 100, 1.5, -10, 2_500, 2.0, 0, 3_000, 1.0),
         TargetPreset.Smiley => new(0, 6, 100, 1.0, 5, 4_000, 1.5, 0, 3_000, 1.0),

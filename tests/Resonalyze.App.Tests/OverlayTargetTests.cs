@@ -64,11 +64,12 @@ public sealed class OverlayTargetTests
     }
 
     /// <summary>
-    /// The third-octave in-car target the Car preset is fitted to: a bass shelf
-    /// that has reached its full ≈+9 dB by 31.5 Hz, a flat 400 Hz…5 kHz band, and
-    /// a gentle rolloff of 3 dB spread from 5 kHz to 20 kHz. The preset builds
-    /// that from two tanh shelves, so it follows the table closely rather than
-    /// exactly — the tolerance below is the fit error, not measurement slack.
+    /// The third-octave in-car target the Car preset is fitted to, and the
+    /// reference of record for the car presets: a bass shelf that has reached
+    /// its full ≈+9 dB by 31.5 Hz, a flat 400 Hz…5 kHz band, and a gentle
+    /// rolloff of 3 dB from there to 20 kHz. The preset builds that from two
+    /// tanh shelves, so it follows the table closely rather than exactly — the
+    /// tolerance below is the fit error, not measurement slack.
     /// </summary>
     public static TheoryData<double, double> CarTargetTable => new()
     {

@@ -638,15 +638,16 @@ public sealed record TargetCurveSpec(
         TargetPreset.HarmanRoom => new(-0.8, 4, 105, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.RoomGentle => new(-0.5, 2, 120, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.Warm => new(-1.0, 3, 110, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
-        // The car targets are not a tilt: in-car preference research puts a bass
-        // shelf on top of a FLAT 400 Hz…5 kHz band, then a gentle high-frequency
-        // rolloff — roughly 3 dB spread over the 5 kHz…20 kHz decade rather than
-        // a downslope that starts in the midrange. Car fits that shape to within
-        // 0.2 dB (see OverlayTargetTests.CarTargetTable); the other two move the
-        // bass shelf GAIN only, because raising its corner instead would drag up
-        // 150…300 Hz, which is where cabin boom lives. The +6/+9/+12 dB spread
-        // covers the published spread of listener bass preference, and the extra
-        // lift also stands in for road noise, which masks the low end at speed.
+        // The car targets are not a tilt. The in-car reference of record here is
+        // the third-octave table in OverlayTargetTests.CarTargetTable: a bass
+        // shelf on top of a FLAT 400 Hz…5 kHz band, then a gentle rolloff
+        // reaching ≈3 dB by 20 kHz over the two octaves above 5 kHz, rather than
+        // a downslope that starts in the midrange. Car fits that table to within
+        // 0.2 dB; the other two move the bass shelf GAIN only, because raising
+        // its corner instead would drag up 150…300 Hz, which is where cabin boom
+        // lives. The +6/+9/+12 dB spread is a taste range over one shape, not
+        // three shapes — bass preference varies widely between listeners, and
+        // road noise masks the low end at speed.
         TargetPreset.Car => new(0, 9.2, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
         TargetPreset.CarMild => new(0, 6, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
         TargetPreset.CarBass => new(0, 12, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),

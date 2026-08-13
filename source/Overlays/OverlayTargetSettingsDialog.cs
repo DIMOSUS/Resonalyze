@@ -514,7 +514,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         TargetPreset.Warm =>
             "Warm — steeper downslope with a modest bass lift.",
         TargetPreset.Car =>
-            "Car — in-car target: ≈+9 dB bass shelf, flat 400 Hz…5 kHz, and a gentle 3 dB rolloff from 5 kHz to 20 kHz.",
+            "Car — in-car target: ≈+9 dB bass shelf, flat 400 Hz…5 kHz, and a gentle rolloff reaching ≈3 dB by 20 kHz.",
         TargetPreset.CarMild =>
             "Car (mild) — the same in-car shape with a moderate ≈+6 dB bass lift.",
         TargetPreset.CarBass =>

@@ -669,7 +669,7 @@ public sealed class Overlay
     private bool targetConfigured;
     private readonly TargetOverlayCurveBuilder targetCurveBuilder = new();
     private int targetSourceSlot;
-    private TargetPreset targetPreset = TargetPreset.HarmanRoom;
+    private TargetPreset targetPreset = OverlayTargets.DefaultPreset;
     private double targetTiltDbPerOctave;
     private double targetBassShelfGainDb;
     private double targetBassShelfFrequencyHz = 100;
@@ -2743,7 +2743,7 @@ public sealed class Overlay
         compareInvertPolarity = false;
         targetConfigured = false;
         targetSourceSlot = 0;
-        targetPreset = TargetPreset.HarmanRoom;
+        targetPreset = OverlayTargets.DefaultPreset;
         targetTiltDbPerOctave = 0;
         targetBassShelfGainDb = 0;
         targetBassShelfFrequencyHz = 100;

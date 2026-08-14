@@ -182,6 +182,50 @@ public sealed class OverlayTargetTests
     }
 
     [Fact]
+    public void ResolvePreset_KeepsAPresetWhoseParametersStillMatch()
+    {
+        foreach (TargetPreset preset in Enum.GetValues<TargetPreset>())
+        {
+            Assert.Equal(
+                preset,
+                OverlayTargets.ResolvePreset(preset, TargetCurveSpec.FromPreset(preset)));
+        }
+    }
+
+    [Theory]
+    // The shapes these two presets had before they were refitted. A target saved
+    // back then persisted these numbers plus the preset name, so on load the name
+    // would advertise the new shape over the old curve.
+    [InlineData(TargetPreset.XCurve, 0, 0, 100, 1.5, -10, 2_500, 2.0)]
+    [InlineData(TargetPreset.Car, -1.0, 8, 80, 1.5, 0, 5_000, 1.5)]
+    public void ResolvePreset_FallsBackToCustomWhenTheStoredShapeMovedOn(
+        TargetPreset preset,
+        double tilt,
+        double bassGain, double bassFreq, double bassWidth,
+        double trebleGain, double trebleFreq, double trebleWidth)
+    {
+        var stored = new TargetCurveSpec(
+            tilt,
+            bassGain, bassFreq, bassWidth,
+            trebleGain, trebleFreq, trebleWidth,
+            0, 3_000, 1.0);
+
+        Assert.Equal(TargetPreset.Custom, OverlayTargets.ResolvePreset(preset, stored));
+    }
+
+    [Fact]
+    public void ResolvePreset_LeavesCustomAlone()
+    {
+        // Custom has no canonical shape to compare against, so any parameters
+        // are its parameters.
+        TargetCurveSpec spec = Spec(tilt: -3, bassGain: 11, presenceGain: 2);
+
+        Assert.Equal(
+            TargetPreset.Custom,
+            OverlayTargets.ResolvePreset(TargetPreset.Custom, spec));
+    }
+
+    [Fact]
     public void BuildTarget_DeviationIsMeasurementMinusShiftedTarget()
     {
         OverlayPoint[] source =

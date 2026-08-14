@@ -729,6 +729,24 @@ public static class OverlayTargets
     public const TargetPreset DefaultPreset = TargetPreset.Car;
 
     /// <summary>
+    /// The preset a stored target should present itself as. A target persists
+    /// its shape as parameters, not as a reference to the preset table, so one
+    /// saved before a preset's numbers changed still names that preset while
+    /// drawing the old shape. Report such a target as <see cref="TargetPreset.
+    /// Custom"/>: the stored curve is left exactly as the user had it, and the
+    /// name stops promising a shape it no longer has.
+    /// </summary>
+    public static TargetPreset ResolvePreset(TargetPreset preset, TargetCurveSpec spec)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+
+        return preset == TargetPreset.Custom ||
+               spec == TargetCurveSpec.FromPreset(preset)
+            ? preset
+            : TargetPreset.Custom;
+    }
+
+    /// <summary>
     /// Modes a Target overlay can be defined in. A target is a magnitude shape in
     /// dB — a tilt with shelves — so it only means something on a dB-over-frequency
     /// axis. On the phase (degrees), group delay (ms), impulse and autocorrelation

@@ -49,7 +49,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         suppressEvents = true;
         nameTextBox.Text = name;
         SelectSource(sourceSlot);
-        presetComboBox.SelectedItem = preset;
+        presetComboBox.SelectedItem = OverlayTargets.ResolvePreset(preset, spec);
         ApplySpec(spec);
         toleranceInput.Value = ClampToRange(toleranceInput, toleranceDb);
         deviationModeComboBox.SelectedItem = deviationMode;

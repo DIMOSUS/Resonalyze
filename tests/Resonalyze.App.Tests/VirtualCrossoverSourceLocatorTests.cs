@@ -69,6 +69,31 @@ public sealed class VirtualCrossoverSourceLocatorTests
     }
 
     [Fact]
+    public void Locate_PrefersTheDeepestTailMatch()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            // Both exist under the session's folder: a bare woofer.json that is some
+            // OTHER measurement, and the one whose folder still matches the stored
+            // path. The deeper match agrees with more of the stored path, so it wins
+            // — taking the shallow one would swap two same-rate measurements with
+            // nothing on screen to say so.
+            string expected = WriteFile(Path.Combine(root, "left"), "woofer.json");
+            WriteFile(root, "woofer.json");
+
+            Assert.Equal(
+                expected,
+                VirtualCrossoverSourceLocator.Locate(
+                    @"D:\car\v5\left\woofer.json", null, root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Locate_DoesNotSearchWithoutAProjectDirectory()
     {
         string root = CreateTemporaryDirectory();
@@ -244,6 +269,46 @@ public sealed class VirtualCrossoverSourceLocatorTests
             Assert.Equal(
                 Path.Combine(root, "v4", "subwoofer.json"),
                 autosaved.Pairs[0].Left.SourceFilePath);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SaveKeepsTheImportedRelativePathsInMemory()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string sessionFolder = Path.Combine(root, "v5");
+            Directory.CreateDirectory(sessionFolder);
+            var original = new VirtualCrossoverProjectFile();
+            original.Pairs[0].Left.SourceFilePath =
+                Path.Combine(root, "v4", "subwoofer.json");
+            string sessionPath = Path.Combine(sessionFolder, "session.json");
+            original.SaveTo(sessionPath);
+
+            // Exporting states the arrangement on the wire without adopting it: the
+            // live project still describes the session it was loaded from, whose
+            // folder is what the tool resolves against.
+            Assert.Null(original.Pairs[0].Left.SourceRelativePath);
+
+            VirtualCrossoverProjectFile imported =
+                VirtualCrossoverProjectFile.LoadFrom(sessionPath);
+            string relative = Path.Combine("..", "v4", "subwoofer.json");
+            Assert.Equal(relative, imported.Pairs[0].Left.SourceRelativePath);
+
+            // The autosave writes no relative path, but must not take the imported
+            // one away either: the tool is still using it to find measurements whose
+            // absolute paths are dead — including while the relink prompt is open,
+            // which a debounced autosave can fire behind.
+            imported.Save(root);
+            Assert.Equal(relative, imported.Pairs[0].Left.SourceRelativePath);
+            Assert.Null(
+                VirtualCrossoverProjectFile.LoadOrDefault(root)
+                    .Pairs[0].Left.SourceRelativePath);
         }
         finally
         {

@@ -21,13 +21,13 @@ namespace Resonalyze;
 /// folder can reach.
 /// </para>
 /// <para>
-/// THEN the stored path's TAIL, shortest first: the bare file name in the
-/// session's folder, then the file name under its parent folder, and so on. That
-/// still resolves the flat case (everything in one folder) and a whole tree copied
-/// across, and it is the only route for a session exported by a build that wrote
-/// no relative path. Neither step ever enumerates a directory — only paths the
-/// stored ones actually name are probed, so a same-named measurement sitting in an
-/// unrelated sibling folder is never picked up.
+/// THEN the stored path's TAIL, LONGEST first: the deepest chunk of the stored
+/// path under the session's folder, then one folder less, down to the bare file
+/// name. That resolves a whole tree copied across and, last, the flat case
+/// (everything in one folder), and it is the only route for a session exported by
+/// a build that wrote no relative path. Neither step ever enumerates a directory —
+/// only paths the stored ones actually name are probed, so a same-named
+/// measurement sitting in an unrelated sibling folder is never picked up.
 /// </para>
 /// </summary>
 internal static class VirtualCrossoverSourceLocator
@@ -140,25 +140,41 @@ internal static class VirtualCrossoverSourceLocator
         }
     }
 
-    // The stored path's tails, shortest first: "woofer.json", "left\woofer.json",
-    // "v5\left\woofer.json"... Stops at the root (the drive or UNC share is not a
-    // folder name that could repeat under the session's folder).
+    // The stored path's tails, LONGEST first: "v5\left\woofer.json",
+    // "left\woofer.json", "woofer.json". Longest first because the number of path
+    // components that still agree is the whole evidence a tail match has — a new
+    // tree holding both <session>\left\woofer.json and a different
+    // <session>\woofer.json would otherwise answer with the shallow one, and two
+    // measurements of the same rate and format swap silently. Dropping components
+    // one at a time still reaches the flat case, just last. Collection stops at the
+    // root (the drive or UNC share is not a folder name that could repeat under the
+    // session's folder).
     private static IEnumerable<string> TrailingSegments(string storedPath)
     {
         string tail = Path.GetFileName(storedPath);
-        string? remainder = Path.GetDirectoryName(storedPath);
-        for (int depth = 0; depth < MaximumTailDepth && tail.Length > 0; depth++)
+        if (tail.Length == 0)
         {
-            yield return tail;
+            yield break;
+        }
 
+        var tails = new List<string> { tail };
+        string? remainder = Path.GetDirectoryName(storedPath);
+        while (tails.Count < MaximumTailDepth)
+        {
             string? segment = Path.GetFileName(remainder);
             if (string.IsNullOrEmpty(segment))
             {
-                yield break;
+                break;
             }
 
             tail = Path.Combine(segment, tail);
+            tails.Add(tail);
             remainder = Path.GetDirectoryName(remainder);
+        }
+
+        for (int index = tails.Count - 1; index >= 0; index--)
+        {
+            yield return tails[index];
         }
     }
 

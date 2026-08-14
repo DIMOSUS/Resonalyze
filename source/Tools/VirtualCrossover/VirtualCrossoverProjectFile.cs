@@ -88,15 +88,20 @@ public sealed class VirtualCrossoverChannelSettings
     public string? SourceFilePath { get; set; }
 
     /// <summary>
-    /// The same measurement as <see cref="SourceFilePath"/>, written relative to the
-    /// folder an EXPORTED session file sits in (see
+    /// The same measurement as <see cref="SourceFilePath"/>, expressed relative to
+    /// the folder of the session file this project came from (see
     /// <see cref="VirtualCrossoverSourceLocator.Relativize"/>). Absolute paths are
     /// written on the machine that measured, so they are the first thing a session
     /// loses when it travels; the relative one survives as long as the measurements
-    /// travel with it in the same arrangement. Null when there is no source, when
-    /// the measurement sits on another volume, or in the internal autosave — see
-    /// <see cref="VirtualCrossoverProjectFile.SaveTo"/> for why the autosave carries
-    /// none. Additive: files written before it exists simply have no such property.
+    /// travel with it in the same arrangement.
+    /// <para>
+    /// In memory this holds what the loaded session carried, and it stays put: what
+    /// each WRITE puts on the wire — the export's own folder, nothing for the
+    /// autosave — is decided per write and does not touch the value here. Null when
+    /// there is no source, when the measurement sits on another volume, or when the
+    /// project was never loaded from a session file. Additive: files written before
+    /// it existed simply have no such property.
+    /// </para>
     /// </summary>
     public string? SourceRelativePath { get; set; }
 
@@ -532,7 +537,6 @@ public sealed class VirtualCrossoverProjectFile
     public void Save(string? rootDirectory = null)
     {
         Validate();
-        SetExportRelativePaths(null);
         SavedAtUtc = DateTimeOffset.UtcNow;
 
         string path = GetPath(rootDirectory);
@@ -544,15 +548,18 @@ public sealed class VirtualCrossoverProjectFile
         string temporaryPath = path + ".tmp";
         try
         {
-            using (FileStream stream = new(
-                temporaryPath,
-                FileMode.Create,
-                FileAccess.Write,
-                FileShare.None))
+            // The autosave has no folder of its own for a relative path to be
+            // relative TO, so it writes none (see WriteWithExportRelativePaths).
+            WriteWithExportRelativePaths(null, () =>
             {
+                using FileStream stream = new(
+                    temporaryPath,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None);
                 JsonSerializer.Serialize(stream, this, SerializerOptions);
                 stream.Flush(flushToDisk: true);
-            }
+            });
 
             File.Move(temporaryPath, path, overwrite: true);
         }
@@ -574,26 +581,54 @@ public sealed class VirtualCrossoverProjectFile
     public void SaveTo(string path)
     {
         Validate();
-        SetExportRelativePaths(SafeDirectoryOf(path));
         SavedAtUtc = DateTimeOffset.UtcNow;
-        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, this, SerializerOptions));
+        WriteWithExportRelativePaths(
+            SafeDirectoryOf(path),
+            () => AtomicFile.Write(
+                path,
+                stream => JsonSerializer.Serialize(stream, this, SerializerOptions)));
     }
 
     // A relative path means nothing without the folder it was computed against, so
-    // it is rewritten on every export and CLEARED from the internal autosave: that
-    // copy lives in the application data folder, no measurement sits beside it, and
-    // a value left over from some earlier export would be a confident wrong answer
-    // if the autosave were ever hand-carried to another machine and imported.
-    private void SetExportRelativePaths(string? exportDirectory)
+    // each write states its own: an export writes paths relative to ITS folder, and
+    // the internal autosave writes none — it lives in the application data folder,
+    // no measurement sits beside it, and a value left over from some earlier export
+    // would be a confident wrong answer if that file were hand-carried to another
+    // machine and imported.
+    //
+    // Strictly a property of the WRITE, never of the project: the values are swapped
+    // in around the serialization and put back afterwards. The live ones belong to
+    // the session this project was IMPORTED from and are still in use — the tool
+    // reads them to find measurements whose absolute paths are dead, including
+    // during the relink prompt, which an autosave can fire behind (a modal dialog
+    // keeps pumping the message loop, so the debounced save runs while the user
+    // reads the question). Clearing them for real there would delete the very hint
+    // the relink is about to need, and would also leave a re-export unable to
+    // restate the arrangement it was imported with.
+    private void WriteWithExportRelativePaths(string? exportDirectory, Action write)
     {
+        List<(VirtualCrossoverChannelSettings Side, string? RelativePath)> restore = [];
         foreach (VirtualCrossoverChannelPairSettings pair in Pairs)
         {
             foreach (VirtualCrossoverChannelSettings side in new[] { pair.Left, pair.Right })
             {
+                restore.Add((side, side.SourceRelativePath));
                 side.SourceRelativePath = exportDirectory == null
                     ? null
                     : VirtualCrossoverSourceLocator.Relativize(
                         side.SourceFilePath, exportDirectory);
+            }
+        }
+
+        try
+        {
+            write();
+        }
+        finally
+        {
+            foreach ((VirtualCrossoverChannelSettings side, string? relativePath) in restore)
+            {
+                side.SourceRelativePath = relativePath;
             }
         }
     }

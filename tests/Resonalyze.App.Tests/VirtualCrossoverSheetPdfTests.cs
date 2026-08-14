@@ -41,6 +41,76 @@ public sealed class VirtualCrossoverSheetPdfTests
         Assert.Equal("Inverted", RowValue(pairTable, "Polarity", left: false));
     }
 
+    // Polarity is the one setting that is silent when typed in wrong, so it is colour-coded
+    // per side: red for an inverted channel, green for one left alone. The two sides of a
+    // pair are coloured separately — a flipped right side must not tint the left.
+    [Fact]
+    public void Build_ColorsThePolarityValue_RedWhenInvertedAndGreenWhenNormal()
+    {
+        var project = new VirtualCrossoverProjectFile();
+        project.Pairs[1].Left.SourceFilePath = "l.json";
+        project.Pairs[1].Left.DisplayName = "L";
+        project.Pairs[1].Right.SourceFilePath = "r.json";
+        project.Pairs[1].Right.DisplayName = "R";
+        project.Pairs[1].Right.InvertPolarity = true;
+        // A single-channel section carries the same colours.
+        project.Pairs[0].Mono = true;
+        project.Pairs[0].Left.SourceFilePath = "sub.json";
+        project.Pairs[0].Left.DisplayName = "Sub";
+        project.Pairs[0].Left.InvertPolarity = true;
+
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
+        Table pairTable = PairTables(sheet.Document).Single();
+
+        Assert.Equal(
+            PdfSheet.NormalPolarityColor, RowColor(pairTable, "Polarity", column: 1));
+        Assert.Equal(
+            PdfSheet.InvertedPolarityColor, RowColor(pairTable, "Polarity", column: 2));
+
+        Table monoTable = ValueTables(sheet.Document).First(table => table.Columns.Count == 2);
+        Assert.Equal(
+            PdfSheet.InvertedPolarityColor, RowColor(monoTable, "Polarity", column: 1));
+
+        // Only polarity is tinted; every other value keeps the document's text colour.
+        Assert.Equal(Color.Empty, RowColor(pairTable, "Delay", column: 1));
+    }
+
+    // The two crossover edges are two separate entries in the DSP, so they get a row each
+    // rather than one "Crossover" row that printed a band-pass as "A + B".
+    [Fact]
+    public void Build_PrintsTheHighAndLowPassAsSeparateRows()
+    {
+        var project = new VirtualCrossoverProjectFile();
+        project.Pairs[1].Left.SourceFilePath = "l.json";
+        project.Pairs[1].Left.DisplayName = "L mid";
+        project.Pairs[1].Left.CrossoverKind = CrossoverKind.BandPass;
+        project.Pairs[1].Left.HighPassEdge =
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 300, 12);
+        project.Pairs[1].Left.LowPassEdge =
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 3_000, 18);
+        // A high-pass-only side prints "Off" for the edge it does not use: an empty cell
+        // reads as "not printed", where "Off" is itself a setting to dial in.
+        project.Pairs[1].Right.SourceFilePath = "r.json";
+        project.Pairs[1].Right.DisplayName = "R twt";
+        project.Pairs[1].Right.CrossoverKind = CrossoverKind.HighPass;
+        project.Pairs[1].Right.HighPassEdge =
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_000, 24);
+
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
+        Table pairTable = PairTables(sheet.Document).Single();
+
+        // The row label names the edge, so the value no longer repeats it.
+        Assert.Equal(
+            "Linkwitz-Riley 12 dB/oct @ 300 Hz", RowValue(pairTable, "High-pass", left: true));
+        Assert.Equal(
+            "Butterworth 18 dB/oct @ 3000 Hz", RowValue(pairTable, "Low-pass", left: true));
+        Assert.Equal(
+            "Linkwitz-Riley 24 dB/oct @ 3000 Hz", RowValue(pairTable, "High-pass", left: false));
+        Assert.Equal("Off", RowValue(pairTable, "Low-pass", left: false));
+
+        Assert.DoesNotContain("Crossover", AllText(sheet.Document));
+    }
+
     [Fact]
     public void Build_MonoPairAndOneSidedPair_UseSingleColumnTables()
     {
@@ -376,6 +446,22 @@ public sealed class VirtualCrossoverSheetPdfTests
             if (CellText(table.Rows[r].Cells[0]) == label)
             {
                 return CellText(table.Rows[r].Cells[left ? 1 : 2]);
+            }
+        }
+
+        throw new InvalidOperationException($"No row labelled '{label}'.");
+    }
+
+    // The font colour of the value cell in the given column of the row whose label matches.
+    // An untinted value leaves the colour unset, which MigraDoc reports as Color.Empty.
+    private static Color RowColor(Table table, string label, int column)
+    {
+        for (int r = 0; r < table.Rows.Count; r++)
+        {
+            if (CellText(table.Rows[r].Cells[0]) == label)
+            {
+                return ((Paragraph)table.Rows[r].Cells[column].Elements[0]!)
+                    .Format.Font.Color;
             }
         }
 

@@ -31,6 +31,13 @@ internal sealed class PdfSheet : IDisposable
     public static readonly Color CaptionColor = Color.FromRgb(90, 90, 90);
     public static readonly Color CardBorderColor = Color.FromRgb(210, 210, 210);
 
+    // Polarity is the one setting on the sheet that is silent when it is typed in wrong —
+    // a flipped channel measures as a hole rather than as an error — so it is colour-coded
+    // to be read at a glance: red for a deliberate flip, green for a channel left alone.
+    // Both are dark enough to stay legible printed in greyscale.
+    public static readonly Color InvertedPolarityColor = Color.FromRgb(180, 30, 30);
+    public static readonly Color NormalPolarityColor = Color.FromRgb(20, 115, 65);
+
     private readonly Document document;
     private readonly List<string> tempImages = new();
     private readonly PeqQConvention qConvention;

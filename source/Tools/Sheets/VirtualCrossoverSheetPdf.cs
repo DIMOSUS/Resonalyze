@@ -6,6 +6,8 @@ using OxyPlot.Axes;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
+// Disambiguates against System.Drawing.Color, which the WinForms implicit usings pull in.
+using Color = MigraDoc.DocumentObjectModel.Color;
 
 namespace Resonalyze;
 
@@ -149,10 +151,17 @@ internal static class VirtualCrossoverSheetPdf
                 CombinedGainText(right));
         }
         AddPairRow(table, "Delay", DelayText(left), DelayText(right));
-        AddPairRow(table, "Polarity", PolarityText(left), PolarityText(right));
-        AddPairRow(table, "Crossover",
-            VirtualCrossoverSheet.DescribeCrossover(left),
-            VirtualCrossoverSheet.DescribeCrossover(right));
+        AddPairRow(table, "Polarity", PolarityText(left), PolarityText(right),
+            PolarityColor(left), PolarityColor(right));
+        // A row per edge rather than one "Crossover" row: high- and low-pass are two
+        // separate entries in the DSP, and a band-pass channel used to print both on a
+        // single line joined by "+" — the one value on the sheet that was not one entry.
+        AddPairRow(table, HighPassLabel,
+            VirtualCrossoverSheet.DescribeHighPass(left),
+            VirtualCrossoverSheet.DescribeHighPass(right));
+        AddPairRow(table, LowPassLabel,
+            VirtualCrossoverSheet.DescribeLowPass(left),
+            VirtualCrossoverSheet.DescribeLowPass(right));
         if (HasAllPass(left) || HasAllPass(right))
         {
             AddPairRow(table, "All-pass", AllPassText(left), AllPassText(right));
@@ -177,6 +186,16 @@ internal static class VirtualCrossoverSheetPdf
 
     private static string PolarityText(VirtualCrossoverChannelSettings channel) =>
         channel.InvertPolarity ? "Inverted" : "Normal";
+
+    private static Color PolarityColor(VirtualCrossoverChannelSettings channel) =>
+        channel.InvertPolarity
+            ? PdfSheet.InvertedPolarityColor
+            : PdfSheet.NormalPolarityColor;
+
+    // The crossover row labels, shared by both layouts so the pair table and the
+    // single-channel table cannot end up naming the same edge differently.
+    private const string HighPassLabel = "High-pass";
+    private const string LowPassLabel = "Low-pass";
 
     // Many DSPs have no separate preamp for their equalizer, so the PEQ's preamp has to be
     // folded into the channel gain when the tune is typed in. Both numbers are printed:
@@ -249,13 +268,27 @@ internal static class VirtualCrossoverSheetPdf
         Table table,
         string label,
         string leftValue,
-        string rightValue)
+        string rightValue,
+        Color? leftColor = null,
+        Color? rightColor = null)
     {
         Row row = table.AddRow();
         Paragraph caption = row.Cells[0].AddParagraph(label);
         caption.Format.Font.Color = PdfSheet.CaptionColor;
-        row.Cells[1].AddParagraph(leftValue).Format.Font.Bold = true;
-        row.Cells[2].AddParagraph(rightValue).Format.Font.Bold = true;
+        WriteValue(row.Cells[1], leftValue, leftColor);
+        WriteValue(row.Cells[2], rightValue, rightColor);
+    }
+
+    // Every value on the sheet is bold; a colour is set only where one was asked for,
+    // so an uncoloured value keeps the document's default text colour.
+    private static void WriteValue(Cell cell, string value, Color? color)
+    {
+        Paragraph paragraph = cell.AddParagraph(value);
+        paragraph.Format.Font.Bold = true;
+        if (color.HasValue)
+        {
+            paragraph.Format.Font.Color = color.Value;
+        }
     }
 
     private static void AddChannelSection(
@@ -280,8 +313,9 @@ internal static class VirtualCrossoverSheetPdf
             AddRow(table, CombinedGainLabel, CombinedGainText(channel));
         }
         AddRow(table, "Delay", DelayText(channel));
-        AddRow(table, "Polarity", PolarityText(channel));
-        AddRow(table, "Crossover", VirtualCrossoverSheet.DescribeCrossover(channel));
+        AddRow(table, "Polarity", PolarityText(channel), PolarityColor(channel));
+        AddRow(table, HighPassLabel, VirtualCrossoverSheet.DescribeHighPass(channel));
+        AddRow(table, LowPassLabel, VirtualCrossoverSheet.DescribeLowPass(channel));
         if (HasAllPass(channel))
         {
             AddRow(table, "All-pass", AllPassText(channel));
@@ -329,14 +363,16 @@ internal static class VirtualCrossoverSheetPdf
         return table;
     }
 
-    private static void AddRow(Table table, string label, string value)
+    private static void AddRow(
+        Table table,
+        string label,
+        string value,
+        Color? valueColor = null)
     {
         Row row = table.AddRow();
         Paragraph caption = row.Cells[0].AddParagraph(label);
         caption.Format.Font.Color = PdfSheet.CaptionColor;
-
-        Paragraph valueParagraph = row.Cells[1].AddParagraph(value);
-        valueParagraph.Format.Font.Bold = true;
+        WriteValue(row.Cells[1], value, valueColor);
     }
 
     // A compact white graph of every participating channel side's DSP chain

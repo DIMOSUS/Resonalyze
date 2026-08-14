@@ -150,11 +150,43 @@ internal static class VirtualCrossoverSheet
             CrossoverKind.BandPass =>
                 DescribeEdge("High-pass", channel.HighPassEdge) + " + " +
                 DescribeEdge("Low-pass", channel.LowPassEdge),
-            _ => "Off"
+            _ => OffText
         };
     }
 
-    private static string DescribeEdge(string kind, CrossoverEdge edge)
+    /// <summary>The value printed where a channel does not use that edge at all.</summary>
+    public const string OffText = "Off";
+
+    /// <summary>
+    /// The high-pass (resp. low-pass) edge as a value of its own — family, slope and
+    /// corner, without naming which edge it is. The PDF sheet gives each edge a row of
+    /// its own, so the row label already says that; a channel whose crossover kind does
+    /// not use the edge prints <see cref="OffText"/>, which is itself a setting to dial
+    /// in rather than a blank to skip over.
+    /// </summary>
+    public static string DescribeHighPass(VirtualCrossoverChannelSettings channel)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+
+        return channel.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
+            ? DescribeEdgeSettings(channel.HighPassEdge)
+            : OffText;
+    }
+
+    /// <inheritdoc cref="DescribeHighPass"/>
+    public static string DescribeLowPass(VirtualCrossoverChannelSettings channel)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+
+        return channel.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
+            ? DescribeEdgeSettings(channel.LowPassEdge)
+            : OffText;
+    }
+
+    private static string DescribeEdge(string kind, CrossoverEdge edge) =>
+        $"{kind} {DescribeEdgeSettings(edge)}";
+
+    private static string DescribeEdgeSettings(CrossoverEdge edge)
     {
         string family = edge.Family switch
         {
@@ -166,7 +198,7 @@ internal static class VirtualCrossoverSheet
         string ripple = edge.Family == CrossoverFilterFamily.Chebyshev
             ? $" ({Number(edge.RippleDb, "0.#")} dB ripple)"
             : string.Empty;
-        return $"{kind} {family} {edge.SlopeDbPerOctave} dB/oct @ " +
+        return $"{family} {edge.SlopeDbPerOctave} dB/oct @ " +
             $"{Number(edge.FrequencyHz, "0.###")} Hz{ripple}";
     }
 

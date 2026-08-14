@@ -508,7 +508,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         TargetPreset.Flat =>
             "Flat reference — no tilt or shelving (studio / anechoic target).",
         TargetPreset.HarmanRoom =>
-            "Harman room — gentle ≈-0.8 dB/oct downslope with a bass lift; a common preference for home listening rooms.",
+            "Room (Harman-style) — gentle ≈-0.8 dB/oct downslope with a bass lift, in the spirit of the Harman work; a common preference for home listening rooms.",
         TargetPreset.RoomGentle =>
             "Gentle room slope — slight downward tilt and a small bass lift.",
         TargetPreset.Warm =>
@@ -522,7 +522,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         TargetPreset.House =>
             "House / bass boost — flat overall with an elevated low end.",
         TargetPreset.XCurve =>
-            "X-curve — high-frequency rolloff above ≈2.5 kHz for cinema-sized rooms.",
+            "X-curve (cinema) — ISO 2969 / SMPTE ST 202: flat to 2 kHz, then ≈-3 dB/oct, for cinema-sized rooms.",
         TargetPreset.Smiley =>
             "Smiley — boosted bass and treble (consumer 'loudness' shape).",
         TargetPreset.BbcDip =>
@@ -541,7 +541,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     private static string GetPresetLabel(TargetPreset preset) => preset switch
     {
         TargetPreset.Flat => "Flat",
-        TargetPreset.HarmanRoom => "Harman room",
+        TargetPreset.HarmanRoom => "Room (Harman-style)",
         TargetPreset.RoomGentle => "Room (gentle)",
         TargetPreset.Warm => "Warm",
         TargetPreset.Car => "Car",

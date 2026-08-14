@@ -598,6 +598,13 @@ public enum TargetDeviationMode
 public enum TargetPreset
 {
     Flat,
+
+    /// <summary>
+    /// Shown as "Room (Harman-style)": a room slope with a bass lift in the
+    /// spirit of the Harman work, not a reproduction of a published curve. The
+    /// member keeps its original name because presets persist by name, in both
+    /// overlay files and the measurement settings.
+    /// </summary>
     HarmanRoom,
     RoomGentle,
     Warm,
@@ -652,7 +659,12 @@ public sealed record TargetCurveSpec(
         TargetPreset.CarMild => new(0, 6, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
         TargetPreset.CarBass => new(0, 12, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
         TargetPreset.House => new(0, 6, 120, 1.0, 0, 5_000, 1.5, 0, 3_000, 1.0),
-        TargetPreset.XCurve => new(0, 0, 100, 1.5, -10, 2_500, 2.0, 0, 3_000, 1.0),
+        // ISO 2969 / SMPTE ST 202: flat to 2 kHz, then -3 dB/octave. The shelf
+        // used to sit at 2.5 kHz / 2.0 octaves, whose tail reached down into the
+        // midrange and put the curve 2.1 dB low at 1 kHz and 4.2 dB low at 2 kHz,
+        // where the standard is still flat. A higher, narrower shelf tracks the
+        // straight line to within 0.6 dB (see OverlayTargetTests.XCurveTable).
+        TargetPreset.XCurve => new(0, 0, 100, 1.5, -10, 6_300, 1.2, 0, 3_000, 1.0),
         TargetPreset.Smiley => new(0, 6, 100, 1.0, 5, 4_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.BbcDip => new(-0.5, 0, 100, 1.5, 0, 5_000, 1.5, -3, 2_800, 1.0),
         _ => new TargetCurveSpec(-0.5, 0, 100, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0)
@@ -710,6 +722,12 @@ public sealed record TargetCurveResult(
 
 public static class OverlayTargets
 {
+    /// <summary>
+    /// Preset a Target overlay opens with before it has been configured. This is
+    /// a car analyzer, so the in-car shape is the sane starting point.
+    /// </summary>
+    public const TargetPreset DefaultPreset = TargetPreset.Car;
+
     /// <summary>
     /// Modes a Target overlay can be defined in. A target is a magnitude shape in
     /// dB — a tilt with shelves — so it only means something on a dB-over-frequency

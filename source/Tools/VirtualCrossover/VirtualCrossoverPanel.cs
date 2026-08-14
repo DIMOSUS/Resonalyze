@@ -1432,7 +1432,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RefreshAutoActionsEnabled();
         try
         {
-            MeasurementHistorySnapshot? snapshot =
+            (MeasurementHistorySnapshot? snapshot, string? relocatedPath) =
                 await LoadSnapshotFromReferenceAsync(settings);
             // The same assignment core as the interactive pickers (the file
             // behind a stored path may have been replaced since the project was
@@ -1440,10 +1440,19 @@ public partial class VirtualCrossoverPanel : UserControl
             // transfer IR, or a rate that clashes with the other sides — stays
             // unresolved (the button shows the warning glyph) instead of
             // prompting, because a silent reload cannot ask.
-            if (snapshot != null)
-            {
+            if (snapshot != null &&
                 TryAssignSource(
-                    state, revision, snapshot, SourceConflictPolicy.RejectSilently);
+                    state, revision, snapshot, SourceConflictPolicy.RejectSilently) &&
+                relocatedPath != null)
+            {
+                // Only a measurement that LANDED may repoint the channel, the same
+                // rule the interactive pickers follow (see OnSourceAssigned). A file
+                // found under the search folders can still be refused — no transfer
+                // IR, or the wrong sample rate — and pinning it anyway would bury the
+                // reference the search itself needs: the stored path always wins once
+                // it exists, so the next relink would reopen the refused file instead
+                // of looking in the folder the user just pointed at.
+                settings.SourceFilePath = relocatedPath;
             }
         }
         catch (Exception exception) when (!showErrors)
@@ -1460,10 +1469,14 @@ public partial class VirtualCrossoverPanel : UserControl
     // Loads the measurement behind a persisted source reference: the history
     // entry first (it survives file moves), then the file path — and, when that
     // path no longer exists, the same file beside the session file the project
-    // was imported from. Null when nothing resolves — the side stays unresolved
-    // instead of failing the load.
-    private async Task<MeasurementHistorySnapshot?> LoadSnapshotFromReferenceAsync(
-        VirtualCrossoverChannelSettings settings)
+    // was imported from. A null snapshot means nothing resolved and the side stays
+    // unresolved instead of failing the load. RelocatedPath is where the file was
+    // actually read from when that differs from the stored path — the caller pins
+    // it only if the measurement is accepted, because this project becomes the
+    // internal autosave right after the import and that copy has no session file
+    // beside it to search from a second time.
+    private async Task<(MeasurementHistorySnapshot? Snapshot, string? RelocatedPath)>
+        LoadSnapshotFromReferenceAsync(VirtualCrossoverChannelSettings settings)
     {
         if (settings.HistoryEntryId is { } entryId && HistoryService != null)
         {
@@ -1471,21 +1484,21 @@ public partial class VirtualCrossoverPanel : UserControl
                 await HistoryService.GetSnapshotAsync(entryId);
             if (snapshot != null)
             {
-                return snapshot;
+                return (snapshot, null);
             }
         }
 
         if (LocateSource(settings) is { } path)
         {
-            // Pin where the measurement was actually read from: this project
-            // becomes the internal autosave right after the import, and that copy
-            // has no session file beside it to search from a second time.
-            settings.SourceFilePath = path;
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
-            return MeasurementHistoryService.CreateSnapshot(file);
+            return (
+                MeasurementHistoryService.CreateSnapshot(file),
+                string.Equals(path, settings.SourceFilePath, StringComparison.Ordinal)
+                    ? null
+                    : path);
         }
 
-        return null;
+        return (null, null);
     }
 
     // The stored path, then the folder the session was imported from, then the

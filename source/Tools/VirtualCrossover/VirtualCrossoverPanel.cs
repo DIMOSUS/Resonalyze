@@ -115,6 +115,12 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private VirtualCrossoverProjectFile project = new();
 
+    // The folder the user pointed at to relink an imported session's missing
+    // measurements: an extra search root for every source this session resolves
+    // afterwards (a mono toggle re-resolves a side long after the import). Belongs
+    // to the imported session, so binding a project clears it.
+    private string? relinkDirectory;
+
     // Candidate gate values while the gate dialog is open, so the gated plots
     // track the dialog live; null once it closes (Save committed them to the
     // project, Cancel reverts by simply dropping them). AutoOffset mirrors the
@@ -356,6 +362,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private async Task BindProjectAsync(VirtualCrossoverProjectFile newProject)
     {
         project = newProject;
+        relinkDirectory = null;
         // Match the block list to the project's channel count (validated into the
         // supported range on load), so an imported 2- or 6-channel session shows
         // exactly its channels.
@@ -525,7 +532,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // Rebuilds the selector's items from the available profiles and the persisted
     // mode, then resolves the calibration the curves use. A profile that is no
-    // longer configured falls back to Off (the helper's default selection).
+    // longer configured keeps its entry, marked "(file missing)", so the stored
+    // preference is not overwritten by the rebuild — the curves are simply drawn
+    // uncalibrated until the file comes back (an imported session says so once,
+    // see WarnAboutUnavailableCalibration).
     private void RefreshCalibrationCombo()
     {
         suppressProjectEvents = true;
@@ -1399,9 +1409,9 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // Re-resolves one side's persisted source reference: the history entry
-    // first (it survives file moves), then the file path. A source that no
-    // longer exists degrades to an unresolved side instead of failing the
-    // project load.
+    // first (it survives file moves), then the file path, then that file beside
+    // an imported session. A source that no longer exists degrades to an
+    // unresolved side instead of failing the project load.
     private async Task ResolveSourceAsync(
         VirtualCrossoverChannel channel, bool rightSide, bool showErrors)
     {
@@ -1448,8 +1458,10 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // Loads the measurement behind a persisted source reference: the history
-    // entry first (it survives file moves), then the file path. Null when
-    // neither resolves — the side stays unresolved instead of failing the load.
+    // entry first (it survives file moves), then the file path — and, when that
+    // path no longer exists, the same file beside the session file the project
+    // was imported from. Null when nothing resolves — the side stays unresolved
+    // instead of failing the load.
     private async Task<MeasurementHistorySnapshot?> LoadSnapshotFromReferenceAsync(
         VirtualCrossoverChannelSettings settings)
     {
@@ -1463,16 +1475,32 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(settings.SourceFilePath) &&
-            File.Exists(settings.SourceFilePath))
+        if (LocateSource(settings) is { } path)
         {
-            ImpulseResponseFile file =
-                await ImpulseResponseFile.LoadAsync(settings.SourceFilePath);
+            // Pin where the measurement was actually read from: this project
+            // becomes the internal autosave right after the import, and that copy
+            // has no session file beside it to search from a second time.
+            settings.SourceFilePath = path;
+            ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
             return MeasurementHistoryService.CreateSnapshot(file);
         }
 
         return null;
     }
+
+    // The stored path, then the folder the session was imported from, then the
+    // folder the user pointed at when relinking. The first call already answers
+    // for a path that still exists, so the second only ever runs when nothing
+    // resolves without the user's help.
+    private string? LocateSource(VirtualCrossoverChannelSettings settings) =>
+        VirtualCrossoverSourceLocator.Locate(
+            settings.SourceFilePath,
+            settings.SourceRelativePath,
+            project.ProjectDirectory)
+        ?? VirtualCrossoverSourceLocator.Locate(
+            settings.SourceFilePath,
+            settings.SourceRelativePath,
+            relinkDirectory);
 
     private void UpdateSourceButton(VirtualCrossoverChannel channel)
     {
@@ -4321,6 +4349,162 @@ public partial class VirtualCrossoverPanel : UserControl
 
         await ApplyProjectAsync(imported);
         ScheduleSave();
+        await RelinkMissingSourcesAsync();
+        WarnAboutUnavailableCalibration();
+    }
+
+    // Offers to relink the sources an imported session could not find. The stored
+    // paths were written on the machine that measured, so a session that arrives
+    // without its original tree — a different drive letter, a renamed folder, the
+    // measurements filed apart from the session — leaves every such channel
+    // unresolved. One folder answers for all of them: the same locator runs against
+    // it, and it stays this session's extra search root.
+    private async Task RelinkMissingSourcesAsync()
+    {
+        List<(VirtualCrossoverChannel Channel, bool RightSide)> missing =
+            MissingSourceSides().ToList();
+        if (missing.Count == 0 || IsDisposed)
+        {
+            return;
+        }
+
+        if (MessageBox.Show(
+                FindForm(),
+                $"{DescribeMissingSources(missing)}\r\n\r\nThey were saved with this " +
+                "session's own paths, which do not exist on this computer. Point at " +
+                "the folder holding the measurements?",
+                "Virtual DSP",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "Select the folder holding this session's measurements",
+            UseDescriptionForTitle = true,
+            SelectedPath = project.ProjectDirectory ?? string.Empty
+        };
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        {
+            return;
+        }
+
+        relinkDirectory = dialog.SelectedPath;
+        SetProjectLoading(true);
+        try
+        {
+            foreach ((VirtualCrossoverChannel channel, bool rightSide) in missing)
+            {
+                await ResolveSourceAsync(channel, rightSide, showErrors: false);
+            }
+
+            foreach (VirtualCrossoverChannel channel in
+                missing.Select(item => item.Channel).Distinct())
+            {
+                UpdateSourceButton(channel);
+            }
+
+            UpdateSideRadioTexts();
+        }
+        finally
+        {
+            // Same order as a project load: leave the loading state before the
+            // redraw, so the final frame is the real plot.
+            SetProjectLoading(false);
+            RedrawAll();
+        }
+
+        // The relinked paths belong in the autosave, not just on screen.
+        ScheduleSave();
+
+        List<(VirtualCrossoverChannel Channel, bool RightSide)> remaining =
+            MissingSourceSides().ToList();
+        if (remaining.Count > 0 && !IsDisposed)
+        {
+            MessageBox.Show(
+                FindForm(),
+                $"{DescribeMissingSources(remaining)}\r\n\r\nThe folder holds no file " +
+                "under the name each channel was saved with. Pick those measurements " +
+                "with the channel's Source button, or import the session again to " +
+                "choose a different folder.",
+                "Virtual DSP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+    }
+
+    // Every side that names a source FILE but has no measurement behind it — the
+    // ones a folder can answer for. A side with no stored reference is simply
+    // empty, not missing, and one referring only to a history entry of the machine
+    // that measured is not something pointing at a folder could fix.
+    private IEnumerable<(VirtualCrossoverChannel Channel, bool RightSide)>
+        MissingSourceSides()
+    {
+        foreach (VirtualCrossoverChannel channel in channels)
+        {
+            foreach (bool rightSide in new[] { false, true })
+            {
+                if (channel.Pair.Mono && rightSide)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(
+                        channel.SideSettings(rightSide).SourceFilePath) &&
+                    channel.SideState(rightSide).TransferImpulseResponse == null)
+                {
+                    yield return (channel, rightSide);
+                }
+            }
+        }
+    }
+
+    private static string DescribeMissingSources(
+        IReadOnlyList<(VirtualCrossoverChannel Channel, bool RightSide)> missing)
+    {
+        string sides = string.Join(
+            ", ",
+            missing.Select(item => SideLabel(item.Channel, item.RightSide)));
+        return missing.Count == 1
+            ? $"The measurement of channel {sides} was not found."
+            : $"{missing.Count} measurements were not found: {sides}.";
+    }
+
+    // The calibration a session asks for is a per-computer setting: the session
+    // stores WHICH profile (0°/90°) its curves were drawn with, but the profile's
+    // file belongs to the machine's own microphone. The selector keeps the mode and
+    // marks it "(file missing)", yet the curves are then drawn with no calibration
+    // at all — a quiet difference from what the session's author saw, and worth one
+    // sentence at import time. Copying the other machine's file is NOT the fix: it
+    // describes their microphone, not this one.
+    private void WarnAboutUnavailableCalibration()
+    {
+        bool available = project.CalibrationMode switch
+        {
+            MicrophoneCalibrationMode.Degrees0 => hasZeroDegreeCalibration,
+            MicrophoneCalibrationMode.Degrees90 => hasNinetyDegreeCalibration,
+            _ => true
+        };
+        if (available || IsDisposed)
+        {
+            return;
+        }
+
+        string profile = project.CalibrationMode == MicrophoneCalibrationMode.Degrees90
+            ? "90 degrees"
+            : "0 degrees";
+        MessageBox.Show(
+            FindForm(),
+            $"This session was tuned with the {profile} microphone calibration, which " +
+            "is not configured on this computer, so its curves are drawn without any " +
+            "calibration and will not match the ones its author saw.\r\n\r\nConfigure " +
+            "the calibration of THIS microphone in the measurement settings — the " +
+            "other computer's file describes its own microphone, not yours.",
+            "Virtual DSP",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 
     private void ShowError(string message, string details)

@@ -68,8 +68,10 @@ public sealed class VirtualCrossoverPhaseGateSettings
 /// <summary>
 /// One channel of the virtual crossover: which measurement feeds it and the DSP
 /// chain applied before the virtual sum. The source is re-resolved on load — by
-/// history entry first, then by file path — so a renamed history label or a moved
-/// file degrades gracefully instead of failing the whole project.
+/// history entry first, then by file path, and finally beside the imported session
+/// file itself (see <see cref="VirtualCrossoverSourceLocator"/>) — so a renamed
+/// history label or a moved file degrades gracefully instead of failing the whole
+/// project.
 /// </summary>
 public sealed class VirtualCrossoverChannelSettings
 {
@@ -84,6 +86,20 @@ public sealed class VirtualCrossoverChannelSettings
 
     public string DisplayName { get; set; } = string.Empty;
     public string? SourceFilePath { get; set; }
+
+    /// <summary>
+    /// The same measurement as <see cref="SourceFilePath"/>, written relative to the
+    /// folder an EXPORTED session file sits in (see
+    /// <see cref="VirtualCrossoverSourceLocator.Relativize"/>). Absolute paths are
+    /// written on the machine that measured, so they are the first thing a session
+    /// loses when it travels; the relative one survives as long as the measurements
+    /// travel with it in the same arrangement. Null when there is no source, when
+    /// the measurement sits on another volume, or in the internal autosave — see
+    /// <see cref="VirtualCrossoverProjectFile.SaveTo"/> for why the autosave carries
+    /// none. Additive: files written before it exists simply have no such property.
+    /// </summary>
+    public string? SourceRelativePath { get; set; }
+
     public Guid? HistoryEntryId { get; set; }
 
     public double GainDb { get; set; }
@@ -516,6 +532,7 @@ public sealed class VirtualCrossoverProjectFile
     public void Save(string? rootDirectory = null)
     {
         Validate();
+        SetExportRelativePaths(null);
         SavedAtUtc = DateTimeOffset.UtcNow;
 
         string path = GetPath(rootDirectory);
@@ -550,13 +567,35 @@ public sealed class VirtualCrossoverProjectFile
 
     /// <summary>
     /// Exports the session to a user-chosen file (same format as the internal
-    /// project file), so a tuning setup can be shared or archived.
+    /// project file), so a tuning setup can be shared or archived. Each source also
+    /// gets a path relative to THIS file's folder, which is what lets the export
+    /// find its measurements again on another machine.
     /// </summary>
     public void SaveTo(string path)
     {
         Validate();
+        SetExportRelativePaths(SafeDirectoryOf(path));
         SavedAtUtc = DateTimeOffset.UtcNow;
         AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, this, SerializerOptions));
+    }
+
+    // A relative path means nothing without the folder it was computed against, so
+    // it is rewritten on every export and CLEARED from the internal autosave: that
+    // copy lives in the application data folder, no measurement sits beside it, and
+    // a value left over from some earlier export would be a confident wrong answer
+    // if the autosave were ever hand-carried to another machine and imported.
+    private void SetExportRelativePaths(string? exportDirectory)
+    {
+        foreach (VirtualCrossoverChannelPairSettings pair in Pairs)
+        {
+            foreach (VirtualCrossoverChannelSettings side in new[] { pair.Left, pair.Right })
+            {
+                side.SourceRelativePath = exportDirectory == null
+                    ? null
+                    : VirtualCrossoverSourceLocator.Relativize(
+                        side.SourceFilePath, exportDirectory);
+            }
+        }
     }
 
     /// <summary>
@@ -578,7 +617,34 @@ public sealed class VirtualCrossoverProjectFile
             ?? throw new InvalidDataException("The session file is empty.");
         Migrate(file);
         file.Validate();
+        file.ProjectDirectory = SafeDirectoryOf(path);
         return file;
+    }
+
+    /// <summary>
+    /// The folder the session file was imported from, kept so a channel whose
+    /// stored absolute path no longer exists can be looked for beside the session
+    /// itself (see <see cref="VirtualCrossoverSourceLocator"/>). Null for the
+    /// internal autosave, which lives in the application data folder: measurements
+    /// never sit there, so searching it could only produce a false match. Not
+    /// serialized — it describes where the file came from, not what it contains.
+    /// </summary>
+    [JsonIgnore]
+    public string? ProjectDirectory { get; private set; }
+
+    private static string? SafeDirectoryOf(string path)
+    {
+        try
+        {
+            return Path.GetDirectoryName(Path.GetFullPath(path));
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or PathTooLongException or NotSupportedException)
+        {
+            // The file just opened, so this practically cannot fail; if it does,
+            // the session still loads and simply gets no folder to search.
+            return null;
+        }
     }
 
     // Per-version upgrade steps, applied before validation. Newer-than-current

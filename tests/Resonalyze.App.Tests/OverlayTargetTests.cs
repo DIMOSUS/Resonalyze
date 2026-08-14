@@ -134,6 +134,97 @@ public sealed class OverlayTargetTests
         Assert.Equal(car.Evaluate(20_000), bass.Evaluate(20_000), tolerance: 1e-6);
     }
 
+    /// <summary>
+    /// The X-curve of ISO 2969 / SMPTE ST 202: flat to 2 kHz, then -3 dB per
+    /// octave. A tanh shelf cannot make a hard knee followed by a straight line,
+    /// so the tolerance below is the fit error of the closest shelf; what it
+    /// really guards is that the rolloff starts at the knee and not an octave
+    /// early, which is how this preset was wrong before (-2.1 dB at 1 kHz).
+    /// </summary>
+    public static TheoryData<double, double> XCurveTable => new()
+    {
+        { 200, 0.0 }, { 500, 0.0 }, { 1_000, 0.0 }, { 2_000, 0.0 },
+        { 2_500, -0.97 }, { 3_150, -1.97 }, { 4_000, -3.0 }, { 5_000, -3.97 },
+        { 6_300, -4.97 }, { 8_000, -6.0 }, { 10_000, -6.97 }, { 12_500, -7.93 },
+        { 16_000, -9.0 }, { 20_000, -9.97 }
+    };
+
+    [Theory]
+    [MemberData(nameof(XCurveTable))]
+    public void Evaluate_XCurveFollowsTheIsoLine(double frequencyHz, double expectedDb)
+    {
+        TargetCurveSpec spec = TargetCurveSpec.FromPreset(TargetPreset.XCurve);
+
+        Assert.Equal(expectedDb, spec.Evaluate(frequencyHz), tolerance: 0.7);
+    }
+
+    [Fact]
+    public void Evaluate_XCurveStaysFlatBelowTheKnee()
+    {
+        TargetCurveSpec spec = TargetCurveSpec.FromPreset(TargetPreset.XCurve);
+
+        // The standard is flat all the way to the 2 kHz knee, so the shelf tail
+        // must not reach the midrange — the old preset was 2.1 dB down at 1 kHz.
+        Assert.Equal(0.0, spec.Evaluate(1_000), tolerance: 0.2);
+        Assert.Equal(0.0, spec.Evaluate(500), tolerance: 0.1);
+        Assert.Equal(0.0, spec.Evaluate(100), tolerance: 0.1);
+    }
+
+    [Fact]
+    public void DefaultPreset_IsTheInCarShape()
+    {
+        // A new target overlay opens on this preset; this is a car analyzer, so
+        // it must not open on a room curve.
+        TargetCurveSpec spec = TargetCurveSpec.FromPreset(OverlayTargets.DefaultPreset);
+
+        Assert.Equal(TargetPreset.Car, OverlayTargets.DefaultPreset);
+        Assert.Equal(0.0, spec.TiltDbPerOctave, precision: 9);
+    }
+
+    [Fact]
+    public void ResolvePreset_KeepsAPresetWhoseParametersStillMatch()
+    {
+        foreach (TargetPreset preset in Enum.GetValues<TargetPreset>())
+        {
+            Assert.Equal(
+                preset,
+                OverlayTargets.ResolvePreset(preset, TargetCurveSpec.FromPreset(preset)));
+        }
+    }
+
+    [Theory]
+    // The shapes these two presets had before they were refitted. A target saved
+    // back then persisted these numbers plus the preset name, so on load the name
+    // would advertise the new shape over the old curve.
+    [InlineData(TargetPreset.XCurve, 0, 0, 100, 1.5, -10, 2_500, 2.0)]
+    [InlineData(TargetPreset.Car, -1.0, 8, 80, 1.5, 0, 5_000, 1.5)]
+    public void ResolvePreset_FallsBackToCustomWhenTheStoredShapeMovedOn(
+        TargetPreset preset,
+        double tilt,
+        double bassGain, double bassFreq, double bassWidth,
+        double trebleGain, double trebleFreq, double trebleWidth)
+    {
+        var stored = new TargetCurveSpec(
+            tilt,
+            bassGain, bassFreq, bassWidth,
+            trebleGain, trebleFreq, trebleWidth,
+            0, 3_000, 1.0);
+
+        Assert.Equal(TargetPreset.Custom, OverlayTargets.ResolvePreset(preset, stored));
+    }
+
+    [Fact]
+    public void ResolvePreset_LeavesCustomAlone()
+    {
+        // Custom has no canonical shape to compare against, so any parameters
+        // are its parameters.
+        TargetCurveSpec spec = Spec(tilt: -3, bassGain: 11, presenceGain: 2);
+
+        Assert.Equal(
+            TargetPreset.Custom,
+            OverlayTargets.ResolvePreset(TargetPreset.Custom, spec));
+    }
+
     [Fact]
     public void BuildTarget_DeviationIsMeasurementMinusShiftedTarget()
     {

@@ -669,7 +669,7 @@ public sealed class Overlay
     private bool targetConfigured;
     private readonly TargetOverlayCurveBuilder targetCurveBuilder = new();
     private int targetSourceSlot;
-    private TargetPreset targetPreset = TargetPreset.HarmanRoom;
+    private TargetPreset targetPreset = OverlayTargets.DefaultPreset;
     private double targetTiltDbPerOctave;
     private double targetBassShelfGainDb;
     private double targetBassShelfFrequencyHz = 100;
@@ -1920,7 +1920,7 @@ public sealed class Overlay
             collection.GetCaptureSourceOptions();
         TargetCurveSpec spec = targetConfigured
             ? CurrentTargetSpec()
-            : TargetCurveSpec.FromPreset(TargetPreset.HarmanRoom);
+            : TargetCurveSpec.FromPreset(OverlayTargets.DefaultPreset);
 
         // Live preview while the dialog is open: the target shape, tolerance band,
         // and deviation curve redraw on the main plot as the parameters change, so
@@ -1932,7 +1932,7 @@ public sealed class Overlay
             SeriesMode,
             targetConfigured ? Title : $"Target {Index}",
             targetConfigured ? targetSourceSlot : 0,
-            targetConfigured ? targetPreset : TargetPreset.HarmanRoom,
+            targetConfigured ? targetPreset : OverlayTargets.DefaultPreset,
             spec,
             targetConfigured ? targetToleranceDb : 3,
             targetConfigured ? targetDeviationMode : TargetDeviationMode.Deviation,
@@ -2743,7 +2743,7 @@ public sealed class Overlay
         compareInvertPolarity = false;
         targetConfigured = false;
         targetSourceSlot = 0;
-        targetPreset = TargetPreset.HarmanRoom;
+        targetPreset = OverlayTargets.DefaultPreset;
         targetTiltDbPerOctave = 0;
         targetBassShelfGainDb = 0;
         targetBassShelfFrequencyHz = 100;

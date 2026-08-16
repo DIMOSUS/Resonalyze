@@ -427,6 +427,13 @@ measured / minimum / excess in Phase. Numeric and dropdown settings carry a smal
 axis restores its default scale, and the Frequency Response, Phase, Group Delay,
 Waterfall and Burst panels include a compact impulse-window preview.
 
+The **Tools** modes (EQ Wizard, Signal Generator, Virtual DSP) do not measure and
+do not draw the shell's curves: they bring their own sources and controls, so the
+measurement block on the right — input meters, **Start**, **Record Settings**,
+**Save** / **Load** / **Compare**, **History** and **Mode Settings...** — is
+hidden while one of them is open, and any docked Record Settings or History panel
+closes with it.
+
 ## Phase and Group Delay
 
 Phase and group-delay analysis run on the **loopback transfer impulse
@@ -970,9 +977,11 @@ the multiplier:
 Resonalyze fits, plots and exports RBJ filters throughout. Hand a Q of 5.8 at
 −15 dB to a Symmetric processor and it realizes a band over twice as wide. The
 **DSP Q** selector states which convention the processor being tuned uses; it
-moves the Q printed on the tuning sheets (which name the convention they were
-written for) and nothing else — the fit, the curve on screen and the exported
-profiles stay RBJ. The conventions are exactly reconcilable:
+moves the Q printed on the EQ Wizard's tuning sheets (which name the convention
+they were written for) and nothing else — the fit, the curve on screen and the
+exported profiles stay RBJ. Virtual DSP asks for the convention as it exports,
+pre-selected from this selector, because a crossover sheet is often written for a
+different processor than the one the wizard was last pointed at. The conventions are exactly reconcilable:
 
 ```
 Q_symmetric = Q_rbj × 10^( |gain| / 40)     ±3 dB ×1.19   ±12 dB ×2.00   ±15 dB ×2.37
@@ -1123,7 +1132,9 @@ defaults to Off because the measurements are loopback-referenced.
   envelope arrivals, and the far side descends junction by junction. The **scene
   offset** is entered as a non-negative magnitude — how far the far side leads —
   so switching LHD/RHD never means re-entering a sign, and the level tilt is
-  entered the same way, as a cut on the near side. Pairs whose shared band
+  entered the same way, as a cut on the near side. The gain balance itself is
+  **off by default**: a run writes delays and polarity and leaves every level
+  alone until you tick **Balance channel gains (cut-only)**. Pairs whose shared band
   reaches the localization region are pinned to the scene, because the image
   outranks the handover there; a final scene-preserving pass may then shift both
   sides of a pair by one shared delta to recover what the pin cost.
@@ -1143,7 +1154,13 @@ defaults to Off because the measurements are loopback-referenced.
   sides, not a binaural head simulation.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
   text): for every side of every pair (a mono pair prints once) the gain, delay in
-  ms and mm, polarity, crossover filters, the all-pass stage, and PEQ bands.
+  ms and mm, polarity, crossover filters, the all-pass stage, and PEQ bands. It
+  asks first which [Q convention](#dsp-q-convention) the PEQ columns should be
+  stated in — the processor being tuned here is not necessarily the one the EQ
+  Wizard's **DSP Q** selector was set for, so that selector only pre-selects the
+  answer (as does the previous export in the same session). The chooser carries a
+  crib that follows the selection: what the convention does to a band's width, and
+  which processors are known to read Q that way.
   **Save session... / Load session...** export and import the complete session
   JSON for sharing or archiving.
 

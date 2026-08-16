@@ -312,8 +312,9 @@ public partial class EqWizardPanel : UserControl
             "twice as wide at 15 dB; used by AMP Panacea, Behringer DCX2496, Rockford " +
             "Fosgate 3Sixty.3, Hypex and rePhase. Classic widens a boost the same way " +
             "but narrows a cut instead, and is rare — the JL Audio TwK-88 is the one " +
-            "processor documented for it. Only the tuning sheets are restated; the " +
-            "fit, the curve on screen and the exported profile files stay RBJ. If you " +
+            "processor documented for it. Only the tuning sheets are restated — this " +
+            "one directly, Virtual DSP's by pre-selecting the question it asks as it " +
+            "exports; the fit, the curve on screen and the exported profiles stay RBJ. If you " +
             "do not know your DSP's convention, measure it: one band at +12 and again " +
             "at -12 dB, and compare the two bandwidths.");
     }

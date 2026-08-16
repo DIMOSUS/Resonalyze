@@ -156,8 +156,9 @@ namespace Resonalyze
             eqWizardPanel.HistoryService = measurementHistoryService;
             eqWizardPanel.ApplyPersistedSettings(measurementSettings.EqWizard);
             // The Q convention is a property of the DSP being tuned, not of one mode, so
-            // it lives at the top level of the settings and both tuning-sheet exporters
-            // read it. The EQ Wizard owns the selector; Virtual DSP follows it.
+            // it lives at the top level of the settings. The EQ Wizard owns the selector
+            // and states its own sheets in it; Virtual DSP only pre-selects the question
+            // its export asks, since that sheet is often written for another processor.
             eqWizardPanel.TargetDspQConvention = measurementSettings.TargetDspQConvention;
             eqWizardPanel.SettingsChanged += () =>
             {

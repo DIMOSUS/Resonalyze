@@ -202,5 +202,17 @@ public partial class Form1
         public bool ShowsSignalGeneratorPanel => MainContent == MainContentKind.SignalGenerator;
 
         public bool ShowsVirtualCrossoverPanel => MainContent == MainContentKind.VirtualCrossover;
+
+        /// <summary>
+        /// The Tools modes (EQ Wizard, Signal Generator, Virtual DSP) do not measure:
+        /// they own their sources and their own controls. The shell's capture block —
+        /// input meters, Start, Record Settings, Save/Load/Compare, History and Mode
+        /// Settings — has nothing to act on there, so it is hidden rather than left
+        /// standing as buttons that would start a sweep behind the open tool.
+        /// </summary>
+        public bool HasCaptureControls => MainContent
+            is not MainContentKind.EqWizard
+            and not MainContentKind.SignalGenerator
+            and not MainContentKind.VirtualCrossover;
     }
 }

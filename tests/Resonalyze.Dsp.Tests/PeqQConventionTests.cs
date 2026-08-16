@@ -203,6 +203,51 @@ public class PeqQConventionTests
         Assert.True(cutQ > cut.Q);
     }
 
+    // The three descriptions a chooser shows are what a user decides on, so a switch
+    // that quietly fell through to the RBJ default would mislabel a whole sheet. Each
+    // convention must describe ITSELF, in every one of the three texts.
+    [Fact]
+    public void EveryConventionIsDescribedDistinctly()
+    {
+        PeqQConvention[] conventions =
+            [PeqQConvention.Rbj, PeqQConvention.Symmetric, PeqQConvention.Classic];
+
+        foreach (Func<PeqQConvention, string> describe in new Func<PeqQConvention, string>[]
+        {
+            PeqQConventions.Describe,
+            PeqQConventions.DescribeShort,
+            PeqQConventions.DescribeBandwidth,
+            PeqQConventions.DescribeDevices
+        })
+        {
+            string[] texts = conventions.Select(describe).ToArray();
+
+            Assert.All(texts, text => Assert.False(string.IsNullOrWhiteSpace(text)));
+            Assert.Equal(texts.Length, texts.Distinct().Count());
+        }
+    }
+
+    // The width factors quoted in the blurb are the ones a user checks their own DSP
+    // against, so they are pinned to the conversion itself rather than trusted: a
+    // change to Scale that left the prose behind would print a lie.
+    [Theory]
+    [InlineData(PeqQConvention.Symmetric, 3.0)]
+    [InlineData(PeqQConvention.Symmetric, 12.0)]
+    [InlineData(PeqQConvention.Symmetric, 15.0)]
+    [InlineData(PeqQConvention.Classic, 12.0)]
+    [InlineData(PeqQConvention.Classic, -12.0)]
+    public void DescribeBandwidth_QuotesTheFactorsTheConversionRealizes(
+        PeqQConvention convention,
+        double gainDb)
+    {
+        var band = new PeqBand(1_000, 1.0, gainDb);
+        double factor = PeqQConventions.ToConvention(band, convention).Q / band.Q;
+
+        Assert.Contains(
+            factor.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            PeqQConventions.DescribeBandwidth(convention));
+    }
+
     // Distance between the points at half the band's gain, the quantity every one of
     // these conventions defines Q through. Bisection on each skirt rather than a scan,
     // so the resolution does not limit what the bandwidth assertions can pin down.

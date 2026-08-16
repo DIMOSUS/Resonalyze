@@ -130,6 +130,11 @@ public partial class VirtualCrossoverPanel : UserControl
     private (double OffsetMs, bool AutoOffset, double LeftMs, double PlateauMs,
         double RightMs, PhaseWindowMode WindowMode, int FdwCycles,
         PhaseDetrendMode DetrendMode, double DetrendMs)? gatePreview;
+    // The Q convention the last tuning sheet WRITTEN this session was stated in; null
+    // until one is, when the shared setting pre-selects the dialog instead. Session
+    // state on purpose: the answer describes the sheet being printed, not the panel
+    // or the project (see AskSheetQConvention).
+    private PeqQConvention? sheetQConvention;
     private VirtualCrossoverAcousticPlot acousticPlot = null!;
     private VirtualCrossoverDspChainPlot dspChainPlot = null!;
     private bool initialized;
@@ -208,7 +213,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     /// <summary>
     /// How the DSP being tuned defines Q, mirrored here from the application settings
-    /// (the EQ Wizard owns the selector). Read only when a tuning sheet is exported —
+    /// (the EQ Wizard owns the selector). Only pre-selects the export's own question —
     /// the simulated chain itself is always the RBJ realization, so this cannot change
     /// what the panel plots or what a project file holds.
     /// </summary>
@@ -4108,6 +4113,12 @@ public partial class VirtualCrossoverPanel : UserControl
     // a printable PDF or a plain-text file.
     private async Task ExportTuningSheetAsync()
     {
+        PeqQConvention? qConvention = AskSheetQConvention();
+        if (qConvention == null)
+        {
+            return;
+        }
+
         using var dialog = new SaveFileDialog
         {
             AddExtension = true,
@@ -4144,20 +4155,43 @@ public partial class VirtualCrossoverPanel : UserControl
             if (dialog.FilterIndex == 1)
             {
                 VirtualCrossoverSheetPdf.Export(
-                    dialog.FileName, project, metricLine, sampleRate, TargetDspQConvention);
+                    dialog.FileName, project, metricLine, sampleRate, qConvention.Value);
             }
             else
             {
                 AtomicFile.WriteAllText(
                     dialog.FileName,
                     VirtualCrossoverSheet.FormatText(
-                        project, metricLine, TargetDspQConvention));
+                        project, metricLine, qConvention.Value));
             }
+
+            // Only a sheet that reached the disk becomes "the previous export": an
+            // answer given to a dialog the user then backed out of — at the file
+            // picker, at an empty render or on a write failure — is not a choice
+            // they made about any sheet, so it must not pre-select the next one.
+            sheetQConvention = qConvention;
         }
         catch (Exception exception)
         {
             ShowError("The tuning sheet could not be exported.", exception.Message);
         }
+    }
+
+    // The convention the sheet's Q column is stated in is a property of the processor
+    // being tuned, and Virtual DSP has no selector of its own. Inheriting the EQ
+    // Wizard's meant a crossover sheet silently stated for whatever device THAT mode
+    // was last pointed at, so the export asks instead: pre-selected with the session's
+    // last EXPORTED convention (the shared setting until one is written), and never
+    // written back, so the wizard's own sheets keep following its selector. The answer
+    // is only returned here — the caller records it once the sheet exists.
+    // Null when the user cancels.
+    private PeqQConvention? AskSheetQConvention()
+    {
+        using var dialog = new TuningSheetQConventionDialog(
+            sheetQConvention ?? TargetDspQConvention);
+        return dialog.ShowDialog(FindForm()) == DialogResult.OK
+            ? dialog.SelectedConvention
+            : null;
     }
 
     // ----------------------------------------------------------------- wizard

@@ -46,6 +46,11 @@ public partial class Form1
         return Math.Max(margin + minimumContentWidth, rightPanelLeft - margin);
     }
 
+    // Deliberately measured whether or not they are shown: the right rail keeps its
+    // width in every mode. A Tools mode hides this block (SetCaptureControlsVisible)
+    // but may put its own readout there — the EQ results panel, the Virtual DSP
+    // metric — and those are not in this list, so shrinking the rail with the block
+    // would slide the main content underneath them.
     private Control[] GetRightSideControls() =>
     [
         inputLevelMeterPanel,

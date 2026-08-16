@@ -70,7 +70,9 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
             "per-octave band energy — the board to one target, left vs\r\n" +
             "right offset by the L-R level below. Subwoofers, mono channels\r\n" +
             "and channels without a crossover keep their gain. This is a\r\n" +
-            "starting balance, not a final tonal decision.");
+            "starting balance, not a final tonal decision — which is why it\r\n" +
+            "is off unless you ask for it: a run then writes delays and\r\n" +
+            "polarity, and leaves every level as you set it.");
         numericNearSideCut.ApplyToolTip(
             toolTip,
             "How much quieter the NEAR (driver's) side plays than the far\r\n" +

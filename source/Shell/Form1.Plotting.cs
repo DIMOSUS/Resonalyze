@@ -193,6 +193,7 @@ public partial class Form1
         UpdateRecordButtonForCurrentMode();
         ApplyMainContentLayout();
         plotView1.Visible = descriptor.HasPlotView;
+        SetCaptureControlsVisible(descriptor.HasCaptureControls);
         overlays.Visible = descriptor.HasOverlayPanel;
         buttonOverlayShowAll.Visible = descriptor.HasOverlayPanel;
         buttonOverlayHideAll.Visible = descriptor.HasOverlayPanel;
@@ -212,6 +213,23 @@ public partial class Form1
         eqResultsPanel.Visible = descriptor.ShowsEqWizardPanel;
         SyncDockedModeSettingsOnModeChange();
         UpdatePlotLabelsPanel();
+    }
+
+    // Hiding the buttons is not enough on its own: Record Settings and History dock
+    // as separate windows beside the shell, so one left open before the switch would
+    // outlive the block it belongs to and keep offering measurement settings with no
+    // way to close it.
+    private void SetCaptureControlsVisible(bool visible)
+    {
+        inputLevelMeterPanel.Visible = visible;
+        panel1.Visible = visible;
+        buttonHistory.Visible = visible;
+        buttonCurrentModeSettings.Visible = visible;
+        if (!visible)
+        {
+            dockedMeasurementSettingsHost.Close();
+            dockedHistoryHost.Close();
+        }
     }
 
     private void UpdateRecordButtonForCurrentMode()

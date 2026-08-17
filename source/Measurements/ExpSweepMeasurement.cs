@@ -1655,14 +1655,17 @@ namespace Resonalyze
                 result.SweepPeakIndex);
             Complex[]? transferImpulseResponse = result.TransferImpulseResponse;
             int transferPeakIndex = result.TransferPeakIndex;
+            double[]? transferCoherence = result.TransferCoherence;
             if (transferImpulseResponse != null && ProtectiveHighPass.Enabled)
             {
-                transferImpulseResponse =
+                ProtectiveHighPassCompensationResult compensation =
                     ProtectiveHighPassCompensation.RemoveFromImpulseResponse(
                         transferImpulseResponse,
                         ProtectiveHighPass.ToEdge(),
                         SampleRate,
                         ProtectiveHighPassConfiguration.MaximumCompensationBoostDb);
+                transferImpulseResponse = compensation.ImpulseResponse;
+                transferCoherence = compensation.MaskCoherence(transferCoherence);
                 // Removing the high-pass removes its group delay too, so its
                 // corrected arrival is allowed to move on a synchronized live
                 // measurement. An import is different: its peak was deliberately
@@ -1686,7 +1689,7 @@ namespace Resonalyze
                     transferImpulseResponse,
                     transferPeakIndex)
                 : null;
-            TransferCoherence = result.TransferCoherence;
+            TransferCoherence = transferCoherence;
             MicrophoneRecordedSamples = result.MicrophoneRecordedSamples;
             LoopbackRecordedSamples = result.LoopbackRecordedSamples;
             MeasurementMode = result.TransferImpulseResponse != null

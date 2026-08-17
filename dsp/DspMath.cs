@@ -48,4 +48,22 @@ public static class DspMath
 
         return result;
     }
+
+    /// <summary>
+    /// Raised-cosine soft gate: zero at and below <paramref name="low"/>, one at
+    /// and above <paramref name="high"/>, and a smooth transition between them.
+    /// </summary>
+    internal static double RaisedCosineGate(double value, double low, double high)
+    {
+        if (value <= low)
+        {
+            return 0.0;
+        }
+        if (value >= high)
+        {
+            return 1.0;
+        }
+
+        return 0.5 - 0.5 * Math.Cos(Math.PI * (value - low) / (high - low));
+    }
 }

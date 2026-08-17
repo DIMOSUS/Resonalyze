@@ -106,6 +106,78 @@ public sealed class TransferIrDiagnosticsTests
     }
 
     [Fact]
+    public void DetectDominantBand_IgnoresAFalsePeakBelowTheCoherenceFloor()
+    {
+        var impulseResponse = new double[65_536];
+        AddToneBurst(
+            impulseResponse,
+            startMs: 20.0,
+            frequencyHz: 160,
+            periods: 40,
+            amplitude: 10.0);
+        AddToneBurst(
+            impulseResponse,
+            startMs: 20.0,
+            frequencyHz: 3_000,
+            periods: 40,
+            amplitude: 1.0);
+        var coherence = new double[impulseResponse.Length / 2 + 1];
+        int firstTrustedBin = (int)Math.Ceiling(
+            500.0 * impulseResponse.Length / SampleRate);
+        Array.Fill(coherence, 1.0, firstTrustedBin, coherence.Length - firstTrustedBin);
+
+        DominantBand rawBand = TransferIrDiagnostics.DetectDominantBand(
+            impulseResponse, SampleRate);
+        DominantBand trustedBand = TransferIrDiagnostics.DetectDominantBand(
+            impulseResponse,
+            SampleRate,
+            coherence: coherence);
+
+        Assert.InRange(rawBand.PeakHz, 120, 220);
+        Assert.InRange(trustedBand.PeakHz, 2_500, 3_500);
+        Assert.True(trustedBand.LowHz >= 500);
+    }
+
+    [Fact]
+    public void DetectDominantBand_DoesNotPromoteOneTrustedBinToAWholeBand()
+    {
+        var impulseResponse = new double[65_536];
+        AddToneBurst(
+            impulseResponse,
+            startMs: 20.0,
+            frequencyHz: 2_000,
+            periods: 80,
+            amplitude: 1.0);
+        AddToneBurst(
+            impulseResponse,
+            startMs: 20.0,
+            frequencyHz: 5_000,
+            periods: 80,
+            amplitude: 20.0);
+        var coherence = new double[impulseResponse.Length / 2 + 1];
+        int trustedLowBin = (int)Math.Floor(
+            1_700.0 * impulseResponse.Length / SampleRate);
+        int trustedHighBin = (int)Math.Ceiling(
+            2_300.0 * impulseResponse.Length / SampleRate);
+        Array.Fill(
+            coherence,
+            1.0,
+            trustedLowBin,
+            trustedHighBin - trustedLowBin + 1);
+        int isolatedBin = (int)Math.Round(
+            5_000.0 * impulseResponse.Length / SampleRate);
+        coherence[isolatedBin] = 1.0;
+
+        DominantBand band = TransferIrDiagnostics.DetectDominantBand(
+            impulseResponse,
+            SampleRate,
+            coherence: coherence);
+
+        Assert.InRange(band.PeakHz, 1_700, 2_300);
+        Assert.True(band.HighHz < 3_000);
+    }
+
+    [Fact]
     public void DetectCrosstalkHead_FindsTheEarlyBroadbandClick()
     {
         // -21 dB re the record's max — the field click's level, inside the

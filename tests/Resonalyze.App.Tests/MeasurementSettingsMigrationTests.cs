@@ -89,6 +89,53 @@ public sealed class MeasurementSettingsMigrationTests
     }
 
     [Fact]
+    public void ProtectiveHighPass_RoundTripsThroughCapturedSettings()
+    {
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(
+                20,
+                20_000,
+                48_000,
+                24,
+                1.0,
+                PlaybackChannel.Mono),
+            new SweepAudioConfiguration(),
+            new SweepAveragingConfiguration(),
+            new ProtectiveHighPassConfiguration(
+                ProtectiveHighPassKind.Butterworth,
+                3_150,
+                36)));
+
+        MeasurementSettingsFile.SweepMeasurementSettings captured =
+            MeasurementSettingsFile.SweepMeasurementSettings.Capture(measurement);
+        SweepMeasurementConfiguration rebuilt = captured.BuildConfiguration();
+
+        Assert.Equal(ProtectiveHighPassKind.Butterworth, captured.ProtectiveHighPassKind);
+        Assert.Equal(3_150, captured.ProtectiveHighPassFrequencyHz);
+        Assert.Equal(36, captured.ProtectiveHighPassSlopeDbPerOctave);
+        Assert.Equal(measurement.ProtectiveHighPass, rebuilt.ProtectiveHighPass);
+    }
+
+    [Fact]
+    public void ProtectiveHighPass_InvalidLinkwitzRileySlopeFallsBackToTwentyFour()
+    {
+        var settings = new MeasurementSettingsFile.SweepMeasurementSettings
+        {
+            ProtectiveHighPassKind = ProtectiveHighPassKind.LinkwitzRiley,
+            ProtectiveHighPassFrequencyHz = 2_500,
+            ProtectiveHighPassSlopeDbPerOctave = 18
+        };
+
+        ProtectiveHighPassConfiguration protectiveHighPass =
+            settings.BuildConfiguration().ProtectiveHighPass!;
+
+        Assert.Equal(ProtectiveHighPassKind.LinkwitzRiley, protectiveHighPass.Kind);
+        Assert.Equal(2_500, protectiveHighPass.FrequencyHz);
+        Assert.Equal(24, protectiveHighPass.SlopeDbPerOctave);
+    }
+
+    [Fact]
     public void RestoreImpulseResponse_PreservesCurrentWasapiConfiguration()
     {
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
@@ -127,6 +174,39 @@ public sealed class MeasurementSettingsMigrationTests
         Assert.Equal(40, measurement.WasapiBufferMilliseconds);
         Assert.Equal("USB Input", measurement.WasapiCaptureEndpointName);
         Assert.Equal("USB Output", measurement.WasapiRenderEndpointName);
+    }
+
+    [Fact]
+    public void RestoreImpulseResponse_PreservesCurrentProtectiveHighPassConfiguration()
+    {
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        var protectiveHighPass = new ProtectiveHighPassConfiguration(
+            ProtectiveHighPassKind.LinkwitzRiley,
+            2_000,
+            48);
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(
+                20,
+                20_000,
+                48_000,
+                24,
+                1.0,
+                PlaybackChannel.Mono),
+            new SweepAudioConfiguration(),
+            new SweepAveragingConfiguration(),
+            protectiveHighPass));
+
+        measurement.RestoreImpulseResponse(
+            20,
+            20_000,
+            48_000,
+            24,
+            1.0,
+            PlaybackChannel.Mono,
+            [System.Numerics.Complex.Zero, System.Numerics.Complex.One],
+            1);
+
+        Assert.Equal(protectiveHighPass, measurement.ProtectiveHighPass);
     }
 
     [Fact]

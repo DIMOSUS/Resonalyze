@@ -1,4 +1,5 @@
 using Resonalyze.Audio;
+using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
@@ -34,6 +35,28 @@ internal static class SyntheticCapture
     public static AudioCaptureResult QuietCleanLoopback(AudioPlaybackSignal signal, int tailSamples)
     {
         (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.0089f);
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
+    // The physical arrangement behind protective-HPF compensation: loopback is
+    // captured directly from the sound-card output, while only the microphone
+    // path passes through the external DSP's high-pass.
+    public static AudioCaptureResult ProtectedLoudspeaker(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        CrossoverEdge edge,
+        double sampleRateHz)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        IReadOnlyList<BiquadCoefficients> sections =
+            CrossoverFilter.BuildSections(edge, highPass: true, sampleRateHz);
+        foreach (BiquadCoefficients section in sections)
+        {
+            ApplySection(mic, section);
+        }
+
         return new AudioCaptureResult(
             [mic, loop], 0, 1, StereoSeparationExpected: true,
             AudioCaptureAnomalies.None, Diagnostics: null);
@@ -235,6 +258,25 @@ internal static class SyntheticCapture
             loop[i] = signal.MonoSamples[i] * loopScale;
         }
         return (mic, loop);
+    }
+
+    private static void ApplySection(float[] samples, BiquadCoefficients section)
+    {
+        double x1 = 0;
+        double x2 = 0;
+        double y1 = 0;
+        double y2 = 0;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            double x = samples[i];
+            double y = section.B0 * x + section.B1 * x1 + section.B2 * x2 +
+                section.A1 * y1 + section.A2 * y2;
+            samples[i] = (float)y;
+            x2 = x1;
+            x1 = x;
+            y2 = y1;
+            y1 = y;
+        }
     }
 }
 

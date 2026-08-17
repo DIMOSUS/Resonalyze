@@ -41,6 +41,11 @@
             labelHighFrequency = new Label();
             numericUpDownLowFrequency = new DarkNumericUpDown();
             labelLowFrequency = new Label();
+            labelProtectiveHighPass = new Label();
+            labelProtectiveHighPassParameters = new Label();
+            comboBoxProtectiveHighPassKind = new DarkComboBox();
+            numericUpDownProtectiveHighPassFrequency = new DarkNumericUpDown();
+            comboBoxProtectiveHighPassSlope = new DarkComboBox();
             numericUpDownBits = new DarkNumericUpDown();
             label2 = new Label();
             comboBoxSampleRate = new DarkComboBox();
@@ -69,6 +74,7 @@
             (numericUpDownRequestedDuration).BeginInit();
             (numericUpDownHighFrequency).BeginInit();
             (numericUpDownLowFrequency).BeginInit();
+            (numericUpDownProtectiveHighPassFrequency).BeginInit();
             (numericUpDownBits).BeginInit();
             (numericUpDownAverageRunCount).BeginInit();
             SuspendLayout();
@@ -78,6 +84,11 @@
             sweepPanel.BackColor = Color.FromArgb(50, 55, 66);
             sweepPanel.BorderStyle = BorderStyle.FixedSingle;
             sweepPanel.Controls.Add(buttonSaveSweepFile);
+            sweepPanel.Controls.Add(comboBoxProtectiveHighPassSlope);
+            sweepPanel.Controls.Add(numericUpDownProtectiveHighPassFrequency);
+            sweepPanel.Controls.Add(comboBoxProtectiveHighPassKind);
+            sweepPanel.Controls.Add(labelProtectiveHighPassParameters);
+            sweepPanel.Controls.Add(labelProtectiveHighPass);
             sweepPanel.Controls.Add(labelActualRangeCaption);
             sweepPanel.Controls.Add(numericUpDownRequestedDuration);
             sweepPanel.Controls.Add(label4);
@@ -87,14 +98,14 @@
             sweepPanel.Controls.Add(labelLowFrequency);
             sweepPanel.Location = new Point(8, 6);
             sweepPanel.Name = "sweepPanel";
-            sweepPanel.Size = new Size(322, 134);
+            sweepPanel.Size = new Size(322, 184);
             sweepPanel.TabIndex = 0;
             //
             // buttonSaveSweepFile
             //
             buttonSaveSweepFile.FlatStyle = FlatStyle.Popup;
             buttonSaveSweepFile.ForeColor = Color.White;
-            buttonSaveSweepFile.Location = new Point(8, 103);
+            buttonSaveSweepFile.Location = new Point(8, 153);
             buttonSaveSweepFile.Name = "buttonSaveSweepFile";
             buttonSaveSweepFile.Size = new Size(307, 23);
             buttonSaveSweepFile.TabIndex = 22;
@@ -195,6 +206,65 @@
             labelLowFrequency.Size = new Size(110, 15);
             labelLowFrequency.TabIndex = 15;
             labelLowFrequency.Text = "Low frequency (Hz)";
+            //
+            // labelProtectiveHighPass
+            //
+            labelProtectiveHighPass.AutoSize = true;
+            labelProtectiveHighPass.ForeColor = SystemColors.ControlLight;
+            labelProtectiveHighPass.Location = new Point(8, 108);
+            labelProtectiveHighPass.Name = "labelProtectiveHighPass";
+            labelProtectiveHighPass.Size = new Size(83, 15);
+            labelProtectiveHighPass.TabIndex = 23;
+            labelProtectiveHighPass.Text = "Protective HPF";
+            //
+            // labelProtectiveHighPassParameters
+            //
+            labelProtectiveHighPassParameters.AutoSize = true;
+            labelProtectiveHighPassParameters.ForeColor = SystemColors.ControlLight;
+            labelProtectiveHighPassParameters.Location = new Point(8, 133);
+            labelProtectiveHighPassParameters.Name = "labelProtectiveHighPassParameters";
+            labelProtectiveHighPassParameters.Size = new Size(104, 15);
+            labelProtectiveHighPassParameters.TabIndex = 24;
+            labelProtectiveHighPassParameters.Text = "Corner (Hz) / slope";
+            //
+            // comboBoxProtectiveHighPassKind
+            //
+            comboBoxProtectiveHighPassKind.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxProtectiveHighPassKind.ForeColor = Color.White;
+            comboBoxProtectiveHighPassKind.Location = new Point(145, 103);
+            comboBoxProtectiveHighPassKind.Margin = new Padding(0);
+            comboBoxProtectiveHighPassKind.MinimumSize = new Size(36, 19);
+            comboBoxProtectiveHighPassKind.Name = "comboBoxProtectiveHighPassKind";
+            comboBoxProtectiveHighPassKind.Size = new Size(170, 23);
+            comboBoxProtectiveHighPassKind.TabIndex = 25;
+            //
+            // numericUpDownProtectiveHighPassFrequency
+            //
+            numericUpDownProtectiveHighPassFrequency.BackColor = Color.FromArgb(55, 60, 72);
+            numericUpDownProtectiveHighPassFrequency.DecimalPlaces = 0;
+            numericUpDownProtectiveHighPassFrequency.ForeColor = Color.White;
+            numericUpDownProtectiveHighPassFrequency.Increment = new decimal(new int[] { 10, 0, 0, 0 });
+            numericUpDownProtectiveHighPassFrequency.Location = new Point(145, 130);
+            numericUpDownProtectiveHighPassFrequency.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
+            numericUpDownProtectiveHighPassFrequency.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
+            numericUpDownProtectiveHighPassFrequency.MinimumSize = new Size(36, 19);
+            numericUpDownProtectiveHighPassFrequency.Name = "numericUpDownProtectiveHighPassFrequency";
+            numericUpDownProtectiveHighPassFrequency.Size = new Size(70, 19);
+            numericUpDownProtectiveHighPassFrequency.TabIndex = 26;
+            numericUpDownProtectiveHighPassFrequency.TextAlign = HorizontalAlignment.Right;
+            numericUpDownProtectiveHighPassFrequency.ThousandsSeparator = false;
+            numericUpDownProtectiveHighPassFrequency.Value = new decimal(new int[] { 2000, 0, 0, 0 });
+            //
+            // comboBoxProtectiveHighPassSlope
+            //
+            comboBoxProtectiveHighPassSlope.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxProtectiveHighPassSlope.ForeColor = Color.White;
+            comboBoxProtectiveHighPassSlope.Location = new Point(220, 128);
+            comboBoxProtectiveHighPassSlope.Margin = new Padding(0);
+            comboBoxProtectiveHighPassSlope.MinimumSize = new Size(36, 19);
+            comboBoxProtectiveHighPassSlope.Name = "comboBoxProtectiveHighPassSlope";
+            comboBoxProtectiveHighPassSlope.Size = new Size(95, 23);
+            comboBoxProtectiveHighPassSlope.TabIndex = 27;
             // 
             // numericUpDownBits
             // 
@@ -251,7 +321,7 @@
             // 
             comboBoxChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxChannel.ForeColor = Color.White;
-            comboBoxChannel.Location = new Point(154, 148);
+            comboBoxChannel.Location = new Point(154, 198);
             comboBoxChannel.Margin = new Padding(0);
             comboBoxChannel.MinimumSize = new Size(36, 19);
             comboBoxChannel.Name = "comboBoxChannel";
@@ -263,7 +333,7 @@
             // 
             label3.AutoSize = true;
             label3.ForeColor = SystemColors.ControlLight;
-            label3.Location = new Point(17, 156);
+            label3.Location = new Point(17, 206);
             label3.Name = "label3";
             label3.Size = new Size(51, 15);
             label3.TabIndex = 5;
@@ -282,7 +352,7 @@
             audioBackendPanel.Controls.Add(label2);
             audioBackendPanel.Controls.Add(comboBoxSampleRate);
             audioBackendPanel.Controls.Add(label1);
-            audioBackendPanel.Location = new Point(8, 304);
+            audioBackendPanel.Location = new Point(8, 354);
             audioBackendPanel.Name = "audioBackendPanel";
             audioBackendPanel.Size = new Size(322, 368);
             audioBackendPanel.TabIndex = 39;
@@ -325,7 +395,7 @@
             // 
             labelAverageRunCount.AutoSize = true;
             labelAverageRunCount.ForeColor = SystemColors.ControlLight;
-            labelAverageRunCount.Location = new Point(17, 182);
+            labelAverageRunCount.Location = new Point(17, 232);
             labelAverageRunCount.Name = "labelAverageRunCount";
             labelAverageRunCount.Size = new Size(85, 15);
             labelAverageRunCount.TabIndex = 27;
@@ -337,7 +407,7 @@
             numericUpDownAverageRunCount.DecimalPlaces = 0;
             numericUpDownAverageRunCount.ForeColor = Color.White;
             numericUpDownAverageRunCount.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericUpDownAverageRunCount.Location = new Point(154, 178);
+            numericUpDownAverageRunCount.Location = new Point(154, 228);
             numericUpDownAverageRunCount.Maximum = new decimal(new int[] { 64, 0, 0, 0 });
             numericUpDownAverageRunCount.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             numericUpDownAverageRunCount.MinimumSize = new Size(36, 19);
@@ -353,7 +423,7 @@
             // 
             checkBoxConfirmEachAverageRun.AutoSize = true;
             checkBoxConfirmEachAverageRun.ForeColor = SystemColors.ControlLight;
-            checkBoxConfirmEachAverageRun.Location = new Point(154, 202);
+            checkBoxConfirmEachAverageRun.Location = new Point(154, 252);
             checkBoxConfirmEachAverageRun.Name = "checkBoxConfirmEachAverageRun";
             checkBoxConfirmEachAverageRun.Size = new Size(119, 19);
             checkBoxConfirmEachAverageRun.TabIndex = 29;
@@ -365,7 +435,7 @@
             // 
             labelCalibration0.AutoSize = true;
             labelCalibration0.ForeColor = SystemColors.ControlLight;
-            labelCalibration0.Location = new Point(17, 232);
+            labelCalibration0.Location = new Point(17, 282);
             labelCalibration0.Name = "labelCalibration0";
             labelCalibration0.Size = new Size(100, 15);
             labelCalibration0.TabIndex = 30;
@@ -375,7 +445,7 @@
             // 
             buttonCalibration0.FlatStyle = FlatStyle.Popup;
             buttonCalibration0.ForeColor = Color.White;
-            buttonCalibration0.Location = new Point(154, 227);
+            buttonCalibration0.Location = new Point(154, 277);
             buttonCalibration0.Name = "buttonCalibration0";
             buttonCalibration0.Size = new Size(143, 23);
             buttonCalibration0.TabIndex = 31;
@@ -387,7 +457,7 @@
             // 
             buttonClearCalibration0.FlatStyle = FlatStyle.Popup;
             buttonClearCalibration0.ForeColor = Color.White;
-            buttonClearCalibration0.Location = new Point(300, 227);
+            buttonClearCalibration0.Location = new Point(300, 277);
             buttonClearCalibration0.Name = "buttonClearCalibration0";
             buttonClearCalibration0.Size = new Size(24, 23);
             buttonClearCalibration0.TabIndex = 34;
@@ -399,7 +469,7 @@
             //
             labelCalibrationExtra.AutoSize = true;
             labelCalibrationExtra.ForeColor = SystemColors.ControlLight;
-            labelCalibrationExtra.Location = new Point(17, 257);
+            labelCalibrationExtra.Location = new Point(17, 307);
             labelCalibrationExtra.Name = "labelCalibrationExtra";
             labelCalibrationExtra.Size = new Size(106, 15);
             labelCalibrationExtra.TabIndex = 32;
@@ -409,7 +479,7 @@
             //
             buttonCalibrationExtra.FlatStyle = FlatStyle.Popup;
             buttonCalibrationExtra.ForeColor = Color.White;
-            buttonCalibrationExtra.Location = new Point(154, 252);
+            buttonCalibrationExtra.Location = new Point(154, 302);
             buttonCalibrationExtra.Name = "buttonCalibrationExtra";
             buttonCalibrationExtra.Size = new Size(170, 23);
             buttonCalibrationExtra.TabIndex = 33;
@@ -421,7 +491,7 @@
             // 
             labelSplCalibration.AutoSize = true;
             labelSplCalibration.ForeColor = SystemColors.ControlLight;
-            labelSplCalibration.Location = new Point(17, 282);
+            labelSplCalibration.Location = new Point(17, 332);
             labelSplCalibration.Name = "labelSplCalibration";
             labelSplCalibration.Size = new Size(85, 15);
             labelSplCalibration.TabIndex = 36;
@@ -431,7 +501,7 @@
             // 
             buttonSplCalibration.FlatStyle = FlatStyle.Popup;
             buttonSplCalibration.ForeColor = Color.White;
-            buttonSplCalibration.Location = new Point(154, 277);
+            buttonSplCalibration.Location = new Point(154, 327);
             buttonSplCalibration.Name = "buttonSplCalibration";
             buttonSplCalibration.Size = new Size(143, 23);
             buttonSplCalibration.TabIndex = 37;
@@ -443,7 +513,7 @@
             // 
             buttonClearSplCalibration.FlatStyle = FlatStyle.Popup;
             buttonClearSplCalibration.ForeColor = Color.White;
-            buttonClearSplCalibration.Location = new Point(300, 277);
+            buttonClearSplCalibration.Location = new Point(300, 327);
             buttonClearSplCalibration.Name = "buttonClearSplCalibration";
             buttonClearSplCalibration.Size = new Size(24, 23);
             buttonClearSplCalibration.TabIndex = 38;
@@ -472,7 +542,7 @@
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(334, 678);
+            ClientSize = new Size(334, 728);
             Controls.Add(audioBackendPanel);
             Controls.Add(buttonClearSplCalibration);
             Controls.Add(buttonSplCalibration);
@@ -501,6 +571,7 @@
             (numericUpDownRequestedDuration).EndInit();
             (numericUpDownHighFrequency).EndInit();
             (numericUpDownLowFrequency).EndInit();
+            (numericUpDownProtectiveHighPassFrequency).EndInit();
             (numericUpDownBits).EndInit();
             (numericUpDownAverageRunCount).EndInit();
             ResumeLayout(false);
@@ -525,6 +596,11 @@
         private Label labelHighFrequency;
         private Label labelActualRangeCaption;
         private Button buttonSaveSweepFile;
+        private Label labelProtectiveHighPass;
+        private Label labelProtectiveHighPassParameters;
+        private DarkComboBox comboBoxProtectiveHighPassKind;
+        private DarkNumericUpDown numericUpDownProtectiveHighPassFrequency;
+        private DarkComboBox comboBoxProtectiveHighPassSlope;
         private Label labelAudioBackend;
         private DarkComboBox comboBoxAudioBackend;
         private Label labelAverageRunCount;

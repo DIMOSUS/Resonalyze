@@ -129,6 +129,8 @@ namespace Resonalyze
         public int AverageRunCount { get; private set; } = 1;
         public int AcceptedAverageRunCount { get; private set; } = 1;
         public bool ConfirmEachAverageRun { get; private set; }
+        public ProtectiveHighPassConfiguration ProtectiveHighPass { get; private set; } =
+            ProtectiveHighPassConfiguration.Off;
         // The SPL calibration CONFIGURED for the next run (follows the settings /
         // dialog). It is snapshotted into MeasurementSplCalibration when a run
         // starts, so recalibrating afterwards never rewrites an existing result.
@@ -259,6 +261,8 @@ namespace Resonalyze
             AverageRunCount = Math.Clamp(averaging.RunCount, 1, 64);
             AcceptedAverageRunCount = 0;
             ConfirmEachAverageRun = averaging.ConfirmEachRun;
+            ProtectiveHighPass = ProtectiveHighPassConfiguration.Normalize(
+                configuration.ProtectiveHighPass);
             QualityReport = null;
             LastError = null;
             CurrentLevels = InputLevelMeterSnapshot.Empty;
@@ -513,7 +517,8 @@ namespace Resonalyze
                     WasapiBufferMilliseconds: WasapiBufferMilliseconds),
                 new SweepAveragingConfiguration(
                     AverageRunCount,
-                    ConfirmEachAverageRun)));
+                    ConfirmEachAverageRun),
+                ProtectiveHighPass));
             // Init just set these from the sweep it regenerated; the recorded
             // geometry wins, since that sweep is a reconstruction and this result
             // came from the original one. The length matters as much as the band:
@@ -1648,10 +1653,25 @@ namespace Resonalyze
             sweepDeconvolutionResult = new MeasurementImpulseResponse(
                 result.SweepImpulseResponse,
                 result.SweepPeakIndex);
-            transferResult = result.TransferImpulseResponse != null
+            Complex[]? transferImpulseResponse = result.TransferImpulseResponse;
+            int transferPeakIndex = result.TransferPeakIndex;
+            if (transferImpulseResponse != null && ProtectiveHighPass.Enabled)
+            {
+                transferImpulseResponse =
+                    ProtectiveHighPassCompensation.RemoveFromImpulseResponse(
+                        transferImpulseResponse,
+                        ProtectiveHighPass.ToEdge(),
+                        SampleRate,
+                        ProtectiveHighPassConfiguration.MaximumCompensationBoostDb);
+                // Removing the high-pass removes its group delay too, so its
+                // corrected arrival is allowed to move instead of inheriting the
+                // filtered response's peak index.
+                transferPeakIndex = FindPeakIndex(transferImpulseResponse);
+            }
+            transferResult = transferImpulseResponse != null
                 ? new MeasurementImpulseResponse(
-                    result.TransferImpulseResponse,
-                    result.TransferPeakIndex)
+                    transferImpulseResponse,
+                    transferPeakIndex)
                 : null;
             TransferCoherence = result.TransferCoherence;
             MicrophoneRecordedSamples = result.MicrophoneRecordedSamples;

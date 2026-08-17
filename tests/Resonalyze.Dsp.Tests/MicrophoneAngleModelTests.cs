@@ -188,6 +188,54 @@ public sealed class MicrophoneAngleModelTests
         Assert.Equal(atSize, justPast, precision: 4);
     }
 
+    [Theory]
+    [InlineData(12_000)]
+    [InlineData(16_000)]
+    [InlineData(18_000)]
+    [InlineData(20_000)]
+    public void ADiameterJustBelowATabulatedSize_ReadsAlmostLikeThatSize(double frequencyHz)
+    {
+        // The neighbouring size is weighted at a ten-thousandth here, so it must
+        // not decide anything — including where the estimate stops modelling.
+        // Sharing one limit between the sizes let the half-inch references, which
+        // run out at 10 kHz once scaled to 25 mm, cut the one-inch reference
+        // short and step the answer by 12 dB across a hundredth of a millimetre.
+        double justBelow = MicrophoneAngleModel
+            .Estimate(new MicrophoneAngleRequest(90, 25.39, MicrophoneProtectionGrid.Fitted))
+            .DeltaDb(frequencyHz);
+        double atSize = MicrophoneAngleModel
+            .Estimate(new MicrophoneAngleRequest(90, 25.40, MicrophoneProtectionGrid.Fitted))
+            .DeltaDb(frequencyHz);
+
+        Assert.InRange(Math.Abs(justBelow - atSize), 0.0, 0.05);
+    }
+
+    [Theory]
+    [InlineData(12_000, MicrophoneProtectionGrid.Fitted)]
+    [InlineData(18_000, MicrophoneProtectionGrid.Fitted)]
+    [InlineData(20_000, MicrophoneProtectionGrid.Unknown)]
+    [InlineData(20_000, MicrophoneProtectionGrid.Removed)]
+    public void TheEstimateMovesSmoothlyWithTheStatedDiameter(
+        double frequencyHz,
+        MicrophoneProtectionGrid grid)
+    {
+        // The dialog takes hundredths of a millimetre, so walk the whole range in
+        // that step across every tabulated size: a physical dimension nudged by
+        // 0.01 mm cannot change the correction by a decibel.
+        double previous = MicrophoneAngleModel
+            .Estimate(new MicrophoneAngleRequest(90, 3.0, grid))
+            .DeltaDb(frequencyHz);
+        for (int step = 1; step <= 2700; step++)
+        {
+            double diameterMm = 3.0 + step * 0.01;
+            double current = MicrophoneAngleModel
+                .Estimate(new MicrophoneAngleRequest(90, diameterMm, grid))
+                .DeltaDb(frequencyHz);
+            Assert.InRange(Math.Abs(current - previous), 0.0, 0.1);
+            previous = current;
+        }
+    }
+
     [Fact]
     public void BetweenTwoSizes_TheBlendFollowsTheLogarithmOfTheDiameter()
     {

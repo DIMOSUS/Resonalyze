@@ -64,14 +64,15 @@ public sealed class MicrophoneAngleEstimate
     public IReadOnlyList<string> References { get; }
 
     /// <summary>
-    /// The highest frequency EVERY reference behind this estimate still covers
-    /// after diameter scaling. Above it the estimate HOLDS its last value
-    /// instead of extrapolating a diffraction curve it has no data for — and
-    /// the limit is the point where the FIRST reference runs out rather than the
-    /// last, so the set of references never changes mid-curve. Swapping one
-    /// reference for another at some frequency would step the correction (a 1"
-    /// microphone read from a quarter-inch reference jumps by ~9 dB) and leave
-    /// <see cref="References"/> naming curves the top of the band never used.
+    /// The highest frequency at which nothing is being held yet: where the FIRST
+    /// of the reference sizes behind this estimate runs out of table after
+    /// diameter scaling. Above it that size holds its last value — the other may
+    /// still be modelling — instead of extrapolating a diffraction curve it has
+    /// no data for, and the set of references never changes mid-curve. Swapping
+    /// one reference for another at some frequency would step the correction (a
+    /// 1" microphone read from a quarter-inch reference jumps by ~9 dB) and
+    /// leave <see cref="References"/> naming curves the top of the band never
+    /// used.
     /// </summary>
     public double HighestSupportedFrequencyHz { get; }
 
@@ -186,21 +187,25 @@ public static class MicrophoneAngleModel
             ? 0.0
             : (Math.Log(request.FrontDiameterMm) - Math.Log(below)) /
               (Math.Log(above) - Math.Log(below));
-        double highestSupported = lower
+        // Every reference holds at its own range (see Candidate.GetDeltas), so
+        // this limit only REPORTS where the first of them stops modelling — a
+        // shared cut-off would travel with the blend, letting a neighbouring
+        // family weighted at a ten-thousandth truncate the dominant one and step
+        // the answer by 12 dB across a hundredth of a millimetre.
+        double reportedLimit = lower
             .Concat(upper)
             .Min(candidate => candidate.HighestTargetFrequencyHz);
 
         return new MicrophoneAngleEstimate(
             request.AngleDegrees,
             lower.Concat(upper).Select(candidate => candidate.Curve.Label).ToList(),
-            highestSupported,
+            reportedLimit,
             frequencyHz =>
             {
-                double bounded = Math.Min(frequencyHz, highestSupported);
-                MicrophoneAngleBounds atBelow = Aggregate(lower, bounded, u);
+                MicrophoneAngleBounds atBelow = Aggregate(lower, frequencyHz, u);
                 return upper.Count == 0
                     ? atBelow
-                    : Interpolate(atBelow, Aggregate(upper, bounded, u), blend);
+                    : Interpolate(atBelow, Aggregate(upper, frequencyHz, u), blend);
             });
     }
 
@@ -219,9 +224,10 @@ public static class MicrophoneAngleModel
             .Where(curve => curve.DiameterMm == SonarworksXref20DiameterMm)
             .Select(curve => new Candidate(curve, 1.0))
             .ToList();
-        // Bounded by the FIRST thing that runs out — the fit's own band or the
-        // half-inch references that shape the spread — so neither the measured
-        // difference nor the set of references behind the band changes mid-curve.
+        // Reported at the FIRST thing that runs out — the fit's own band or the
+        // half-inch references that shape the spread. Both hold from there of
+        // their own accord: the fit clamps itself, the references hold in
+        // Candidate.GetDeltas.
         double highestSupported = Math.Min(
             SonarworksXref20HighestFittedHz,
             halfInch.Min(candidate => candidate.HighestTargetFrequencyHz));
@@ -234,11 +240,10 @@ public static class MicrophoneAngleModel
             {
                 double delta90 = SonarworksXref20Delta90Db(frequencyHz);
                 var factors = new List<double> { analyticFactor };
-                double bounded = Math.Min(frequencyHz, highestSupported);
                 foreach (Candidate candidate in halfInch)
                 {
-                    if (candidate.TryGetDeltas(bounded, out GrasAngleDeltas deltas) &&
-                        Math.Abs(deltas.At90) >= MinimumUsableAngleDeltaDb)
+                    GrasAngleDeltas deltas = candidate.GetDeltas(frequencyHz);
+                    if (Math.Abs(deltas.At90) >= MinimumUsableAngleDeltaDb)
                     {
                         factors.Add(InterpolateAngle(u, deltas) / deltas.At90);
                     }
@@ -283,15 +288,7 @@ public static class MicrophoneAngleModel
         var deltas = new List<double>(candidates.Count);
         foreach (Candidate candidate in candidates)
         {
-            if (candidate.TryGetDeltas(frequencyHz, out GrasAngleDeltas angleDeltas))
-            {
-                deltas.Add(InterpolateAngle(u, angleDeltas));
-            }
-        }
-
-        if (deltas.Count == 0)
-        {
-            return default;
+            deltas.Add(InterpolateAngle(u, candidate.GetDeltas(frequencyHz)));
         }
 
         deltas.Sort();
@@ -355,7 +352,21 @@ public static class MicrophoneAngleModel
 
         public double HighestTargetFrequencyHz => Curve.MaxFrequencyHz / FrequencyScale;
 
-        public bool TryGetDeltas(double frequencyHz, out GrasAngleDeltas deltas) =>
-            Curve.TryGetAngleDeltas(frequencyHz * FrequencyScale, out deltas);
+        /// <summary>
+        /// The angular differences this reference states for a target frequency,
+        /// HOLDING its last tabulated value above its own range. Holding here,
+        /// rather than at the caller, is what keeps the estimate continuous: the
+        /// caller would have to clamp to <see cref="HighestTargetFrequencyHz"/>,
+        /// and scaling that back through the diameter ratio can land a single
+        /// ulp past the table's end — which used to drop the reference and step
+        /// the answer by the whole correction.
+        /// </summary>
+        public GrasAngleDeltas GetDeltas(double frequencyHz)
+        {
+            Curve.TryGetAngleDeltas(
+                Math.Min(frequencyHz * FrequencyScale, Curve.MaxFrequencyHz),
+                out GrasAngleDeltas deltas);
+            return deltas;
+        }
     }
 }

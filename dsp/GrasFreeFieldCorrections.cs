@@ -64,8 +64,9 @@ public sealed class GrasReferenceCurve
     /// (log frequency, dB) — the reading the table is drawn for. Below the
     /// tabulated range the differences are zero: diffraction around the housing
     /// is negligible there, and the table itself starts at 0.01 dB. Above it the
-    /// lookup FAILS rather than extrapolating; the caller moves to a
-    /// smaller-diameter reference, which reaches further in scaled frequency.
+    /// lookup FAILS rather than extrapolating, and the caller holds its last
+    /// value: reading another size's curve instead would step the correction by
+    /// several decibels mid-band.
     /// </summary>
     public bool TryGetAngleDeltas(double hz, out GrasAngleDeltas deltas)
     {

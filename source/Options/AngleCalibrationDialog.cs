@@ -247,12 +247,15 @@ internal sealed partial class AngleCalibrationDialog : Form
         string references = estimate.References.Count == 0
             ? "no reference"
             : string.Join(" · ", estimate.References);
-        // Where the references run out the curve holds its last value rather
-        // than switching to another size mid-band, so say where that happens
-        // instead of letting a flat top look like a measured result.
+        // Where a reference runs out it holds its last value rather than handing
+        // the band to another size, so say where that starts instead of letting
+        // a flat top read as a measured result. The frequency is where the FIRST
+        // of them stops modelling; a second size of comparable geometry may keep
+        // going past it, which is why this says "references hold" rather than
+        // claiming the whole curve is frozen.
         string held = estimate.HighestSupportedFrequencyHz < PreviewMaximumHz
-            ? $" Modelled to {FrequencyText.Format(estimate.HighestSupportedFrequencyHz)}, " +
-              "held above that."
+            ? $" Modelled to {FrequencyText.Format(estimate.HighestSupportedFrequencyHz)}; " +
+              "references hold above that."
             : string.Empty;
         // With one reference of comparable geometry there is nothing to disagree,
         // and printing a 0.00 dB spread would read as a confidence the estimate

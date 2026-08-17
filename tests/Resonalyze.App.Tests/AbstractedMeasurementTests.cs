@@ -45,8 +45,11 @@ public sealed class AbstractedMeasurementTests
         Assert.Equal(1, factory.DuplexOpenCount);
     }
 
-    [Fact]
-    public async Task ProtectiveHighPass_IsRemovedFromThePublishedTransferIrOnly()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task ProtectiveHighPass_IsRemovedFromThePublishedTransferIrOnly(
+        int runCount)
     {
         var edge = new CrossoverEdge(
             CrossoverFilterFamily.LinkwitzRiley,
@@ -69,7 +72,7 @@ public sealed class AbstractedMeasurementTests
             new SweepAudioConfiguration(
                 WaveInputChannelOffset: 0,
                 WaveLoopbackInputChannelOffset: 1),
-            new SweepAveragingConfiguration(),
+            new SweepAveragingConfiguration(runCount),
             new ProtectiveHighPassConfiguration(
                 ProtectiveHighPassKind.LinkwitzRiley,
                 2_000,
@@ -80,6 +83,7 @@ public sealed class AbstractedMeasurementTests
         Assert.True(success, measurement.LastError?.ToString());
         Assert.NotNull(measurement.TransferImpulseResponse);
         Assert.NotNull(measurement.SweepDeconvolutionImpulseResponse);
+        Assert.Equal(runCount > 1, measurement.TransferCoherence != null);
 
         using ExpSweepMeasurement uncompensated = CreateSweep(factory);
         bool uncompensatedSuccess = await uncompensated.RunAsync();
@@ -91,6 +95,7 @@ public sealed class AbstractedMeasurementTests
         Fourier.Forward(rawTransfer, FourierOptions.Matlab);
         int cornerBin = (int)Math.Round(2_000.0 * transfer.Length / measurement.SampleRate);
         int passBandBin = (int)Math.Round(8_000.0 * transfer.Length / measurement.SampleRate);
+        int stopBandBin = (int)Math.Round(250.0 * transfer.Length / measurement.SampleRate);
         double transferCornerRelativeDb = 20.0 * Math.Log10(
             transfer[cornerBin].Magnitude / transfer[passBandBin].Magnitude);
         double rawCornerRelativeDb = 20.0 * Math.Log10(
@@ -99,6 +104,25 @@ public sealed class AbstractedMeasurementTests
         Assert.InRange(transferCornerRelativeDb, -0.2, 0.2);
         Assert.InRange(rawCornerRelativeDb, -6.3, -5.7);
         Assert.InRange(Math.Abs(transfer[cornerBin].Phase), 0.0, 0.05);
+        double gatedStopBandRelativeDb = 20.0 * Math.Log10(
+            transfer[stopBandBin].Magnitude / transfer[passBandBin].Magnitude);
+        Assert.True(
+            gatedStopBandRelativeDb < -140.0,
+            $"unreliable stopband remained at {gatedStopBandRelativeDb:0.0} dB");
+
+        if (measurement.TransferCoherence is { } coherence)
+        {
+            int coherenceFftLength = (coherence.Length - 1) * 2;
+            int coherenceStopBin = (int)Math.Round(
+                250.0 * coherenceFftLength / measurement.SampleRate);
+            int coherenceCornerBin = (int)Math.Round(
+                2_000.0 * coherenceFftLength / measurement.SampleRate);
+            // The two synthetic runs are identical, so raw MSC is one everywhere.
+            // The protective-filter validity must still reject the unrecoverable
+            // stopband while leaving the correction's trusted band untouched.
+            Assert.Equal(0.0, coherence[coherenceStopBin], 12);
+            Assert.InRange(coherence[coherenceCornerBin], 0.99, 1.0);
+        }
         Assert.Equal(
             uncompensated.SweepDeconvolutionImpulseResponse,
             measurement.SweepDeconvolutionImpulseResponse);

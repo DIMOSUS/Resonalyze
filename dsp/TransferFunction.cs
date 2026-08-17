@@ -282,12 +282,13 @@ public static class TransferFunction
         var weights = new double[fftLength];
         for (int bin = 0; bin < fftLength; bin++)
         {
-            double weight = SoftGate(referencePowerSpectrum[bin], gateLow, gateHigh);
+            double weight = DspMath.RaisedCosineGate(
+                referencePowerSpectrum[bin], gateLow, gateHigh);
             if (weight > 0 && hasLowEdge)
             {
                 // Zero below the achieved low edge (nothing was excited there),
                 // rising to unity where the fade-in completes.
-                weight *= SoftGate(
+                weight *= DspMath.RaisedCosineGate(
                     NyquistFraction(bin),
                     gate.LowZeroNyquistFraction,
                     gate.LowFullNyquistFraction);
@@ -296,7 +297,7 @@ public static class TransferFunction
             {
                 // Mirror: unity where the fade-out starts, zero above the
                 // achieved high edge.
-                weight *= 1.0 - SoftGate(
+                weight *= 1.0 - DspMath.RaisedCosineGate(
                     NyquistFraction(bin),
                     gate.HighFullNyquistFraction,
                     gate.HighZeroNyquistFraction);
@@ -428,7 +429,8 @@ public static class TransferFunction
         double weightSum = 0;
         for (int bin = 0; bin < fftLength; bin++)
         {
-            double bandWeight = SoftGate(gateReference[bin], gateLow, gateHigh);
+            double bandWeight = DspMath.RaisedCosineGate(
+                gateReference[bin], gateLow, gateHigh);
             if (bandWeight <= 0)
             {
                 continue;
@@ -487,22 +489,6 @@ public static class TransferFunction
         // normalizes the coefficient to [0, 1].
         double normalizer = weightSum / fftLength;
         return new PhaseTransformCorrelation(correlation, normalizer);
-    }
-
-    // Raised-cosine soft gate: 0 below low, 1 above high, a smooth cosine ramp
-    // between. Keeps the passband at unity while fading the excitation edges.
-    private static double SoftGate(double value, double low, double high)
-    {
-        if (value <= low)
-        {
-            return 0.0;
-        }
-        if (value >= high)
-        {
-            return 1.0;
-        }
-
-        return 0.5 - 0.5 * Math.Cos(Math.PI * (value - low) / (high - low));
     }
 
     // Sub-sample peak location by a fine windowed-sinc (Lanczos) upsampling around

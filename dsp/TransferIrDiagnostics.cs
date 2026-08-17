@@ -321,7 +321,8 @@ public static class TransferIrDiagnostics
     public static DominantBand DetectDominantBand(
         IReadOnlyList<double> impulseResponse,
         int sampleRate,
-        double thresholdDb = DominantBandThresholdDb)
+        double thresholdDb = DominantBandThresholdDb,
+        IReadOnlyList<double>? coherence = null)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
         if (impulseResponse.Count == 0)
@@ -345,6 +346,29 @@ public static class TransferIrDiagnostics
         int half = length / 2;
         double topHz = Math.Min(20_000, sampleRate * 0.45);
 
+        double CoherenceAt(double hz)
+        {
+            if (coherence == null || coherence.Count < 2)
+            {
+                return 1.0;
+            }
+
+            double position = hz * 2.0 * (coherence.Count - 1) / sampleRate;
+            if (position <= 0.0)
+            {
+                return coherence[0];
+            }
+            if (position >= coherence.Count - 1)
+            {
+                return coherence[^1];
+            }
+
+            int lower = (int)position;
+            double fraction = position - lower;
+            return coherence[lower] * (1.0 - fraction) +
+                coherence[lower + 1] * fraction;
+        }
+
         double SmoothedDb(double hz)
         {
             double lo = hz / Math.Pow(2.0, 1.0 / 12);
@@ -356,11 +380,26 @@ public static class TransferIrDiagnostics
                 i2 = i1;
             }
             double sum = 0;
+            int trustedCount = 0;
+            int binCount = i2 - i1 + 1;
             for (int i = i1; i <= i2; i++)
             {
+                double binCoherence = CoherenceAt((double)i * sampleRate / length);
+                if (!double.IsFinite(binCoherence) || binCoherence < 0.5)
+                {
+                    continue;
+                }
+
                 sum += spectrum[i].Magnitude * spectrum[i].Magnitude;
+                trustedCount++;
             }
-            return 10 * Math.Log10(Math.Max(1e-24, sum / (i2 - i1 + 1)));
+            // A lone coherent bin must not represent a whole 1/6-octave
+            // window. Require at least half of the window to be trustworthy;
+            // this also makes the detected band edge stable when γ² jitters
+            // around the threshold in a few adjacent bins.
+            return trustedCount * 2 >= binCount
+                ? 10 * Math.Log10(Math.Max(1e-24, sum / trustedCount))
+                : double.NegativeInfinity;
         }
 
         // 1/24-octave log grid over the audible range.
@@ -370,6 +409,12 @@ public static class TransferIrDiagnostics
         {
             gridHz.Add(hz);
             gridDb.Add(SmoothedDb(hz));
+        }
+
+        if (coherence != null && gridDb.All(double.IsNegativeInfinity))
+        {
+            throw new InvalidOperationException(
+                "No reliable signal remains above the coherence threshold.");
         }
 
         int peakIndex = 0;

@@ -360,7 +360,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         if (options.BandMode == TimeAlignmentBandMode.AutoBand)
         {
             DominantBand band = TransferIrDiagnostics.DetectDominantBand(
-                source.TransferImpulseResponse, source.SampleRate);
+                source.TransferImpulseResponse,
+                source.SampleRate,
+                coherence: source.TransferCoherence);
             lastAutoBand = band;
             centerHz = Math.Sqrt(band.LowHz * band.HighHz);
             passOctaves = Math.Log2(band.HighHz / band.LowHz);

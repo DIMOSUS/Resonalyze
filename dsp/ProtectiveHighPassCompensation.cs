@@ -3,6 +3,38 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp;
 
+public sealed record ProtectiveHighPassCompensationResult(
+    Complex[] ImpulseResponse,
+    double[] Reliability)
+{
+    /// <summary>
+    /// Applies the compensation-validity mask to an existing coherence estimate.
+    /// The transfer estimator already folds its excitation validity into coherence;
+    /// this adds the corresponding target-side validity after the known high-pass.
+    /// </summary>
+    public double[]? MaskCoherence(IReadOnlyList<double>? coherence)
+    {
+        if (coherence == null)
+        {
+            return null;
+        }
+        if (coherence.Count != Reliability.Length)
+        {
+            throw new ArgumentException(
+                "Coherence and compensation reliability must use the same frequency grid.",
+                nameof(coherence));
+        }
+
+        var masked = new double[coherence.Count];
+        for (int i = 0; i < masked.Length; i++)
+        {
+            masked[i] = coherence[i] * Reliability[i];
+        }
+
+        return masked;
+    }
+}
+
 /// <summary>
 /// Removes a known protective high-pass from a measured transfer impulse
 /// response. This is the frequency-domain equivalent of filtering the clean
@@ -13,15 +45,18 @@ namespace Resonalyze.Dsp;
 public static class ProtectiveHighPassCompensation
 {
     private const int PhaseRefreshInterval = 1_024;
+    private const double ReliabilityFadeWidthDb = 6.0;
 
     /// <summary>
     /// Returns a copy of <paramref name="impulseResponse"/> with the magnitude
-    /// and phase of <paramref name="edge"/> divided out. Inverse gain is capped
-    /// at <paramref name="maximumBoostDb"/> because a stop-band bin contains no
-    /// recoverable loudspeaker information once the protection filter has buried
-    /// it in the measurement noise.
+    /// and phase of <paramref name="edge"/> divided out, plus the per-bin
+    /// reliability of that inversion. Full trust ends 6 dB before
+    /// <paramref name="maximumBoostDb"/>; a raised-cosine fade reaches zero at
+    /// the limit. Unrecoverable bins are suppressed by a smooth frequency mask
+    /// derived only from that known-filter reliability; measured coherence is
+    /// deliberately not punched into the IR bin by bin.
     /// </summary>
-    public static Complex[] RemoveFromImpulseResponse(
+    public static ProtectiveHighPassCompensationResult RemoveFromImpulseResponse(
         IReadOnlyList<Complex> impulseResponse,
         CrossoverEdge edge,
         double sampleRateHz,
@@ -65,6 +100,7 @@ public static class ProtectiveHighPassCompensation
         }
         Fourier.Forward(spectrum, FourierOptions.Matlab);
 
+        var reliability = new double[spectrum.Length / 2 + 1];
         Complex binStep = Complex.Exp(
             new Complex(0.0, -Math.Tau / spectrum.Length));
         Complex z1 = Complex.One;
@@ -83,11 +119,25 @@ public static class ProtectiveHighPassCompensation
             }
 
             Complex response = Response(sections, z1);
-            spectrum[bin] *= CappedInverse(response, maximumGain);
+            int foldedBin = Math.Min(bin, spectrum.Length - bin);
+            double reliabilityWeight;
+            if (bin <= spectrum.Length / 2)
+            {
+                reliabilityWeight = ReliabilityWeight(
+                    response.Magnitude,
+                    maximumBoostDb);
+                reliability[foldedBin] = reliabilityWeight;
+            }
+            else
+            {
+                reliabilityWeight = reliability[foldedBin];
+            }
+
+            spectrum[bin] *= reliabilityWeight * CappedInverse(response, maximumGain);
         }
 
         Fourier.Inverse(spectrum, FourierOptions.Matlab);
-        return spectrum;
+        return new ProtectiveHighPassCompensationResult(spectrum, reliability);
     }
 
     private static Complex Response(
@@ -117,5 +167,31 @@ public static class ProtectiveHighPassCompensation
 
         double inverseMagnitude = Math.Min(1.0 / magnitude, maximumGain);
         return Complex.FromPolarCoordinates(inverseMagnitude, -response.Phase);
+    }
+
+    private static double ReliabilityWeight(double magnitude, double maximumBoostDb)
+    {
+        if (!(magnitude > 0.0) || !double.IsFinite(magnitude))
+        {
+            return 0.0;
+        }
+
+        double requiredBoostDb = Math.Max(0.0, -20.0 * Math.Log10(magnitude));
+        double fullTrustBoostDb = Math.Max(
+            0.0,
+            maximumBoostDb - ReliabilityFadeWidthDb);
+        if (requiredBoostDb <= fullTrustBoostDb)
+        {
+            return 1.0;
+        }
+        if (requiredBoostDb >= maximumBoostDb)
+        {
+            return 0.0;
+        }
+
+        return 1.0 - DspMath.RaisedCosineGate(
+            requiredBoostDb,
+            fullTrustBoostDb,
+            maximumBoostDb);
     }
 }

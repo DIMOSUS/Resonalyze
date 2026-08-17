@@ -1664,9 +1664,22 @@ namespace Resonalyze
                         SampleRate,
                         ProtectiveHighPassConfiguration.MaximumCompensationBoostDb);
                 // Removing the high-pass removes its group delay too, so its
-                // corrected arrival is allowed to move instead of inheriting the
-                // filtered response's peak index.
-                transferPeakIndex = FindPeakIndex(transferImpulseResponse);
+                // corrected arrival is allowed to move on a synchronized live
+                // measurement. An import is different: its peak was deliberately
+                // placed at its own 10 ms origin before publication, so preserve
+                // that convention by rotating the corrected arrival back there.
+                int correctedPeakIndex = FindPeakIndex(transferImpulseResponse);
+                if (TimingReference == TimingReference.RecordedSweep)
+                {
+                    transferImpulseResponse = RotateTo(
+                        transferImpulseResponse,
+                        correctedPeakIndex,
+                        result.TransferPeakIndex);
+                }
+                else
+                {
+                    transferPeakIndex = correctedPeakIndex;
+                }
             }
             transferResult = transferImpulseResponse != null
                 ? new MeasurementImpulseResponse(

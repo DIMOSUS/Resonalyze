@@ -218,6 +218,9 @@ namespace Resonalyze.Options
                 "Protective high-pass configured in the external DSP between the " +
                 "sound-card output and the loudspeaker. Resonalyze removes its " +
                 "magnitude and phase from the loopback-referenced transfer IR.");
+            deviceToolTip.SetToolTip(
+                labelProtectiveHighPass,
+                "Optional protective high-pass configured in the external DSP.");
             numericUpDownProtectiveHighPassFrequency.ApplyToolTip(
                 deviceToolTip,
                 "Protective high-pass corner frequency (Hz). The loopback must be " +
@@ -298,7 +301,6 @@ namespace Resonalyze.Options
         private void UpdateProtectiveHighPassAvailability()
         {
             bool enabled = SelectedProtectiveHighPassKind != ProtectiveHighPassKind.Off;
-            UiStyle.SetTextEnabledLook(labelProtectiveHighPassParameters, enabled);
             numericUpDownProtectiveHighPassFrequency.Enabled = enabled;
             comboBoxProtectiveHighPassSlope.Enabled = enabled;
         }

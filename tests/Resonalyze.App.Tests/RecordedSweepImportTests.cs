@@ -89,6 +89,34 @@ public sealed class RecordedSweepImportTests
         Assert.Equal(1, measurement.AcceptedAverageRunCount);
     }
 
+    [Fact]
+    public void ProtectiveHighPassCompensationKeepsTheImportedArrivalAtItsOwnReference()
+    {
+        var protectiveHighPass = new ProtectiveHighPassConfiguration(
+            ProtectiveHighPassKind.LinkwitzRiley,
+            250,
+            48);
+        SweepMeasurementConfiguration configuration = Configuration() with
+        {
+            ProtectiveHighPass = protectiveHighPass
+        };
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.Init(configuration);
+        float[] recording = RecordSweep(measurement, startOffset: 2_400);
+        ApplyHighPass(recording, protectiveHighPass.ToEdge());
+
+        measurement.ImportRecordedSweep(configuration, recording, SampleRate);
+
+        Assert.Equal(TimingReference.RecordedSweep, measurement.TimingReference);
+        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
+        Assert.Equal(
+            Arrival,
+            Array.IndexOf(
+                measurement.TransferImpulseResponse!,
+                measurement.TransferImpulseResponse!
+                    .MaxBy(sample => sample.Magnitude)));
+    }
+
     // Which channel holds the measurement is a question about the sweep, not
     // about loudness: a dead input is rarely silent, and hum or hiss on it can
     // easily out-measure a quiet microphone that actually recorded the take.
@@ -468,6 +496,31 @@ public sealed class RecordedSweepImportTests
         }
 
         return result;
+    }
+
+    private static void ApplyHighPass(float[] samples, CrossoverEdge edge)
+    {
+        foreach (BiquadCoefficients section in CrossoverFilter.BuildSections(
+            edge,
+            highPass: true,
+            SampleRate))
+        {
+            double x1 = 0;
+            double x2 = 0;
+            double y1 = 0;
+            double y2 = 0;
+            for (int i = 0; i < samples.Length; i++)
+            {
+                double x = samples[i];
+                double y = section.B0 * x + section.B1 * x1 + section.B2 * x2 +
+                    section.A1 * y1 + section.A2 * y2;
+                samples[i] = (float)y;
+                x2 = x1;
+                x1 = x;
+                y2 = y1;
+                y1 = y;
+            }
+        }
     }
 
     // And it does not invent one: a recording of the very sweep the settings

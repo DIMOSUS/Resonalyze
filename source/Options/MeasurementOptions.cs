@@ -118,6 +118,7 @@ namespace Resonalyze.Options
         public MeasurementOptions()
         {
             InitializeComponent();
+            InitializeProtectiveHighPassControls();
             WireAudioBackendPanelEvents();
             TryStartEndpointMonitoring();
             Disposed += (_, _) => DisposeEndpointMonitoring();
@@ -212,7 +213,104 @@ namespace Resonalyze.Options
                 "measurement would play it: same band, pace, sample rate and " +
                 "playback channel, and the same 6 dB of headroom (-6 dBFS peak), " +
                 "with a second of silence before and after it.");
+            deviceToolTip.SetToolTip(
+                comboBoxProtectiveHighPassKind,
+                "Protective high-pass configured in the external DSP between the " +
+                "sound-card output and the loudspeaker. Resonalyze removes its " +
+                "magnitude and phase from the loopback-referenced transfer IR.");
+            deviceToolTip.SetToolTip(
+                labelProtectiveHighPass,
+                "Optional protective high-pass configured in the external DSP.");
+            numericUpDownProtectiveHighPassFrequency.ApplyToolTip(
+                deviceToolTip,
+                "Protective high-pass corner frequency (Hz). The loopback must be " +
+                "captured before the external DSP, directly from the sound-card output.");
+            deviceToolTip.SetToolTip(
+                comboBoxProtectiveHighPassSlope,
+                "Protective high-pass slope. Compensation is limited to 40 dB; " +
+                "deeper in the stop band the measurement cannot recover signal " +
+                "that the protection filter buried in noise.");
         }
+
+        private void InitializeProtectiveHighPassControls()
+        {
+            comboBoxProtectiveHighPassKind.Items.AddRange(
+            [
+                ProtectiveHighPassKind.Off,
+                ProtectiveHighPassKind.Butterworth,
+                ProtectiveHighPassKind.LinkwitzRiley
+            ]);
+            comboBoxProtectiveHighPassKind.Format += (_, args) =>
+            {
+                if (args.ListItem is ProtectiveHighPassKind kind)
+                {
+                    args.Value = kind switch
+                    {
+                        ProtectiveHighPassKind.LinkwitzRiley => "Linkwitz-Riley",
+                        _ => kind.ToString()
+                    };
+                }
+            };
+            comboBoxProtectiveHighPassSlope.Format += (_, args) =>
+            {
+                if (args.ListItem is int slope)
+                {
+                    args.Value = $"{slope} dB/oct";
+                }
+            };
+            comboBoxProtectiveHighPassKind.SelectedIndexChanged += (_, _) =>
+            {
+                PopulateProtectiveHighPassSlopes();
+                UpdateProtectiveHighPassAvailability();
+                RaiseSweepSettingsChanged();
+            };
+            numericUpDownProtectiveHighPassFrequency.ValueChanged += (_, _) =>
+                RaiseSweepSettingsChanged();
+            comboBoxProtectiveHighPassSlope.SelectedIndexChanged += (_, _) =>
+                RaiseSweepSettingsChanged();
+
+            comboBoxProtectiveHighPassKind.SelectedItem = ProtectiveHighPassKind.Off;
+            PopulateProtectiveHighPassSlopes(preferredSlope: 24);
+            UpdateProtectiveHighPassAvailability();
+        }
+
+        private ProtectiveHighPassKind SelectedProtectiveHighPassKind =>
+            comboBoxProtectiveHighPassKind.SelectedItem is ProtectiveHighPassKind kind
+                ? kind
+                : ProtectiveHighPassKind.Off;
+
+        private void PopulateProtectiveHighPassSlopes(int? preferredSlope = null)
+        {
+            int? previousSlope = preferredSlope ??
+                (comboBoxProtectiveHighPassSlope.SelectedItem is int slope ? slope : null);
+            comboBoxProtectiveHighPassSlope.Items.Clear();
+            foreach (int supportedSlope in ProtectiveHighPassConfiguration.SupportedSlopes(
+                SelectedProtectiveHighPassKind))
+            {
+                comboBoxProtectiveHighPassSlope.Items.Add(supportedSlope);
+            }
+
+            int index = previousSlope.HasValue
+                ? comboBoxProtectiveHighPassSlope.Items.IndexOf(previousSlope.Value)
+                : -1;
+            comboBoxProtectiveHighPassSlope.SelectedIndex = index >= 0
+                ? index
+                : comboBoxProtectiveHighPassSlope.Items.IndexOf(24);
+        }
+
+        private void UpdateProtectiveHighPassAvailability()
+        {
+            bool enabled = SelectedProtectiveHighPassKind != ProtectiveHighPassKind.Off;
+            numericUpDownProtectiveHighPassFrequency.Enabled = enabled;
+            comboBoxProtectiveHighPassSlope.Enabled = enabled;
+        }
+
+        private ProtectiveHighPassConfiguration ReadProtectiveHighPass() =>
+            ProtectiveHighPassConfiguration.Normalize(
+                new ProtectiveHighPassConfiguration(
+                    SelectedProtectiveHighPassKind,
+                    (double)numericUpDownProtectiveHighPassFrequency.Value,
+                    comboBoxProtectiveHighPassSlope.SelectedItem is int slope ? slope : 24));
 
         internal void Init(
             ExpSweepMeasurement expSweepMeasurement,
@@ -312,6 +410,18 @@ namespace Resonalyze.Options
                 settings.SampleRate) * 1000.0;
             numericUpDownRequestedDuration.Value = numericUpDownRequestedDuration.ClampValue(
                 perOctaveMs > 0 ? Math.Round(perOctaveMs) : 100.0);
+            ProtectiveHighPassConfiguration protectiveHighPass =
+                ProtectiveHighPassConfiguration.Normalize(
+                    new ProtectiveHighPassConfiguration(
+                        settings.ProtectiveHighPassKind,
+                        settings.ProtectiveHighPassFrequencyHz,
+                        settings.ProtectiveHighPassSlopeDbPerOctave));
+            comboBoxProtectiveHighPassKind.SelectedItem = protectiveHighPass.Kind;
+            numericUpDownProtectiveHighPassFrequency.Value =
+                numericUpDownProtectiveHighPassFrequency.ClampValue(
+                    protectiveHighPass.FrequencyHz);
+            PopulateProtectiveHighPassSlopes(protectiveHighPass.SlopeDbPerOctave);
+            UpdateProtectiveHighPassAvailability();
             // Total duration and the achieved-range line are filled by the shared
             // preview at the end of Init, once the sample-rate control is settled.
             numericUpDownAverageRunCount.Value = Math.Clamp(settings.AverageRunCount, 1, 64);
@@ -490,7 +600,8 @@ namespace Resonalyze.Options
                     WasapiBufferMilliseconds: settings.WasapiBufferMilliseconds),
                 new SweepAveragingConfiguration(
                     averageRunCount,
-                    confirmEachAverageRun)));
+                    confirmEachAverageRun),
+                ReadProtectiveHighPass()));
 
             settings.LowFrequencyHz = lowFrequencyHz;
             settings.HighFrequencyHz = highFrequencyHz;
@@ -540,6 +651,11 @@ namespace Resonalyze.Options
             settings.PlaybackChannel = GetSelectedPlaybackChannel();
             settings.AverageRunCount = (int)numericUpDownAverageRunCount.Value;
             settings.ConfirmEachAverageRun = checkBoxConfirmEachAverageRun.Checked;
+            ProtectiveHighPassConfiguration protectiveHighPass = ReadProtectiveHighPass();
+            settings.ProtectiveHighPassKind = protectiveHighPass.Kind;
+            settings.ProtectiveHighPassFrequencyHz = protectiveHighPass.FrequencyHz;
+            settings.ProtectiveHighPassSlopeDbPerOctave =
+                protectiveHighPass.SlopeDbPerOctave;
         }
 
         // The duration field holds a per-octave pace; expand it to the total sweep

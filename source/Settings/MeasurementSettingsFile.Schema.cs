@@ -53,6 +53,9 @@ internal sealed partial class MeasurementSettingsFile
         // (its minimum is 2), and a lone sweep gives nothing to average away.
         public int AverageRunCount { get; set; } = 2;
         public bool ConfirmEachAverageRun { get; set; }
+        public ProtectiveHighPassKind ProtectiveHighPassKind { get; set; }
+        public double ProtectiveHighPassFrequencyHz { get; set; } = 2_000.0;
+        public int ProtectiveHighPassSlopeDbPerOctave { get; set; } = 24;
         public string? MicrophoneCalibration0DegreesPath { get; set; }
         // Legacy field (schema <= 10, when 90° was a second fixed slot), kept
         // ONLY so old files deserialize into the migration, which turns the file
@@ -146,6 +149,10 @@ internal sealed partial class MeasurementSettingsFile
                 AsioOutputChannelOffset = measurement.AsioOutputChannelOffset,
                 AverageRunCount = measurement.AverageRunCount,
                 ConfirmEachAverageRun = measurement.ConfirmEachAverageRun,
+                ProtectiveHighPassKind = measurement.ProtectiveHighPass.Kind,
+                ProtectiveHighPassFrequencyHz = measurement.ProtectiveHighPass.FrequencyHz,
+                ProtectiveHighPassSlopeDbPerOctave =
+                    measurement.ProtectiveHighPass.SlopeDbPerOctave,
                 SplCalibration = measurement.SplCalibration
             };
 
@@ -227,7 +234,12 @@ internal sealed partial class MeasurementSettingsFile
                     WasapiBufferMilliseconds: Clamp(WasapiBufferMilliseconds, 10, 100)),
                 new SweepAveragingConfiguration(
                     Clamp(AverageRunCount, 1, 64),
-                    ConfirmEachAverageRun));
+                    ConfirmEachAverageRun),
+                ProtectiveHighPassConfiguration.Normalize(
+                    new ProtectiveHighPassConfiguration(
+                        ProtectiveHighPassKind,
+                        ProtectiveHighPassFrequencyHz,
+                        ProtectiveHighPassSlopeDbPerOctave)));
         }
     }
 

@@ -1,5 +1,7 @@
 using Resonalyze.Audio;
 using Resonalyze.Dsp;
+using MathNet.Numerics.IntegralTransforms;
+using System.Numerics;
 
 namespace Resonalyze.App.Tests;
 
@@ -41,6 +43,65 @@ public sealed class AbstractedMeasurementTests
         Assert.True(success, measurement.LastError?.ToString());
         Assert.True(measurement.HasImpulseResponse);
         Assert.Equal(1, factory.DuplexOpenCount);
+    }
+
+    [Fact]
+    public async Task ProtectiveHighPass_IsRemovedFromThePublishedTransferIrOnly()
+    {
+        var edge = new CrossoverEdge(
+            CrossoverFilterFamily.LinkwitzRiley,
+            2_000,
+            24);
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal,
+                (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.ProtectedLoudspeaker(s, tail, edge, 44_100))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory);
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(
+                20,
+                20_000,
+                44_100,
+                24,
+                0.05,
+                PlaybackChannel.Mono),
+            new SweepAudioConfiguration(
+                WaveInputChannelOffset: 0,
+                WaveLoopbackInputChannelOffset: 1),
+            new SweepAveragingConfiguration(),
+            new ProtectiveHighPassConfiguration(
+                ProtectiveHighPassKind.LinkwitzRiley,
+                2_000,
+                24)));
+
+        bool success = await measurement.RunAsync();
+
+        Assert.True(success, measurement.LastError?.ToString());
+        Assert.NotNull(measurement.TransferImpulseResponse);
+        Assert.NotNull(measurement.SweepDeconvolutionImpulseResponse);
+
+        using ExpSweepMeasurement uncompensated = CreateSweep(factory);
+        bool uncompensatedSuccess = await uncompensated.RunAsync();
+        Assert.True(uncompensatedSuccess, uncompensated.LastError?.ToString());
+
+        Complex[] transfer = measurement.TransferImpulseResponse!.ToArray();
+        Complex[] rawTransfer = uncompensated.TransferImpulseResponse!.ToArray();
+        Fourier.Forward(transfer, FourierOptions.Matlab);
+        Fourier.Forward(rawTransfer, FourierOptions.Matlab);
+        int cornerBin = (int)Math.Round(2_000.0 * transfer.Length / measurement.SampleRate);
+        int passBandBin = (int)Math.Round(8_000.0 * transfer.Length / measurement.SampleRate);
+        double transferCornerRelativeDb = 20.0 * Math.Log10(
+            transfer[cornerBin].Magnitude / transfer[passBandBin].Magnitude);
+        double rawCornerRelativeDb = 20.0 * Math.Log10(
+            rawTransfer[cornerBin].Magnitude / rawTransfer[passBandBin].Magnitude);
+
+        Assert.InRange(transferCornerRelativeDb, -0.2, 0.2);
+        Assert.InRange(rawCornerRelativeDb, -6.3, -5.7);
+        Assert.InRange(Math.Abs(transfer[cornerBin].Phase), 0.0, 0.05);
+        Assert.Equal(
+            uncompensated.SweepDeconvolutionImpulseResponse,
+            measurement.SweepDeconvolutionImpulseResponse);
     }
 
     [Fact]

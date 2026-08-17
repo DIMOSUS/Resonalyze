@@ -5,35 +5,32 @@ namespace Resonalyze.App.Tests;
 public sealed class EqWizardCalibrationTests
 {
     [Fact]
-    public void ToMicrophoneMode_MapsEachEffectiveMode()
+    public void MicrophoneCalibrationId_MapsEachEffectiveChoice()
     {
+        Assert.Null(EqWizardCalibrationChoice.Off.MicrophoneCalibrationId);
         Assert.Equal(
-            MicrophoneCalibrationMode.Off,
-            EqWizardCalibration.ToMicrophoneMode(EqWizardCalibrationMode.Off));
-        Assert.Equal(
-            MicrophoneCalibrationMode.Degrees0,
-            EqWizardCalibration.ToMicrophoneMode(EqWizardCalibrationMode.Degrees0));
-        Assert.Equal(
-            MicrophoneCalibrationMode.Degrees90,
-            EqWizardCalibration.ToMicrophoneMode(EqWizardCalibrationMode.Degrees90));
-        // "Own" applies the correction stored on the imported curve, not a file-backed
-        // measurement profile, so at the measurement layer it is Off.
-        Assert.Equal(
-            MicrophoneCalibrationMode.Off,
-            EqWizardCalibration.ToMicrophoneMode(EqWizardCalibrationMode.Own));
+            MicrophoneCalibrationIds.ZeroDegrees,
+            EqWizardCalibrationChoice
+                .Microphone(MicrophoneCalibrationIds.ZeroDegrees)
+                .MicrophoneCalibrationId);
+        // "Own" applies the correction stored on the imported curve, not a configured
+        // calibration, so at the measurement layer it is Off.
+        Assert.Null(EqWizardCalibrationChoice.OwnCapture.MicrophoneCalibrationId);
+        Assert.False(EqWizardCalibrationChoice.OwnCapture.IsOff);
+        Assert.True(EqWizardCalibrationChoice.Microphone("   ").IsOff);
     }
 
     [Fact]
     public void UpdatedIrPreference_KeepsPreferenceWhenACurveForcesOwn()
     {
-        // The reported regression: the user's 90° impulse-response preference must survive
-        // loading a raw RTA overlay, which forces the effective mode to Own.
-        MicrophoneCalibrationMode next = EqWizardCalibration.UpdatedIrPreference(
-            current: MicrophoneCalibrationMode.Degrees90,
+        // The reported regression: the user's impulse-response preference must survive
+        // loading a raw RTA overlay, which forces the effective choice to Own.
+        string? next = EqWizardCalibration.UpdatedIrPreference(
+            current: "cal1",
             loadedKind: EqWizardSourceKind.OverlaySlot,
-            chosen: EqWizardCalibrationMode.Own);
+            chosen: EqWizardCalibrationChoice.OwnCapture);
 
-        Assert.Equal(MicrophoneCalibrationMode.Degrees90, next);
+        Assert.Equal("cal1", next);
     }
 
     [Fact]
@@ -41,30 +38,30 @@ public sealed class EqWizardCalibrationTests
     {
         // A text curve carries no re-smoothable reference, so it forces Off; that must not
         // erase the impulse-response preference either.
-        MicrophoneCalibrationMode next = EqWizardCalibration.UpdatedIrPreference(
-            current: MicrophoneCalibrationMode.Degrees0,
+        string? next = EqWizardCalibration.UpdatedIrPreference(
+            current: MicrophoneCalibrationIds.ZeroDegrees,
             loadedKind: EqWizardSourceKind.TextCurve,
-            chosen: EqWizardCalibrationMode.Off);
+            chosen: EqWizardCalibrationChoice.Off);
 
-        Assert.Equal(MicrophoneCalibrationMode.Degrees0, next);
+        Assert.Equal(MicrophoneCalibrationIds.ZeroDegrees, next);
     }
 
     [Fact]
-    public void UpdatedIrPreference_AdoptsAFileBackedChoiceMadeAgainstAnImpulseResponse()
+    public void UpdatedIrPreference_AdoptsAChoiceMadeAgainstAnImpulseResponse()
     {
-        // Choosing 90° while an impulse response (or nothing) is loaded IS a standing
-        // preference and must be remembered.
+        // Choosing a calibration while an impulse response (or nothing) is loaded IS a
+        // standing preference and must be remembered.
         Assert.Equal(
-            MicrophoneCalibrationMode.Degrees90,
+            "cal1",
             EqWizardCalibration.UpdatedIrPreference(
-                MicrophoneCalibrationMode.Off,
+                null,
                 EqWizardSourceKind.ImpulseResponse,
-                EqWizardCalibrationMode.Degrees90));
+                EqWizardCalibrationChoice.Microphone("cal1")));
         Assert.Equal(
-            MicrophoneCalibrationMode.Degrees0,
+            MicrophoneCalibrationIds.ZeroDegrees,
             EqWizardCalibration.UpdatedIrPreference(
-                MicrophoneCalibrationMode.Off,
+                null,
                 loadedKind: null,
-                EqWizardCalibrationMode.Degrees0));
+                EqWizardCalibrationChoice.Microphone(MicrophoneCalibrationIds.ZeroDegrees)));
     }
 }

@@ -132,18 +132,22 @@ namespace Resonalyze.Dsp
         /// </summary>
         public string? LoadError { get; }
 
-        public static CalibrationFile CreateNinetyDegreeApproximation(
-            CalibrationFile zeroDegreeCalibration) =>
-            new(zeroDegreeCalibration, Delta90Minus0);
-
-        public static double Delta90Minus0(double hz)
+        /// <summary>
+        /// The calibration <paramref name="zeroDegreeCalibration"/> becomes when
+        /// the microphone is turned by an angle, given that angle's estimated
+        /// difference. The file states the microphone's own response, which the
+        /// measurement then divides out (see
+        /// <see cref="DataHelper.LogarithmicResample"/>), so the angular
+        /// difference ADDS to it: turning the microphone off-axis really does
+        /// lower what it reports at high frequency.
+        /// </summary>
+        public static CalibrationFile CreateAngled(
+            CalibrationFile zeroDegreeCalibration,
+            Func<double, double> angleDeltaDb)
         {
-            const double a = 0.202901338;
-            const double fc = 1917.43333;
-            const double p = 1.34178411;
-            const double q = 2.23024128;
-
-            return -a * Math.Pow(Math.Log2(1.0 + Math.Pow(hz / fc, p)), q);
+            ArgumentNullException.ThrowIfNull(zeroDegreeCalibration);
+            ArgumentNullException.ThrowIfNull(angleDeltaDb);
+            return new CalibrationFile(zeroDegreeCalibration, angleDeltaDb);
         }
 
         private static bool TryParseCalibrationPoint(

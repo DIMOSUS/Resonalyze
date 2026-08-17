@@ -48,27 +48,20 @@ public sealed class CalibrationFileTests
     }
 
     [Fact]
-    public void Delta90Minus0_MatchesHalfInchMicrophoneApproximation()
-    {
-        double delta = CalibrationFile.Delta90Minus0(10_000);
-
-        Assert.Equal(-3.000769, delta, precision: 6);
-    }
-
-    [Fact]
-    public void CreateNinetyDegreeApproximation_AddsDeltaToZeroDegreeCalibration()
+    public void CreateAngled_AddsTheAngularDifferenceToTheSourceCalibration()
     {
         string path = WriteCalibrationFile(
             "20 2.5\n" +
             "1000 2.5\n" +
             "20000 2.5\n");
         var zeroDegree = new CalibrationFile(path);
-        CalibrationFile ninetyDegree =
-            CalibrationFile.CreateNinetyDegreeApproximation(zeroDegree);
 
-        double expected = 2.5 + CalibrationFile.Delta90Minus0(1000);
+        CalibrationFile angled = CalibrationFile.CreateAngled(
+            zeroDegree,
+            frequency => -frequency / 10_000.0);
 
-        Assert.Equal(expected, ninetyDegree.GetDecibelCorrection(1000), precision: 6);
+        Assert.Equal(2.4, angled.GetDecibelCorrection(1000), precision: 9);
+        Assert.Equal(0.5, angled.GetDecibelCorrection(20_000), precision: 9);
     }
 
     [Fact]
@@ -202,7 +195,7 @@ public sealed class CalibrationFileTests
         Assert.False(new CalibrationFile(missing).HasData);
         Assert.True(new CalibrationFile(loaded).HasData);
         Assert.True(CalibrationFile
-            .CreateNinetyDegreeApproximation(new CalibrationFile(loaded))
+            .CreateAngled(new CalibrationFile(loaded), _ => -1.0)
             .HasData);
     }
 
@@ -246,17 +239,17 @@ public sealed class CalibrationFileTests
     }
 
     [Fact]
-    public void LoadError_PropagatesThroughNinetyDegreeApproximation()
+    public void LoadError_PropagatesThroughAnAngledCalibration()
     {
         string missing = Path.Combine(
             Path.GetTempPath(),
             $"resonalyze-calibration-missing-{Guid.NewGuid():N}.txt");
 
-        CalibrationFile approximation =
-            CalibrationFile.CreateNinetyDegreeApproximation(new CalibrationFile(missing));
+        CalibrationFile angled =
+            CalibrationFile.CreateAngled(new CalibrationFile(missing), _ => -1.0);
 
-        Assert.False(approximation.HasData);
-        Assert.Contains("not found", approximation.LoadError);
+        Assert.False(angled.HasData);
+        Assert.Contains("not found", angled.LoadError);
     }
 
     [Fact]

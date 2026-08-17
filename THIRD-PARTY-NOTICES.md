@@ -15,6 +15,18 @@ MIT-licensed.
 | YamlDotNet | 16.2.1 | MIT | Antoine Aubry |
 | PDFsharp-MigraDoc-GDI (incl. PDFsharp, MigraDoc) | 6.2.4 | MIT | PDFsharp Team (empira Software GmbH) |
 
+## Bundled reference data
+
+`dsp/Data/GrasFreeFieldCorrections.csv` is an extract of the free-field and
+random-incidence correction table published by **GRAS Sound & Vibration A/S**
+([GRAS_Free-field_and_Random_Incidence_Corrections.xlsx](https://www.grasacoustics.com/fileadmin-gras/downloads/GRAS_Free-field_and_Random_Incidence_Corrections.xlsx),
+SHA-256 `13ab5f3ccbbf1ab53774496cdcc9765e2d79180a99df50309188a7e502e7620b`). It
+carries the measured 0°/30°/60°/90° columns of the microphone families
+Resonalyze scales from; the remaining angles and the random-incidence column are
+not reproduced. The numbers are GRAS measurement data, used here to estimate the
+angular behaviour of a user's own microphone, and are neither modified nor
+presented as Resonalyze's own. GRAS is not affiliated with this project.
+
 ## Build-only dependency
 
 `Tracy-CSharp` 0.13.1 is referenced **only** by the `Tracy` build configuration,

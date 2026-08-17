@@ -60,10 +60,9 @@ namespace Resonalyze.Options
             Disposed += (_, _) => toolTip.Dispose();
         }
 
-        public void Init(
+        internal void Init(
             LiveSpectrumOptions options,
-            bool hasZeroDegreeCalibration,
-            bool hasNinetyDegreeCalibration,
+            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries,
             bool isSplAvailable,
             bool hasLiveCurve)
         {
@@ -135,10 +134,21 @@ namespace Resonalyze.Options
 
             MicrophoneCalibrationComboHelper.Configure(
                 comboCalibration,
-                options.CalibrationMode,
-                hasZeroDegreeCalibration,
-                hasNinetyDegreeCalibration);
+                options.CalibrationId,
+                calibrationEntries);
         }
+
+        /// <summary>
+        /// Rebuilds the calibration list without disturbing the selection — the
+        /// host calls this when the configured calibrations change while the
+        /// panel is open.
+        /// </summary>
+        internal void RefreshCalibrationEntries(
+            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
+            MicrophoneCalibrationComboHelper.Configure(
+                comboCalibration,
+                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration),
+                calibrationEntries);
 
         /// <summary>
         /// Recolours the dB SPL choice, in both directions, without disturbing the
@@ -206,8 +216,8 @@ namespace Resonalyze.Options
                 signalTypeComboBox.SelectedItem is NoiseColorOption noiseColorOption
                     ? noiseColorOption.NoiseColor
                     : NoiseColor.PinkPeriodic;
-            options.CalibrationMode =
-                MicrophoneCalibrationComboHelper.GetSelectedMode(comboCalibration);
+            options.CalibrationId =
+                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration);
             options.SequenceLength = sequenceLengthComboBox.SelectedItem is int sequenceLength
                 ? sequenceLength
                 : SequenceLengths[0];

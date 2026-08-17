@@ -51,10 +51,8 @@ public partial class Form1
     {
         MeasurementSettingsFile.SweepMeasurementSettings preservedMeasurementSettings =
             measurementSettings.Measurement;
-        string? microphoneCalibration0DegreesPath =
-            measurementSettings.Measurement.MicrophoneCalibration0DegreesPath;
-        string? microphoneCalibration90DegreesPath =
-            measurementSettings.Measurement.MicrophoneCalibration90DegreesPath;
+        // The calibrations themselves survive the capture inside CaptureFrom: the
+        // measurement they are rebuilt from knows nothing about them.
         measurementSettings.CaptureFrom(
             expSweepMeasurement,
             frequencyResponseOptions,
@@ -72,13 +70,7 @@ public partial class Form1
         {
             measurementSettings.Measurement = preservedMeasurementSettings;
         }
-        else
-        {
-            measurementSettings.Measurement.MicrophoneCalibration0DegreesPath =
-                microphoneCalibration0DegreesPath;
-            measurementSettings.Measurement.MicrophoneCalibration90DegreesPath =
-                microphoneCalibration90DegreesPath;
-        }
+
         ScheduleMeasurementSettingsSave();
     }
 
@@ -143,8 +135,7 @@ public partial class Form1
             {
                 opt.Init(
                     liveSpectrumOptions,
-                    microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
-                    microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90),
+                    microphoneCalibration.GetEntries(),
                     plotModelFactory.LiveSplOffsetDb.HasValue,
                     liveSpectrumController.HasDisplayableCurve);
                 opt.ResetAverageRequested += liveSpectrumController.ResetAverage;

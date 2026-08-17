@@ -181,8 +181,10 @@ offer a manual download.
   Decay, autocorrelation, harmonic distortion, THD and THD+N, with
   reliability-anchored phase unwrapping, Fixed/**FDW** phase windowing, and
   minimum/excess-phase decomposition
-- **Calibration** — microphone profiles (0° / 90°) from `.txt` / `.cal` / `.frd`
-  / `.csv` files, and **absolute dB SPL** from an acoustic 1 kHz calibrator
+- **Calibration** — the microphone's 0° profile from `.txt` / `.cal` / `.frd` /
+  `.csv` files, any number of further named profiles, curves **estimated for an
+  off-axis angle** from the microphone's geometry (with the uncertainty of that
+  estimate shown), and **absolute dB SPL** from an acoustic 1 kHz calibrator
 - **Time Alignment** — sub-sample delay from the transfer IR, refined by a
   GCC-PHAT cross-correlation
 - **Crossover summation prediction** — in Frequency Response, the true **complex
@@ -1089,8 +1091,11 @@ finishes the centering.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
 value stays responsive with several channels loaded. A **calibration** selector
-(Off / 0° / 90°) applies your microphone correction to the magnitude curves; it
-defaults to Off because the measurements are loopback-referenced.
+applies one of your configured microphone corrections to the magnitude curves; it
+defaults to Off because the measurements are loopback-referenced. The session
+stores WHICH calibration it was tuned with; opening it on a machine that has no
+such entry says so once and draws the curves uncalibrated, because the other
+machine's file describes its microphone, not yours.
 
 - **Auto crossover...** estimates each channel's usable band and driver type
   (subwoofer, woofer, midbass, midrange, tweeter), asks which filter families to
@@ -1172,20 +1177,42 @@ position, the same playback chain for every measurement, and the linear
 ## Calibration
 
 Resonalyze applies a microphone (or measurement-chain) frequency-response
-correction during logarithmic resampling. Configure up to two profiles in
-**Record Settings** — one for **0°** (on-axis) and one for **90°** (grazing) — by
-browsing to a correction file for each. Files are read leniently in the common
-plain-text formats (`.txt`, `.cal`, `.frd`, `.csv`): `frequency level` pairs,
-with comments, headers, a decimal comma, various delimiters, and extra columns
-all handled.
+correction during logarithmic resampling. In **Record Settings**, **Mic
+calibration 0°** browses to the microphone's own on-axis correction file. Files
+are read leniently in the common plain-text formats (`.txt`, `.cal`, `.frd`,
+`.csv`): `frequency level` pairs, with comments, headers, a decimal comma,
+various delimiters, and extra columns all handled.
 
-In the **Frequency Response** and **Live Spectrum** settings a selector picks the
-profile — **Off**, **0 degrees**, or **90 degrees** — offered once a file exists
-for it, with one deliberate exception: **90 degrees** is also offered when only a
-0° file is configured, in which case the 90° curve is *approximated* rather than
-measured, so treat that entry as an estimate. For a source checkout, a legacy
-`source/calibration.txt` beside the executable is still honored as the 0°
-profile.
+Beside it, **More calibrations → Manage...** holds any number of further
+calibrations, each with a name of your choosing:
+
+- a **file** — a second microphone, a different capsule, another chain;
+- an **angle** — a curve *estimated* for an angle of incidence between 0° and
+  90°, derived from the 0° file (or from another file entry) plus the geometry
+  of your microphone: the outer diameter of its front and whether the protection
+  grid is fitted. The estimate reads the published GRAS free-field corrections as
+  measured diffraction of known geometries, takes only the change with angle,
+  scales each reference's frequency axis by the diameter ratio (diffraction
+  follows `ka = πdf/c`), and reports the median of the matching references with
+  their spread as the uncertainty — which for half-inch constructions reaches
+  2 dB at 20 kHz. The dialog draws that band and states it in words: an angle
+  entry is an estimate from geometry, never a measurement of your microphone off
+  axis. One microphone is modelled from its own measured behaviour instead — the
+  Sonarworks XREF 20, whose 90° difference a generic 12.7 mm estimate misses by
+  up to 2.2 dB.
+
+An angle entry stores the recipe rather than the points, so correcting or
+replacing the 0° file updates every angle derived from it. Entries are edited on
+a working copy and applied when the dialog is accepted; angle entries can only
+be derived from file-backed ones, so an estimate is never built on an estimate.
+
+The views that read a magnitude — **Frequency Response**, **Live Spectrum**, the
+**EQ Wizard** and **Virtual DSP** — each pick one of them (or **Off**) in their
+own selector; Phase and Group Delay read timing rather than level and apply no
+correction at all. A selection whose file went missing, or whose entry was
+deleted, stays selected and is marked rather than being silently rewritten to
+Off. For a source checkout, a legacy `source/calibration.txt` beside the
+executable is still honored as the 0° calibration.
 
 ## Sound Pressure Level (dB SPL)
 

@@ -7,86 +7,114 @@ using CalibrationOptions =
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// The persisted calibration mode must stay selectable when its file is
-/// missing; dropping the entry used to land the selection on "Off" and the
-/// next apply permanently overwrote the stored preference.
+/// The persisted calibration selection must stay selectable when its file is
+/// missing — or when the entry itself is gone; dropping the entry used to land
+/// the selection on "Off" and the next apply permanently overwrote the stored
+/// preference.
 /// </summary>
 public sealed class MicrophoneCalibrationComboHelperTests
 {
+    private static readonly MicrophoneCalibrationEntry[] Configured =
+    [
+        new(MicrophoneCalibrationIds.ZeroDegrees, "0°", true),
+        new("cal1", "45° seat", true)
+    ];
+
     [Fact]
-    public void BuildOptions_ListsAvailableProfiles()
+    public void BuildOptions_ListsOffThenEveryConfiguredCalibration()
     {
         CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
-            MicrophoneCalibrationMode.Off,
-            hasZeroDegreeCalibration: true,
-            hasNinetyDegreeCalibration: true);
+            null,
+            Configured);
 
         Assert.Equal(
-            [
-                MicrophoneCalibrationMode.Off,
-                MicrophoneCalibrationMode.Degrees0,
-                MicrophoneCalibrationMode.Degrees90
-            ],
-            options.Select(option => option.Mode));
-        Assert.Equal(0, MicrophoneCalibrationComboHelper.FindIndex(
-            options,
-            MicrophoneCalibrationMode.Off));
+            [null, MicrophoneCalibrationIds.ZeroDegrees, "cal1"],
+            options.Select(option => option.CalibrationId));
+        Assert.Equal(0, MicrophoneCalibrationComboHelper.FindIndex(options, null));
     }
 
     [Fact]
-    public void BuildOptions_OmitsUnselectedProfilesWithoutFiles()
+    public void BuildOptions_MarksAnEntryThatDoesNotResolve()
     {
         CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
-            MicrophoneCalibrationMode.Off,
-            hasZeroDegreeCalibration: false,
-            hasNinetyDegreeCalibration: false);
+            "cal1",
+            [new MicrophoneCalibrationEntry("cal1", "45° seat", Available: false)]);
 
-        Assert.Equal(
-            [MicrophoneCalibrationMode.Off],
-            options.Select(option => option.Mode));
-    }
-
-    [Theory]
-    [InlineData(MicrophoneCalibrationMode.Degrees0, "0 degrees (file missing)")]
-    [InlineData(MicrophoneCalibrationMode.Degrees90, "90 degrees (file missing)")]
-    public void BuildOptions_KeepsSelectedModeWhenItsFileIsMissing(
-        MicrophoneCalibrationMode selectedMode,
-        string expectedDisplayName)
-    {
-        CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
-            selectedMode,
-            hasZeroDegreeCalibration: false,
-            hasNinetyDegreeCalibration: false);
-
-        int index = MicrophoneCalibrationComboHelper.FindIndex(options, selectedMode);
-        Assert.True(index > 0);
-        Assert.Equal(selectedMode, options[index].Mode);
-        Assert.Equal(expectedDisplayName, options[index].DisplayName);
+        int index = MicrophoneCalibrationComboHelper.FindIndex(options, "cal1");
+        Assert.Equal(1, index);
+        Assert.Equal("45° seat (unavailable)", options[index].DisplayName);
     }
 
     [Fact]
-    public void BuildOptions_DoesNotMarkAvailableProfiles()
+    public void BuildOptions_KeepsASelectionTheListNoLongerHolds()
     {
         CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
-            MicrophoneCalibrationMode.Degrees90,
-            hasZeroDegreeCalibration: true,
-            hasNinetyDegreeCalibration: true);
+            "deleted",
+            Configured);
+
+        int index = MicrophoneCalibrationComboHelper.FindIndex(options, "deleted");
+        Assert.Equal(3, index);
+        Assert.Equal("deleted", options[index].CalibrationId);
+        Assert.Equal("Deleted calibration (missing)", options[index].DisplayName);
+    }
+
+    [Fact]
+    public void BuildOptions_DoesNotMarkAvailableCalibrations()
+    {
+        CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
+            "cal1",
+            Configured);
 
         Assert.All(
             options,
-            option => Assert.DoesNotContain("missing", option.DisplayName));
+            option => Assert.DoesNotContain("(", option.DisplayName));
     }
 
     [Fact]
-    public void FindIndex_FallsBackToOffForAnAbsentMode()
+    public void ASelectionLeftFromADeletedEntryStaysMissingAfterANewOneIsAdded()
+    {
+        // A counted id would be handed out again after a deletion, and every
+        // stored selection still naming it — another view, a saved Virtual DSP
+        // session, a history entry — would silently start correcting with a
+        // calibration nobody pointed it at.
+        var definitions = new List<MicrophoneCalibrationDefinition>();
+        string deleted = MicrophoneCalibrationDefinition.CreateId(definitions);
+        definitions.Add(new MicrophoneCalibrationDefinition { Id = deleted, Name = "Old" });
+        definitions.Clear();
+        string added = MicrophoneCalibrationDefinition.CreateId(definitions);
+        definitions.Add(new MicrophoneCalibrationDefinition { Id = added, Name = "New" });
+
+        Assert.NotEqual(deleted, added);
+        CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
+            deleted,
+            definitions
+                .Select(definition => new MicrophoneCalibrationEntry(
+                    definition.Id,
+                    definition.Name,
+                    Available: true))
+                .ToList());
+
+        int index = MicrophoneCalibrationComboHelper.FindIndex(options, deleted);
+        Assert.Equal(deleted, options[index].CalibrationId);
+        Assert.Contains("missing", options[index].DisplayName);
+    }
+
+    [Fact]
+    public void CreateId_NeverCollidesWithTheReservedIds()
+    {
+        string created = MicrophoneCalibrationDefinition.CreateId([]);
+
+        Assert.NotEqual(MicrophoneCalibrationIds.ZeroDegrees, created);
+        Assert.NotEqual(MicrophoneCalibrationDefinition.LegacyNinetyDegreesId, created);
+    }
+
+    [Fact]
+    public void FindIndex_FallsBackToOffForAnAbsentSelection()
     {
         CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
-            MicrophoneCalibrationMode.Off,
-            hasZeroDegreeCalibration: false,
-            hasNinetyDegreeCalibration: false);
+            null,
+            []);
 
-        Assert.Equal(0, MicrophoneCalibrationComboHelper.FindIndex(
-            options,
-            MicrophoneCalibrationMode.Degrees90));
+        Assert.Equal(0, MicrophoneCalibrationComboHelper.FindIndex(options, "cal1"));
     }
 }

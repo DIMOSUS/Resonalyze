@@ -7,57 +7,57 @@ internal static class MicrophoneCalibrationComboHelper
 {
     public static void Configure(
         DarkComboBox comboBox,
-        MicrophoneCalibrationMode selectedMode,
-        bool hasZeroDegreeCalibration,
-        bool hasNinetyDegreeCalibration)
+        string? selectedCalibrationId,
+        IReadOnlyList<MicrophoneCalibrationEntry> entries)
     {
         comboBox.Items.Clear();
         comboBox.DropDownStyle = ComboBoxStyle.DropDownList;
         IReadOnlyList<MicrophoneCalibrationOption> options = BuildOptions(
-            selectedMode,
-            hasZeroDegreeCalibration,
-            hasNinetyDegreeCalibration);
+            selectedCalibrationId,
+            entries);
         foreach (MicrophoneCalibrationOption option in options)
         {
             comboBox.Items.Add(option);
         }
 
-        comboBox.SelectedIndex = FindIndex(options, selectedMode);
+        comboBox.SelectedIndex = FindIndex(options, selectedCalibrationId);
         comboBox.Enabled = options.Count > 1;
     }
 
-    public static MicrophoneCalibrationMode GetSelectedMode(DarkComboBox comboBox) =>
+    public static string? GetSelectedCalibrationId(DarkComboBox comboBox) =>
         comboBox.SelectedItem is MicrophoneCalibrationOption option
-            ? option.Mode
-            : MicrophoneCalibrationMode.Off;
+            ? option.CalibrationId
+            : null;
 
-    // The persisted mode stays selectable even when its file is currently
-    // missing. Dropping the entry would land the selection on "Off" and the
-    // next apply would silently overwrite the stored preference.
+    // Off plus every configured calibration. An entry whose file is currently
+    // missing stays in the list, marked: dropping it would land the selection on
+    // "Off" and the next apply would silently overwrite the stored preference.
+    // The same reasoning keeps a selection the list no longer holds at all — an
+    // entry deleted while a saved project still points at it.
     internal static IReadOnlyList<MicrophoneCalibrationOption> BuildOptions(
-        MicrophoneCalibrationMode selectedMode,
-        bool hasZeroDegreeCalibration,
-        bool hasNinetyDegreeCalibration)
+        string? selectedCalibrationId,
+        IReadOnlyList<MicrophoneCalibrationEntry> entries)
     {
         var options = new List<MicrophoneCalibrationOption>
         {
-            new(MicrophoneCalibrationMode.Off, "Off")
+            new(null, "Off")
         };
-
-        if (hasZeroDegreeCalibration ||
-            selectedMode == MicrophoneCalibrationMode.Degrees0)
+        foreach (MicrophoneCalibrationEntry entry in entries)
         {
             options.Add(new MicrophoneCalibrationOption(
-                MicrophoneCalibrationMode.Degrees0,
-                hasZeroDegreeCalibration ? "0 degrees" : "0 degrees (file missing)"));
+                entry.Id,
+                entry.Available ? entry.Name : $"{entry.Name} (unavailable)"));
         }
 
-        if (hasNinetyDegreeCalibration ||
-            selectedMode == MicrophoneCalibrationMode.Degrees90)
+        if (!MicrophoneCalibrationIds.IsOff(selectedCalibrationId) &&
+            !entries.Any(entry => IsSame(entry.Id, selectedCalibrationId)))
         {
+            // The id is all that is left of a deleted entry, and it is a
+            // generated one nobody can read, so the label says what happened
+            // rather than spelling it out.
             options.Add(new MicrophoneCalibrationOption(
-                MicrophoneCalibrationMode.Degrees90,
-                hasNinetyDegreeCalibration ? "90 degrees" : "90 degrees (file missing)"));
+                selectedCalibrationId,
+                "Deleted calibration (missing)"));
         }
 
         return options;
@@ -65,11 +65,11 @@ internal static class MicrophoneCalibrationComboHelper
 
     internal static int FindIndex(
         IReadOnlyList<MicrophoneCalibrationOption> options,
-        MicrophoneCalibrationMode selectedMode)
+        string? selectedCalibrationId)
     {
         for (int index = 0; index < options.Count; index++)
         {
-            if (options[index].Mode == selectedMode)
+            if (IsSame(options[index].CalibrationId, selectedCalibrationId))
             {
                 return index;
             }
@@ -78,17 +78,18 @@ internal static class MicrophoneCalibrationComboHelper
         return 0;
     }
 
+    private static bool IsSame(string? left, string? right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
     internal sealed class MicrophoneCalibrationOption
     {
-        public MicrophoneCalibrationOption(
-            MicrophoneCalibrationMode mode,
-            string displayName)
+        public MicrophoneCalibrationOption(string? calibrationId, string displayName)
         {
-            Mode = mode;
+            CalibrationId = calibrationId;
             DisplayName = displayName;
         }
 
-        public MicrophoneCalibrationMode Mode { get; }
+        public string? CalibrationId { get; }
 
         public string DisplayName { get; }
 

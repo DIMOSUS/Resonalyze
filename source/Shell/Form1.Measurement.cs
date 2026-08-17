@@ -244,7 +244,7 @@ public partial class Form1
         expSweepMeasurement.InProgress &&
         expSweepMeasurement.AverageRunCount > 1;
 
-    // Commit a calibration change (microphone 0°/90° file or the SPL anchor) the
+    // Commit a calibration change (the microphone's files or the SPL anchor) the
     // moment it happens: into the settings and to disk (debounced, flushed on
     // close), onto the live measurement so the next impulse response stamps the SPL
     // anchor, and onto the plot so a microphone calibration shows at once. None of
@@ -254,8 +254,8 @@ public partial class Form1
     {
         measurementSettings.Measurement.MicrophoneCalibration0DegreesPath =
             selection.MicrophoneCalibration0DegreesPath;
-        measurementSettings.Measurement.MicrophoneCalibration90DegreesPath =
-            selection.MicrophoneCalibration90DegreesPath;
+        measurementSettings.Measurement.AdditionalMicrophoneCalibrations =
+            selection.AdditionalMicrophoneCalibrations.ToList();
         measurementSettings.Measurement.SplCalibration = selection.SplCalibration;
         expSweepMeasurement.SplCalibration = selection.SplCalibration;
         RefreshCalibrationConsumers();

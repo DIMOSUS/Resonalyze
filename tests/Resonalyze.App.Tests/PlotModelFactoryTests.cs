@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
@@ -590,7 +590,7 @@ public sealed class PlotModelFactoryTests
             """);
         var options = new FrequencyResponseOptions
         {
-            CalibrationMode = MicrophoneCalibrationMode.Degrees0,
+            CalibrationId = MicrophoneCalibrationIds.ZeroDegrees,
             SmoothingInverseOctaves = smoothing
         };
         using ExpSweepMeasurement measurement = CreateTransferMeasurement();
@@ -1569,7 +1569,7 @@ public sealed class PlotModelFactoryTests
         measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         var options = new LiveSpectrumOptions
         {
-            CalibrationMode = MicrophoneCalibrationMode.Off,
+            CalibrationId = null,
             SmoothingInverseOctaves = 6,
             MagnitudeScale = MagnitudeScale.SoundPressureLevel
         };
@@ -1642,7 +1642,7 @@ public sealed class PlotModelFactoryTests
         // must move the identical power-band curve by exactly the offset difference.
         var options = new LiveSpectrumOptions
         {
-            CalibrationMode = MicrophoneCalibrationMode.Off,
+            CalibrationId = null,
             SmoothingInverseOctaves = 0,
             MagnitudeScale = MagnitudeScale.SoundPressureLevel
         };

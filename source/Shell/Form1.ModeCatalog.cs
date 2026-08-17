@@ -45,8 +45,7 @@ public partial class Form1
                         expSweepMeasurement,
                         frequencyResponseOptions,
                         frequencyResponseVisibility,
-                        microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
-                        microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90)),
+                        microphoneCalibration.GetEntries()),
                     opt => opt.SetOptions(frequencyResponseOptions, frequencyResponseVisibility),
                     // Switching dBr <-> SPL rescales the axis, so the old zoom is
                     // meaningless: refit instead of restoring it.

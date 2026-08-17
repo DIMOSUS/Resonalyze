@@ -23,7 +23,7 @@ internal sealed class PlotModelFactory
 
     private readonly ExpSweepMeasurement expSweepMeasurement;
     private readonly NoiseMeasurement noiseMeasurement;
-    private readonly Func<MicrophoneCalibrationMode, CalibrationFile?> getCalibration;
+    private readonly Func<string?, CalibrationFile?> getCalibration;
     private readonly MeasurementPlotContext measurementContext;
     private readonly FrequencyResponseOptions frequencyResponseOptions;
     private readonly FrequencyResponseOptions phaseResponseOptions;
@@ -40,7 +40,7 @@ internal sealed class PlotModelFactory
     public PlotModelFactory(
         ExpSweepMeasurement expSweepMeasurement,
         NoiseMeasurement noiseMeasurement,
-        Func<MicrophoneCalibrationMode, CalibrationFile?> getCalibration,
+        Func<string?, CalibrationFile?> getCalibration,
         PlotPresentationOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -134,14 +134,10 @@ internal sealed class PlotModelFactory
             : 0.0;
 
     private CalibrationFile? GetCalibration(FrequencyResponseOptions options) =>
-        options.CalibrationMode == MicrophoneCalibrationMode.Off
-            ? null
-            : getCalibration(options.CalibrationMode);
+        getCalibration(options.CalibrationId);
 
     private CalibrationFile? GetCalibration(LiveSpectrumOptions options) =>
-        options.CalibrationMode == MicrophoneCalibrationMode.Off
-            ? null
-            : getCalibration(options.CalibrationMode);
+        getCalibration(options.CalibrationId);
 
     /// <summary>
     /// The RAW (unsmoothed) samples of a captured analysis curve plus the mode's

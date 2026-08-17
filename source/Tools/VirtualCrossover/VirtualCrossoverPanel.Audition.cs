@@ -91,9 +91,8 @@ public partial class VirtualCrossoverPanel
                 right.ChannelCount,
                 borrowedSide,
                 calibrationResolver,
-                hasZeroDegreeCalibration,
-                hasNinetyDegreeCalibration,
-                project.CalibrationMode));
+                calibrationEntries,
+                project.CalibrationId));
         dialog.ShowDialog(FindForm());
     }
 }

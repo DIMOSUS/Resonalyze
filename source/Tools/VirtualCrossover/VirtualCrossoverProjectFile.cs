@@ -300,7 +300,7 @@ public sealed class VirtualCrossoverProjectFile
     // step in Migrate below. Files from a NEWER version (a downgraded app)
     // are never migrated: LoadOrDefault backs them up and starts fresh,
     // LoadFrom rejects them with an explicit error.
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
     public const int MaximumChannelCount = 8;
     private const string FileName = "virtual-crossover.json";
 
@@ -475,11 +475,16 @@ public sealed class VirtualCrossoverProjectFile
             : mode;
     }
 
-    // Microphone calibration applied to the magnitude curves. The measurement is
-    // loopback-referenced, so calibration is optional and off by default.
-    // Additive: older files lack the field and default to Off.
-    public MicrophoneCalibrationMode CalibrationMode { get; set; } =
-        MicrophoneCalibrationMode.Off;
+    // Microphone calibration applied to the magnitude curves, by id. The
+    // measurement is loopback-referenced, so calibration is optional and off by
+    // default (null). Which calibration an id names is a property of the machine,
+    // not of the session — see WarnAboutUnavailableCalibration.
+    public string? CalibrationId { get; set; }
+
+    // Schema v5 payload, kept only so an older file deserializes for migration:
+    // the selection used to be one of three fixed modes.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LegacyMicrophoneCalibrationMode? CalibrationMode { get; set; }
 
     /// <summary>
     /// The phase gate's placement, per SIDE. The two sides' drivers sit at different
@@ -733,6 +738,20 @@ public sealed class VirtualCrossoverProjectFile
             file.LegacyPhaseDetrendMs = null;
             file.Version = 5;
         }
+        if (file.Version == 5)
+        {
+            // v5 picked the calibration from three fixed modes; it is now an id
+            // into the user's calibration list. 90° maps to the entry the
+            // settings migration creates from the old second slot — the session
+            // says WHICH calibration it was tuned with, and this machine either
+            // has that entry or is told it does not.
+            file.CalibrationId = MeasurementSettingsFile.ResolveCalibrationId(
+                file.CalibrationId,
+                file.CalibrationMode,
+                legacyUseCalibration: false);
+            file.CalibrationMode = null;
+            file.Version = 6;
+        }
 
         // The scene offset's wire SIGN and the layout flag state one fact
         // (see the properties): re-align them here for files that carry only
@@ -855,11 +874,6 @@ public sealed class VirtualCrossoverProjectFile
         {
             throw new InvalidDataException(
                 "The virtual crossover smoothing setting is invalid.");
-        }
-        if (!Enum.IsDefined(CalibrationMode))
-        {
-            throw new InvalidDataException(
-                "The virtual crossover calibration mode is invalid.");
         }
         if (!Enum.IsDefined(DspPlotMode))
         {

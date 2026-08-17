@@ -376,10 +376,6 @@ Car / CarMild / XCurve presets cover it), and HP/LP filter types (crossover tool
 
 ## Signal Generator / files / calibration / release
 
-- [ ] **Estimated 90° calibration looks real**: `Has(Degrees90)` is true when the
-  90° curve is approximated from the 0° file, and the UI labels it plainly "90
-  degrees". Label it "estimated from 0°" so the user knows the 90° curve is
-  inferred, not measured.
 - [ ] **Signal Generator materializes whole signals in memory** (mono array +
   full playback copy; ASIO always a stereo float copy): 600 s at 192 kHz is
   ~1.3 GiB. Needs a streaming IWaveProvider generating blocks.

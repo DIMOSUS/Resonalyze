@@ -6,11 +6,26 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp
 {
-    public enum MicrophoneCalibrationMode
+    /// <summary>
+    /// Identifies which microphone calibration a view corrects with. The
+    /// measurement layer only ever passes the id around; what it resolves to —
+    /// the one 0° file, another file, or a curve estimated for an angle — is the
+    /// application's bookkeeping. Null or empty means no correction.
+    /// </summary>
+    public static class MicrophoneCalibrationIds
     {
-        Off,
-        Degrees0,
-        Degrees90
+        /// <summary>
+        /// The microphone's own 0° calibration: the one slot every other entry
+        /// is derived from or compared against.
+        /// </summary>
+        public const string ZeroDegrees = "0deg";
+
+        public static bool IsOff(string? calibrationId) =>
+            string.IsNullOrEmpty(calibrationId);
+
+        /// <summary>Empty selections collapse to null so persisted state has one spelling of "off".</summary>
+        public static string? Normalize(string? calibrationId) =>
+            string.IsNullOrWhiteSpace(calibrationId) ? null : calibrationId.Trim();
     }
 
     /// <summary>
@@ -44,15 +59,16 @@ namespace Resonalyze.Dsp
         public double SmoothingInverseOctaves { get; set; } = 6;
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
-        public MicrophoneCalibrationMode CalibrationMode { get; set; } =
-            MicrophoneCalibrationMode.Degrees0;
+        /// <summary>
+        /// Which microphone calibration corrects this view, by id (see
+        /// <see cref="MicrophoneCalibrationIds"/>); null means uncalibrated.
+        /// </summary>
+        public string? CalibrationId { get; set; } = MicrophoneCalibrationIds.ZeroDegrees;
 
         public bool UseCalibration
         {
-            get => CalibrationMode != MicrophoneCalibrationMode.Off;
-            set => CalibrationMode = value
-                ? MicrophoneCalibrationMode.Degrees0
-                : MicrophoneCalibrationMode.Off;
+            get => !MicrophoneCalibrationIds.IsOff(CalibrationId);
+            set => CalibrationId = value ? MicrophoneCalibrationIds.ZeroDegrees : null;
         }
 
         // Whether the magnitude plot reads in native loopback-referenced dB or in

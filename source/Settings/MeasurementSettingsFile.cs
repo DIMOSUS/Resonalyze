@@ -7,7 +7,7 @@ namespace Resonalyze;
 
 internal sealed partial class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 10;
+    private const int CurrentSchemaVersion = 11;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -59,7 +59,8 @@ internal sealed partial class MeasurementSettingsFile
         {
             if (!File.Exists(path))
             {
-                return new MeasurementSettingsFile { pathOnDisk = path };
+                return new MeasurementSettingsFile { pathOnDisk = path }
+                    .WithFirstRunCalibrationDefaults();
             }
 
             using FileStream stream = File.OpenRead(path);
@@ -100,8 +101,17 @@ internal sealed partial class MeasurementSettingsFile
                 settings.Measurement.SplCalibration = null;
             }
 
+            // Version 11 replaced the two fixed microphone-calibration slots
+            // with a named list; the selections it rewrites are only readable
+            // while the file still carries the legacy fields.
+            if (settings.SchemaVersion < 11)
+            {
+                settings.MigrateLegacyMicrophoneCalibrations();
+            }
+
             settings.SchemaVersion = CurrentSchemaVersion;
             settings.MigrateLegacyDualDeviceLoopback();
+            settings.NormalizeMicrophoneCalibrations();
             settings.pathOnDisk = path;
             return settings;
         }
@@ -118,8 +128,26 @@ internal sealed partial class MeasurementSettingsFile
                 pathOnDisk = path,
                 LoadWarning = $"Settings could not be loaded: {exception.Message}\r\n\r\n{preservation}",
                 preserveExistingFileBeforeSave = backup.Status == BackupStatus.Failed
-            };
+            }.WithFirstRunCalibrationDefaults();
         }
+    }
+
+    // A settings object with no file behind it is a FIRST RUN, and the measurement
+    // views used to start corrected: the selection was a bare on/off flag that
+    // defaulted to true, and then a mode that defaulted to 0°. Without this a fresh
+    // installation would leave every view uncalibrated after the user configures
+    // their 0° file, until they also picked it in each mode's selector.
+    // A LOADED file is never touched here: an absent id there is a deliberate Off,
+    // and that difference is the whole reason this lives in the load path rather
+    // than in the property initializers. The EQ Wizard is excluded because it
+    // always defaulted to no correction.
+    private MeasurementSettingsFile WithFirstRunCalibrationDefaults()
+    {
+        FrequencyResponse.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
+        PhaseResponse.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
+        GroupDelay.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
+        LiveSpectrum.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
+        return this;
     }
 
     private static BackupResult BackupUnusableFile(string path)
@@ -170,6 +198,128 @@ internal sealed partial class MeasurementSettingsFile
         }
 
         Measurement.WaveLoopbackDeviceNumber = null;
+    }
+
+    // The 90° calibration used to be a second fixed slot, optionally backed by a
+    // file and otherwise approximated from the 0° one. The slot is gone: a
+    // CONFIGURED file becomes a named entry of the calibration list, keeping
+    // every view that selected it working, while the approximation is not
+    // recreated — an estimate now needs the microphone's geometry, which a
+    // legacy file does not carry, so those views fall back to no correction
+    // rather than to a curve nobody chose.
+    internal void MigrateLegacyMicrophoneCalibrations()
+    {
+        string? legacyPath = Measurement.MicrophoneCalibration90DegreesPath;
+        Measurement.MicrophoneCalibration90DegreesPath = null;
+        bool migrated = !string.IsNullOrWhiteSpace(legacyPath);
+        if (migrated &&
+            !Measurement.AdditionalMicrophoneCalibrations.Any(definition =>
+                string.Equals(
+                    definition.Id,
+                    MicrophoneCalibrationDefinition.LegacyNinetyDegreesId,
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            Measurement.AdditionalMicrophoneCalibrations.Add(
+                new MicrophoneCalibrationDefinition
+                {
+                    Id = MicrophoneCalibrationDefinition.LegacyNinetyDegreesId,
+                    Name = "90°",
+                    Kind = MicrophoneCalibrationKind.File,
+                    Path = legacyPath
+                });
+        }
+
+        FrequencyResponse.CalibrationId = MigrateSelection(
+            FrequencyResponse.CalibrationId,
+            FrequencyResponse.CalibrationMode,
+            FrequencyResponse.UseCalibration,
+            migrated);
+        PhaseResponse.CalibrationId = MigrateSelection(
+            PhaseResponse.CalibrationId,
+            PhaseResponse.CalibrationMode,
+            PhaseResponse.UseCalibration,
+            migrated);
+        GroupDelay.CalibrationId = MigrateSelection(
+            GroupDelay.CalibrationId,
+            GroupDelay.CalibrationMode,
+            GroupDelay.UseCalibration,
+            migrated);
+        LiveSpectrum.CalibrationId = MigrateSelection(
+            LiveSpectrum.CalibrationId,
+            LiveSpectrum.CalibrationMode,
+            LiveSpectrum.UseCalibration,
+            migrated);
+        EqWizard.CalibrationId = MigrateSelection(
+            EqWizard.CalibrationId,
+            EqWizard.CalibrationMode,
+            legacyUseCalibration: false,
+            migrated);
+        FrequencyResponse.CalibrationMode = null;
+        PhaseResponse.CalibrationMode = null;
+        GroupDelay.CalibrationMode = null;
+        LiveSpectrum.CalibrationMode = null;
+        EqWizard.CalibrationMode = null;
+        FrequencyResponse.UseCalibration = null;
+        PhaseResponse.UseCalibration = null;
+        GroupDelay.UseCalibration = null;
+        LiveSpectrum.UseCalibration = null;
+    }
+
+    private static string? MigrateSelection(
+        string? calibrationId,
+        LegacyMicrophoneCalibrationMode? legacyMode,
+        bool? legacyUseCalibration,
+        bool ninetyDegreeFileMigrated)
+    {
+        string? resolved = ResolveCalibrationId(
+            calibrationId,
+            legacyMode,
+            legacyUseCalibration);
+        return !ninetyDegreeFileMigrated &&
+            resolved == MicrophoneCalibrationDefinition.LegacyNinetyDegreesId
+                ? null
+                : resolved;
+    }
+
+    // Runs for every file, not just a migrated one: the list is hand-editable
+    // JSON, and a definition with a duplicate id, no id, or an angle outside the
+    // model's range would otherwise reach the estimator.
+    private void NormalizeMicrophoneCalibrations()
+    {
+        List<MicrophoneCalibrationDefinition> definitions =
+            Measurement.AdditionalMicrophoneCalibrations;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            MicrophoneCalibrationIds.ZeroDegrees
+        };
+        // Forward, so a duplicated id keeps its FIRST entry: that is the one the
+        // stored selections were written against, and the one the list showed.
+        for (int index = 0; index < definitions.Count; index++)
+        {
+            MicrophoneCalibrationDefinition definition = definitions[index];
+            definition.Normalize();
+            if (definition.Id.Length == 0 || !seen.Add(definition.Id))
+            {
+                definitions.RemoveAt(index);
+                index--;
+            }
+        }
+
+        // An estimate may only be derived from a file-backed entry (or from the
+        // 0° slot, which BaseId leaves null); anything else — a missing entry, or
+        // a chain of estimates — falls back to the 0° calibration.
+        var fileBacked = new HashSet<string>(
+            definitions
+                .Where(definition => definition.Kind == MicrophoneCalibrationKind.File)
+                .Select(definition => definition.Id),
+            StringComparer.OrdinalIgnoreCase);
+        foreach (MicrophoneCalibrationDefinition definition in definitions)
+        {
+            if (definition.BaseId is { } baseId && !fileBacked.Contains(baseId))
+            {
+                definition.BaseId = null;
+            }
+        }
     }
 
     public void Save()
@@ -248,7 +398,9 @@ internal sealed partial class MeasurementSettingsFile
         TimeAlignmentOptions timeAlignment)
     {
         SchemaVersion = CurrentSchemaVersion;
+        SweepMeasurementSettings previousMeasurement = Measurement;
         Measurement = SweepMeasurementSettings.Capture(measurement);
+        Measurement.CopyCalibrationFrom(previousMeasurement);
         FrequencyResponse = FrequencyResponseSettings.Capture(frequencyResponse, frequencyResponseVisibility);
         PhaseResponse = FrequencyResponseSettings.Capture(phaseResponse, phaseResponseVisibility);
         GroupDelay = FrequencyResponseSettings.Capture(groupDelay, groupDelayVisibility);

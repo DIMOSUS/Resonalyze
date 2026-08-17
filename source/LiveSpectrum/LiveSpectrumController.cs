@@ -141,7 +141,7 @@ internal sealed class LiveSpectrumController : IDisposable
         MagnitudeScale Scale,
         bool RtaOnly,
         int SmoothingInverseOctaves,
-        MicrophoneCalibrationMode CalibrationMode,
+        string? CalibrationId,
         double? SplOffsetDb);
 
     private PeakHoldDisplayKey renderedPeakHoldKey;
@@ -150,7 +150,7 @@ internal sealed class LiveSpectrumController : IDisposable
         RenderingSpl ? MagnitudeScale.SoundPressureLevel : MagnitudeScale.Relative,
         RtaOnly,
         liveSpectrumOptions.SmoothingInverseOctaves,
-        liveSpectrumOptions.CalibrationMode,
+        liveSpectrumOptions.CalibrationId,
         // The offset only shapes the display in SPL; in relative it is irrelevant.
         RenderingSpl ? plotModelFactory.LiveSplOffsetDb : null);
 

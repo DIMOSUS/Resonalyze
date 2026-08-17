@@ -16,10 +16,11 @@ namespace Resonalyze.Options
     public partial class MeasurementOptions : Form
     {
         private readonly WrappingToolTip deviceToolTip = new();
-        // Raised the moment any calibration (microphone 0°/90° file or the SPL
-        // anchor) is selected, captured, or cleared, so the host can apply and
-        // persist it immediately instead of only when the panel is applied.
-        public event Action<CalibrationSelection>? CalibrationChanged;
+        // Raised the moment any calibration (the microphone's 0° file, the list of
+        // additional ones, or the SPL anchor) is selected, edited, captured, or
+        // cleared, so the host can apply and persist it immediately instead of
+        // only when the panel is applied.
+        internal event Action<CalibrationSelection>? CalibrationChanged;
         // Raised whenever a control outside the audio-backend group changes. That
         // whole group — the backend, the format it opens the device with (sample
         // rate and bit depth), its device panel and the Apply button — is the only
@@ -27,10 +28,10 @@ namespace Resonalyze.Options
         // effect as it is edited.
         public event Action? SweepSettingsChanged;
 
-        /// <summary>A snapshot of the three calibrations the panel manages.</summary>
-        public sealed record CalibrationSelection(
+        /// <summary>A snapshot of the calibrations the panel manages.</summary>
+        internal sealed record CalibrationSelection(
             string? MicrophoneCalibration0DegreesPath,
-            string? MicrophoneCalibration90DegreesPath,
+            IReadOnlyList<MicrophoneCalibrationDefinition> AdditionalMicrophoneCalibrations,
             SplCalibration? SplCalibration);
         private WindowsAudioEndpointService? endpointService;
         private Font? normalStatusFont;
@@ -44,7 +45,7 @@ namespace Resonalyze.Options
         private AsioDriverInfo asioDriverInfo = AsioDeviceCatalog.EmptyDriverInfo;
         private bool initializing;
         private string? microphoneCalibration0DegreesPath;
-        private string? microphoneCalibration90DegreesPath;
+        private List<MicrophoneCalibrationDefinition> additionalMicrophoneCalibrations = [];
         // The SPL calibration anchor and the factory used to capture it. The
         // factory is only present when the form is created for real use (the
         // parameterless designer constructor leaves it null, which disables the
@@ -316,7 +317,9 @@ namespace Resonalyze.Options
             numericUpDownAverageRunCount.Value = Math.Clamp(settings.AverageRunCount, 1, 64);
             checkBoxConfirmEachAverageRun.Checked = settings.ConfirmEachAverageRun;
             microphoneCalibration0DegreesPath = settings.MicrophoneCalibration0DegreesPath;
-            microphoneCalibration90DegreesPath = settings.MicrophoneCalibration90DegreesPath;
+            additionalMicrophoneCalibrations = settings.AdditionalMicrophoneCalibrations
+                .Select(definition => definition.Clone())
+                .ToList();
             splCalibration = settings.SplCalibration;
             UpdateCalibrationButtons();
             // The button's own refresh happens in the UpdateAudioBackendControls
@@ -340,8 +343,9 @@ namespace Resonalyze.Options
         {
             settings.MicrophoneCalibration0DegreesPath =
                 NormalizeCalibrationPath(microphoneCalibration0DegreesPath);
-            settings.MicrophoneCalibration90DegreesPath =
-                NormalizeCalibrationPath(microphoneCalibration90DegreesPath);
+            settings.AdditionalMicrophoneCalibrations = additionalMicrophoneCalibrations
+                .Select(definition => definition.Clone())
+                .ToList();
             settings.SplCalibration = splCalibration;
 
             int sampleRate = GetSelectedSampleRate();
@@ -574,10 +578,18 @@ namespace Resonalyze.Options
             RaiseCalibrationChanged();
         }
 
-        private void buttonCalibration90_Click(object? sender, EventArgs e)
+        private void buttonCalibrationExtra_Click(object? sender, EventArgs e)
         {
-            microphoneCalibration90DegreesPath =
-                SelectCalibrationFile(microphoneCalibration90DegreesPath);
+            using var dialog = new MicrophoneCalibrationsDialog(
+                additionalMicrophoneCalibrations,
+                NormalizeCalibrationPath(microphoneCalibration0DegreesPath),
+                SelectCalibrationFile);
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            additionalMicrophoneCalibrations = dialog.Definitions.ToList();
             UpdateCalibrationButtons();
             RaiseCalibrationChanged();
         }
@@ -589,17 +601,12 @@ namespace Resonalyze.Options
             RaiseCalibrationChanged();
         }
 
-        private void buttonClearCalibration90_Click(object? sender, EventArgs e)
-        {
-            microphoneCalibration90DegreesPath = null;
-            UpdateCalibrationButtons();
-            RaiseCalibrationChanged();
-        }
-
         private void RaiseCalibrationChanged() =>
             CalibrationChanged?.Invoke(new CalibrationSelection(
                 NormalizeCalibrationPath(microphoneCalibration0DegreesPath),
-                NormalizeCalibrationPath(microphoneCalibration90DegreesPath),
+                additionalMicrophoneCalibrations
+                    .Select(definition => definition.Clone())
+                    .ToList(),
                 splCalibration));
 
         private void buttonSplCalibration_Click(object? sender, EventArgs e)
@@ -785,10 +792,15 @@ namespace Resonalyze.Options
                 buttonCalibration0,
                 buttonClearCalibration0,
                 microphoneCalibration0DegreesPath);
-            UpdateCalibrationButton(
-                buttonCalibration90,
-                buttonClearCalibration90,
-                microphoneCalibration90DegreesPath);
+            int count = additionalMicrophoneCalibrations.Count;
+            buttonCalibrationExtra.Text = count == 0
+                ? "Manage..."
+                : $"Manage... ({count})";
+            deviceToolTip.SetToolTip(
+                buttonCalibrationExtra,
+                "Further calibration files, and curves estimated from one of them for " +
+                "an angle of incidence. Every analysis mode can then be corrected with " +
+                "any of them.");
         }
 
         private void UpdateCalibrationButton(

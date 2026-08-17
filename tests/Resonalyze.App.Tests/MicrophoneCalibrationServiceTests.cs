@@ -5,9 +5,10 @@ namespace Resonalyze.App.Tests;
 /// <summary>
 /// The calibration cache, the once-per-session problem reporting and the path
 /// fallbacks moved off Form1 into <see cref="MicrophoneCalibrationService"/>;
-/// these pin the behavior the shell relied on: legacy calibration.txt lookup,
-/// the 90°-from-0° approximation, and warnings that never repeat within a
-/// session even across a cache invalidation.
+/// these pin the behavior the shell relies on: legacy calibration.txt lookup,
+/// resolution of the additional entries (files and angular estimates), and
+/// warnings that never repeat within a session even across a cache
+/// invalidation.
 /// </summary>
 public sealed class MicrophoneCalibrationServiceTests : IDisposable
 {
@@ -15,8 +16,8 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
 
     private readonly string tempDirectory;
     private readonly List<(string Path, string? Reason)> reportedProblems = new();
+    private readonly List<MicrophoneCalibrationDefinition> definitions = new();
     private string? zeroDegreePath;
-    private string? ninetyDegreePath;
 
     public MicrophoneCalibrationServiceTests()
     {
@@ -42,10 +43,9 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
     {
         MicrophoneCalibrationService service = CreateService();
 
-        Assert.Null(service.Get(MicrophoneCalibrationMode.Degrees0));
-        Assert.Null(service.Get(MicrophoneCalibrationMode.Degrees90));
-        Assert.False(service.Has(MicrophoneCalibrationMode.Degrees0));
-        Assert.False(service.Has(MicrophoneCalibrationMode.Degrees90));
+        Assert.Null(service.Get(MicrophoneCalibrationIds.ZeroDegrees));
+        Assert.Null(service.Get(null));
+        Assert.False(service.GetEntries()[0].Available);
         Assert.Empty(reportedProblems);
     }
 
@@ -55,11 +55,11 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
         zeroDegreePath = WriteFile("zero.txt", ValidCalibration);
         MicrophoneCalibrationService service = CreateService();
 
-        CalibrationFile? first = service.Get(MicrophoneCalibrationMode.Degrees0);
+        CalibrationFile? first = service.Get(MicrophoneCalibrationIds.ZeroDegrees);
 
         Assert.NotNull(first);
         Assert.True(first!.HasData);
-        Assert.Same(first, service.Get(MicrophoneCalibrationMode.Degrees0));
+        Assert.Same(first, service.Get(MicrophoneCalibrationIds.ZeroDegrees));
         Assert.Empty(reportedProblems);
     }
 
@@ -69,8 +69,8 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
         zeroDegreePath = WriteFile("broken.txt", "not a calibration\n");
         MicrophoneCalibrationService service = CreateService();
 
-        CalibrationFile? calibration = service.Get(MicrophoneCalibrationMode.Degrees0);
-        service.Get(MicrophoneCalibrationMode.Degrees0);
+        CalibrationFile? calibration = service.Get(MicrophoneCalibrationIds.ZeroDegrees);
+        service.Get(MicrophoneCalibrationIds.ZeroDegrees);
 
         Assert.NotNull(calibration);
         Assert.False(calibration!.HasData);
@@ -85,8 +85,8 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
         zeroDegreePath = Path.Combine(tempDirectory, "deleted.txt");
         MicrophoneCalibrationService service = CreateService();
 
-        Assert.Null(service.Get(MicrophoneCalibrationMode.Degrees0));
-        Assert.Null(service.Get(MicrophoneCalibrationMode.Degrees0));
+        Assert.Null(service.Get(MicrophoneCalibrationIds.ZeroDegrees));
+        Assert.Null(service.Get(MicrophoneCalibrationIds.ZeroDegrees));
 
         (string path, string? reason) = Assert.Single(reportedProblems);
         Assert.Equal(zeroDegreePath, path);
@@ -94,17 +94,44 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
     }
 
     [Fact]
+    public void Get_ReportsAnUnknownCalibrationIdOncePerSession()
+    {
+        MicrophoneCalibrationService service = CreateService();
+
+        Assert.Null(service.Get("deleted-entry"));
+        Assert.Null(service.Get("deleted-entry"));
+
+        (_, string? reason) = Assert.Single(reportedProblems);
+        Assert.Contains("no longer configured", reason);
+    }
+
+    [Fact]
     public void InvalidateCache_ReloadsFilesButKeepsSessionProblemReports()
     {
         zeroDegreePath = WriteFile("broken.txt", "not a calibration\n");
         MicrophoneCalibrationService service = CreateService();
-        CalibrationFile? first = service.Get(MicrophoneCalibrationMode.Degrees0);
+        CalibrationFile? first = service.Get(MicrophoneCalibrationIds.ZeroDegrees);
 
         service.InvalidateCache();
-        CalibrationFile? second = service.Get(MicrophoneCalibrationMode.Degrees0);
+        CalibrationFile? second = service.Get(MicrophoneCalibrationIds.ZeroDegrees);
 
         Assert.NotSame(first, second);
         Assert.Single(reportedProblems);
+    }
+
+    [Fact]
+    public void InvalidateCache_PicksUpAnEditedDefinition()
+    {
+        zeroDegreePath = WriteFile("zero.txt", ValidCalibration);
+        definitions.Add(NewAngle("angle", 90));
+        MicrophoneCalibrationService service = CreateService();
+        double before = service.Get("angle")!.GetDecibelCorrection(10_000);
+
+        definitions[0].AngleDegrees = 30;
+        service.InvalidateCache();
+        double after = service.Get("angle")!.GetDecibelCorrection(10_000);
+
+        Assert.True(after > before);
     }
 
     [Fact]
@@ -113,54 +140,132 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
         WriteFile("calibration.txt", ValidCalibration);
         MicrophoneCalibrationService service = CreateService();
 
-        CalibrationFile? calibration = service.Get(MicrophoneCalibrationMode.Degrees0);
+        CalibrationFile? calibration = service.Get(MicrophoneCalibrationIds.ZeroDegrees);
 
         Assert.NotNull(calibration);
         Assert.True(calibration!.HasData);
-        Assert.True(service.Has(MicrophoneCalibrationMode.Degrees0));
-        Assert.True(service.Has(MicrophoneCalibrationMode.Degrees90));
+        Assert.True(service.GetEntries()[0].Available);
     }
 
     [Fact]
-    public void Get_NinetyDegrees_DerivesTheApproximationFromTheZeroDegreeFile()
+    public void Get_AngleEntry_AddsTheEstimateToItsBaseCalibration()
     {
         zeroDegreePath = WriteFile("zero.txt", ValidCalibration);
+        definitions.Add(NewAngle("angle", 90));
         MicrophoneCalibrationService service = CreateService();
 
-        CalibrationFile? ninety = service.Get(MicrophoneCalibrationMode.Degrees90);
+        CalibrationFile? angled = service.Get("angle");
 
-        Assert.NotNull(ninety);
-        Assert.True(ninety!.HasData);
-        Assert.True(service.Has(MicrophoneCalibrationMode.Degrees90));
-        Assert.NotSame(service.Get(MicrophoneCalibrationMode.Degrees0), ninety);
-        Assert.Same(ninety, service.Get(MicrophoneCalibrationMode.Degrees90));
+        Assert.NotNull(angled);
+        double expected = 2.5 + MicrophoneAngleModel
+            .Estimate(new MicrophoneAngleRequest(90, 12.7))
+            .DeltaDb(10_000);
+        Assert.Equal(expected, angled!.GetDecibelCorrection(10_000), precision: 9);
+        Assert.Same(angled, service.Get("angle"));
+    }
+
+    [Fact]
+    public void Get_AngleEntry_OnAxisReturnsTheBaseCalibrationItself()
+    {
+        zeroDegreePath = WriteFile("zero.txt", ValidCalibration);
+        definitions.Add(NewAngle("on-axis", 0));
+        MicrophoneCalibrationService service = CreateService();
+
+        Assert.Same(
+            service.Get(MicrophoneCalibrationIds.ZeroDegrees),
+            service.Get("on-axis"));
+    }
+
+    [Fact]
+    public void Get_AngleEntry_DerivesFromTheNamedFileRatherThanTheZeroDegreeSlot()
+    {
+        zeroDegreePath = WriteFile("zero.txt", ValidCalibration);
+        definitions.Add(new MicrophoneCalibrationDefinition
+        {
+            Id = "second",
+            Name = "Second microphone",
+            Kind = MicrophoneCalibrationKind.File,
+            Path = WriteFile("second.txt", "20 1.0\n1000 1.0\n20000 1.0\n")
+        });
+        MicrophoneCalibrationDefinition angle = NewAngle("angle", 90);
+        angle.BaseId = "second";
+        definitions.Add(angle);
+        MicrophoneCalibrationService service = CreateService();
+
+        double expected = 1.0 + MicrophoneAngleModel
+            .Estimate(new MicrophoneAngleRequest(90, 12.7))
+            .DeltaDb(10_000);
         Assert.Equal(
-            2.5 + CalibrationFile.Delta90Minus0(10_000),
-            ninety.GetDecibelCorrection(10_000),
-            precision: 6);
+            expected,
+            service.Get("angle")!.GetDecibelCorrection(10_000),
+            precision: 9);
     }
 
     [Fact]
-    public void Get_NinetyDegrees_PrefersTheConfiguredNinetyDegreeFile()
+    public void GetEntries_MarksAnUnparsableFileUnavailable()
     {
-        zeroDegreePath = WriteFile("zero.txt", ValidCalibration);
-        ninetyDegreePath = WriteFile("ninety.txt", "20 1.0\n1000 1.0\n20000 1.0\n");
+        // Availability is about yielding a correction, not about the file being
+        // on disk: an unparsable one corrects by 0 dB everywhere, which a
+        // selector marked "ready" would hide.
+        zeroDegreePath = WriteFile("broken.txt", "not a calibration\n");
+        definitions.Add(new MicrophoneCalibrationDefinition
+        {
+            Id = "second",
+            Name = "Second microphone",
+            Kind = MicrophoneCalibrationKind.File,
+            Path = WriteFile("empty.txt", string.Empty)
+        });
+        definitions.Add(NewAngle("angle", 90));
         MicrophoneCalibrationService service = CreateService();
 
-        CalibrationFile? ninety = service.Get(MicrophoneCalibrationMode.Degrees90);
-
-        Assert.NotNull(ninety);
-        Assert.Equal(1.0, ninety!.GetDecibelCorrection(1000), precision: 6);
+        Assert.All(service.GetEntries(), entry => Assert.False(entry.Available));
+        // Listing entries reads the files, but the warning belongs to correcting
+        // a measurement with one, so it must not have been raised yet.
+        Assert.Empty(reportedProblems);
+        Assert.False(service.Get(MicrophoneCalibrationIds.ZeroDegrees)!.HasData);
+        Assert.Single(reportedProblems);
     }
+
+    [Fact]
+    public void GetEntries_MarksAnAngleWithoutABaseUnavailable()
+    {
+        definitions.Add(NewAngle("angle", 45));
+        MicrophoneCalibrationService service = CreateService();
+
+        MicrophoneCalibrationEntry entry = service.GetEntries()[^1];
+
+        Assert.Equal("angle", entry.Id);
+        Assert.False(entry.Available);
+        Assert.Null(service.Get("angle"));
+    }
+
+    [Fact]
+    public void GetEntries_ListsTheZeroDegreeSlotFirstThenTheConfiguredOrder()
+    {
+        zeroDegreePath = WriteFile("zero.txt", ValidCalibration);
+        definitions.Add(NewAngle("first", 30));
+        definitions.Add(NewAngle("second", 60));
+        MicrophoneCalibrationService service = CreateService();
+
+        Assert.Equal(
+            [MicrophoneCalibrationIds.ZeroDegrees, "first", "second"],
+            service.GetEntries().Select(entry => entry.Id));
+    }
+
+    private static MicrophoneCalibrationDefinition NewAngle(string id, double angleDegrees) =>
+        new()
+        {
+            Id = id,
+            Name = id,
+            Kind = MicrophoneCalibrationKind.Angle,
+            AngleDegrees = angleDegrees,
+            FrontDiameterMm = 12.7
+        };
 
     private MicrophoneCalibrationService CreateService() =>
         new(
-            mode => mode switch
-            {
-                MicrophoneCalibrationMode.Degrees0 => zeroDegreePath,
-                MicrophoneCalibrationMode.Degrees90 => ninetyDegreePath,
-                _ => null
-            },
+            () => zeroDegreePath,
+            () => definitions,
             (path, reason) => reportedProblems.Add((path, reason)),
             legacyZeroDegreeDirectory: tempDirectory);
 

@@ -30,12 +30,11 @@ namespace Resonalyze.Options
             InitializeToolTips();
         }
 
-        public void Init(
+        internal void Init(
             ExpSweepMeasurement expSweepMeasurement,
             FrequencyResponseOptions frequencyResponseOptions,
             CurveVisibilityOptions visibility,
-            bool hasZeroDegreeCalibration,
-            bool hasNinetyDegreeCalibration)
+            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries)
         {
             AttachMeasurement(expSweepMeasurement);
             InitializeControls(() =>
@@ -55,9 +54,8 @@ namespace Resonalyze.Options
                     SmoothingPresetOptions.Normalize(frequencyResponseOptions.SmoothingInverseOctaves);
                 MicrophoneCalibrationComboHelper.Configure(
                     comboCalibration,
-                    frequencyResponseOptions.CalibrationMode,
-                    hasZeroDegreeCalibration,
-                    hasNinetyDegreeCalibration);
+                    frequencyResponseOptions.CalibrationId,
+                    calibrationEntries);
                 checkBoxShowPrimary.Checked = visibility.ShowPrimary;
                 checkBoxShowCoherence.Checked = visibility.ShowCoherence;
                 checkBoxShowHd2.Checked = visibility.ShowHd2;
@@ -79,6 +77,19 @@ namespace Resonalyze.Options
             UpdateIrPreview();
         }
 
+        /// <summary>
+        /// Rebuilds the calibration list without disturbing the selection — the
+        /// host calls this when the configured calibrations change while the
+        /// panel is open. A selection the list no longer holds stays selected
+        /// and marked missing rather than being silently rewritten.
+        /// </summary>
+        internal void RefreshCalibrationEntries(
+            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
+            MicrophoneCalibrationComboHelper.Configure(
+                comboCalibration,
+                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration),
+                calibrationEntries);
+
         public void SetOptions(
             FrequencyResponseOptions frequencyResponseOptions,
             CurveVisibilityOptions visibility)
@@ -97,8 +108,8 @@ namespace Resonalyze.Options
                 comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
                     ? inverseOctaves
                     : SmoothingPresetOptions.SupportedInverseOctaves[0];
-            frequencyResponseOptions.CalibrationMode =
-                MicrophoneCalibrationComboHelper.GetSelectedMode(comboCalibration);
+            frequencyResponseOptions.CalibrationId =
+                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration);
             visibility.ShowPrimary = checkBoxShowPrimary.Checked;
             visibility.ShowCoherence = checkBoxShowCoherence.Checked;
             visibility.ShowHd2 = checkBoxShowHd2.Checked;

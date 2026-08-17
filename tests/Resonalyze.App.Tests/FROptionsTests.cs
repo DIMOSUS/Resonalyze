@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
@@ -19,8 +19,7 @@ public sealed class FROptionsTests
             measurement,
             options,
             new CurveVisibilityOptions(),
-            hasZeroDegreeCalibration: false,
-            hasNinetyDegreeCalibration: false);
+            []);
 
         var written = new FrequencyResponseOptions();
         panel.SetOptions(written, new CurveVisibilityOptions());
@@ -43,8 +42,7 @@ public sealed class FROptionsTests
             measurement,
             options,
             new CurveVisibilityOptions(),
-            hasZeroDegreeCalibration: false,
-            hasNinetyDegreeCalibration: false);
+            []);
 
         var written = new FrequencyResponseOptions();
         panel.SetOptions(written, new CurveVisibilityOptions());

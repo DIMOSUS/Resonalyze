@@ -58,15 +58,14 @@ public partial class EqWizardPanel
     private OverlayLineStyle targetLineStyle = OverlayLineStyle.Dash;
     private int targetSmoothingInverseOctaves;
 
-    private Func<MicrophoneCalibrationMode, CalibrationFile?>? calibrationResolver;
-    private bool hasZeroDegreeCalibration;
-    private bool hasNinetyDegreeCalibration;
-    // The effective mode of the loaded source (may be Own). Distinct from the persisted
+    private Func<string?, CalibrationFile?>? calibrationResolver;
+    private IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries = [];
+    // The effective choice for the loaded source (may be Own). Distinct from the persisted
     // impulse-response preference below: loading a curve forces this to Own/Off, which
     // must NOT overwrite what the user chose for impulse responses. See EqWizardCalibration.
-    private EqWizardCalibrationMode calibrationMode = EqWizardCalibrationMode.Off;
-    // The user's standing file-backed choice for impulse responses; the only one persisted.
-    private MicrophoneCalibrationMode preferredIrCalibrationMode = MicrophoneCalibrationMode.Off;
+    private EqWizardCalibrationChoice calibrationChoice = EqWizardCalibrationChoice.Off;
+    // The user's standing configured choice for impulse responses; the only one persisted.
+    private string? preferredIrCalibrationId;
     private bool suppressCalibrationEvents;
     private bool suppressSampleRateEvents;
     private bool suppressQConventionEvents;
@@ -325,7 +324,7 @@ public partial class EqWizardPanel
         suppressRedraw = true;
         try
         {
-            calibrationMode = ChooseCalibrationMode(source);
+            calibrationChoice = ChooseCalibration(source);
             comboBoxSmooth.Enabled = source.SupportsSmoothing;
             PopulateCalibrationCombo();
             RefreshSampleRateCombo();
@@ -350,21 +349,21 @@ public partial class EqWizardPanel
 
     // The calibration a freshly loaded source starts on:
     //  - a curve that stored its own correction defaults to reproducing it (Own);
-    //  - an impulse response restores the user's standing file-backed preference,
-    //    regardless of what a previously loaded curve forced the effective mode to;
+    //  - an impulse response restores the user's standing configured preference,
+    //    regardless of what a previously loaded curve forced the effective choice to;
     //  - a curve with no uncalibrated reference cannot be re-calibrated at all (Off).
-    private EqWizardCalibrationMode ChooseCalibrationMode(EqWizardCurveSource source)
+    private EqWizardCalibrationChoice ChooseCalibration(EqWizardCurveSource source)
     {
         if (source.HasOwnCalibration)
         {
-            return EqWizardCalibrationMode.Own;
+            return EqWizardCalibrationChoice.OwnCapture;
         }
         if (source.Kind == EqWizardSourceKind.ImpulseResponse)
         {
-            return EqWizardCalibration.FromMicrophoneMode(preferredIrCalibrationMode);
+            return EqWizardCalibrationChoice.Microphone(preferredIrCalibrationId);
         }
 
-        return EqWizardCalibrationMode.Off;
+        return EqWizardCalibrationChoice.Off;
     }
 
     // ------------------------------------------------------------- source curve
@@ -401,9 +400,9 @@ public partial class EqWizardPanel
     private IReadOnlyList<SignalPoint> ComputeImpulseResponseSpectrum(
         EqWizardCurveSource source)
     {
-        // Only a file-backed calibration can be applied while computing an FR; "own"
+        // Only a configured calibration can be applied while computing an FR; "own"
         // belongs to an imported curve and never reaches here.
-        MicrophoneCalibrationMode mode = EqWizardCalibration.ToMicrophoneMode(calibrationMode);
+        string? calibrationId = calibrationChoice.MicrophoneCalibrationId;
         var options = new FrequencyResponseOptions
         {
             Window = SourceWindow,
@@ -411,11 +410,9 @@ public partial class EqWizardPanel
             RightTukeyWindow = SourceRightTukey,
             SmoothingInverseOctaves = SourceSmoothingInverseOctaves,
             Offset = 0,
-            CalibrationMode = mode
+            CalibrationId = calibrationId
         };
-        CalibrationFile? calibration = mode == MicrophoneCalibrationMode.Off
-            ? null
-            : calibrationResolver?.Invoke(mode);
+        CalibrationFile? calibration = calibrationResolver?.Invoke(calibrationId);
 
         IReadOnlyList<AnalysisCurve> curves = DataHelper.GetSpectrum(
             source.Measurement!, options, calibration, SpectrumCurves.Primary);
@@ -449,29 +446,35 @@ public partial class EqWizardPanel
     // The same choice as ResolveCurveCalibrationCorrection, but frozen on the curve's own
     // points instead of the raw output grid — the only frequencies a no-raw capture has.
     private IReadOnlyList<double> ResolvePointsCalibrationCorrection(
-        EqWizardCurveSource source) => calibrationMode switch
+        EqWizardCurveSource source)
+    {
+        if (calibrationChoice.Own)
         {
-            EqWizardCalibrationMode.Own => source.PointsCalibrationCorrectionDb,
-            EqWizardCalibrationMode.Degrees0 or EqWizardCalibrationMode.Degrees90 =>
-                EqWizardImportedCurve.SampleCorrection(
-                    calibrationResolver?.Invoke(
-                        EqWizardCalibration.ToMicrophoneMode(calibrationMode)),
-                    source.Points),
-            _ => Array.Empty<double>()
-        };
+            return source.PointsCalibrationCorrectionDb;
+        }
+
+        return calibrationChoice.IsOff
+            ? Array.Empty<double>()
+            : EqWizardImportedCurve.SampleCorrection(
+                calibrationResolver?.Invoke(calibrationChoice.CalibrationId),
+                source.Points);
+    }
 
     // The correction subtracted after smoothing: none, the one frozen at capture, or a
     // configured profile re-frozen on the same output grid.
     private IReadOnlyList<double> ResolveCurveCalibrationCorrection(
-        EqWizardCurveSource source) => calibrationMode switch
+        EqWizardCurveSource source)
+    {
+        if (calibrationChoice.Own)
         {
-            EqWizardCalibrationMode.Own => source.OwnCalibrationCorrectionDb,
-            EqWizardCalibrationMode.Degrees0 or EqWizardCalibrationMode.Degrees90 =>
-                RawCurveRenderer.CaptureCalibrationCorrection(
-                    calibrationResolver?.Invoke(
-                        EqWizardCalibration.ToMicrophoneMode(calibrationMode))),
-            _ => Array.Empty<double>()
-        };
+            return source.OwnCalibrationCorrectionDb;
+        }
+
+        return calibrationChoice.IsOff
+            ? Array.Empty<double>()
+            : RawCurveRenderer.CaptureCalibrationCorrection(
+                calibrationResolver?.Invoke(calibrationChoice.CalibrationId));
+    }
 
     // A measured curve keeps its NaN gaps: they mark bands the measurement could not
     // trust, and the fitter reads them instead of bridging them. A computed FR has no
@@ -741,13 +744,11 @@ public partial class EqWizardPanel
     /// rebuilds the selector. Called again whenever the configured files change.
     /// </summary>
     internal void ConfigureCalibration(
-        Func<MicrophoneCalibrationMode, CalibrationFile?> resolver,
-        bool hasZeroDegree,
-        bool hasNinetyDegree)
+        Func<string?, CalibrationFile?> resolver,
+        IReadOnlyList<MicrophoneCalibrationEntry> entries)
     {
         calibrationResolver = resolver;
-        hasZeroDegreeCalibration = hasZeroDegree;
-        hasNinetyDegreeCalibration = hasNinetyDegree;
+        calibrationEntries = entries;
         RefreshCalibrationCombo();
     }
 
@@ -777,7 +778,7 @@ public partial class EqWizardPanel
             for (int i = 0; i < comboBoxCalibration.Items.Count; i++)
             {
                 if (comboBoxCalibration.Items[i] is EqWizardCalibrationOption option &&
-                    option.Mode == calibrationMode)
+                    option.Choice == calibrationChoice)
                 {
                     index = i;
                     break;
@@ -785,7 +786,7 @@ public partial class EqWizardPanel
             }
 
             // BuildCalibrationOptions always yields at least "Off" and always includes
-            // the current mode, so index is found; the 0 fallback is only for the
+            // the current choice, so index is found; the 0 fallback is only for the
             // impossible empty list.
             comboBoxCalibration.SelectedIndex = index >= 0 ? index : 0;
             comboBoxCalibration.Enabled =
@@ -797,43 +798,52 @@ public partial class EqWizardPanel
             suppressCalibrationEvents = false;
         }
 
-        calibrationMode = GetSelectedCalibrationMode();
+        calibrationChoice = GetSelectedCalibration();
     }
 
-    // Off and the configured profiles are always offered; "own" only exists for a curve
-    // that stored the correction it was captured with.
+    // Off and every configured calibration are always offered; "own" only exists for a
+    // curve that stored the correction it was captured with. An entry that currently
+    // resolves to nothing stays listed and marked, and so does a selection the list no
+    // longer holds — dropping either would silently rewrite the user's choice.
     private IReadOnlyList<EqWizardCalibrationOption> BuildCalibrationOptions()
     {
         var options = new List<EqWizardCalibrationOption>
         {
-            new(EqWizardCalibrationMode.Off, "Off")
+            new(EqWizardCalibrationChoice.Off, "Off")
         };
 
         if (loadedSource is { HasOwnCalibration: true })
         {
             options.Add(new EqWizardCalibrationOption(
-                EqWizardCalibrationMode.Own, "Own (as captured)"));
+                EqWizardCalibrationChoice.OwnCapture, "Own (as captured)"));
         }
-        if (hasZeroDegreeCalibration || calibrationMode == EqWizardCalibrationMode.Degrees0)
+
+        foreach (MicrophoneCalibrationEntry entry in calibrationEntries)
         {
             options.Add(new EqWizardCalibrationOption(
-                EqWizardCalibrationMode.Degrees0,
-                hasZeroDegreeCalibration ? "0 degrees" : "0 degrees (file missing)"));
+                EqWizardCalibrationChoice.Microphone(entry.Id),
+                entry.Available ? entry.Name : $"{entry.Name} (unavailable)"));
         }
-        if (hasNinetyDegreeCalibration || calibrationMode == EqWizardCalibrationMode.Degrees90)
+
+        if (!calibrationChoice.Own &&
+            !calibrationChoice.IsOff &&
+            !calibrationEntries.Any(entry => string.Equals(
+                entry.Id,
+                calibrationChoice.CalibrationId,
+                StringComparison.OrdinalIgnoreCase)))
         {
             options.Add(new EqWizardCalibrationOption(
-                EqWizardCalibrationMode.Degrees90,
-                hasNinetyDegreeCalibration ? "90 degrees" : "90 degrees (file missing)"));
+                calibrationChoice,
+                $"{calibrationChoice.CalibrationId} (missing)"));
         }
 
         return options;
     }
 
-    private EqWizardCalibrationMode GetSelectedCalibrationMode() =>
+    private EqWizardCalibrationChoice GetSelectedCalibration() =>
         comboBoxCalibration.SelectedItem is EqWizardCalibrationOption option
-            ? option.Mode
-            : EqWizardCalibrationMode.Off;
+            ? option.Choice
+            : EqWizardCalibrationChoice.Off;
 
     private void OnCalibrationChanged()
     {
@@ -842,18 +852,18 @@ public partial class EqWizardPanel
             return;
         }
 
-        calibrationMode = GetSelectedCalibrationMode();
-        // A file-backed choice made against an impulse response (or with nothing loaded)
+        calibrationChoice = GetSelectedCalibration();
+        // A configured choice made against an impulse response (or with nothing loaded)
         // becomes the standing IR preference; one made against a curve does not.
-        preferredIrCalibrationMode = EqWizardCalibration.UpdatedIrPreference(
-            preferredIrCalibrationMode, loadedSource?.Kind, calibrationMode);
+        preferredIrCalibrationId = EqWizardCalibration.UpdatedIrPreference(
+            preferredIrCalibrationId, loadedSource?.Kind, calibrationChoice);
         InvalidateSourceCurve();
         RaiseSettingsChanged();
         DrawSelectedCurves();
     }
 
     private sealed record EqWizardCalibrationOption(
-        EqWizardCalibrationMode Mode,
+        EqWizardCalibrationChoice Choice,
         string Label)
     {
         public override string ToString() => Label;
@@ -1029,12 +1039,12 @@ public partial class EqWizardPanel
             targetStrokeThickness = settings.TargetStrokeThickness;
             targetLineStyle = settings.TargetLineStyle;
             targetSmoothingInverseOctaves = settings.TargetSmoothingInverseOctaves;
-            // Only the file-backed impulse-response preference is persisted: "own" belongs
-            // to an imported curve, and no source is restored, so the effective mode simply
-            // starts from that preference.
-            preferredIrCalibrationMode = settings.CalibrationMode;
-            calibrationMode =
-                EqWizardCalibration.FromMicrophoneMode(preferredIrCalibrationMode);
+            // Only the configured impulse-response preference is persisted: "own" belongs
+            // to an imported curve, and no source is restored, so the effective choice
+            // simply starts from that preference.
+            preferredIrCalibrationId = settings.ResolveCalibrationId();
+            calibrationChoice =
+                EqWizardCalibrationChoice.Microphone(preferredIrCalibrationId);
             manualSampleRateHz = settings.ManualSampleRateHz > 0
                 ? settings.ManualSampleRateHz
                 : DefaultSampleRateHz;
@@ -1084,7 +1094,7 @@ public partial class EqWizardPanel
         PreampDb = (double)NumericGain.Value,
         BandCount = peqSlots.Count,
         SourceSmoothingInverseOctaves = SourceSmoothingInverseOctaves,
-        CalibrationMode = preferredIrCalibrationMode,
+        CalibrationId = preferredIrCalibrationId,
         ManualSampleRateHz = manualSampleRateHz,
         CutsOnly = checkBoxCutsOnly.Checked
     };

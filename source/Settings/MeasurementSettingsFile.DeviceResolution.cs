@@ -11,6 +11,20 @@ using Resonalyze.Options;
 
 namespace Resonalyze;
 
+/// <summary>
+/// The microphone calibration as files written before schema 11 stored it: two
+/// fixed slots and off. Deserialization target for the migration, and nothing
+/// else — the live selection is an id.
+/// </summary>
+// Public only because the Virtual DSP project file — a public type — deserializes
+// it; nothing outside this assembly consumes it.
+public enum LegacyMicrophoneCalibrationMode
+{
+    Off,
+    Degrees0,
+    Degrees90
+}
+
 internal sealed partial class MeasurementSettingsFile
 {
     private static int NormalizeDeviceNumber(
@@ -145,18 +159,39 @@ internal sealed partial class MeasurementSettingsFile
             ? NormalizeAsioChannelOffset(asioDriverName, sampleRate, offset.Value, input: true)
             : null;
 
-    private static MicrophoneCalibrationMode NormalizeCalibrationMode(
-        MicrophoneCalibrationMode? mode,
-        bool legacyUseCalibration)
+    /// <summary>
+    /// The calibration id a persisted view restores to. A stored id wins; a file
+    /// written before the calibration list existed carries one of the three
+    /// fixed modes instead, or — older still — only an on/off flag. 90° maps to
+    /// the entry the migration creates from the old second slot, whether the
+    /// file being read is the settings file (already migrated) or a history
+    /// snapshot restored later.
+    /// </summary>
+    internal static string? ResolveCalibrationId(
+        string? calibrationId,
+        LegacyMicrophoneCalibrationMode? legacyMode,
+        bool? legacyUseCalibration)
     {
-        if (mode.HasValue && Enum.IsDefined(mode.Value))
+        if (MicrophoneCalibrationIds.Normalize(calibrationId) is { } id)
         {
-            return mode.Value;
+            return id;
         }
 
-        return legacyUseCalibration
-            ? MicrophoneCalibrationMode.Degrees0
-            : MicrophoneCalibrationMode.Off;
+        if (legacyMode.HasValue && Enum.IsDefined(legacyMode.Value))
+        {
+            return legacyMode.Value switch
+            {
+                LegacyMicrophoneCalibrationMode.Degrees0 =>
+                    MicrophoneCalibrationIds.ZeroDegrees,
+                LegacyMicrophoneCalibrationMode.Degrees90 =>
+                    MicrophoneCalibrationDefinition.LegacyNinetyDegreesId,
+                _ => null
+            };
+        }
+
+        return legacyUseCalibration == true
+            ? MicrophoneCalibrationIds.ZeroDegrees
+            : null;
     }
 
     // Mirrors the UI invariant (see TukeyWindowControlHelper): each fade is in

@@ -224,16 +224,15 @@ public partial class VirtualCrossoverPanel : UserControl
 
     /// <summary>
     /// Microphone calibration applied to the magnitude curves, resolved from the
-    /// panel's own <see cref="comboBoxCalibration"/> selection (Off / 0° / 90°).
-    /// Null when calibration is off or unavailable.
+    /// panel's own <see cref="comboBoxCalibration"/> selection. Null when
+    /// calibration is off or unavailable.
     /// </summary>
     private CalibrationFile? Calibration { get; set; }
 
-    // Resolves a calibration file for a given mode; supplied by the host form,
-    // which owns the configured 0°/90° paths. Null until the host wires it.
-    private Func<MicrophoneCalibrationMode, CalibrationFile?>? calibrationResolver;
-    private bool hasZeroDegreeCalibration;
-    private bool hasNinetyDegreeCalibration;
+    // Resolves a calibration by id; supplied by the host form, which owns the
+    // configured calibrations. Null until the host wires it.
+    private Func<string?, CalibrationFile?>? calibrationResolver;
+    private IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries = [];
 
     /// <summary>
     /// Saves the given curve as a Captured Frequency Response overlay and returns
@@ -520,27 +519,25 @@ public partial class VirtualCrossoverPanel : UserControl
 
     /// <summary>
     /// Wires the microphone calibration source. The host owns the configured
-    /// 0°/90° files, so it supplies both a resolver and which profiles exist; the
-    /// panel offers the available ones in its own Off / 0° / 90° selector. Called
-    /// again whenever the configured files change, refreshing the selector.
+    /// calibrations, so it supplies both a resolver and the list of entries; the
+    /// panel offers them in its own selector. Called again whenever the
+    /// configured calibrations change, refreshing the selector.
     /// </summary>
     internal void ConfigureCalibration(
-        Func<MicrophoneCalibrationMode, CalibrationFile?> resolver,
-        bool hasZeroDegree,
-        bool hasNinetyDegree)
+        Func<string?, CalibrationFile?> resolver,
+        IReadOnlyList<MicrophoneCalibrationEntry> entries)
     {
         calibrationResolver = resolver;
-        hasZeroDegreeCalibration = hasZeroDegree;
-        hasNinetyDegreeCalibration = hasNinetyDegree;
+        calibrationEntries = entries;
         RefreshCalibrationCombo();
     }
 
-    // Rebuilds the selector's items from the available profiles and the persisted
-    // mode, then resolves the calibration the curves use. A profile that is no
-    // longer configured keeps its entry, marked "(file missing)", so the stored
-    // preference is not overwritten by the rebuild — the curves are simply drawn
-    // uncalibrated until the file comes back (an imported session says so once,
-    // see WarnAboutUnavailableCalibration).
+    // Rebuilds the selector's items from the configured calibrations and the
+    // persisted selection, then resolves the calibration the curves use. A
+    // selection that is no longer configured keeps its entry, marked, so the
+    // stored preference is not overwritten by the rebuild — the curves are simply
+    // drawn uncalibrated until the file comes back (an imported session says so
+    // once, see WarnAboutUnavailableCalibration).
     private void RefreshCalibrationCombo()
     {
         suppressProjectEvents = true;
@@ -548,9 +545,8 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             MicrophoneCalibrationComboHelper.Configure(
                 comboBoxCalibration,
-                project.CalibrationMode,
-                hasZeroDegreeCalibration,
-                hasNinetyDegreeCalibration);
+                project.CalibrationId,
+                calibrationEntries);
         }
         finally
         {
@@ -561,17 +557,12 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // Sets the calibration file from the selector's current mode. Off (or an
+    // Sets the calibration file from the selector's current selection. Off (or an
     // absent resolver) yields no calibration, matching the loopback-referenced
     // default.
-    private void ResolveCalibration()
-    {
-        MicrophoneCalibrationMode mode =
-            MicrophoneCalibrationComboHelper.GetSelectedMode(comboBoxCalibration);
-        Calibration = mode == MicrophoneCalibrationMode.Off
-            ? null
-            : calibrationResolver?.Invoke(mode);
-    }
+    private void ResolveCalibration() =>
+        Calibration = calibrationResolver?.Invoke(
+            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration));
 
     private void OnCalibrationChanged()
     {
@@ -580,8 +571,8 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        project.CalibrationMode =
-            MicrophoneCalibrationComboHelper.GetSelectedMode(comboBoxCalibration);
+        project.CalibrationId =
+            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
         ResolveCalibration();
         ScheduleSave();
         RedrawAll();
@@ -4520,31 +4511,30 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // The calibration a session asks for is a per-computer setting: the session
-    // stores WHICH profile (0°/90°) its curves were drawn with, but the profile's
-    // file belongs to the machine's own microphone. The selector keeps the mode and
-    // marks it "(file missing)", yet the curves are then drawn with no calibration
-    // at all — a quiet difference from what the session's author saw, and worth one
-    // sentence at import time. Copying the other machine's file is NOT the fix: it
-    // describes their microphone, not this one.
+    // stores WHICH calibration its curves were drawn with, but that calibration
+    // belongs to the machine's own microphone. The selector keeps the selection and
+    // marks it, yet the curves are then drawn with no calibration at all — a quiet
+    // difference from what the session's author saw, and worth one sentence at
+    // import time. Copying the other machine's file is NOT the fix: it describes
+    // their microphone, not this one.
     private void WarnAboutUnavailableCalibration()
     {
-        bool available = project.CalibrationMode switch
-        {
-            MicrophoneCalibrationMode.Degrees0 => hasZeroDegreeCalibration,
-            MicrophoneCalibrationMode.Degrees90 => hasNinetyDegreeCalibration,
-            _ => true
-        };
-        if (available || IsDisposed)
+        if (MicrophoneCalibrationIds.IsOff(project.CalibrationId) || IsDisposed)
         {
             return;
         }
 
-        string profile = project.CalibrationMode == MicrophoneCalibrationMode.Degrees90
-            ? "90 degrees"
-            : "0 degrees";
+        MicrophoneCalibrationEntry? entry = calibrationEntries.FirstOrDefault(item =>
+            string.Equals(item.Id, project.CalibrationId, StringComparison.OrdinalIgnoreCase));
+        if (entry is { Available: true })
+        {
+            return;
+        }
+
+        string profile = entry?.Name ?? project.CalibrationId!;
         MessageBox.Show(
             FindForm(),
-            $"This session was tuned with the {profile} microphone calibration, which " +
+            $"This session was tuned with the '{profile}' microphone calibration, which " +
             "is not configured on this computer, so its curves are drawn without any " +
             "calibration and will not match the ones its author saw.\r\n\r\nConfigure " +
             "the calibration of THIS microphone in the measurement settings — the " +

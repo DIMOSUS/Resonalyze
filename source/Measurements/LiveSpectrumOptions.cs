@@ -45,15 +45,16 @@ namespace Resonalyze
         /// <summary>Spectral colour of the excitation noise played during measurement.</summary>
         public NoiseColor NoiseColor { get; set; } = NoiseColor.PinkPeriodic;
 
-        public MicrophoneCalibrationMode CalibrationMode { get; set; } =
-            MicrophoneCalibrationMode.Degrees0;
+        /// <summary>
+        /// Which microphone calibration corrects the live curves, by id (see
+        /// <see cref="MicrophoneCalibrationIds"/>); null means uncalibrated.
+        /// </summary>
+        public string? CalibrationId { get; set; } = MicrophoneCalibrationIds.ZeroDegrees;
 
         public bool UseCalibration
         {
-            get => CalibrationMode != MicrophoneCalibrationMode.Off;
-            set => CalibrationMode = value
-                ? MicrophoneCalibrationMode.Degrees0
-                : MicrophoneCalibrationMode.Off;
+            get => !MicrophoneCalibrationIds.IsOff(CalibrationId);
+            set => CalibrationId = value ? MicrophoneCalibrationIds.ZeroDegrees : null;
         }
         public int SequenceLength { get; set; } = 2048;
 

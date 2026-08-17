@@ -21,10 +21,9 @@ internal sealed record VirtualCrossoverAuditionContext(
     int LeftChannelCount,
     int RightChannelCount,
     string? BorrowedSide,
-    Func<MicrophoneCalibrationMode, CalibrationFile?>? CalibrationResolver,
-    bool HasZeroDegreeCalibration,
-    bool HasNinetyDegreeCalibration,
-    MicrophoneCalibrationMode InitialCalibrationMode);
+    Func<string?, CalibrationFile?>? CalibrationResolver,
+    IReadOnlyList<MicrophoneCalibrationEntry> CalibrationEntries,
+    string? InitialCalibrationId);
 
 /// <summary>
 /// The Virtual DSP audition dialog: pick a track and a destination, optionally a
@@ -93,7 +92,32 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     // so a dead path degrades to the usual refusal in the report.
     private static string? lastSourcePath;
     private static string? lastTargetPath;
-    private static MicrophoneCalibrationMode? lastCalibrationMode;
+    private static string? lastCalibrationId;
+    private static bool hasLastCalibrationId;
+
+    // The remembered choice only seeds a new opening while it still resolves;
+    // otherwise the panel's own selection does. A remembered "Off" is a real
+    // choice and is kept, which is what hasLastCalibrationId separates from
+    // "nothing remembered yet".
+    private static string? ResolveInitialCalibrationId(
+        VirtualCrossoverAuditionContext context)
+    {
+        if (!hasLastCalibrationId)
+        {
+            return context.InitialCalibrationId;
+        }
+
+        if (MicrophoneCalibrationIds.IsOff(lastCalibrationId))
+        {
+            return null;
+        }
+
+        return context.CalibrationEntries.Any(entry =>
+            entry.Available &&
+            string.Equals(entry.Id, lastCalibrationId, StringComparison.OrdinalIgnoreCase))
+                ? lastCalibrationId
+                : context.InitialCalibrationId;
+    }
     // Seeded with the averaged sedan — the typical headphone listener wants
     // the typical rise gone; "off (as measured)" stays one click away and is
     // remembered like any other choice once picked.
@@ -117,27 +141,14 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         this.context = context ?? throw new ArgumentNullException(nameof(context));
         InitializeComponent();
 
-        // The remembered mode wins only when its profile is configured NOW:
-        // a 90° choice remembered from another project must not seed a
-        // project set up for 0° with "90 degrees (file missing)" — which would
-        // silently render as Off — so anything unavailable falls back to the
-        // panel's own setting.
-        MicrophoneCalibrationMode initialMode = lastCalibrationMode switch
-        {
-            MicrophoneCalibrationMode.Degrees0
-                when context.HasZeroDegreeCalibration =>
-                MicrophoneCalibrationMode.Degrees0,
-            MicrophoneCalibrationMode.Degrees90
-                when context.HasNinetyDegreeCalibration =>
-                MicrophoneCalibrationMode.Degrees90,
-            MicrophoneCalibrationMode.Off => MicrophoneCalibrationMode.Off,
-            _ => context.InitialCalibrationMode
-        };
+        // The remembered choice wins only when it resolves NOW: an entry
+        // remembered from another project must not seed this one with a
+        // "(missing)" selection — which would silently render as Off — so
+        // anything unavailable falls back to the panel's own setting.
         MicrophoneCalibrationComboHelper.Configure(
             comboBoxCalibration,
-            initialMode,
-            context.HasZeroDegreeCalibration,
-            context.HasNinetyDegreeCalibration);
+            ResolveInitialCalibrationId(context),
+            context.CalibrationEntries);
 
         comboBoxCabin.DropDownStyle = ComboBoxStyle.DropDownList;
         foreach (CabinOption option in CabinOptions)
@@ -191,8 +202,9 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     {
         lastSourcePath = sourcePath;
         lastTargetPath = targetPath;
-        lastCalibrationMode =
-            MicrophoneCalibrationComboHelper.GetSelectedMode(comboBoxCalibration);
+        lastCalibrationId =
+            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
+        hasLastCalibrationId = true;
         lastCabinStyle = SelectedCabinStyle;
         base.OnFormClosed(e);
     }
@@ -421,12 +433,10 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         // Resolved on the UI thread: the combo and the resolver belong here.
         // A configured-but-unreadable file degrades to Off, called out in the
         // result rather than silently.
-        MicrophoneCalibrationMode mode =
-            MicrophoneCalibrationComboHelper.GetSelectedMode(comboBoxCalibration);
-        CalibrationFile? calibration = mode == MicrophoneCalibrationMode.Off
-            ? null
-            : context.CalibrationResolver?.Invoke(mode);
-        string calibrationLabel = mode == MicrophoneCalibrationMode.Off
+        string? calibrationId =
+            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
+        CalibrationFile? calibration = context.CalibrationResolver?.Invoke(calibrationId);
+        string calibrationLabel = MicrophoneCalibrationIds.IsOff(calibrationId)
             ? "off"
             : calibration is { HasData: true }
                 ? comboBoxCalibration.GetItemText(comboBoxCalibration.SelectedItem)

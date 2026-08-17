@@ -54,8 +54,35 @@ internal sealed partial class MeasurementSettingsFile
         public int AverageRunCount { get; set; } = 2;
         public bool ConfirmEachAverageRun { get; set; }
         public string? MicrophoneCalibration0DegreesPath { get; set; }
+        // Legacy field (schema <= 10, when 90° was a second fixed slot), kept
+        // ONLY so old files deserialize into the migration, which turns the file
+        // into a named entry of AdditionalMicrophoneCalibrations; always null
+        // after loading and never written back.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? MicrophoneCalibration90DegreesPath { get; set; }
+        // Every calibration beside the microphone's own 0° file: further files
+        // and curves estimated for an angle of incidence, in the order the user
+        // arranged them.
+        public List<MicrophoneCalibrationDefinition> AdditionalMicrophoneCalibrations
+        { get; set; } = [];
         public SplCalibration? SplCalibration { get; set; }
+
+        /// <summary>
+        /// Carries the microphone calibrations over from <paramref name="previous"/>.
+        /// <see cref="Capture"/> rebuilds this section from the measurement, which
+        /// knows the audio configuration and the SPL anchor but nothing about the
+        /// calibration files — so without this they would be dropped on every
+        /// capture. Kept here rather than at the call site so a calibration added
+        /// later cannot be forgotten by one caller.
+        /// </summary>
+        public void CopyCalibrationFrom(SweepMeasurementSettings previous)
+        {
+            ArgumentNullException.ThrowIfNull(previous);
+            MicrophoneCalibration0DegreesPath = previous.MicrophoneCalibration0DegreesPath;
+            AdditionalMicrophoneCalibrations = previous.AdditionalMicrophoneCalibrations
+                .Select(definition => definition.Clone())
+                .ToList();
+        }
 
         // A loopback reference channel is mandatory: every analysis mode is derived from the
         // transfer IR, which only exists when the loopback is captured alongside the microphone.
@@ -217,8 +244,17 @@ internal sealed partial class MeasurementSettingsFile
         public double SmoothingInverseOctaves { get; set; } = 6;
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
-        public bool UseCalibration { get; set; } = true;
-        public MicrophoneCalibrationMode? CalibrationMode { get; set; }
+        // Which calibration this view corrects with, by id; null means none.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? CalibrationId { get; set; }
+        // Legacy selections (schema <= 10): first a bare on/off flag, then the
+        // three fixed modes. Read for migration only — deliberately nullable and
+        // without an initializer, so "absent" stays distinguishable from a
+        // stored value — and never written back.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? UseCalibration { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public LegacyMicrophoneCalibrationMode? CalibrationMode { get; set; }
         public MagnitudeScale MagnitudeScale { get; set; } = MagnitudeScale.Relative;
         public bool ShowCoherence { get; set; } = true;
         public bool ShowMeasuredPhase { get; set; } = true;
@@ -267,8 +303,7 @@ internal sealed partial class MeasurementSettingsFile
                 SmoothingInverseOctaves = options.SmoothingInverseOctaves,
                 Offset = options.Offset,
                 Unwrap = options.Unwrap,
-                UseCalibration = options.UseCalibration,
-                CalibrationMode = options.CalibrationMode,
+                CalibrationId = options.CalibrationId,
                 MagnitudeScale = options.MagnitudeScale,
                 ShowCoherence = visibility.ShowCoherence,
                 ShowMeasuredPhase = visibility.ShowMeasuredPhase,
@@ -318,7 +353,10 @@ internal sealed partial class MeasurementSettingsFile
                 SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);
             options.Offset = Clamp(Offset, -32768, 32768);
             options.Unwrap = Unwrap;
-            options.CalibrationMode = NormalizeCalibrationMode(CalibrationMode, UseCalibration);
+            options.CalibrationId = ResolveCalibrationId(
+                CalibrationId,
+                CalibrationMode,
+                UseCalibration);
             options.MagnitudeScale = Enum.IsDefined(MagnitudeScale)
                 ? MagnitudeScale
                 : MagnitudeScale.Relative;
@@ -428,8 +466,20 @@ internal sealed partial class MeasurementSettingsFile
         // when Bands is absent (see above).
         public int BandCount { get; set; }
         public int SourceSmoothingInverseOctaves { get; set; }
-        public MicrophoneCalibrationMode CalibrationMode { get; set; } =
-            MicrophoneCalibrationMode.Off;
+
+        // The wizard's standing preference for impulse responses. Unlike the
+        // measurement views it defaults to no correction, so a file that carries
+        // neither the id nor the legacy mode restores as Off.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? CalibrationId { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public LegacyMicrophoneCalibrationMode? CalibrationMode { get; set; }
+
+        public string? ResolveCalibrationId() =>
+            MeasurementSettingsFile.ResolveCalibrationId(
+                CalibrationId,
+                CalibrationMode,
+                legacyUseCalibration: false);
 
         // The rate the fitted biquads are realized at when the source does not state one
         // (a foreign text curve). A source that knows its own rate overrides this without
@@ -518,8 +568,13 @@ internal sealed partial class MeasurementSettingsFile
     internal sealed class LiveSpectrumSettings
     {
         public NoiseColor NoiseColor { get; set; } = NoiseColor.PinkPeriodic;
-        public bool UseCalibration { get; set; } = true;
-        public MicrophoneCalibrationMode? CalibrationMode { get; set; }
+        // See FrequencyResponseSettings for the id and the two legacy fields.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? CalibrationId { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? UseCalibration { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public LegacyMicrophoneCalibrationMode? CalibrationMode { get; set; }
         public int SequenceLength { get; set; } = 2048;
         public int OverlapPercent { get; set; } = 50;
         public int SmoothingInverseOctaves { get; set; } = 6;
@@ -539,8 +594,7 @@ internal sealed partial class MeasurementSettingsFile
                 NoiseColor = Enum.IsDefined(options.NoiseColor)
                     ? options.NoiseColor
                     : NoiseColor.PinkPeriodic,
-                UseCalibration = options.UseCalibration,
-                CalibrationMode = options.CalibrationMode,
+                CalibrationId = options.CalibrationId,
                 SequenceLength = NormalizeSequenceLength(options.SequenceLength),
                 OverlapPercent = NormalizeOverlapPercent(options.OverlapPercent),
                 SmoothingInverseOctaves =
@@ -565,7 +619,10 @@ internal sealed partial class MeasurementSettingsFile
             options.NoiseColor = Enum.IsDefined(NoiseColor)
                 ? NoiseColor
                 : NoiseColor.PinkPeriodic;
-            options.CalibrationMode = NormalizeCalibrationMode(CalibrationMode, UseCalibration);
+            options.CalibrationId = ResolveCalibrationId(
+                CalibrationId,
+                CalibrationMode,
+                UseCalibration);
             options.SequenceLength = NormalizeSequenceLength(SequenceLength);
             options.OverlapPercent = NormalizeOverlapPercent(OverlapPercent);
             options.SmoothingInverseOctaves =

@@ -57,9 +57,8 @@
             labelCalibration0 = new Label();
             buttonCalibration0 = new Button();
             buttonClearCalibration0 = new Button();
-            labelCalibration90 = new Label();
-            buttonCalibration90 = new Button();
-            buttonClearCalibration90 = new Button();
+            labelCalibrationExtra = new Label();
+            buttonCalibrationExtra = new Button();
             labelSplCalibration = new Label();
             buttonSplCalibration = new Button();
             buttonClearSplCalibration = new Button();
@@ -396,39 +395,27 @@
             buttonClearCalibration0.UseVisualStyleBackColor = true;
             buttonClearCalibration0.Click += buttonClearCalibration0_Click;
             // 
-            // labelCalibration90
-            // 
-            labelCalibration90.AutoSize = true;
-            labelCalibration90.ForeColor = SystemColors.ControlLight;
-            labelCalibration90.Location = new Point(17, 257);
-            labelCalibration90.Name = "labelCalibration90";
-            labelCalibration90.Size = new Size(106, 15);
-            labelCalibration90.TabIndex = 32;
-            labelCalibration90.Text = "Mic calibration 90°";
-            // 
-            // buttonCalibration90
-            // 
-            buttonCalibration90.FlatStyle = FlatStyle.Popup;
-            buttonCalibration90.ForeColor = Color.White;
-            buttonCalibration90.Location = new Point(154, 252);
-            buttonCalibration90.Name = "buttonCalibration90";
-            buttonCalibration90.Size = new Size(143, 23);
-            buttonCalibration90.TabIndex = 33;
-            buttonCalibration90.Text = "Select file...";
-            buttonCalibration90.UseVisualStyleBackColor = true;
-            buttonCalibration90.Click += buttonCalibration90_Click;
-            // 
-            // buttonClearCalibration90
-            // 
-            buttonClearCalibration90.FlatStyle = FlatStyle.Popup;
-            buttonClearCalibration90.ForeColor = Color.White;
-            buttonClearCalibration90.Location = new Point(300, 252);
-            buttonClearCalibration90.Name = "buttonClearCalibration90";
-            buttonClearCalibration90.Size = new Size(24, 23);
-            buttonClearCalibration90.TabIndex = 35;
-            buttonClearCalibration90.Text = "X";
-            buttonClearCalibration90.UseVisualStyleBackColor = true;
-            buttonClearCalibration90.Click += buttonClearCalibration90_Click;
+            // labelCalibrationExtra
+            //
+            labelCalibrationExtra.AutoSize = true;
+            labelCalibrationExtra.ForeColor = SystemColors.ControlLight;
+            labelCalibrationExtra.Location = new Point(17, 257);
+            labelCalibrationExtra.Name = "labelCalibrationExtra";
+            labelCalibrationExtra.Size = new Size(106, 15);
+            labelCalibrationExtra.TabIndex = 32;
+            labelCalibrationExtra.Text = "More calibrations";
+            //
+            // buttonCalibrationExtra
+            //
+            buttonCalibrationExtra.FlatStyle = FlatStyle.Popup;
+            buttonCalibrationExtra.ForeColor = Color.White;
+            buttonCalibrationExtra.Location = new Point(154, 252);
+            buttonCalibrationExtra.Name = "buttonCalibrationExtra";
+            buttonCalibrationExtra.Size = new Size(170, 23);
+            buttonCalibrationExtra.TabIndex = 33;
+            buttonCalibrationExtra.Text = "Manage...";
+            buttonCalibrationExtra.UseVisualStyleBackColor = true;
+            buttonCalibrationExtra.Click += buttonCalibrationExtra_Click;
             // 
             // labelSplCalibration
             // 
@@ -490,9 +477,8 @@
             Controls.Add(buttonClearSplCalibration);
             Controls.Add(buttonSplCalibration);
             Controls.Add(labelSplCalibration);
-            Controls.Add(buttonClearCalibration90);
-            Controls.Add(buttonCalibration90);
-            Controls.Add(labelCalibration90);
+            Controls.Add(buttonCalibrationExtra);
+            Controls.Add(labelCalibrationExtra);
             Controls.Add(buttonClearCalibration0);
             Controls.Add(buttonCalibration0);
             Controls.Add(labelCalibration0);
@@ -547,9 +533,8 @@
         private Label labelCalibration0;
         private Button buttonCalibration0;
         private Button buttonClearCalibration0;
-        private Label labelCalibration90;
-        private Button buttonCalibration90;
-        private Button buttonClearCalibration90;
+        private Label labelCalibrationExtra;
+        private Button buttonCalibrationExtra;
         private Label labelSplCalibration;
         private Button buttonSplCalibration;
         private Button buttonClearSplCalibration;

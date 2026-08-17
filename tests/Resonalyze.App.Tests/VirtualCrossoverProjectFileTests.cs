@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text.Json.Nodes;
 using Resonalyze.Dsp;
 
@@ -517,14 +517,14 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
-    public void SaveAndLoad_RoundTripsAMaxChannelProjectAndCalibrationMode()
+    public void SaveAndLoad_RoundTripsAMaxChannelProjectAndCalibrationSelection()
     {
         string root = CreateTemporaryDirectory();
         try
         {
             var original = new VirtualCrossoverProjectFile
             {
-                CalibrationMode = MicrophoneCalibrationMode.Degrees90,
+                CalibrationId = "cal1",
                 DspPlotMode = DspPlotMode.GroupDelay
             };
             while (original.Pairs.Count <
@@ -540,7 +540,7 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(
                 VirtualCrossoverProjectFile.MaximumChannelCount,
                 loaded.Pairs.Count);
-            Assert.Equal(MicrophoneCalibrationMode.Degrees90, loaded.CalibrationMode);
+            Assert.Equal("cal1", loaded.CalibrationId);
             Assert.Equal(DspPlotMode.GroupDelay, loaded.DspPlotMode);
         }
         finally
@@ -589,12 +589,6 @@ public sealed class VirtualCrossoverProjectFileTests
             StereoLevelDifferenceDb = GainBalanceEngine.MaxLevelDifferenceDb + 1
         };
         Assert.Throws<InvalidDataException>(() => badLevelDifference.Validate());
-
-        var badCalibrationMode = new VirtualCrossoverProjectFile
-        {
-            CalibrationMode = (MicrophoneCalibrationMode)42
-        };
-        Assert.Throws<InvalidDataException>(() => badCalibrationMode.Validate());
 
         var badDspPlotMode = new VirtualCrossoverProjectFile
         {

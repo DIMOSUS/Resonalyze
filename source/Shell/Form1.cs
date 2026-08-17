@@ -111,7 +111,8 @@ namespace Resonalyze
                     await expSweepMeasurement.AbortAsync();
                 });
             microphoneCalibration = new MicrophoneCalibrationService(
-                GetConfiguredMicrophoneCalibrationPath,
+                () => measurementSettings.Measurement.MicrophoneCalibration0DegreesPath,
+                () => measurementSettings.Measurement.AdditionalMicrophoneCalibrations,
                 ShowCalibrationProblem);
             sessionTracker = new MeasurementSessionTracker(
                 measurementHistoryService,

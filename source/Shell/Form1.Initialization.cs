@@ -163,34 +163,16 @@ public partial class Form1
         _ = SelectModeAsync(ModeTab.Frequency);
     }
 
-    private string? GetConfiguredMicrophoneCalibrationPath(MicrophoneCalibrationMode mode) =>
-        mode switch
-        {
-            MicrophoneCalibrationMode.Degrees0 =>
-                measurementSettings.Measurement.MicrophoneCalibration0DegreesPath,
-            MicrophoneCalibrationMode.Degrees90 =>
-                measurementSettings.Measurement.MicrophoneCalibration90DegreesPath,
-            _ => null
-        };
-
     private void RefreshCalibrationConsumers()
     {
         microphoneCalibration.InvalidateCache();
-        if (virtualCrossoverPanel != null)
-        {
-            virtualCrossoverPanel.ConfigureCalibration(
-                microphoneCalibration.Get,
-                microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
-                microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90));
-        }
-
-        if (eqWizardPanel != null)
-        {
-            eqWizardPanel.ConfigureCalibration(
-                microphoneCalibration.Get,
-                microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
-                microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90));
-        }
+        IReadOnlyList<MicrophoneCalibrationEntry> entries = microphoneCalibration.GetEntries();
+        virtualCrossoverPanel?.ConfigureCalibration(microphoneCalibration.Get, entries);
+        eqWizardPanel?.ConfigureCalibration(microphoneCalibration.Get, entries);
+        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
+            panel => panel.RefreshCalibrationEntries(entries));
+        dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
+            panel => panel.RefreshCalibrationEntries(entries));
     }
 
     private void WireFormEvents()

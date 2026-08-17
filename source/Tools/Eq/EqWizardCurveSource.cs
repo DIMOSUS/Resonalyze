@@ -16,22 +16,6 @@ internal enum EqWizardSourceKind
 }
 
 /// <summary>
-/// How the microphone correction is applied to a source curve. This is the wizard's own
-/// choice, not the measurement layer's <see cref="MicrophoneCalibrationMode"/>: an
-/// imported curve can additionally re-use the correction frozen into it at capture time,
-/// which has no meaning for a live measurement.
-/// </summary>
-internal enum EqWizardCalibrationMode
-{
-    Off,
-    Degrees0,
-    Degrees90,
-
-    /// <summary>The correction the curve was captured with, stored alongside it.</summary>
-    Own
-}
-
-/// <summary>
 /// The curve the EQ Wizard equalizes, decoupled from where it was picked. An impulse
 /// response still computes its own frequency response (so window, smoothing and
 /// calibration all apply); an imported curve is a finished response and carries only what

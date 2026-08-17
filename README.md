@@ -1206,10 +1206,11 @@ replacing the 0° file updates every angle derived from it. Entries are edited o
 a working copy and applied when the dialog is accepted; angle entries can only
 be derived from file-backed ones, so an estimate is never built on an estimate.
 
-Every analysis view — **Frequency Response**, **Phase**, **Group Delay**, **Live
-Spectrum**, the **EQ Wizard** and **Virtual DSP** — picks one of them (or
-**Off**) in its own selector. A selection whose file went missing, or whose entry
-was deleted, stays selected and is marked rather than being silently rewritten to
+The views that read a magnitude — **Frequency Response**, **Live Spectrum**, the
+**EQ Wizard** and **Virtual DSP** — each pick one of them (or **Off**) in their
+own selector; Phase and Group Delay read timing rather than level and apply no
+correction at all. A selection whose file went missing, or whose entry was
+deleted, stays selected and is marked rather than being silently rewritten to
 Off. For a source checkout, a legacy `source/calibration.txt` beside the
 executable is still honored as the 0° calibration.
 

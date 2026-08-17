@@ -150,34 +150,6 @@ namespace Resonalyze.Dsp
             return new CalibrationFile(zeroDegreeCalibration, angleDeltaDb);
         }
 
-        /// <summary>
-        /// The correction as points, on the frequency grid of the file it was
-        /// loaded from — an angled calibration keeps the 0° grid rather than
-        /// inventing one of its own. Used to write a derived calibration out as
-        /// a file.
-        /// </summary>
-        public IEnumerable<SignalPoint> EnumerateDecibelPoints()
-        {
-            if (baseCalibration != null && decibelOffset != null)
-            {
-                foreach (SignalPoint point in baseCalibration.EnumerateDecibelPoints())
-                {
-                    yield return new SignalPoint(
-                        point.X,
-                        point.Y + decibelOffset(point.X));
-                }
-
-                yield break;
-            }
-
-            foreach (SignalPoint point in calibration)
-            {
-                yield return new SignalPoint(
-                    point.X,
-                    DataHelper.AmplitudeToDecibels(point.Y));
-            }
-        }
-
         private static bool TryParseCalibrationPoint(
             string line,
             out double frequency,

@@ -12,6 +12,11 @@ namespace Resonalyze.Options;
 /// produces — the angular correction and the spread of the reference
 /// microphones it was taken from — so the user sees the uncertainty of the
 /// estimate before accepting it.
+/// <para>
+/// The edited definition IS the one handed in: accepting the dialog writes the
+/// controls back into it, and cancelling leaves it untouched. There is no second
+/// result to read.
+/// </para>
 /// </summary>
 internal sealed partial class AngleCalibrationDialog : Form
 {
@@ -53,9 +58,6 @@ internal sealed partial class AngleCalibrationDialog : Form
         buttonOk.Click += (_, _) => CommitToDefinition();
         UpdatePreview();
     }
-
-    /// <summary>The edited definition; valid once the dialog returned OK.</summary>
-    public MicrophoneCalibrationDefinition Definition => definition;
 
     private void PopulateBaseCombo(
         IReadOnlyList<MicrophoneCalibrationDefinition> baseCandidates)

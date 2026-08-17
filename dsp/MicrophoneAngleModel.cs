@@ -64,9 +64,14 @@ public sealed class MicrophoneAngleEstimate
     public IReadOnlyList<string> References { get; }
 
     /// <summary>
-    /// The highest frequency any reference still covers after diameter scaling.
-    /// Above it the estimate HOLDS its last value instead of extrapolating a
-    /// diffraction curve it has no data for.
+    /// The highest frequency EVERY reference behind this estimate still covers
+    /// after diameter scaling. Above it the estimate HOLDS its last value
+    /// instead of extrapolating a diffraction curve it has no data for — and
+    /// the limit is the point where the FIRST reference runs out rather than the
+    /// last, so the set of references never changes mid-curve. Swapping one
+    /// reference for another at some frequency would step the correction (a 1"
+    /// microphone read from a quarter-inch reference jumps by ~9 dB) and leave
+    /// <see cref="References"/> naming curves the top of the band never used.
     /// </summary>
     public double HighestSupportedFrequencyHz { get; }
 
@@ -104,6 +109,9 @@ public static class MicrophoneAngleModel
     /// physical size alone does not fix directivity.
     /// </summary>
     public const double SonarworksXref20DiameterMm = 12.7;
+
+    /// <summary>The top of the band the Sonarworks difference was fitted over.</summary>
+    public const double SonarworksXref20HighestFittedHz = 20_000.0;
 
     // u = 1 - cos(theta) at the tabulated angles 0, 30, 60 and 90 degrees. The
     // substitution is what makes the interpolation behave: it approaches zero
@@ -151,9 +159,10 @@ public static class MicrophoneAngleModel
             .ToList();
 
         // The two reference sizes the target diameter falls between (one when it
-        // sits on or outside a tabulated size). Both are scaled onto the target
-        // frequency axis, so what the pair adds is the SHAPE difference between
-        // constructions, which is exactly what the spread measures.
+        // sits on or outside a tabulated size). Each size is aggregated on its
+        // own and the two are then blended by log-diameter, so a target sitting
+        // a hair above a tabulated size reads almost exactly like that size
+        // instead of suddenly averaging in a family twice its diameter.
         double[] diameters = matching
             .Select(candidate => candidate.Curve.DiameterMm)
             .Distinct()
@@ -165,32 +174,34 @@ public static class MicrophoneAngleModel
         double above = diameters.FirstOrDefault(
             diameter => diameter >= request.FrontDiameterMm,
             diameters[^1]);
-        List<Candidate> preferred = matching
-            .Where(candidate =>
-                candidate.Curve.DiameterMm == below ||
-                candidate.Curve.DiameterMm == above)
+        List<Candidate> lower = matching
+            .Where(candidate => candidate.Curve.DiameterMm == below)
             .ToList();
-        // Ordered by how far each reference is from the target in log-diameter:
-        // above a reference's tabulated range the estimate steps to the nearest
-        // SMALLER reference, which reaches further once scaled, rather than
-        // extrapolating a curve past its data.
-        List<Candidate> byCloseness = matching
-            .OrderBy(candidate => Math.Abs(
-                Math.Log(candidate.Curve.DiameterMm) - Math.Log(request.FrontDiameterMm)))
-            .ThenBy(candidate => candidate.Curve.Label, StringComparer.Ordinal)
-            .ToList();
-        double highestSupported = matching.Max(candidate => candidate.HighestTargetFrequencyHz);
+        List<Candidate> upper = above == below
+            ? []
+            : matching
+                .Where(candidate => candidate.Curve.DiameterMm == above)
+                .ToList();
+        double blend = upper.Count == 0
+            ? 0.0
+            : (Math.Log(request.FrontDiameterMm) - Math.Log(below)) /
+              (Math.Log(above) - Math.Log(below));
+        double highestSupported = lower
+            .Concat(upper)
+            .Min(candidate => candidate.HighestTargetFrequencyHz);
 
         return new MicrophoneAngleEstimate(
             request.AngleDegrees,
-            preferred.Select(candidate => candidate.Curve.Label).ToList(),
+            lower.Concat(upper).Select(candidate => candidate.Curve.Label).ToList(),
             highestSupported,
-            frequencyHz => Combine(
-                CollectDeltas(
-                    Math.Min(frequencyHz, highestSupported),
-                    u,
-                    preferred,
-                    byCloseness)));
+            frequencyHz =>
+            {
+                double bounded = Math.Min(frequencyHz, highestSupported);
+                MicrophoneAngleBounds atBelow = Aggregate(lower, bounded, u);
+                return upper.Count == 0
+                    ? atBelow
+                    : Interpolate(atBelow, Aggregate(upper, bounded, u), blend);
+            });
     }
 
     private static MicrophoneAngleEstimate EstimateFromSonarworksXref20(
@@ -208,7 +219,12 @@ public static class MicrophoneAngleModel
             .Where(curve => curve.DiameterMm == SonarworksXref20DiameterMm)
             .Select(curve => new Candidate(curve, 1.0))
             .ToList();
-        double highestSupported = halfInch.Max(candidate => candidate.HighestTargetFrequencyHz);
+        // Bounded by the FIRST thing that runs out — the fit's own band or the
+        // half-inch references that shape the spread — so neither the measured
+        // difference nor the set of references behind the band changes mid-curve.
+        double highestSupported = Math.Min(
+            SonarworksXref20HighestFittedHz,
+            halfInch.Min(candidate => candidate.HighestTargetFrequencyHz));
 
         return new MicrophoneAngleEstimate(
             request.AngleDegrees,
@@ -237,10 +253,16 @@ public static class MicrophoneAngleModel
 
     /// <summary>
     /// The measured 90°-minus-0° difference of the Sonarworks XREF 20, in dB.
+    /// The fit was taken over 20 Hz - 20 kHz and HOLDS above that: it is a
+    /// power law with no turnover, so continuing it would reach -13 dB at
+    /// 48 kHz and -18 dB at 96 kHz on nothing but arithmetic — and those
+    /// frequencies are reached, since the audition FIR samples the correction
+    /// up to Nyquist.
     /// </summary>
     public static double SonarworksXref20Delta90Db(double frequencyHz)
     {
-        double octavesAboveKnee = Math.Log2(frequencyHz / 4394.0);
+        double octavesAboveKnee = Math.Log2(
+            Math.Min(frequencyHz, SonarworksXref20HighestFittedHz) / 4394.0);
         // Below the knee the two measured units showed no angular change at all,
         // and the fit is only defined above it. Return a positive zero so the
         // value reads as "no correction" everywhere it is printed.
@@ -249,14 +271,17 @@ public static class MicrophoneAngleModel
             : -2.82 * Math.Pow(octavesAboveKnee, 1.248);
     }
 
-    private static List<double> CollectDeltas(
+    // One tabulated size, read at a frequency the caller has already bounded to
+    // what every candidate covers: the median of its constructions with their
+    // spread. Same size means comparable geometry, so the spread reads as "how
+    // much do microphones this size differ", not "how much do sizes differ".
+    private static MicrophoneAngleBounds Aggregate(
+        List<Candidate> candidates,
         double frequencyHz,
-        double u,
-        List<Candidate> preferred,
-        List<Candidate> byCloseness)
+        double u)
     {
-        var deltas = new List<double>(preferred.Count);
-        foreach (Candidate candidate in preferred)
+        var deltas = new List<double>(candidates.Count);
+        foreach (Candidate candidate in candidates)
         {
             if (candidate.TryGetDeltas(frequencyHz, out GrasAngleDeltas angleDeltas))
             {
@@ -264,36 +289,6 @@ public static class MicrophoneAngleModel
             }
         }
 
-        if (deltas.Count > 0)
-        {
-            return deltas;
-        }
-
-        // Every preferred reference has run out of table here; fall back to the
-        // closest diameter that still covers this frequency, and to that diameter
-        // alone, so the spread stays a comparison of like constructions.
-        double? fallbackDiameter = null;
-        foreach (Candidate candidate in byCloseness)
-        {
-            if (!candidate.TryGetDeltas(frequencyHz, out GrasAngleDeltas angleDeltas))
-            {
-                continue;
-            }
-
-            fallbackDiameter ??= candidate.Curve.DiameterMm;
-            if (candidate.Curve.DiameterMm != fallbackDiameter)
-            {
-                break;
-            }
-
-            deltas.Add(InterpolateAngle(u, angleDeltas));
-        }
-
-        return deltas;
-    }
-
-    private static MicrophoneAngleBounds Combine(List<double> deltas)
-    {
         if (deltas.Count == 0)
         {
             return default;
@@ -306,6 +301,18 @@ public static class MicrophoneAngleModel
             : (deltas[middle - 1] + deltas[middle]) / 2.0;
         return new MicrophoneAngleBounds(median, deltas[0], deltas[^1]);
     }
+
+    // Between the two tabulated sizes the target falls between, by log-diameter:
+    // ka scales with the diameter, so the geometric mean of two sizes is the
+    // midpoint of the behaviour, not the arithmetic one.
+    private static MicrophoneAngleBounds Interpolate(
+        MicrophoneAngleBounds below,
+        MicrophoneAngleBounds above,
+        double position) =>
+        new(
+            below.CenterDb + (above.CenterDb - below.CenterDb) * position,
+            below.LowerDb + (above.LowerDb - below.LowerDb) * position,
+            below.UpperDb + (above.UpperDb - below.UpperDb) * position);
 
     private static double InterpolateAngle(double u, GrasAngleDeltas deltas)
     {

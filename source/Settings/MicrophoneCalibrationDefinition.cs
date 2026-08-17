@@ -34,7 +34,7 @@ internal sealed class MicrophoneCalibrationDefinition
     /// </summary>
     public const string LegacyNinetyDegreesId = "90deg";
 
-    private const string GeneratedIdPrefix = "cal";
+    private const string GeneratedIdPrefix = "cal-";
 
     public string Id { get; set; } = string.Empty;
 
@@ -118,11 +118,17 @@ internal sealed class MicrophoneCalibrationDefinition
         $"{angleDegrees:0.#}°";
 
     /// <summary>
-    /// A short id that no existing entry uses and that cannot collide with the
-    /// reserved ones (the 0° slot and the migrated 90° entry).
+    /// An id for a new entry that no other entry — present or DELETED — can
+    /// ever have carried. A counted id would be handed out again after a
+    /// deletion, and every place that outlives the list (a saved Virtual DSP
+    /// session, a history entry, the other views' stored selection) would then
+    /// silently bind a correction it never chose: those selections are kept and
+    /// marked missing precisely so the user notices, and reuse would take that
+    /// away.
     /// </summary>
     public static string CreateId(IEnumerable<MicrophoneCalibrationDefinition> existing)
     {
+        ArgumentNullException.ThrowIfNull(existing);
         var taken = new HashSet<string>(
             existing.Select(definition => definition.Id),
             StringComparer.OrdinalIgnoreCase)
@@ -130,14 +136,13 @@ internal sealed class MicrophoneCalibrationDefinition
             MicrophoneCalibrationIds.ZeroDegrees,
             LegacyNinetyDegreesId
         };
-        for (int index = 1; ; index++)
+        string candidate;
+        do
         {
-            string candidate = $"{GeneratedIdPrefix}{index}";
-            if (taken.Add(candidate))
-            {
-                return candidate;
-            }
+            candidate = GeneratedIdPrefix + Guid.NewGuid().ToString("N");
         }
+        while (!taken.Add(candidate));
+        return candidate;
     }
 }
 

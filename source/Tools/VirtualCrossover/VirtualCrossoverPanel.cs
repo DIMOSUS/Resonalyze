@@ -4531,10 +4531,12 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        string profile = entry?.Name ?? project.CalibrationId!;
+        string profile = entry is null
+            ? "a"
+            : $"the '{entry.Name}'";
         MessageBox.Show(
             FindForm(),
-            $"This session was tuned with the '{profile}' microphone calibration, which " +
+            $"This session was tuned with {profile} microphone calibration, which " +
             "is not configured on this computer, so its curves are drawn without any " +
             "calibration and will not match the ones its author saw.\r\n\r\nConfigure " +
             "the calibration of THIS microphone in the measurement settings — the " +

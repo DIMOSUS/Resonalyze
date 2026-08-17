@@ -149,6 +149,125 @@ public sealed class MicrophoneAngleModelTests
     }
 
     [Fact]
+    public void WhereAReferenceRunsOut_TheCurveHoldsInsteadOfSwitchingFamilies()
+    {
+        // The one-inch table ends at 18 kHz. Reading the rest of the band from a
+        // quarter-inch reference instead — the same ka, a different construction
+        // — stepped the correction by ~9 dB mid-curve and left the estimate
+        // naming references the top of the band never used.
+        MicrophoneAngleEstimate estimate = MicrophoneAngleModel.Estimate(
+            new MicrophoneAngleRequest(90, OneInchMm, MicrophoneProtectionGrid.Fitted));
+
+        Assert.Equal(18_000.0, estimate.HighestSupportedFrequencyHz);
+        Assert.Equal(
+            estimate.DeltaDb(18_000),
+            estimate.DeltaDb(20_000),
+            precision: 12);
+        Assert.Equal(
+            Single(OneInchMm, MicrophoneProtectionGrid.Fitted).Label,
+            Assert.Single(estimate.References));
+        AssertNoStepsWiderThan(estimate, 0.5);
+    }
+
+    [Fact]
+    public void ADiameterJustPastATabulatedSize_ReadsAlmostLikeThatSize()
+    {
+        // Two sizes are blended by log-diameter rather than pooled, so an
+        // infinitesimal change of the stated diameter cannot change the answer
+        // by three quarters of a decibel.
+        double atSize = MicrophoneAngleModel
+            .Estimate(new MicrophoneAngleRequest(90, 6.35, MicrophoneProtectionGrid.Fitted))
+            .DeltaDb(18_000);
+        double justPast = MicrophoneAngleModel
+            .Estimate(new MicrophoneAngleRequest(
+                90,
+                6.3500001,
+                MicrophoneProtectionGrid.Fitted))
+            .DeltaDb(18_000);
+
+        Assert.Equal(atSize, justPast, precision: 4);
+    }
+
+    [Fact]
+    public void BetweenTwoSizes_TheBlendFollowsTheLogarithmOfTheDiameter()
+    {
+        const double frequency = 12_000;
+        const double lower = 6.35;
+        const double upper = 12.7;
+        // The geometric mean of the two sizes sits halfway along log-diameter.
+        double target = Math.Sqrt(lower * upper);
+
+        // Each size is read on the target's OWN scaled frequency axis — that is
+        // what keeps ka equal — so the two halves of the blend are taken at
+        // different reference frequencies, not at the same one.
+        double expected =
+            0.5 * GroupMedianAt90(lower, MicrophoneProtectionGrid.Fitted, frequency * target / lower) +
+            0.5 * GroupMedianAt90(upper, MicrophoneProtectionGrid.Fitted, frequency * target / upper);
+
+        double actual = MicrophoneAngleModel
+            .Estimate(new MicrophoneAngleRequest(90, target, MicrophoneProtectionGrid.Fitted))
+            .DeltaDb(frequency);
+
+        Assert.Equal(expected, actual, precision: 9);
+    }
+
+    [Fact]
+    public void SonarworksModel_HoldsAboveTheBandItWasFittedOver()
+    {
+        // The audition FIR samples the correction up to Nyquist, so the power
+        // law would otherwise be continued to -13 dB at 48 kHz and -18 dB at
+        // 96 kHz on nothing but arithmetic.
+        double atTop = MicrophoneAngleModel.SonarworksXref20Delta90Db(20_000);
+
+        Assert.Equal(atTop, MicrophoneAngleModel.SonarworksXref20Delta90Db(48_000));
+        Assert.Equal(atTop, MicrophoneAngleModel.SonarworksXref20Delta90Db(96_000));
+
+        MicrophoneAngleEstimate estimate = MicrophoneAngleModel.Estimate(
+            new MicrophoneAngleRequest(
+                90,
+                MicrophoneAngleModel.SonarworksXref20DiameterMm,
+                MicrophoneProtectionGrid.Unknown,
+                MicrophoneAngleReference.SonarworksXref20));
+        Assert.Equal(
+            MicrophoneAngleModel.SonarworksXref20HighestFittedHz,
+            estimate.HighestSupportedFrequencyHz);
+        Assert.Equal(estimate.DeltaDb(20_000), estimate.DeltaDb(96_000), precision: 12);
+    }
+
+    [Theory]
+    [InlineData(12.7, MicrophoneProtectionGrid.Unknown)]
+    [InlineData(9.0, MicrophoneProtectionGrid.Removed)]
+    [InlineData(25.4, MicrophoneProtectionGrid.Fitted)]
+    [InlineData(60.0, MicrophoneProtectionGrid.Unknown)]
+    public void TheCurveHasNoStepsAcrossTheAudioBand(
+        double diameterMm,
+        MicrophoneProtectionGrid grid)
+    {
+        AssertNoStepsWiderThan(
+            MicrophoneAngleModel.Estimate(
+                new MicrophoneAngleRequest(90, diameterMm, grid)),
+            0.5);
+    }
+
+    // A diffraction curve moves smoothly; a step between neighbouring points a
+    // fiftieth of an octave apart is the model changing its mind about which
+    // reference to read, not the microphone doing anything.
+    private static void AssertNoStepsWiderThan(
+        MicrophoneAngleEstimate estimate,
+        double maximumStepDb)
+    {
+        const int points = 500;
+        double previous = estimate.DeltaDb(20.0);
+        for (int index = 1; index < points; index++)
+        {
+            double frequency = 20.0 * Math.Pow(1000.0, index / (double)(points - 1));
+            double current = estimate.DeltaDb(frequency);
+            Assert.InRange(Math.Abs(current - previous), 0.0, maximumStepDb);
+            previous = current;
+        }
+    }
+
+    [Fact]
     public void SonarworksModel_ReproducesItsMeasuredNinetyDegreeFit()
     {
         MicrophoneAngleEstimate estimate = MicrophoneAngleModel.Estimate(
@@ -207,6 +326,26 @@ public sealed class MicrophoneAngleModelTests
         Assert.All(
             GrasFreeFieldCorrections.Curves,
             curve => Assert.True(curve.MinFrequencyHz <= 500));
+    }
+
+    private static double GroupMedianAt90(
+        double diameterMm,
+        MicrophoneProtectionGrid grid,
+        double referenceFrequencyHz)
+    {
+        List<double> deltas = GrasFreeFieldCorrections.Curves
+            .Where(curve => curve.DiameterMm == diameterMm && curve.Grid == grid)
+            .Select(curve =>
+            {
+                Assert.True(curve.TryGetAngleDeltas(referenceFrequencyHz, out GrasAngleDeltas d));
+                return d.At90;
+            })
+            .OrderBy(delta => delta)
+            .ToList();
+        int middle = deltas.Count / 2;
+        return deltas.Count % 2 == 1
+            ? deltas[middle]
+            : (deltas[middle - 1] + deltas[middle]) / 2.0;
     }
 
     private static GrasReferenceCurve Single(

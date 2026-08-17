@@ -247,11 +247,23 @@ internal sealed partial class AngleCalibrationDialog : Form
         string references = estimate.References.Count == 0
             ? "no reference"
             : string.Join(" · ", estimate.References);
+        // Where the references run out the curve holds its last value rather
+        // than switching to another size mid-band, so say where that happens
+        // instead of letting a flat top look like a measured result.
+        string held = estimate.HighestSupportedFrequencyHz < PreviewMaximumHz
+            ? $" Modelled to {FrequencyText.Format(estimate.HighestSupportedFrequencyHz)}, " +
+              "held above that."
+            : string.Empty;
+        // With one reference of comparable geometry there is nothing to disagree,
+        // and printing a 0.00 dB spread would read as a confidence the estimate
+        // has not earned.
+        string spread = widestSpreadDb >= 0.005
+            ? $", references disagreeing by up to {widestSpreadDb:0.00} dB " +
+              $"around {FrequencyText.Format(widestSpreadHz)}"
+            : ", from a single reference, so no spread is shown";
         return
-            $"Estimated, not measured: {topOfBandDb:+0.00;-0.00;0.00} dB at 20 kHz, " +
-            $"references disagreeing by up to {widestSpreadDb:0.00} dB " +
-            $"around {FrequencyText.Format(widestSpreadHz)}.\r\n" +
-            $"Built from: {references}.";
+            $"Estimated, not measured: {topOfBandDb:+0.00;-0.00;0.00} dB at 20 kHz" +
+            $"{spread}.\r\nBuilt from: {references}.{held}";
     }
 
     private sealed record BaseOption(string? Id, string Label)

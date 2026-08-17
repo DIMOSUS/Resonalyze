@@ -52,9 +52,12 @@ internal static class MicrophoneCalibrationComboHelper
         if (!MicrophoneCalibrationIds.IsOff(selectedCalibrationId) &&
             !entries.Any(entry => IsSame(entry.Id, selectedCalibrationId)))
         {
+            // The id is all that is left of a deleted entry, and it is a
+            // generated one nobody can read, so the label says what happened
+            // rather than spelling it out.
             options.Add(new MicrophoneCalibrationOption(
                 selectedCalibrationId,
-                $"{selectedCalibrationId} (missing)"));
+                "Deleted calibration (missing)"));
         }
 
         return options;

@@ -834,7 +834,7 @@ public partial class EqWizardPanel
         {
             options.Add(new EqWizardCalibrationOption(
                 calibrationChoice,
-                $"{calibrationChoice.CalibrationId} (missing)"));
+                "Deleted calibration (missing)"));
         }
 
         return options;

@@ -54,7 +54,8 @@ public sealed class MicrophoneCalibrationComboHelperTests
 
         int index = MicrophoneCalibrationComboHelper.FindIndex(options, "deleted");
         Assert.Equal(3, index);
-        Assert.Equal("deleted (missing)", options[index].DisplayName);
+        Assert.Equal("deleted", options[index].CalibrationId);
+        Assert.Equal("Deleted calibration (missing)", options[index].DisplayName);
     }
 
     [Fact]
@@ -67,6 +68,44 @@ public sealed class MicrophoneCalibrationComboHelperTests
         Assert.All(
             options,
             option => Assert.DoesNotContain("(", option.DisplayName));
+    }
+
+    [Fact]
+    public void ASelectionLeftFromADeletedEntryStaysMissingAfterANewOneIsAdded()
+    {
+        // A counted id would be handed out again after a deletion, and every
+        // stored selection still naming it — another view, a saved Virtual DSP
+        // session, a history entry — would silently start correcting with a
+        // calibration nobody pointed it at.
+        var definitions = new List<MicrophoneCalibrationDefinition>();
+        string deleted = MicrophoneCalibrationDefinition.CreateId(definitions);
+        definitions.Add(new MicrophoneCalibrationDefinition { Id = deleted, Name = "Old" });
+        definitions.Clear();
+        string added = MicrophoneCalibrationDefinition.CreateId(definitions);
+        definitions.Add(new MicrophoneCalibrationDefinition { Id = added, Name = "New" });
+
+        Assert.NotEqual(deleted, added);
+        CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
+            deleted,
+            definitions
+                .Select(definition => new MicrophoneCalibrationEntry(
+                    definition.Id,
+                    definition.Name,
+                    Available: true))
+                .ToList());
+
+        int index = MicrophoneCalibrationComboHelper.FindIndex(options, deleted);
+        Assert.Equal(deleted, options[index].CalibrationId);
+        Assert.Contains("missing", options[index].DisplayName);
+    }
+
+    [Fact]
+    public void CreateId_NeverCollidesWithTheReservedIds()
+    {
+        string created = MicrophoneCalibrationDefinition.CreateId([]);
+
+        Assert.NotEqual(MicrophoneCalibrationIds.ZeroDegrees, created);
+        Assert.NotEqual(MicrophoneCalibrationDefinition.LegacyNinetyDegreesId, created);
     }
 
     [Fact]

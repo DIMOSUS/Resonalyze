@@ -14,6 +14,7 @@ public static class EqProfileFormats
         new GenericCsvFormat(),
         new EasyEffectsFormat(),
         new CamillaDspYamlFormat(),
+        new AudiotecFischerFormat(),
         // Biquad coefficients are rate-specific, and biquad-consuming devices
         // process at different internal rates (car DSPs commonly at 44.1 kHz,
         // miniDSP 2x4 at 48 kHz, HD/DDRC-class at 96 kHz) — one dialog entry

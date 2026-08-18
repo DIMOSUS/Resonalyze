@@ -30,6 +30,19 @@ public interface IEqProfileFormat
     /// </remarks>
     bool SupportsShelvingFilters => true;
 
+    /// <summary>
+    /// Whether the layout has a place for the whole-profile gain
+    /// (<see cref="EqualizationCurve.PreampDb"/>). False means the target keeps that
+    /// gain in a control the file never reaches — a car DSP's channel gain — so an
+    /// export leaves the preamp out and an import reads it as 0; the caller is
+    /// expected to say so, as it does for a dropped shelf.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to true: the formats that carry a preamp line, an output-gain field
+    /// or a gain biquad realize it by construction.
+    /// </remarks>
+    bool CarriesPreamp => true;
+
     /// <summary>Serialises the curve. Only valid when <see cref="CanExport"/>.</summary>
     string Export(EqualizationCurve curve);
 

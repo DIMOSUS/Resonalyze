@@ -33,6 +33,7 @@ public sealed class EqProfileShelfFormatsTests
     [InlineData(typeof(RewFilterFormat))]
     [InlineData(typeof(GenericCsvFormat))]
     [InlineData(typeof(CamillaDspYamlFormat))]
+    [InlineData(typeof(AudiotecFischerFormat))]
     public void RoundTrip_KeepsEachBandsShapeAndOrder(Type formatType)
     {
         var format = (IEqProfileFormat)Activator.CreateInstance(formatType)!;

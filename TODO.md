@@ -310,7 +310,12 @@ items below are what a car DSP tune actually needs, roughly in priority order.
   a constructor parameter now, but device biquad limits are not checked and the
   preamp burns a biquad slot instead of mapping to the device's gain control. Car
   DSPs (Helix / Audison / miniDSP) have a fixed per-channel band budget and a
-  separate master gain the profile must respect.
+  separate master gain the profile must respect. Residual after the
+  Audiotec-Fischer bank format: that one format enforces its 30-slot budget
+  (export refuses a longer curve) and never writes the preamp
+  (`IEqProfileFormat.CarriesPreamp` is false), but the EQ Wizard does not yet
+  warn about a non-zero preamp left behind the way it warns about a dropped
+  shelf, and the miniDSP / generic paths still have no budget or gain profile.
 
 Deliberately out of scope for car DSP tuning (do not add here): FIR/convolution
 export (car DSPs are biquad), a phase / min-phase / all-pass view (the Virtual

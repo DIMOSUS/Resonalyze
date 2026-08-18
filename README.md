@@ -955,10 +955,15 @@ error** between Source + EQ and Target, **Filters used**, **Peak boost** and
 ### Import, export, and tuning sheet
 
 PEQ profiles move both ways for Equalizer APO, REW filter settings, Generic CSV,
-EasyEffects (JSON) and CamillaDSP (YAML), and export-only for miniDSP biquads
-(RBJ coefficients at 44.1 / 48 / 96 kHz) and GraphicEQ (Wavelet / JamesDSP).
-Import is deliberately lenient: comments, blank lines, disabled (`OFF`) filters,
-non-peaking types, and malformed entries are skipped rather than rejected.
+EasyEffects (JSON), CamillaDSP (YAML) and the Audiotec-Fischer "Full EQ (30
+bands)" bank the HELIX / MATCH / BRAX DSP PC-Tool imports per channel (the same
+tab-separated block REW exports for that equaliser: PK plus the LS_Q / HS_Q
+shelves, always 30 slots — a bank has no place for the preamp, so it is not
+written and the channel gain stays a PC-Tool setting), and export-only for
+miniDSP biquads (RBJ coefficients at 44.1 / 48 / 96 kHz) and GraphicEQ
+(Wavelet / JamesDSP). Import is deliberately lenient: comments, blank lines,
+disabled (`OFF`) filters, non-peaking types, and malformed entries are skipped
+rather than rejected.
 **Export as tuning sheet** produces a phone-friendly PDF for reading next to the
 car: the banner, a title, the date and fit range, an EQ preview graph with the
 fit window shaded, the tuning statistics, the preamp, and one card per filter.

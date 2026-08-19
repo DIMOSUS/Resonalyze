@@ -966,7 +966,10 @@ lenient: comments, blank lines, disabled (`OFF`) filters, non-peaking types, and
 malformed entries are skipped rather than rejected. The one exception is a
 fixed-layout device bank: the Audiotec-Fischer file is the channel's 30-slot
 table, so a truncated or renumbered one is refused outright rather than imported
-as an empty bank over the EQ you have.
+as an empty bank over the EQ you have — and so is one whose enabled slot claims a
+filter that cannot be read, since in a fixed table that band would simply go
+missing from the tune (`None`, the all-pass slots and `Enabled False` rows remain
+ordinary empty slots).
 **Export as tuning sheet** produces a phone-friendly PDF for reading next to the
 car: the banner, a title, the date and fit range, an EQ preview graph with the
 fit window shaded, the tuning statistics, the preamp, and one card per filter.

@@ -867,11 +867,14 @@ public partial class EqWizardPanel : UserControl
         }
 
         string gain = FormattableString.Invariant($"{preampDb:+0.0;-0.0} dB");
+        // The preamp is signed: leaving out a cut makes the export louder than the
+        // curve on screen, leaving out a boost makes it quieter. Say which.
+        string direction = preampDb < 0 ? "louder" : "quieter";
         return MessageBox.Show(
             FindForm(),
             $"{target.Name} has no place for the preamp, so the {gain} would be left " +
-            "out and the exported bands alone are that much louder than the tune on " +
-            "screen." +
+            $"out and the exported bands alone are that much {direction} than the tune " +
+            "on screen." +
             Environment.NewLine + Environment.NewLine +
             $"Enter {gain} in the channel's own gain control on the device after " +
             "importing the bands. Export anyway?",

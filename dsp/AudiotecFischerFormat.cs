@@ -71,6 +71,10 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
     private const string LowShelfType = "LS_Q";
     private const string HighShelfType = "HS_Q";
     private const string EmptyType = "None";
+    // The slots that legitimately hold no magnitude band: the two all-pass types move
+    // phase only, which no PeqBand can state. Anything else claiming to be an active
+    // filter must be readable, or the bank is not this file.
+    private static readonly string[] PhaseOnlyTypes = ["AP1", "AP2"];
 
     public string Name => "Audiotec Fischer 30-band bank";
     public string Extension => "txt";
@@ -151,7 +155,8 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
                 continue;
             }
 
-            if (!TryParseSlot(line, out int slotNumber, out PeqBand? band))
+            SlotKind kind = ReadSlot(line, out int slotNumber, out PeqBand band);
+            if (kind == SlotKind.NotASlot)
             {
                 // Not a slot row at all: this is not the bank's table.
                 tableIntact = false;
@@ -159,13 +164,16 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
             }
 
             slotsSeen++;
+            // A slot that claims to hold a filter but cannot be read is a band the
+            // import would silently drop from a fixed table — refuse the file instead.
+            tableIntact &= kind != SlotKind.Unreadable;
             // The bank is a fixed table: slot n is the nth row. A file that skips,
             // repeats or renumbers rows is not the channel's slot table, whatever
             // its header says.
             tableIntact &= slotNumber == slotsSeen && slotsSeen <= SlotCount;
-            if (band.HasValue)
+            if (kind == SlotKind.Band)
             {
-                bands.Add(band.Value);
+                bands.Add(band);
             }
         }
 
@@ -194,28 +202,50 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
             fields[3].Equals("Type", StringComparison.OrdinalIgnoreCase);
     }
 
-    // Reads one slot row: whether the line IS a slot of this bank (its number), and
-    // the band it holds, if any. Empty (None), all-pass, disabled, unknown-type and
-    // malformed rows are slots holding no band — a bank is a fixed table, so most
-    // rows of a real file are expected to be empty. Telling "no band here" from
-    // "not this bank's table" is what lets an incomplete file be refused.
-    private static bool TryParseSlot(string line, out int slotNumber, out PeqBand? band)
+    /// <summary>What one line of a bank turns out to be.</summary>
+    private enum SlotKind
     {
-        band = null;
-        slotNumber = 0;
+        /// <summary>Not a row of this table at all.</summary>
+        NotASlot,
+
+        /// <summary>A slot that legitimately holds no band: None, all-pass, or OFF.</summary>
+        Empty,
+
+        /// <summary>A slot holding a band this profile can state.</summary>
+        Band,
+
+        /// <summary>A slot claiming a filter whose type or numbers cannot be read.</summary>
+        Unreadable
+    }
+
+    // Reads one slot row: whether the line IS a slot of this bank (its number), what
+    // kind of slot, and the band it holds. Telling "no band here" from "not this
+    // bank's table" is what lets an incomplete file be refused; telling both from
+    // "a filter I cannot read" is what stops a band going missing unnoticed.
+    private static SlotKind ReadSlot(string line, out int slotNumber, out PeqBand band)
+    {
+        band = default;
 
         string[] fields = SplitRow(line);
         if (fields.Length < 4 ||
             !int.TryParse(fields[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out slotNumber) ||
             fields[3].Length == 0)
         {
-            return false;
+            slotNumber = 0;
+            return SlotKind.NotASlot;
         }
 
-        if (fields.Length < 6 ||
-            fields[1].Equals("False", StringComparison.OrdinalIgnoreCase))
+        // An OFF filter occupies its slot and contributes nothing, whatever it says
+        // afterwards — as elsewhere in these formats.
+        if (fields[1].Equals("False", StringComparison.OrdinalIgnoreCase))
         {
-            return true;
+            return SlotKind.Empty;
+        }
+
+        if (fields[3].Equals(EmptyType, StringComparison.OrdinalIgnoreCase) ||
+            PhaseOnlyTypes.Contains(fields[3], StringComparer.OrdinalIgnoreCase))
+        {
+            return SlotKind.Empty;
         }
 
         PeqBandType type;
@@ -234,14 +264,17 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
         }
         else
         {
-            // None, AP1, AP2 or anything else this layout may grow: a slot, no band.
-            return true;
+            // An enabled slot of a type this reader does not know. It may well be a
+            // filter that shapes magnitude, so passing it off as an empty slot would
+            // quietly change the tune.
+            return SlotKind.Unreadable;
         }
 
-        if (!EqTextNumbers.TryParse(fields[4], out double frequencyHz) ||
+        if (fields.Length < 6 ||
+            !EqTextNumbers.TryParse(fields[4], out double frequencyHz) ||
             !EqTextNumbers.TryParse(fields[5], out double gainDb))
         {
-            return true;
+            return SlotKind.Unreadable;
         }
 
         // The Q cell may be blank on a hand-edited row: a bell can still be read
@@ -253,7 +286,7 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
                 if (!EqTextNumbers.TryParse(FieldAt(fields, 7), out double bandwidthHz) ||
                     bandwidthHz <= 0)
                 {
-                    return true;
+                    return SlotKind.Unreadable;
                 }
 
                 q = frequencyHz / bandwidthHz;
@@ -268,11 +301,11 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
             !double.IsFinite(q) || q <= 0 ||
             !double.IsFinite(gainDb))
         {
-            return true;
+            return SlotKind.Unreadable;
         }
 
         band = new PeqBand(frequencyHz, q, gainDb, type);
-        return true;
+        return SlotKind.Band;
     }
 
     // Tab-separated as exported; a copy pasted through something that turned the

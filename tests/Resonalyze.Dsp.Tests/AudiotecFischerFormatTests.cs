@@ -130,24 +130,49 @@ public sealed class AudiotecFischerFormatTests
     }
 
     [Fact]
-    public void Import_SkipsDisabledAllPassEmptyAndMalformedRows()
+    public void Import_SkipsTheSlotsThatHoldNoBand()
     {
         // The two all-pass slots move phase only, which no PeqBand can state; a
-        // disabled row is an OFF filter; a None row is an empty slot; a bell with
-        // neither Q nor bandwidth says nothing about its width.
+        // disabled row is an OFF filter (whatever it says after that); a None row is
+        // an empty slot. All three are slots the bank legitimately spends on nothing.
         EqualizationCurve curve = Format.Import(Bank(
             "True\tAuto\tPK\t100\t-2\t2.00\t50\t",
             "False\tAuto\tPK\t200\t-2\t2.00\t100\t",
+            "False\tAuto\tPK\tnot-a-number\t-2\t2.00",
             "True\tAuto\tAP1\t300",
             "True\tAuto\tAP2\t400\t\t1.50",
             "True\tAuto\tNone\t",
-            "True\tAuto\tPK\t600\t-2\t\t\t",
-            "True\tAuto\tPK\tnot-a-number\t-2\t2.00",
             "True\tAuto\tPK\t800\t-1\t1.00\t800\t"));
 
         Assert.Equal(2, curve.Bands.Count);
         Assert.Equal(100, curve.Bands[0].FrequencyHz);
         Assert.Equal(800, curve.Bands[1].FrequencyHz);
+    }
+
+    [Fact]
+    public void Import_RefusesASlotThatClaimsAFilterItCannotRead()
+    {
+        // An enabled band row whose numbers do not read, and an enabled row of a type
+        // this reader does not know, are both bands that would go missing from a fixed
+        // table without a word. In a device bank that is a changed tune, so the file is
+        // refused instead — the same protection as a truncated bank.
+        foreach (string row in new[]
+        {
+            "True\tAuto\tPK\tnot-a-number\t-2\t2.00\t50\t",   // unreadable centre
+            "True\tAuto\tPK\t600\t-2\t\t\t",                  // neither Q nor bandwidth
+            "True\tAuto\tPK\t600\t-2\t0\t0\t",                // a width of zero
+            "True\tAuto\tHS_Q\t8000\tnot-a-number\t0.7",        // unreadable gain
+            "True\tAuto\tNotch\t1000\t-6\t4.00\t250\t",       // a magnitude filter we do not model
+        })
+        {
+            Assert.False(Format.TryImport(Bank(row), out EqualizationCurve refused), row);
+            Assert.Empty(refused.Bands);
+        }
+
+        // ...while the same rows turned OFF are ordinary empty slots.
+        Assert.True(Format.TryImport(
+            Bank("False\tAuto\tNotch\t1000\t-6\t4.00\t250\t"), out EqualizationCurve disabled));
+        Assert.Empty(disabled.Bands);
     }
 
     [Fact]

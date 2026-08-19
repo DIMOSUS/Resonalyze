@@ -3729,6 +3729,7 @@ public partial class VirtualCrossoverPanel : UserControl
     internal sealed record GatePlacementVerdict(
         double OffsetMs,
         double PlateauMs,
+        double RightMs,
         bool Pinned,
         bool RightSide,
         IReadOnlyList<GateCutChannel> Cut)
@@ -3738,6 +3739,13 @@ public partial class VirtualCrossoverPanel : UserControl
         public string SideLabel => RightSide ? "R" : "L";
 
         public double PlateauEndMs => OffsetMs + PlateauMs;
+
+        /// <summary>
+        /// Where the Tukey window reaches zero: the plateau plus the fade-out
+        /// behind it. Content between <see cref="PlateauEndMs"/> and here is
+        /// attenuated, not absent.
+        /// </summary>
+        public double WindowEndMs => PlateauEndMs + RightMs;
 
         public bool Any(GateCutKind kind) => Cut.Any(item => item.Kind == kind);
     }
@@ -3780,6 +3788,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     startMs,
                     offsetMs,
                     snapshot.Template.PlateauMs,
+                    snapshot.Template.RightMs,
                     lossDb,
                     Loss(startMs)) is { } kind)
             {
@@ -3797,6 +3806,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return new GatePlacementVerdict(
             offsetMs,
             snapshot.Template.PlateauMs,
+            snapshot.Template.RightMs,
             snapshot.PinnedOffsetMs is not null,
             project.ActiveSideRight,
             cut);
@@ -3817,7 +3827,13 @@ public partial class VirtualCrossoverPanel : UserControl
     /// <see cref="DataHelper.GateLeadingEdgeLossDb"/> reserves for "the window
     /// kept nothing" needs a bit-for-bit silent window, which a measured record
     /// does not give.) So the far side is decided on the window's geometry
-    /// instead: the channel's front has to be inside the plateau.
+    /// instead: the channel's front has to be inside the window — the plateau
+    /// AND the fade-out behind it, because the fade starts at unity and a
+    /// front just past the plateau is attenuated, not missing. How far into a
+    /// fade a front may land before the curve stops describing the channel is
+    /// a continuum this deliberately does not judge: nothing measured says
+    /// where in it to draw a line, and the end of the window is the one place
+    /// the answer is not a matter of degree.
     /// </para>
     /// <para>
     /// The near side is the placement question: over the ceiling, and worse by
@@ -3838,10 +3854,11 @@ public partial class VirtualCrossoverPanel : UserControl
         double startMs,
         double gateOffsetMs,
         double plateauMs,
+        double rightMs,
         double placementLossDb,
         double ownArrivalLossDb)
     {
-        if (startMs > gateOffsetMs + plateauMs)
+        if (startMs >= gateOffsetMs + plateauMs + rightMs)
         {
             return GateCutKind.ClosesBeforeArrival;
         }
@@ -3905,11 +3922,21 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         bool opensLate = verdict.Any(GateCutKind.OpensAfterArrival);
         bool closesEarly = verdict.Any(GateCutKind.ClosesBeforeArrival);
+        bool one = verdict.Cut.Count == 1;
         var text = new System.Text.StringBuilder();
         text.Append($"The gate's plateau runs from {verdict.OffsetMs:0.00} to ")
-            .Append($"{verdict.PlateauEndMs:0.00} ms, and these channels fall outside it, ")
-            .Append("so their curves — and the sum-loss read-out built from them — do ")
-            .AppendLine("not describe the drivers:")
+            .Append($"{verdict.PlateauEndMs:0.00} ms")
+            // The fade-out only matters to the reader when a channel fell off
+            // the far end: that is the edge it was measured against.
+            .Append(closesEarly
+                ? $", with its fade-out over at {verdict.WindowEndMs:0.00} ms, "
+                : ", ")
+            .Append(one
+                ? "and this channel falls outside it, so its curve — and the sum-loss " +
+                    "read-out built from it — does not describe the driver:"
+                : "and these channels fall outside it, so their curves — and the " +
+                    "sum-loss read-out built from them — do not describe the drivers:")
+            .AppendLine()
             .AppendLine();
         foreach (GateCutChannel item in verdict.Cut)
         {
@@ -3917,9 +3944,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 ? $"    {item.Name} — arrives {item.StartMs:0.00} ms, ahead of the plateau; " +
                     "the curve is the reverberant tail, leading-edge loss " +
                     FormatLeadingEdgeLossDb(item.LeadingEdgeLossDb)
-                : $"    {item.Name} — arrives {item.StartMs:0.00} ms, after the plateau " +
-                    "ends; the window is over before it starts and its curve holds " +
-                    "none of it");
+                : $"    {item.Name} — arrives {item.StartMs:0.00} ms, after the window " +
+                    $"closes at {verdict.WindowEndMs:0.00} ms; it is over before the " +
+                    "channel starts and the curve holds none of it");
         }
 
         if (opensLate)
@@ -3948,9 +3975,12 @@ public partial class VirtualCrossoverPanel : UserControl
                 .Where(item => item.Kind == GateCutKind.ClosesBeforeArrival)
                 .Max(item => item.StartMs);
             text.Append(opensLate ? "The window also has to be " : "The window has to be ")
-                .Append("long enough to reach them: raise the ")
-                .Append($"plateau in Gate… until it covers {latest:0.00} ms, or take the ")
-                .Append("delay that pushes them out of it back. ");
+                .Append("long enough to reach ")
+                .Append(one ? "it" : "them")
+                .Append(": raise the plateau in Gate… past ")
+                .Append($"{latest:0.00} ms, or take back the delay that pushes ")
+                .Append(one ? "it" : "them")
+                .Append(" out of the window. ");
         }
 
         text.Append("Each side keeps its own gate placement, so the one fitted on ")

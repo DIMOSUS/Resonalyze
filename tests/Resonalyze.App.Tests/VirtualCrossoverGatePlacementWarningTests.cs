@@ -31,23 +31,23 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
         Assert.Equal(
             VirtualCrossoverPanel.GateCutKind.OpensAfterArrival,
             VirtualCrossoverPanel.JudgeGateCut(
-                startMs: 5.967, gateOffsetMs: 15.06, plateauMs: 50.0,
+                startMs: 5.967, gateOffsetMs: 15.06, plateauMs: 50.0, rightMs: 20.0,
                 placementLossDb: 1.0, ownArrivalLossDb: -42.9));
         Assert.Equal(
             VirtualCrossoverPanel.GateCutKind.OpensAfterArrival,
             VirtualCrossoverPanel.JudgeGateCut(
-                startMs: 4.101, gateOffsetMs: 15.06, plateauMs: 50.0,
+                startMs: 4.101, gateOffsetMs: 15.06, plateauMs: 50.0, rightMs: 20.0,
                 placementLossDb: 9.9, ownArrivalLossDb: -53.7));
         Assert.Equal(
             VirtualCrossoverPanel.GateCutKind.OpensAfterArrival,
             VirtualCrossoverPanel.JudgeGateCut(
-                startMs: 4.119, gateOffsetMs: 15.06, plateauMs: 50.0,
+                startMs: 4.119, gateOffsetMs: 15.06, plateauMs: 50.0, rightMs: 20.0,
                 placementLossDb: 15.2, ownArrivalLossDb: -55.0));
         // Not the subwoofer of that same side: its own 65 Hz low-pass delays it
         // to 10.4 ms and smears its front, so the same window discards only
         // -21.3 dB of it. Over the ceiling is the test, not "arrives earlier".
         Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
-            startMs: 10.388, gateOffsetMs: 15.06, plateauMs: 50.0,
+            startMs: 10.388, gateOffsetMs: 15.06, plateauMs: 50.0, rightMs: 20.0,
             placementLossDb: -21.3, ownArrivalLossDb: -34.9));
     }
 
@@ -60,13 +60,13 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
         // and one of them is measurably worse there than on its own arrival,
         // which is exactly why the ceiling is the other half of the test.
         Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
-            startMs: 2.907, gateOffsetMs: 2.969, plateauMs: 50.0,
+            startMs: 2.907, gateOffsetMs: 2.969, plateauMs: 50.0, rightMs: 20.0,
             placementLossDb: -67.4, ownArrivalLossDb: -68.4));
         Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
-            startMs: 2.924, gateOffsetMs: 2.969, plateauMs: 50.0,
+            startMs: 2.924, gateOffsetMs: 2.969, plateauMs: 50.0, rightMs: 20.0,
             placementLossDb: -50.8, ownArrivalLossDb: -63.3));
         Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
-            startMs: 4.739, gateOffsetMs: 2.969, plateauMs: 50.0,
+            startMs: 4.739, gateOffsetMs: 2.969, plateauMs: 50.0, rightMs: 20.0,
             placementLossDb: -65.7, ownArrivalLossDb: -50.7));
     }
 
@@ -77,16 +77,38 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
         // plateau still covers it, nothing of it lies ahead of the window and
         // nothing is missing behind it — that is the placement working.
         Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
-            startMs: 20.0, gateOffsetMs: 4.125, plateauMs: 50.0,
+            startMs: 20.0, gateOffsetMs: 4.125, plateauMs: 50.0, rightMs: 20.0,
             placementLossDb: -60.0, ownArrivalLossDb: -30.0));
     }
 
     [Fact]
-    public void AChannelBeyondThePlateauReadsAsAWindowThatClosedTooEarly()
+    public void AChannelInsideTheFadeOutIsNotReportedAsMissing()
+    {
+        // The fade-out is part of the window and starts at unity, so a front
+        // just past the plateau is attenuated, not absent — saying the window
+        // is over would be false. The session's own 20 ms shoulder makes the
+        // gap wide: a plateau ending at 8 ms with the window running to 28.
+        Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
+            startMs: 9.0, gateOffsetMs: 4.0, plateauMs: 4.0, rightMs: 20.0,
+            placementLossDb: -60.0, ownArrivalLossDb: -30.0));
+        // Right up to the last sample of the fade.
+        Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
+            startMs: 9.624, gateOffsetMs: 4.125, plateauMs: 4.0, rightMs: 1.5,
+            placementLossDb: -60.0, ownArrivalLossDb: -30.0));
+        // Where the window reaches zero, it holds none of the channel.
+        Assert.Equal(
+            VirtualCrossoverPanel.GateCutKind.ClosesBeforeArrival,
+            VirtualCrossoverPanel.JudgeGateCut(
+                startMs: 9.625, gateOffsetMs: 4.125, plateauMs: 4.0, rightMs: 1.5,
+                placementLossDb: -60.0, ownArrivalLossDb: -30.0));
+    }
+
+    [Fact]
+    public void AChannelBeyondTheWindowReadsAsAWindowThatClosedTooEarly()
     {
         // The same session with the DEFAULT gate (0.5/4/1.5 ms) and its tweeter
-        // delayed 20 ms: the Auto window's plateau is over at 11.11 ms and the
-        // driver lands at 24.12 ms, so its curve holds none of it. The
+        // delayed 20 ms: the Auto window is over at 12.61 ms and the driver
+        // lands at 24.12 ms, so its curve holds none of it. The
         // leading-edge figure not only fails to say so — it reads -282.0 dB
         // there, the BEST placement figure in that session, because a channel
         // past the window has nothing ahead of the plateau to lose either. That
@@ -94,18 +116,13 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
         Assert.Equal(
             VirtualCrossoverPanel.GateCutKind.ClosesBeforeArrival,
             VirtualCrossoverPanel.JudgeGateCut(
-                startMs: 24.119, gateOffsetMs: 7.115, plateauMs: 4.0,
+                startMs: 24.119, gateOffsetMs: 7.115, plateauMs: 4.0, rightMs: 1.5,
                 placementLossDb: -282.0, ownArrivalLossDb: -55.0));
         Assert.Equal(
             VirtualCrossoverPanel.GateCutKind.ClosesBeforeArrival,
             VirtualCrossoverPanel.JudgeGateCut(
-                startMs: 20.0, gateOffsetMs: 4.125, plateauMs: 4.0,
+                startMs: 20.0, gateOffsetMs: 4.125, plateauMs: 4.0, rightMs: 1.5,
                 placementLossDb: -60.0, ownArrivalLossDb: -30.0));
-        // The boundary belongs to the plateau: a front on its last sample is
-        // still inside the window.
-        Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
-            startMs: 8.125, gateOffsetMs: 4.125, plateauMs: 4.0,
-            placementLossDb: -60.0, ownArrivalLossDb: -30.0));
     }
 
     [Fact]
@@ -117,23 +134,23 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
         // placement fixes it — reporting it would stop the automatic commands
         // on something moving the gate cannot cure.
         Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
-            startMs: 3.0, gateOffsetMs: 4.0, plateauMs: 4.0,
+            startMs: 3.0, gateOffsetMs: 4.0, plateauMs: 4.0, rightMs: 1.5,
             placementLossDb: -19.4, ownArrivalLossDb: -19.4));
         // And two nearby offsets never read bit-identically on a real response,
         // so the margin — not a bare comparison — is what keeps that case out:
         // a hair's difference, and a difference no user can act on, both stay
         // below it.
         Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
-            startMs: 3.0, gateOffsetMs: 4.0, plateauMs: 4.0,
+            startMs: 3.0, gateOffsetMs: 4.0, plateauMs: 4.0, rightMs: 1.5,
             placementLossDb: -19.399, ownArrivalLossDb: -19.4));
         Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
-            startMs: 3.0, gateOffsetMs: 4.0, plateauMs: 4.0,
+            startMs: 3.0, gateOffsetMs: 4.0, plateauMs: 4.0, rightMs: 1.5,
             placementLossDb: -17.0, ownArrivalLossDb: -19.4));
         // Worse by the margin is a placement problem again.
         Assert.Equal(
             VirtualCrossoverPanel.GateCutKind.OpensAfterArrival,
             VirtualCrossoverPanel.JudgeGateCut(
-                startMs: 3.0, gateOffsetMs: 4.0, plateauMs: 4.0,
+                startMs: 3.0, gateOffsetMs: 4.0, plateauMs: 4.0, rightMs: 1.5,
                 placementLossDb: -12.7, ownArrivalLossDb: -19.4));
     }
 
@@ -161,6 +178,7 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
             var verdict = new VirtualCrossoverPanel.GatePlacementVerdict(
                 OffsetMs: 4.125,
                 PlateauMs: 4.0,
+                RightMs: 1.5,
                 Pinned: false,
                 RightSide: false,
                 Cut: new List<VirtualCrossoverPanel.GateCutChannel>
@@ -175,11 +193,14 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
             Assert.Contains("that curve holds none of it", warning);
 
             string detail = VirtualCrossoverPanel.FormatGateCutDetail(verdict);
+            // Both edges, because this channel was judged against the far one:
+            // the plateau's span AND where the fade-out reaches zero.
             Assert.Contains("plateau runs from 4.13 to 8.13 ms", detail);
-            Assert.Contains("the window is over before it starts", detail);
+            Assert.Contains("fade-out over at 9.63 ms", detail);
+            Assert.Contains("after the window closes at 9.63 ms", detail);
             // A longer window is the fix here; the leading-edge figure has
             // nothing to say about this one, so it is not quoted.
-            Assert.Contains("until it covers 19.11 ms", detail);
+            Assert.Contains("raise the plateau in Gate… past 19.11 ms", detail);
             Assert.DoesNotContain("leading-edge loss", detail);
         });
     }
@@ -223,6 +244,7 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
             var verdict = new VirtualCrossoverPanel.GatePlacementVerdict(
                 OffsetMs: 15.06,
                 PlateauMs: 50.0,
+                RightMs: 20.0,
                 Pinned: true,
                 RightSide: true,
                 Cut: new List<VirtualCrossoverPanel.GateCutChannel>
@@ -256,6 +278,7 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
         new(
             OffsetMs: 15.06,
             PlateauMs: 50.0,
+            RightMs: 20.0,
             Pinned: pinned,
             RightSide: true,
             Cut: new List<VirtualCrossoverPanel.GateCutChannel>

@@ -3692,31 +3692,54 @@ public partial class VirtualCrossoverPanel : UserControl
         processed.Min(item => TransferIrStartCache.ResolveStartMs(
             item.ImpulseResponse, sampleRate, item.PeakIndex));
 
+    /// <summary>Which way the window fails a channel.</summary>
+    internal enum GateCutKind
+    {
+        /// <summary>
+        /// It opens after the channel's front, so the curve is built from
+        /// whatever came after the response.
+        /// </summary>
+        OpensAfterArrival,
+
+        /// <summary>
+        /// It is over before the channel arrives, so the curve holds none of
+        /// the channel at all.
+        /// </summary>
+        ClosesBeforeArrival
+    }
+
     /// <summary>
-    /// One channel the gate placement cuts into: its label, where its response
-    /// starts (ms) and what the window throws away ahead of its plateau
-    /// (<see cref="DataHelper.GateLeadingEdgeLossDb"/>, dB).
+    /// One channel the gate placement fails: its label, where its response
+    /// starts (ms), which way the window misses it and what the window throws
+    /// away ahead of its plateau
+    /// (<see cref="DataHelper.GateLeadingEdgeLossDb"/>, dB — meaningful for
+    /// <see cref="GateCutKind.OpensAfterArrival"/> only).
     /// </summary>
     internal readonly record struct GateCutChannel(
         string Name,
         double StartMs,
+        GateCutKind Kind,
         double LeadingEdgeLossDb);
 
     /// <summary>
     /// The window the side on screen is actually gated at, judged against the
-    /// channels it windows: where its plateau starts, whether that placement is
-    /// pinned or Auto, where Auto would put it, and the channels it cuts into.
+    /// channels it windows: where its plateau starts and ends, whether the
+    /// placement is pinned or Auto, and the channels it fails.
     /// </summary>
     internal sealed record GatePlacementVerdict(
         double OffsetMs,
+        double PlateauMs,
         bool Pinned,
         bool RightSide,
-        double AutoOffsetMs,
         IReadOnlyList<GateCutChannel> Cut)
     {
         public bool CutsChannels => Cut.Count > 0;
 
         public string SideLabel => RightSide ? "R" : "L";
+
+        public double PlateauEndMs => OffsetMs + PlateauMs;
+
+        public bool Any(GateCutKind kind) => Cut.Any(item => item.Kind == kind);
     }
 
     /// <summary>
@@ -3753,9 +3776,14 @@ public partial class VirtualCrossoverPanel : UserControl
                 item.ImpulseResponse, sampleRate, item.PeakIndex);
             var view = new ImpulseMeasurementView(item.ImpulseResponse, 0, sampleRate);
             double lossDb = Loss(offsetMs);
-            if (GateCutsChannel(startMs, offsetMs, lossDb, Loss(startMs)))
+            if (JudgeGateCut(
+                    startMs,
+                    offsetMs,
+                    snapshot.Template.PlateauMs,
+                    lossDb,
+                    Loss(startMs)) is { } kind)
             {
-                cut.Add(new GateCutChannel(item.Channel.Name, startMs, lossDb));
+                cut.Add(new GateCutChannel(item.Channel.Name, startMs, kind, lossDb));
             }
 
             double Loss(double placementMs) => DataHelper.GateLeadingEdgeLossDb(
@@ -3768,39 +3796,62 @@ public partial class VirtualCrossoverPanel : UserControl
 
         return new GatePlacementVerdict(
             offsetMs,
+            snapshot.Template.PlateauMs,
             snapshot.PinnedOffsetMs is not null,
             project.ActiveSideRight,
-            EarliestStartMs(processed, sampleRate),
             cut);
     }
 
     /// <summary>
-    /// Whether the window in use cuts a channel: its front lies outside the
-    /// plateau — the claim the warning makes, so it is a condition — and the
-    /// PLACEMENT is what costs it — over the ceiling, and worse by
-    /// <see cref="GateMisplacementMarginDb"/> than the same gate on the
-    /// channel's own arrival.
+    /// How the window in use fails a channel, or null when it holds it.
+    /// A window has two ways to miss: it can open after the channel's front,
+    /// or be over before the channel arrives at all.
     /// <para>
-    /// That second half is what keeps a short gate from reading as a
-    /// misplacement. The project default (0.5/4/1.5 ms) cannot hold one period
-    /// of a 55 Hz subwoofer wherever it is placed — the field session read
+    /// The two are judged differently BECAUSE the leading-edge figure only
+    /// answers the first. It is a ratio of what the window discards ahead of
+    /// its plateau to what it keeps, and a channel that lands past the window
+    /// has nothing ahead of that plateau either — so it reads not as bad but
+    /// as EXCELLENT. Measured: a tweeter delayed 20 ms out of a 4 ms plateau
+    /// reads -282 dB there, the best figure of any channel in that session,
+    /// with its curve holding none of the channel. (The +∞ that
+    /// <see cref="DataHelper.GateLeadingEdgeLossDb"/> reserves for "the window
+    /// kept nothing" needs a bit-for-bit silent window, which a measured record
+    /// does not give.) So the far side is decided on the window's geometry
+    /// instead: the channel's front has to be inside the plateau.
+    /// </para>
+    /// <para>
+    /// The near side is the placement question: over the ceiling, and worse by
+    /// <see cref="GateMisplacementMarginDb"/> than the same gate on the
+    /// channel's own arrival. That comparison is what keeps a short gate from
+    /// reading as a misplacement — the project default cannot hold one period
+    /// of a 55 Hz subwoofer wherever it is placed, and the field session read
     /// -19.4 dB at the channel's own arrival and -19.4 dB at the shared one —
-    /// and a gate the user cannot fix by moving is not something to stop them
-    /// with. <see cref="AllowsPerCurvePhaseGate"/> makes the same comparison
-    /// with no margin at all, which is right THERE: its penalty for reading a
-    /// hair's difference as significant is one curve falling back to the shared
-    /// window. Here the penalty is an amber line and two refused commands, so
-    /// the difference has to be one the user can act on.
+    /// because a gate the user cannot fix by moving is not something to stop
+    /// them with. <see cref="AllowsPerCurvePhaseGate"/> makes the same
+    /// comparison with no margin at all, which is right THERE: its penalty for
+    /// reading a hair's difference as significant is one curve falling back to
+    /// the shared window. Here the penalty is an amber line and two refused
+    /// commands, so the difference has to be one the user can act on.
     /// </para>
     /// </summary>
-    internal static bool GateCutsChannel(
+    internal static GateCutKind? JudgeGateCut(
         double startMs,
         double gateOffsetMs,
+        double plateauMs,
         double placementLossDb,
-        double ownArrivalLossDb) =>
-        startMs < gateOffsetMs &&
-        placementLossDb > MaxGateLeadingEdgeLossDb &&
-        placementLossDb > ownArrivalLossDb + GateMisplacementMarginDb;
+        double ownArrivalLossDb)
+    {
+        if (startMs > gateOffsetMs + plateauMs)
+        {
+            return GateCutKind.ClosesBeforeArrival;
+        }
+
+        return startMs < gateOffsetMs &&
+            placementLossDb > MaxGateLeadingEdgeLossDb &&
+            placementLossDb > ownArrivalLossDb + GateMisplacementMarginDb
+                ? GateCutKind.OpensAfterArrival
+                : null;
+    }
 
     /// <summary>
     /// How much worse than the channel's own arrival a placement has to read
@@ -3814,17 +3865,37 @@ public partial class VirtualCrossoverPanel : UserControl
     private const double GateMisplacementMarginDb = 3.0;
 
     // The plot's one-line form of the verdict; the detail below carries the
-    // per-channel figures and what to do about them.
+    // per-channel figures and what to do about them. The two ways a window
+    // misses produce different curves — the tail of the response, or none of
+    // it — so the line says which one the reader is looking at.
     internal static string FormatGateCutWarning(GatePlacementVerdict verdict)
     {
         string names = string.Join(", ", verdict.Cut.Select(item => item.Name));
         double earliest = verdict.Cut.Min(item => item.StartMs);
         double latest = verdict.Cut.Max(item => item.StartMs);
-        string arrivals = verdict.Cut.Count == 1 || Math.Abs(latest - earliest) < 0.005
+        bool one = verdict.Cut.Count == 1;
+        string arrivals = one || Math.Abs(latest - earliest) < 0.005
             ? $"{earliest:0.00} ms"
             : $"{earliest:0.00}–{latest:0.00} ms";
-        return $"⚠ {verdict.SideLabel} gate at {verdict.OffsetMs:0.00} ms opens after " +
-            $"{names} arrive ({arrivals}) — those curves read the reverberant tail.";
+        string curves = one ? "that curve reads" : "those curves read";
+        string opening = $"⚠ {verdict.SideLabel} gate at {verdict.OffsetMs:0.00} ms ";
+        if (!verdict.Any(GateCutKind.ClosesBeforeArrival))
+        {
+            return opening +
+                $"opens after {names} {(one ? "arrives" : "arrive")} ({arrivals}) — " +
+                $"{curves} the reverberant tail.";
+        }
+
+        if (!verdict.Any(GateCutKind.OpensAfterArrival))
+        {
+            return opening +
+                $"is over before {names} {(one ? "arrives" : "arrive")} ({arrivals}) — " +
+                $"{(one ? "that curve holds" : "those curves hold")} none of " +
+                $"{(one ? "it" : "them")}.";
+        }
+
+        return opening + $"misses {names} (arriving {arrivals}) — " +
+            $"{(one ? "that curve is" : "those curves are")} not the response.";
     }
 
     // The tooltip, and the body of the refusal the automatic commands show:
@@ -3832,32 +3903,57 @@ public partial class VirtualCrossoverPanel : UserControl
     // describe the same placement differently.
     internal static string FormatGateCutDetail(GatePlacementVerdict verdict)
     {
+        bool opensLate = verdict.Any(GateCutKind.OpensAfterArrival);
+        bool closesEarly = verdict.Any(GateCutKind.ClosesBeforeArrival);
         var text = new System.Text.StringBuilder();
-        text.Append($"The gate's plateau starts at {verdict.OffsetMs:0.00} ms, but these ")
-            .Append("channels arrive before it, so their curves — and the sum-loss ")
-            .Append("read-out built from them — are made of the reverberant tail ")
-            .AppendLine("instead of the response:")
+        text.Append($"The gate's plateau runs from {verdict.OffsetMs:0.00} to ")
+            .Append($"{verdict.PlateauEndMs:0.00} ms, and these channels fall outside it, ")
+            .Append("so their curves — and the sum-loss read-out built from them — do ")
+            .AppendLine("not describe the drivers:")
             .AppendLine();
         foreach (GateCutChannel item in verdict.Cut)
         {
-            text.AppendLine(
-                $"    {item.Name} — arrives {item.StartMs:0.00} ms, leading-edge loss " +
-                FormatLeadingEdgeLossDb(item.LeadingEdgeLossDb));
+            text.AppendLine(item.Kind == GateCutKind.OpensAfterArrival
+                ? $"    {item.Name} — arrives {item.StartMs:0.00} ms, ahead of the plateau; " +
+                    "the curve is the reverberant tail, leading-edge loss " +
+                    FormatLeadingEdgeLossDb(item.LeadingEdgeLossDb)
+                : $"    {item.Name} — arrives {item.StartMs:0.00} ms, after the plateau " +
+                    "ends; the window is over before it starts and its curve holds " +
+                    "none of it");
         }
 
-        text.AppendLine()
-            .Append("(Leading-edge loss is what the window throws away ahead of its ")
-            .Append("plateau against what it keeps, so ")
-            .Append($"{MaxGateLeadingEdgeLossDb:0} dB is already the ceiling.)")
-            .AppendLine()
-            .AppendLine();
-        text.Append(verdict.Pinned
-            ? "Open Gate… and press Auto: the window then follows this side's " +
-                $"earliest arrival, {verdict.AutoOffsetMs:0.00} ms."
-            : "The gate is on Auto and still lands there, which means a shoulder too " +
-                "short for these arrivals: widen the left fade in Gate…, or check what " +
-                "those channels' sources hold ahead of their front.");
-        text.Append(" Each side keeps its own gate placement, so the one fitted on ")
+        if (opensLate)
+        {
+            text.AppendLine()
+                .Append("(Leading-edge loss is what the window throws away ahead of its ")
+                .Append("plateau against what it keeps, so ")
+                .Append($"{MaxGateLeadingEdgeLossDb:0} dB is already the ceiling.)")
+                .AppendLine();
+        }
+
+        text.AppendLine();
+        if (opensLate)
+        {
+            text.Append(verdict.Pinned
+                ? "Open Gate… and press Auto: the window then follows this side's own " +
+                    "earliest arrival instead of a time fixed to other measurements. "
+                : "The gate is on Auto and still opens late, which means a shoulder too " +
+                    "short for these arrivals: widen the left fade in Gate…, or check " +
+                    "what those channels' sources hold ahead of their front. ");
+        }
+
+        if (closesEarly)
+        {
+            double latest = verdict.Cut
+                .Where(item => item.Kind == GateCutKind.ClosesBeforeArrival)
+                .Max(item => item.StartMs);
+            text.Append(opensLate ? "The window also has to be " : "The window has to be ")
+                .Append("long enough to reach them: raise the ")
+                .Append($"plateau in Gate… until it covers {latest:0.00} ms, or take the ")
+                .Append("delay that pushes them out of it back. ");
+        }
+
+        text.Append("Each side keeps its own gate placement, so the one fitted on ")
             .Append(verdict.SideLabel)
             .Append(" says nothing about ")
             .Append(verdict.RightSide ? "L" : "R")

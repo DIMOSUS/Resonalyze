@@ -192,21 +192,25 @@ public sealed class AudiotecFischerFormatTests
     {
         // REW's room-mode filter occupies a slot like any other and realizes a bell:
         // the row carries Fc, gain and the Q of that bell, with the T60 the optimizer
-        // aimed at in the last cell. (The row below is a modal filter set in REW 5.40
-        // to 120 Hz / -6 dB / T60 300 ms; its realized Q, fitted from REW's own EQ
-        // response, is 11.6 — not any textbook T60 identity, which is exactly why the
-        // Q column is the only thing to read.) Dropping the row, as this format did
-        // before, silently left a room mode uncorrected.
+        // aimed at in the last cell. The three rows below are a byte-exact bank from
+        // REW 5.40 Beta 132 with this equaliser selected (two modal filters and a
+        // plain bell); note that a modal Q is not any textbook T60 identity — 120 Hz
+        // at -6 dB and T60 300 ms realizes Q 11.59, not the 16.4 that
+        // pi*f0*T60/ln(1000) would give — so the Q column is the only thing to read.
+        // Dropping these rows, as this format did before, silently left a room mode
+        // uncorrected.
         EqualizationCurve curve = Format.Import(Bank(
-            "True\tAuto\tModal\t120.0\t-6.0\t11.59\t10.35\t300.0\t",
+            "True\tAuto\tModal\t120.0\t-6.0\t11.59\t10.35\t300\t",
+            "True\tAuto\tModal\t45.0\t-4.5\t9.48\t4.75\t600\t",
             "True\tAuto\tPK\t200.0\t-2.0\t4.00\t50.00\t"));
 
-        Assert.Equal(2, curve.Bands.Count);
+        Assert.Equal(3, curve.Bands.Count);
         Assert.Equal(new PeqBand(120, 11.59, -6.0), curve.Bands[0]);
-        Assert.Equal(PeqBandType.Peaking, curve.Bands[0].Type);
-        Assert.Equal(new PeqBand(200, 4.0, -2.0), curve.Bands[1]);
+        Assert.Equal(new PeqBand(45, 9.48, -4.5), curve.Bands[1]);
+        Assert.All(curve.Bands, band => Assert.Equal(PeqBandType.Peaking, band.Type));
+        Assert.Equal(new PeqBand(200, 4.0, -2.0), curve.Bands[2]);
 
-        // Written back it is a plain bell: the processor has no modal slot, and the
+        // Written back they are plain bells: the processor has no modal slot, and the
         // T60 was REW's optimizer metadata, not part of the filter the device runs.
         Assert.Equal(
             "1\tTrue\tAuto\tPK\t120.0\t-6.0\t11.59\t10.35\t",

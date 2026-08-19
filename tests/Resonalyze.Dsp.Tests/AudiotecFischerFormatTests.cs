@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Resonalyze.Dsp.Tests;
 
 // The Audiotec-Fischer bank both ways: what a real REW export reads as, what a
@@ -61,6 +63,22 @@ public sealed class AudiotecFischerFormatTests
             .Select(line => line.TrimEnd('\r'))
             .ToArray();
 
+    // A complete bank around the rows a test cares about: the layout is a fixed
+    // table, so anything short of thirty slots is not this format (see
+    // Import_RefusesATruncatedOrRenumberedBank) and every fixture must fill it.
+    private static string Bank(params string[] rows)
+    {
+        var text = new StringBuilder("Audiotec_Fischer_Full_EQ_(30_bands)\n");
+        for (int slot = 1; slot <= AudiotecFischerFormat.SlotCount; slot++)
+        {
+            text.AppendLine(slot <= rows.Length
+                ? $"{slot}\t{rows[slot - 1]}"
+                : $"{slot}\tTrue\tAuto\tNone\t");
+        }
+
+        return text.ToString();
+    }
+
     [Fact]
     public void IsRegisteredForImportAndExport()
     {
@@ -89,11 +107,7 @@ public sealed class AudiotecFischerFormatTests
     {
         // REW writes both; Q is what the slot means. A bandwidth that disagrees
         // (here 500 Hz against Q 4 at 1 kHz, i.e. Q 2) must not move the band.
-        string text =
-            "Audiotec_Fischer_Full_EQ_(30_bands)\n" +
-            "1\tTrue\tAuto\tPK\t1000\t-3\t4.00\t500\t\n";
-
-        EqualizationCurve curve = Format.Import(text);
+        EqualizationCurve curve = Format.Import(Bank("True\tAuto\tPK\t1000\t-3\t4.00\t500\t"));
 
         Assert.Equal(4.0, Assert.Single(curve.Bands).Q, 6);
     }
@@ -101,11 +115,7 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_ReadsQFromTheBandwidthWhenTheQCellIsBlank()
     {
-        string text =
-            "Audiotec_Fischer_Full_EQ_(30_bands)\n" +
-            "1\tTrue\tAuto\tPK\t1000\t-3\t\t250\t\n";
-
-        EqualizationCurve curve = Format.Import(text);
+        EqualizationCurve curve = Format.Import(Bank("True\tAuto\tPK\t1000\t-3\t\t250\t"));
 
         Assert.Equal(4.0, Assert.Single(curve.Bands).Q, 6);
     }
@@ -113,11 +123,7 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_ReadsAShelfWithoutAQAtTheDefaultKnee()
     {
-        string text =
-            "Audiotec_Fischer_Full_EQ_(30_bands)\n" +
-            "1\tTrue\tAuto\tHS_Q\t8000\t-2\n";
-
-        PeqBand band = Assert.Single(Format.Import(text).Bands);
+        PeqBand band = Assert.Single(Format.Import(Bank("True\tAuto\tHS_Q\t8000\t-2")).Bands);
 
         Assert.Equal(PeqBandType.HighShelf, band.Type);
         Assert.Equal(PeqTextFile.DefaultShelfQ, band.Q, 9);
@@ -129,18 +135,15 @@ public sealed class AudiotecFischerFormatTests
         // The two all-pass slots move phase only, which no PeqBand can state; a
         // disabled row is an OFF filter; a None row is an empty slot; a bell with
         // neither Q nor bandwidth says nothing about its width.
-        string text =
-            "Audiotec_Fischer_Full_EQ_(30_bands)\n" +
-            "1\tTrue\tAuto\tPK\t100\t-2\t2.00\t50\t\n" +
-            "2\tFalse\tAuto\tPK\t200\t-2\t2.00\t100\t\n" +
-            "3\tTrue\tAuto\tAP1\t300\n" +
-            "4\tTrue\tAuto\tAP2\t400\t\t1.50\n" +
-            "5\tTrue\tAuto\tNone\t\n" +
-            "6\tTrue\tAuto\tPK\t600\t-2\t\t\t\n" +
-            "7\tTrue\tAuto\tPK\tnot-a-number\t-2\t2.00\n" +
-            "8\tTrue\tAuto\tPK\t800\t-1\t1.00\t800\t\n";
-
-        EqualizationCurve curve = Format.Import(text);
+        EqualizationCurve curve = Format.Import(Bank(
+            "True\tAuto\tPK\t100\t-2\t2.00\t50\t",
+            "False\tAuto\tPK\t200\t-2\t2.00\t100\t",
+            "True\tAuto\tAP1\t300",
+            "True\tAuto\tAP2\t400\t\t1.50",
+            "True\tAuto\tNone\t",
+            "True\tAuto\tPK\t600\t-2\t\t\t",
+            "True\tAuto\tPK\tnot-a-number\t-2\t2.00",
+            "True\tAuto\tPK\t800\t-1\t1.00\t800\t"));
 
         Assert.Equal(2, curve.Bands.Count);
         Assert.Equal(100, curve.Bands[0].FrequencyHz);
@@ -157,7 +160,9 @@ public sealed class AudiotecFischerFormatTests
             "\uFEFFAudiotec_Fischer_Full_EQ_(30_bands)\r\n" +
             "Number Enabled Control Type Frequency(Hz) Gain(dB) Q Bandwidth(Hz) TargetT60(ms)\r\n" +
             "1 True Auto PK 2504.0 -12.2 1.27 1972\r\n" +
-            "2 True Manual LS_Q 44.3 -11.0 0.7\r\n";
+            "2 True Manual LS_Q 44.3 -11.0 0.7\r\n" +
+            string.Concat(Enumerable.Range(3, AudiotecFischerFormat.SlotCount - 2)
+                .Select(slot => $"{slot} True Auto None\r\n"));
 
         Assert.True(Format.TryImport(text, out EqualizationCurve curve));
 
@@ -180,6 +185,71 @@ public sealed class AudiotecFischerFormatTests
         Assert.False(Format.TryImport("Preamp: -6.0 dB\nFilter 1: ON PK Fc 600 Hz Gain 6.0 dB Q 4.0\n", out _));
         Assert.False(Format.TryImport("Preamp (dB),-6.0\nFilter,Frequency (Hz),Gain (dB),Q,Type\n1,600,6.0,4.0,PK\n", out _));
         Assert.False(Format.TryImport(string.Empty, out _));
+    }
+
+    [Fact]
+    public void Import_ReadsARewModalRowAsABell()
+    {
+        // REW's room-mode filter occupies a slot like any other and realizes a bell:
+        // the row carries Fc, gain and the Q of that bell, with the T60 the optimizer
+        // aimed at in the last cell. (The row below is a modal filter set in REW 5.40
+        // to 120 Hz / -6 dB / T60 300 ms; its realized Q, fitted from REW's own EQ
+        // response, is 11.6 — not any textbook T60 identity, which is exactly why the
+        // Q column is the only thing to read.) Dropping the row, as this format did
+        // before, silently left a room mode uncorrected.
+        EqualizationCurve curve = Format.Import(Bank(
+            "True\tAuto\tModal\t120.0\t-6.0\t11.59\t10.35\t300.0\t",
+            "True\tAuto\tPK\t200.0\t-2.0\t4.00\t50.00\t"));
+
+        Assert.Equal(2, curve.Bands.Count);
+        Assert.Equal(new PeqBand(120, 11.59, -6.0), curve.Bands[0]);
+        Assert.Equal(PeqBandType.Peaking, curve.Bands[0].Type);
+        Assert.Equal(new PeqBand(200, 4.0, -2.0), curve.Bands[1]);
+
+        // Written back it is a plain bell: the processor has no modal slot, and the
+        // T60 was REW's optimizer metadata, not part of the filter the device runs.
+        Assert.Equal(
+            "1\tTrue\tAuto\tPK\t120.0\t-6.0\t11.59\t10.35\t",
+            Lines(Format.Export(curve))[2]);
+    }
+
+    [Fact]
+    public void Import_RefusesATruncatedOrRenumberedBank()
+    {
+        // The bank is a fixed 30-slot table and a successful import REPLACES the
+        // EQ on screen, so anything that is not that table must fail recognition
+        // rather than arrive as an empty curve and wipe the user's tune.
+        string full = Bank("True\tAuto\tPK\t1000\t-3\t4.00\t250\t");
+        Assert.True(Format.TryImport(full, out EqualizationCurve intact));
+        Assert.Single(intact.Bands);
+
+        string[] rows = full.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        // a bank cut short (a partial copy/paste, a truncated download)
+        Assert.False(Format.TryImport(string.Join("\n", rows.Take(rows.Length - 1)), out _));
+        // the header alone — the case that used to import as "no bands"
+        Assert.False(Format.TryImport("Audiotec_Fischer_Full_EQ_(30_bands)\n", out _));
+        // more rows than the channel has slots: this format would refuse to export it
+        Assert.False(Format.TryImport(
+            full + $"{AudiotecFischerFormat.SlotCount + 1}\tTrue\tAuto\tPK\t900\t-1\t2.00\t450\t\n",
+            out _));
+        // renumbered/repeated rows are not the slot table either
+        Assert.False(Format.TryImport(full.Replace("\n2\tTrue", "\n1\tTrue"), out _));
+    }
+
+    [Fact]
+    public void Import_KeepsAFullBankOfBandsWithinTheSlotBudget()
+    {
+        // Thirty bells fill the table; the curve type allows 32, the channel does
+        // not, and what imports must be what this format can write back.
+        string full = Bank(Enumerable.Range(1, AudiotecFischerFormat.SlotCount)
+            .Select(slot => $"True\tAuto\tPK\t{100 * slot}\t-1.0\t2.00\t{50 * slot}\t")
+            .ToArray());
+
+        Assert.True(Format.TryImport(full, out EqualizationCurve curve));
+
+        Assert.Equal(AudiotecFischerFormat.SlotCount, curve.Bands.Count);
+        Assert.Equal(AudiotecFischerFormat.SlotCount, Format.Import(Format.Export(curve)).Bands.Count);
     }
 
     [Fact]

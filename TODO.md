@@ -312,10 +312,12 @@ items below are what a car DSP tune actually needs, roughly in priority order.
   DSPs (Helix / Audison / miniDSP) have a fixed per-channel band budget and a
   separate master gain the profile must respect. Residual after the
   Audiotec-Fischer bank format: that one format enforces its 30-slot budget
-  (export refuses a longer curve) and never writes the preamp
-  (`IEqProfileFormat.CarriesPreamp` is false), but the EQ Wizard does not yet
-  warn about a non-zero preamp left behind the way it warns about a dropped
-  shelf, and the miniDSP / generic paths still have no budget or gain profile.
+  (export refuses a longer curve, and an import that is not a complete 30-slot
+  table is refused rather than read as an empty bank), never writes the preamp
+  (`IEqProfileFormat.CarriesPreamp` is false) and the wizard now warns about the
+  gain left behind, naming the dB to enter on the device — but the miniDSP /
+  generic paths still have no budget or gain profile, and the warning is
+  per-format metadata, not a device profile.
 
 Deliberately out of scope for car DSP tuning (do not add here): FIR/convolution
 export (car DSPs are biquad), a phase / min-phase / all-pass view (the Virtual

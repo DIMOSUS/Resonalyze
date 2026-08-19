@@ -21,8 +21,13 @@ namespace Resonalyze.Dsp;
 /// this library realizes, so they travel unchanged. <c>Bandwidth(Hz)</c> is REW's
 /// companion figure for a bell, <c>Fc / Q</c> — the RBJ relation, consistent with
 /// the processors' place in the <see cref="PeqQConvention"/> crib — and
-/// <c>TargetT60(ms)</c> is REW housekeeping; import ignores both (Q wins, and a
-/// row carrying a bandwidth but no Q reads Q = Fc / BW).
+/// <c>TargetT60(ms)</c> carries REW's modal-filter target; import ignores both
+/// (Q wins, and a row carrying a bandwidth but no Q reads Q = Fc / BW).
+/// <c>Modal</c> is REW's room-mode filter: a bell whose width REW derives from that
+/// T60, written into this bank with the Fc / Gain / Q of the filter it realizes, so
+/// it is read as a <see cref="PeqBandType.Peaking"/> band like any other bell —
+/// dropping it would quietly widen a hole in the tune. The T60 itself is REW's
+/// optimizer metadata, has no slot in the processor, and is not kept.
 /// </summary>
 /// <remarks>
 /// The bank holds equalization only. Crossovers, delay, polarity and the phase
@@ -39,8 +44,12 @@ namespace Resonalyze.Dsp;
 /// because that is the layout the PC-Tool is known to accept. Parsing is
 /// defensive: a UTF-8 BOM, CR/LF, ragged rows, trailing tabs and spaces in place
 /// of tabs are all tolerated (numbers read as in the other text formats), and the
-/// file is recognised by its bank header even when every slot is <c>None</c> (a
-/// valid empty bank).
+/// file is recognised by its bank header together with a COMPLETE slot table —
+/// exactly <see cref="SlotCount"/> rows numbered 1..30, in order. An empty bank
+/// (thirty <c>None</c> rows) is valid and neutral; a truncated or renumbered one is
+/// NOT recognised, because importing it as "no bands" would silently replace the
+/// user's EQ with nothing, and a bank with more rows than the channel has slots
+/// would import what this format then refuses to export.
 /// </remarks>
 public sealed class AudiotecFischerFormat : IEqProfileFormat
 {
@@ -57,6 +66,8 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
         "Number\tEnabled\tControl\tType\tFrequency(Hz)\tGain(dB)\tQ\tBandwidth(Hz)\tTargetT60(ms)\t";
 
     private const string BellType = "PK";
+    // REW's room-mode filter: a bell in this bank, its T60 only optimizer metadata.
+    private const string ModalType = "Modal";
     private const string LowShelfType = "LS_Q";
     private const string HighShelfType = "HS_Q";
     private const string EmptyType = "None";
@@ -120,16 +131,13 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
     {
         ArgumentNullException.ThrowIfNull(text);
 
-        bool recognized = false;
+        bool headerSeen = false;
+        int slotsSeen = 0;
+        bool tableIntact = true;
         var bands = new List<PeqBand>();
 
         foreach (string rawLine in text.TrimStart('\uFEFF').Split('\n'))
         {
-            if (bands.Count >= EqualizationCurve.MaxBandCount)
-            {
-                break;
-            }
-
             string line = rawLine.Trim();
             if (line.Length == 0 || line.StartsWith('#'))
             {
@@ -139,18 +147,33 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
             if (line.Contains(BankHeader, StringComparison.OrdinalIgnoreCase) ||
                 IsColumnHeader(line))
             {
-                recognized = true;
+                headerSeen = true;
                 continue;
             }
 
-            if (TryParseRow(line, out PeqBand band))
+            if (!TryParseSlot(line, out int slotNumber, out PeqBand? band))
             {
-                bands.Add(band);
-                recognized = true;
+                // Not a slot row at all: this is not the bank's table.
+                tableIntact = false;
+                continue;
+            }
+
+            slotsSeen++;
+            // The bank is a fixed table: slot n is the nth row. A file that skips,
+            // repeats or renumbers rows is not the channel's slot table, whatever
+            // its header says.
+            tableIntact &= slotNumber == slotsSeen && slotsSeen <= SlotCount;
+            if (band.HasValue)
+            {
+                bands.Add(band.Value);
             }
         }
 
-        curve = new EqualizationCurve(bands);
+        // Recognition is the caller's only defence: a "successful" import replaces
+        // the EQ on screen, so an incomplete or over-long bank must fail here
+        // rather than arrive as an empty (or unexportable) curve.
+        bool recognized = headerSeen && tableIntact && slotsSeen == SlotCount;
+        curve = new EqualizationCurve(recognized ? bands : Array.Empty<PeqBand>());
         return recognized;
     }
 
@@ -171,23 +194,33 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
             fields[3].Equals("Type", StringComparison.OrdinalIgnoreCase);
     }
 
-    // Reads one slot row. Empty (None), all-pass, disabled, unknown-type and
-    // malformed rows all read as "no band" — a bank is a fixed table, so most rows
-    // of a real file are expected to be empty.
-    private static bool TryParseRow(string line, out PeqBand band)
+    // Reads one slot row: whether the line IS a slot of this bank (its number), and
+    // the band it holds, if any. Empty (None), all-pass, disabled, unknown-type and
+    // malformed rows are slots holding no band — a bank is a fixed table, so most
+    // rows of a real file are expected to be empty. Telling "no band here" from
+    // "not this bank's table" is what lets an incomplete file be refused.
+    private static bool TryParseSlot(string line, out int slotNumber, out PeqBand? band)
     {
-        band = default;
+        band = null;
+        slotNumber = 0;
 
         string[] fields = SplitRow(line);
-        if (fields.Length < 6 ||
-            !int.TryParse(fields[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out _) ||
-            fields[1].Equals("False", StringComparison.OrdinalIgnoreCase))
+        if (fields.Length < 4 ||
+            !int.TryParse(fields[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out slotNumber) ||
+            fields[3].Length == 0)
         {
             return false;
         }
 
+        if (fields.Length < 6 ||
+            fields[1].Equals("False", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         PeqBandType type;
-        if (fields[3].Equals(BellType, StringComparison.OrdinalIgnoreCase))
+        if (fields[3].Equals(BellType, StringComparison.OrdinalIgnoreCase) ||
+            fields[3].Equals(ModalType, StringComparison.OrdinalIgnoreCase))
         {
             type = PeqBandType.Peaking;
         }
@@ -201,13 +234,14 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
         }
         else
         {
-            return false;
+            // None, AP1, AP2 or anything else this layout may grow: a slot, no band.
+            return true;
         }
 
         if (!EqTextNumbers.TryParse(fields[4], out double frequencyHz) ||
             !EqTextNumbers.TryParse(fields[5], out double gainDb))
         {
-            return false;
+            return true;
         }
 
         // The Q cell may be blank on a hand-edited row: a bell can still be read
@@ -219,7 +253,7 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
                 if (!EqTextNumbers.TryParse(FieldAt(fields, 7), out double bandwidthHz) ||
                     bandwidthHz <= 0)
                 {
-                    return false;
+                    return true;
                 }
 
                 q = frequencyHz / bandwidthHz;
@@ -234,7 +268,7 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
             !double.IsFinite(q) || q <= 0 ||
             !double.IsFinite(gainDb))
         {
-            return false;
+            return true;
         }
 
         band = new PeqBand(frequencyHz, q, gainDb, type);

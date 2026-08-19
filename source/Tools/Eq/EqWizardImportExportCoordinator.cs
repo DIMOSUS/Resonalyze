@@ -156,6 +156,30 @@ internal sealed class EqWizardImportExportCoordinator
             : curve.Bands.Count(band => band.Type.IsShelving());
     }
 
+    /// <summary>
+    /// The preamp an export to <paramref name="target"/> would leave behind, in dB.
+    /// Zero when the format carries it, and zero when there is none to lose — the
+    /// panel asks only when the answer is going to cost the user something.
+    /// </summary>
+    /// <remarks>
+    /// A format without a preamp slot (a car DSP's per-channel bank: the gain is a
+    /// separate control on the device) writes the bands only. The whole curve is
+    /// then quietly that many dB off the tune on screen, which is worse than a
+    /// dropped band: nothing in the exported file hints at it, so the user has to
+    /// be told which gain to enter by hand.
+    /// </remarks>
+    internal static double PreampDroppedBy(
+        EqWizardExportTarget target,
+        EqualizationCurve curve)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(curve);
+
+        return target.CarriesPreamp || curve.PreampDb == 0
+            ? 0
+            : curve.PreampDb;
+    }
+
     internal static EqualizationCurve WithoutShelvingBands(EqualizationCurve curve)
     {
         ArgumentNullException.ThrowIfNull(curve);
@@ -232,6 +256,9 @@ internal sealed class EqWizardExportTarget : IEqWizardFileTarget
 
     // The tuning sheet prints shelves in a table of their own, so it carries them.
     internal bool SupportsShelvingFilters => Format?.SupportsShelvingFilters ?? true;
+
+    // ... and prints the preamp with them, so it carries that too.
+    internal bool CarriesPreamp => Format?.CarriesPreamp ?? true;
 
     internal static EqWizardExportTarget TuningSheet() =>
         new(null, "Tuning sheet (PDF)", "pdf");

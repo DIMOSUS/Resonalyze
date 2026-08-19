@@ -135,6 +135,13 @@ public partial class VirtualCrossoverPanel : UserControl
     // state on purpose: the answer describes the sheet being printed, not the panel
     // or the project (see AskSheetQConvention).
     private PeqQConvention? sheetQConvention;
+    // The verdict on the window the side on screen is gated at, from the last
+    // redraw (null before the first one, or with no processed channels). The
+    // Auto commands read this instead of judging the placement themselves:
+    // both are disabled until the redraw that fills it has settled, which is
+    // the same condition that puts their curves on screen — see
+    // RefreshAutoActionsEnabled.
+    private GatePlacementVerdict? gatePlacement;
     private VirtualCrossoverAcousticPlot acousticPlot = null!;
     private VirtualCrossoverDspChainPlot dspChainPlot = null!;
     private bool initialized;
@@ -2067,9 +2074,9 @@ public partial class VirtualCrossoverPanel : UserControl
             UpdateMetric(processed, lossCurve, stereoDeltas);
         }
 
-        using (AppProfiler.Zone("VirtualDSP.UpdateCrossoverWarning"))
+        using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))
         {
-            UpdateCrossoverWarning(processed);
+            UpdateWarnings(processed);
         }
 
         // Split from the draw on purpose: building the curves (the phase view's
@@ -2246,6 +2253,45 @@ public partial class VirtualCrossoverPanel : UserControl
         MetricChanged?.Invoke(compact, detail);
     }
 
+    // One warning line under the plot, and only one: the gate placement comes
+    // first because it decides whether the curves describe the channels at all
+    // — a window that opens after the drivers arrive turns every one of them
+    // into its own reverberant tail, and the crossover spread below is read off
+    // the applied delays, which stay true meanwhile.
+    private void UpdateWarnings(List<ProcessedChannel> processed)
+    {
+        gatePlacement = JudgeGatePlacement(processed);
+        if (gatePlacement is { CutsChannels: true } verdict)
+        {
+            ShowWarning(
+                FormatGateCutWarning(verdict),
+                FormatGateCutDetail(verdict),
+                GateWarningColor);
+            return;
+        }
+
+        UpdateCrossoverWarning(processed);
+    }
+
+    private void ShowWarning(string text, string detail, Color color)
+    {
+        labelCrossoverWarning.ForeColor = color;
+        labelCrossoverWarning.Text = text;
+        toolTip.SetToolTip(labelCrossoverWarning, detail);
+        labelCrossoverWarning.Visible = true;
+    }
+
+    private void HideWarning()
+    {
+        labelCrossoverWarning.Visible = false;
+        toolTip.SetToolTip(labelCrossoverWarning, string.Empty);
+    }
+
+    // Amber for the gate: it says the view cannot be read yet, not that the
+    // tuning is wrong. The crossover spread keeps the red it always had.
+    private static readonly Color GateWarningColor = Color.FromArgb(230, 184, 0);
+    private static readonly Color CrossoverWarningColor = Color.FromArgb(235, 110, 95);
+
     // The spread of alignment delays, above which the setup is flagged. A driver
     // whose crossover has pathological group delay (a narrow or steep low-
     // frequency band-pass) arrives so late that Auto delay must push every other
@@ -2266,7 +2312,7 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
         if (active.Count < 2)
         {
-            labelCrossoverWarning.Visible = false;
+            HideWarning();
             return;
         }
 
@@ -2277,21 +2323,18 @@ public partial class VirtualCrossoverPanel : UserControl
         double spread = earliestDelay - latest.Channel.Settings.DelayMs;
         if (spread <= CrossoverGroupDelayWarningMs)
         {
-            labelCrossoverWarning.Visible = false;
-            toolTip.SetToolTip(labelCrossoverWarning, string.Empty);
+            HideWarning();
             return;
         }
 
         string name = latest.Channel.Name;
-        labelCrossoverWarning.Text =
-            $"⚠ {name} lags the others by ~{spread:0} ms — check its crossover.";
-        toolTip.SetToolTip(
-            labelCrossoverWarning,
+        ShowWarning(
+            $"⚠ {name} lags the others by ~{spread:0} ms — check its crossover.",
             $"{name} arrives ~{spread:0} ms after the other drivers, so Auto delay pushes " +
             "them out by that much to match it.\r\n\r\n" +
             "This is usually excessive crossover group delay — a narrow or steep low-frequency " +
-            "band-pass. Reduce its slope or widen its band to bring the alignment delays down.");
-        labelCrossoverWarning.Visible = true;
+            "band-pass. Reduce its slope or widen its band to bring the alignment delays down.",
+            CrossoverWarningColor);
     }
 
     // The two alignment stages, their tuning constants and the selection
@@ -2363,6 +2406,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 string.Join(", ", bypassed.Select(channel => channel.Name)) +
                 ".\r\n\r\nDisable Bypass on every participating channel " +
                 "(or mute the channel to exclude it) and run Auto delay again.");
+            return;
+        }
+
+        if (RefuseOnMisplacedGate("Auto delay"))
+        {
             return;
         }
 
@@ -2888,6 +2936,14 @@ public partial class VirtualCrossoverPanel : UserControl
                 string.Join(", ", bypassed.Select(item => item.Name)) +
                 ".\r\n\r\nDisable Bypass on every participating channel " +
                 "(or mute the channel to exclude it) and run Auto delay again.");
+            return;
+        }
+
+        // The verdict describes the side on screen; the detail text says so and
+        // asks for the other one to be checked after switching, because only
+        // the shown side's channels have been processed to judge it against.
+        if (RefuseOnMisplacedGate("Auto delay"))
+        {
             return;
         }
 
@@ -3519,10 +3575,13 @@ public partial class VirtualCrossoverPanel : UserControl
         : ActiveGate.OffsetMs;
 
     /// <summary>
-    /// The ceiling on <see cref="DataHelper.GateLeadingEdgeLossDb"/> for a
-    /// per-curve phase window: above it the window is cutting into its own
-    /// channel's leading edge and the curve stops being comparable with its
-    /// neighbours.
+    /// The ceiling on <see cref="DataHelper.GateLeadingEdgeLossDb"/>: above it
+    /// a window is cutting into its channel's leading edge, and the curve stops
+    /// describing that channel — it starts describing what came after it.
+    /// Two placements are put to this figure: whether a phase curve may take
+    /// its own window (<see cref="AllowsPerCurvePhaseGate"/>) and whether the
+    /// window in use holds the channels at all
+    /// (<see cref="JudgeGatePlacement"/>).
     /// <para>
     /// Measured on the v5 field session (four processed channels, gate
     /// 5/50/20 ms): windows placed on each channel's own arrival START read
@@ -3531,8 +3590,15 @@ public partial class VirtualCrossoverPanel : UserControl
     /// to nearly half of a steeply low-passed channel's own energy. -20 dB
     /// sits in the middle of that 17.6 dB gap.
     /// </para>
+    /// <para>
+    /// The Passat session put the other end on the scale: a 15.06 ms gate
+    /// inherited from another car's project, against processed arrivals at
+    /// 4.10 to 5.97 ms, read +1.0 to +15.2 dB — at the top of that range the
+    /// window discards thirty times the energy it keeps — while the same
+    /// channels gated on their own arrivals read -42.9 to -55.0 dB.
+    /// </para>
     /// </summary>
-    private const double MaxPhaseGateLeadingEdgeLossDb = -20.0;
+    private const double MaxGateLeadingEdgeLossDb = -20.0;
 
     /// <summary>
     /// Whether a per-curve window may be used for a channel, from what it
@@ -3553,7 +3619,7 @@ public partial class VirtualCrossoverPanel : UserControl
     internal static bool AllowsPerCurvePhaseGate(
         double perCurveLossDb,
         double sharedLossDb) =>
-        perCurveLossDb <= MaxPhaseGateLeadingEdgeLossDb ||
+        perCurveLossDb <= MaxGateLeadingEdgeLossDb ||
         perCurveLossDb <= sharedLossDb;
 
     /// <summary>
@@ -3625,6 +3691,189 @@ public partial class VirtualCrossoverPanel : UserControl
         int sampleRate) =>
         processed.Min(item => TransferIrStartCache.ResolveStartMs(
             item.ImpulseResponse, sampleRate, item.PeakIndex));
+
+    /// <summary>
+    /// One channel the gate placement cuts into: its label, where its response
+    /// starts (ms) and what the window throws away ahead of its plateau
+    /// (<see cref="DataHelper.GateLeadingEdgeLossDb"/>, dB).
+    /// </summary>
+    internal readonly record struct GateCutChannel(
+        string Name,
+        double StartMs,
+        double LeadingEdgeLossDb);
+
+    /// <summary>
+    /// The window the side on screen is actually gated at, judged against the
+    /// channels it windows: where its plateau starts, whether that placement is
+    /// pinned or Auto, where Auto would put it, and the channels it cuts into.
+    /// </summary>
+    internal sealed record GatePlacementVerdict(
+        double OffsetMs,
+        bool Pinned,
+        bool RightSide,
+        double AutoOffsetMs,
+        IReadOnlyList<GateCutChannel> Cut)
+    {
+        public bool CutsChannels => Cut.Count > 0;
+
+        public string SideLabel => RightSide ? "R" : "L";
+    }
+
+    /// <summary>
+    /// Judges the magnitude view's window against every processed channel: the
+    /// gate is an ABSOLUTE time, so a placement that belonged to one set of
+    /// measurements windows the reverberant tail of the next set instead of
+    /// their response — and nothing about a channel's curve says so, because a
+    /// tail has a magnitude too. The magnitude placement is the one judged
+    /// (mirroring <see cref="VirtualCrossoverMetrics.BuildCurves"/>'s shared
+    /// anchor): it is what the drawn curves, the Sum and the sum-loss read-out
+    /// are built from, and it is never the earlier of the two — it anchors on
+    /// the earliest processed PEAK where the phase view's shared placement
+    /// anchors on the earliest estimated START — so a magnitude window that
+    /// opens in time answers for that one as well. The phase view's per-curve
+    /// placements keep their own guard in
+    /// <see cref="ResolvePhaseGateOffsets"/>.
+    /// </summary>
+    private GatePlacementVerdict? JudgeGatePlacement(
+        IReadOnlyList<ProcessedChannel> processed)
+    {
+        if (processed.Count == 0)
+        {
+            return null;
+        }
+
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        int sampleRate = processed[0].Channel.SampleRate;
+        double offsetMs = snapshot.ResolveGateOffsetMs(
+            oppositeSide: false, processed.Min(item => item.PeakIndex), sampleRate);
+        var cut = new List<GateCutChannel>();
+        foreach (ProcessedChannel item in processed)
+        {
+            double startMs = TransferIrStartCache.ResolveStartMs(
+                item.ImpulseResponse, sampleRate, item.PeakIndex);
+            var view = new ImpulseMeasurementView(item.ImpulseResponse, 0, sampleRate);
+            double lossDb = Loss(offsetMs);
+            if (GateCutsChannel(startMs, offsetMs, lossDb, Loss(startMs)))
+            {
+                cut.Add(new GateCutChannel(item.Channel.Name, startMs, lossDb));
+            }
+
+            double Loss(double placementMs) => DataHelper.GateLeadingEdgeLossDb(
+                view,
+                placementMs,
+                snapshot.Template.LeftMs,
+                snapshot.Template.PlateauMs,
+                snapshot.Template.RightMs);
+        }
+
+        return new GatePlacementVerdict(
+            offsetMs,
+            snapshot.PinnedOffsetMs is not null,
+            project.ActiveSideRight,
+            EarliestStartMs(processed, sampleRate),
+            cut);
+    }
+
+    /// <summary>
+    /// Whether the window in use cuts a channel: its front lies outside the
+    /// plateau — the claim the warning makes, so it is a condition — and the
+    /// PLACEMENT is what costs it, which is the same relation
+    /// <see cref="AllowsPerCurvePhaseGate"/> makes, read the other way round:
+    /// over the ceiling, and measurably worse than the same gate on the
+    /// channel's own arrival.
+    /// <para>
+    /// That second half is what keeps a short gate from reading as a
+    /// misplacement. The project default (0.5/4/1.5 ms) cannot hold one period
+    /// of a 55 Hz subwoofer wherever it is placed — the field session read
+    /// -19.4 dB at the channel's own arrival and -19.4 dB at the shared one —
+    /// and a gate the user cannot fix by moving is not something to stop them
+    /// with. The misplacements this catches are 44 to 70 dB apart on that
+    /// comparison.
+    /// </para>
+    /// </summary>
+    internal static bool GateCutsChannel(
+        double startMs,
+        double gateOffsetMs,
+        double placementLossDb,
+        double ownArrivalLossDb) =>
+        startMs < gateOffsetMs &&
+        !AllowsPerCurvePhaseGate(placementLossDb, ownArrivalLossDb);
+
+    // The plot's one-line form of the verdict; the detail below carries the
+    // per-channel figures and what to do about them.
+    internal static string FormatGateCutWarning(GatePlacementVerdict verdict)
+    {
+        string names = string.Join(", ", verdict.Cut.Select(item => item.Name));
+        double earliest = verdict.Cut.Min(item => item.StartMs);
+        double latest = verdict.Cut.Max(item => item.StartMs);
+        string arrivals = verdict.Cut.Count == 1 || Math.Abs(latest - earliest) < 0.005
+            ? $"{earliest:0.00} ms"
+            : $"{earliest:0.00}–{latest:0.00} ms";
+        return $"⚠ {verdict.SideLabel} gate at {verdict.OffsetMs:0.00} ms opens after " +
+            $"{names} arrive ({arrivals}) — those curves read the reverberant tail.";
+    }
+
+    // The tooltip, and the body of the refusal the automatic commands show:
+    // the same explanation either way, so the plot and the dialogs cannot
+    // describe the same placement differently.
+    internal static string FormatGateCutDetail(GatePlacementVerdict verdict)
+    {
+        var text = new System.Text.StringBuilder();
+        text.Append($"The gate's plateau starts at {verdict.OffsetMs:0.00} ms, but these ")
+            .Append("channels arrive before it, so their curves — and the sum-loss ")
+            .Append("read-out built from them — are made of the reverberant tail ")
+            .AppendLine("instead of the response:")
+            .AppendLine();
+        foreach (GateCutChannel item in verdict.Cut)
+        {
+            text.AppendLine(
+                $"    {item.Name} — arrives {item.StartMs:0.00} ms, leading-edge loss " +
+                FormatLeadingEdgeLossDb(item.LeadingEdgeLossDb));
+        }
+
+        text.AppendLine()
+            .Append("(Leading-edge loss is what the window throws away ahead of its ")
+            .Append("plateau against what it keeps, so ")
+            .Append($"{MaxGateLeadingEdgeLossDb:0} dB is already the ceiling.)")
+            .AppendLine()
+            .AppendLine();
+        text.Append(verdict.Pinned
+            ? "Open Gate… and press Auto: the window then follows this side's " +
+                $"earliest arrival, {verdict.AutoOffsetMs:0.00} ms."
+            : "The gate is on Auto and still lands there, which means a shoulder too " +
+                "short for these arrivals: widen the left fade in Gate…, or check what " +
+                "those channels' sources hold ahead of their front.");
+        text.Append(" Each side keeps its own gate placement, so the one fitted on ")
+            .Append(verdict.SideLabel)
+            .Append(" says nothing about ")
+            .Append(verdict.RightSide ? "L" : "R")
+            .Append(" — switch sides and check it too.");
+        return text.ToString();
+    }
+
+    // A window that holds none of the channel at all reads as infinite loss;
+    // printing "∞ dB" beats a number nobody can place.
+    private static string FormatLeadingEdgeLossDb(double lossDb) =>
+        double.IsFinite(lossDb) ? $"{lossDb:+0.0;-0.0} dB" : "∞ (the window holds none of it)";
+
+    // Refuses an automatic command while the side on screen is gated on a
+    // window that opens after its own channels arrive. Neither search reads the
+    // gate itself, but both are judged on what it produces — the curves, the
+    // sum-loss read-out and (for Auto delay) the outcome metric written into
+    // the alignment log — so a run started here can only be verified against a
+    // view of the reverberant tail.
+    private bool RefuseOnMisplacedGate(string command)
+    {
+        if (gatePlacement is not { CutsChannels: true } verdict)
+        {
+            return false;
+        }
+
+        ShowError(
+            $"{command} cannot run while the {verdict.SideLabel} side's gate is misplaced.",
+            FormatGateCutDetail(verdict));
+        return true;
+    }
 
     // The τ detrend follows the same pattern: unconfigured projects reference
     // the earliest arrival. One τ serves every curve, so their relative phase —
@@ -4201,6 +4450,15 @@ public partial class VirtualCrossoverPanel : UserControl
         if (participating.Count < 2)
         {
             System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
+        // The band read below is gate-independent (it windows each raw response
+        // on its own peak), but the proposal it writes is checked on the plot
+        // and in the sum-loss read-out, both of which the gate builds — so a
+        // misplaced window still has to be dealt with before the wizard runs.
+        if (RefuseOnMisplacedGate("Auto crossover"))
+        {
             return;
         }
 

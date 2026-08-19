@@ -3777,9 +3777,8 @@ public partial class VirtualCrossoverPanel : UserControl
     /// <summary>
     /// Whether the window in use cuts a channel: its front lies outside the
     /// plateau — the claim the warning makes, so it is a condition — and the
-    /// PLACEMENT is what costs it, which is the same relation
-    /// <see cref="AllowsPerCurvePhaseGate"/> makes, read the other way round:
-    /// over the ceiling, and measurably worse than the same gate on the
+    /// PLACEMENT is what costs it — over the ceiling, and worse by
+    /// <see cref="GateMisplacementMarginDb"/> than the same gate on the
     /// channel's own arrival.
     /// <para>
     /// That second half is what keeps a short gate from reading as a
@@ -3787,8 +3786,11 @@ public partial class VirtualCrossoverPanel : UserControl
     /// of a 55 Hz subwoofer wherever it is placed — the field session read
     /// -19.4 dB at the channel's own arrival and -19.4 dB at the shared one —
     /// and a gate the user cannot fix by moving is not something to stop them
-    /// with. The misplacements this catches are 44 to 70 dB apart on that
-    /// comparison.
+    /// with. <see cref="AllowsPerCurvePhaseGate"/> makes the same comparison
+    /// with no margin at all, which is right THERE: its penalty for reading a
+    /// hair's difference as significant is one curve falling back to the shared
+    /// window. Here the penalty is an amber line and two refused commands, so
+    /// the difference has to be one the user can act on.
     /// </para>
     /// </summary>
     internal static bool GateCutsChannel(
@@ -3797,7 +3799,19 @@ public partial class VirtualCrossoverPanel : UserControl
         double placementLossDb,
         double ownArrivalLossDb) =>
         startMs < gateOffsetMs &&
-        !AllowsPerCurvePhaseGate(placementLossDb, ownArrivalLossDb);
+        placementLossDb > MaxGateLeadingEdgeLossDb &&
+        placementLossDb > ownArrivalLossDb + GateMisplacementMarginDb;
+
+    /// <summary>
+    /// How much worse than the channel's own arrival a placement has to read
+    /// before it counts as misplaced: 3 dB, the window discarding twice the
+    /// energy that moving it would. Nothing separates a short gate from a
+    /// misplaced one by a hair — the field misplacements are 44 to 70 dB apart
+    /// on this comparison and the short-gate case is 0.0 dB apart, so the
+    /// margin only has to be clear of arithmetic noise between two nearby
+    /// offsets.
+    /// </summary>
+    private const double GateMisplacementMarginDb = 3.0;
 
     // The plot's one-line form of the verdict; the detail below carries the
     // per-channel figures and what to do about them.

@@ -76,7 +76,15 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
         // on something moving the gate cannot cure.
         Assert.False(VirtualCrossoverPanel.GateCutsChannel(
             startMs: 3.0, gateOffsetMs: 4.0, placementLossDb: -19.4, ownArrivalLossDb: -19.4));
-        // Measurably worse than its own arrival is a placement problem again.
+        // And two nearby offsets never read bit-identically on a real response,
+        // so the margin — not a bare comparison — is what keeps that case out:
+        // a hair's difference, and a difference no user can act on, both stay
+        // below it.
+        Assert.False(VirtualCrossoverPanel.GateCutsChannel(
+            startMs: 3.0, gateOffsetMs: 4.0, placementLossDb: -19.399, ownArrivalLossDb: -19.4));
+        Assert.False(VirtualCrossoverPanel.GateCutsChannel(
+            startMs: 3.0, gateOffsetMs: 4.0, placementLossDb: -17.0, ownArrivalLossDb: -19.4));
+        // Worse by the margin is a placement problem again.
         Assert.True(VirtualCrossoverPanel.GateCutsChannel(
             startMs: 3.0, gateOffsetMs: 4.0, placementLossDb: -12.7, ownArrivalLossDb: -19.4));
     }

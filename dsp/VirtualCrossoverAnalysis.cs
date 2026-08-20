@@ -376,13 +376,11 @@ public static class VirtualCrossoverAnalysis
     /// cannot see — typically the channel's other crossover junction.
     /// </summary>
     /// <param name="gateAnchorSample">
-    /// The sample the shared direct-sound gate anchors on. Null takes the
-    /// earliest peak of the responses passed in — right for a standalone
-    /// two-response question, WRONG for one junction of a multiway system,
-    /// where the pair's own peak places the window later than the read-out's
-    /// and can rank the junction's alignments differently (see the gate
-    /// constants' remarks). A caller aligning a system passes the whole
-    /// system's first arrival, the same anchor the metric read-out uses.
+    /// Null — the default, and what every engine site passes — windows each
+    /// response at its OWN band-limited front, the cuts meeting in one
+    /// absolute-time frame (see BuildAlignmentBins). A non-null sample forces
+    /// ONE shared window at that anchor instead: the read "through this
+    /// window", for displays and placement comparisons.
     /// </param>
     public static IReadOnlyList<AlignmentCandidate> FindAlignmentCandidates(
         Complex[] variableImpulseResponse,
@@ -396,12 +394,14 @@ public static class VirtualCrossoverAnalysis
         double priorSigmaMs = 0,
         bool? forcedPolarity = null,
         bool levelMatch = false,
-        int? gateAnchorSample = null) =>
+        int? gateAnchorSample = null,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null) =>
         FindAlignmentCandidates(
             variableImpulseResponse, fixedImpulseResponses, sampleRate,
             minFrequencyHz, maxFrequencyHz, minDelayMs, maxDelayMs,
             priorDelayMs, priorSigmaMs, forcedPolarity, levelMatch, out _,
-            gateAnchorSample);
+            gateAnchorSample, variableValidRange, fixedValidRanges);
 
     /// <summary>
     /// The overload that also reports EVERY refined local optimum (best
@@ -425,7 +425,9 @@ public static class VirtualCrossoverAnalysis
         bool? forcedPolarity,
         bool levelMatch,
         out IReadOnlyList<AlignmentCandidate> allOptima,
-        int? gateAnchorSample = null)
+        int? gateAnchorSample = null,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -436,7 +438,9 @@ public static class VirtualCrossoverAnalysis
             minDelayMs,
             maxDelayMs,
             levelMatch,
-            gateAnchorSample);
+            gateAnchorSample,
+            variableValidRange,
+            fixedValidRanges);
         if (bins.Count == 0 || !HoldsDelayEvidence(bins))
         {
             allOptima = Array.Empty<AlignmentCandidate>();
@@ -575,6 +579,141 @@ public static class VirtualCrossoverAnalysis
             impulseResponse, sampleRate, lowFrequencyHz, highFrequencyHz,
             validRange)
             .FirstArrivalDelayMilliseconds;
+
+    /// <summary>
+    /// Where the direct-sound gate of a junction measurement must open for ONE
+    /// response: its band-limited first arrival inside the junction's own band,
+    /// as a sample index — the placement the gate remarks in
+    /// <see cref="BuildAlignmentBins"/> ask for, computed rather than
+    /// approximated by the peak.
+    /// <para>
+    /// A PEAK is the wrong estimator for this. It answers "where is this
+    /// channel loudest", and a crossover moves that answer by its own group
+    /// delay — in a band the junction may not even be judged in. On the
+    /// archived Passat right side a midrange band-passed at 250-2000 Hz peaks
+    /// 7.11 ms in, set by the group delay of its 250 Hz high-pass, while its
+    /// energy in the 1-4 kHz junction it shares with the tweeter is already
+    /// there at 4.28 ms; the subwoofer's peak sits 5.55 ms behind its own
+    /// 33-130 Hz arrival. A window anchored on the peak therefore opens after
+    /// the front it is supposed to hold, and its fade-in attenuates one
+    /// member's rise more than the other's — the very artifact the anchor
+    /// exists to prevent.
+    /// </para>
+    /// <para>
+    /// Two guards keep this honest where the estimate cannot be trusted. A
+    /// band that carries no measurable arrival (invalid, or below
+    /// <see cref="AutoAlignmentEngine.MinimumArrivalSnrDb"/>) falls back to the
+    /// peak, and the result is never LATER than the peak: the envelope search
+    /// can latch onto a room mode at a low junction, and a latched read is a
+    /// late one, so clamping to the peak means this can only ever move a
+    /// window EARLIER than the peak anchor it replaces — it cannot introduce a
+    /// cut that placement did not already have.
+    /// </para>
+    /// </summary>
+    public static int FindGateAnchor(
+        Complex[] impulseResponse,
+        int peakIndex,
+        int sampleRate,
+        double bandLowHz,
+        double bandHighHz,
+        ValidSampleRange validRange = default)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        if (impulseResponse.Length == 0)
+        {
+            throw new ArgumentException(
+                "The impulse response is empty.",
+                nameof(impulseResponse));
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+
+        int peak = Math.Clamp(peakIndex, 0, impulseResponse.Length - 1);
+        TimeAlignmentAnalysisResult arrival = AnalyzeBandLimitedArrival(
+            impulseResponse, sampleRate, bandLowHz, bandHighHz, validRange);
+        if (!arrival.IsValid ||
+            arrival.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        {
+            return peak;
+        }
+
+        // Floored, not rounded: half a sample earlier costs nothing (the
+        // fade-in covers the pre-arrival span) while half a sample later would
+        // start the plateau inside the front.
+        int front = (int)Math.Floor(
+            arrival.FirstArrivalDelayMilliseconds / 1_000.0 * sampleRate);
+        return Math.Clamp(Math.Min(front, peak), 0, impulseResponse.Length - 1);
+    }
+
+    /// <summary>
+    /// One channel's DIRECT sound, cut for a whitened junction comparison:
+    /// everything outside [front − T/2, front + 2T + T/2] is zeroed (T = one
+    /// period of the junction's crossover), with half-period raised-cosine
+    /// fades at both edges, the front being the channel's own band-limited
+    /// arrival (<see cref="FindGateAnchor"/>). Two crossover periods is the
+    /// span that reads the drivers: measured on the archived mid/tweeter
+    /// junctions, one period behind the front the whitened correlation of the
+    /// pair peaks at the drivers' timing (r ≈ 0.85 on the reference car),
+    /// from two-and-some periods on the cabin's early reflections take the
+    /// extremum over and carry it whole periods away (−2.5 ms on the same
+    /// junction, polarity alternating between adjacent lobes). The
+    /// correlation view's "PHAT direct" curve and the alignment engine's
+    /// direct-coherence witness both read pairs of these cuts — one
+    /// implementation, so the curve the user checks IS the figure the engine
+    /// weighed.
+    /// </summary>
+    public static Complex[] CutDirectSound(
+        Complex[] impulseResponse,
+        int sampleRate,
+        double bandLowHz,
+        double bandHighHz,
+        double crossoverHz,
+        ValidSampleRange validRange = default)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        if (impulseResponse.Length == 0)
+        {
+            throw new ArgumentException(
+                "The impulse response is empty.", nameof(impulseResponse));
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+        if (!(crossoverHz > 0))
+        {
+            throw new ArgumentException("The crossover is invalid.");
+        }
+
+        int front = FindGateAnchor(
+            impulseResponse,
+            FindPeakIndex(impulseResponse),
+            sampleRate,
+            bandLowHz,
+            bandHighHz,
+            validRange);
+        double periodSamples = sampleRate / crossoverHz;
+        int fade = Math.Max(8, (int)Math.Round(0.5 * periodSamples));
+        int plateau = (int)Math.Round(2.0 * periodSamples);
+        int start = Math.Max(0, front - fade);
+        int end = Math.Min(impulseResponse.Length, front + plateau + fade);
+        var cut = new Complex[impulseResponse.Length];
+        for (int i = start; i < end; i++)
+        {
+            double weight =
+                i < front
+                    ? 0.5 - 0.5 * Math.Cos(Math.PI * (i - start) / (double)fade)
+                    : i >= front + plateau
+                        ? 0.5 + 0.5 * Math.Cos(
+                            Math.PI * (i - front - plateau) / (double)fade)
+                        : 1.0;
+            cut[i] = impulseResponse[i] * weight;
+        }
+
+        return cut;
+    }
 
     /// <summary>
     /// The minimum band width (as a high/low frequency ratio: a third of an
@@ -1135,19 +1274,38 @@ public static class VirtualCrossoverAnalysis
     /// <summary>
     /// The junction summation loss as a function of an EXTRA delay applied to
     /// the variable channel — the prior-free acoustic surface of one junction,
-    /// as a drawable curve. Each probe is HONEST: the variable response is
-    /// delayed by rotating its FULL spectrum (an exact fractional delay of the
-    /// whole record) and the direct-sound gates are re-anchored on the delayed
-    /// response by <see cref="MeasureSumLoss"/>, unlike the
-    /// <see cref="SumLossEvaluator"/> rotation probe, whose gates stay pinned
-    /// where the responses originally sat and which misgrades multi-millisecond
-    /// deltas by whole dB. Both responses go into a guard-padded frame before
-    /// the rotation — a shared silent prefix and suffix covering the sweep
-    /// window — so no probed delay wraps record content circularly. Without the
-    /// prefix a negative delay on an early-peaked record carries the direct
-    /// sound to the END of the array, the shared gate (anchored at the fixed
-    /// channel) loses the variable channel entirely, and the "loss" of a
-    /// one-channel sum reads as a fake perfect 0 dB.
+    /// as a drawable curve. Each channel is windowed ONCE — by default at its
+    /// OWN band-limited front, exactly as the Auto delay search windows it
+    /// (see BuildAlignmentBins; a non-null anchor forces one shared window
+    /// instead) — and every probe rotates the variable channel's windowed cut
+    /// by e^(−jωΔ): the same bins and the same rotation the search's
+    /// <see cref="SumLossEvaluator"/> reads, so with the search's own
+    /// settings (null anchor, levelMatch on) the drawn surface IS the
+    /// search's surface, point for point at Δ = 0.
+    /// <para>
+    /// This replaced re-gating every probe through a STATIONARY window (the
+    /// variable response physically delayed, then windowed at the fixed
+    /// anchor). A stationary window only holds a moved channel for the few ms
+    /// between the channel's front and the window's opening; a panel sweep
+    /// spans ±1.5 crossover periods (±27 ms at a 55 Hz junction), and past
+    /// that margin the moved channel slid into the fade, the "sum"
+    /// degenerated toward one channel, and BOTH polarities converged to a
+    /// fake near-0 dB plateau — on the archived cabins the in-band level skew
+    /// grew from 3 to 19 dB across the sweep while the delay-evidence guard,
+    /// which reads the still-windowed content, saw nothing wrong. Rotation is
+    /// the model's statement that the window TRAVELS with the channel it
+    /// holds: the probed content is the same two cuts at every delay, the
+    /// level balance is delay-independent by construction, and the plateau
+    /// cannot form.
+    /// </para>
+    /// <para>
+    /// (An earlier revision deliberately kept ONE shared window here, because
+    /// per-channel fronts under the then-fixed 85 ms gate cut into a
+    /// crossover's rise — measured −4.27 dB against the shared window's −2.35
+    /// on the 55 Hz reproduction. The band-sized windows retired that
+    /// objection along with the shared default; the figures live on in the
+    /// gate remarks above.)
+    /// </para>
     /// </summary>
     public static List<JunctionSweepPoint> JunctionLossSweep(
         Complex[] variableImpulseResponse,
@@ -1159,7 +1317,10 @@ public static class VirtualCrossoverAnalysis
         double endDelayMs,
         double stepMs,
         bool invertVariable,
-        int? gateAnchorSample = null)
+        int? gateAnchorSample = null,
+        bool levelMatch = false,
+        ValidSampleRange variableValidRange = default,
+        ValidSampleRange fixedValidRange = default)
     {
         ArgumentNullException.ThrowIfNull(variableImpulseResponse);
         ArgumentNullException.ThrowIfNull(fixedImpulseResponse);
@@ -1176,59 +1337,44 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentException("The sweep window is invalid.");
         }
 
-        // The guard covers the widest probed shift in either direction (plus a
-        // few samples for the fractional-delay sinc tails). The SAME offset is
-        // applied to both channels, so their relative timing — the only thing
-        // the gate-re-anchoring measurement reads — is untouched.
-        int guardSamples = 8 + (int)Math.Ceiling(
-            Math.Max(Math.Abs(startDelayMs), Math.Abs(endDelayMs))
-            / 1000.0 * sampleRate);
-        int contentLength = Math.Max(
-            variableImpulseResponse.Length, fixedImpulseResponse.Length);
-        int fftLength = DspMath.NextPowerOfTwo(contentLength + 2 * guardSamples);
-        var variableFrame = new Complex[fftLength];
-        variableImpulseResponse.CopyTo(variableFrame, guardSamples);
-        var fixedFrame = new Complex[fftLength];
-        fixedImpulseResponse.CopyTo(fixedFrame, guardSamples);
-        Complex[] spectrum = ForwardSpectrum(variableFrame, fftLength);
+        // The anchor passes through UNTOUCHED: null must reach
+        // BuildAlignmentBins as null, where it means each response windowed
+        // at its own front — the same read the Auto search makes. Deriving a
+        // shared pair anchor here (as this once did) silently redirected the
+        // default onto a different window than the search's, and the drawn
+        // surface stopped being the searched one exactly where it matters —
+        // short high-frequency windows over separated arrivals.
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            new List<Complex[]> { fixedImpulseResponse },
+            sampleRate,
+            bandLowHz,
+            bandHighHz,
+            startDelayMs,
+            endDelayMs,
+            levelMatch,
+            gateAnchorSample,
+            variableValidRange,
+            fixedValidRanges: new[] { fixedValidRange });
         var points = new List<JunctionSweepPoint>();
-        var delayed = new Complex[fftLength];
+        if (bins.Count == 0)
+        {
+            return points;
+        }
+
+        double weightSum = 0;
+        foreach (AlignmentBin bin in bins)
+        {
+            weightSum += bin.LogWeight;
+        }
+
         for (double delayMs = startDelayMs;
             delayMs <= endDelayMs + 1e-9;
             delayMs += stepMs)
         {
-            double sign = invertVariable ? -1.0 : 1.0;
-            for (int k = 0; k < fftLength; k++)
-            {
-                // The rotation frequency follows the conjugate mirror above
-                // Nyquist, so the delayed sequence stays real.
-                double frequency = (double)k / fftLength * sampleRate;
-                if (frequency > sampleRate / 2.0)
-                {
-                    frequency -= sampleRate;
-                }
-
-                delayed[k] = sign * spectrum[k] * Complex.Exp(
-                    new Complex(0, -Math.Tau * frequency * delayMs / 1000.0));
-            }
-
-            Fourier.Inverse(delayed, FourierOptions.Matlab);
-            (double LossDb, double DipDb)? loss = MeasureSumLoss(
-                delayed,
-                new List<Complex[]> { fixedFrame },
-                sampleRate,
-                bandLowHz,
-                bandHighHz,
-                // The frame shifted both responses by the guard, so a caller's
-                // anchor (stated in the responses' own coordinates) shifts with
-                // them; without the guard offset the window would sit that far
-                // early and fade over content it must not touch.
-                gateAnchorSample: gateAnchorSample + guardSamples);
-            if (loss is { } value)
-            {
-                points.Add(new JunctionSweepPoint(
-                    delayMs, value.LossDb, value.DipDb));
-            }
+            (double lossDb, double dipDb) = DetailedLoss(
+                bins, weightSum, delayMs, invertVariable);
+            points.Add(new JunctionSweepPoint(delayMs, lossDb, dipDb));
         }
 
         return points;
@@ -1484,27 +1630,63 @@ public static class VirtualCrossoverAnalysis
 
     // The direct-sound gate applied to every response before the alignment
     // spectra are taken: a cosine-faded Tukey window anchored one fade-length
-    // before the earliest channel peak. Reading the full IR instead would fold
-    // the entire room decay into every bin — hundreds of milliseconds of
-    // reverberation whose comb structure the alignment cannot change — so the
-    // search would optimize (and be misled by) reflections while the panel
-    // displays the gated direct sound. One gate shared by all channels, like
-    // the metric's shared anchor, so the loss keeps its 0 dB ceiling.
+    // before the earliest FRONT among the responses the caller named (see
+    // FindGateAnchor). Reading the full IR instead would fold the entire room
+    // decay into every bin — hundreds of milliseconds of reverberation whose
+    // comb structure the alignment cannot change — so the search would
+    // optimize (and be misled by) reflections while the panel displays the
+    // gated direct sound. One gate shared by both sides of a measurement, so
+    // the loss keeps its 0 dB ceiling.
     //
-    // WHICH channels set that anchor is a decision the caller owns
-    // (gateAnchorSample). Measuring one junction of a multiway system with an
-    // anchor taken from the PAIR alone places the window tens of milliseconds
-    // later than a window anchored on the whole system's first arrival — the
-    // placement the metric read-out uses (VirtualCrossoverMetrics.BuildCurves)
-    // — and at a sub/woofer junction the two then rank the same alignments
-    // differently:
-    // on a field cabin (LP/HP 55 Hz, 36 dB/oct) the pair-anchored window read
-    // the tuned alignment at -0.44 dB and preferred one 2 ms later, while the
-    // system-anchored window read it at -0.02 dB, the sharpest optimum of the
-    // sweep, agreeing with the panel and with the whitened correlation
-    // (r 0.99). A window whose fade-in cuts into the slow channel's own rise
-    // shifts that channel's apparent phase, and the junction search must not
-    // decide a lobe on an artifact of where the window happened to start.
+    // WHICH responses set that anchor is a decision the caller owns
+    // (gateAnchorSample), and the callers here name the JUNCTION's own members
+    // — not the whole system. What makes that safe is the anchor being a
+    // front. Anchoring a pair on its earlier PEAK is what once ranked
+    // alignments wrongly (a field cabin, LP/HP 55 Hz 36 dB/oct: the
+    // pair-and-peak window read the tuned alignment at -0.44 dB and preferred
+    // one 2 ms later, where a window anchored on the whole system's earliest
+    // peak read it at -0.02 dB, the sharpest optimum of the sweep, agreeing
+    // with the panel and with the whitened correlation, r 0.99) — because a
+    // low channel's peak trails its own rise by its crossover's group delay,
+    // so the window's fade-in cut into that rise and shifted the channel's
+    // apparent phase. Reaching outside the pair for an earlier peak fixed that
+    // by accident: it bought margin ahead of the rise at the price of a window
+    // that moved whenever an unrelated channel was enabled, muted or re-timed
+    // (on the archived Passat right side, muting the mid and tweeter moved the
+    // 65 Hz junction's window 8.96 ms and its own optimum by 14 ms). The
+    // junction search must not decide a lobe on an artifact of where the
+    // window happened to start — least of all one set by a channel that is not
+    // in the junction.
+    //
+    // The pair's own fronts recover PART of that margin, not all of it. On the
+    // 55 Hz reproduction in JunctionCorrelationCurveTests all four placements
+    // pick the same lobe (-3.5 ms, inverted), but the flatness each can read
+    // there differs: 0.00 dB through a window opened at the drivers' shared
+    // source, -0.21 dB through the pair's filtered fronts, -0.23 dB through
+    // the pair's peaks. What is left is the crossover's own rise, which starts
+    // before the filtered front any detector can mark — that 36 dB/oct low-pass
+    // reads its filtered front 12.8 ms after the driver's, its woofer partner
+    // 8.6 ms after.
+    //
+    // Reading the anchor off the CHAIN-FREE response closes that gap exactly
+    // (the fourth placement in the same test reads 0.00 dB, and
+    // PredictedFrontArrivalMs already derives the figure) — and it was
+    // MEASURED AND DECLINED, so it is not to be re-proposed on the strength of
+    // the reasoning above. Judged by the panel's own metric over the archived
+    // cabins (the session battery in tests/Resonalyze.App.Tests, every session
+    // read at its own Auto gate placement), a chain-free anchor moves only the
+    // LOWEST junction of a cabin, and there it moves the proposal AWAY from the
+    // owner's own tuning on the reference car — both of its saved sessions:
+    // v5's sub/bass junction reads -0.20 dB against the saved tuning and
+    // v5_exp's -0.13, where the filtered front reads +0.03 and +0.10, and the
+    // delay it proposes sits 0.74 ms off the manual one where the filtered
+    // front sits 0.11 ms off. Only v3 prefers it (+0.38 dB), and there
+    // it lands 1.56 ms from that session's own tuning — the LF metric is a
+    // 1/6-octave statistic narrower than the window can resolve (see
+    // AlignmentFftInterpolationFactor), so at the bottom junction it is the
+    // weaker witness of the two. What honestly needs the chain-free front is a
+    // reported FLATNESS trusted to a tenth of a dB; what must not follow it is
+    // the search.
     //
     // The window is sized in TIME, not samples. A fixed 4096 samples is ~85 ms
     // at 48 kHz but only 43 ms at 96 kHz and 21 ms at 192 kHz — the higher the
@@ -1515,11 +1697,104 @@ public static class VirtualCrossoverAnalysis
     // the 4096-sample / 256-fade window EXACTLY at 48 kHz. The analyzed span is
     // then zero-padded to a per-rate power-of-two FFT length — window and FFT
     // length kept separate so the physical window cannot jump across a
-    // power-of-two boundary (the same split as JunctionPhaseAlignment's).
+    // power-of-two boundary (the same split as JunctionPhaseAlignment's), and
+    // padded well past the window so the spectrum is SAMPLED densely enough to
+    // be read (see AlignmentFftInterpolationFactor).
     private const int AlignmentGateReferenceRate = 48_000;
     private const int AlignmentGateReferenceSamples = 4096;
     private const int AlignmentGateReferenceFadeSamples = 256;
 
+    /// <summary>
+    /// How many times the gate the analysed span is zero-padded to before the
+    /// FFT. This buys no RESOLUTION — that is the window's 1/T and nothing but
+    /// a longer window changes it — it buys SAMPLING: enough points to
+    /// represent the continuous spectrum the window actually measures.
+    /// <para>
+    /// Padded only to the gate (the length this used to be), a low junction is
+    /// barely sampled at all. At 96 kHz the gate is 8192 samples, so the bins
+    /// sit 11.7 Hz apart and a 33-130 Hz junction band holds NINE of them —
+    /// while the dip statistic is the minimum of a 1/6-octave moving average,
+    /// 7.7 Hz wide at 65 Hz. The "dip" was therefore the worst single bin, and
+    /// a cancellation notch falling between two bins was missed outright. Four
+    /// times the gate puts 34 bins in that band; the same grid already gave a
+    /// 750-3000 Hz junction ~190, which is why nothing above the bass ever
+    /// showed it.
+    /// </para>
+    /// <para>
+    /// Measured on the archived cabins, this moves LF verdicts by more than
+    /// any anchor rule does: on v3's 80 Hz junction the sweep's optimum went
+    /// from 9.6 ms away from the whitened-correlation extremum to 0.1 ms, and
+    /// on v5_exp's 65 Hz junction from 12.6 ms to 0.3 — the anchor untouched.
+    /// </para>
+    /// <para>
+    /// Sampling alone did NOT make the LF dip trustworthy: 1/6 octave at
+    /// 65 Hz is 7.7 Hz, narrower than the 11.7 Hz an 85 ms window can
+    /// resolve, so down there the dip still read the window's own kernel.
+    /// That took the band-sized window length below
+    /// (AlignmentGateBandLowEdgeCycles); the padding factor rides on top of
+    /// whatever length the band chooses, keeping ~4 spectrum samples per
+    /// dip width at the band's low edge.
+    /// </para>
+    /// </summary>
+    private const int AlignmentFftInterpolationFactor = 4;
+
+    /// <summary>
+    /// How many periods of a junction band's LOW edge its direct-sound window
+    /// spans: the reciprocal of the dip statistic's own relative width. The
+    /// dip is the minimum of a 1/6-octave moving average, which at frequency f
+    /// is f·(2^(1/12) − 2^(−1/12)) ≈ 0.1155·f wide; a window of length
+    /// 1/(0.1155·f) is the shortest whose ~1/T kernel fits inside that
+    /// average at the band's low edge — its binding frequency — so the dip
+    /// reads the SPECTRUM there instead of the window's own kernel. One
+    /// scale-free rule sizes every junction: ~8.66 low-edge periods, which is
+    /// 262 ms for a 33–130 Hz sub band (the old fixed 85 ms was too short —
+    /// the very kernel-reading this replaces) and 11.5 ms for a 750–3000 Hz
+    /// mid/tweeter band, where 85 ms was mostly a car cabin's late
+    /// reflections wearing a direct-sound gate's name.
+    /// </summary>
+    private static readonly double AlignmentGateBandLowEdgeCycles =
+        1.0 / (Math.Pow(2, 1.0 / 12) - Math.Pow(2, -1.0 / 12));
+
+    /// <summary>
+    /// The band-sized window's bounds. The floor guards a degenerate
+    /// high-frequency band (8.66 periods of 20 kHz is under half a
+    /// millisecond — too short to hold a real driver's direct sound and its
+    /// own fade structure); the ceiling bounds the FFT work where a band
+    /// reaches toward 20 Hz, at the resolution cost the size rule would
+    /// otherwise pay there. The ceiling is public because the Auto delay
+    /// search's shared crop must budget, in time at any sample rate, for the
+    /// longest window this rule can ask for (see AlignmentReprocessor's crop
+    /// sizing in the app).
+    /// </summary>
+    private const double MinimumAlignmentGateMs = 4.0;
+    public const double MaximumAlignmentGateMs = 350.0;
+
+    // The gate's fade share: the same 1/16 of the window the fixed
+    // 4096/256-sample reference gate carried.
+    private const int AlignmentGateFadeFraction = 16;
+
+    private static int AlignmentGateSamples(int sampleRate, double bandLowHz)
+    {
+        double windowMs = Math.Clamp(
+            AlignmentGateBandLowEdgeCycles / bandLowHz * 1_000.0,
+            MinimumAlignmentGateMs,
+            MaximumAlignmentGateMs);
+        return (int)Math.Round(windowMs / 1_000.0 * sampleRate);
+    }
+
+    private static int AlignmentGateFadeSamples(int sampleRate, double bandLowHz) =>
+        AlignmentGateSamples(sampleRate, bandLowHz) / AlignmentGateFadeFraction;
+
+    private static int AlignmentFftLength(int sampleRate, double bandLowHz) =>
+        DspMath.NextPowerOfTwo(
+            AlignmentGateSamples(sampleRate, bandLowHz)
+            * AlignmentFftInterpolationFactor);
+
+    // The FIXED reference-length gate, kept for the band-level read
+    // (MeasureBandLevelDb): a level is an energy average, indifferent to the
+    // kernel-width story that sizes the junction windows above, and a channel
+    // band's low edge runs to 20 Hz, where the size rule pays its ceiling for
+    // resolution a level read does not need.
     private static int AlignmentGateSamples(int sampleRate) => (int)Math.Round(
         (double)AlignmentGateReferenceSamples * sampleRate / AlignmentGateReferenceRate);
 
@@ -1527,7 +1802,8 @@ public static class VirtualCrossoverAnalysis
         (double)AlignmentGateReferenceFadeSamples * sampleRate / AlignmentGateReferenceRate);
 
     private static int AlignmentFftLength(int sampleRate) =>
-        DspMath.NextPowerOfTwo(AlignmentGateSamples(sampleRate));
+        DspMath.NextPowerOfTwo(
+            AlignmentGateSamples(sampleRate) * AlignmentFftInterpolationFactor);
 
     /// <summary>
     /// The widest in-band level correction the search-side level match may
@@ -1557,7 +1833,9 @@ public static class VirtualCrossoverAnalysis
         IReadOnlyList<Complex[]> fixedImpulseResponses,
         int sampleRate,
         double minFrequencyHz,
-        double maxFrequencyHz)
+        double maxFrequencyHz,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -1566,7 +1844,11 @@ public static class VirtualCrossoverAnalysis
             minFrequencyHz,
             maxFrequencyHz,
             minDelayMs: -1,
-            maxDelayMs: 1);
+            maxDelayMs: 1,
+            levelMatch: false,
+            gateAnchorSample: null,
+            variableValidRange,
+            fixedValidRanges);
         double variableLevel = 0;
         double fixedLevel = 0;
         foreach (AlignmentBin bin in bins)
@@ -1591,7 +1873,9 @@ public static class VirtualCrossoverAnalysis
         double minDelayMs,
         double maxDelayMs,
         bool levelMatch = false,
-        int? gateAnchorSample = null)
+        int? gateAnchorSample = null,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
     {
         ArgumentNullException.ThrowIfNull(variableImpulseResponse);
         ArgumentNullException.ThrowIfNull(fixedImpulseResponses);
@@ -1609,44 +1893,125 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentException("The search window is invalid.");
         }
 
-        int anchor;
-        if (gateAnchorSample is { } shared)
+        // The window is sized by the junction's own band (see
+        // AlignmentGateBandLowEdgeCycles): long enough at its LOW edge that
+        // the dip statistic reads the spectrum rather than the window's
+        // kernel, and no longer — above the bass that sheds the late cabin
+        // reflections the fixed 85 ms reference length used to admit. The
+        // earliest content a window holds must land on its plateau, never
+        // inside the fade-in: a fade would attenuate the channels' arrivals
+        // unequally and bias the loss; when a front sits closer to the start
+        // than a full fade, the fade shrinks to fit.
+        int gateSamples = AlignmentGateSamples(sampleRate, minFrequencyHz);
+        int fadeSamples = AlignmentGateFadeSamples(sampleRate, minFrequencyHz);
+        int length = AlignmentFftLength(sampleRate, minFrequencyHz);
+
+        // One windowed cut per response, restored to ABSOLUTE time by the
+        // linear phase of its window's start, so cuts taken at different
+        // positions still interfere at the timing the records actually carry.
+        Complex[] CutSpectrum(Complex[] impulseResponse, int anchor)
         {
-            anchor = Math.Clamp(shared, 0, variableImpulseResponse.Length - 1);
+            int clamped = Math.Clamp(anchor, 0, impulseResponse.Length - 1);
+            int leftFadeSamples = Math.Min(fadeSamples, clamped);
+            int gateStart = clamped - leftFadeSamples;
+            double[] gate = Windowing.TukeyWindow(
+                gateSamples,
+                2.0 * leftFadeSamples / gateSamples,
+                2.0 * fadeSamples / gateSamples);
+            Complex[] spectrum = ForwardSpectrum(
+                GateDirectSound(impulseResponse, gateStart, gate), length);
+            if (gateStart > 0)
+            {
+                double startSeconds = (double)gateStart / sampleRate;
+                for (int bin = 1; bin <= length / 2; bin++)
+                {
+                    double frequencyHz = bin * (double)sampleRate / length;
+                    Complex rotation = Complex.Exp(
+                        new Complex(0, -Math.Tau * frequencyHz * startSeconds));
+                    spectrum[bin] *= rotation;
+                    if (bin < length / 2)
+                    {
+                        spectrum[length - bin] *= Complex.Conjugate(rotation);
+                    }
+                }
+            }
+
+            return spectrum;
+        }
+
+        Complex[] variableSpectrum;
+        var fixedSpectrum = new Complex[length];
+        if (gateAnchorSample is { } sharedAnchor)
+        {
+            // One SHARED window at the caller's anchor for every response —
+            // the read "through this window": what a display drawing several
+            // channels through one placement measures, and what the placement
+            // tests compare. The cuts are co-located, so no absolute-time
+            // restoration is needed (a common linear phase cancels in every
+            // magnitude and interference term).
+            int anchor = Math.Clamp(
+                sharedAnchor, 0, variableImpulseResponse.Length - 1);
+            int leftFadeSamples = Math.Min(fadeSamples, anchor);
+            int gateStart = anchor - leftFadeSamples;
+            double[] gate = Windowing.TukeyWindow(
+                gateSamples,
+                2.0 * leftFadeSamples / gateSamples,
+                2.0 * fadeSamples / gateSamples);
+            variableSpectrum = ForwardSpectrum(
+                GateDirectSound(variableImpulseResponse, gateStart, gate), length);
+            foreach (Complex[] ir in fixedImpulseResponses)
+            {
+                Complex[] spectrum = ForwardSpectrum(
+                    GateDirectSound(ir, gateStart, gate), length);
+                for (int i = 0; i < length; i++)
+                {
+                    fixedSpectrum[i] += spectrum[i];
+                }
+            }
         }
         else
         {
-            anchor = FindPeakIndex(variableImpulseResponse);
-            foreach (Complex[] ir in fixedImpulseResponses)
+            // The default: every response is windowed at its OWN band-limited
+            // front (never later than its peak — FindGateAnchor's guards), and
+            // the cuts meet in one absolute-time frame. This is the model's
+            // junction measurement — the window belongs to the channel it
+            // holds and travels with it — and it is what lets a junction be
+            // measured at all once the members' assigned delays spread them
+            // further apart than one band-sized window spans: mid-cascade a
+            // settled neighbor can sit tens of ms behind a not-yet-delayed
+            // channel, which the old shared fixed-length window only survived
+            // by being 85 ms long.
+            // The front detector takes each response's valid range where the
+            // caller has one (the engine's snapshots always do): a chain's
+            // delay pads the record with a silent prefix that inflates the
+            // arrival SNR estimate, and an anchor certified by that inflation
+            // can open the window on the wrong event — the failure mode
+            // ValidSampleRange exists for.
+            variableSpectrum = CutSpectrum(
+                variableImpulseResponse,
+                FindGateAnchor(
+                    variableImpulseResponse,
+                    FindPeakIndex(variableImpulseResponse),
+                    sampleRate,
+                    minFrequencyHz,
+                    maxFrequencyHz,
+                    variableValidRange));
+            for (int index = 0; index < fixedImpulseResponses.Count; index++)
             {
-                anchor = Math.Min(anchor, FindPeakIndex(ir));
-            }
-        }
-
-        // The earliest arrival must land on the window's plateau, never inside
-        // the fade-in: a fade would attenuate the channels' arrivals unequally
-        // (they sit at different fade depths) and bias the loss. When the peak
-        // sits closer to the start than a full fade, the fade shrinks to fit.
-        int gateSamples = AlignmentGateSamples(sampleRate);
-        int fadeSamples = AlignmentGateFadeSamples(sampleRate);
-        int leftFadeSamples = Math.Min(fadeSamples, anchor);
-        int gateStart = anchor - leftFadeSamples;
-        double[] gate = Windowing.TukeyWindow(
-            gateSamples,
-            2.0 * leftFadeSamples / gateSamples,
-            2.0 * fadeSamples / gateSamples);
-
-        int length = AlignmentFftLength(sampleRate);
-        Complex[] variableSpectrum = ForwardSpectrum(
-            GateDirectSound(variableImpulseResponse, gateStart, gate), length);
-        var fixedSpectrum = new Complex[length];
-        foreach (Complex[] ir in fixedImpulseResponses)
-        {
-            Complex[] spectrum = ForwardSpectrum(
-                GateDirectSound(ir, gateStart, gate), length);
-            for (int i = 0; i < length; i++)
-            {
-                fixedSpectrum[i] += spectrum[i];
+                Complex[] ir = fixedImpulseResponses[index];
+                Complex[] spectrum = CutSpectrum(
+                    ir,
+                    FindGateAnchor(
+                        ir, FindPeakIndex(ir), sampleRate,
+                        minFrequencyHz, maxFrequencyHz,
+                        fixedValidRanges != null &&
+                        index < fixedValidRanges.Count
+                            ? fixedValidRanges[index]
+                            : default));
+                for (int i = 0; i < length; i++)
+                {
+                    fixedSpectrum[i] += spectrum[i];
+                }
             }
         }
 
@@ -1753,7 +2118,9 @@ public static class VirtualCrossoverAnalysis
         IReadOnlyList<Complex[]> fixedImpulseResponses,
         int sampleRate,
         double minFrequencyHz,
-        double maxFrequencyHz)
+        double maxFrequencyHz,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
     {
         // The delay bounds only shape BuildAlignmentBins' argument validation
         // (the bins themselves are delay-free); any valid span works, as in
@@ -1765,7 +2132,11 @@ public static class VirtualCrossoverAnalysis
             minFrequencyHz,
             maxFrequencyHz,
             minDelayMs: -1,
-            maxDelayMs: 1);
+            maxDelayMs: 1,
+            levelMatch: false,
+            gateAnchorSample: null,
+            variableValidRange,
+            fixedValidRanges);
         if (bins.Count < 2)
         {
             return 0.0;
@@ -2205,7 +2576,21 @@ public static class VirtualCrossoverAnalysis
     public static Complex[][] CropSharedDirectSoundWindow(
         IReadOnlyList<Complex[]> impulseResponses,
         int cropLength,
-        int prePeakSamples)
+        int prePeakSamples) =>
+        CropSharedDirectSoundWindow(
+            impulseResponses, cropLength, prePeakSamples, out _);
+
+    /// <summary>
+    /// The overload that also reports the shared offset the crop removed, so
+    /// a caller holding per-response metadata in the ORIGINAL frame — a
+    /// <see cref="ValidSampleRange"/> above all — can shift it into the
+    /// cropped one instead of silently dropping it.
+    /// </summary>
+    public static Complex[][] CropSharedDirectSoundWindow(
+        IReadOnlyList<Complex[]> impulseResponses,
+        int cropLength,
+        int prePeakSamples,
+        out int startSample)
     {
         ArgumentNullException.ThrowIfNull(impulseResponses);
         if (cropLength < 1)
@@ -2215,6 +2600,7 @@ public static class VirtualCrossoverAnalysis
 
         int earliestPeak = impulseResponses.Min(FindPeakIndex);
         int start = Math.Max(0, earliestPeak - Math.Max(0, prePeakSamples));
+        startSample = start;
         var cropped = new Complex[impulseResponses.Count][];
         for (int channel = 0; channel < impulseResponses.Count; channel++)
         {
@@ -2243,7 +2629,9 @@ public static class VirtualCrossoverAnalysis
         double maxFrequencyHz,
         bool levelMatch = false,
         bool requireDelayEvidence = false,
-        int? gateAnchorSample = null)
+        int? gateAnchorSample = null,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
     {
         // The delay window only gates parameter validation here — the
         // measurement itself evaluates the responses exactly as given.
@@ -2256,7 +2644,9 @@ public static class VirtualCrossoverAnalysis
             minDelayMs: -1,
             maxDelayMs: 1,
             levelMatch,
-            gateAnchorSample);
+            gateAnchorSample,
+            variableValidRange,
+            fixedValidRanges);
         // A caller COMPARING alignments across this band (rather than
         // reporting what a sum happens to measure) must not read a verdict
         // off a band where the delay is not observable: with one side only a
@@ -2363,8 +2753,11 @@ public static class VirtualCrossoverAnalysis
     /// re-running the channels' full DSP chains per candidate delta.
     /// <c>Evaluate(0)</c> reproduces <see cref="MeasureSumLoss"/> on the same
     /// responses. The direct-sound gate stays anchored where the responses
-    /// currently sit, which is exact for the probes' small deltas (a fraction
-    /// of the gate length).
+    /// currently sit and the rotation carries the variable channel's windowed
+    /// cut — window and all — to the probed time: the model's reading of
+    /// "delay this driver", the same one <see cref="JunctionLossSweep"/> draws
+    /// (see the plateau remarks there for what re-gating a moved channel
+    /// through a stationary window did instead).
     /// </summary>
     public sealed class SumLossEvaluator
     {
@@ -2390,7 +2783,9 @@ public static class VirtualCrossoverAnalysis
             double maxFrequencyHz,
             bool levelMatch = false,
             bool requireDelayEvidence = false,
-            int? gateAnchorSample = null)
+            int? gateAnchorSample = null,
+            ValidSampleRange variableValidRange = default,
+            IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
         {
             List<AlignmentBin> bins = BuildAlignmentBins(
                 variableImpulseResponse,
@@ -2401,7 +2796,9 @@ public static class VirtualCrossoverAnalysis
                 minDelayMs: -1,
                 maxDelayMs: 1,
                 levelMatch,
-                gateAnchorSample);
+                gateAnchorSample,
+                variableValidRange,
+                fixedValidRanges);
             if (bins.Count == 0 ||
                 (requireDelayEvidence && !HoldsDelayEvidence(bins)))
             {
@@ -2419,10 +2816,13 @@ public static class VirtualCrossoverAnalysis
 
         /// <summary>
         /// The in-band average loss and 1/6-octave dip with the variable
-        /// channel delayed by <paramref name="extraDelayMs"/> more.
+        /// channel delayed by <paramref name="extraDelayMs"/> more (and
+        /// inverted, when <paramref name="invertVariable"/> asks — the
+        /// polarity half of the same probe, for searches that weigh both).
         /// </summary>
-        public (double LossDb, double DipDb) Evaluate(double extraDelayMs) =>
-            DetailedLoss(bins, weightSum, extraDelayMs, invert: false);
+        public (double LossDb, double DipDb) Evaluate(
+            double extraDelayMs, bool invertVariable = false) =>
+            DetailedLoss(bins, weightSum, extraDelayMs, invertVariable);
     }
 
     private static Complex[] GateDirectSound(

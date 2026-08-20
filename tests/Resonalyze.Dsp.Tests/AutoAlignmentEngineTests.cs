@@ -1349,6 +1349,190 @@ public sealed class AutoAlignmentEngineTests
             $"the seed should have been refused conservatively:\r\n{trace}");
     }
 
+    // The dead-zone shape (see LatchArbitrationMinR in the engine): one SHORT-
+    // tailed mode close behind the front. The long-tailed build-ups above
+    // carry the band read whole periods late — past the conviction factor,
+    // where the predictor convicts alone. A short tail near the front drags
+    // the read late by BETWEEN one and two allowances instead: Inconsistent,
+    // which used to withdraw the pair silently.
+    private static Complex[] FrontUnderShortMode(
+        int length, double modeHz, double modeMs, double amplitude)
+    {
+        Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
+            SingleImpulse(length, BasePosition),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 24),
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 25, 24))),
+            SampleRate);
+        int start = BasePosition + (int)Math.Round(modeMs / 1000.0 * SampleRate);
+        const double AttackSeconds = 0.002;
+        const double DecaySeconds = 0.012;
+        for (int i = start; i < ir.Length; i++)
+        {
+            double t = (i - start) / (double)SampleRate;
+            ir[i] += amplitude *
+                (1 - Math.Exp(-t / AttackSeconds)) *
+                Math.Exp(-t / DecaySeconds) *
+                Math.Sin(2 * Math.PI * modeHz * t);
+        }
+        return ir;
+    }
+
+    private static (string Trace, AlignmentOverride Woofer) RunDeadZonePair(
+        AlignmentSnapshot sub, Complex[] subBypassed, DspChannelChain subChain,
+        AlignmentSnapshot woofer, Complex[] wooferBypassed,
+        DspChannelChain wooferChain)
+    {
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
+        {
+            AlignmentSnapshot One(
+                AlignmentSnapshot side, Complex[] bypassed, DspChannelChain chain)
+            {
+                AlignmentOverride over = overrides.GetValueOrDefault(side.Channel);
+                Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                    bypassed,
+                    chain with
+                    {
+                        DelayMs = over.DelayMs,
+                        InvertPolarity = over.InvertPolarity
+                    },
+                    SampleRate,
+                    out ValidSampleRange range);
+                return side with
+                {
+                    ImpulseResponse = processed,
+                    PeakIndex = VirtualCrossoverAnalysis.FindPeakIndex(processed),
+                    ValidRange = range
+                };
+            }
+
+            return
+            [
+                One(sub, subBypassed, subChain),
+                One(woofer, wooferBypassed, wooferChain)
+            ];
+        }
+
+        var log = new StringBuilder();
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        AutoAlignmentEngine.Compute(
+            [sub, woofer],
+            [new AlignmentJunction(sub, woofer, 55, 27.5, 110)],
+            Reprocess,
+            alignment,
+            log);
+        return (log.ToString(), alignment.GetValueOrDefault(woofer.Channel));
+    }
+
+    // The archived Passat v2 defect: the sub's band read latched onto a mode
+    // 1.7 allowances past its prediction — inside the conviction dead zone,
+    // where the predictor may not convict alone (its own shaping error can
+    // reach 1.2 allowances) — and the silently withdrawn pair anchored the
+    // junction a period late. The whitened comb is the second witness: the
+    // pair's shared content sits with the prediction, so the read is
+    // convicted and the junction lands on the true front family.
+    [Fact]
+    public void Compute_DeadZoneLatch_IsConvictedByTheWhitenedCombArbitration()
+    {
+        const int Length = 32_768;
+        var subChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 48)));
+        var wooferChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 48),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 48)));
+        Complex[] subBypassed = FrontUnderShortMode(Length, 40.0, 4.0, 0.10);
+        Complex[] wooferBypassed = SingleImpulse(Length, BasePosition);
+        AlignmentSnapshot sub = PredictableSnapshot("SUB", subBypassed, subChain);
+        AlignmentSnapshot woofer = PredictableSnapshot(
+            "W", wooferBypassed, wooferChain);
+
+        // The fixture must actually sit in the dead zone: the sub's read
+        // LATER than its prediction by one-to-two allowances (Inconsistent —
+        // the predictor alone would withdraw the pair), the woofer verified.
+        double Read(AlignmentSnapshot side) =>
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                side.ImpulseResponse, SampleRate, 27.5, 110, side.ValidRange)
+                .FirstArrivalDelayMilliseconds;
+        double subRead = Read(sub);
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Inconsistent,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                sub, subRead, 27.5, 110, out double subPrediction));
+        double allowance = AutoAlignmentEngine.PredictedArrivalAllowanceMs(
+            27.5, 110);
+        Assert.InRange((subRead - subPrediction) / allowance, 1.0, 2.0);
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Verified,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                woofer, Read(woofer), 27.5, 110, out _));
+
+        (string trace, AlignmentOverride over) = RunDeadZonePair(
+            sub, subBypassed, subChain, woofer, wooferBypassed, wooferChain);
+
+        Assert.Contains("SUB: read sits in the conviction dead zone", trace);
+        Assert.Contains("convicted by arbitration", trace);
+        Assert.Contains("modal latch behind the crossover", trace);
+        Assert.Contains("seed phat", trace);
+        // The junction lands on the true front family (the clean-sum optimum
+        // sits at ~8 ms, the latched family a lobe later at ~14+ ms inv).
+        Assert.False(over.InvertPolarity);
+        Assert.InRange(over.DelayMs, 6.0, 10.0);
+    }
+
+    // The arbitration's other verdict, and the fleet's common one: when the
+    // woofer carries its own late build-up, the comb reads as strongly at the
+    // measured family as at the predicted one — the two are indistinguishable,
+    // so there is no second witness and the conviction-strength discrepancy
+    // may not be acted on. The pair withdraws from the predictor exactly as
+    // it did before the arbitration existed.
+    [Fact]
+    public void Compute_DeadZoneLatch_ArbitrationStandsDownWithoutASecondWitness()
+    {
+        const int Length = 32_768;
+        var subChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 48)));
+        var wooferChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 24),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 24)));
+        Complex[] subBypassed = FrontUnderShortMode(Length, 40.0, 4.0, 0.06);
+        Complex[] wooferBypassed = FrontUnderShortMode(Length, 70.0, 4.0, 0.35);
+        AlignmentSnapshot sub = PredictableSnapshot("SUB", subBypassed, subChain);
+        AlignmentSnapshot woofer = PredictableSnapshot(
+            "W", wooferBypassed, wooferChain);
+
+        // Same dead zone as the conviction case; the woofer's build-up stays
+        // inside its own allowance, so the woofer still verifies.
+        double Read(AlignmentSnapshot side) =>
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                side.ImpulseResponse, SampleRate, 27.5, 110, side.ValidRange)
+                .FirstArrivalDelayMilliseconds;
+        double subRead = Read(sub);
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Inconsistent,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                sub, subRead, 27.5, 110, out double subPrediction));
+        double allowance = AutoAlignmentEngine.PredictedArrivalAllowanceMs(
+            27.5, 110);
+        Assert.InRange((subRead - subPrediction) / allowance, 1.0, 2.0);
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Verified,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                woofer, Read(woofer), 27.5, 110, out _));
+
+        (string trace, _) = RunDeadZonePair(
+            sub, subBypassed, subChain, woofer, wooferBypassed, wooferChain);
+
+        Assert.Contains("latch arbitration stood down for SUB/W", trace);
+        Assert.DoesNotContain("convicted by arbitration", trace);
+        Assert.DoesNotContain("modal latch behind the crossover", trace);
+    }
+
     [Fact]
     public void PredictedArrival_GradesEveryState()
     {

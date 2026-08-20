@@ -384,27 +384,49 @@ public static class AutoAlignmentEngine
     // search to a guess.
     private const double OnsetLockMaxSpreadPeriods = 0.5;
 
+    // Junction measurements no longer share one gate anchor: every response
+    // is windowed at its own band-limited front and the cuts meet in one
+    // absolute-time frame (see BuildAlignmentBins in
+    // VirtualCrossoverAnalysis, and the gate remarks there for the full
+    // placement history — system peak, pair peak, pair front, chain-free
+    // front were each measured on the archived cabins before per-channel
+    // traveling windows made the shared choice moot).
+
     /// <summary>
-    /// The sample every junction measurement of a run anchors its direct-sound
-    /// gate on: the earliest peak across ALL the run's channels, rendered in
-    /// one frame. Two properties matter and neither is the pair's own peak.
+    /// The direct-coherence witness: at a junction where the summation score
+    /// cannot separate a lobe from its POLARITY partner (thin spectral
+    /// overlap ties them within hundredths of a dB — split corners like
+    /// 1500/1700 at 48 dB/oct leave half an octave of usable overlap), the
+    /// whitened correlation of the two channels' DIRECT sound
+    /// (<see cref="VirtualCrossoverAnalysis.CutDirectSound"/>) still
+    /// separates them: r at the lobe measures how well the direct
+    /// wavefronts' phase SLOPE matches across the whole overlap, which the
+    /// flip partner — phase-equivalent at the corner only — cannot fake. The
+    /// ear sides with this witness at these junctions: fusion and
+    /// localization above the bass follow the direct wavefront (precedence),
+    /// and on the reference car the owner's hand tune sits on the lobe this
+    /// figure prefers (r 0.89 against 0.81) while the summation score reads
+    /// the two as a 0.04 dB tie.
     ///
-    /// It is EARLY — no channel's own rise can fall inside the window's
-    /// fade-in, which is what made a pair-anchored window misjudge a slow
-    /// channel's phase (see the gate remarks in VirtualCrossoverAnalysis).
-    ///
-    /// It is SHARED — one window for every junction, side and probe of a run,
-    /// so candidates, co-move cells and cross-side comparisons are all
-    /// measured through the same one. This is the same PLACEMENT RULE the
-    /// metric read-out follows (VirtualCrossoverMetrics.BuildCurves anchors on
-    /// its channel set's earliest peak), not the same sample: the read-out
-    /// runs on the applied delays and on the displayed side alone, so its
-    /// anchor lands wherever those put it. Matching it exactly is not the
-    /// goal and is not achievable mid-cascade — being early enough for every
-    /// channel, and the same for every comparison, is.
+    /// The witness only arbitrates a TIE between polarity partners; a score
+    /// preference beyond <see cref="DirectCoherenceTieMarginDb"/> stands,
+    /// because the score reads the whole windowed sum the cabin will
+    /// actually produce. It stands down where "direct sound" is not a
+    /// measurable notion (below <see cref="DirectCoherenceMinCrossoverHz"/>
+    /// two crossover periods of cut span the room's own build-up — the
+    /// archived sub junctions read high r at delays whole periods away, room
+    /// geometry wearing a coherence figure), where a lock or policy already
+    /// pinned the lobe by stronger evidence, and where the coherence itself
+    /// is weak or the advantage inside its own noise. Field calibration
+    /// (2026-08-20, six cabins): genuine mid/tweeter discriminations read
+    /// |r| 0.74-0.96 with advantages from 0.08 up; 0.6 / 0.05 sit under
+    /// those with room to spare while a coherence-free junction (Passat C/D
+    /// reads r 0.07 at its current lobe) cannot vote at all.
     /// </summary>
-    private static int SystemGateAnchor(IEnumerable<AlignmentSnapshot> scope) =>
-        scope.Min(item => item.PeakIndex);
+    private const double DirectCoherenceMinCrossoverHz = 120;
+    private const double DirectCoherenceTieMarginDb = 0.3;
+    private const double DirectCoherenceMinR = 0.6;
+    private const double DirectCoherenceMinAdvantage = 0.05;
 
     /// <summary>
     /// The minimum envelope peak-to-noise grade (dB) both channels' onset
@@ -727,6 +749,31 @@ public static class AutoAlignmentEngine
     /// but not trusted to certify an anchor either.
     /// </summary>
     private const double PredictedArrivalConvictionFactor = 2.0;
+
+    /// <summary>
+    /// The comb arbitration for the conviction factor's DEAD ZONE. The factor
+    /// exists because a prediction's own shaping error can reach 1.2
+    /// allowances, so a single witness may not convict below 2.0 — but at a
+    /// bass junction the allowance is ~half the crossover period, which puts
+    /// conviction at a FULL period: exactly where a modal latch lands. A read
+    /// in that zone (later than its prediction by more than one allowance,
+    /// short of two) used to withdraw the pair silently, and the upper-half
+    /// probe cannot examine a steeply low-passed reference that has nothing
+    /// above the corner — the archived Passat v2 sub read 26.8 ms against a
+    /// predicted 13.6 (1.7 allowances) and its latch anchored the whole
+    /// junction a period late. The whitened correlation of the pair breaks
+    /// the tie: it reads WHERE the two channels' shared content actually
+    /// aligns, so its strongest lobe within half a period of the
+    /// prediction-implied lag, beating the strongest within half a period of
+    /// the measured-implied lag by a real margin, is the second independent
+    /// witness a sub-conviction-strength discrepancy needs (on the Passat v2
+    /// junction: r 0.91 at the predicted family against 0.81 at the measured
+    /// one). The floor and the advantage mirror the direct-coherence
+    /// witness's field calibration; both lags must be measurable or the
+    /// arbitration stands down and the zone withdraws the pair as before.
+    /// </summary>
+    private const double LatchArbitrationMinR = 0.6;
+    private const double LatchArbitrationMinAdvantage = 0.05;
 
     /// <summary>
     /// How far a processed read may sit from
@@ -1062,19 +1109,93 @@ public static class AutoAlignmentEngine
                 pairGradeable && lowerState == PredictionState.Latched;
             bool upperLatchedByPrediction =
                 pairGradeable && upperState == PredictionState.Latched;
+
+            // The dead zone (see LatchArbitrationMinR): a side LATER than its
+            // prediction by more than one allowance but short of the
+            // conviction factor, with both predictions in hand and the other
+            // side not itself refusing the grade. The whitened comb decides
+            // whether the pair's shared content sits with the predictions or
+            // with the measured arrivals.
+            bool lowerLateInZone =
+                lowerState == PredictionState.Inconsistent &&
+                lowerArrival > lowerPrediction;
+            bool upperLateInZone =
+                upperState == PredictionState.Inconsistent &&
+                upperArrival > upperPrediction;
+            if (!lowerLatchedByPrediction && !upperLatchedByPrediction &&
+                (lowerLateInZone || upperLateInZone) &&
+                lowerState != PredictionState.Unavailable &&
+                upperState != PredictionState.Unavailable &&
+                (lowerLateInZone || lowerState == PredictionState.Verified) &&
+                (upperLateInZone || upperState == PredictionState.Verified))
+            {
+                double periodMs = 1_000.0 / pair.CrossoverHz;
+                double measuredLagMs = lowerArrival - upperArrival;
+                double predictedLagMs = lowerPrediction - upperPrediction;
+                List<SignalPoint> comb =
+                    VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                        pair.Lower.ImpulseResponse,
+                        pair.Upper.ImpulseResponse,
+                        pair.Lower.Channel.SampleRate,
+                        pair.CrossoverHz,
+                        Math.Log2(pair.BandHighHz / pair.BandLowHz),
+                        Math.Abs(measuredLagMs - predictedLagMs) / 2.0
+                            + periodMs / 2.0,
+                        (measuredLagMs + predictedLagMs) / 2.0,
+                        phaseTransform: true);
+                double StrongestNear(double lagMs) => comb
+                    .Where(point => Math.Abs(point.X - lagMs) <= periodMs / 2.0)
+                    .Select(point => Math.Abs(point.Y))
+                    .DefaultIfEmpty(0.0)
+                    .Max();
+                double nearPredicted = StrongestNear(predictedLagMs);
+                double nearMeasured = StrongestNear(measuredLagMs);
+                if (nearPredicted >= LatchArbitrationMinR &&
+                    nearPredicted >= nearMeasured + LatchArbitrationMinAdvantage)
+                {
+                    log.AppendLine(
+                        $"  {(lowerLateInZone ? pair.Lower : pair.Upper).Channel.Name}: " +
+                        $"read sits in the conviction dead zone and the " +
+                        $"whitened comb sides with the prediction " +
+                        $"(r {nearPredicted:0.00} at the predicted family vs " +
+                        $"{nearMeasured:0.00} at the measured) — convicted by " +
+                        "arbitration");
+                    lowerLatchedByPrediction = lowerLateInZone;
+                    upperLatchedByPrediction = upperLateInZone;
+                }
+                else
+                {
+                    log.AppendLine(
+                        $"  latch arbitration stood down for " +
+                        $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
+                        $"comb r {nearPredicted:0.00} at the predicted family " +
+                        $"vs {nearMeasured:0.00} at the measured — no second " +
+                        "witness, the pair withdraws from the predictor.");
+                }
+            }
             if (lowerLatchedByPrediction || upperLatchedByPrediction)
             {
                 void LogConviction(
-                    AlignmentSnapshot side, double measuredMs, double predictedMs) =>
+                    AlignmentSnapshot side, double measuredMs, double predictedMs)
+                {
+                    double allowances = (measuredMs - predictedMs) /
+                        PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz);
+                    // Below the factor the predictor did not convict alone —
+                    // the comb arbitration above supplied the second witness
+                    // — and the line must not read as if it had.
+                    string basis = allowances >= PredictedArrivalConvictionFactor
+                        ? $"conviction needs {PredictedArrivalConvictionFactor:0.0}"
+                        : $"short of the predictor's own " +
+                          $"{PredictedArrivalConvictionFactor:0.0}, convicted by " +
+                          $"the comb's second witness";
                     log.AppendLine(
                         $"  {side.Channel.Name}: {measuredMs:0.000} ms in " +
                         $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but its " +
                         $"un-crossovered front, read through its own " +
                         $"chain, predicts {predictedMs:0.000} ms there (modal " +
                         $"latch behind the crossover; " +
-                        $"{(measuredMs - predictedMs) / PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz):0.0} " +
-                        $"allowances, conviction needs " +
-                        $"{PredictedArrivalConvictionFactor:0.0}) — re-anchored");
+                        $"{allowances:0.0} allowances, {basis}) — re-anchored");
+                }
                 if (lowerLatchedByPrediction)
                 {
                     LogConviction(pair.Lower, lowerArrival, lowerPrediction);
@@ -1505,28 +1626,41 @@ public static class AutoAlignmentEngine
         AlignmentSnapshot primaryNeighborSnapshot =
             current.First(item => item.Channel == neighborChannel);
         Complex[] variableIr = variableSnapshot.ImpulseResponse;
-        // The gate anchor of every loss measurement below: the whole system's
-        // first arrival, NOT this pair's (see the gate remarks in
-        // VirtualCrossoverAnalysis). The metric read-out the user tunes by
-        // anchors there, and a pair-anchored window at a sub/woofer junction
-        // starts inside the sub's own rise and ranks the pair's alignments
-        // differently from what the panel then shows.
-        int gateAnchor = SystemGateAnchor(current);
+        AlignmentSnapshot? secondaryNeighborSnapshot = secondaryNeighbor != null
+            ? current.First(item => item.Channel == secondaryNeighbor)
+            : null;
+        // Every loss measurement below windows each response at its OWN
+        // band-limited front and rotates the probes through those cuts (see
+        // BuildAlignmentBins) — the fronts are detected once per bins build,
+        // from the responses of THIS `current` render, so every candidate of
+        // this search is scored through the same windows, however far the
+        // candidate moves the channel. No shared anchor is needed, and none
+        // could serve: mid-cascade a settled neighbor's assigned delay can
+        // put it further from the searched channel than a band-sized window
+        // spans.
         var neighborIrs = new List<Complex[]>
         {
             primaryNeighborSnapshot.ImpulseResponse
         };
-        if (secondaryNeighbor != null)
+        // The snapshots' valid ranges travel with the responses into every
+        // bins build below: the per-channel front detection must not read a
+        // chain delay's silent prefix as arrival SNR.
+        var neighborRanges = new List<ValidSampleRange>
         {
-            neighborIrs.Add(current
-                .First(item => item.Channel == secondaryNeighbor).ImpulseResponse);
+            primaryNeighborSnapshot.ValidRange
+        };
+        if (secondaryNeighborSnapshot != null)
+        {
+            neighborIrs.Add(secondaryNeighborSnapshot.ImpulseResponse);
+            neighborRanges.Add(secondaryNeighborSnapshot.ValidRange);
         }
 
         // The level match saturates at its cap; past it the residual
         // imbalance shrinks the junction contrast again, so the user should
         // level the gains and re-run — say so instead of degrading silently.
         if (VirtualCrossoverAnalysis.MeasureInBandImbalanceDb(
-                variableIr, neighborIrs, channel.SampleRate, bandLowHz, bandHighHz)
+                variableIr, neighborIrs, channel.SampleRate, bandLowHz, bandHighHz,
+                variableSnapshot.ValidRange, neighborRanges)
             is { } imbalanceDb &&
             Math.Abs(imbalanceDb) > VirtualCrossoverAnalysis.LevelMatchCapDb)
         {
@@ -1690,7 +1824,9 @@ public static class AutoAlignmentEngine
                     // on the channels' playback gains (see BuildAlignmentBins).
                     levelMatch: true,
                     out IReadOnlyList<AlignmentCandidate> allOptima,
-                    gateAnchorSample: gateAnchor);
+                    gateAnchorSample: null,
+                    variableSnapshot.ValidRange,
+                    neighborRanges);
             return (candidates, allOptima, windowLowMs, windowHighMs);
         }
 
@@ -2033,6 +2169,105 @@ public static class AutoAlignmentEngine
                 }
             }
 
+            // The direct-coherence witness (see the DirectCoherence*
+            // constants): a polarity partner within the tie margin is
+            // re-judged on the whitened correlation of the two channels'
+            // direct sound. Guarded off wherever the lobe is already pinned
+            // by stronger evidence — a scene or onset lock, a forced
+            // polarity, a joint two-junction search whose combined band has
+            // no single junction to read.
+            string? directCoherenceDetail = null;
+            if (secondaryNeighbor == null &&
+                sceneLockToleranceMs == null &&
+                onsetAnchorMs == null &&
+                forcedPolarity == null &&
+                pair.CrossoverHz >= DirectCoherenceMinCrossoverHz)
+            {
+                AlignmentCandidate? rival = fineOptima
+                    .Concat(wideOptima)
+                    .Concat(retriedOptima)
+                    .Where(item => item.InvertPolarity != chosen.InvertPolarity &&
+                        Math.Abs(item.DelayMs - chosen.DelayMs)
+                            <= 1.5 * halfPeriodMs)
+                    .OrderByDescending(AcousticScore)
+                    .FirstOrDefault();
+                if (rival != null &&
+                    Math.Abs(AcousticScore(chosen) - AcousticScore(rival))
+                        <= DirectCoherenceTieMarginDb)
+                {
+                    // One curve serves both candidates: lag is the delay
+                    // added to the VARIABLE channel, the frame every
+                    // candidate's DelayMs lives in.
+                    double centerMs = (chosen.DelayMs + rival.DelayMs) / 2.0;
+                    List<SignalPoint> coherence =
+                        VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                            VirtualCrossoverAnalysis.CutDirectSound(
+                                neighborIrs[0], channel.SampleRate,
+                                bandLowHz, bandHighHz, pair.CrossoverHz,
+                                primaryNeighborSnapshot.ValidRange),
+                            VirtualCrossoverAnalysis.CutDirectSound(
+                                variableIr, channel.SampleRate,
+                                bandLowHz, bandHighHz, pair.CrossoverHz,
+                                variableSnapshot.ValidRange),
+                            channel.SampleRate,
+                            pair.CrossoverHz,
+                            Math.Log2(bandHighHz / bandLowHz),
+                            Math.Abs(chosen.DelayMs - rival.DelayMs) / 2.0
+                                + halfPeriodMs,
+                            centerMs,
+                            phaseTransform: true);
+
+                    // A candidate's coherence: the best sign-consistent value
+                    // within a quarter period of its delay — its own lobe,
+                    // never the partner's half a period away.
+                    double CoherenceOf(AlignmentCandidate candidate)
+                    {
+                        double best = double.NegativeInfinity;
+                        foreach (SignalPoint point in coherence)
+                        {
+                            if (Math.Abs(point.X - candidate.DelayMs)
+                                <= 0.5 * halfPeriodMs)
+                            {
+                                best = Math.Max(best, candidate.InvertPolarity
+                                    ? -point.Y
+                                    : point.Y);
+                            }
+                        }
+
+                        return best;
+                    }
+
+                    double chosenR = CoherenceOf(chosen);
+                    double rivalR = CoherenceOf(rival);
+                    if (rivalR >= DirectCoherenceMinR &&
+                        rivalR >= chosenR + DirectCoherenceMinAdvantage)
+                    {
+                        log.AppendLine(
+                            $"  direct coherence: preferred " +
+                            $"{rival.DelayMs:0.000} ms" +
+                            $"{(rival.InvertPolarity ? " inv" : "")} " +
+                            $"(direct r {rivalR:0.00}) over " +
+                            $"{chosen.DelayMs:0.000} ms" +
+                            $"{(chosen.InvertPolarity ? " inv" : "")} " +
+                            $"(r {chosenR:0.00}) — scores tied within " +
+                            $"{DirectCoherenceTieMarginDb:0.00} dB, the " +
+                            "direct wavefronts decide the polarity.");
+                        directCoherenceDetail = string.Create(
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            $"direct coherence r {rivalR:0.00} vs " +
+                            $"{chosenR:0.00} decided the polarity tie");
+                        chosen = rival;
+                    }
+                    else if (chosenR > double.NegativeInfinity)
+                    {
+                        log.AppendLine(
+                            $"  direct coherence: {chosen.DelayMs:0.000} ms" +
+                            $" stands (r {chosenR:0.00} vs rival " +
+                            $"{rivalR:0.00})");
+                    }
+                }
+            }
+
             double newDelay = chosen.DelayMs;
             if (newDelay < 0)
             {
@@ -2067,20 +2302,26 @@ public static class AutoAlignmentEngine
                 // (say 50-150 Hz) is not judged over five octaves it never
                 // overlaps. A fraction, not an octave count, so the threshold
                 // means the same across narrow and wide bands.
-                double OverlapFractionAgainst(AlignmentJunction junction, Complex[] neighborIr)
+                double OverlapFractionAgainst(
+                    AlignmentJunction junction,
+                    Complex[] neighborIr,
+                    ValidSampleRange neighborRange)
                 {
                     double nominal = Math.Log2(junction.BandHighHz / junction.BandLowHz);
                     double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
                         variableIr, [neighborIr], channel.SampleRate,
-                        junction.BandLowHz, junction.BandHighHz);
+                        junction.BandLowHz, junction.BandHighHz,
+                        variableSnapshot.ValidRange, [neighborRange]);
                     return nominal > 0 ? octaves / nominal : 0;
                 }
-                double overlapFraction = OverlapFractionAgainst(pair, neighborIrs[0]);
+                double overlapFraction = OverlapFractionAgainst(
+                    pair, neighborIrs[0], neighborRanges[0]);
                 if (secondaryPair != null && neighborIrs.Count > 1)
                 {
                     overlapFraction = Math.Min(
                         overlapFraction,
-                        OverlapFractionAgainst(secondaryPair, neighborIrs[1]));
+                        OverlapFractionAgainst(
+                            secondaryPair, neighborIrs[1], neighborRanges[1]));
                 }
                 decisions[channel] = BuildDecision(
                     chosen,
@@ -2089,6 +2330,10 @@ public static class AutoAlignmentEngine
                     onsetLocked: onsetAnchorMs != null,
                     sceneLocked: sceneLockToleranceMs != null,
                     overlapFraction);
+                if (directCoherenceDetail != null)
+                {
+                    AmendDecision(decisions, channel, directCoherenceDetail);
+                }
                 if (subPrecedenceBehindDb is { } precedenceBehindDb)
                 {
                     // The report must say the objective was deliberately
@@ -3462,15 +3707,12 @@ public static class AutoAlignmentEngine
             }
 
             IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
+            AlignmentSnapshot SnapshotOf(IAlignmentChannel channel) =>
+                current.First(item => item.Channel == channel);
             Complex[] IrOf(IAlignmentChannel channel) =>
-                current.First(item => item.Channel == channel).ImpulseResponse;
-            // The same window the searches were decided through. Without it
-            // this pass would re-judge settled pairs on a pair-anchored
-            // surface — the very measurement the cascade stopped using — and
-            // it moves channels for as little as the co-move threshold, so a
-            // fraction-of-a-dB difference between the two windows is exactly
-            // the size of change it can make.
-            int gateAnchor = SystemGateAnchor(current);
+                SnapshotOf(channel).ImpulseResponse;
+                ValidSampleRange RangeOf(IAlignmentChannel channel) =>
+                    current.First(item => item.Channel == channel).ValidRange;
 
             // One evaluator per junction of the REFERENCE side. The move is
             // shared, so its criterion is a choice, and a mean over both sides
@@ -3494,6 +3736,15 @@ public static class AutoAlignmentEngine
                 IAlignmentChannel neighbor = lowerMoves
                     ? junction.Upper.Channel
                     : junction.Lower.Channel;
+                // This junction's own window, held for every delta the pass
+                // probes: it re-judges settled pairs, and it moves channels
+                // for as little as the co-move threshold, so a window that
+                // shifted between two probes would be exactly the size of
+                // change this pass can make. Rebuilt from `current` rather
+                // than carried from the search that settled the pair — the
+                // fronts it reads have since moved with the delays the
+                // cascade assigned, and the criterion is a difference over
+                // THIS pass's probes, all of which see this one window.
                 VirtualCrossoverAnalysis.SumLossEvaluator? evaluator =
                     VirtualCrossoverAnalysis.SumLossEvaluator.Create(
                         IrOf(mover),
@@ -3503,7 +3754,9 @@ public static class AutoAlignmentEngine
                         junction.BandHighHz,
                         levelMatch: true,
                         requireDelayEvidence: true,
-                        gateAnchor);
+                        gateAnchorSample: null,
+                        RangeOf(mover),
+                        new[] { RangeOf(neighbor) });
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);
@@ -3740,14 +3993,60 @@ public static class AutoAlignmentEngine
             // healthy upper one. A co-move judged by the measurable side alone
             // would merely re-optimize the left junction the walk already
             // settled, so with any junction unmeasurable the whole co-move
-            // abstains and the walk's placement stands. Evidence is delay- and
-            // polarity-invariant (it reads magnitudes), so one certification on
-            // the current render covers every probe below.
+            // abstains and the walk's placement stands.
+            //
+            // One render, one evaluator per junction (and one per half-band
+            // for the veto below): every probe of the grid rotates the mono
+            // channel's windowed cut through the SAME spectra
+            // (VirtualCrossoverAnalysis.SumLossEvaluator — the same probe the
+            // pair co-move and the drawn junction surface read). The windows
+            // travel with the channels they hold, so a probe cannot slide the
+            // mono out of anyone's window: evidence, level match and window
+            // placement are all fixed properties of this one render, exactly
+            // the consistency the old per-probe re-rendering bought with ~40
+            // reprocesses and still lost whenever a probe carried the mono
+            // into the fixed window's fade.
             IReadOnlyList<AlignmentSnapshot> certified = reprocess(alignment);
-            AlignmentJunction? unmeasurable = junctions.FirstOrDefault(
-                junction => CellScore(
-                    certified, junction, junction.BandLowHz, junction.BandHighHz,
-                    requireDelayEvidence: true) == null);
+            Complex[] CertifiedIrOf(IAlignmentChannel channel) =>
+                certified.First(item => item.Channel == channel).ImpulseResponse;
+            ValidSampleRange CertifiedRangeOf(IAlignmentChannel channel) =>
+                certified.First(item => item.Channel == channel).ValidRange;
+            VirtualCrossoverAnalysis.SumLossEvaluator? Probe(
+                AlignmentJunction junction, double lowHz, double highHz)
+            {
+                IAlignmentChannel neighbor = junction.Lower.Channel == mono
+                    ? junction.Upper.Channel
+                    : junction.Lower.Channel;
+                return VirtualCrossoverAnalysis.SumLossEvaluator.Create(
+                    CertifiedIrOf(mono),
+                    new List<Complex[]> { CertifiedIrOf(neighbor) },
+                    mono.SampleRate,
+                    lowHz,
+                    highHz,
+                    levelMatch: true,
+                    requireDelayEvidence: true,
+                    gateAnchorSample: null,
+                    CertifiedRangeOf(mono),
+                    new[] { CertifiedRangeOf(neighbor) });
+            }
+
+            var fullBand =
+                new Dictionary<AlignmentJunction,
+                    VirtualCrossoverAnalysis.SumLossEvaluator>();
+            AlignmentJunction? unmeasurable = null;
+            foreach (AlignmentJunction junction in junctions)
+            {
+                if (Probe(junction, junction.BandLowHz, junction.BandHighHz)
+                    is { } evaluator)
+                {
+                    fullBand[junction] = evaluator;
+                }
+                else
+                {
+                    unmeasurable = junction;
+                    break;
+                }
+            }
             if (unmeasurable is { } silent)
             {
                 IAlignmentChannel silentNeighbor =
@@ -3789,89 +4088,24 @@ public static class AutoAlignmentEngine
             double maxDelta = Math.Min(
                 reachMs, MaxDelayMs - over.DelayMs + minOtherMs);
 
-            // The evaluation frame: one uniform lift of EVERY channel keeps
-            // all probe delays non-negative without touching any relation, so
-            // a probe below the mono's own zero needs no per-probe rebasing —
-            // only the mono re-renders per probe, the lifted rest renders
-            // once and stays cached. (Frame delays may exceed the UI ceiling;
-            // they are evaluation-only.)
-            double liftMs = Math.Max(0, -(over.DelayMs + minDelta));
-            var framed = new Dictionary<IAlignmentChannel, AlignmentOverride>();
-            foreach (AlignmentSnapshot item in shiftScope)
-            {
-                AlignmentOverride current = alignment.GetValueOrDefault(item.Channel);
-                framed[item.Channel] = current with
-                {
-                    DelayMs = Math.Round(current.DelayMs + liftMs, 2)
-                };
-            }
-
-            double framedMonoMs = framed[mono].DelayMs;
-            IReadOnlyList<AlignmentSnapshot> Rendered(double deltaMs, bool flip) =>
-                reprocess(new Dictionary<IAlignmentChannel, AlignmentOverride>(framed)
-                {
-                    [mono] = new AlignmentOverride(
-                        Math.Round(framedMonoMs + deltaMs, 2),
-                        over.InvertPolarity ^ flip)
-                });
-            double? CellScore(
-                IReadOnlyList<AlignmentSnapshot> current,
-                AlignmentJunction junction,
-                double lowHz,
-                double highHz,
-                bool requireDelayEvidence)
-            {
-                Complex[] IrOf(IAlignmentChannel channel) =>
-                    current.First(item => item.Channel == channel).ImpulseResponse;
-                IAlignmentChannel neighbor = junction.Lower.Channel == mono
-                    ? junction.Upper.Channel
-                    : junction.Lower.Channel;
-                (double LossDb, double DipDb)? loss =
-                    VirtualCrossoverAnalysis.MeasureSumLoss(
-                        IrOf(mono),
-                        new List<Complex[]> { IrOf(neighbor) },
-                        mono.SampleRate,
-                        lowHz,
-                        highHz,
-                        levelMatch: true,
-                        requireDelayEvidence,
-                        // One system-anchored window, like the searches above:
-                        // the co-move compares cells of a grid, and a window
-                        // that moved with each cell's own pair would compare
-                        // them through different measurements.
-                        SystemGateAnchor(current));
-                return loss is { } value
-                    ? value.LossDb +
-                        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
-                        (value.DipDb - value.LossDb)
-                    : null;
-            }
             double Score(double deltaMs, bool flip)
             {
-                IReadOnlyList<AlignmentSnapshot> current = Rendered(deltaMs, flip);
+                // The mean the co-move optimizes: every junction's rotation
+                // probe at this delta, dip-penalized like every other junction
+                // score. No junction can drop out mid-sweep — measurability
+                // was settled once, above — so the mean is over all of them
+                // by construction.
                 double total = 0;
-                int measured = 0;
                 foreach (AlignmentJunction junction in junctions)
                 {
-                    if (CellScore(current, junction, junction.BandLowHz,
-                        junction.BandHighHz, requireDelayEvidence: true)
-                        is { } cell)
-                    {
-                        total += cell;
-                        measured++;
-                    }
+                    (double lossDb, double dipDb) =
+                        fullBand[junction].Evaluate(deltaMs, flip);
+                    total += lossDb +
+                        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                        (dipDb - lossDb);
                 }
 
-                // FAIL-CLOSED, not an average of the survivors: the upfront
-                // certification ran on one render, but every probe re-gates the
-                // IRs and the direct-sound window shifts with the probed delay,
-                // so a borderline junction can drop out mid-sweep and a mean over
-                // the rest would be the one-sided vote the certification exists
-                // to prevent. A probe that cannot measure EVERY junction is not
-                // a candidate.
-                return measured == junctions.Count
-                    ? total / measured
-                    : double.NegativeInfinity;
+                return total / junctions.Count;
             }
 
             double baseline = Score(0, flip: false);
@@ -3965,11 +4199,18 @@ public static class AutoAlignmentEngine
                 // near-flat loss is noise the level match amplifies toward
                 // parity. Losing a measurable cell means the full-band gain came
                 // from a mode rewarding a comb impostor, not from a better
-                // alignment of the direct sound.
-                IReadOnlyList<AlignmentSnapshot> hopRender =
-                    Rendered(bestDelta, bestFlip);
-                IReadOnlyList<AlignmentSnapshot> polishRender =
-                    Rendered(bestPolishDelta, false);
+                // alignment of the direct sound. Both candidates read through
+                // the SAME half-band evaluator, so the comparison cannot be
+                // biased by window placement.
+                //
+                // The reference is the better of the in-lobe polish and the
+                // INCUMBENT (no move at all): on a mode-dominated junction the
+                // polish itself can slide onto a modal trade — the archived
+                // 80 Hz reproduction polishes to -2.45 ms, where the clean
+                // lower half reads -6.6 dB — and a hop compared against that
+                // spot alone would "win" the very half it is ruining. What a
+                // hop must actually beat, cell by cell, is the best placement
+                // the channel has WITHOUT hopping.
                 bool vetoed = false;
                 foreach (AlignmentJunction junction in junctions)
                 {
@@ -3978,16 +4219,26 @@ public static class AutoAlignmentEngine
                         (double lowHz, double highHz) = upperHalf
                             ? (junction.CrossoverHz, junction.BandHighHz)
                             : (junction.BandLowHz, junction.CrossoverHz);
-                        double? polishCell = CellScore(
-                            polishRender, junction, lowHz, highHz,
-                            requireDelayEvidence: true);
-                        double? hopCell = CellScore(
-                            hopRender, junction, lowHz, highHz,
-                            requireDelayEvidence: true);
-                        if (polishCell is not { } polishCellScore ||
-                            hopCell is not { } hopCellScore ||
-                            hopCellScore >=
-                                polishCellScore - MonoComoveSubBandVetoMarginDb)
+                        if (Probe(junction, lowHz, highHz) is not { } cell)
+                        {
+                            continue;
+                        }
+
+                        double CellScore(double deltaMs, bool flip)
+                        {
+                            (double lossDb, double dipDb) =
+                                cell.Evaluate(deltaMs, flip);
+                            return lossDb +
+                                VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                                (dipDb - lossDb);
+                        }
+
+                        double referenceCellScore = Math.Max(
+                            CellScore(bestPolishDelta, false),
+                            CellScore(0, false));
+                        double hopCellScore = CellScore(bestDelta, bestFlip);
+                        if (hopCellScore >=
+                            referenceCellScore - MonoComoveSubBandVetoMarginDb)
                         {
                             continue;
                         }
@@ -4003,8 +4254,8 @@ public static class AutoAlignmentEngine
                             $"by {bestScore - bestPolishScore:0.00} dB but loses " +
                             $"the {lowHz:0}-{highHz:0} Hz half vs " +
                             $"{neighbor.Name} by " +
-                            $"{polishCellScore - hopCellScore:0.00} dB — a true " +
-                            "lobe holds every measurable sub-band.");
+                            $"{referenceCellScore - hopCellScore:0.00} dB " +
+                            "— a true lobe holds every measurable sub-band.");
                         vetoed = true;
                         break;
                     }
@@ -4103,17 +4354,18 @@ public static class AutoAlignmentEngine
         StringBuilder log)
     {
         IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
-        Complex[] mono = current
-            .First(item => item.Channel == monoChannel).ImpulseResponse;
-        Complex[] other = current
-            .First(item => item.Channel == otherChannel).ImpulseResponse;
+        AlignmentSnapshot mono = current
+            .First(item => item.Channel == monoChannel);
+        AlignmentSnapshot other = current
+            .First(item => item.Channel == otherChannel);
         (double LossDb, double DipDb)? loss = VirtualCrossoverAnalysis.MeasureSumLoss(
-            mono,
-            new List<Complex[]> { other },
+            mono.ImpulseResponse,
+            new List<Complex[]> { other.ImpulseResponse },
             monoChannel.SampleRate,
             pair.BandLowHz,
             pair.BandHighHz,
-            gateAnchorSample: SystemGateAnchor(current));
+            variableValidRange: mono.ValidRange,
+            fixedValidRanges: new[] { other.ValidRange });
         if (loss is not { } measured)
         {
             log.AppendLine(

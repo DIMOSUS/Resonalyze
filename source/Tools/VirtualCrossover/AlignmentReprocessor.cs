@@ -38,6 +38,61 @@ internal sealed class AlignmentReprocessor
     private readonly Complex[]?[] bypassedImpulseResponses;
     private readonly ValidSampleRange[] bypassedValidRanges;
 
+    /// <summary>
+    /// The shared search crop, sized by TIME. The base length was tuned when
+    /// every field rate was 48 or 96 kHz (1.4 / 0.7 s of decay); the
+    /// band-sized alignment windows made the requirement explicit — after
+    /// the pre-peak reserve (1/8 of the crop) the crop must still hold the
+    /// longest window the band sizing can ask for
+    /// (<see cref="VirtualCrossoverAnalysis.MaximumAlignmentGateMs"/>) plus
+    /// the channels' arrival/delay spread (the fleet's worst measured is
+    /// ~46 ms; 175 ms of reserve): 8/7 · 525 = 600 ms. At 48/96 kHz the base
+    /// length already exceeds that and is kept EXACTLY, so archived results
+    /// do not move; higher rates double it until the budget fits (192 kHz →
+    /// 131_072, 384 kHz → 262_144 — where the fixed length left 149 ms after
+    /// the reserve, less than a single sub-band window).
+    /// </summary>
+    internal const int BaseSearchCropLength = 65_536;
+    private const double SearchCropSpreadReserveMs = 175.0;
+
+    internal static int SearchCropLength(int sampleRate)
+    {
+        double requiredSamples = sampleRate / 1_000.0 *
+            (VirtualCrossoverAnalysis.MaximumAlignmentGateMs +
+                SearchCropSpreadReserveMs) * 8.0 / 7.0;
+        int length = BaseSearchCropLength;
+        while (length < requiredSamples)
+        {
+            length *= 2;
+        }
+        return length;
+    }
+
+    /// <summary>The pre-peak reserve: the crop's own 1/8, at every rate.</summary>
+    internal static int SearchCropPrePeakSamples(int sampleRate) =>
+        SearchCropLength(sampleRate) / 8;
+
+    /// <summary>
+    /// The production constructor: the crop sizes itself from the inputs'
+    /// sample rate (see <see cref="SearchCropLength"/>), so a high-rate
+    /// session cannot silently truncate the low junctions' windows.
+    /// </summary>
+    public AlignmentReprocessor(IReadOnlyList<AlignmentReprocessInput> inputs)
+        : this(
+            inputs,
+            SearchCropLength(MaxSampleRate(inputs)),
+            SearchCropPrePeakSamples(MaxSampleRate(inputs)))
+    {
+    }
+
+    private static int MaxSampleRate(IReadOnlyList<AlignmentReprocessInput> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        return inputs.Select(input => input.SampleRate)
+            .DefaultIfEmpty(48_000)
+            .Max();
+    }
+
     public AlignmentReprocessor(
         IReadOnlyList<AlignmentReprocessInput> inputs,
         int cropLength,

@@ -52,13 +52,16 @@ public sealed class VirtualCrossoverGatePlacementWarningTests
     }
 
     [Fact]
-    public void TheSameSessionOnTheAutoAnchorIsNotFlagged()
+    public void AWindowOpeningJustAfterTheEarliestFrontIsNotFlagged()
     {
-        // The left side of that session, which was never pinned: the shared
-        // window sits on the earliest processed peak (2.97 ms). Two channels
-        // start before it — the anchor is a PEAK and their fronts precede it —
-        // and one of them is measurably worse there than on its own arrival,
-        // which is exactly why the ceiling is the other half of the test.
+        // The left side of that session, measured at 2.969 ms — a sliver after
+        // the earliest front (2.907 ms). Two channels start ahead of the
+        // window and one of them is measurably worse there than on its own
+        // arrival, and still none of it is worth reporting: being late is not
+        // the test, being late ENOUGH to lose the response is, which is why
+        // the ceiling is the other half of the test. (The Auto placement now
+        // anchors on the earliest front itself, so this gap is what a PINNED
+        // offset a hair off the arrival looks like.)
         Assert.Null(VirtualCrossoverPanel.JudgeGateCut(
             startMs: 2.907, gateOffsetMs: 2.969, plateauMs: 50.0, rightMs: 20.0,
             placementLossDb: -67.4, ownArrivalLossDb: -68.4));

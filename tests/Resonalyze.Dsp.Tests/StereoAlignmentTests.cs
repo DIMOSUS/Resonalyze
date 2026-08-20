@@ -715,22 +715,21 @@ public sealed class StereoAlignmentTests
     {
         // The engine's cost unit is one reprocess: every channel's full DSP
         // chain re-run. The junction walks legitimately spend a couple per
-        // channel; the PAIR co-move must spend ONE per linked pair (its delta
-        // scan is an analytic spectrum rotation, not a re-render — the old
-        // implementation burned ~40 per pair). The MONO co-move is the
-        // deliberate exception: at its multi-millisecond deltas the rotation
-        // probe's fixed gate anchoring misgrades candidates by whole dB, so
-        // each of its ~30-60 probes honestly re-renders the one mono channel
-        // (every other channel is a cache hit). The ceiling still breaks
-        // loudly if per-delta re-rendering creeps into the pair co-move or
-        // the walks.
+        // channel; BOTH co-moves spend ONE per pass — their delta scans are
+        // spectrum rotations through per-channel windowed cuts, never
+        // re-renders. (The mono co-move once re-rendered every one of its
+        // ~30-60 probes, on the belief that rotation through a fixed shared
+        // gate misgrades multi-millisecond deltas — true of that gate, and
+        // repealed with it: the windows travel with the channels now, so the
+        // rotation IS the honest read.) The ceiling breaks loudly if
+        // per-delta re-rendering creeps back into any of them.
         int[] count = [0];
         RunStereo(
             sceneOffsetMs: 0.25,
             linkBands: UserLinkBands,
             reprocessCount: count);
 
-        Assert.InRange(count[0], 1, 110);
+        Assert.InRange(count[0], 1, 40);
     }
 
     [Fact]
@@ -854,17 +853,27 @@ public sealed class StereoAlignmentTests
         // The field failure this pins (an 80 Hz sub junction): both woofers
         // carry a strong inverted narrowband build-up in the junction band's
         // UPPER half, half a period behind their direct front. Through the
-        // full-band mean the sub then "gains" by flipping onto that build-up
+        // full-band mean the sub then "gains" by moving onto that build-up
         // (a comb impostor the margin gate cannot refuse), while the clean
         // LOWER half — direct sound only — plainly loses. The sub-band
         // consistency veto is the cross-check narrow-band ranging disciplines
         // converge on: a true lobe holds every half of the band, an impostor
         // wins one half and loses the other.
+        //
+        // The build-up has to be genuinely strong (-6 dB) to fool the mean.
+        // At -10 dB it once did, but only through a window that moved with
+        // the probe: the grid's anchor was the earliest peak of the whole
+        // field, which the probed sub itself set, so a cell that carried the
+        // sub earlier also carried the window earlier and won ~0.5 dB of that
+        // move rather than of the summation. With the window held for the
+        // whole grid (see JunctionGateAnchor) the same impostor gains 0.02 dB
+        // and is refused by the hop margin long before the veto — the guard
+        // this test exists for needs a build-up that wins on merit.
         Complex[] WooferIr()
         {
             Complex[] ir = ImpulseAtMs(8.0);
             Complex[] mode = VirtualCrossoverAnalysis.ApplyChain(
-                ImpulseAtMs(8.0 + 6.25, -10.0),
+                ImpulseAtMs(8.0 + 6.25, -6.0),
                 new DspChannelChain(Crossover: new CrossoverSpec(
                     CrossoverKind.BandPass,
                     new CrossoverEdge(CrossoverFilterFamily.Butterworth, 150, 36),

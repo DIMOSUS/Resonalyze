@@ -55,7 +55,40 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
-    public void BuildCurves_AnchorsEveryCurveToTheEarliestPeakAndSumsTheResponses()
+    public void BuildCurves_AnchorsEveryCurveToTheEarliestFront()
+    {
+        // A channel whose peak is a later, louder feature than its front: the
+        // shared window must open at the FRONT, or it opens after part of the
+        // response it is supposed to measure. (The other channel arrives after
+        // both, so the anchor is the first one's front either way — what is
+        // pinned here is front vs peak, not which channel wins.)
+        var early = new Complex[1_024];
+        early[300] = 1.0;
+        early[400] = 2.0;
+        var late = new Complex[1_024];
+        late[600] = 1.0;
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var captured = new ConcurrentBag<(Complex[] Ir, int Peak, int Rate)>();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator,
+            (ir, peak, rate) =>
+            {
+                captured.Add((ir, peak, rate));
+                return EmptyMagnitude;
+            });
+
+        metrics.BuildCurves(
+        [
+            Processed("A", early, peak: 400, rate: 48_000),
+            Processed("B", late, peak: 600, rate: 48_000)
+        ],
+        0);
+
+        Assert.All(captured, entry => Assert.InRange(entry.Peak, 250, 320));
+    }
+
+    [Fact]
+    public void BuildCurves_AnchorsEveryCurveToOneSampleAndSumsTheResponses()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var captured = new ConcurrentBag<(Complex[] Ir, int Peak, int Rate)>();
@@ -79,9 +112,12 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.NotNull(magnitudes);
         Assert.Equal(2, magnitudes.Count);
         Assert.NotNull(sum);
-        // Two channel spectra + one sum spectrum, all anchored to the earliest
-        // peak: one shared window is what keeps the drawn Sum the vector sum
-        // of the drawn channels and the loss under its 0 dB ceiling.
+        // Two channel spectra + one sum spectrum, all anchored to the SAME
+        // sample: one shared window is what keeps the drawn Sum the vector sum
+        // of the drawn channels and the loss under its 0 dB ceiling. These
+        // records are 64 samples — too short for the front estimator, which
+        // refuses rather than guesses — so the anchor falls back to the
+        // earliest declared peak, the rule this one used to follow outright.
         Assert.Equal(3, captured.Count);
         Assert.All(captured, entry => Assert.Equal(2, entry.Peak));
         // One of the calls built the complex sum of the two responses.

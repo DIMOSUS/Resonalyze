@@ -23,11 +23,14 @@ internal readonly record struct DspChainCurve(
 /// The junction-correlation view's data, computed off the UI thread from two
 /// adjacent PROCESSED channels (current delays, polarity, filters applied, so
 /// lag 0 is "as currently aligned" and every lag reads as a correction to the
-/// upper channel). Correlation and its GCC-PHAT twin show WHERE the comb
-/// lobes sit (negative lobes: the same alignment with the upper channel
-/// inverted); the two score curves show what the alignment engine THINKS of
-/// every lag — the dip-penalized junction loss, honestly re-gated per point,
-/// for both polarities. <see cref="ArrivalLagMs"/> marks the band-limited
+/// upper channel). The whitened correlation shows WHERE the comb lobes sit on
+/// the full records (negative lobes: the same alignment with the upper
+/// channel inverted); its DIRECT twin reads the same comb on the channels'
+/// direct sound alone — the drivers' wavefronts, the engine's polarity
+/// witness; the two score curves show what the alignment engine THINKS of
+/// every lag — the dip-penalized junction loss, probed by rotating the
+/// windowed cuts, for both polarities.
+/// <see cref="ArrivalLagMs"/> marks the band-limited
 /// envelope arrival difference — the physics-first estimate the searches
 /// anchor on.
 /// </summary>
@@ -37,8 +40,8 @@ internal sealed record JunctionCorrelationView(
     double CrossoverHz,
     double BandLowHz,
     double BandHighHz,
-    List<SignalPoint> Correlation,
     List<SignalPoint> Whitened,
+    List<SignalPoint> WhitenedDirect,
     List<SignalPoint> ScoreNormal,
     List<SignalPoint> ScoreInverted,
     double ArrivalLagMs);
@@ -192,8 +195,8 @@ internal sealed class VirtualCrossoverDspChainPlot
 
         // A junction switch (or a window change from new crossover settings)
         // resets the axes; an in-pair redraw keeps the zoom.
-        double windowMs = data.Correlation.Count > 0
-            ? Math.Abs(data.Correlation[^1].X)
+        double windowMs = data.Whitened.Count > 0
+            ? Math.Abs(data.Whitened[^1].X)
             : 3.0;
         if (correlationAxisState != (data.PairTitle, windowMs))
         {
@@ -210,14 +213,27 @@ internal sealed class VirtualCrossoverDspChainPlot
             }
         }
 
-        AddCorrelationSeries(
-            model, "corr", data.Correlation,
-            OxyColor.FromRgb(130, 138, 152), CoefficientAxisKey,
-            LineStyle.Solid, 1.2);
+        // Four curves, each with its own question: PHAT — the whitened
+        // full-record comb (the honest read at bass junctions, where "direct
+        // sound" is not a measurable notion); PHAT direct — the drivers'
+        // wavefronts (the polarity witness); score both ways — the summation
+        // surface the search optimizes. The raw amplitude-weighted
+        // correlation used to be drawn too and answered nothing the others
+        // do not: its weighting hands the lag to whatever the cabin plays
+        // loudest, which is neither the comb, nor the drivers, nor the sum.
         AddCorrelationSeries(
             model, "PHAT", data.Whitened,
             OxyColor.FromRgb(79, 195, 247), CoefficientAxisKey,
             LineStyle.Solid, 1.8);
+        // The same whitened read on the DIRECT sound alone: each channel cut
+        // to a couple of crossover periods behind its own front, so the comb
+        // shows the drivers' timing where the full-record twin shows whatever
+        // the cabin's reflections correlate best (on a thin-overlap junction
+        // the two disagree by whole periods).
+        AddCorrelationSeries(
+            model, "PHAT direct", data.WhitenedDirect,
+            OxyColor.FromRgb(200, 130, 255), CoefficientAxisKey,
+            LineStyle.Solid, 1.4);
         AddCorrelationSeries(
             model, "score", data.ScoreNormal,
             OxyColor.FromRgb(124, 213, 124), ScoreAxisKey,

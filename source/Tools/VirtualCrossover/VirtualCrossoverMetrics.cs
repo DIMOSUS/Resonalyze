@@ -52,7 +52,14 @@ internal sealed class VirtualCrossoverMetrics
         // Auto-placement fallback. The magnitude always reads the FIXED gate —
         // FDW would need per-channel windows here, exactly what the shared
         // window exists to prevent — so FDW shapes the phase view only.)
-        int anchor = processed.Min(item => item.PeakIndex);
+        // The arrival is each channel's estimated START, not its peak: a
+        // crossover's group delay puts the peak behind the front, and the
+        // window has to open ahead of every channel's front, not of its
+        // loudest moment (see ProcessedChannels.StartAnchorIndex). The phase
+        // view's Auto placement and the junction gate the Auto delay search
+        // places both read the front too, so the three no longer differ in
+        // RULE — only in span, which is what each of them is for.
+        int anchor = ProcessedChannels.SharedStartAnchorIndex(processed);
         // One gated build per channel, resampled at both widths; the panel's
         // magnitude builder reads only its immutable UI-thread snapshots and the
         // calibration, so the channels' spectra compute across cores. AsOrdered
@@ -530,7 +537,11 @@ internal sealed class VirtualCrossoverMetrics
             jobs.Select(side => side.ProcessedIr!).ToList());
         return new VirtualCrossoverSideSum(
             sum,
-            jobs.Min(side => side.ProcessedPeak),
+            // The same placement rule as the shown side's (see BuildCurves):
+            // the earliest FRONT of the channels that went into this sum.
+            jobs.Min(side => ProcessedChannels.StartAnchorIndex(
+                side.ProcessedIr!, side.ProcessedPeak, side.SampleRate,
+                side.ProcessedValidRange)),
             jobs[0].SampleRate,
             jobs.Count);
     }

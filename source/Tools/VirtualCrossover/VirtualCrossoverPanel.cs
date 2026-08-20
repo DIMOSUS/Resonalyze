@@ -2002,7 +2002,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 channel,
                 result.ImpulseResponse,
                 result.PeakIndex,
-                color));
+                color,
+                result.ValidRange));
         }
         return new ProcessedRender(render.Revision, processed);
     }
@@ -2162,7 +2163,14 @@ public partial class VirtualCrossoverPanel : UserControl
                     ? magnitudes[i]
                     : BuildMagnitudeCurve(
                         item.ImpulseResponse,
-                        item.PeakIndex,
+                        // No shared anchor to follow (BuildCurves yields no
+                        // metric below two channels), so the channel opens on
+                        // its own front — the same rule, one channel wide.
+                        ProcessedChannels.StartAnchorIndex(
+                            item.ImpulseResponse,
+                            item.PeakIndex,
+                            item.Channel.SampleRate,
+                            item.ValidRange),
                         item.Channel.SampleRate).Display;
                 curves.Add(new AcousticCurve(
                     item.Channel.Name, curve.Points, item.Color, 1.8, LineStyle.Solid));
@@ -2835,9 +2843,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     channel.TransferImpulseResponse!,
                     channel.SampleRate,
                     channel.Settings.ToChain())).ToList(),
-                log),
-            AutoDelaySearchCropLength,
-            AutoDelaySearchCropPrePeakSamples);
+                log));
 
         IReadOnlyList<AlignmentSnapshot> initial = reprocessor.Reprocess(
             new Dictionary<IAlignmentChannel, AlignmentOverride>());
@@ -2865,14 +2871,6 @@ public partial class VirtualCrossoverPanel : UserControl
             decisions);
         return reprocessor;
     }
-
-    // The Auto delay search reads only the gated direct sound, so it runs on
-    // a shared crop of the measured IRs (one offset for every channel keeps
-    // the inter-channel timing intact). 64k samples keep well over a second
-    // of decay at 44.1 kHz — conservative headroom over the 4096-sample
-    // evaluation gate and the low-band arrival envelopes.
-    private const int AutoDelaySearchCropLength = 65_536;
-    private const int AutoDelaySearchCropPrePeakSamples = 8_192;
 
     // The per-side participants of a stereo Auto delay run: every enabled
     // channel side with a resolved measurement. A mono pair contributes ONE
@@ -3203,9 +3201,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     side.State.TransferImpulseResponse!,
                     side.State.SampleRate,
                     side.Settings.ToChain())).ToList(),
-                log),
-            AutoDelaySearchCropLength,
-            AutoDelaySearchCropPrePeakSamples);
+                log));
 
         IReadOnlyList<AlignmentSnapshot> initialSnapshots = reprocessor.Reprocess(
             new Dictionary<IAlignmentChannel, AlignmentOverride>());
@@ -3317,8 +3313,8 @@ public partial class VirtualCrossoverPanel : UserControl
     // the metrics — always through the FIXED gate (see the snapshot refresh:
     // FDW is phase-only, it cannot hold a multi-arrival sum). A pinned (or
     // pinned-previewed) offset is one absolute window for every curve;
-    // unpinned (Auto), the window anchors at the peak the CALLER passes — the
-    // shared earliest arrival for channels and sums (one window is what keeps
+    // unpinned (Auto), the window anchors at the sample the CALLER passes — the
+    // shared earliest FRONT for channels and sums (one window is what keeps
     // the drawn Sum the exact vector sum of the drawn channels and the
     // sum-loss under its 0 dB ceiling; see VirtualCrossoverMetrics.BuildCurves)
     // and the raw curve's own peak. Runs on PLINQ worker threads: reads only
@@ -3658,7 +3654,8 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             var view = new ImpulseMeasurementView(item.ImpulseResponse, 0, sampleRate);
             double startMs = TransferIrStartCache.ResolveStartMs(
-                item.ImpulseResponse, sampleRate, item.PeakIndex);
+                item.ImpulseResponse, sampleRate, item.PeakIndex,
+                item.ValidRange);
             if (!AllowsPerCurvePhaseGate(
                     DataHelper.GateLeadingEdgeLossDb(
                         view, startMs, leftMs, plateauMs, rightMs),
@@ -3690,7 +3687,7 @@ public partial class VirtualCrossoverPanel : UserControl
         IReadOnlyList<ProcessedChannel> processed,
         int sampleRate) =>
         processed.Min(item => TransferIrStartCache.ResolveStartMs(
-            item.ImpulseResponse, sampleRate, item.PeakIndex));
+            item.ImpulseResponse, sampleRate, item.PeakIndex, item.ValidRange));
 
     /// <summary>Which way the window fails a channel.</summary>
     internal enum GateCutKind
@@ -3758,12 +3755,13 @@ public partial class VirtualCrossoverPanel : UserControl
     /// tail has a magnitude too. The magnitude placement is the one judged
     /// (mirroring <see cref="VirtualCrossoverMetrics.BuildCurves"/>'s shared
     /// anchor): it is what the drawn curves, the Sum and the sum-loss read-out
-    /// are built from, and it is never the earlier of the two — it anchors on
-    /// the earliest processed PEAK where the phase view's shared placement
-    /// anchors on the earliest estimated START — so a magnitude window that
-    /// opens in time answers for that one as well. The phase view's per-curve
-    /// placements keep their own guard in
-    /// <see cref="ResolvePhaseGateOffsets"/>.
+    /// are built from, and both shared placements now open at the same sample
+    /// — the earliest estimated START of the processed channels — so judging
+    /// this one answers for the phase view's shared placement as well. (It
+    /// used to anchor on the earliest PEAK, which is never the earlier of the
+    /// two and so also answered for it; the rules were unified when the
+    /// junction gate moved to fronts.) The phase view's per-curve placements
+    /// keep their own guard in <see cref="ResolvePhaseGateOffsets"/>.
     /// </summary>
     private GatePlacementVerdict? JudgeGatePlacement(
         IReadOnlyList<ProcessedChannel> processed)
@@ -3776,12 +3774,15 @@ public partial class VirtualCrossoverPanel : UserControl
         MagnitudeGateSnapshot snapshot = magnitudeGate;
         int sampleRate = processed[0].Channel.SampleRate;
         double offsetMs = snapshot.ResolveGateOffsetMs(
-            oppositeSide: false, processed.Min(item => item.PeakIndex), sampleRate);
+            oppositeSide: false,
+            ProcessedChannels.SharedStartAnchorIndex(processed),
+            sampleRate);
         var cut = new List<GateCutChannel>();
         foreach (ProcessedChannel item in processed)
         {
             double startMs = TransferIrStartCache.ResolveStartMs(
-                item.ImpulseResponse, sampleRate, item.PeakIndex);
+                item.ImpulseResponse, sampleRate, item.PeakIndex,
+                item.ValidRange);
             var view = new ImpulseMeasurementView(item.ImpulseResponse, 0, sampleRate);
             double lossDb = Loss(offsetMs);
             if (JudgeGateCut(
@@ -4034,12 +4035,15 @@ public partial class VirtualCrossoverPanel : UserControl
         if (detrendMode == PhaseDetrendMode.Manual)
         {
             return gatePreview?.DetrendMs ?? ResolveDetrendMs(
-                processed.Min(item => item.PeakIndex), sampleRate);
+                ProcessedChannels.SharedStartAnchorIndex(processed), sampleRate);
         }
 
-        // Estimate once from the existing common anchor (earliest processed
-        // arrival), then apply that exact value to every driver and the sum.
-        ProcessedChannel anchor = processed.MinBy(item => item.PeakIndex)!;
+        // Estimate once from the existing common anchor (the earliest
+        // processed FRONT, the same channel the shared window opens on), then
+        // apply that exact value to every driver and the sum.
+        ProcessedChannel anchor = processed.MinBy(item => ProcessedChannels.StartAnchorIndex(
+            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate,
+            item.ValidRange))!;
         var view = new ImpulseMeasurementView(anchor.ImpulseResponse, 0, sampleRate);
         PhaseAnalysisSettings settings = CreateVirtualPhaseSettings(
             gateOffsetMs,
@@ -4120,7 +4124,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         int sampleRate = processed[0].Channel.SampleRate;
-        int reference = processed.Min(item => item.PeakIndex);
+        int reference = ProcessedChannels.SharedStartAnchorIndex(processed);
         double fitOffsetMs = EarliestStartMs(processed, sampleRate);
 
         var traces = processed
@@ -4357,13 +4361,20 @@ public partial class VirtualCrossoverPanel : UserControl
     // The off-thread compute of one junction's correlation view. Both
     // channels enter PROCESSED (delays, polarity, filters applied), so lag 0
     // is the current alignment and every reading is a correction to the
-    // UPPER channel. The WHOLE side is cropped and anchored, not just the
-    // pair: crop and gate follow the alignment engine's own basis, so the
-    // drawn score is the surface Auto delay searches and the read-out
-    // reports — a pair-anchored window would draw a different one (see the
-    // gate remarks in VirtualCrossoverAnalysis). The sweep's per-point
-    // inverse FFTs shrink from the capture length to the crop.
-    private static JunctionCorrelationView BuildCorrelationView(
+    // UPPER channel. The gate follows the alignment engine's own basis — the
+    // pair's earliest front, in the pair's band (see the gate remarks in
+    // VirtualCrossoverAnalysis) — and the sweep probes it by rotating the
+    // windowed cut, the same bins and rotation the search's SumLossEvaluator
+    // reads, so the drawn score IS the surface Auto delay searches (see the
+    // plateau remarks on JunctionLossSweep for what re-gating each probe
+    // through the stationary window drew instead). The crop still spans the
+    // whole side, because a shared offset is what keeps the channels'
+    // relative timing intact; it no longer decides anything the score reads,
+    // the anchor being derived from the pair's own content rather than from
+    // an index into the crop.
+    // Internal so the correlation-view harness can render the exact product
+    // curves without constructing the panel.
+    internal static JunctionCorrelationView BuildCorrelationView(
         AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildCorrelationView");
@@ -4373,28 +4384,66 @@ public partial class VirtualCrossoverPanel : UserControl
             : [pair.Lower, pair.Upper];
         Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
             all.Select(item => item.ImpulseResponse).ToList(),
-            AutoDelaySearchCropLength,
-            AutoDelaySearchCropPrePeakSamples);
+            AlignmentReprocessor.SearchCropLength(sampleRate),
+            AlignmentReprocessor.SearchCropPrePeakSamples(sampleRate),
+            out int cropStart);
         Complex[] lower = cropped[all.IndexOf(pair.Lower)];
         Complex[] upper = cropped[all.IndexOf(pair.Upper)];
-        // The displayed side's first arrival — the same placement rule the
-        // read-out beside this plot uses, over the same channel set and the
-        // same applied delays, so the drawn score and the read-out's numbers
-        // come from one window.
-        int gateAnchor = cropped.Min(VirtualCrossoverAnalysis.FindPeakIndex);
+        // The channels' valid ranges, shifted into the crop's frame: the
+        // front detections behind the sweep and the direct cuts take them, so
+        // the drawn surface reads the same fronts the search reads — on a
+        // clean capture the heuristic fallback agrees anyway, but a delayed
+        // or glitch-headed record is exactly where the two paths must not
+        // part.
+        ValidSampleRange Shifted(ProcessedChannel item, Complex[] croppedIr) =>
+            item.ValidRange.IsKnown
+                ? new ValidSampleRange(
+                    Math.Max(0, item.ValidRange.StartSample - cropStart),
+                    Math.Clamp(
+                        item.ValidRange.EndSample - cropStart,
+                        0,
+                        croppedIr.Length))
+                : item.ValidRange;
+        ValidSampleRange lowerRange = Shifted(pair.Lower, lower);
+        ValidSampleRange upperRange = Shifted(pair.Upper, upper);
+        // No gate anchor is passed: the sweep windows each channel at its own
+        // band-limited front, exactly as every junction measurement of an
+        // Auto delay run does (see BuildAlignmentBins), so the drawn score
+        // stays the search's surface. The read-out beside this plot keeps its
+        // own, shared placement (one window for the drawn channels, their Sum
+        // and the loss curve, which is what makes the Sum the sum of what is
+        // drawn) — the two answer different questions and always did: the
+        // read-out measures the WHOLE sum inside the pair band, this
+        // measures the pair.
 
         // The window spans 1.5 crossover periods to each side (floored at the
         // fixed diagnostic span), so the neighboring comb lobes both ways are
         // in view even at an 80 Hz junction.
         double windowMs = Math.Max(3.0, 1.5 * 1000.0 / pair.CrossoverHz);
         double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
-        List<SignalPoint> correlation =
-            VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
-                lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
-                windowMs, centerLagMs: 0, phaseTransform: false);
         List<SignalPoint> whitened =
             VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
                 lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
+                windowMs, centerLagMs: 0, phaseTransform: true);
+
+        // The whitened curve again, on the DIRECT sound alone (see
+        // VirtualCrossoverAnalysis.CutDirectSound — the same cut the
+        // engine's direct-coherence witness reads, so this curve shows the
+        // very figure the search weighed). The full-record curves above read
+        // the whole capture — reflections included, which on a thin-overlap
+        // junction outvote the drivers — while this one answers the question
+        // the view is usually opened with: where do the DRIVERS align.
+        List<SignalPoint> whitenedDirect =
+            VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                VirtualCrossoverAnalysis.CutDirectSound(
+                    lower, sampleRate,
+                    pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz,
+                    lowerRange),
+                VirtualCrossoverAnalysis.CutDirectSound(
+                    upper, sampleRate,
+                    pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz,
+                    upperRange),
+                sampleRate, pair.CrossoverHz, passOctaves,
                 windowMs, centerLagMs: 0, phaseTransform: true);
 
         // The score comb repeats per crossover period, so the step must
@@ -4410,7 +4459,15 @@ public partial class VirtualCrossoverPanel : UserControl
             VirtualCrossoverAnalysis.JunctionLossSweep(
                 upper, lower, sampleRate,
                 pair.BandLowHz, pair.BandHighHz,
-                -windowMs, windowMs, stepMs, invert, gateAnchor)
+                -windowMs, windowMs, stepMs, invert,
+                // The search's own settings, or the drawn surface is not the
+                // searched one: per-channel windows (null anchor) and the
+                // search-side level match, whose absence re-shapes the lobes
+                // whenever the two channels sit at different gains.
+                gateAnchorSample: null,
+                levelMatch: true,
+                variableValidRange: upperRange,
+                fixedValidRange: lowerRange)
             .Select(point => new SignalPoint(
                 point.DelayMs,
                 point.LossDb +
@@ -4419,9 +4476,9 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
 
         double arrivalLagMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                lower, sampleRate, pair.BandLowHz, pair.BandHighHz)
+                lower, sampleRate, pair.BandLowHz, pair.BandHighHz, lowerRange)
             - VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                upper, sampleRate, pair.BandLowHz, pair.BandHighHz);
+                upper, sampleRate, pair.BandLowHz, pair.BandHighHz, upperRange);
 
         return new JunctionCorrelationView(
             $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
@@ -4429,8 +4486,8 @@ public partial class VirtualCrossoverPanel : UserControl
             pair.CrossoverHz,
             pair.BandLowHz,
             pair.BandHighHz,
-            correlation,
             whitened,
+            whitenedDirect,
             ScoreSweep(invert: false),
             ScoreSweep(invert: true),
             arrivalLagMs);

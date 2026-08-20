@@ -6,14 +6,20 @@ namespace Resonalyze;
 
 /// <summary>
 /// A channel's processed response ready for the metric, the complex sum and the
-/// plot: the applied-chain impulse response, its peak index and the channel's
-/// plot color. Shared by the redraw, the metric read-out and the Auto delay search.
+/// plot: the applied-chain impulse response, its peak index, the channel's
+/// plot color and where the MEASURED content sits inside the processed record
+/// (<see cref="ValidRange"/> — the coordinator computes it with every render;
+/// front detections read it so a chain delay's silent prefix cannot pose as
+/// arrival SNR). Shared by the redraw, the metric read-out and the Auto delay
+/// search. The range defaults to unknown for callers without one — the
+/// analyses then fall back to their padding-signature heuristic.
 /// </summary>
 internal sealed record ProcessedChannel(
     VirtualCrossoverChannel Channel,
     Complex[] ImpulseResponse,
     int PeakIndex,
-    OxyColor Color);
+    OxyColor Color,
+    ValidSampleRange ValidRange = default);
 
 /// <summary>
 /// One gated magnitude curve at the two widths the tool needs, from a single gate
@@ -67,6 +73,49 @@ internal static class ProcessedChannels
         IReadOnlyList<ProcessedChannel> processed) =>
         VirtualCrossoverJunctions.GetCrossoverWindow(
             processed.Select(item => item.Channel.Settings));
+
+    /// <summary>
+    /// Where one channel lets a shared window open: its estimated response
+    /// START, as a sample index, falling back to its peak when the estimator
+    /// refuses the record (see <see cref="TransferIrStartCache"/>, which
+    /// memoizes the estimate per IR — the gate-placement guard reads the same
+    /// figure for the same channels on the same redraw).
+    /// <para>
+    /// A peak would be the wrong figure to share: a crossover's group delay
+    /// puts a filtered channel's peak milliseconds behind its own front — on
+    /// the archived Passat right side the subwoofer peaks 5.6 ms after its
+    /// band's arrival — so a window anchored on the earliest PEAK can still
+    /// open after an earlier channel's front. The phase view's Auto placement
+    /// has always used the start; this is the same rule for the magnitude
+    /// window, and for the junction gate the Auto delay search places
+    /// (VirtualCrossoverAnalysis.FindGateAnchor).
+    /// </para>
+    /// </summary>
+    public static int StartAnchorIndex(
+        Complex[] impulseResponse,
+        int peakIndex,
+        int sampleRate,
+        ValidSampleRange validRange = default) =>
+        Math.Clamp(
+            (int)Math.Floor(
+                TransferIrStartCache.ResolveStartMs(
+                    impulseResponse, sampleRate, peakIndex, validRange)
+                / 1_000.0 * sampleRate),
+            0,
+            Math.Max(0, impulseResponse.Length - 1));
+
+    /// <summary>
+    /// The shared window's anchor for a channel set: the earliest
+    /// <see cref="StartAnchorIndex"/> among them, each read within its own
+    /// <see cref="ProcessedChannel.ValidRange"/> — a chain delay's silent
+    /// prefix must not certify a front here any more than in the junction
+    /// gates.
+    /// </summary>
+    public static int SharedStartAnchorIndex(
+        IReadOnlyList<ProcessedChannel> processed) =>
+        processed.Min(item => StartAnchorIndex(
+            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate,
+            item.ValidRange));
 
     public static List<ProcessedChannel> OrderByBand(IReadOnlyList<ProcessedChannel> processed) =>
         processed

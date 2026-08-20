@@ -1046,46 +1046,58 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindAlignmentCandidates_DipExcessOutranksASlightlyBetterAverage()
     {
-        // An asymmetric junction (LR 12 dB high-pass vs Butterworth 48 dB
-        // low-pass) with an in-band reflection on the woofer. The raw-average
-        // optimum is an inverted lobe whose good average hides a deep smoothed
-        // notch; a neighbouring non-inverted lobe averages slightly worse but
-        // stays much flatter. Ranked by average alone the notched impostor
-        // would reach the selection tie-breaks as the winner; the dip-excess
-        // penalty must put the flat lobe first.
-        var tweeterIr = new Complex[8_192];
-        tweeterIr[480] = Complex.One;
-        Complex[] tweeter = VirtualCrossoverAnalysis.ApplyChain(
-            tweeterIr,
+        // A bass junction whose woofer carries a strong inverted narrowband
+        // build-up behind its direct front (the modal shape of the archived
+        // 80 Hz failure). The lobe that stays on the DIRECT sound averages
+        // better across the band, but the un-cancelled build-up leaves it a
+        // deeper 1/6-octave notch; the lobe that follows the build-up
+        // averages slightly worse and notches less. Ranked by average alone
+        // the direct lobe wins; the dip-excess penalty must outrank the
+        // difference. (WHICH lobe deserves to win the junction is not this
+        // test's question — that is the mono co-move's sub-band veto — this
+        // pins only that the score orders by dip excess, not by average.)
+        //
+        // An earlier construction (an asymmetric LR12/BW48 pair with an
+        // in-band reflection) lost its meaning with per-channel windows: the
+        // "notch" its impostor carried was the shared peak-anchored window
+        // cutting the woofer's group-delayed content, and with each channel
+        // windowed at its own front the same candidate reads genuinely flat
+        // and wins on merit.
+        Complex[] woofer = ImpulseAt(8.0);
+        Complex[] mode = VirtualCrossoverAnalysis.ApplyChain(
+            ImpulseAt(8.0 + 6.25, -6.0),
             new DspChannelChain(Crossover: new CrossoverSpec(
-                CrossoverKind.HighPass,
-                HighPassEdge: new CrossoverEdge(
-                    CrossoverFilterFamily.LinkwitzRiley, 1_000, 12))),
+                CrossoverKind.BandPass,
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 150, 36),
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 100, 36))),
             SampleRate);
-
-        var wooferIr = new Complex[8_192];
-        wooferIr[480] = Complex.One;
-        wooferIr[480 + 96] = new Complex(0.7, 0); // reflection 2 ms after the arrival
-        Complex[] woofer = VirtualCrossoverAnalysis.ApplyChain(
-            wooferIr,
-            new DspChannelChain(Crossover: new CrossoverSpec(
-                CrossoverKind.LowPass,
-                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 48))),
-            SampleRate);
+        for (int i = 0; i < woofer.Length; i++)
+        {
+            woofer[i] += mode[i];
+        }
+        Complex[] sub = ImpulseAt(8.0);
 
         IReadOnlyList<AlignmentCandidate> candidates =
             VirtualCrossoverAnalysis.FindAlignmentCandidates(
-                tweeter, [woofer], SampleRate, 500, 2_000, -3, 3);
+                sub, [woofer], SampleRate, 40, 160, -9, 9,
+                priorDelayMs: null, priorSigmaMs: 0, forcedPolarity: null,
+                levelMatch: true, out _);
 
         AlignmentCandidate winner = candidates[0];
         AlignmentCandidate notched = candidates.Single(item =>
-            item.InvertPolarity && Math.Abs(item.DelayMs - 0.73) < 0.15);
-        Assert.False(winner.InvertPolarity);
-        Assert.InRange(winner.DelayMs, 1.1, 1.4);
-        // The impostor averages better yet notches deeper — and loses.
+            !item.InvertPolarity && Math.Abs(item.DelayMs + 1.0) < 0.5);
+        Assert.True(winner.InvertPolarity);
+        // The direct lobe averages better yet notches deeper — and loses.
         Assert.True(notched.LossDb > winner.LossDb);
         Assert.True(notched.DipDb < winner.DipDb);
         Assert.True(notched.ScoreDb < winner.ScoreDb);
+    }
+
+    private static Complex[] ImpulseAt(double offsetMs, double amplitude = 1.0)
+    {
+        var ir = new Complex[16_384];
+        ir[480 + (int)Math.Round(offsetMs / 1000.0 * SampleRate)] = amplitude;
+        return ir;
     }
 
     [Fact]
@@ -1186,12 +1198,16 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void MeasureBandLevelDb_BandWithoutBinsReturnsNull()
     {
-        // 23 990 - 23 999 Hz at 48 kHz falls between the last usable FFT bin
-        // and Nyquist: no bins, no level.
+        // A band above the last usable FFT bin and below Nyquist holds no
+        // bins, so there is no level to report. The gap is one bin wide, and
+        // the analysis grid is 2.93 Hz at 48 kHz (the gate padded by
+        // AlignmentFftInterpolationFactor), which puts the last bin at
+        // 23 997.1 Hz — so the band has to start above that, not merely
+        // near Nyquist.
         Complex[] ir = UnitImpulse(8_192, 480);
 
         Assert.Null(VirtualCrossoverAnalysis.MeasureBandLevelDb(
-            ir, SampleRate, 23_990, 23_999));
+            ir, SampleRate, 23_999, 23_999.9));
     }
 
     [Fact]

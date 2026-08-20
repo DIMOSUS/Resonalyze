@@ -358,19 +358,63 @@ public sealed class RewImpulseResponseTextFile
         }
     }
 
-    // The band line is written with the exporting machine's thousands separator, so
-    // "19,999.9" and "19.999,9" are the same frequency on two different machines.
-    private static bool TryReadGrouped(string token, out double value) =>
-        double.TryParse(
-            token.Trim(),
-            NumberStyles.Float | NumberStyles.AllowThousands,
+    /// <summary>
+    /// Reads a number written with either grouping convention — "19,999.9" and
+    /// "19.999,9" are the same frequency on two different machines.
+    /// </summary>
+    /// <remarks>
+    /// The file was written somewhere else, so neither the invariant culture nor the
+    /// one this program is running under is the right authority: trying them in turn
+    /// gets "20,1" wrong twice over, once as 201 under a culture that groups by comma
+    /// and once by refusing it. The token itself says which character is the decimal
+    /// point — the rightmost of the two when both appear, and otherwise the only one,
+    /// unless it stands three digits from the end and alone, which is how a thousands
+    /// group looks in both conventions.
+    /// </remarks>
+    private static bool TryReadGrouped(string token, out double value)
+    {
+        value = 0;
+        string trimmed = token.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        int lastDot = trimmed.LastIndexOf('.');
+        int lastComma = trimmed.LastIndexOf(',');
+        char? decimalSeparator;
+        if (lastDot >= 0 && lastComma >= 0)
+        {
+            decimalSeparator = lastDot > lastComma ? '.' : ',';
+        }
+        else if (lastDot >= 0 || lastComma >= 0)
+        {
+            char only = lastDot >= 0 ? '.' : ',';
+            int at = lastDot >= 0 ? lastDot : lastComma;
+            int occurrences = trimmed.Count(character => character == only);
+            bool looksGrouped = occurrences > 1 ||
+                (occurrences == 1 && trimmed.Length - at - 1 == 3);
+            decimalSeparator = looksGrouped ? null : only;
+        }
+        else
+        {
+            decimalSeparator = null;
+        }
+
+        string normalized = decimalSeparator is char separator
+            ? trimmed
+                .Replace(separator == '.' ? "," : ".", string.Empty, StringComparison.Ordinal)
+                .Replace(separator, '.')
+            : trimmed
+                .Replace(".", string.Empty, StringComparison.Ordinal)
+                .Replace(",", string.Empty, StringComparison.Ordinal);
+
+        return double.TryParse(
+            normalized,
+            NumberStyles.Float,
             CultureInfo.InvariantCulture,
-            out value) ||
-        double.TryParse(
-            token.Trim(),
-            NumberStyles.Float | NumberStyles.AllowThousands,
-            CultureInfo.CurrentCulture,
             out value);
+    }
 
     // "512k Log Swept Sine, 1 sweep at -10.0 dBFS using a loopback as a timing reference"
     private static (int? Length, int? Count) ReadExcitation(string? excitation)

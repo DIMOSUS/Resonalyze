@@ -463,11 +463,29 @@ namespace Resonalyze
                     "Transfer impulse response is required for loopback transfer measurements.",
                     nameof(transferImpulseResponse));
             }
-            if (InProgress)
+            // A run blocks; a claim does not. The caller that decoded this file has
+            // usually been holding one across the read and the analysis so nothing
+            // could start a sweep underneath it, and it must still be able to publish
+            // the result it went to the trouble of protecting. Same shape as
+            // ImportRecordedSweep, which faced this first.
+            bool claimedHere = false;
+            lock (stateSync)
             {
-                throw new InvalidOperationException(
-                    "Cannot load an impulse response while a measurement is running.");
+                if (inProgress && !claimed)
+                {
+                    throw new InvalidOperationException(
+                        "Cannot load an impulse response while a measurement is running.");
+                }
+
+                if (!inProgress)
+                {
+                    inProgress = true;
+                    claimedHere = true;
+                }
             }
+
+            try
+            {
             if (sweepDeconvolutionImpulseResponse.Length == 0)
             {
                 throw new ArgumentException(
@@ -555,6 +573,17 @@ namespace Resonalyze
                 AverageRunCount);
             LastError = null;
             Publish(ImpulseResponseChanged);
+            }
+            finally
+            {
+                if (claimedHere)
+                {
+                    lock (stateSync)
+                    {
+                        inProgress = false;
+                    }
+                }
+            }
         }
 
         /// <summary>

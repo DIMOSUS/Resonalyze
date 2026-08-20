@@ -43,6 +43,10 @@ namespace Resonalyze.Options
         private IReadOnlyList<AudioEndpointDescriptor> wasapiRenderEndpoints = Array.Empty<AudioEndpointDescriptor>();
         private IReadOnlyList<AsioDeviceInfo> asioDrivers = Array.Empty<AsioDeviceInfo>();
         private AsioDriverInfo asioDriverInfo = AsioDeviceCatalog.EmptyDriverInfo;
+        // What the last rate probe amounted to, so the status line can say which of the
+        // three situations it is in rather than pronouncing on a rate it did not test.
+        private bool sampleRateProbeFailed;
+        private int? sampleRateFellBackFrom;
         private bool initializing;
         private string? microphoneCalibration0DegreesPath;
         private List<MicrophoneCalibrationDefinition> additionalMicrophoneCalibrations = [];
@@ -1499,12 +1503,30 @@ namespace Resonalyze.Options
             }
 
             int sampleRate = GetSelectedSampleRate();
-            labelAsioSampleRateStatus.Text = asioDriverInfo.SupportsSampleRate
-                ? $"{sampleRate} Hz supported"
-                : $"{sampleRate} Hz not supported";
-            labelAsioSampleRateStatus.ForeColor = asioDriverInfo.SupportsSampleRate
-                ? Color.LightGreen
-                : Color.LightSalmon;
+            if (sampleRateProbeFailed)
+            {
+                // The number is the live selection and the verdict came from the last
+                // probe; when that probe told us nothing the two must not be combined
+                // into a confident sentence about a rate nobody tested.
+                labelAsioSampleRateStatus.Text =
+                    $"{sampleRate} Hz kept — the driver did not report its rates";
+                labelAsioSampleRateStatus.ForeColor = Color.Khaki;
+            }
+            else if (sampleRateFellBackFrom is int previous)
+            {
+                labelAsioSampleRateStatus.Text =
+                    $"{previous} Hz is not offered by this driver — changed to {sampleRate} Hz";
+                labelAsioSampleRateStatus.ForeColor = Color.LightSalmon;
+            }
+            else
+            {
+                labelAsioSampleRateStatus.Text = asioDriverInfo.SupportsSampleRate
+                    ? $"{sampleRate} Hz supported"
+                    : $"{sampleRate} Hz not supported";
+                labelAsioSampleRateStatus.ForeColor = asioDriverInfo.SupportsSampleRate
+                    ? Color.LightGreen
+                    : Color.LightSalmon;
+            }
             labelAsioPlaybackLatencyValue.Text =
                 asioDriverInfo.PlaybackLatency > 0
                     ? $"{asioDriverInfo.PlaybackLatency} samples"
@@ -2063,15 +2085,23 @@ namespace Resonalyze.Options
 
         private void RefreshSampleRateOptions(int preferredSampleRate)
         {
-            int fallbackSampleRate = 44_100;
-            IReadOnlyList<int> supportedRates = GetSupportedSampleRates();
-            int[] availableRates = supportedRates.Count > 0
-                ? supportedRates.ToArray()
-                : [fallbackSampleRate];
+            SampleRateResolution resolution = SampleRateOptions.Resolve(
+                GetSupportedSampleRates(),
+                preferredSampleRate,
+                comboBoxSampleRate.Items.Count > 0);
+            sampleRateProbeFailed = resolution.ProbeFailed;
+            sampleRateFellBackFrom = resolution.FellBackFrom;
+            if (resolution.ProbeFailed)
+            {
+                // Nothing is rebuilt on the absence of an answer: the list and the
+                // user's selection stand, and the status line says the driver did not
+                // report. Rebuilding here is what used to replace a working 96 kHz with
+                // 44.1 and persist it on the next Apply.
+                return;
+            }
 
-            int selectedSampleRate = availableRates.Contains(preferredSampleRate)
-                ? preferredSampleRate
-                : availableRates[0];
+            int[] availableRates = resolution.Rates;
+            int selectedSampleRate = resolution.Selected;
 
             bool wasInitializing = initializing;
             initializing = true;

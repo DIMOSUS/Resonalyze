@@ -68,6 +68,42 @@ internal static class ProcessedChannels
         VirtualCrossoverJunctions.GetCrossoverWindow(
             processed.Select(item => item.Channel.Settings));
 
+    /// <summary>
+    /// Where one channel lets a shared window open: its estimated response
+    /// START, as a sample index, falling back to its peak when the estimator
+    /// refuses the record (see <see cref="TransferIrStartCache"/>, which
+    /// memoizes the estimate per IR — the gate-placement guard reads the same
+    /// figure for the same channels on the same redraw).
+    /// <para>
+    /// A peak would be the wrong figure to share: a crossover's group delay
+    /// puts a filtered channel's peak milliseconds behind its own front — on
+    /// the archived Passat right side the subwoofer peaks 5.6 ms after its
+    /// band's arrival — so a window anchored on the earliest PEAK can still
+    /// open after an earlier channel's front. The phase view's Auto placement
+    /// has always used the start; this is the same rule for the magnitude
+    /// window, and for the junction gate the Auto delay search places
+    /// (VirtualCrossoverAnalysis.FindGateAnchor).
+    /// </para>
+    /// </summary>
+    public static int StartAnchorIndex(
+        Complex[] impulseResponse, int peakIndex, int sampleRate) =>
+        Math.Clamp(
+            (int)Math.Floor(
+                TransferIrStartCache.ResolveStartMs(
+                    impulseResponse, sampleRate, peakIndex)
+                / 1_000.0 * sampleRate),
+            0,
+            Math.Max(0, impulseResponse.Length - 1));
+
+    /// <summary>
+    /// The shared window's anchor for a channel set: the earliest
+    /// <see cref="StartAnchorIndex"/> among them.
+    /// </summary>
+    public static int SharedStartAnchorIndex(
+        IReadOnlyList<ProcessedChannel> processed) =>
+        processed.Min(item => StartAnchorIndex(
+            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate));
+
     public static List<ProcessedChannel> OrderByBand(IReadOnlyList<ProcessedChannel> processed) =>
         processed
             .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Channel.Settings))

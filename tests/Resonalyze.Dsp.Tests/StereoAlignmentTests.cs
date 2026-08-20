@@ -854,17 +854,27 @@ public sealed class StereoAlignmentTests
         // The field failure this pins (an 80 Hz sub junction): both woofers
         // carry a strong inverted narrowband build-up in the junction band's
         // UPPER half, half a period behind their direct front. Through the
-        // full-band mean the sub then "gains" by flipping onto that build-up
+        // full-band mean the sub then "gains" by moving onto that build-up
         // (a comb impostor the margin gate cannot refuse), while the clean
         // LOWER half — direct sound only — plainly loses. The sub-band
         // consistency veto is the cross-check narrow-band ranging disciplines
         // converge on: a true lobe holds every half of the band, an impostor
         // wins one half and loses the other.
+        //
+        // The build-up has to be genuinely strong (-6 dB) to fool the mean.
+        // At -10 dB it once did, but only through a window that moved with
+        // the probe: the grid's anchor was the earliest peak of the whole
+        // field, which the probed sub itself set, so a cell that carried the
+        // sub earlier also carried the window earlier and won ~0.5 dB of that
+        // move rather than of the summation. With the window held for the
+        // whole grid (see JunctionGateAnchor) the same impostor gains 0.02 dB
+        // and is refused by the hop margin long before the veto — the guard
+        // this test exists for needs a build-up that wins on merit.
         Complex[] WooferIr()
         {
             Complex[] ir = ImpulseAtMs(8.0);
             Complex[] mode = VirtualCrossoverAnalysis.ApplyChain(
-                ImpulseAtMs(8.0 + 6.25, -10.0),
+                ImpulseAtMs(8.0 + 6.25, -6.0),
                 new DspChannelChain(Crossover: new CrossoverSpec(
                     CrossoverKind.BandPass,
                     new CrossoverEdge(CrossoverFilterFamily.Butterworth, 150, 36),

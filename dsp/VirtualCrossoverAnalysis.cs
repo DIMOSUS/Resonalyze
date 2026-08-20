@@ -577,6 +577,73 @@ public static class VirtualCrossoverAnalysis
             .FirstArrivalDelayMilliseconds;
 
     /// <summary>
+    /// Where the direct-sound gate of a junction measurement must open for ONE
+    /// response: its band-limited first arrival inside the junction's own band,
+    /// as a sample index — the placement the gate remarks in
+    /// <see cref="BuildAlignmentBins"/> ask for, computed rather than
+    /// approximated by the peak.
+    /// <para>
+    /// A PEAK is the wrong estimator for this. It answers "where is this
+    /// channel loudest", and a crossover moves that answer by its own group
+    /// delay — in a band the junction may not even be judged in. On the
+    /// archived Passat right side a midrange band-passed at 250-2000 Hz peaks
+    /// 7.11 ms in, set by the group delay of its 250 Hz high-pass, while its
+    /// energy in the 1-4 kHz junction it shares with the tweeter is already
+    /// there at 4.28 ms; the subwoofer's peak sits 5.55 ms behind its own
+    /// 33-130 Hz arrival. A window anchored on the peak therefore opens after
+    /// the front it is supposed to hold, and its fade-in attenuates one
+    /// member's rise more than the other's — the very artifact the anchor
+    /// exists to prevent.
+    /// </para>
+    /// <para>
+    /// Two guards keep this honest where the estimate cannot be trusted. A
+    /// band that carries no measurable arrival (invalid, or below
+    /// <see cref="AutoAlignmentEngine.MinimumArrivalSnrDb"/>) falls back to the
+    /// peak, and the result is never LATER than the peak: the envelope search
+    /// can latch onto a room mode at a low junction, and a latched read is a
+    /// late one, so clamping to the peak means this can only ever move a
+    /// window EARLIER than the peak anchor it replaces — it cannot introduce a
+    /// cut that placement did not already have.
+    /// </para>
+    /// </summary>
+    public static int FindGateAnchor(
+        Complex[] impulseResponse,
+        int peakIndex,
+        int sampleRate,
+        double bandLowHz,
+        double bandHighHz,
+        ValidSampleRange validRange = default)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        if (impulseResponse.Length == 0)
+        {
+            throw new ArgumentException(
+                "The impulse response is empty.",
+                nameof(impulseResponse));
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+
+        int peak = Math.Clamp(peakIndex, 0, impulseResponse.Length - 1);
+        TimeAlignmentAnalysisResult arrival = AnalyzeBandLimitedArrival(
+            impulseResponse, sampleRate, bandLowHz, bandHighHz, validRange);
+        if (!arrival.IsValid ||
+            arrival.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        {
+            return peak;
+        }
+
+        // Floored, not rounded: half a sample earlier costs nothing (the
+        // fade-in covers the pre-arrival span) while half a sample later would
+        // start the plateau inside the front.
+        int front = (int)Math.Floor(
+            arrival.FirstArrivalDelayMilliseconds / 1_000.0 * sampleRate);
+        return Math.Clamp(Math.Min(front, peak), 0, impulseResponse.Length - 1);
+    }
+
+    /// <summary>
     /// The minimum band width (as a high/low frequency ratio: a third of an
     /// octave) a band-limited arrival analysis accepts. Narrower bands leave
     /// the envelope detector too few in-band periods to place an arrival, so
@@ -1484,27 +1551,46 @@ public static class VirtualCrossoverAnalysis
 
     // The direct-sound gate applied to every response before the alignment
     // spectra are taken: a cosine-faded Tukey window anchored one fade-length
-    // before the earliest channel peak. Reading the full IR instead would fold
-    // the entire room decay into every bin — hundreds of milliseconds of
-    // reverberation whose comb structure the alignment cannot change — so the
-    // search would optimize (and be misled by) reflections while the panel
-    // displays the gated direct sound. One gate shared by all channels, like
-    // the metric's shared anchor, so the loss keeps its 0 dB ceiling.
+    // before the earliest FRONT among the responses the caller named (see
+    // FindGateAnchor). Reading the full IR instead would fold the entire room
+    // decay into every bin — hundreds of milliseconds of reverberation whose
+    // comb structure the alignment cannot change — so the search would
+    // optimize (and be misled by) reflections while the panel displays the
+    // gated direct sound. One gate shared by both sides of a measurement, so
+    // the loss keeps its 0 dB ceiling.
     //
-    // WHICH channels set that anchor is a decision the caller owns
-    // (gateAnchorSample). Measuring one junction of a multiway system with an
-    // anchor taken from the PAIR alone places the window tens of milliseconds
-    // later than a window anchored on the whole system's first arrival — the
-    // placement the metric read-out uses (VirtualCrossoverMetrics.BuildCurves)
-    // — and at a sub/woofer junction the two then rank the same alignments
-    // differently:
-    // on a field cabin (LP/HP 55 Hz, 36 dB/oct) the pair-anchored window read
-    // the tuned alignment at -0.44 dB and preferred one 2 ms later, while the
-    // system-anchored window read it at -0.02 dB, the sharpest optimum of the
-    // sweep, agreeing with the panel and with the whitened correlation
-    // (r 0.99). A window whose fade-in cuts into the slow channel's own rise
-    // shifts that channel's apparent phase, and the junction search must not
-    // decide a lobe on an artifact of where the window happened to start.
+    // WHICH responses set that anchor is a decision the caller owns
+    // (gateAnchorSample), and the callers here name the JUNCTION's own members
+    // — not the whole system. What makes that safe is the anchor being a
+    // front. Anchoring a pair on its earlier PEAK is what once ranked
+    // alignments wrongly (a field cabin, LP/HP 55 Hz 36 dB/oct: the
+    // pair-and-peak window read the tuned alignment at -0.44 dB and preferred
+    // one 2 ms later, where a window anchored on the whole system's earliest
+    // peak read it at -0.02 dB, the sharpest optimum of the sweep, agreeing
+    // with the panel and with the whitened correlation, r 0.99) — because a
+    // low channel's peak trails its own rise by its crossover's group delay,
+    // so the window's fade-in cut into that rise and shifted the channel's
+    // apparent phase. Reaching outside the pair for an earlier peak fixed that
+    // by accident: it bought margin ahead of the rise at the price of a window
+    // that moved whenever an unrelated channel was enabled, muted or re-timed
+    // (on the archived Passat right side, muting the mid and tweeter moved the
+    // 65 Hz junction's window 8.96 ms and its own optimum by 14 ms). The
+    // junction search must not decide a lobe on an artifact of where the
+    // window happened to start — least of all one set by a channel that is not
+    // in the junction.
+    //
+    // The pair's own fronts recover PART of that margin, not all of it. On the
+    // 55 Hz reproduction in JunctionCorrelationCurveTests all three placements
+    // pick the same lobe (-3.5 ms, inverted), but the flatness each can read
+    // there differs: 0.00 dB through a window opened well ahead of both
+    // drivers, -0.15 dB through the pair's filtered fronts, -0.16 dB through
+    // the pair's peaks. What is left is the crossover's own rise, which starts
+    // before the filtered front any detector can mark — a 36 dB/oct low-pass
+    // reads its front 14 ms after the driver's. Closing that gap means reading
+    // the anchor off the chain-free response instead (PredictedFrontArrivalMs
+    // already derives exactly that figure), which is worth doing when the
+    // reported flatness of a steep low junction has to be trusted to a tenth
+    // of a dB; the lobe it lands on does not depend on it.
     //
     // The window is sized in TIME, not samples. A fixed 4096 samples is ~85 ms
     // at 48 kHz but only 43 ms at 96 kHz and 21 ms at 192 kHz — the higher the

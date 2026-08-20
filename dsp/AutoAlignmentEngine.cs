@@ -385,26 +385,55 @@ public static class AutoAlignmentEngine
     private const double OnsetLockMaxSpreadPeriods = 0.5;
 
     /// <summary>
-    /// The sample every junction measurement of a run anchors its direct-sound
-    /// gate on: the earliest peak across ALL the run's channels, rendered in
-    /// one frame. Two properties matter and neither is the pair's own peak.
+    /// The sample a junction's measurements anchor their direct-sound gate on:
+    /// the earliest FRONT among the junction's own members, read inside the
+    /// junction's band (see <see cref="VirtualCrossoverAnalysis.FindGateAnchor"/>).
+    /// Two properties matter, and the old rule — the earliest PEAK across every
+    /// channel of the run — bought them at a price this one does not pay.
     ///
-    /// It is EARLY — no channel's own rise can fall inside the window's
-    /// fade-in, which is what made a pair-anchored window misjudge a slow
-    /// channel's phase (see the gate remarks in VirtualCrossoverAnalysis).
+    /// It is EARLY — no member's own rise can fall inside the window's fade-in,
+    /// which is what made a peak-anchored window misjudge a slow channel's
+    /// phase (see the gate remarks in VirtualCrossoverAnalysis). A front says
+    /// so directly; the earliest peak of the whole system only implied it, by
+    /// reaching for a channel that happened to arrive sooner.
     ///
-    /// It is SHARED — one window for every junction, side and probe of a run,
-    /// so candidates, co-move cells and cross-side comparisons are all
-    /// measured through the same one. This is the same PLACEMENT RULE the
-    /// metric read-out follows (VirtualCrossoverMetrics.BuildCurves anchors on
-    /// its channel set's earliest peak), not the same sample: the read-out
-    /// runs on the applied delays and on the displayed side alone, so its
-    /// anchor lands wherever those put it. Matching it exactly is not the
-    /// goal and is not achievable mid-cascade — being early enough for every
-    /// channel, and the same for every comparison, is.
+    /// It is FIXED for everything compared through it — the candidates of one
+    /// search, the cells of a co-move grid, the two renders its sub-band veto
+    /// weighs. That is a property of the CALLER: each computes its junction's
+    /// anchor once, from a state it names, and passes that one sample to every
+    /// probe. What no
+    /// longer follows is one anchor for the whole run: losses are compared
+    /// within a junction (a candidate against a candidate, a cell against a
+    /// cell), and the co-move sums such differences over a side, where a
+    /// per-junction constant cancels. Junctions do NOT have to be measured
+    /// through the same window to be summed — they already carry different
+    /// bands — they have to be measured through a window that does not move
+    /// while they are being compared.
     /// </summary>
-    private static int SystemGateAnchor(IEnumerable<AlignmentSnapshot> scope) =>
-        scope.Min(item => item.PeakIndex);
+    private static int JunctionGateAnchor(
+        double bandLowHz,
+        double bandHighHz,
+        params AlignmentSnapshot?[] members)
+    {
+        int anchor = int.MaxValue;
+        foreach (AlignmentSnapshot? member in members)
+        {
+            if (member is not { } side)
+            {
+                continue;
+            }
+
+            anchor = Math.Min(anchor, VirtualCrossoverAnalysis.FindGateAnchor(
+                side.ImpulseResponse,
+                side.PeakIndex,
+                side.Channel.SampleRate,
+                bandLowHz,
+                bandHighHz,
+                side.ValidRange));
+        }
+
+        return anchor == int.MaxValue ? 0 : anchor;
+    }
 
     /// <summary>
     /// The minimum envelope peak-to-noise grade (dB) both channels' onset
@@ -1505,21 +1534,26 @@ public static class AutoAlignmentEngine
         AlignmentSnapshot primaryNeighborSnapshot =
             current.First(item => item.Channel == neighborChannel);
         Complex[] variableIr = variableSnapshot.ImpulseResponse;
-        // The gate anchor of every loss measurement below: the whole system's
-        // first arrival, NOT this pair's (see the gate remarks in
-        // VirtualCrossoverAnalysis). The metric read-out the user tunes by
-        // anchors there, and a pair-anchored window at a sub/woofer junction
-        // starts inside the sub's own rise and ranks the pair's alignments
-        // differently from what the panel then shows.
-        int gateAnchor = SystemGateAnchor(current);
+        AlignmentSnapshot? secondaryNeighborSnapshot = secondaryNeighbor != null
+            ? current.First(item => item.Channel == secondaryNeighbor)
+            : null;
+        // The gate anchor of every loss measurement below, taken ONCE here and
+        // handed to each of them: the earliest front among the channels this
+        // step measures, in the band it measures them over (see the gate
+        // remarks in VirtualCrossoverAnalysis). Computed on `current`, where
+        // the searched channel carries no delay yet — so every candidate of
+        // this search is scored through the same window, however far the
+        // candidate moves the channel.
+        int gateAnchor = JunctionGateAnchor(
+            bandLowHz, bandHighHz,
+            variableSnapshot, primaryNeighborSnapshot, secondaryNeighborSnapshot);
         var neighborIrs = new List<Complex[]>
         {
             primaryNeighborSnapshot.ImpulseResponse
         };
-        if (secondaryNeighbor != null)
+        if (secondaryNeighborSnapshot != null)
         {
-            neighborIrs.Add(current
-                .First(item => item.Channel == secondaryNeighbor).ImpulseResponse);
+            neighborIrs.Add(secondaryNeighborSnapshot.ImpulseResponse);
         }
 
         // The level match saturates at its cap; past it the residual
@@ -3462,15 +3496,10 @@ public static class AutoAlignmentEngine
             }
 
             IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
+            AlignmentSnapshot SnapshotOf(IAlignmentChannel channel) =>
+                current.First(item => item.Channel == channel);
             Complex[] IrOf(IAlignmentChannel channel) =>
-                current.First(item => item.Channel == channel).ImpulseResponse;
-            // The same window the searches were decided through. Without it
-            // this pass would re-judge settled pairs on a pair-anchored
-            // surface — the very measurement the cascade stopped using — and
-            // it moves channels for as little as the co-move threshold, so a
-            // fraction-of-a-dB difference between the two windows is exactly
-            // the size of change it can make.
-            int gateAnchor = SystemGateAnchor(current);
+                SnapshotOf(channel).ImpulseResponse;
 
             // One evaluator per junction of the REFERENCE side. The move is
             // shared, so its criterion is a choice, and a mean over both sides
@@ -3494,6 +3523,15 @@ public static class AutoAlignmentEngine
                 IAlignmentChannel neighbor = lowerMoves
                     ? junction.Upper.Channel
                     : junction.Lower.Channel;
+                // This junction's own window, held for every delta the pass
+                // probes: it re-judges settled pairs, and it moves channels
+                // for as little as the co-move threshold, so a window that
+                // shifted between two probes would be exactly the size of
+                // change this pass can make. Rebuilt from `current` rather
+                // than carried from the search that settled the pair — the
+                // fronts it reads have since moved with the delays the
+                // cascade assigned, and the criterion is a difference over
+                // THIS pass's probes, all of which see this one window.
                 VirtualCrossoverAnalysis.SumLossEvaluator? evaluator =
                     VirtualCrossoverAnalysis.SumLossEvaluator.Create(
                         IrOf(mover),
@@ -3503,7 +3541,11 @@ public static class AutoAlignmentEngine
                         junction.BandHighHz,
                         levelMatch: true,
                         requireDelayEvidence: true,
-                        gateAnchor);
+                        JunctionGateAnchor(
+                            junction.BandLowHz,
+                            junction.BandHighHz,
+                            SnapshotOf(mover),
+                            SnapshotOf(neighbor)));
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);
@@ -3744,10 +3786,19 @@ public static class AutoAlignmentEngine
             // polarity-invariant (it reads magnitudes), so one certification on
             // the current render covers every probe below.
             IReadOnlyList<AlignmentSnapshot> certified = reprocess(alignment);
+            int CertifiedGateAnchor(AlignmentJunction junction) =>
+                JunctionGateAnchor(
+                    junction.BandLowHz,
+                    junction.BandHighHz,
+                    certified.First(
+                        item => item.Channel == junction.Lower.Channel),
+                    certified.First(
+                        item => item.Channel == junction.Upper.Channel));
             AlignmentJunction? unmeasurable = junctions.FirstOrDefault(
                 junction => CellScore(
                     certified, junction, junction.BandLowHz, junction.BandHighHz,
-                    requireDelayEvidence: true) == null);
+                    requireDelayEvidence: true, CertifiedGateAnchor(junction))
+                    == null);
             if (unmeasurable is { } silent)
             {
                 IAlignmentChannel silentNeighbor =
@@ -3814,12 +3865,44 @@ public static class AutoAlignmentEngine
                         Math.Round(framedMonoMs + deltaMs, 2),
                         over.InvertPolarity ^ flip)
                 });
+
+            // The window every cell of this grid is measured through: read
+            // once, off the frame's own zero cell, per junction and band. The
+            // pass compares cells against each other — and its sub-band veto
+            // compares two whole renders of the same junction — so an anchor
+            // that followed the mono channel from cell to cell would compare
+            // them through different measurements. Read in the LIFTED frame,
+            // not off `certified`: the lift moves every channel together, and
+            // an anchor taken before it would sit that far ahead of every
+            // front the grid actually holds.
+            IReadOnlyList<AlignmentSnapshot> gridOrigin = Rendered(0, flip: false);
+            var gridAnchors =
+                new Dictionary<(AlignmentJunction Junction, double LowHz, double HighHz), int>();
+            int GridGateAnchor(
+                AlignmentJunction junction, double lowHz, double highHz)
+            {
+                if (!gridAnchors.TryGetValue((junction, lowHz, highHz),
+                    out int anchor))
+                {
+                    anchor = JunctionGateAnchor(
+                        lowHz,
+                        highHz,
+                        gridOrigin.First(
+                            item => item.Channel == junction.Lower.Channel),
+                        gridOrigin.First(
+                            item => item.Channel == junction.Upper.Channel));
+                    gridAnchors[(junction, lowHz, highHz)] = anchor;
+                }
+
+                return anchor;
+            }
             double? CellScore(
                 IReadOnlyList<AlignmentSnapshot> current,
                 AlignmentJunction junction,
                 double lowHz,
                 double highHz,
-                bool requireDelayEvidence)
+                bool requireDelayEvidence,
+                int gateAnchor)
             {
                 Complex[] IrOf(IAlignmentChannel channel) =>
                     current.First(item => item.Channel == channel).ImpulseResponse;
@@ -3835,11 +3918,7 @@ public static class AutoAlignmentEngine
                         highHz,
                         levelMatch: true,
                         requireDelayEvidence,
-                        // One system-anchored window, like the searches above:
-                        // the co-move compares cells of a grid, and a window
-                        // that moved with each cell's own pair would compare
-                        // them through different measurements.
-                        SystemGateAnchor(current));
+                        gateAnchor);
                 return loss is { } value
                     ? value.LossDb +
                         VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
@@ -3854,7 +3933,9 @@ public static class AutoAlignmentEngine
                 foreach (AlignmentJunction junction in junctions)
                 {
                     if (CellScore(current, junction, junction.BandLowHz,
-                        junction.BandHighHz, requireDelayEvidence: true)
+                        junction.BandHighHz, requireDelayEvidence: true,
+                        GridGateAnchor(
+                            junction, junction.BandLowHz, junction.BandHighHz))
                         is { } cell)
                     {
                         total += cell;
@@ -3863,12 +3944,12 @@ public static class AutoAlignmentEngine
                 }
 
                 // FAIL-CLOSED, not an average of the survivors: the upfront
-                // certification ran on one render, but every probe re-gates the
-                // IRs and the direct-sound window shifts with the probed delay,
-                // so a borderline junction can drop out mid-sweep and a mean over
-                // the rest would be the one-sided vote the certification exists
-                // to prevent. A probe that cannot measure EVERY junction is not
-                // a candidate.
+                // certification ran on one render, but the probed delay slides
+                // the mono channel inside the (fixed) direct-sound window and
+                // re-gates what of it the spectra see, so a borderline junction
+                // can drop out mid-sweep and a mean over the rest would be the
+                // one-sided vote the certification exists to prevent. A probe
+                // that cannot measure EVERY junction is not a candidate.
                 return measured == junctions.Count
                     ? total / measured
                     : double.NegativeInfinity;
@@ -3978,12 +4059,13 @@ public static class AutoAlignmentEngine
                         (double lowHz, double highHz) = upperHalf
                             ? (junction.CrossoverHz, junction.BandHighHz)
                             : (junction.BandLowHz, junction.CrossoverHz);
+                        int cellAnchor = GridGateAnchor(junction, lowHz, highHz);
                         double? polishCell = CellScore(
                             polishRender, junction, lowHz, highHz,
-                            requireDelayEvidence: true);
+                            requireDelayEvidence: true, cellAnchor);
                         double? hopCell = CellScore(
                             hopRender, junction, lowHz, highHz,
-                            requireDelayEvidence: true);
+                            requireDelayEvidence: true, cellAnchor);
                         if (polishCell is not { } polishCellScore ||
                             hopCell is not { } hopCellScore ||
                             hopCellScore >=
@@ -4103,17 +4185,18 @@ public static class AutoAlignmentEngine
         StringBuilder log)
     {
         IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
-        Complex[] mono = current
-            .First(item => item.Channel == monoChannel).ImpulseResponse;
-        Complex[] other = current
-            .First(item => item.Channel == otherChannel).ImpulseResponse;
+        AlignmentSnapshot mono = current
+            .First(item => item.Channel == monoChannel);
+        AlignmentSnapshot other = current
+            .First(item => item.Channel == otherChannel);
         (double LossDb, double DipDb)? loss = VirtualCrossoverAnalysis.MeasureSumLoss(
-            mono,
-            new List<Complex[]> { other },
+            mono.ImpulseResponse,
+            new List<Complex[]> { other.ImpulseResponse },
             monoChannel.SampleRate,
             pair.BandLowHz,
             pair.BandHighHz,
-            gateAnchorSample: SystemGateAnchor(current));
+            gateAnchorSample: JunctionGateAnchor(
+                pair.BandLowHz, pair.BandHighHz, mono, other));
         if (loss is not { } measured)
         {
             log.AppendLine(

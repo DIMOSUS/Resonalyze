@@ -180,16 +180,19 @@ public sealed class JunctionCorrelationCurveTests
             ImpulseAtMs(0), new DspChannelChain(Crossover: crossover), SampleRate);
 
     [Fact]
-    public void AlignmentCandidates_JudgeTheJunctionThroughTheGivenSystemAnchor()
+    public void AlignmentCandidates_JudgeTheJunctionThroughTheGivenAnchor()
     {
         // A subwoofer and its woofer partner fired from the SAME impulse
         // through the field cabin's edges (55 Hz, 36 dB/oct Butterworth; the
         // woofer's own 180 Hz low-pass is what puts the optimum a couple of
         // milliseconds early). Two filtered copies of one impulse in a silent
         // record CAN sum flat: at the right delay and polarity the junction is
-        // arithmetic, with no room to blame. The system-anchored window finds
-        // exactly that; the pair-anchored one — its fade-in cutting into both
-        // drivers' rise — cannot see a flat sum anywhere.
+        // arithmetic, with no room to blame. A window opened at the drivers'
+        // shared source finds exactly that; one opened on the pair's own peaks
+        // — its fade-in cutting into both drivers' rise — cannot see a flat sum
+        // anywhere. How much of the difference the shipped anchor rule
+        // (VirtualCrossoverAnalysis.FindGateAnchor, the pair's filtered fronts)
+        // recovers is pinned below.
         Complex[] sub = Filtered(new CrossoverSpec(
             CrossoverKind.LowPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
@@ -204,29 +207,47 @@ public sealed class JunctionCorrelationCurveTests
                 priorDelayMs: null, priorSigmaMs: 0, forcedPolarity: null,
                 levelMatch: true, out _, gateAnchorSample: anchor)[0];
 
-        AlignmentCandidate systemAnchored = Best(BasePosition);
+        AlignmentCandidate sourceAnchored = Best(BasePosition);
         Assert.True(
-            systemAnchored.InvertPolarity,
+            sourceAnchored.InvertPolarity,
             "36 dB/oct edges at one corner hand over inverted");
-        Assert.InRange(systemAnchored.DelayMs, -4.5, -2.5);
-        Assert.InRange(systemAnchored.LossDb, -0.02, 0.0);
-        Assert.InRange(systemAnchored.DipDb, -0.05, 0.0);
+        Assert.InRange(sourceAnchored.DelayMs, -4.5, -2.5);
+        Assert.InRange(sourceAnchored.LossDb, -0.02, 0.0);
+        Assert.InRange(sourceAnchored.DipDb, -0.05, 0.0);
 
-        AlignmentCandidate pairAnchored = Best(null);
+        AlignmentCandidate peakAnchored = Best(null);
         Assert.True(
-            pairAnchored.LossDb < -0.10 && pairAnchored.DipDb < -0.3,
-            $"the pair-anchored window cannot read the flat sum: " +
-            $"avg {pairAnchored.LossDb:0.00}, dip {pairAnchored.DipDb:0.00} dB");
+            peakAnchored.LossDb < -0.10 && peakAnchored.DipDb < -0.3,
+            $"the peak-anchored window cannot read the flat sum: " +
+            $"avg {peakAnchored.LossDb:0.00}, dip {peakAnchored.DipDb:0.00} dB");
+
+        // The shipped rule sits between the two, and the lobe is the same
+        // through all three: the anchor decides how honestly the junction's
+        // flatness READS, not which alignment wins. The remaining gap is the
+        // 36 dB/oct low-pass's own rise, which starts ~14 ms before the front
+        // the detector can mark on the filtered response (see the gate remarks
+        // in VirtualCrossoverAnalysis).
+        AlignmentCandidate frontAnchored = Best(Math.Min(
+            VirtualCrossoverAnalysis.FindGateAnchor(
+                sub, VirtualCrossoverAnalysis.FindPeakIndex(sub),
+                SampleRate, 27.5, 110),
+            VirtualCrossoverAnalysis.FindGateAnchor(
+                woofer, VirtualCrossoverAnalysis.FindPeakIndex(woofer),
+                SampleRate, 27.5, 110)));
+        Assert.True(frontAnchored.InvertPolarity);
+        Assert.InRange(frontAnchored.DelayMs, -4.5, -2.5);
+        Assert.InRange(frontAnchored.LossDb, peakAnchored.LossDb, -0.05);
     }
 
     [Fact]
-    public void AlignmentCandidates_PairAnchoredWindowMisreadsTheSameJunction()
+    public void AlignmentCandidates_PeakAnchoredWindowMisreadsTheSameJunction()
     {
-        // The same junction with the anchor left to the pair: the window then
-        // starts inside the drivers' own rise and the surface it measures is
-        // not the one the read-out shows — this is what let a field sub/woofer
-        // junction (55 Hz, 36 dB/oct) be settled a half period out. Pinned so
-        // the two anchors cannot silently converge and hide the distinction.
+        // The same junction with the anchor left to the pair's PEAKS: the
+        // window then starts inside the drivers' own rise, and what it reads
+        // there is a windowing artifact rather than the junction — this is what
+        // let a field sub/woofer junction (55 Hz, 36 dB/oct) be settled a half
+        // period out. Pinned so the placements cannot silently converge and
+        // hide the distinction.
         Complex[] sub = Filtered(new CrossoverSpec(
             CrossoverKind.LowPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
@@ -238,20 +259,21 @@ public sealed class JunctionCorrelationCurveTests
         // The true alignment itself — zero delay, the woofer inverted — read
         // through each window.
         Complex[] inverted = woofer.Select(value => -value).ToArray();
-        (double LossDb, double DipDb)? pairAnchored =
+        (double LossDb, double DipDb)? peakAnchored =
             VirtualCrossoverAnalysis.MeasureSumLoss(
                 inverted, [sub], SampleRate, 27.5, 110, levelMatch: true);
-        (double LossDb, double DipDb)? systemAnchored =
+        (double LossDb, double DipDb)? sourceAnchored =
             VirtualCrossoverAnalysis.MeasureSumLoss(
                 inverted, [sub], SampleRate, 27.5, 110, levelMatch: true,
                 gateAnchorSample: BasePosition);
 
-        Assert.NotNull(pairAnchored);
-        Assert.NotNull(systemAnchored);
+        Assert.NotNull(peakAnchored);
+        Assert.NotNull(sourceAnchored);
         Assert.True(
-            systemAnchored.Value.LossDb > pairAnchored.Value.LossDb + 0.05,
-            $"the system-anchored window must read the truth more honestly: " +
-            $"{systemAnchored.Value.LossDb:0.00} vs {pairAnchored.Value.LossDb:0.00} dB");
+            sourceAnchored.Value.LossDb > peakAnchored.Value.LossDb + 0.05,
+            $"a window opened ahead of both rises must read the truth more " +
+            $"honestly: {sourceAnchored.Value.LossDb:0.00} vs " +
+            $"{peakAnchored.Value.LossDb:0.00} dB");
     }
 
     [Fact]

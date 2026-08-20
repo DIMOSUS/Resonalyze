@@ -21,7 +21,8 @@ public sealed class RewImpulseResponseTextFileTests
         string excitation =
             "* Excitation: 512k Log Swept Sine, 1 sweep at -10.0 dBFS using a loopback as a timing reference",
         int? declaredLength = null,
-        string band = "* Response measured over: 20.1 to 19,999.9 Hz")
+        string band = "* Response measured over: 20.1 to 19,999.9 Hz",
+        int? peakIndex = null)
     {
         var text = new StringBuilder();
         text.AppendLine("* Impulse Response data saved by REW V5.40 Beta 132");
@@ -34,7 +35,7 @@ public sealed class RewImpulseResponseTextFileTests
         text.AppendLine(excitation);
         text.AppendLine(band);
         text.AppendLine("0.0034054601565003395 // Peak value before normalisation");
-        text.AppendLine(Invariant(samples.Count > 0 ? Peak(samples) : 0) + " // Peak index");
+        text.AppendLine(Invariant(peakIndex ?? (samples.Count > 0 ? Peak(samples) : 0)) + " // Peak index");
         text.AppendLine(Invariant(declaredLength ?? samples.Count) + " // Response length");
         text.AppendLine("1.0416666666666666E-5 // Sample interval (seconds)");
         text.AppendLine(startTimeSeconds.ToString("R", CultureInfo.InvariantCulture) +
@@ -82,11 +83,30 @@ public sealed class RewImpulseResponseTextFileTests
         ];
     }
 
+    // Sub-sample position of the largest peak, so a fractional shift can be asserted.
+    private static double ArgMaxParabolic(double[] x)
+    {
+        int i = 0;
+        for (int k = 1; k < x.Length; k++)
+        {
+            if (Math.Abs(x[k]) > Math.Abs(x[i]))
+            {
+                i = k;
+            }
+        }
+
+        double a = Math.Abs(x[(i - 1 + x.Length) % x.Length]);
+        double b = Math.Abs(x[i]);
+        double c = Math.Abs(x[(i + 1) % x.Length]);
+        double denominator = a - (2 * b) + c;
+        return i + (denominator == 0 ? 0 : 0.5 * (a - c) / denominator);
+    }
+
     [Fact]
     public void Parse_ReadsTheHeaderRewWrites()
     {
         RewImpulseResponseTextFile file = RewImpulseResponseTextFile.Parse(
-            Export(ImpulseAt(64, 20.25), -20.25 / SampleRate));
+            Export(ImpulseAt(64, 34.0), -20.25 / SampleRate));
 
         Assert.Equal(SampleRate, file.SampleRate);
         Assert.Equal(64, file.Samples.Length);
@@ -108,20 +128,21 @@ public sealed class RewImpulseResponseTextFileTests
     {
         // t = 0 at sample 20.25: rounding it to 20 would move the arrival by a quarter of
         // a sample — 2.6 us, 0.9 mm — on every channel placed this way.
-        double[] samples = ImpulseAt(64, 20.25);
+        double[] samples = ImpulseAt(64, 34.0);
         RewImpulseResponseTextFile file = RewImpulseResponseTextFile.Parse(
             Export(samples, -20.25 / SampleRate));
 
         double[] referenced = file.ToLoopbackReferencedImpulseResponse();
 
-        // The same pulse, now centred on sample 0 rather than on 20.25.
-        double[] expected = ImpulseAt(64, 0.0);
+        // The same pulse, now 13.75 samples after the reference rather than 34 after
+        // the buffer's start: 34 − 20.25, with the quarter sample carried not rounded.
+        double[] expected = ImpulseAt(64, 13.75);
         for (int i = 0; i < referenced.Length; i++)
         {
             Assert.Equal(expected[i], referenced[i], 9);
         }
 
-        Assert.Equal(1.0, referenced[0], 9);
+        Assert.Equal(13.75, ArgMaxParabolic(referenced), 1);
 
         // The samples themselves are untouched by reading: they stay REW's buffer, which
         // is what a raw deconvolution looks like on this side too.
@@ -131,7 +152,7 @@ public sealed class RewImpulseResponseTextFileTests
     [Fact]
     public void Parse_RefusesAnExportThatCannotCarryWhatItClaims()
     {
-        double[] samples = ImpulseAt(64, 20.25);
+        double[] samples = ImpulseAt(64, 34.0);
         double startTime = -20.25 / SampleRate;
 
         // Normalised: the peak has been scaled to 1, so the file holds no level relation
@@ -178,7 +199,7 @@ public sealed class RewImpulseResponseTextFileTests
         // decides whether to refuse it or import it as a recorded sweep — but it must not
         // be silently treated as the loopback base.
         RewImpulseResponseTextFile file = RewImpulseResponseTextFile.Parse(Export(
-            ImpulseAt(64, 20.25),
+            ImpulseAt(64, 34.0),
             -20.25 / SampleRate,
             excitation: "* Excitation: 256k Log Swept Sine, 4 sweeps at -12.0 dBFS using an " +
                 "acoustic timing reference"));
@@ -194,7 +215,7 @@ public sealed class RewImpulseResponseTextFileTests
         // culture nor the one this program runs under is the authority on what "20,1"
         // means. Both conventions must read the same, whichever culture is current —
         // and trying invariant-then-current would read "20,1" as 201.
-        double[] samples = ImpulseAt(64, 20.25);
+        double[] samples = ImpulseAt(64, 34.0);
         double startTime = -20.25 / SampleRate;
         CultureInfo original = CultureInfo.CurrentCulture;
         try
@@ -232,5 +253,31 @@ public sealed class RewImpulseResponseTextFileTests
         {
             CultureInfo.CurrentCulture = original;
         }
+    }
+    [Fact]
+    public void Parse_RefusesAnArrivalThatPrecedesTheReference()
+    {
+        // A timing offset applied in REW is invisible in this format: the header of a
+        // measurement taken with one is word for word the header of one taken without,
+        // and the offset is simply baked into the start time. What it cannot hide is
+        // the consequence. Measured on REW 5.40 Beta 132: the same channel exported
+        // with a 4 ms offset carries "96000 // Peak index" against a start time of
+        // -1.0013229166666666 s, which puts t = 0 at sample 96127 — 127 samples after
+        // the peak — and REW's own API reports that measurement's delay as -1.32 ms.
+        // Sound does not reach the microphone before it reaches the loopback.
+        double[] samples = ImpulseAt(64, 34.0);
+
+        Assert.False(RewImpulseResponseTextFile.TryParse(
+            Export(samples, -20.25 / SampleRate, peakIndex: 20),
+            out _,
+            out string? problem));
+        Assert.Contains("precede the reference", problem);
+
+        // The honest limit: an offset smaller than the arrival keeps the peak after
+        // t = 0 and is indistinguishable from a shorter path. This one still imports,
+        // and the notice says the arrival it implies so a user can catch it.
+        RewImpulseResponseTextFile file = RewImpulseResponseTextFile.Parse(
+            Export(samples, -20.25 / SampleRate, peakIndex: 40));
+        Assert.Equal(19.75, file.ImpliedArrivalSamples, 6);
     }
 }

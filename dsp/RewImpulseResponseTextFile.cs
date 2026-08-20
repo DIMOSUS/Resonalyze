@@ -63,6 +63,15 @@ public sealed class RewImpulseResponseTextFile
     public int PeakIndex { get; private init; }
 
     /// <summary>
+    /// The arrival this header implies, in samples: the buffer's peak minus the
+    /// reference. For a loopback-referenced sweep it is the tract's delay, and it is
+    /// positive by physics — the microphone cannot hear the sweep before the reference
+    /// does. A file where it is not is on some other time base; see the refusal in
+    /// <see cref="TryParse"/>.
+    /// </summary>
+    public double ImpliedArrivalSamples => PeakIndex - TimeZeroIndex;
+
+    /// <summary>
     /// REW's peak before normalisation — <em>interpolated</em>, so it sits a little above
     /// the largest sample in the data (0.002 dB on the file this reader was written
     /// against). It is the sub-sample peak, not one of the numbers below it.
@@ -277,10 +286,29 @@ public sealed class RewImpulseResponseTextFile
         }
 
         double timeZero = -startTime * sampleRate;
+        int peakIndexValue = values.TryGetValue("Peak index", out double peakIndex)
+            ? (int)Math.Round(peakIndex)
+            : 0;
         if (!(timeZero >= 0) || timeZero >= samples.Count)
         {
             problem = $"t = 0 falls at sample {timeZero:0.###} of {samples.Count}, outside the " +
                 "buffer: these samples do not contain the reference arrival";
+            return false;
+        }
+
+        // REW's text export does not record a timing offset — the header of a
+        // measurement taken with one is word for word the header of one taken without,
+        // and the offset is simply baked into the start time. What it cannot hide is
+        // the consequence: a large enough offset pushes t = 0 past the buffer's peak,
+        // and an arrival before the reference is not something a loopback measurement
+        // can produce. Measured: a 4 ms offset on a 2.7 ms arrival puts t = 0 127
+        // samples after the peak, which REW's own API reports as a delay of -1.32 ms.
+        if (values.ContainsKey("Peak index") && peakIndexValue <= timeZero)
+        {
+            problem = $"the header puts the reference at sample {timeZero:0.###} and the " +
+                $"buffer's peak at {peakIndexValue}, so the arrival would precede the " +
+                "reference — which a loopback-referenced sweep cannot do. The usual cause " +
+                "is a timing offset applied in REW, which this export does not record";
             return false;
         }
 
@@ -291,9 +319,7 @@ public sealed class RewImpulseResponseTextFile
             SampleRate = sampleRate,
             SampleIntervalSeconds = interval,
             StartTimeSeconds = startTime,
-            PeakIndex = values.TryGetValue("Peak index", out double peakIndex)
-                ? (int)Math.Round(peakIndex)
-                : 0,
+            PeakIndex = peakIndexValue,
             PeakValueBeforeNormalisation =
                 values.TryGetValue("Peak value before normalisation", out double peak) ? peak : 0.0,
             DataOffsetDb = values.TryGetValue("Data offset (dB)", out double offset) ? offset : 0.0,

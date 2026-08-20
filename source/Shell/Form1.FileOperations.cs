@@ -318,9 +318,27 @@ public partial class Form1
     // its own curves is not in the impulse response — an imported IR is uncalibrated.
     private async Task ImportRewImpulseResponseAsync(string path)
     {
+        // Claimed before the read, not after it: parsing a few hundred thousand
+        // samples and running the fractional shift takes long enough for the record
+        // button to start a sweep in between, and this import would then arrive on
+        // top of it. The claim is held until the result is published.
+        using var claim = expSweepMeasurement.Claim();
         string text = await File.ReadAllTextAsync(path);
         RewImpulseResponseTextFile file = await Task.Run(
             () => RewImpulseResponseTextFile.Parse(text));
+        // The sweep this result would be filed under is generated at the configured
+        // rate; a file at another rate is not describing the same signal, and the
+        // state applied afterwards would report a rate the measurement does not have.
+        int configuredSampleRate =
+            measurementSettings.Measurement.BuildConfiguration().Signal.SampleRate;
+        if (file.SampleRate != configuredSampleRate)
+        {
+            throw new InvalidOperationException(
+                $"This export is {file.SampleRate} Hz while the measurement is configured " +
+                $"for {configuredSampleRate} Hz. Set the sample rate in Measurement Options " +
+                "to match the file, then import it again.");
+        }
+
         if (!file.IsLoopbackReferenced)
         {
             // The shape is real; the position is its own. Placing it here would give it

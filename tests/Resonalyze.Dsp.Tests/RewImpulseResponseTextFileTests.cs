@@ -20,7 +20,8 @@ public sealed class RewImpulseResponseTextFileTests
         string minPhase = "* IR is not the min phase version",
         string excitation =
             "* Excitation: 512k Log Swept Sine, 1 sweep at -10.0 dBFS using a loopback as a timing reference",
-        int? declaredLength = null)
+        int? declaredLength = null,
+        string band = "* Response measured over: 20.1 to 19,999.9 Hz")
     {
         var text = new StringBuilder();
         text.AppendLine("* Impulse Response data saved by REW V5.40 Beta 132");
@@ -31,7 +32,7 @@ public sealed class RewImpulseResponseTextFileTests
         text.AppendLine("* Dated: Jun 15, 2026, 2:47:02 PM");
         text.AppendLine("* Measurement: w-L_01 (sw)");
         text.AppendLine(excitation);
-        text.AppendLine("* Response measured over: 20.1 to 19,999.9 Hz");
+        text.AppendLine(band);
         text.AppendLine("0.0034054601565003395 // Peak value before normalisation");
         text.AppendLine(Invariant(samples.Count > 0 ? Peak(samples) : 0) + " // Peak index");
         text.AppendLine(Invariant(declaredLength ?? samples.Count) + " // Response length");
@@ -185,5 +186,51 @@ public sealed class RewImpulseResponseTextFileTests
         Assert.False(file.IsLoopbackReferenced);
         Assert.Equal(4, file.SweepCount);
         Assert.Equal(256 * 1024, file.SweepLengthSamples);
+    }
+    [Fact]
+    public void Parse_ReadsTheBandInEitherGroupingConvention()
+    {
+        // The file was written on someone else's machine, so neither the invariant
+        // culture nor the one this program runs under is the authority on what "20,1"
+        // means. Both conventions must read the same, whichever culture is current —
+        // and trying invariant-then-current would read "20,1" as 201.
+        double[] samples = ImpulseAt(64, 20.25);
+        double startTime = -20.25 / SampleRate;
+        CultureInfo original = CultureInfo.CurrentCulture;
+        try
+        {
+            foreach (string culture in new[] { "en-US", "de-DE" })
+            {
+                CultureInfo.CurrentCulture = new CultureInfo(culture);
+
+                RewImpulseResponseTextFile dotted = RewImpulseResponseTextFile.Parse(
+                    Export(samples, startTime, band: "* Response measured over: 20.1 to 19,999.9 Hz"));
+                RewImpulseResponseTextFile commaed = RewImpulseResponseTextFile.Parse(
+                    Export(samples, startTime, band: "* Response measured over: 20,1 to 19.999,9 Hz"));
+
+                Assert.Equal(20.1, dotted.LowFrequencyHz);
+                Assert.Equal(19999.9, dotted.HighFrequencyHz);
+                Assert.Equal(20.1, commaed.LowFrequencyHz);
+                Assert.Equal(19999.9, commaed.HighFrequencyHz);
+            }
+
+            // A lone separator three digits from the end is a thousands group in both
+            // conventions; anything else is a decimal point.
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            RewImpulseResponseTextFile grouped = RewImpulseResponseTextFile.Parse(
+                Export(samples, startTime, band: "* Response measured over: 1,250 to 12.500 Hz"));
+            Assert.Equal(1250.0, grouped.LowFrequencyHz);
+            Assert.Equal(12500.0, grouped.HighFrequencyHz);
+
+            // A band it cannot read leaves the band absent rather than failing the file.
+            RewImpulseResponseTextFile unreadable = RewImpulseResponseTextFile.Parse(
+                Export(samples, startTime, band: "* Response measured over: unknown"));
+            Assert.Null(unreadable.LowFrequencyHz);
+            Assert.Null(unreadable.HighFrequencyHz);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 }

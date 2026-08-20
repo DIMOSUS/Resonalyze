@@ -751,6 +751,31 @@ public static class AutoAlignmentEngine
     private const double PredictedArrivalConvictionFactor = 2.0;
 
     /// <summary>
+    /// The comb arbitration for the conviction factor's DEAD ZONE. The factor
+    /// exists because a prediction's own shaping error can reach 1.2
+    /// allowances, so a single witness may not convict below 2.0 — but at a
+    /// bass junction the allowance is ~half the crossover period, which puts
+    /// conviction at a FULL period: exactly where a modal latch lands. A read
+    /// in that zone (later than its prediction by more than one allowance,
+    /// short of two) used to withdraw the pair silently, and the upper-half
+    /// probe cannot examine a steeply low-passed reference that has nothing
+    /// above the corner — the archived Passat v2 sub read 26.8 ms against a
+    /// predicted 13.6 (1.7 allowances) and its latch anchored the whole
+    /// junction a period late. The whitened correlation of the pair breaks
+    /// the tie: it reads WHERE the two channels' shared content actually
+    /// aligns, so its strongest lobe within half a period of the
+    /// prediction-implied lag, beating the strongest within half a period of
+    /// the measured-implied lag by a real margin, is the second independent
+    /// witness a sub-conviction-strength discrepancy needs (on the Passat v2
+    /// junction: r 0.91 at the predicted family against 0.81 at the measured
+    /// one). The floor and the advantage mirror the direct-coherence
+    /// witness's field calibration; both lags must be measurable or the
+    /// arbitration stands down and the zone withdraws the pair as before.
+    /// </summary>
+    private const double LatchArbitrationMinR = 0.6;
+    private const double LatchArbitrationMinAdvantage = 0.05;
+
+    /// <summary>
     /// How far a processed read may sit from
     /// <see cref="PredictedFrontArrivalMs"/> before the side loses its
     /// certificate: half a period at the band's geometric center — one
@@ -1084,6 +1109,70 @@ public static class AutoAlignmentEngine
                 pairGradeable && lowerState == PredictionState.Latched;
             bool upperLatchedByPrediction =
                 pairGradeable && upperState == PredictionState.Latched;
+
+            // The dead zone (see LatchArbitrationMinR): a side LATER than its
+            // prediction by more than one allowance but short of the
+            // conviction factor, with both predictions in hand and the other
+            // side not itself refusing the grade. The whitened comb decides
+            // whether the pair's shared content sits with the predictions or
+            // with the measured arrivals.
+            bool lowerLateInZone =
+                lowerState == PredictionState.Inconsistent &&
+                lowerArrival > lowerPrediction;
+            bool upperLateInZone =
+                upperState == PredictionState.Inconsistent &&
+                upperArrival > upperPrediction;
+            if (!lowerLatchedByPrediction && !upperLatchedByPrediction &&
+                (lowerLateInZone || upperLateInZone) &&
+                lowerState != PredictionState.Unavailable &&
+                upperState != PredictionState.Unavailable &&
+                (lowerLateInZone || lowerState == PredictionState.Verified) &&
+                (upperLateInZone || upperState == PredictionState.Verified))
+            {
+                double periodMs = 1_000.0 / pair.CrossoverHz;
+                double measuredLagMs = lowerArrival - upperArrival;
+                double predictedLagMs = lowerPrediction - upperPrediction;
+                List<SignalPoint> comb =
+                    VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                        pair.Lower.ImpulseResponse,
+                        pair.Upper.ImpulseResponse,
+                        pair.Lower.Channel.SampleRate,
+                        pair.CrossoverHz,
+                        Math.Log2(pair.BandHighHz / pair.BandLowHz),
+                        Math.Abs(measuredLagMs - predictedLagMs) / 2.0
+                            + periodMs / 2.0,
+                        (measuredLagMs + predictedLagMs) / 2.0,
+                        phaseTransform: true);
+                double StrongestNear(double lagMs) => comb
+                    .Where(point => Math.Abs(point.X - lagMs) <= periodMs / 2.0)
+                    .Select(point => Math.Abs(point.Y))
+                    .DefaultIfEmpty(0.0)
+                    .Max();
+                double nearPredicted = StrongestNear(predictedLagMs);
+                double nearMeasured = StrongestNear(measuredLagMs);
+                if (nearPredicted >= LatchArbitrationMinR &&
+                    nearPredicted >= nearMeasured + LatchArbitrationMinAdvantage)
+                {
+                    log.AppendLine(
+                        $"  {(lowerLateInZone ? pair.Lower : pair.Upper).Channel.Name}: " +
+                        $"read sits in the conviction dead zone and the " +
+                        $"whitened comb sides with the prediction " +
+                        $"(r {nearPredicted:0.00} at the predicted family vs " +
+                        $"{nearMeasured:0.00} at the measured) — convicted by " +
+                        "arbitration");
+                    lowerLatchedByPrediction = lowerLateInZone;
+                    upperLatchedByPrediction = upperLateInZone;
+                }
+                else
+                {
+                    log.AppendLine(
+                        $"  latch arbitration stood down for " +
+                        $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
+                        $"comb r {nearPredicted:0.00} at the predicted family " +
+                        $"vs {nearMeasured:0.00} at the measured — no second " +
+                        "witness, the pair withdraws from the predictor.");
+                }
+            }
             if (lowerLatchedByPrediction || upperLatchedByPrediction)
             {
                 void LogConviction(

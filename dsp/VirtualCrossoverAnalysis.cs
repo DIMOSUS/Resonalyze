@@ -376,13 +376,11 @@ public static class VirtualCrossoverAnalysis
     /// cannot see — typically the channel's other crossover junction.
     /// </summary>
     /// <param name="gateAnchorSample">
-    /// The sample the shared direct-sound gate anchors on. Null takes the
-    /// earliest peak of the responses passed in — right for a standalone
-    /// two-response question, WRONG for one junction of a multiway system,
-    /// where the pair's own peak places the window later than the read-out's
-    /// and can rank the junction's alignments differently (see the gate
-    /// constants' remarks). A caller aligning a system passes the whole
-    /// system's first arrival, the same anchor the metric read-out uses.
+    /// Null — the default, and what every engine site passes — windows each
+    /// response at its OWN band-limited front, the cuts meeting in one
+    /// absolute-time frame (see BuildAlignmentBins). A non-null sample forces
+    /// ONE shared window at that anchor instead: the read "through this
+    /// window", for displays and placement comparisons.
     /// </param>
     public static IReadOnlyList<AlignmentCandidate> FindAlignmentCandidates(
         Complex[] variableImpulseResponse,
@@ -396,12 +394,14 @@ public static class VirtualCrossoverAnalysis
         double priorSigmaMs = 0,
         bool? forcedPolarity = null,
         bool levelMatch = false,
-        int? gateAnchorSample = null) =>
+        int? gateAnchorSample = null,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null) =>
         FindAlignmentCandidates(
             variableImpulseResponse, fixedImpulseResponses, sampleRate,
             minFrequencyHz, maxFrequencyHz, minDelayMs, maxDelayMs,
             priorDelayMs, priorSigmaMs, forcedPolarity, levelMatch, out _,
-            gateAnchorSample);
+            gateAnchorSample, variableValidRange, fixedValidRanges);
 
     /// <summary>
     /// The overload that also reports EVERY refined local optimum (best
@@ -425,7 +425,9 @@ public static class VirtualCrossoverAnalysis
         bool? forcedPolarity,
         bool levelMatch,
         out IReadOnlyList<AlignmentCandidate> allOptima,
-        int? gateAnchorSample = null)
+        int? gateAnchorSample = null,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -436,7 +438,9 @@ public static class VirtualCrossoverAnalysis
             minDelayMs,
             maxDelayMs,
             levelMatch,
-            gateAnchorSample);
+            gateAnchorSample,
+            variableValidRange,
+            fixedValidRanges);
         if (bins.Count == 0 || !HoldsDelayEvidence(bins))
         {
             allOptima = Array.Empty<AlignmentCandidate>();
@@ -665,7 +669,8 @@ public static class VirtualCrossoverAnalysis
         int sampleRate,
         double bandLowHz,
         double bandHighHz,
-        double crossoverHz)
+        double crossoverHz,
+        ValidSampleRange validRange = default)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
         if (impulseResponse.Length == 0)
@@ -687,7 +692,8 @@ public static class VirtualCrossoverAnalysis
             FindPeakIndex(impulseResponse),
             sampleRate,
             bandLowHz,
-            bandHighHz);
+            bandHighHz,
+            validRange);
         double periodSamples = sampleRate / crossoverHz;
         int fade = Math.Max(8, (int)Math.Round(0.5 * periodSamples));
         int plateau = (int)Math.Round(2.0 * periodSamples);
@@ -1268,13 +1274,14 @@ public static class VirtualCrossoverAnalysis
     /// <summary>
     /// The junction summation loss as a function of an EXTRA delay applied to
     /// the variable channel — the prior-free acoustic surface of one junction,
-    /// as a drawable curve. Both channels are windowed ONCE through the
-    /// junction's shared direct-sound gate (the caller's anchor — the pair's
-    /// earliest front, the same rule the Auto delay search gates by — or that
-    /// rule derived here when none is given), and every probe rotates the
-    /// variable channel's windowed cut by e^(−jωΔ): the same bins and the same
-    /// rotation the search's <see cref="SumLossEvaluator"/> reads, so the
-    /// drawn surface IS the search's surface, point for point at Δ = 0.
+    /// as a drawable curve. Each channel is windowed ONCE — by default at its
+    /// OWN band-limited front, exactly as the Auto delay search windows it
+    /// (see BuildAlignmentBins; a non-null anchor forces one shared window
+    /// instead) — and every probe rotates the variable channel's windowed cut
+    /// by e^(−jωΔ): the same bins and the same rotation the search's
+    /// <see cref="SumLossEvaluator"/> reads, so with the search's own
+    /// settings (null anchor, levelMatch on) the drawn surface IS the
+    /// search's surface, point for point at Δ = 0.
     /// <para>
     /// This replaced re-gating every probe through a STATIONARY window (the
     /// variable response physically delayed, then windowed at the fixed
@@ -1314,7 +1321,10 @@ public static class VirtualCrossoverAnalysis
         double endDelayMs,
         double stepMs,
         bool invertVariable,
-        int? gateAnchorSample = null)
+        int? gateAnchorSample = null,
+        bool levelMatch = false,
+        ValidSampleRange variableValidRange = default,
+        ValidSampleRange fixedValidRange = default)
     {
         ArgumentNullException.ThrowIfNull(variableImpulseResponse);
         ArgumentNullException.ThrowIfNull(fixedImpulseResponse);
@@ -1331,19 +1341,13 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentException("The sweep window is invalid.");
         }
 
-        int anchor = gateAnchorSample ?? Math.Min(
-            FindGateAnchor(
-                variableImpulseResponse,
-                FindPeakIndex(variableImpulseResponse),
-                sampleRate,
-                bandLowHz,
-                bandHighHz),
-            FindGateAnchor(
-                fixedImpulseResponse,
-                FindPeakIndex(fixedImpulseResponse),
-                sampleRate,
-                bandLowHz,
-                bandHighHz));
+        // The anchor passes through UNTOUCHED: null must reach
+        // BuildAlignmentBins as null, where it means each response windowed
+        // at its own front — the same read the Auto search makes. Deriving a
+        // shared pair anchor here (as this once did) silently redirected the
+        // default onto a different window than the search's, and the drawn
+        // surface stopped being the searched one exactly where it matters —
+        // short high-frequency windows over separated arrivals.
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
             new List<Complex[]> { fixedImpulseResponse },
@@ -1352,8 +1356,10 @@ public static class VirtualCrossoverAnalysis
             bandHighHz,
             startDelayMs,
             endDelayMs,
-            levelMatch: false,
-            anchor);
+            levelMatch,
+            gateAnchorSample,
+            variableValidRange,
+            fixedValidRanges: new[] { fixedValidRange });
         var points = new List<JunctionSweepPoint>();
         if (bins.Count == 0)
         {
@@ -1828,7 +1834,9 @@ public static class VirtualCrossoverAnalysis
         IReadOnlyList<Complex[]> fixedImpulseResponses,
         int sampleRate,
         double minFrequencyHz,
-        double maxFrequencyHz)
+        double maxFrequencyHz,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -1837,7 +1845,11 @@ public static class VirtualCrossoverAnalysis
             minFrequencyHz,
             maxFrequencyHz,
             minDelayMs: -1,
-            maxDelayMs: 1);
+            maxDelayMs: 1,
+            levelMatch: false,
+            gateAnchorSample: null,
+            variableValidRange,
+            fixedValidRanges);
         double variableLevel = 0;
         double fixedLevel = 0;
         foreach (AlignmentBin bin in bins)
@@ -1862,7 +1874,9 @@ public static class VirtualCrossoverAnalysis
         double minDelayMs,
         double maxDelayMs,
         bool levelMatch = false,
-        int? gateAnchorSample = null)
+        int? gateAnchorSample = null,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
     {
         ArgumentNullException.ThrowIfNull(variableImpulseResponse);
         ArgumentNullException.ThrowIfNull(fixedImpulseResponses);
@@ -1968,6 +1982,12 @@ public static class VirtualCrossoverAnalysis
             // settled neighbor can sit tens of ms behind a not-yet-delayed
             // channel, which the old shared fixed-length window only survived
             // by being 85 ms long.
+            // The front detector takes each response's valid range where the
+            // caller has one (the engine's snapshots always do): a chain's
+            // delay pads the record with a silent prefix that inflates the
+            // arrival SNR estimate, and an anchor certified by that inflation
+            // can open the window on the wrong event — the failure mode
+            // ValidSampleRange exists for.
             variableSpectrum = CutSpectrum(
                 variableImpulseResponse,
                 FindGateAnchor(
@@ -1975,14 +1995,20 @@ public static class VirtualCrossoverAnalysis
                     FindPeakIndex(variableImpulseResponse),
                     sampleRate,
                     minFrequencyHz,
-                    maxFrequencyHz));
-            foreach (Complex[] ir in fixedImpulseResponses)
+                    maxFrequencyHz,
+                    variableValidRange));
+            for (int index = 0; index < fixedImpulseResponses.Count; index++)
             {
+                Complex[] ir = fixedImpulseResponses[index];
                 Complex[] spectrum = CutSpectrum(
                     ir,
                     FindGateAnchor(
                         ir, FindPeakIndex(ir), sampleRate,
-                        minFrequencyHz, maxFrequencyHz));
+                        minFrequencyHz, maxFrequencyHz,
+                        fixedValidRanges != null &&
+                        index < fixedValidRanges.Count
+                            ? fixedValidRanges[index]
+                            : default));
                 for (int i = 0; i < length; i++)
                 {
                     fixedSpectrum[i] += spectrum[i];
@@ -2093,7 +2119,9 @@ public static class VirtualCrossoverAnalysis
         IReadOnlyList<Complex[]> fixedImpulseResponses,
         int sampleRate,
         double minFrequencyHz,
-        double maxFrequencyHz)
+        double maxFrequencyHz,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
     {
         // The delay bounds only shape BuildAlignmentBins' argument validation
         // (the bins themselves are delay-free); any valid span works, as in
@@ -2105,7 +2133,11 @@ public static class VirtualCrossoverAnalysis
             minFrequencyHz,
             maxFrequencyHz,
             minDelayMs: -1,
-            maxDelayMs: 1);
+            maxDelayMs: 1,
+            levelMatch: false,
+            gateAnchorSample: null,
+            variableValidRange,
+            fixedValidRanges);
         if (bins.Count < 2)
         {
             return 0.0;
@@ -2583,7 +2615,9 @@ public static class VirtualCrossoverAnalysis
         double maxFrequencyHz,
         bool levelMatch = false,
         bool requireDelayEvidence = false,
-        int? gateAnchorSample = null)
+        int? gateAnchorSample = null,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
     {
         // The delay window only gates parameter validation here — the
         // measurement itself evaluates the responses exactly as given.
@@ -2596,7 +2630,9 @@ public static class VirtualCrossoverAnalysis
             minDelayMs: -1,
             maxDelayMs: 1,
             levelMatch,
-            gateAnchorSample);
+            gateAnchorSample,
+            variableValidRange,
+            fixedValidRanges);
         // A caller COMPARING alignments across this band (rather than
         // reporting what a sum happens to measure) must not read a verdict
         // off a band where the delay is not observable: with one side only a
@@ -2733,7 +2769,9 @@ public static class VirtualCrossoverAnalysis
             double maxFrequencyHz,
             bool levelMatch = false,
             bool requireDelayEvidence = false,
-            int? gateAnchorSample = null)
+            int? gateAnchorSample = null,
+            ValidSampleRange variableValidRange = default,
+            IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
         {
             List<AlignmentBin> bins = BuildAlignmentBins(
                 variableImpulseResponse,
@@ -2744,7 +2782,9 @@ public static class VirtualCrossoverAnalysis
                 minDelayMs: -1,
                 maxDelayMs: 1,
                 levelMatch,
-                gateAnchorSample);
+                gateAnchorSample,
+                variableValidRange,
+                fixedValidRanges);
             if (bins.Count == 0 ||
                 (requireDelayEvidence && !HoldsDelayEvidence(bins)))
             {

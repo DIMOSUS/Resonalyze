@@ -372,6 +372,106 @@ public sealed class JunctionCorrelationCurveTests
     }
 
     [Fact]
+    public void JunctionLossSweep_DefaultReadsTheSearchsOwnWindows()
+    {
+        // Two channels whose fronts sit 12 ms apart — further than the
+        // 800-1250 Hz band's 10.8 ms window spans. Windowed per channel (the
+        // search's default) each cut holds its channel wherever it sits;
+        // forced through one shared window at the earliest front, the late
+        // channel is lost off the window's end. The sweep once derived that
+        // shared anchor whenever the caller passed none, so the drawn surface
+        // silently stopped being the searched one exactly on such pairs; the
+        // null anchor must now reach the bins untouched, making the sweep
+        // point-identical to the evaluator the search reads.
+        Complex[] variable = ImpulseAtSample(96);        // 2 ms
+        Complex[] fixedIr = ImpulseAtSample(96 + 576);   // 14 ms
+
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> sweep =
+            VirtualCrossoverAnalysis.JunctionLossSweep(
+                variable, fixedIr, SampleRate, 800, 1_250,
+                startDelayMs: 10.0, endDelayMs: 14.0, stepMs: 0.5,
+                invertVariable: false);
+        VirtualCrossoverAnalysis.SumLossEvaluator? evaluator =
+            VirtualCrossoverAnalysis.SumLossEvaluator.Create(
+                variable, [fixedIr], SampleRate, 800, 1_250);
+
+        Assert.NotNull(evaluator);
+        foreach (VirtualCrossoverAnalysis.JunctionSweepPoint point in sweep)
+        {
+            (double lossDb, double dipDb) = evaluator.Evaluate(point.DelayMs);
+            Assert.Equal(lossDb, point.LossDb, 9);
+            Assert.Equal(dipDb, point.DipDb, 9);
+        }
+
+        // And the distinction is real on this pair: the shared window at the
+        // early channel's front cannot even hold the late channel, so the
+        // same probes read a different surface through it.
+        int sharedFront = VirtualCrossoverAnalysis.FindGateAnchor(
+            variable, VirtualCrossoverAnalysis.FindPeakIndex(variable),
+            SampleRate, 800, 1_250);
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> shared =
+            VirtualCrossoverAnalysis.JunctionLossSweep(
+                variable, fixedIr, SampleRate, 800, 1_250,
+                startDelayMs: 10.0, endDelayMs: 14.0, stepMs: 0.5,
+                invertVariable: false, sharedFront);
+        double worst = sweep
+            .Zip(shared, (own, one) => Math.Abs(own.LossDb - one.LossDb))
+            .Max();
+        Assert.True(
+            worst > 0.5,
+            $"the two window rules read this pair {worst:0.00} dB apart at " +
+            "most — too close to prove the anchor pass-through matters");
+    }
+
+    [Fact]
+    public void JunctionLossSweep_LevelMatchReshapesUnequalChannels()
+    {
+        // The Auto search always scores through the level match
+        // (FindAlignmentCandidates, levelMatch: true): the lobe choice must
+        // not depend on the channels' playback gains. A sweep drawn without
+        // it shows a different surface whenever the pair sits at different
+        // levels — equal-amplitude synthetics hid this. With the match ON the
+        // sweep must again be point-identical to the matched evaluator.
+        Complex[] variable = ImpulseAtMs(0.5, amplitude: 0.25); // -12 dB
+        Complex[] fixedIr = ImpulseAtMs(2.0);
+
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> matched =
+            VirtualCrossoverAnalysis.JunctionLossSweep(
+                variable, fixedIr, SampleRate, 800, 1_250,
+                startDelayMs: 0.0, endDelayMs: 3.0, stepMs: 0.25,
+                invertVariable: false, gateAnchorSample: null,
+                levelMatch: true);
+        VirtualCrossoverAnalysis.SumLossEvaluator? evaluator =
+            VirtualCrossoverAnalysis.SumLossEvaluator.Create(
+                variable, [fixedIr], SampleRate, 800, 1_250,
+                levelMatch: true);
+
+        Assert.NotNull(evaluator);
+        foreach (VirtualCrossoverAnalysis.JunctionSweepPoint point in matched)
+        {
+            (double lossDb, double dipDb) = evaluator.Evaluate(point.DelayMs);
+            Assert.Equal(lossDb, point.LossDb, 9);
+            Assert.Equal(dipDb, point.DipDb, 9);
+        }
+
+        // A 12 dB imbalance flattens the unmatched surface: at the aligned
+        // probe the matched pair cancels ~fully where the unmatched one
+        // cannot lose more than the weak channel contributes.
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> unmatched =
+            VirtualCrossoverAnalysis.JunctionLossSweep(
+                variable, fixedIr, SampleRate, 800, 1_250,
+                startDelayMs: 0.0, endDelayMs: 3.0, stepMs: 0.25,
+                invertVariable: false);
+        double worst = matched
+            .Zip(unmatched, (a, b) => Math.Abs(a.LossDb - b.LossDb))
+            .Max();
+        Assert.True(
+            worst > 3.0,
+            $"a 12 dB pair reads only {worst:0.00} dB apart with and " +
+            "without the match — the surfaces should differ starkly");
+    }
+
+    [Fact]
     public void JunctionLossSweep_InvertedPolarityShiftsTheCombByHalfAPeriod()
     {
         // With the variable channel inverted the comb flips: the optimum moves

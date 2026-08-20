@@ -4446,7 +4446,13 @@ public partial class VirtualCrossoverPanel : UserControl
             VirtualCrossoverAnalysis.JunctionLossSweep(
                 upper, lower, sampleRate,
                 pair.BandLowHz, pair.BandHighHz,
-                -windowMs, windowMs, stepMs, invert)
+                -windowMs, windowMs, stepMs, invert,
+                // The search's own settings, or the drawn surface is not the
+                // searched one: per-channel windows (null anchor) and the
+                // search-side level match, whose absence re-shapes the lobes
+                // whenever the two channels sit at different gains.
+                gateAnchorSample: null,
+                levelMatch: true)
             .Select(point => new SignalPoint(
                 point.DelayMs,
                 point.LossDb +

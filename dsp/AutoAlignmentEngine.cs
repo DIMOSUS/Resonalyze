@@ -1543,16 +1543,25 @@ public static class AutoAlignmentEngine
         {
             primaryNeighborSnapshot.ImpulseResponse
         };
+        // The snapshots' valid ranges travel with the responses into every
+        // bins build below: the per-channel front detection must not read a
+        // chain delay's silent prefix as arrival SNR.
+        var neighborRanges = new List<ValidSampleRange>
+        {
+            primaryNeighborSnapshot.ValidRange
+        };
         if (secondaryNeighborSnapshot != null)
         {
             neighborIrs.Add(secondaryNeighborSnapshot.ImpulseResponse);
+            neighborRanges.Add(secondaryNeighborSnapshot.ValidRange);
         }
 
         // The level match saturates at its cap; past it the residual
         // imbalance shrinks the junction contrast again, so the user should
         // level the gains and re-run — say so instead of degrading silently.
         if (VirtualCrossoverAnalysis.MeasureInBandImbalanceDb(
-                variableIr, neighborIrs, channel.SampleRate, bandLowHz, bandHighHz)
+                variableIr, neighborIrs, channel.SampleRate, bandLowHz, bandHighHz,
+                variableSnapshot.ValidRange, neighborRanges)
             is { } imbalanceDb &&
             Math.Abs(imbalanceDb) > VirtualCrossoverAnalysis.LevelMatchCapDb)
         {
@@ -1715,7 +1724,10 @@ public static class AutoAlignmentEngine
                     // Search-side level match: the lobe choice must not depend
                     // on the channels' playback gains (see BuildAlignmentBins).
                     levelMatch: true,
-                    out IReadOnlyList<AlignmentCandidate> allOptima);
+                    out IReadOnlyList<AlignmentCandidate> allOptima,
+                    gateAnchorSample: null,
+                    variableSnapshot.ValidRange,
+                    neighborRanges);
             return (candidates, allOptima, windowLowMs, windowHighMs);
         }
 
@@ -2092,10 +2104,12 @@ public static class AutoAlignmentEngine
                         VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
                             VirtualCrossoverAnalysis.CutDirectSound(
                                 neighborIrs[0], channel.SampleRate,
-                                bandLowHz, bandHighHz, pair.CrossoverHz),
+                                bandLowHz, bandHighHz, pair.CrossoverHz,
+                                primaryNeighborSnapshot.ValidRange),
                             VirtualCrossoverAnalysis.CutDirectSound(
                                 variableIr, channel.SampleRate,
-                                bandLowHz, bandHighHz, pair.CrossoverHz),
+                                bandLowHz, bandHighHz, pair.CrossoverHz,
+                                variableSnapshot.ValidRange),
                             channel.SampleRate,
                             pair.CrossoverHz,
                             Math.Log2(bandHighHz / bandLowHz),
@@ -2189,20 +2203,26 @@ public static class AutoAlignmentEngine
                 // (say 50-150 Hz) is not judged over five octaves it never
                 // overlaps. A fraction, not an octave count, so the threshold
                 // means the same across narrow and wide bands.
-                double OverlapFractionAgainst(AlignmentJunction junction, Complex[] neighborIr)
+                double OverlapFractionAgainst(
+                    AlignmentJunction junction,
+                    Complex[] neighborIr,
+                    ValidSampleRange neighborRange)
                 {
                     double nominal = Math.Log2(junction.BandHighHz / junction.BandLowHz);
                     double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
                         variableIr, [neighborIr], channel.SampleRate,
-                        junction.BandLowHz, junction.BandHighHz);
+                        junction.BandLowHz, junction.BandHighHz,
+                        variableSnapshot.ValidRange, [neighborRange]);
                     return nominal > 0 ? octaves / nominal : 0;
                 }
-                double overlapFraction = OverlapFractionAgainst(pair, neighborIrs[0]);
+                double overlapFraction = OverlapFractionAgainst(
+                    pair, neighborIrs[0], neighborRanges[0]);
                 if (secondaryPair != null && neighborIrs.Count > 1)
                 {
                     overlapFraction = Math.Min(
                         overlapFraction,
-                        OverlapFractionAgainst(secondaryPair, neighborIrs[1]));
+                        OverlapFractionAgainst(
+                            secondaryPair, neighborIrs[1], neighborRanges[1]));
                 }
                 decisions[channel] = BuildDecision(
                     chosen,
@@ -3592,6 +3612,8 @@ public static class AutoAlignmentEngine
                 current.First(item => item.Channel == channel);
             Complex[] IrOf(IAlignmentChannel channel) =>
                 SnapshotOf(channel).ImpulseResponse;
+                ValidSampleRange RangeOf(IAlignmentChannel channel) =>
+                    current.First(item => item.Channel == channel).ValidRange;
 
             // One evaluator per junction of the REFERENCE side. The move is
             // shared, so its criterion is a choice, and a mean over both sides
@@ -3632,7 +3654,10 @@ public static class AutoAlignmentEngine
                         junction.BandLowHz,
                         junction.BandHighHz,
                         levelMatch: true,
-                        requireDelayEvidence: true);
+                        requireDelayEvidence: true,
+                        gateAnchorSample: null,
+                        RangeOf(mover),
+                        new[] { RangeOf(neighbor) });
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);
@@ -3885,6 +3910,8 @@ public static class AutoAlignmentEngine
             IReadOnlyList<AlignmentSnapshot> certified = reprocess(alignment);
             Complex[] CertifiedIrOf(IAlignmentChannel channel) =>
                 certified.First(item => item.Channel == channel).ImpulseResponse;
+            ValidSampleRange CertifiedRangeOf(IAlignmentChannel channel) =>
+                certified.First(item => item.Channel == channel).ValidRange;
             VirtualCrossoverAnalysis.SumLossEvaluator? Probe(
                 AlignmentJunction junction, double lowHz, double highHz)
             {
@@ -3898,7 +3925,10 @@ public static class AutoAlignmentEngine
                     lowHz,
                     highHz,
                     levelMatch: true,
-                    requireDelayEvidence: true);
+                    requireDelayEvidence: true,
+                    gateAnchorSample: null,
+                    CertifiedRangeOf(mono),
+                    new[] { CertifiedRangeOf(neighbor) });
             }
 
             var fullBand =
@@ -4234,7 +4264,9 @@ public static class AutoAlignmentEngine
             new List<Complex[]> { other.ImpulseResponse },
             monoChannel.SampleRate,
             pair.BandLowHz,
-            pair.BandHighHz);
+            pair.BandHighHz,
+            variableValidRange: mono.ValidRange,
+            fixedValidRanges: new[] { other.ValidRange });
         if (loss is not { } measured)
         {
             log.AppendLine(

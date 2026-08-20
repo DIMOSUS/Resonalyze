@@ -60,6 +60,43 @@ public sealed class DirectCoherenceTests
     }
 
     [Fact]
+    public void CutDirectSound_HonorsTheValidRange()
+    {
+        // An in-band artifact ahead of the record's valid content — the shape
+        // a chain's group-delay padding or a capture glitch leaves. Without
+        // the range the front detector marks the artifact and the cut windows
+        // the wrong event; with the range the artifact is outside the
+        // analysis and the cut lands on the real front. The engine's
+        // snapshots always carry the range — this pins that the cut actually
+        // takes it.
+        Complex[] ir = Impulse(amplitude: 1.0);              // real front
+        Complex[] artifact = Impulse(-10.0, amplitude: 0.6); // 10 ms earlier
+        for (int i = 0; i < ir.Length; i++)
+        {
+            ir[i] += artifact[i];
+        }
+        int artifactAt = BasePosition - (int)Math.Round(10.0 / 1000 * SampleRate);
+        var validRange = new ValidSampleRange(
+            BasePosition - (int)Math.Round(2.0 / 1000 * SampleRate), IrLength);
+
+        Complex[] blind = VirtualCrossoverAnalysis.CutDirectSound(
+            ir, SampleRate, 750, 3_000, 1_500);
+        Complex[] guarded = VirtualCrossoverAnalysis.CutDirectSound(
+            ir, SampleRate, 750, 3_000, 1_500, validRange);
+
+        // Blind, the window opens on the artifact and the real front sits
+        // 10 ms behind it — far outside a two-period cut at 1.5 kHz.
+        Assert.True(
+            blind[artifactAt].Magnitude > 0.5,
+            "without the range the artifact should anchor the cut");
+        Assert.Equal(0.0, blind[BasePosition].Magnitude, 6);
+        // Guarded, the artifact region is invisible to the detector and the
+        // cut holds the real front at full weight.
+        Assert.Equal(0.0, guarded[artifactAt].Magnitude, 6);
+        Assert.Equal(1.0, guarded[BasePosition].Magnitude, 2);
+    }
+
+    [Fact]
     public void Compute_WeighsTheDirectCoherenceOnAPolarityTie()
     {
         // The archived C/D geometry: split corners (LP 1500, HP 1700, both

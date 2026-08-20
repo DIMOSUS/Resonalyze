@@ -2123,6 +2123,17 @@ namespace Resonalyze.Options
             {
                 RefreshSweepBandPreview();
             }
+
+            // The status line pairs a number taken from the selection with a verdict
+            // taken from the probe, so it can only be written once the selection has
+            // settled. RefreshAsioDriverInfo writes it before this method has filled the
+            // combo, when GetSelectedSampleRate still answers with its own fallback —
+            // which is how "96000" in the list came to sit above "44100 Hz supported"
+            // in green. Writing it again here is what keeps the two halves in step.
+            if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
+            {
+                UpdateAsioStatusLabels();
+            }
         }
 
         private IReadOnlyList<int> GetSupportedSampleRates()

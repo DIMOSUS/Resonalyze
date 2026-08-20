@@ -4488,9 +4488,9 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
 
         double arrivalLagMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                lower, sampleRate, pair.BandLowHz, pair.BandHighHz)
+                lower, sampleRate, pair.BandLowHz, pair.BandHighHz, lowerRange)
             - VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                upper, sampleRate, pair.BandLowHz, pair.BandHighHz);
+                upper, sampleRate, pair.BandLowHz, pair.BandHighHz, upperRange);
 
         return new JunctionCorrelationView(
             $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",

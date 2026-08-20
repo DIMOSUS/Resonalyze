@@ -56,23 +56,31 @@ public sealed class VirtualCrossoverCorrelationViewTests
                 [lower, upper]);
         }
 
-        SignalPoint guarded = View(honest).WhitenedDirect
+        JunctionCorrelationView guardedView = View(honest);
+        SignalPoint guarded = guardedView.WhitenedDirect
             .MaxBy(point => Math.Abs(point.Y));
         Assert.InRange(guarded.X, -0.2, 0.2);
         Assert.True(
             guarded.Y > 0.8,
             $"with the range honored the aligned fronts should cohere " +
             $"strongly, got r {guarded.Y:0.00} at {guarded.X:0.00} ms");
+        // The arrival marker is the same read the search anchors on: with the
+        // range honored it sees the aligned fronts, not the artifact.
+        Assert.InRange(guardedView.ArrivalLagMs, -0.5, 0.5);
 
         // The discriminating control: the SAME channels with an
         // all-permissive range on the artifact-bearing one. If the view ever
         // stops passing ranges (or shifts them wrongly enough to void them),
         // this is what the guarded read degenerates to.
-        SignalPoint blind = View(wide).WhitenedDirect
+        JunctionCorrelationView blindView = View(wide);
+        SignalPoint blind = blindView.WhitenedDirect
             .MaxBy(point => Math.Abs(point.Y));
         Assert.True(
             Math.Abs(blind.Y) < 0.5,
             $"with the artifact anchoring the cut no strong lobe should " +
             $"survive in view, got r {blind.Y:0.00} at {blind.X:0.00} ms");
+        // ...and the blind marker parks on the artifact, 10 ms early on the
+        // upper side — the false front a dropped range would draw.
+        Assert.InRange(blindView.ArrivalLagMs, 9.0, 11.0);
     }
 }

@@ -183,20 +183,29 @@ public sealed class JunctionCorrelationCurveTests
             ImpulseAtMs(0), new DspChannelChain(Crossover: crossover), SampleRate);
 
     [Fact]
-    public void AlignmentCandidates_JudgeTheJunctionThroughTheGivenAnchor()
+    public void AlignmentCandidates_ReadTheFlatSumHonestlyByDefault()
     {
         // A subwoofer and its woofer partner fired from the SAME impulse
-        // through the field cabin's edges (55 Hz, 36 dB/oct Butterworth; the
-        // woofer's own 180 Hz low-pass is what puts the optimum a couple of
-        // milliseconds early). Two filtered copies of one impulse in a silent
-        // record CAN sum flat: at the right delay and polarity the junction is
-        // arithmetic, with no room to blame. A window opened at the drivers'
-        // shared source finds exactly that; one opened on the pair's own peaks
-        // — its fade-in cutting into both drivers' rise — cannot see a flat sum
-        // anywhere. Four placements are put to that record below: the source,
-        // the shipped rule (VirtualCrossoverAnalysis.FindGateAnchor over the
-        // pair's filtered fronts), the pair's peaks, and the chain-free fronts
-        // that were measured against the shipped rule and declined.
+        // through the field cabin's edges (55 Hz, 36 dB/oct Butterworth):
+        // two filtered copies of one impulse in a silent record CAN sum
+        // flat, so any honest read of the true alignment must say so. This
+        // junction spent two generations of window placement being misread —
+        // a window on the pair's PEAKS started inside both drivers' rises
+        // and settled the field junction a half period out; a window on the
+        // pair's filtered FRONTS still cut the rise a 36 dB/oct filter
+        // spreads 8-13 ms ahead of any detectable front and invented
+        // -0.21 dB at the optimum (the placements were measured against each
+        // other here before the band-sized window; see the gate remarks in
+        // VirtualCrossoverAnalysis for the full history and figures).
+        //
+        // The band-sized window closed the question at a bass junction: at
+        // 27.5-110 Hz the window is ~315 ms with a ~20 ms fade-in, so every
+        // placement — even the peaks — admits the whole rise, and the
+        // default per-channel-front read and a deliberately peak-anchored
+        // shared window now agree on the flat sum to a few hundredths of a
+        // dB. Placement still matters where windows are short; what holds it
+        // to the front there is the detector itself (JunctionGateAnchorTests
+        // pins front-vs-peak directly).
         Complex[] sub = Filtered(new CrossoverSpec(
             CrossoverKind.LowPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
@@ -211,98 +220,30 @@ public sealed class JunctionCorrelationCurveTests
                 priorDelayMs: null, priorSigmaMs: 0, forcedPolarity: null,
                 levelMatch: true, out _, gateAnchorSample: anchor)[0];
 
-        AlignmentCandidate sourceAnchored = Best(BasePosition);
+        // The default read: each channel windowed at its own front. The
+        // 36 dB/oct edges at one corner hand over inverted, and the flat sum
+        // reads flat.
+        AlignmentCandidate byDefault = Best(null);
         Assert.True(
-            sourceAnchored.InvertPolarity,
+            byDefault.InvertPolarity,
             "36 dB/oct edges at one corner hand over inverted");
-        Assert.InRange(sourceAnchored.DelayMs, -4.5, -2.5);
-        Assert.InRange(sourceAnchored.LossDb, -0.02, 0.0);
-        Assert.InRange(sourceAnchored.DipDb, -0.05, 0.0);
+        Assert.InRange(byDefault.DelayMs, -4.5, -2.5);
+        Assert.InRange(byDefault.LossDb, -0.05, 0.0);
+        Assert.InRange(byDefault.DipDb, -0.10, 0.0);
 
-        AlignmentCandidate peakAnchored = Best(null);
-        Assert.True(
-            peakAnchored.LossDb < -0.10 && peakAnchored.DipDb < -0.3,
-            $"the peak-anchored window cannot read the flat sum: " +
-            $"avg {peakAnchored.LossDb:0.00}, dip {peakAnchored.DipDb:0.00} dB");
-
-        // The shipped rule sits between the two, and the lobe is the same
-        // through all three: the anchor decides how honestly the junction's
-        // flatness READS, not which alignment wins. The remaining gap is the
-        // 36 dB/oct low-pass's own rise, which starts before the front the
-        // detector can mark on the filtered response — 12.8 ms before it for
-        // this sub, 8.6 ms for its woofer partner (see the gate remarks in
-        // VirtualCrossoverAnalysis).
-        int filteredFront = Math.Min(
-            VirtualCrossoverAnalysis.FindGateAnchor(
-                sub, VirtualCrossoverAnalysis.FindPeakIndex(sub),
-                SampleRate, 27.5, 110),
-            VirtualCrossoverAnalysis.FindGateAnchor(
-                woofer, VirtualCrossoverAnalysis.FindPeakIndex(woofer),
-                SampleRate, 27.5, 110));
-        AlignmentCandidate frontAnchored = Best(filteredFront);
-        Assert.True(frontAnchored.InvertPolarity);
-        Assert.InRange(frontAnchored.DelayMs, -4.5, -2.5);
-        Assert.InRange(frontAnchored.LossDb, peakAnchored.LossDb, -0.05);
-
-        // The fourth placement, and the reason the third one is still what the
-        // engine uses. Reading those same fronts off the pair's CHAIN-FREE
-        // responses — here the bare impulse both drivers were fired from —
-        // lands on the source and gives back the whole 0.21 dB the window was
-        // inventing. Tempting, and measured on the archived cabins: it moves
-        // the lowest junction of a cabin away from the owner's own tuning (see
-        // the gate remarks), so the flatness it reads is honest while the
-        // alignment it picks is not better. Pinned here so the option stays
-        // measured rather than re-proposed from the reasoning.
-        int chainFreeFront = VirtualCrossoverAnalysis.FindGateAnchor(
-            ImpulseAtMs(0), BasePosition, SampleRate, 27.5, 110);
-        Assert.InRange(chainFreeFront, BasePosition - 2, BasePosition);
-        Assert.True(
-            filteredFront - chainFreeFront > Samples(5.0),
-            "the filtered front sat only " +
-            $"{(filteredFront - chainFreeFront) * 1000.0 / SampleRate:0.0} ms " +
-            "behind the driver's — too little to tell the placements apart");
-        AlignmentCandidate chainFreeAnchored = Best(chainFreeFront);
-        Assert.True(chainFreeAnchored.InvertPolarity);
-        Assert.InRange(chainFreeAnchored.DelayMs, -4.5, -2.5);
-        Assert.InRange(chainFreeAnchored.LossDb, -0.02, 0.0);
-        Assert.InRange(chainFreeAnchored.DipDb, -0.05, 0.0);
-    }
-
-    [Fact]
-    public void AlignmentCandidates_PeakAnchoredWindowMisreadsTheSameJunction()
-    {
-        // The same junction with the anchor left to the pair's PEAKS: the
-        // window then starts inside the drivers' own rise, and what it reads
-        // there is a windowing artifact rather than the junction — this is what
-        // let a field sub/woofer junction (55 Hz, 36 dB/oct) be settled a half
-        // period out. Pinned so the placements cannot silently converge and
-        // hide the distinction.
-        Complex[] sub = Filtered(new CrossoverSpec(
-            CrossoverKind.LowPass,
-            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
-        Complex[] woofer = Filtered(new CrossoverSpec(
-            CrossoverKind.BandPass,
-            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 180, 36),
-            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
-
-        // The true alignment itself — zero delay, the woofer inverted — read
-        // through each window.
-        Complex[] inverted = woofer.Select(value => -value).ToArray();
-        (double LossDb, double DipDb)? peakAnchored =
-            VirtualCrossoverAnalysis.MeasureSumLoss(
-                inverted, [sub], SampleRate, 27.5, 110, levelMatch: true);
-        (double LossDb, double DipDb)? sourceAnchored =
-            VirtualCrossoverAnalysis.MeasureSumLoss(
-                inverted, [sub], SampleRate, 27.5, 110, levelMatch: true,
-                gateAnchorSample: BasePosition);
-
-        Assert.NotNull(peakAnchored);
-        Assert.NotNull(sourceAnchored);
-        Assert.True(
-            sourceAnchored.Value.LossDb > peakAnchored.Value.LossDb + 0.05,
-            $"a window opened ahead of both rises must read the truth more " +
-            $"honestly: {sourceAnchored.Value.LossDb:0.00} vs " +
-            $"{peakAnchored.Value.LossDb:0.00} dB");
+        // The shared window forced onto the pair's earliest PEAK — the
+        // placement that once drew this junction as antiphase — now reads the
+        // same optimum at the same flatness: the window's length, not its
+        // placement, is what buys the honesty at a bass junction.
+        int pairPeak = Math.Min(
+            VirtualCrossoverAnalysis.FindPeakIndex(sub),
+            VirtualCrossoverAnalysis.FindPeakIndex(woofer));
+        AlignmentCandidate peakAnchored = Best(pairPeak);
+        Assert.True(peakAnchored.InvertPolarity);
+        Assert.InRange(
+            Math.Abs(peakAnchored.DelayMs - byDefault.DelayMs), 0, 0.3);
+        Assert.InRange(
+            Math.Abs(peakAnchored.LossDb - byDefault.LossDb), 0, 0.1);
     }
 
     [Fact]
@@ -341,9 +282,11 @@ public sealed class JunctionCorrelationCurveTests
         // 1: no plateau anywhere in the panel's own sweep. With the two
         // channels within a few dB of each other in-band, the parallelogram
         // law |F+V|² + |F−V|² = 2(|F|²+|V|²) forbids both polarities summing
-        // flat at once — at least one must always be losing audibly. The
-        // stationary-window sweep violated this across the whole negative
-        // half, both polarities reading ≈ 0 with the woofer faded out.
+        // flat at once — at least one must always be losing audibly (the
+        // band-sized window reads the shallowest min at -1.44 dB, far off the
+        // optimum where partial decorrelation softens the comb; the plateau
+        // this guards against read ≈ 0 for BOTH). The stationary-window sweep
+        // violated this across the whole negative half, the woofer faded out.
         List<VirtualCrossoverAnalysis.JunctionSweepPoint> normal =
             Sweep(false, pairFront);
         List<VirtualCrossoverAnalysis.JunctionSweepPoint> inverted =
@@ -352,7 +295,7 @@ public sealed class JunctionCorrelationCurveTests
         for (int i = 0; i < normal.Count; i++)
         {
             Assert.True(
-                Math.Min(normal[i].LossDb, inverted[i].LossDb) < -1.5,
+                Math.Min(normal[i].LossDb, inverted[i].LossDb) < -1.0,
                 $"both polarities read flat at {normal[i].DelayMs:0.0} ms " +
                 $"({normal[i].LossDb:0.00} / {inverted[i].LossDb:0.00} dB) — " +
                 "the plateau of a window the moved channel left");

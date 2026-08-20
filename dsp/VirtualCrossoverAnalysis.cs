@@ -1659,14 +1659,71 @@ public static class VirtualCrossoverAnalysis
     /// on v5_exp's 65 Hz junction from 12.6 ms to 0.3 — the anchor untouched.
     /// </para>
     /// <para>
-    /// It does NOT make the LF dip trustworthy: 1/6 octave at 65 Hz is 7.7 Hz,
-    /// narrower than the 11.7 Hz the 85 ms window can resolve, so down there
-    /// the dip still reads the window's own kernel. Only a longer low-junction
-    /// window fixes that.
+    /// Sampling alone did NOT make the LF dip trustworthy: 1/6 octave at
+    /// 65 Hz is 7.7 Hz, narrower than the 11.7 Hz an 85 ms window can
+    /// resolve, so down there the dip still read the window's own kernel.
+    /// That took the band-sized window length below
+    /// (AlignmentGateBandLowEdgeCycles); the padding factor rides on top of
+    /// whatever length the band chooses, keeping ~4 spectrum samples per
+    /// dip width at the band's low edge.
     /// </para>
     /// </summary>
     private const int AlignmentFftInterpolationFactor = 4;
 
+    /// <summary>
+    /// How many periods of a junction band's LOW edge its direct-sound window
+    /// spans: the reciprocal of the dip statistic's own relative width. The
+    /// dip is the minimum of a 1/6-octave moving average, which at frequency f
+    /// is f·(2^(1/12) − 2^(−1/12)) ≈ 0.1155·f wide; a window of length
+    /// 1/(0.1155·f) is the shortest whose ~1/T kernel fits inside that
+    /// average at the band's low edge — its binding frequency — so the dip
+    /// reads the SPECTRUM there instead of the window's own kernel. One
+    /// scale-free rule sizes every junction: ~8.66 low-edge periods, which is
+    /// 133 ms for a 33–130 Hz sub band (the old fixed 85 ms was too short —
+    /// the very kernel-reading this replaces) and 11.5 ms for a 750–3000 Hz
+    /// mid/tweeter band, where 85 ms was mostly a car cabin's late
+    /// reflections wearing a direct-sound gate's name.
+    /// </summary>
+    private static readonly double AlignmentGateBandLowEdgeCycles =
+        1.0 / (Math.Pow(2, 1.0 / 12) - Math.Pow(2, -1.0 / 12));
+
+    /// <summary>
+    /// The band-sized window's bounds. The floor guards a degenerate
+    /// high-frequency band (8.66 periods of 20 kHz is under half a
+    /// millisecond — too short to hold a real driver's direct sound and its
+    /// own fade structure); the ceiling bounds the FFT work where a band
+    /// reaches toward 20 Hz, at the resolution cost the size rule would
+    /// otherwise pay there.
+    /// </summary>
+    private const double MinimumAlignmentGateMs = 4.0;
+    private const double MaximumAlignmentGateMs = 350.0;
+
+    // The gate's fade share: the same 1/16 of the window the fixed
+    // 4096/256-sample reference gate carried.
+    private const int AlignmentGateFadeFraction = 16;
+
+    private static int AlignmentGateSamples(int sampleRate, double bandLowHz)
+    {
+        double windowMs = Math.Clamp(
+            AlignmentGateBandLowEdgeCycles / bandLowHz * 1_000.0,
+            MinimumAlignmentGateMs,
+            MaximumAlignmentGateMs);
+        return (int)Math.Round(windowMs / 1_000.0 * sampleRate);
+    }
+
+    private static int AlignmentGateFadeSamples(int sampleRate, double bandLowHz) =>
+        AlignmentGateSamples(sampleRate, bandLowHz) / AlignmentGateFadeFraction;
+
+    private static int AlignmentFftLength(int sampleRate, double bandLowHz) =>
+        DspMath.NextPowerOfTwo(
+            AlignmentGateSamples(sampleRate, bandLowHz)
+            * AlignmentFftInterpolationFactor);
+
+    // The FIXED reference-length gate, kept for the band-level read
+    // (MeasureBandLevelDb): a level is an energy average, indifferent to the
+    // kernel-width story that sizes the junction windows above, and a channel
+    // band's low edge runs to 20 Hz, where the size rule pays its ceiling for
+    // resolution a level read does not need.
     private static int AlignmentGateSamples(int sampleRate) => (int)Math.Round(
         (double)AlignmentGateReferenceSamples * sampleRate / AlignmentGateReferenceRate);
 
@@ -1757,44 +1814,113 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentException("The search window is invalid.");
         }
 
-        int anchor;
-        if (gateAnchorSample is { } shared)
+        // The window is sized by the junction's own band (see
+        // AlignmentGateBandLowEdgeCycles): long enough at its LOW edge that
+        // the dip statistic reads the spectrum rather than the window's
+        // kernel, and no longer — above the bass that sheds the late cabin
+        // reflections the fixed 85 ms reference length used to admit. The
+        // earliest content a window holds must land on its plateau, never
+        // inside the fade-in: a fade would attenuate the channels' arrivals
+        // unequally and bias the loss; when a front sits closer to the start
+        // than a full fade, the fade shrinks to fit.
+        int gateSamples = AlignmentGateSamples(sampleRate, minFrequencyHz);
+        int fadeSamples = AlignmentGateFadeSamples(sampleRate, minFrequencyHz);
+        int length = AlignmentFftLength(sampleRate, minFrequencyHz);
+
+        // One windowed cut per response, restored to ABSOLUTE time by the
+        // linear phase of its window's start, so cuts taken at different
+        // positions still interfere at the timing the records actually carry.
+        Complex[] CutSpectrum(Complex[] impulseResponse, int anchor)
         {
-            anchor = Math.Clamp(shared, 0, variableImpulseResponse.Length - 1);
+            int clamped = Math.Clamp(anchor, 0, impulseResponse.Length - 1);
+            int leftFadeSamples = Math.Min(fadeSamples, clamped);
+            int gateStart = clamped - leftFadeSamples;
+            double[] gate = Windowing.TukeyWindow(
+                gateSamples,
+                2.0 * leftFadeSamples / gateSamples,
+                2.0 * fadeSamples / gateSamples);
+            Complex[] spectrum = ForwardSpectrum(
+                GateDirectSound(impulseResponse, gateStart, gate), length);
+            if (gateStart > 0)
+            {
+                double startSeconds = (double)gateStart / sampleRate;
+                for (int bin = 1; bin <= length / 2; bin++)
+                {
+                    double frequencyHz = bin * (double)sampleRate / length;
+                    Complex rotation = Complex.Exp(
+                        new Complex(0, -Math.Tau * frequencyHz * startSeconds));
+                    spectrum[bin] *= rotation;
+                    if (bin < length / 2)
+                    {
+                        spectrum[length - bin] *= Complex.Conjugate(rotation);
+                    }
+                }
+            }
+
+            return spectrum;
+        }
+
+        Complex[] variableSpectrum;
+        var fixedSpectrum = new Complex[length];
+        if (gateAnchorSample is { } sharedAnchor)
+        {
+            // One SHARED window at the caller's anchor for every response —
+            // the read "through this window": what a display drawing several
+            // channels through one placement measures, and what the placement
+            // tests compare. The cuts are co-located, so no absolute-time
+            // restoration is needed (a common linear phase cancels in every
+            // magnitude and interference term).
+            int anchor = Math.Clamp(
+                sharedAnchor, 0, variableImpulseResponse.Length - 1);
+            int leftFadeSamples = Math.Min(fadeSamples, anchor);
+            int gateStart = anchor - leftFadeSamples;
+            double[] gate = Windowing.TukeyWindow(
+                gateSamples,
+                2.0 * leftFadeSamples / gateSamples,
+                2.0 * fadeSamples / gateSamples);
+            variableSpectrum = ForwardSpectrum(
+                GateDirectSound(variableImpulseResponse, gateStart, gate), length);
+            foreach (Complex[] ir in fixedImpulseResponses)
+            {
+                Complex[] spectrum = ForwardSpectrum(
+                    GateDirectSound(ir, gateStart, gate), length);
+                for (int i = 0; i < length; i++)
+                {
+                    fixedSpectrum[i] += spectrum[i];
+                }
+            }
         }
         else
         {
-            anchor = FindPeakIndex(variableImpulseResponse);
+            // The default: every response is windowed at its OWN band-limited
+            // front (never later than its peak — FindGateAnchor's guards), and
+            // the cuts meet in one absolute-time frame. This is the model's
+            // junction measurement — the window belongs to the channel it
+            // holds and travels with it — and it is what lets a junction be
+            // measured at all once the members' assigned delays spread them
+            // further apart than one band-sized window spans: mid-cascade a
+            // settled neighbor can sit tens of ms behind a not-yet-delayed
+            // channel, which the old shared fixed-length window only survived
+            // by being 85 ms long.
+            variableSpectrum = CutSpectrum(
+                variableImpulseResponse,
+                FindGateAnchor(
+                    variableImpulseResponse,
+                    FindPeakIndex(variableImpulseResponse),
+                    sampleRate,
+                    minFrequencyHz,
+                    maxFrequencyHz));
             foreach (Complex[] ir in fixedImpulseResponses)
             {
-                anchor = Math.Min(anchor, FindPeakIndex(ir));
-            }
-        }
-
-        // The earliest arrival must land on the window's plateau, never inside
-        // the fade-in: a fade would attenuate the channels' arrivals unequally
-        // (they sit at different fade depths) and bias the loss. When the peak
-        // sits closer to the start than a full fade, the fade shrinks to fit.
-        int gateSamples = AlignmentGateSamples(sampleRate);
-        int fadeSamples = AlignmentGateFadeSamples(sampleRate);
-        int leftFadeSamples = Math.Min(fadeSamples, anchor);
-        int gateStart = anchor - leftFadeSamples;
-        double[] gate = Windowing.TukeyWindow(
-            gateSamples,
-            2.0 * leftFadeSamples / gateSamples,
-            2.0 * fadeSamples / gateSamples);
-
-        int length = AlignmentFftLength(sampleRate);
-        Complex[] variableSpectrum = ForwardSpectrum(
-            GateDirectSound(variableImpulseResponse, gateStart, gate), length);
-        var fixedSpectrum = new Complex[length];
-        foreach (Complex[] ir in fixedImpulseResponses)
-        {
-            Complex[] spectrum = ForwardSpectrum(
-                GateDirectSound(ir, gateStart, gate), length);
-            for (int i = 0; i < length; i++)
-            {
-                fixedSpectrum[i] += spectrum[i];
+                Complex[] spectrum = CutSpectrum(
+                    ir,
+                    FindGateAnchor(
+                        ir, FindPeakIndex(ir), sampleRate,
+                        minFrequencyHz, maxFrequencyHz));
+                for (int i = 0; i < length; i++)
+                {
+                    fixedSpectrum[i] += spectrum[i];
+                }
             }
         }
 
@@ -2570,10 +2696,13 @@ public static class VirtualCrossoverAnalysis
 
         /// <summary>
         /// The in-band average loss and 1/6-octave dip with the variable
-        /// channel delayed by <paramref name="extraDelayMs"/> more.
+        /// channel delayed by <paramref name="extraDelayMs"/> more (and
+        /// inverted, when <paramref name="invertVariable"/> asks — the
+        /// polarity half of the same probe, for searches that weigh both).
         /// </summary>
-        public (double LossDb, double DipDb) Evaluate(double extraDelayMs) =>
-            DetailedLoss(bins, weightSum, extraDelayMs, invert: false);
+        public (double LossDb, double DipDb) Evaluate(
+            double extraDelayMs, bool invertVariable = false) =>
+            DetailedLoss(bins, weightSum, extraDelayMs, invertVariable);
     }
 
     private static Complex[] GateDirectSound(

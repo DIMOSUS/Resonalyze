@@ -715,22 +715,21 @@ public sealed class StereoAlignmentTests
     {
         // The engine's cost unit is one reprocess: every channel's full DSP
         // chain re-run. The junction walks legitimately spend a couple per
-        // channel; the PAIR co-move must spend ONE per linked pair (its delta
-        // scan is an analytic spectrum rotation, not a re-render — the old
-        // implementation burned ~40 per pair). The MONO co-move is the
-        // deliberate exception: at its multi-millisecond deltas the rotation
-        // probe's fixed gate anchoring misgrades candidates by whole dB, so
-        // each of its ~30-60 probes honestly re-renders the one mono channel
-        // (every other channel is a cache hit). The ceiling still breaks
-        // loudly if per-delta re-rendering creeps into the pair co-move or
-        // the walks.
+        // channel; BOTH co-moves spend ONE per pass — their delta scans are
+        // spectrum rotations through per-channel windowed cuts, never
+        // re-renders. (The mono co-move once re-rendered every one of its
+        // ~30-60 probes, on the belief that rotation through a fixed shared
+        // gate misgrades multi-millisecond deltas — true of that gate, and
+        // repealed with it: the windows travel with the channels now, so the
+        // rotation IS the honest read.) The ceiling breaks loudly if
+        // per-delta re-rendering creeps back into any of them.
         int[] count = [0];
         RunStereo(
             sceneOffsetMs: 0.25,
             linkBands: UserLinkBands,
             reprocessCount: count);
 
-        Assert.InRange(count[0], 1, 110);
+        Assert.InRange(count[0], 1, 40);
     }
 
     [Fact]

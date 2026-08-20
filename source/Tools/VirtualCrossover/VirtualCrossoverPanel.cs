@@ -4393,20 +4393,15 @@ public partial class VirtualCrossoverPanel : UserControl
             AutoDelaySearchCropPrePeakSamples);
         Complex[] lower = cropped[all.IndexOf(pair.Lower)];
         Complex[] upper = cropped[all.IndexOf(pair.Upper)];
-        // The pair's own earliest front, read in the pair's band: the rule
-        // every junction measurement of an Auto delay run follows. The
-        // read-out beside this plot keeps its own, shared placement (one
-        // window for the drawn channels, their Sum and the loss curve, which
-        // is what makes the Sum the sum of what is drawn) — the two answer
-        // different questions and always did: the read-out measures the WHOLE
-        // sum inside the pair band, this measures the pair.
-        int gateAnchor = Math.Min(
-            VirtualCrossoverAnalysis.FindGateAnchor(
-                lower, VirtualCrossoverAnalysis.FindPeakIndex(lower), sampleRate,
-                pair.BandLowHz, pair.BandHighHz),
-            VirtualCrossoverAnalysis.FindGateAnchor(
-                upper, VirtualCrossoverAnalysis.FindPeakIndex(upper), sampleRate,
-                pair.BandLowHz, pair.BandHighHz));
+        // No gate anchor is passed: the sweep windows each channel at its own
+        // band-limited front, exactly as every junction measurement of an
+        // Auto delay run does (see BuildAlignmentBins), so the drawn score
+        // stays the search's surface. The read-out beside this plot keeps its
+        // own, shared placement (one window for the drawn channels, their Sum
+        // and the loss curve, which is what makes the Sum the sum of what is
+        // drawn) — the two answer different questions and always did: the
+        // read-out measures the WHOLE sum inside the pair band, this
+        // measures the pair.
 
         // The window spans 1.5 crossover periods to each side (floored at the
         // fixed diagnostic span), so the neighboring comb lobes both ways are
@@ -4435,7 +4430,7 @@ public partial class VirtualCrossoverPanel : UserControl
             VirtualCrossoverAnalysis.JunctionLossSweep(
                 upper, lower, sampleRate,
                 pair.BandLowHz, pair.BandHighHz,
-                -windowMs, windowMs, stepMs, invert, gateAnchor)
+                -windowMs, windowMs, stepMs, invert)
             .Select(point => new SignalPoint(
                 point.DelayMs,
                 point.LossDb +

@@ -384,56 +384,13 @@ public static class AutoAlignmentEngine
     // search to a guess.
     private const double OnsetLockMaxSpreadPeriods = 0.5;
 
-    /// <summary>
-    /// The sample a junction's measurements anchor their direct-sound gate on:
-    /// the earliest FRONT among the junction's own members, read inside the
-    /// junction's band (see <see cref="VirtualCrossoverAnalysis.FindGateAnchor"/>).
-    /// Two properties matter, and the old rule — the earliest PEAK across every
-    /// channel of the run — bought them at a price this one does not pay.
-    ///
-    /// It is EARLY — no member's own rise can fall inside the window's fade-in,
-    /// which is what made a peak-anchored window misjudge a slow channel's
-    /// phase (see the gate remarks in VirtualCrossoverAnalysis). A front says
-    /// so directly; the earliest peak of the whole system only implied it, by
-    /// reaching for a channel that happened to arrive sooner.
-    ///
-    /// It is FIXED for everything compared through it — the candidates of one
-    /// search, the cells of a co-move grid, the two renders its sub-band veto
-    /// weighs. That is a property of the CALLER: each computes its junction's
-    /// anchor once, from a state it names, and passes that one sample to every
-    /// probe. What no
-    /// longer follows is one anchor for the whole run: losses are compared
-    /// within a junction (a candidate against a candidate, a cell against a
-    /// cell), and the co-move sums such differences over a side, where a
-    /// per-junction constant cancels. Junctions do NOT have to be measured
-    /// through the same window to be summed — they already carry different
-    /// bands — they have to be measured through a window that does not move
-    /// while they are being compared.
-    /// </summary>
-    private static int JunctionGateAnchor(
-        double bandLowHz,
-        double bandHighHz,
-        params AlignmentSnapshot?[] members)
-    {
-        int anchor = int.MaxValue;
-        foreach (AlignmentSnapshot? member in members)
-        {
-            if (member is not { } side)
-            {
-                continue;
-            }
-
-            anchor = Math.Min(anchor, VirtualCrossoverAnalysis.FindGateAnchor(
-                side.ImpulseResponse,
-                side.PeakIndex,
-                side.Channel.SampleRate,
-                bandLowHz,
-                bandHighHz,
-                side.ValidRange));
-        }
-
-        return anchor == int.MaxValue ? 0 : anchor;
-    }
+    // Junction measurements no longer share one gate anchor: every response
+    // is windowed at its own band-limited front and the cuts meet in one
+    // absolute-time frame (see BuildAlignmentBins in
+    // VirtualCrossoverAnalysis, and the gate remarks there for the full
+    // placement history — system peak, pair peak, pair front, chain-free
+    // front were each measured on the archived cabins before per-channel
+    // traveling windows made the shared choice moot).
 
     /// <summary>
     /// The minimum envelope peak-to-noise grade (dB) both channels' onset
@@ -1537,16 +1494,15 @@ public static class AutoAlignmentEngine
         AlignmentSnapshot? secondaryNeighborSnapshot = secondaryNeighbor != null
             ? current.First(item => item.Channel == secondaryNeighbor)
             : null;
-        // The gate anchor of every loss measurement below, taken ONCE here and
-        // handed to each of them: the earliest front among the channels this
-        // step measures, in the band it measures them over (see the gate
-        // remarks in VirtualCrossoverAnalysis). Computed on `current`, where
-        // the searched channel carries no delay yet — so every candidate of
-        // this search is scored through the same window, however far the
-        // candidate moves the channel.
-        int gateAnchor = JunctionGateAnchor(
-            bandLowHz, bandHighHz,
-            variableSnapshot, primaryNeighborSnapshot, secondaryNeighborSnapshot);
+        // Every loss measurement below windows each response at its OWN
+        // band-limited front and rotates the probes through those cuts (see
+        // BuildAlignmentBins) — the fronts are detected once per bins build,
+        // from the responses of THIS `current` render, so every candidate of
+        // this search is scored through the same windows, however far the
+        // candidate moves the channel. No shared anchor is needed, and none
+        // could serve: mid-cascade a settled neighbor's assigned delay can
+        // put it further from the searched channel than a band-sized window
+        // spans.
         var neighborIrs = new List<Complex[]>
         {
             primaryNeighborSnapshot.ImpulseResponse
@@ -1723,8 +1679,7 @@ public static class AutoAlignmentEngine
                     // Search-side level match: the lobe choice must not depend
                     // on the channels' playback gains (see BuildAlignmentBins).
                     levelMatch: true,
-                    out IReadOnlyList<AlignmentCandidate> allOptima,
-                    gateAnchorSample: gateAnchor);
+                    out IReadOnlyList<AlignmentCandidate> allOptima);
             return (candidates, allOptima, windowLowMs, windowHighMs);
         }
 
@@ -3540,12 +3495,7 @@ public static class AutoAlignmentEngine
                         junction.BandLowHz,
                         junction.BandHighHz,
                         levelMatch: true,
-                        requireDelayEvidence: true,
-                        JunctionGateAnchor(
-                            junction.BandLowHz,
-                            junction.BandHighHz,
-                            SnapshotOf(mover),
-                            SnapshotOf(neighbor)));
+                        requireDelayEvidence: true);
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);
@@ -3782,23 +3732,55 @@ public static class AutoAlignmentEngine
             // healthy upper one. A co-move judged by the measurable side alone
             // would merely re-optimize the left junction the walk already
             // settled, so with any junction unmeasurable the whole co-move
-            // abstains and the walk's placement stands. Evidence is delay- and
-            // polarity-invariant (it reads magnitudes), so one certification on
-            // the current render covers every probe below.
+            // abstains and the walk's placement stands.
+            //
+            // One render, one evaluator per junction (and one per half-band
+            // for the veto below): every probe of the grid rotates the mono
+            // channel's windowed cut through the SAME spectra
+            // (VirtualCrossoverAnalysis.SumLossEvaluator — the same probe the
+            // pair co-move and the drawn junction surface read). The windows
+            // travel with the channels they hold, so a probe cannot slide the
+            // mono out of anyone's window: evidence, level match and window
+            // placement are all fixed properties of this one render, exactly
+            // the consistency the old per-probe re-rendering bought with ~40
+            // reprocesses and still lost whenever a probe carried the mono
+            // into the fixed window's fade.
             IReadOnlyList<AlignmentSnapshot> certified = reprocess(alignment);
-            int CertifiedGateAnchor(AlignmentJunction junction) =>
-                JunctionGateAnchor(
-                    junction.BandLowHz,
-                    junction.BandHighHz,
-                    certified.First(
-                        item => item.Channel == junction.Lower.Channel),
-                    certified.First(
-                        item => item.Channel == junction.Upper.Channel));
-            AlignmentJunction? unmeasurable = junctions.FirstOrDefault(
-                junction => CellScore(
-                    certified, junction, junction.BandLowHz, junction.BandHighHz,
-                    requireDelayEvidence: true, CertifiedGateAnchor(junction))
-                    == null);
+            Complex[] CertifiedIrOf(IAlignmentChannel channel) =>
+                certified.First(item => item.Channel == channel).ImpulseResponse;
+            VirtualCrossoverAnalysis.SumLossEvaluator? Probe(
+                AlignmentJunction junction, double lowHz, double highHz)
+            {
+                IAlignmentChannel neighbor = junction.Lower.Channel == mono
+                    ? junction.Upper.Channel
+                    : junction.Lower.Channel;
+                return VirtualCrossoverAnalysis.SumLossEvaluator.Create(
+                    CertifiedIrOf(mono),
+                    new List<Complex[]> { CertifiedIrOf(neighbor) },
+                    mono.SampleRate,
+                    lowHz,
+                    highHz,
+                    levelMatch: true,
+                    requireDelayEvidence: true);
+            }
+
+            var fullBand =
+                new Dictionary<AlignmentJunction,
+                    VirtualCrossoverAnalysis.SumLossEvaluator>();
+            AlignmentJunction? unmeasurable = null;
+            foreach (AlignmentJunction junction in junctions)
+            {
+                if (Probe(junction, junction.BandLowHz, junction.BandHighHz)
+                    is { } evaluator)
+                {
+                    fullBand[junction] = evaluator;
+                }
+                else
+                {
+                    unmeasurable = junction;
+                    break;
+                }
+            }
             if (unmeasurable is { } silent)
             {
                 IAlignmentChannel silentNeighbor =
@@ -3840,119 +3822,24 @@ public static class AutoAlignmentEngine
             double maxDelta = Math.Min(
                 reachMs, MaxDelayMs - over.DelayMs + minOtherMs);
 
-            // The evaluation frame: one uniform lift of EVERY channel keeps
-            // all probe delays non-negative without touching any relation, so
-            // a probe below the mono's own zero needs no per-probe rebasing —
-            // only the mono re-renders per probe, the lifted rest renders
-            // once and stays cached. (Frame delays may exceed the UI ceiling;
-            // they are evaluation-only.)
-            double liftMs = Math.Max(0, -(over.DelayMs + minDelta));
-            var framed = new Dictionary<IAlignmentChannel, AlignmentOverride>();
-            foreach (AlignmentSnapshot item in shiftScope)
-            {
-                AlignmentOverride current = alignment.GetValueOrDefault(item.Channel);
-                framed[item.Channel] = current with
-                {
-                    DelayMs = Math.Round(current.DelayMs + liftMs, 2)
-                };
-            }
-
-            double framedMonoMs = framed[mono].DelayMs;
-            IReadOnlyList<AlignmentSnapshot> Rendered(double deltaMs, bool flip) =>
-                reprocess(new Dictionary<IAlignmentChannel, AlignmentOverride>(framed)
-                {
-                    [mono] = new AlignmentOverride(
-                        Math.Round(framedMonoMs + deltaMs, 2),
-                        over.InvertPolarity ^ flip)
-                });
-
-            // The window every cell of this grid is measured through: read
-            // once, off the frame's own zero cell, per junction and band. The
-            // pass compares cells against each other — and its sub-band veto
-            // compares two whole renders of the same junction — so an anchor
-            // that followed the mono channel from cell to cell would compare
-            // them through different measurements. Read in the LIFTED frame,
-            // not off `certified`: the lift moves every channel together, and
-            // an anchor taken before it would sit that far ahead of every
-            // front the grid actually holds.
-            IReadOnlyList<AlignmentSnapshot> gridOrigin = Rendered(0, flip: false);
-            var gridAnchors =
-                new Dictionary<(AlignmentJunction Junction, double LowHz, double HighHz), int>();
-            int GridGateAnchor(
-                AlignmentJunction junction, double lowHz, double highHz)
-            {
-                if (!gridAnchors.TryGetValue((junction, lowHz, highHz),
-                    out int anchor))
-                {
-                    anchor = JunctionGateAnchor(
-                        lowHz,
-                        highHz,
-                        gridOrigin.First(
-                            item => item.Channel == junction.Lower.Channel),
-                        gridOrigin.First(
-                            item => item.Channel == junction.Upper.Channel));
-                    gridAnchors[(junction, lowHz, highHz)] = anchor;
-                }
-
-                return anchor;
-            }
-            double? CellScore(
-                IReadOnlyList<AlignmentSnapshot> current,
-                AlignmentJunction junction,
-                double lowHz,
-                double highHz,
-                bool requireDelayEvidence,
-                int gateAnchor)
-            {
-                Complex[] IrOf(IAlignmentChannel channel) =>
-                    current.First(item => item.Channel == channel).ImpulseResponse;
-                IAlignmentChannel neighbor = junction.Lower.Channel == mono
-                    ? junction.Upper.Channel
-                    : junction.Lower.Channel;
-                (double LossDb, double DipDb)? loss =
-                    VirtualCrossoverAnalysis.MeasureSumLoss(
-                        IrOf(mono),
-                        new List<Complex[]> { IrOf(neighbor) },
-                        mono.SampleRate,
-                        lowHz,
-                        highHz,
-                        levelMatch: true,
-                        requireDelayEvidence,
-                        gateAnchor);
-                return loss is { } value
-                    ? value.LossDb +
-                        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
-                        (value.DipDb - value.LossDb)
-                    : null;
-            }
             double Score(double deltaMs, bool flip)
             {
-                IReadOnlyList<AlignmentSnapshot> current = Rendered(deltaMs, flip);
+                // The mean the co-move optimizes: every junction's rotation
+                // probe at this delta, dip-penalized like every other junction
+                // score. No junction can drop out mid-sweep — measurability
+                // was settled once, above — so the mean is over all of them
+                // by construction.
                 double total = 0;
-                int measured = 0;
                 foreach (AlignmentJunction junction in junctions)
                 {
-                    if (CellScore(current, junction, junction.BandLowHz,
-                        junction.BandHighHz, requireDelayEvidence: true,
-                        GridGateAnchor(
-                            junction, junction.BandLowHz, junction.BandHighHz))
-                        is { } cell)
-                    {
-                        total += cell;
-                        measured++;
-                    }
+                    (double lossDb, double dipDb) =
+                        fullBand[junction].Evaluate(deltaMs, flip);
+                    total += lossDb +
+                        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                        (dipDb - lossDb);
                 }
 
-                // FAIL-CLOSED, not an average of the survivors: the upfront
-                // certification ran on one render, but the probed delay slides
-                // the mono channel inside the (fixed) direct-sound window and
-                // re-gates what of it the spectra see, so a borderline junction
-                // can drop out mid-sweep and a mean over the rest would be the
-                // one-sided vote the certification exists to prevent. A probe
-                // that cannot measure EVERY junction is not a candidate.
-                return measured == junctions.Count
-                    ? total / measured
-                    : double.NegativeInfinity;
+                return total / junctions.Count;
             }
 
             double baseline = Score(0, flip: false);
@@ -4046,11 +3933,18 @@ public static class AutoAlignmentEngine
                 // near-flat loss is noise the level match amplifies toward
                 // parity. Losing a measurable cell means the full-band gain came
                 // from a mode rewarding a comb impostor, not from a better
-                // alignment of the direct sound.
-                IReadOnlyList<AlignmentSnapshot> hopRender =
-                    Rendered(bestDelta, bestFlip);
-                IReadOnlyList<AlignmentSnapshot> polishRender =
-                    Rendered(bestPolishDelta, false);
+                // alignment of the direct sound. Both candidates read through
+                // the SAME half-band evaluator, so the comparison cannot be
+                // biased by window placement.
+                //
+                // The reference is the better of the in-lobe polish and the
+                // INCUMBENT (no move at all): on a mode-dominated junction the
+                // polish itself can slide onto a modal trade — the archived
+                // 80 Hz reproduction polishes to -2.45 ms, where the clean
+                // lower half reads -6.6 dB — and a hop compared against that
+                // spot alone would "win" the very half it is ruining. What a
+                // hop must actually beat, cell by cell, is the best placement
+                // the channel has WITHOUT hopping.
                 bool vetoed = false;
                 foreach (AlignmentJunction junction in junctions)
                 {
@@ -4059,17 +3953,26 @@ public static class AutoAlignmentEngine
                         (double lowHz, double highHz) = upperHalf
                             ? (junction.CrossoverHz, junction.BandHighHz)
                             : (junction.BandLowHz, junction.CrossoverHz);
-                        int cellAnchor = GridGateAnchor(junction, lowHz, highHz);
-                        double? polishCell = CellScore(
-                            polishRender, junction, lowHz, highHz,
-                            requireDelayEvidence: true, cellAnchor);
-                        double? hopCell = CellScore(
-                            hopRender, junction, lowHz, highHz,
-                            requireDelayEvidence: true, cellAnchor);
-                        if (polishCell is not { } polishCellScore ||
-                            hopCell is not { } hopCellScore ||
-                            hopCellScore >=
-                                polishCellScore - MonoComoveSubBandVetoMarginDb)
+                        if (Probe(junction, lowHz, highHz) is not { } cell)
+                        {
+                            continue;
+                        }
+
+                        double CellScore(double deltaMs, bool flip)
+                        {
+                            (double lossDb, double dipDb) =
+                                cell.Evaluate(deltaMs, flip);
+                            return lossDb +
+                                VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                                (dipDb - lossDb);
+                        }
+
+                        double referenceCellScore = Math.Max(
+                            CellScore(bestPolishDelta, false),
+                            CellScore(0, false));
+                        double hopCellScore = CellScore(bestDelta, bestFlip);
+                        if (hopCellScore >=
+                            referenceCellScore - MonoComoveSubBandVetoMarginDb)
                         {
                             continue;
                         }
@@ -4085,8 +3988,8 @@ public static class AutoAlignmentEngine
                             $"by {bestScore - bestPolishScore:0.00} dB but loses " +
                             $"the {lowHz:0}-{highHz:0} Hz half vs " +
                             $"{neighbor.Name} by " +
-                            $"{polishCellScore - hopCellScore:0.00} dB — a true " +
-                            "lobe holds every measurable sub-band.");
+                            $"{referenceCellScore - hopCellScore:0.00} dB " +
+                            "— a true lobe holds every measurable sub-band.");
                         vetoed = true;
                         break;
                     }
@@ -4194,9 +4097,7 @@ public static class AutoAlignmentEngine
             new List<Complex[]> { other.ImpulseResponse },
             monoChannel.SampleRate,
             pair.BandLowHz,
-            pair.BandHighHz,
-            gateAnchorSample: JunctionGateAnchor(
-                pair.BandLowHz, pair.BandHighHz, mono, other));
+            pair.BandHighHz);
         if (loss is not { } measured)
         {
             log.AppendLine(

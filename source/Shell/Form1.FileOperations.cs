@@ -304,7 +304,9 @@ public partial class Form1
                 "and REW applies a microphone calibration to its own curves rather than to the " +
                 "impulse response — so this measurement is uncalibrated here, whatever REW showed.",
             FormattableString.Invariant(
-                $"The export states no bit depth and no playback channel: {ImportedBitDepth}-bit and Mono were assumed. Neither changes the samples — they describe the sweep this result is filed under.")
+                $"The export states no bit depth and no playback channel: {ImportedBitDepth}-bit and Mono were assumed. Neither changes the samples — they describe the sweep this result is filed under."),
+            FormattableString.Invariant(
+                $"REW's text export does not record a timing offset, so one smaller than the arrival cannot be told from a shorter path. The arrival this header implies is {file.ImpliedArrivalSamples / file.SampleRate * 1000.0:0.000} ms; if that is not what REW showed for this measurement, it was measured with an offset and does not belong on this session's time base.")
         };
         if (file.LowFrequencyHz == null || file.HighFrequencyHz == null)
         {

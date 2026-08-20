@@ -316,7 +316,8 @@ public sealed class RewImpulseResponseTextFile
     {
         if (!TryParse(text, out RewImpulseResponseTextFile? file, out string? problem) || file == null)
         {
-            throw new FormatException($"This REW impulse-response export cannot be imported: {problem}.");
+            throw new FormatException(
+                $"This REW impulse-response export cannot be imported — {problem}.");
         }
 
         return file;

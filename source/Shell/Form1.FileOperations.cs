@@ -284,7 +284,9 @@ public partial class Form1
                 $"Imported {file.Samples.Length} samples at {file.SampleRate} Hz. The loopback reference sits at sample {file.TimeZeroIndex:0.###} of REW's buffer and is now sample 0 of the transfer response; the fractional part was shifted, not rounded."),
             "REW's sweep exports carry no coherence, no level meters and no SPL calibration, " +
                 "and REW applies a microphone calibration to its own curves rather than to the " +
-                "impulse response — so this measurement is uncalibrated here, whatever REW showed."
+                "impulse response — so this measurement is uncalibrated here, whatever REW showed.",
+            FormattableString.Invariant(
+                $"The export states no bit depth and no playback channel: {ImportedBitDepth}-bit and Mono were assumed. Neither changes the samples — they describe the sweep this result is filed under.")
         };
         if (file.LowFrequencyHz == null || file.HighFrequencyHz == null)
         {

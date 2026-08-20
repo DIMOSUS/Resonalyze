@@ -155,4 +155,28 @@ public sealed class JunctionGateAnchorTests
                 new Complex[IrLength], peakIndex: 7, SampleRate,
                 bandLowHz: 1_000, bandHighHz: 4_000));
     }
+
+    [Fact]
+    public void SumLoss_FindsACancellationNotchBetweenTheOldBins()
+    {
+        // Two equal arrivals 12.2 ms apart cancel completely at 41 Hz (and at
+        // every odd multiple), which a 33-130 Hz junction band must report as
+        // a deep dip. Padded only to the 85 ms gate, the bins sat 11.7 Hz
+        // apart at 96 kHz — 35.2, 46.9, 58.6 Hz — and this notch fell straight
+        // between two of them, so the dip read a fraction of its depth. The
+        // measurement is the same; only how densely it is sampled changed.
+        const int Rate = 96_000;
+        var first = new Complex[65_536];
+        var second = new Complex[65_536];
+        first[16_384] = 1.0;
+        second[16_384 + (int)Math.Round(0.0122 * Rate)] = 1.0;
+
+        (double LossDb, double DipDb)? loss = VirtualCrossoverAnalysis.MeasureSumLoss(
+            second, [first], Rate, 33, 130);
+
+        Assert.NotNull(loss);
+        Assert.True(
+            loss.Value.DipDb < -20.0,
+            $"the 41 Hz cancellation read only {loss.Value.DipDb:0.0} dB deep");
+    }
 }

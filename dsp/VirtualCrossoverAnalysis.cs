@@ -1601,10 +1601,43 @@ public static class VirtualCrossoverAnalysis
     // the 4096-sample / 256-fade window EXACTLY at 48 kHz. The analyzed span is
     // then zero-padded to a per-rate power-of-two FFT length — window and FFT
     // length kept separate so the physical window cannot jump across a
-    // power-of-two boundary (the same split as JunctionPhaseAlignment's).
+    // power-of-two boundary (the same split as JunctionPhaseAlignment's), and
+    // padded well past the window so the spectrum is SAMPLED densely enough to
+    // be read (see AlignmentFftInterpolationFactor).
     private const int AlignmentGateReferenceRate = 48_000;
     private const int AlignmentGateReferenceSamples = 4096;
     private const int AlignmentGateReferenceFadeSamples = 256;
+
+    /// <summary>
+    /// How many times the gate the analysed span is zero-padded to before the
+    /// FFT. This buys no RESOLUTION — that is the window's 1/T and nothing but
+    /// a longer window changes it — it buys SAMPLING: enough points to
+    /// represent the continuous spectrum the window actually measures.
+    /// <para>
+    /// Padded only to the gate (the length this used to be), a low junction is
+    /// barely sampled at all. At 96 kHz the gate is 8192 samples, so the bins
+    /// sit 11.7 Hz apart and a 33-130 Hz junction band holds NINE of them —
+    /// while the dip statistic is the minimum of a 1/6-octave moving average,
+    /// 7.7 Hz wide at 65 Hz. The "dip" was therefore the worst single bin, and
+    /// a cancellation notch falling between two bins was missed outright. Four
+    /// times the gate puts 34 bins in that band; the same grid already gave a
+    /// 750-3000 Hz junction ~190, which is why nothing above the bass ever
+    /// showed it.
+    /// </para>
+    /// <para>
+    /// Measured on the archived cabins, this moves LF verdicts by more than
+    /// any anchor rule does: on v3's 80 Hz junction the sweep's optimum went
+    /// from 9.6 ms away from the whitened-correlation extremum to 0.1 ms, and
+    /// on v5_exp's 65 Hz junction from 12.6 ms to 0.3 — the anchor untouched.
+    /// </para>
+    /// <para>
+    /// It does NOT make the LF dip trustworthy: 1/6 octave at 65 Hz is 7.7 Hz,
+    /// narrower than the 11.7 Hz the 85 ms window can resolve, so down there
+    /// the dip still reads the window's own kernel. Only a longer low-junction
+    /// window fixes that.
+    /// </para>
+    /// </summary>
+    private const int AlignmentFftInterpolationFactor = 4;
 
     private static int AlignmentGateSamples(int sampleRate) => (int)Math.Round(
         (double)AlignmentGateReferenceSamples * sampleRate / AlignmentGateReferenceRate);
@@ -1613,7 +1646,8 @@ public static class VirtualCrossoverAnalysis
         (double)AlignmentGateReferenceFadeSamples * sampleRate / AlignmentGateReferenceRate);
 
     private static int AlignmentFftLength(int sampleRate) =>
-        DspMath.NextPowerOfTwo(AlignmentGateSamples(sampleRate));
+        DspMath.NextPowerOfTwo(
+            AlignmentGateSamples(sampleRate) * AlignmentFftInterpolationFactor);
 
     /// <summary>
     /// The widest in-band level correction the search-side level match may

@@ -1186,12 +1186,16 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void MeasureBandLevelDb_BandWithoutBinsReturnsNull()
     {
-        // 23 990 - 23 999 Hz at 48 kHz falls between the last usable FFT bin
-        // and Nyquist: no bins, no level.
+        // A band above the last usable FFT bin and below Nyquist holds no
+        // bins, so there is no level to report. The gap is one bin wide, and
+        // the analysis grid is 2.93 Hz at 48 kHz (the gate padded by
+        // AlignmentFftInterpolationFactor), which puts the last bin at
+        // 23 997.1 Hz — so the band has to start above that, not merely
+        // near Nyquist.
         Complex[] ir = UnitImpulse(8_192, 480);
 
         Assert.Null(VirtualCrossoverAnalysis.MeasureBandLevelDb(
-            ir, SampleRate, 23_990, 23_999));
+            ir, SampleRate, 23_999, 23_999.9));
     }
 
     [Fact]

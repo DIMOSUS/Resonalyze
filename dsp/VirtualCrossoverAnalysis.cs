@@ -1579,18 +1579,19 @@ public static class VirtualCrossoverAnalysis
     // window happened to start — least of all one set by a channel that is not
     // in the junction.
     //
-    // The pair's own fronts recover PART of that margin, not all of it. On the
-    // 55 Hz reproduction in JunctionCorrelationCurveTests all three placements
-    // pick the same lobe (-3.5 ms, inverted), but the flatness each can read
-    // there differs: 0.00 dB through a window opened well ahead of both
-    // drivers, -0.15 dB through the pair's filtered fronts, -0.16 dB through
-    // the pair's peaks. What is left is the crossover's own rise, which starts
-    // before the filtered front any detector can mark — a 36 dB/oct low-pass
-    // reads its front 14 ms after the driver's. Closing that gap means reading
-    // the anchor off the chain-free response instead (PredictedFrontArrivalMs
-    // already derives exactly that figure), which is worth doing when the
-    // reported flatness of a steep low junction has to be trusted to a tenth
-    // of a dB; the lobe it lands on does not depend on it.
+    // The pair's own fronts must be read BEFORE its chains. On the 55 Hz
+    // reproduction in JunctionCorrelationCurveTests all four placements pick
+    // the same lobe (-3.5 ms, inverted), but the flatness each can read there
+    // differs: 0.00 dB through a window opened at the drivers' shared source,
+    // 0.00 dB through the pair's CHAIN-FREE fronts, -0.21 dB through their
+    // filtered fronts, -0.23 dB through their peaks. What separates the last
+    // two from the first is the crossover's own rise, which starts before the
+    // front any detector can mark on the filtered response — that 36 dB/oct
+    // low-pass reads its filtered front 12.8 ms after the driver's. So the
+    // callers read the anchor off the chain-free response
+    // (AutoAlignmentEngine.JunctionGateAnchor; PredictedFrontArrivalMs derives
+    // the same figure for a different purpose), which closes the gap without
+    // reaching outside the pair for the margin.
     //
     // The window is sized in TIME, not samples. A fixed 4096 samples is ~85 ms
     // at 48 kHz but only 43 ms at 96 kHz and 21 ms at 192 kHz — the higher the

@@ -387,7 +387,8 @@ public static class AutoAlignmentEngine
     /// <summary>
     /// The sample a junction's measurements anchor their direct-sound gate on:
     /// the earliest FRONT among the junction's own members, read inside the
-    /// junction's band (see <see cref="VirtualCrossoverAnalysis.FindGateAnchor"/>).
+    /// junction's band off their CHAIN-FREE responses (see
+    /// <see cref="VirtualCrossoverAnalysis.FindGateAnchor"/>).
     /// Two properties matter, and the old rule — the earliest PEAK across every
     /// channel of the run — bought them at a price this one does not pay.
     ///
@@ -395,7 +396,19 @@ public static class AutoAlignmentEngine
     /// which is what made a peak-anchored window misjudge a slow channel's
     /// phase (see the gate remarks in VirtualCrossoverAnalysis). A front says
     /// so directly; the earliest peak of the whole system only implied it, by
-    /// reaching for a channel that happened to arrive sooner.
+    /// reaching for a channel that happened to arrive sooner. And the front is
+    /// read BEFORE the chain, because a crossover's rise begins before the
+    /// front any detector can mark on its own output: the 55 Hz 36 dB/oct
+    /// low-pass in JunctionCorrelationCurveTests reads its filtered front
+    /// 12.8 ms behind the driver's, its woofer partner 8.6 ms behind, so an
+    /// anchor on the filtered front still cut into the very rise the window
+    /// exists to hold. Measured over the archived cabins by the panel's own
+    /// metric (the session battery in tests/Resonalyze.App.Tests): against the
+    /// sessions' saved tunings the proposal's average summation loss improves
+    /// by 0.127 dB per junction read off the chain-free front against 0.063 dB
+    /// off the filtered one, and it matches the old peak rule's alignments to
+    /// 0.003 dB on every junction of every cabin — that rule's margin, bought
+    /// by accident, recovered without reaching outside the pair for it.
     ///
     /// It is FIXED for everything compared through it — the candidates of one
     /// search, the cells of a co-move grid, the two renders its sub-band veto
@@ -423,13 +436,24 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
+            // The BYPASSED response where the caller supplied one: it is the
+            // same measurement without the chain's own group delay, so its
+            // front is the driver's. It is also independent of the overrides
+            // under test, which makes the anchor constant for the whole run
+            // rather than merely for one search. Without one (a caller that
+            // renders no chain-free copy, e.g. a hand-built snapshot in a
+            // test) the processed response answers, as it did before.
+            Complex[] response = side.BypassedImpulseResponse ?? side.ImpulseResponse;
+            bool chainFree = side.BypassedImpulseResponse != null;
             anchor = Math.Min(anchor, VirtualCrossoverAnalysis.FindGateAnchor(
-                side.ImpulseResponse,
-                side.PeakIndex,
+                response,
+                chainFree
+                    ? VirtualCrossoverAnalysis.FindPeakIndex(response)
+                    : side.PeakIndex,
                 side.Channel.SampleRate,
                 bandLowHz,
                 bandHighHz,
-                side.ValidRange));
+                chainFree ? side.BypassedValidRange : side.ValidRange));
         }
 
         return anchor == int.MaxValue ? 0 : anchor;

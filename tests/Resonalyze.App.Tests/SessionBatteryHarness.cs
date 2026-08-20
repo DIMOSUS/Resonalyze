@@ -471,7 +471,12 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 channel,
                 response,
                 VirtualCrossoverAnalysis.FindPeakIndex(response),
-                OxyColors.White));
+                OxyColors.White,
+                VirtualCrossoverAnalysis.ChainValidRange(
+                    state.ProcessingSource.SampleCount,
+                    chain,
+                    state.SampleRate,
+                    response.Length)));
         }
 
         return processed;

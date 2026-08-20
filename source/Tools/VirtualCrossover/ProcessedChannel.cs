@@ -6,14 +6,20 @@ namespace Resonalyze;
 
 /// <summary>
 /// A channel's processed response ready for the metric, the complex sum and the
-/// plot: the applied-chain impulse response, its peak index and the channel's
-/// plot color. Shared by the redraw, the metric read-out and the Auto delay search.
+/// plot: the applied-chain impulse response, its peak index, the channel's
+/// plot color and where the MEASURED content sits inside the processed record
+/// (<see cref="ValidRange"/> — the coordinator computes it with every render;
+/// front detections read it so a chain delay's silent prefix cannot pose as
+/// arrival SNR). Shared by the redraw, the metric read-out and the Auto delay
+/// search. The range defaults to unknown for callers without one — the
+/// analyses then fall back to their padding-signature heuristic.
 /// </summary>
 internal sealed record ProcessedChannel(
     VirtualCrossoverChannel Channel,
     Complex[] ImpulseResponse,
     int PeakIndex,
-    OxyColor Color);
+    OxyColor Color,
+    ValidSampleRange ValidRange = default);
 
 /// <summary>
 /// One gated magnitude curve at the two widths the tool needs, from a single gate

@@ -1299,16 +1299,12 @@ public static class VirtualCrossoverAnalysis
     /// cannot form.
     /// </para>
     /// <para>
-    /// The windows deliberately do NOT sit on each channel's own front.
-    /// Measured on the 55 Hz 36 dB/oct pair the tests reproduce: per-own-front
-    /// windows read the current-timing loss at −4.27 dB where the shared
-    /// pair-front window reads −2.35 and a window opened at the drivers'
-    /// source (the truth this synthetic makes knowable) −1.89 — a crossover's
-    /// rise starts before any front detectable on its output (see the gate
-    /// remarks above), so the own-front placement cuts MORE rise, not less.
-    /// One shared window keeps the sweep consistent with the search and the
-    /// read-out; opening it earlier than the pair's front is the window-length
-    /// work's business, not the sweep's.
+    /// (An earlier revision deliberately kept ONE shared window here, because
+    /// per-channel fronts under the then-fixed 85 ms gate cut into a
+    /// crossover's rise — measured −4.27 dB against the shared window's −2.35
+    /// on the 55 Hz reproduction. The band-sized windows retired that
+    /// objection along with the shared default; the figures live on in the
+    /// gate remarks above.)
     /// </para>
     /// </summary>
     public static List<JunctionSweepPoint> JunctionLossSweep(
@@ -2577,7 +2573,21 @@ public static class VirtualCrossoverAnalysis
     public static Complex[][] CropSharedDirectSoundWindow(
         IReadOnlyList<Complex[]> impulseResponses,
         int cropLength,
-        int prePeakSamples)
+        int prePeakSamples) =>
+        CropSharedDirectSoundWindow(
+            impulseResponses, cropLength, prePeakSamples, out _);
+
+    /// <summary>
+    /// The overload that also reports the shared offset the crop removed, so
+    /// a caller holding per-response metadata in the ORIGINAL frame — a
+    /// <see cref="ValidSampleRange"/> above all — can shift it into the
+    /// cropped one instead of silently dropping it.
+    /// </summary>
+    public static Complex[][] CropSharedDirectSoundWindow(
+        IReadOnlyList<Complex[]> impulseResponses,
+        int cropLength,
+        int prePeakSamples,
+        out int startSample)
     {
         ArgumentNullException.ThrowIfNull(impulseResponses);
         if (cropLength < 1)
@@ -2587,6 +2597,7 @@ public static class VirtualCrossoverAnalysis
 
         int earliestPeak = impulseResponses.Min(FindPeakIndex);
         int start = Math.Max(0, earliestPeak - Math.Max(0, prePeakSamples));
+        startSample = start;
         var cropped = new Complex[impulseResponses.Count][];
         for (int channel = 0; channel < impulseResponses.Count; channel++)
         {

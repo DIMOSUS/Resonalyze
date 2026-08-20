@@ -2002,7 +2002,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 channel,
                 result.ImpulseResponse,
                 result.PeakIndex,
-                color));
+                color,
+                result.ValidRange));
         }
         return new ProcessedRender(render.Revision, processed);
     }
@@ -4392,9 +4393,27 @@ public partial class VirtualCrossoverPanel : UserControl
         Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
             all.Select(item => item.ImpulseResponse).ToList(),
             AutoDelaySearchCropLength,
-            AutoDelaySearchCropPrePeakSamples);
+            AutoDelaySearchCropPrePeakSamples,
+            out int cropStart);
         Complex[] lower = cropped[all.IndexOf(pair.Lower)];
         Complex[] upper = cropped[all.IndexOf(pair.Upper)];
+        // The channels' valid ranges, shifted into the crop's frame: the
+        // front detections behind the sweep and the direct cuts take them, so
+        // the drawn surface reads the same fronts the search reads — on a
+        // clean capture the heuristic fallback agrees anyway, but a delayed
+        // or glitch-headed record is exactly where the two paths must not
+        // part.
+        ValidSampleRange Shifted(ProcessedChannel item, Complex[] croppedIr) =>
+            item.ValidRange.IsKnown
+                ? new ValidSampleRange(
+                    Math.Max(0, item.ValidRange.StartSample - cropStart),
+                    Math.Clamp(
+                        item.ValidRange.EndSample - cropStart,
+                        0,
+                        croppedIr.Length))
+                : item.ValidRange;
+        ValidSampleRange lowerRange = Shifted(pair.Lower, lower);
+        ValidSampleRange upperRange = Shifted(pair.Upper, upper);
         // No gate anchor is passed: the sweep windows each channel at its own
         // band-limited front, exactly as every junction measurement of an
         // Auto delay run does (see BuildAlignmentBins), so the drawn score
@@ -4426,10 +4445,12 @@ public partial class VirtualCrossoverPanel : UserControl
             VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
                 VirtualCrossoverAnalysis.CutDirectSound(
                     lower, sampleRate,
-                    pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz),
+                    pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz,
+                    lowerRange),
                 VirtualCrossoverAnalysis.CutDirectSound(
                     upper, sampleRate,
-                    pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz),
+                    pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz,
+                    upperRange),
                 sampleRate, pair.CrossoverHz, passOctaves,
                 windowMs, centerLagMs: 0, phaseTransform: true);
 
@@ -4452,7 +4473,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 // search-side level match, whose absence re-shapes the lobes
                 // whenever the two channels sit at different gains.
                 gateAnchorSample: null,
-                levelMatch: true)
+                levelMatch: true,
+                variableValidRange: upperRange,
+                fixedValidRange: lowerRange)
             .Select(point => new SignalPoint(
                 point.DelayMs,
                 point.LossDb +

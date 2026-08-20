@@ -4379,7 +4379,9 @@ public partial class VirtualCrossoverPanel : UserControl
     // relative timing intact; it no longer decides anything the score reads,
     // the anchor being derived from the pair's own content rather than from
     // an index into the crop.
-    private static JunctionCorrelationView BuildCorrelationView(
+    // Internal so the correlation-view harness can render the exact product
+    // curves without constructing the panel.
+    internal static JunctionCorrelationView BuildCorrelationView(
         AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildCorrelationView");
@@ -4417,6 +4419,24 @@ public partial class VirtualCrossoverPanel : UserControl
                 lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
                 windowMs, centerLagMs: 0, phaseTransform: true);
 
+        // The whitened curve again, on the DIRECT sound alone (see
+        // VirtualCrossoverAnalysis.CutDirectSound — the same cut the
+        // engine's direct-coherence witness reads, so this curve shows the
+        // very figure the search weighed). The full-record curves above read
+        // the whole capture — reflections included, which on a thin-overlap
+        // junction outvote the drivers — while this one answers the question
+        // the view is usually opened with: where do the DRIVERS align.
+        List<SignalPoint> whitenedDirect =
+            VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                VirtualCrossoverAnalysis.CutDirectSound(
+                    lower, sampleRate,
+                    pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz),
+                VirtualCrossoverAnalysis.CutDirectSound(
+                    upper, sampleRate,
+                    pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz),
+                sampleRate, pair.CrossoverHz, passOctaves,
+                windowMs, centerLagMs: 0, phaseTransform: true);
+
         // The score comb repeats per crossover period, so the step must
         // resolve THAT scale — a fixed points-per-window count aliased at
         // high junctions (at a 20 kHz-class split, window/60 equals a whole
@@ -4451,6 +4471,7 @@ public partial class VirtualCrossoverPanel : UserControl
             pair.BandHighHz,
             correlation,
             whitened,
+            whitenedDirect,
             ScoreSweep(invert: false),
             ScoreSweep(invert: true),
             arrivalLagMs);

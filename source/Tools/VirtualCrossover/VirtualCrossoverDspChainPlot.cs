@@ -39,6 +39,7 @@ internal sealed record JunctionCorrelationView(
     double BandHighHz,
     List<SignalPoint> Correlation,
     List<SignalPoint> Whitened,
+    List<SignalPoint> WhitenedDirect,
     List<SignalPoint> ScoreNormal,
     List<SignalPoint> ScoreInverted,
     double ArrivalLagMs);
@@ -218,6 +219,15 @@ internal sealed class VirtualCrossoverDspChainPlot
             model, "PHAT", data.Whitened,
             OxyColor.FromRgb(79, 195, 247), CoefficientAxisKey,
             LineStyle.Solid, 1.8);
+        // The same whitened read on the DIRECT sound alone: each channel cut
+        // to a couple of crossover periods behind its own front, so the comb
+        // shows the drivers' timing where the full-record twin shows whatever
+        // the cabin's reflections correlate best (on a thin-overlap junction
+        // the two disagree by whole periods).
+        AddCorrelationSeries(
+            model, "PHAT direct", data.WhitenedDirect,
+            OxyColor.FromRgb(200, 130, 255), CoefficientAxisKey,
+            LineStyle.Solid, 1.4);
         AddCorrelationSeries(
             model, "score", data.ScoreNormal,
             OxyColor.FromRgb(124, 213, 124), ScoreAxisKey,

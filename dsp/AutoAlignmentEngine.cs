@@ -393,6 +393,42 @@ public static class AutoAlignmentEngine
     // traveling windows made the shared choice moot).
 
     /// <summary>
+    /// The direct-coherence witness: at a junction where the summation score
+    /// cannot separate a lobe from its POLARITY partner (thin spectral
+    /// overlap ties them within hundredths of a dB — split corners like
+    /// 1500/1700 at 48 dB/oct leave half an octave of usable overlap), the
+    /// whitened correlation of the two channels' DIRECT sound
+    /// (<see cref="VirtualCrossoverAnalysis.CutDirectSound"/>) still
+    /// separates them: r at the lobe measures how well the direct
+    /// wavefronts' phase SLOPE matches across the whole overlap, which the
+    /// flip partner — phase-equivalent at the corner only — cannot fake. The
+    /// ear sides with this witness at these junctions: fusion and
+    /// localization above the bass follow the direct wavefront (precedence),
+    /// and on the reference car the owner's hand tune sits on the lobe this
+    /// figure prefers (r 0.89 against 0.81) while the summation score reads
+    /// the two as a 0.04 dB tie.
+    ///
+    /// The witness only arbitrates a TIE between polarity partners; a score
+    /// preference beyond <see cref="DirectCoherenceTieMarginDb"/> stands,
+    /// because the score reads the whole windowed sum the cabin will
+    /// actually produce. It stands down where "direct sound" is not a
+    /// measurable notion (below <see cref="DirectCoherenceMinCrossoverHz"/>
+    /// two crossover periods of cut span the room's own build-up — the
+    /// archived sub junctions read high r at delays whole periods away, room
+    /// geometry wearing a coherence figure), where a lock or policy already
+    /// pinned the lobe by stronger evidence, and where the coherence itself
+    /// is weak or the advantage inside its own noise. Field calibration
+    /// (2026-08-20, six cabins): genuine mid/tweeter discriminations read
+    /// |r| 0.74-0.96 with advantages from 0.08 up; 0.6 / 0.05 sit under
+    /// those with room to spare while a coherence-free junction (Passat C/D
+    /// reads r 0.07 at its current lobe) cannot vote at all.
+    /// </summary>
+    private const double DirectCoherenceMinCrossoverHz = 120;
+    private const double DirectCoherenceTieMarginDb = 0.3;
+    private const double DirectCoherenceMinR = 0.6;
+    private const double DirectCoherenceMinAdvantage = 0.05;
+
+    /// <summary>
     /// The minimum envelope peak-to-noise grade (dB) both channels' onset
     /// estimates must carry before the lock trusts them. The spread gate alone
     /// cannot refuse a noise-only record: random crossings can look stable
@@ -2022,6 +2058,103 @@ public static class AutoAlignmentEngine
                 }
             }
 
+            // The direct-coherence witness (see the DirectCoherence*
+            // constants): a polarity partner within the tie margin is
+            // re-judged on the whitened correlation of the two channels'
+            // direct sound. Guarded off wherever the lobe is already pinned
+            // by stronger evidence — a scene or onset lock, a forced
+            // polarity, a joint two-junction search whose combined band has
+            // no single junction to read.
+            string? directCoherenceDetail = null;
+            if (secondaryNeighbor == null &&
+                sceneLockToleranceMs == null &&
+                onsetAnchorMs == null &&
+                forcedPolarity == null &&
+                pair.CrossoverHz >= DirectCoherenceMinCrossoverHz)
+            {
+                AlignmentCandidate? rival = fineOptima
+                    .Concat(wideOptima)
+                    .Concat(retriedOptima)
+                    .Where(item => item.InvertPolarity != chosen.InvertPolarity &&
+                        Math.Abs(item.DelayMs - chosen.DelayMs)
+                            <= 1.5 * halfPeriodMs)
+                    .OrderByDescending(AcousticScore)
+                    .FirstOrDefault();
+                if (rival != null &&
+                    Math.Abs(AcousticScore(chosen) - AcousticScore(rival))
+                        <= DirectCoherenceTieMarginDb)
+                {
+                    // One curve serves both candidates: lag is the delay
+                    // added to the VARIABLE channel, the frame every
+                    // candidate's DelayMs lives in.
+                    double centerMs = (chosen.DelayMs + rival.DelayMs) / 2.0;
+                    List<SignalPoint> coherence =
+                        VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                            VirtualCrossoverAnalysis.CutDirectSound(
+                                neighborIrs[0], channel.SampleRate,
+                                bandLowHz, bandHighHz, pair.CrossoverHz),
+                            VirtualCrossoverAnalysis.CutDirectSound(
+                                variableIr, channel.SampleRate,
+                                bandLowHz, bandHighHz, pair.CrossoverHz),
+                            channel.SampleRate,
+                            pair.CrossoverHz,
+                            Math.Log2(bandHighHz / bandLowHz),
+                            Math.Abs(chosen.DelayMs - rival.DelayMs) / 2.0
+                                + halfPeriodMs,
+                            centerMs,
+                            phaseTransform: true);
+
+                    // A candidate's coherence: the best sign-consistent value
+                    // within a quarter period of its delay — its own lobe,
+                    // never the partner's half a period away.
+                    double CoherenceOf(AlignmentCandidate candidate)
+                    {
+                        double best = double.NegativeInfinity;
+                        foreach (SignalPoint point in coherence)
+                        {
+                            if (Math.Abs(point.X - candidate.DelayMs)
+                                <= 0.5 * halfPeriodMs)
+                            {
+                                best = Math.Max(best, candidate.InvertPolarity
+                                    ? -point.Y
+                                    : point.Y);
+                            }
+                        }
+
+                        return best;
+                    }
+
+                    double chosenR = CoherenceOf(chosen);
+                    double rivalR = CoherenceOf(rival);
+                    if (rivalR >= DirectCoherenceMinR &&
+                        rivalR >= chosenR + DirectCoherenceMinAdvantage)
+                    {
+                        log.AppendLine(
+                            $"  direct coherence: preferred " +
+                            $"{rival.DelayMs:0.000} ms" +
+                            $"{(rival.InvertPolarity ? " inv" : "")} " +
+                            $"(direct r {rivalR:0.00}) over " +
+                            $"{chosen.DelayMs:0.000} ms" +
+                            $"{(chosen.InvertPolarity ? " inv" : "")} " +
+                            $"(r {chosenR:0.00}) — scores tied within " +
+                            $"{DirectCoherenceTieMarginDb:0.00} dB, the " +
+                            "direct wavefronts decide the polarity.");
+                        directCoherenceDetail = string.Create(
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            $"direct coherence r {rivalR:0.00} vs " +
+                            $"{chosenR:0.00} decided the polarity tie");
+                        chosen = rival;
+                    }
+                    else if (chosenR > double.NegativeInfinity)
+                    {
+                        log.AppendLine(
+                            $"  direct coherence: {chosen.DelayMs:0.000} ms" +
+                            $" stands (r {chosenR:0.00} vs rival " +
+                            $"{rivalR:0.00})");
+                    }
+                }
+            }
+
             double newDelay = chosen.DelayMs;
             if (newDelay < 0)
             {
@@ -2078,6 +2211,10 @@ public static class AutoAlignmentEngine
                     onsetLocked: onsetAnchorMs != null,
                     sceneLocked: sceneLockToleranceMs != null,
                     overlapFraction);
+                if (directCoherenceDetail != null)
+                {
+                    AmendDecision(decisions, channel, directCoherenceDetail);
+                }
                 if (subPrecedenceBehindDb is { } precedenceBehindDb)
                 {
                     // The report must say the objective was deliberately

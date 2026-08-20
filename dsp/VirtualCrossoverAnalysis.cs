@@ -644,6 +644,72 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
+    /// One channel's DIRECT sound, cut for a whitened junction comparison:
+    /// everything outside [front − T/2, front + 2T + T/2] is zeroed (T = one
+    /// period of the junction's crossover), with half-period raised-cosine
+    /// fades at both edges, the front being the channel's own band-limited
+    /// arrival (<see cref="FindGateAnchor"/>). Two crossover periods is the
+    /// span that reads the drivers: measured on the archived mid/tweeter
+    /// junctions, one period behind the front the whitened correlation of the
+    /// pair peaks at the drivers' timing (r ≈ 0.85 on the reference car),
+    /// from two-and-some periods on the cabin's early reflections take the
+    /// extremum over and carry it whole periods away (−2.5 ms on the same
+    /// junction, polarity alternating between adjacent lobes). The
+    /// correlation view's "PHAT direct" curve and the alignment engine's
+    /// direct-coherence witness both read pairs of these cuts — one
+    /// implementation, so the curve the user checks IS the figure the engine
+    /// weighed.
+    /// </summary>
+    public static Complex[] CutDirectSound(
+        Complex[] impulseResponse,
+        int sampleRate,
+        double bandLowHz,
+        double bandHighHz,
+        double crossoverHz)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        if (impulseResponse.Length == 0)
+        {
+            throw new ArgumentException(
+                "The impulse response is empty.", nameof(impulseResponse));
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+        if (!(crossoverHz > 0))
+        {
+            throw new ArgumentException("The crossover is invalid.");
+        }
+
+        int front = FindGateAnchor(
+            impulseResponse,
+            FindPeakIndex(impulseResponse),
+            sampleRate,
+            bandLowHz,
+            bandHighHz);
+        double periodSamples = sampleRate / crossoverHz;
+        int fade = Math.Max(8, (int)Math.Round(0.5 * periodSamples));
+        int plateau = (int)Math.Round(2.0 * periodSamples);
+        int start = Math.Max(0, front - fade);
+        int end = Math.Min(impulseResponse.Length, front + plateau + fade);
+        var cut = new Complex[impulseResponse.Length];
+        for (int i = start; i < end; i++)
+        {
+            double weight =
+                i < front
+                    ? 0.5 - 0.5 * Math.Cos(Math.PI * (i - start) / (double)fade)
+                    : i >= front + plateau
+                        ? 0.5 + 0.5 * Math.Cos(
+                            Math.PI * (i - front - plateau) / (double)fade)
+                        : 1.0;
+            cut[i] = impulseResponse[i] * weight;
+        }
+
+        return cut;
+    }
+
+    /// <summary>
     /// The minimum band width (as a high/low frequency ratio: a third of an
     /// octave) a band-limited arrival analysis accepts. Narrower bands leave
     /// the envelope detector too few in-band periods to place an arrival, so

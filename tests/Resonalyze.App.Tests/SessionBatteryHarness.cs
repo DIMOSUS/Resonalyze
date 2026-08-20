@@ -265,6 +265,42 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 : $"   (window opens {leftEdgeMs:0.00} ms, plateau to " +
                   $"{gate.OffsetMs!.Value + project.PhaseGatePlateauMs:0.00} ms)"));
 
+        // The direct-sound whitened correlation of each junction, for the
+        // saved tune and the proposal — the read the correlation view's
+        // "PHAT direct" curve draws and the engine's direct-coherence witness
+        // weighs. Per junction: the extremum nearest zero lag (the lobe the
+        // setting sits on) and the curve's global extremum. A signed r:
+        // negative means the coherent alignment is the INVERTED one.
+        void DirectPhat(string label, List<ProcessedChannel> set)
+        {
+            foreach (AdjacentPair pair in ProcessedChannels.GetAdjacentPairs(
+                ProcessedChannels.OrderByBand(set)))
+            {
+                JunctionCorrelationView view =
+                    VirtualCrossoverPanel.BuildCorrelationView(pair, set);
+                if (view.WhitenedDirect.Count == 0)
+                {
+                    continue;
+                }
+
+                SignalPoint best = view.WhitenedDirect
+                    .MaxBy(point => Math.Abs(point.Y));
+                SignalPoint near = view.WhitenedDirect
+                    .Where(point => Math.Abs(point.X) <= 500.0 / pair.CrossoverHz)
+                    .DefaultIfEmpty(best)
+                    .MaxBy(point => Math.Abs(point.Y));
+                // The runner already pinned the invariant culture.
+                report.AppendLine(
+                    $"    direct-PHAT {label,-8} " +
+                    $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
+                    $"on-lobe r {near.Y:+0.00;-0.00} @ {near.X:+0.00;-0.00} ms; " +
+                    $"best r {best.Y:+0.00;-0.00} @ {best.X:+0.00;-0.00} ms");
+            }
+        }
+
+        DirectPhat("saved", saved);
+        DirectPhat("proposed", proposed);
+
         List<VirtualCrossoverMetric.Entry> savedEntries = Judge(project, saved);
         List<VirtualCrossoverMetric.Entry> proposedEntries = Judge(project, proposed);
         var comparisons = new List<JunctionComparison>();
@@ -307,7 +343,8 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         foreach (string line in log.ToString().Split('\n'))
         {
             if (line.Contains("latch") || line.Contains("veto") ||
-                line.Contains("re-anchored") || line.Contains("lobe hop"))
+                line.Contains("re-anchored") || line.Contains("lobe hop") ||
+                line.Contains("direct coherence"))
             {
                 report.AppendLine("    | " + line.Trim());
             }

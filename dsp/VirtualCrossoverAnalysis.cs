@@ -1761,10 +1761,13 @@ public static class VirtualCrossoverAnalysis
     /// millisecond — too short to hold a real driver's direct sound and its
     /// own fade structure); the ceiling bounds the FFT work where a band
     /// reaches toward 20 Hz, at the resolution cost the size rule would
-    /// otherwise pay there.
+    /// otherwise pay there. The ceiling is public because the Auto delay
+    /// search's shared crop must budget, in time at any sample rate, for the
+    /// longest window this rule can ask for (see AlignmentReprocessor's crop
+    /// sizing in the app).
     /// </summary>
     private const double MinimumAlignmentGateMs = 4.0;
-    private const double MaximumAlignmentGateMs = 350.0;
+    public const double MaximumAlignmentGateMs = 350.0;
 
     // The gate's fade share: the same 1/16 of the window the fixed
     // 4096/256-sample reference gate carried.

@@ -119,12 +119,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         @"v5_exp\virtual-dsp-session-manual-2.json"
     ];
 
-    // The Auto delay search's crop, straight from the panel: the search reads
-    // only the gated direct sound, so it runs on a shared crop of the measured
-    // IRs (one offset for every channel keeps the inter-channel timing intact).
-    private const int SearchCropLength = 65_536;
-    private const int SearchCropPrePeakSamples = 8_192;
-
     internal static string? RootDirectory =>
         Environment.GetEnvironmentVariable(SessionBatteryFactAttribute.RootVariable);
 
@@ -392,9 +386,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     channel.TransferImpulseResponse!,
                     channel.SampleRate,
                     channel.Settings.ToChain())).ToList(),
-                log),
-            SearchCropLength,
-            SearchCropPrePeakSamples);
+                log));
         IReadOnlyList<AlignmentSnapshot> initial = reprocessor.Reprocess(
             new Dictionary<IAlignmentChannel, AlignmentOverride>());
         var snapshots = ordered

@@ -2843,9 +2843,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     channel.TransferImpulseResponse!,
                     channel.SampleRate,
                     channel.Settings.ToChain())).ToList(),
-                log),
-            AutoDelaySearchCropLength,
-            AutoDelaySearchCropPrePeakSamples);
+                log));
 
         IReadOnlyList<AlignmentSnapshot> initial = reprocessor.Reprocess(
             new Dictionary<IAlignmentChannel, AlignmentOverride>());
@@ -2873,14 +2871,6 @@ public partial class VirtualCrossoverPanel : UserControl
             decisions);
         return reprocessor;
     }
-
-    // The Auto delay search reads only the gated direct sound, so it runs on
-    // a shared crop of the measured IRs (one offset for every channel keeps
-    // the inter-channel timing intact). 64k samples keep well over a second
-    // of decay at 44.1 kHz — conservative headroom over the 4096-sample
-    // evaluation gate and the low-band arrival envelopes.
-    private const int AutoDelaySearchCropLength = 65_536;
-    private const int AutoDelaySearchCropPrePeakSamples = 8_192;
 
     // The per-side participants of a stereo Auto delay run: every enabled
     // channel side with a resolved measurement. A mono pair contributes ONE
@@ -3211,9 +3201,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     side.State.TransferImpulseResponse!,
                     side.State.SampleRate,
                     side.Settings.ToChain())).ToList(),
-                log),
-            AutoDelaySearchCropLength,
-            AutoDelaySearchCropPrePeakSamples);
+                log));
 
         IReadOnlyList<AlignmentSnapshot> initialSnapshots = reprocessor.Reprocess(
             new Dictionary<IAlignmentChannel, AlignmentOverride>());
@@ -4396,8 +4384,8 @@ public partial class VirtualCrossoverPanel : UserControl
             : [pair.Lower, pair.Upper];
         Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
             all.Select(item => item.ImpulseResponse).ToList(),
-            AutoDelaySearchCropLength,
-            AutoDelaySearchCropPrePeakSamples,
+            AlignmentReprocessor.SearchCropLength(sampleRate),
+            AlignmentReprocessor.SearchCropPrePeakSamples(sampleRate),
             out int cropStart);
         Complex[] lower = cropped[all.IndexOf(pair.Lower)];
         Complex[] upper = cropped[all.IndexOf(pair.Upper)];

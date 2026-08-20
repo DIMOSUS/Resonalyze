@@ -104,6 +104,11 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     [
         @"3RC\virtual-dsp-session.json",
         @"Passat\virtual-dsp-session.json",
+        // The same car re-measured and re-tuned by the owner (2026-08-20).
+        // Its A/B junction is the conviction dead zone's field case: the
+        // sub's band arrival latches 1.7 allowances late and only the comb
+        // arbitration lands the pair on the owner's inverted earlier lobe.
+        @"Passat v2\virtual-dsp-session-sq-v10-7-opt.json",
         @"v2\virtual-dsp-session.json",
         @"v2\head_90_grad\virtual-dsp-session.json",
         @"v3\virtual-dsp-session.json",
@@ -344,7 +349,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         {
             if (line.Contains("latch") || line.Contains("veto") ||
                 line.Contains("re-anchored") || line.Contains("lobe hop") ||
-                line.Contains("direct coherence"))
+                line.Contains("direct coherence") || line.Contains("arbitration"))
             {
                 report.AppendLine("    | " + line.Trim());
             }

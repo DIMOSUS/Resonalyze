@@ -801,7 +801,8 @@ public partial class EqWizardPanel : UserControl
         EqualizationCurve curve = BuildEqualizationCurve();
         EqWizardExportTarget target =
             importExportCoordinator.ResolveExportTarget(dialog.FilterIndex);
-        if (!ConfirmShelvingBandsDropped(target, curve))
+        if (!ConfirmShelvingBandsDropped(target, curve) ||
+            !ConfirmPreampDropped(target, curve))
         {
             return;
         }
@@ -846,6 +847,37 @@ public partial class EqWizardPanel : UserControl
             Environment.NewLine + Environment.NewLine +
             "The exported profile will hold the peaking filters and the preamp only, " +
             "and will not match the curve on screen. Export anyway?",
+            "EQ Wizard",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning) == DialogResult.Yes;
+    }
+
+    // A format whose layout has no preamp slot exports the bands only, so the whole
+    // curve lands on the device that many dB off the tune on screen — and, unlike a
+    // dropped band, nothing in the file says so. Tell the user the number to enter
+    // in the device's own gain control; they decide.
+    private bool ConfirmPreampDropped(
+        EqWizardExportTarget target,
+        EqualizationCurve curve)
+    {
+        double preampDb = EqWizardImportExportCoordinator.PreampDroppedBy(target, curve);
+        if (preampDb == 0)
+        {
+            return true;
+        }
+
+        string gain = FormattableString.Invariant($"{preampDb:+0.0;-0.0} dB");
+        // The preamp is signed: leaving out a cut makes the export louder than the
+        // curve on screen, leaving out a boost makes it quieter. Say which.
+        string direction = preampDb < 0 ? "louder" : "quieter";
+        return MessageBox.Show(
+            FindForm(),
+            $"{target.Name} has no place for the preamp, so the {gain} would be left " +
+            $"out and the exported bands alone are that much {direction} than the tune " +
+            "on screen." +
+            Environment.NewLine + Environment.NewLine +
+            $"Enter {gain} in the channel's own gain control on the device after " +
+            "importing the bands. Export anyway?",
             "EQ Wizard",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning) == DialogResult.Yes;

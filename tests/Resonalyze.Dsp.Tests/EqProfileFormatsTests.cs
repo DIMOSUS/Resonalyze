@@ -19,7 +19,9 @@ public sealed class EqProfileFormatsTests
 
         EqualizationCurve parsed = format.Import(format.Export(original));
 
-        Assert.Equal(original.PreampDb, parsed.PreampDb, 4);
+        // A format whose layout has no place for the preamp (a car DSP bank, where
+        // the gain is a separate control) reads it back as 0 by declaration.
+        Assert.Equal(format.CarriesPreamp ? original.PreampDb : 0, parsed.PreampDb, 4);
         Assert.Equal(original.Bands.Count, parsed.Bands.Count);
         for (int i = 0; i < original.Bands.Count; i++)
         {

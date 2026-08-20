@@ -97,6 +97,9 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     // is a path under the root; the session file's own folder is what its
     // measurements are resolved against (VirtualCrossoverSourceLocator), so a
     // session whose stored absolute paths have gone stale still loads.
+    // The reference car is v5_exp — the owner deleted the older v5 session of
+    // the same car (2026-08-20) and distrusts v2's tuning, so a verdict that
+    // rests on either of those alone is not a verdict.
     private static readonly string[] DefaultSessions =
     [
         @"3RC\virtual-dsp-session.json",
@@ -105,7 +108,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         @"v2\head_90_grad\virtual-dsp-session.json",
         @"v3\virtual-dsp-session.json",
         @"v4\virtual-dsp-session.json",
-        @"v5\virtual-dsp-session-manual.json",
         @"v5_exp\virtual-dsp-session-manual.json"
     ];
 
@@ -212,8 +214,10 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         report.AppendLine(
             $"  side {(rightSide ? "R" : "L")}, {participants.Count} channels, " +
             $"{participants[0].SampleRate} Hz, gate " +
-            $"{(AutoGate ? "AUTO (pin ignored)" : null)}" +
-            $"{gate.OffsetMs?.ToString("0.00", CultureInfo.InvariantCulture) ?? "auto"} " +
+            (AutoGate && gate.OffsetMs is { } ignoredPin
+                ? FormattableString.Invariant($"auto (pin {ignoredPin:0.00} ignored) ")
+                : $"{gate.OffsetMs?.ToString(
+                    "0.00", CultureInfo.InvariantCulture) ?? "auto"} ") +
             $"+ {project.PhaseGateLeftMs:0.#}/{project.PhaseGatePlateauMs:0.#}/" +
             $"{project.PhaseGateRightMs:0.#} ms, smoothing " +
             $"{OverlaySmoothing.GetLabel(project.SmoothingCode)}");

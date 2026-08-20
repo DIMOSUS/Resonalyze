@@ -1579,19 +1579,35 @@ public static class VirtualCrossoverAnalysis
     // window happened to start — least of all one set by a channel that is not
     // in the junction.
     //
-    // The pair's own fronts must be read BEFORE its chains. On the 55 Hz
-    // reproduction in JunctionCorrelationCurveTests all four placements pick
-    // the same lobe (-3.5 ms, inverted), but the flatness each can read there
-    // differs: 0.00 dB through a window opened at the drivers' shared source,
-    // 0.00 dB through the pair's CHAIN-FREE fronts, -0.21 dB through their
-    // filtered fronts, -0.23 dB through their peaks. What separates the last
-    // two from the first is the crossover's own rise, which starts before the
-    // front any detector can mark on the filtered response — that 36 dB/oct
-    // low-pass reads its filtered front 12.8 ms after the driver's. So the
-    // callers read the anchor off the chain-free response
-    // (AutoAlignmentEngine.JunctionGateAnchor; PredictedFrontArrivalMs derives
-    // the same figure for a different purpose), which closes the gap without
-    // reaching outside the pair for the margin.
+    // The pair's own fronts recover PART of that margin, not all of it. On the
+    // 55 Hz reproduction in JunctionCorrelationCurveTests all four placements
+    // pick the same lobe (-3.5 ms, inverted), but the flatness each can read
+    // there differs: 0.00 dB through a window opened at the drivers' shared
+    // source, -0.21 dB through the pair's filtered fronts, -0.23 dB through
+    // the pair's peaks. What is left is the crossover's own rise, which starts
+    // before the filtered front any detector can mark — that 36 dB/oct low-pass
+    // reads its filtered front 12.8 ms after the driver's, its woofer partner
+    // 8.6 ms after.
+    //
+    // Reading the anchor off the CHAIN-FREE response closes that gap exactly
+    // (the fourth placement in the same test reads 0.00 dB, and
+    // PredictedFrontArrivalMs already derives the figure) — and it was
+    // MEASURED AND DECLINED, so it is not to be re-proposed on the strength of
+    // the reasoning above. Judged by the panel's own metric over the archived
+    // cabins (the session battery in tests/Resonalyze.App.Tests, every session
+    // read at its own Auto gate placement), a chain-free anchor moves only the
+    // LOWEST junction of a cabin, and there it moves the proposal AWAY from the
+    // owner's own tuning on the reference car — both of its saved sessions:
+    // v5's sub/bass junction reads -0.20 dB against the saved tuning and
+    // v5_exp's -0.13, where the filtered front reads +0.03 and +0.10, and the
+    // delay it proposes sits 0.74 ms off the manual one where the filtered
+    // front sits 0.11 ms off. Only v3 prefers it (+0.38 dB), and there
+    // it lands 1.56 ms from that session's own tuning — the LF metric is a
+    // 1/6-octave statistic narrower than the window can resolve (see
+    // AlignmentFftInterpolationFactor), so at the bottom junction it is the
+    // weaker witness of the two. What honestly needs the chain-free front is a
+    // reported FLATNESS trusted to a tenth of a dB; what must not follow it is
+    // the search.
     //
     // The window is sized in TIME, not samples. A fixed 4096 samples is ~85 ms
     // at 48 kHz but only 43 ms at 96 kHz and 21 ms at 192 kHz — the higher the

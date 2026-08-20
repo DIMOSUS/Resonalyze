@@ -194,9 +194,9 @@ public sealed class JunctionCorrelationCurveTests
         // shared source finds exactly that; one opened on the pair's own peaks
         // — its fade-in cutting into both drivers' rise — cannot see a flat sum
         // anywhere. Four placements are put to that record below: the source,
-        // the shipped rule (the pair's CHAIN-FREE fronts, which is what
-        // AutoAlignmentEngine.JunctionGateAnchor reads), the pair's FILTERED
-        // fronts, and the pair's peaks.
+        // the shipped rule (VirtualCrossoverAnalysis.FindGateAnchor over the
+        // pair's filtered fronts), the pair's peaks, and the chain-free fronts
+        // that were measured against the shipped rule and declined.
         Complex[] sub = Filtered(new CrossoverSpec(
             CrossoverKind.LowPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
@@ -225,13 +225,13 @@ public sealed class JunctionCorrelationCurveTests
             $"the peak-anchored window cannot read the flat sum: " +
             $"avg {peakAnchored.LossDb:0.00}, dip {peakAnchored.DipDb:0.00} dB");
 
-        // Reading the pair's own fronts off the FILTERED responses recovers
-        // part of the difference and no more: the lobe is the same, but the
-        // flatness it can read there is still a windowing artifact. What is
-        // left is the crossover's own rise, which begins before the front any
-        // detector can mark on its output — this pair's 36 dB/oct low-pass
-        // reads its filtered front 12.8 ms behind the driver's, and even the
-        // earlier of the two members 8.6 ms behind.
+        // The shipped rule sits between the two, and the lobe is the same
+        // through all three: the anchor decides how honestly the junction's
+        // flatness READS, not which alignment wins. The remaining gap is the
+        // 36 dB/oct low-pass's own rise, which starts before the front the
+        // detector can mark on the filtered response — 12.8 ms before it for
+        // this sub, 8.6 ms for its woofer partner (see the gate remarks in
+        // VirtualCrossoverAnalysis).
         int filteredFront = Math.Min(
             VirtualCrossoverAnalysis.FindGateAnchor(
                 sub, VirtualCrossoverAnalysis.FindPeakIndex(sub),
@@ -244,19 +244,21 @@ public sealed class JunctionCorrelationCurveTests
         Assert.InRange(frontAnchored.DelayMs, -4.5, -2.5);
         Assert.InRange(frontAnchored.LossDb, peakAnchored.LossDb, -0.05);
 
-        // The SHIPPED rule reads those same fronts off the pair's CHAIN-FREE
-        // responses instead — here the bare impulse both drivers were fired
-        // from — and so lands on the source itself and reads the flat sum:
-        // this placement gives back the whole 0.21 dB the window was
-        // inventing. It is what AutoAlignmentEngine.JunctionGateAnchor hands
-        // every probe of a junction; what it is worth on real cabins is the
-        // session battery's business (tests/Resonalyze.App.Tests).
+        // The fourth placement, and the reason the third one is still what the
+        // engine uses. Reading those same fronts off the pair's CHAIN-FREE
+        // responses — here the bare impulse both drivers were fired from —
+        // lands on the source and gives back the whole 0.21 dB the window was
+        // inventing. Tempting, and measured on the archived cabins: it moves
+        // the lowest junction of a cabin away from the owner's own tuning (see
+        // the gate remarks), so the flatness it reads is honest while the
+        // alignment it picks is not better. Pinned here so the option stays
+        // measured rather than re-proposed from the reasoning.
         int chainFreeFront = VirtualCrossoverAnalysis.FindGateAnchor(
             ImpulseAtMs(0), BasePosition, SampleRate, 27.5, 110);
         Assert.InRange(chainFreeFront, BasePosition - 2, BasePosition);
         Assert.True(
             filteredFront - chainFreeFront > Samples(5.0),
-            $"the filtered front sat only " +
+            "the filtered front sat only " +
             $"{(filteredFront - chainFreeFront) * 1000.0 / SampleRate:0.0} ms " +
             "behind the driver's — too little to tell the placements apart");
         AlignmentCandidate chainFreeAnchored = Best(chainFreeFront);

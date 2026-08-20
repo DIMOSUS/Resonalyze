@@ -108,7 +108,10 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         @"v2\head_90_grad\virtual-dsp-session.json",
         @"v3\virtual-dsp-session.json",
         @"v4\virtual-dsp-session.json",
-        @"v5_exp\virtual-dsp-session-manual.json"
+        // manual-2 supersedes manual: the owner's 2026-08-20 re-tune, made
+        // after auditioning the engine's proposal (it adopts the proposal's
+        // bass/mid lobe and polarity structure and re-tunes around them).
+        @"v5_exp\virtual-dsp-session-manual-2.json"
     ];
 
     // The Auto delay search's crop, straight from the panel: the search reads

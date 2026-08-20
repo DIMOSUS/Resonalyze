@@ -3666,7 +3666,8 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             var view = new ImpulseMeasurementView(item.ImpulseResponse, 0, sampleRate);
             double startMs = TransferIrStartCache.ResolveStartMs(
-                item.ImpulseResponse, sampleRate, item.PeakIndex);
+                item.ImpulseResponse, sampleRate, item.PeakIndex,
+                item.ValidRange);
             if (!AllowsPerCurvePhaseGate(
                     DataHelper.GateLeadingEdgeLossDb(
                         view, startMs, leftMs, plateauMs, rightMs),
@@ -3792,7 +3793,8 @@ public partial class VirtualCrossoverPanel : UserControl
         foreach (ProcessedChannel item in processed)
         {
             double startMs = TransferIrStartCache.ResolveStartMs(
-                item.ImpulseResponse, sampleRate, item.PeakIndex);
+                item.ImpulseResponse, sampleRate, item.PeakIndex,
+                item.ValidRange);
             var view = new ImpulseMeasurementView(item.ImpulseResponse, 0, sampleRate);
             double lossDb = Loss(offsetMs);
             if (JudgeGateCut(

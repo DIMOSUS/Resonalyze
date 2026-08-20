@@ -267,6 +267,31 @@ public sealed class AudiotecFischerFormatTests
     }
 
     [Fact]
+    public void Import_RequiresTheBankHeaderNotTheColumnLine()
+    {
+        // REW prints the same "Number / Enabled / Control / Type ..." line above
+        // every equaliser's table, so thirty well-numbered rows under it may be
+        // another processor's bank entirely; only the bank header says whose slots
+        // these are. Recognising the columns alone would let a foreign table import
+        // and replace the EQ on screen.
+        string columnsOnly =
+            "Number\tEnabled\tControl\tType\tFrequency(Hz)\tGain(dB)\tQ\tBandwidth(Hz)\tTargetT60(ms)\t\r\n" +
+            string.Concat(Enumerable
+                .Range(1, AudiotecFischerFormat.SlotCount)
+                .Select(slot => $"{slot}\tTrue\tAuto\tNone\t\r\n"));
+        Assert.False(Format.TryImport(columnsOnly, out _));
+
+        // The column line is auxiliary the other way round: the bank header and its
+        // table are enough on their own, which is what a copy taken without the
+        // column row looks like.
+        Assert.True(Format.TryImport(Bank("True\tAuto\tPK\t1000\t-3\t4.00\t250\t"), out EqualizationCurve curve));
+        Assert.Single(curve.Bands);
+
+        // A real export carries both and still reads.
+        Assert.True(Format.TryImport(RewExport, out _));
+    }
+
+    [Fact]
     public void Import_KeepsAFullBankOfBandsWithinTheSlotBudget()
     {
         // Thirty bells fill the table; the curve type allows 32, the channel does

@@ -135,7 +135,7 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
     {
         ArgumentNullException.ThrowIfNull(text);
 
-        bool headerSeen = false;
+        bool bankHeaderSeen = false;
         int slotsSeen = 0;
         bool tableIntact = true;
         var bands = new List<PeqBand>();
@@ -148,10 +148,17 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
                 continue;
             }
 
-            if (line.Contains(BankHeader, StringComparison.OrdinalIgnoreCase) ||
-                IsColumnHeader(line))
+            if (line.Contains(BankHeader, StringComparison.OrdinalIgnoreCase))
             {
-                headerSeen = true;
+                bankHeaderSeen = true;
+                continue;
+            }
+
+            if (IsColumnHeader(line))
+            {
+                // REW writes the same column line above every equaliser's table, so
+                // it names nothing on its own; it is skipped when present and never
+                // required. Only the bank header says whose thirty slots follow.
                 continue;
             }
 
@@ -179,8 +186,10 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
 
         // Recognition is the caller's only defence: a "successful" import replaces
         // the EQ on screen, so an incomplete or over-long bank must fail here
-        // rather than arrive as an empty (or unexportable) curve.
-        bool recognized = headerSeen && tableIntact && slotsSeen == SlotCount;
+        // rather than arrive as an empty (or unexportable) curve. Thirty rows under
+        // a column header are not enough to claim the file: without the bank header
+        // there is nothing saying these slots are this processor's.
+        bool recognized = bankHeaderSeen && tableIntact && slotsSeen == SlotCount;
         curve = new EqualizationCurve(recognized ? bands : Array.Empty<PeqBand>());
         return recognized;
     }

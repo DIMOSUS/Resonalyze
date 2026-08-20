@@ -4410,10 +4410,6 @@ public partial class VirtualCrossoverPanel : UserControl
         // in view even at an 80 Hz junction.
         double windowMs = Math.Max(3.0, 1.5 * 1000.0 / pair.CrossoverHz);
         double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
-        List<SignalPoint> correlation =
-            VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
-                lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
-                windowMs, centerLagMs: 0, phaseTransform: false);
         List<SignalPoint> whitened =
             VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
                 lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
@@ -4469,7 +4465,6 @@ public partial class VirtualCrossoverPanel : UserControl
             pair.CrossoverHz,
             pair.BandLowHz,
             pair.BandHighHz,
-            correlation,
             whitened,
             whitenedDirect,
             ScoreSweep(invert: false),

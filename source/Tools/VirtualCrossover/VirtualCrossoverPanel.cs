@@ -4370,12 +4370,15 @@ public partial class VirtualCrossoverPanel : UserControl
     // is the current alignment and every reading is a correction to the
     // UPPER channel. The gate follows the alignment engine's own basis — the
     // pair's earliest front, in the pair's band (see the gate remarks in
-    // VirtualCrossoverAnalysis) — so the drawn score is the surface Auto
-    // delay searches. The crop still spans the whole side, because a shared
-    // offset is what keeps the channels' relative timing intact; it no longer
-    // decides anything the score reads, the anchor being derived from the
-    // pair's own content rather than from an index into the crop. The sweep's
-    // per-point inverse FFTs shrink from the capture length to the crop.
+    // VirtualCrossoverAnalysis) — and the sweep probes it by rotating the
+    // windowed cut, the same bins and rotation the search's SumLossEvaluator
+    // reads, so the drawn score IS the surface Auto delay searches (see the
+    // plateau remarks on JunctionLossSweep for what re-gating each probe
+    // through the stationary window drew instead). The crop still spans the
+    // whole side, because a shared offset is what keeps the channels'
+    // relative timing intact; it no longer decides anything the score reads,
+    // the anchor being derived from the pair's own content rather than from
+    // an index into the crop.
     private static JunctionCorrelationView BuildCorrelationView(
         AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
     {

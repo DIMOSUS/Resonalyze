@@ -306,6 +306,129 @@ public sealed class JunctionCorrelationCurveTests
     }
 
     [Fact]
+    public void JunctionLossSweep_RotationKeepsTheMovedChannelInTheWindow()
+    {
+        // The field plateau, reproduced: a 55 Hz sub/woofer junction swept the
+        // panel's full ±1.5 crossover periods. Re-gating each probe through
+        // the STATIONARY pair window lost the moved woofer into the fade a few
+        // ms out, the "sum" degenerated toward the sub alone, and both
+        // polarities converged to a fake near-0 dB plateau (the in-band level
+        // skew grew 3 → 19 dB across the sweep on the archived cabins). The
+        // rotation sweep reads the same two windowed cuts at every probe; three
+        // properties pin it.
+        Complex[] sub = Filtered(new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
+        Complex[] woofer = Filtered(new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 180, 36),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
+        int pairFront = Math.Min(
+            VirtualCrossoverAnalysis.FindGateAnchor(
+                woofer, VirtualCrossoverAnalysis.FindPeakIndex(woofer),
+                SampleRate, 27.5, 110),
+            VirtualCrossoverAnalysis.FindGateAnchor(
+                sub, VirtualCrossoverAnalysis.FindPeakIndex(sub),
+                SampleRate, 27.5, 110));
+
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> Sweep(
+            bool invert, int anchor) =>
+            VirtualCrossoverAnalysis.JunctionLossSweep(
+                woofer, sub, SampleRate, 27.5, 110,
+                startDelayMs: -25.0, endDelayMs: 25.0, stepMs: 0.25,
+                invertVariable: invert, anchor);
+
+        // 1: no plateau anywhere in the panel's own sweep. With the two
+        // channels within a few dB of each other in-band, the parallelogram
+        // law |F+V|² + |F−V|² = 2(|F|²+|V|²) forbids both polarities summing
+        // flat at once — at least one must always be losing audibly. The
+        // stationary-window sweep violated this across the whole negative
+        // half, both polarities reading ≈ 0 with the woofer faded out.
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> normal =
+            Sweep(false, pairFront);
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> inverted =
+            Sweep(true, pairFront);
+        Assert.Equal(normal.Count, inverted.Count);
+        for (int i = 0; i < normal.Count; i++)
+        {
+            Assert.True(
+                Math.Min(normal[i].LossDb, inverted[i].LossDb) < -1.5,
+                $"both polarities read flat at {normal[i].DelayMs:0.0} ms " +
+                $"({normal[i].LossDb:0.00} / {inverted[i].LossDb:0.00} dB) — " +
+                "the plateau of a window the moved channel left");
+        }
+
+        // 2: Δ = 0 is the pair's current alignment, and the drawn surface
+        // must agree with the read-out's measurement of it exactly — same
+        // anchor rule, same bins, same rotation as the search.
+        (double LossDb, double DipDb)? atRest =
+            VirtualCrossoverAnalysis.MeasureSumLoss(
+                woofer, [sub], SampleRate, 27.5, 110,
+                gateAnchorSample: pairFront);
+        VirtualCrossoverAnalysis.JunctionSweepPoint zero = normal
+            .MinBy(point => Math.Abs(point.DelayMs))!;
+        Assert.NotNull(atRest);
+        Assert.InRange(
+            zero.LossDb, atRest.Value.LossDb - 1e-6, atRest.Value.LossDb + 1e-6);
+        Assert.InRange(
+            zero.DipDb, atRest.Value.DipDb - 1e-6, atRest.Value.DipDb + 1e-6);
+
+        // 3: through one and the same window, rotation equals physical
+        // construction at every probe — the channel actually delayed through
+        // its chain (the probed delay on the woofer; its magnitude on the sub
+        // when negative — only the relative offset matters), measured by
+        // MeasureSumLoss through that window. Anchored at the drivers' shared
+        // source so the window holds every rise at every probe and the
+        // reference is the truth this synthetic makes knowable. Compared as
+        // LINEAR amplitude ratios — the quantity the estimator computes —
+        // because dB magnifies the floor: near a deep null a 0.016 linear
+        // disagreement (the construction's fixed window end truncating the
+        // ringing tail the traveling cut keeps) reads as a whole dB. Measured
+        // worst across ±25 ms, both polarities: 0.011 linear on the loss,
+        // 0.016 on the dip. What remains outside this equality is window
+        // PLACEMENT — the anchor work's business, not the sweep's: the sweep
+        // must read the search's window, wherever that rule puts it.
+        static double Linear(double decibels) => Math.Pow(10.0, decibels / 20.0);
+        foreach (bool invert in new[] { false, true })
+        {
+            foreach (VirtualCrossoverAnalysis.JunctionSweepPoint point in
+                Sweep(invert, BasePosition))
+            {
+                Complex[] variable = VirtualCrossoverAnalysis.ApplyChain(
+                    woofer,
+                    new DspChannelChain(
+                        DelayMs: Math.Max(0.0, point.DelayMs),
+                        InvertPolarity: invert),
+                    SampleRate);
+                Complex[] fixedIr = VirtualCrossoverAnalysis.ApplyChain(
+                    sub,
+                    new DspChannelChain(DelayMs: Math.Max(0.0, -point.DelayMs)),
+                    SampleRate);
+                (double LossDb, double DipDb)? reference =
+                    VirtualCrossoverAnalysis.MeasureSumLoss(
+                        variable, [fixedIr], SampleRate, 27.5, 110,
+                        gateAnchorSample: BasePosition);
+
+                Assert.NotNull(reference);
+                Assert.True(
+                    Math.Abs(
+                        Linear(point.LossDb) - Linear(reference.Value.LossDb))
+                        < 0.025,
+                    $"loss at {point.DelayMs:0.0} ms{(invert ? " inv" : "")}: " +
+                    $"sweep {point.LossDb:0.00} vs constructed " +
+                    $"{reference.Value.LossDb:0.00} dB");
+                Assert.True(
+                    Math.Abs(
+                        Linear(point.DipDb) - Linear(reference.Value.DipDb))
+                        < 0.025,
+                    $"dip at {point.DelayMs:0.0} ms{(invert ? " inv" : "")}: " +
+                    $"sweep {point.DipDb:0.00} vs constructed " +
+                    $"{reference.Value.DipDb:0.00} dB");
+            }
+        }
+    }
+
+    [Fact]
     public void JunctionLossSweep_InvertedPolarityShiftsTheCombByHalfAPeriod()
     {
         // With the variable channel inverted the comb flips: the optimum moves

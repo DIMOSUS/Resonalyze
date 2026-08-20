@@ -1202,19 +1202,41 @@ public static class VirtualCrossoverAnalysis
     /// <summary>
     /// The junction summation loss as a function of an EXTRA delay applied to
     /// the variable channel — the prior-free acoustic surface of one junction,
-    /// as a drawable curve. Each probe is HONEST: the variable response is
-    /// delayed by rotating its FULL spectrum (an exact fractional delay of the
-    /// whole record) and the direct-sound gates are re-anchored on the delayed
-    /// response by <see cref="MeasureSumLoss"/>, unlike the
-    /// <see cref="SumLossEvaluator"/> rotation probe, whose gates stay pinned
-    /// where the responses originally sat and which misgrades multi-millisecond
-    /// deltas by whole dB. Both responses go into a guard-padded frame before
-    /// the rotation — a shared silent prefix and suffix covering the sweep
-    /// window — so no probed delay wraps record content circularly. Without the
-    /// prefix a negative delay on an early-peaked record carries the direct
-    /// sound to the END of the array, the shared gate (anchored at the fixed
-    /// channel) loses the variable channel entirely, and the "loss" of a
-    /// one-channel sum reads as a fake perfect 0 dB.
+    /// as a drawable curve. Both channels are windowed ONCE through the
+    /// junction's shared direct-sound gate (the caller's anchor — the pair's
+    /// earliest front, the same rule the Auto delay search gates by — or that
+    /// rule derived here when none is given), and every probe rotates the
+    /// variable channel's windowed cut by e^(−jωΔ): the same bins and the same
+    /// rotation the search's <see cref="SumLossEvaluator"/> reads, so the
+    /// drawn surface IS the search's surface, point for point at Δ = 0.
+    /// <para>
+    /// This replaced re-gating every probe through a STATIONARY window (the
+    /// variable response physically delayed, then windowed at the fixed
+    /// anchor). A stationary window only holds a moved channel for the few ms
+    /// between the channel's front and the window's opening; a panel sweep
+    /// spans ±1.5 crossover periods (±27 ms at a 55 Hz junction), and past
+    /// that margin the moved channel slid into the fade, the "sum"
+    /// degenerated toward one channel, and BOTH polarities converged to a
+    /// fake near-0 dB plateau — on the archived cabins the in-band level skew
+    /// grew from 3 to 19 dB across the sweep while the delay-evidence guard,
+    /// which reads the still-windowed content, saw nothing wrong. Rotation is
+    /// the model's statement that the window TRAVELS with the channel it
+    /// holds: the probed content is the same two cuts at every delay, the
+    /// level balance is delay-independent by construction, and the plateau
+    /// cannot form.
+    /// </para>
+    /// <para>
+    /// The windows deliberately do NOT sit on each channel's own front.
+    /// Measured on the 55 Hz 36 dB/oct pair the tests reproduce: per-own-front
+    /// windows read the current-timing loss at −4.27 dB where the shared
+    /// pair-front window reads −2.35 and a window opened at the drivers'
+    /// source (the truth this synthetic makes knowable) −1.89 — a crossover's
+    /// rise starts before any front detectable on its output (see the gate
+    /// remarks above), so the own-front placement cuts MORE rise, not less.
+    /// One shared window keeps the sweep consistent with the search and the
+    /// read-out; opening it earlier than the pair's front is the window-length
+    /// work's business, not the sweep's.
+    /// </para>
     /// </summary>
     public static List<JunctionSweepPoint> JunctionLossSweep(
         Complex[] variableImpulseResponse,
@@ -1243,59 +1265,48 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentException("The sweep window is invalid.");
         }
 
-        // The guard covers the widest probed shift in either direction (plus a
-        // few samples for the fractional-delay sinc tails). The SAME offset is
-        // applied to both channels, so their relative timing — the only thing
-        // the gate-re-anchoring measurement reads — is untouched.
-        int guardSamples = 8 + (int)Math.Ceiling(
-            Math.Max(Math.Abs(startDelayMs), Math.Abs(endDelayMs))
-            / 1000.0 * sampleRate);
-        int contentLength = Math.Max(
-            variableImpulseResponse.Length, fixedImpulseResponse.Length);
-        int fftLength = DspMath.NextPowerOfTwo(contentLength + 2 * guardSamples);
-        var variableFrame = new Complex[fftLength];
-        variableImpulseResponse.CopyTo(variableFrame, guardSamples);
-        var fixedFrame = new Complex[fftLength];
-        fixedImpulseResponse.CopyTo(fixedFrame, guardSamples);
-        Complex[] spectrum = ForwardSpectrum(variableFrame, fftLength);
+        int anchor = gateAnchorSample ?? Math.Min(
+            FindGateAnchor(
+                variableImpulseResponse,
+                FindPeakIndex(variableImpulseResponse),
+                sampleRate,
+                bandLowHz,
+                bandHighHz),
+            FindGateAnchor(
+                fixedImpulseResponse,
+                FindPeakIndex(fixedImpulseResponse),
+                sampleRate,
+                bandLowHz,
+                bandHighHz));
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            new List<Complex[]> { fixedImpulseResponse },
+            sampleRate,
+            bandLowHz,
+            bandHighHz,
+            startDelayMs,
+            endDelayMs,
+            levelMatch: false,
+            anchor);
         var points = new List<JunctionSweepPoint>();
-        var delayed = new Complex[fftLength];
+        if (bins.Count == 0)
+        {
+            return points;
+        }
+
+        double weightSum = 0;
+        foreach (AlignmentBin bin in bins)
+        {
+            weightSum += bin.LogWeight;
+        }
+
         for (double delayMs = startDelayMs;
             delayMs <= endDelayMs + 1e-9;
             delayMs += stepMs)
         {
-            double sign = invertVariable ? -1.0 : 1.0;
-            for (int k = 0; k < fftLength; k++)
-            {
-                // The rotation frequency follows the conjugate mirror above
-                // Nyquist, so the delayed sequence stays real.
-                double frequency = (double)k / fftLength * sampleRate;
-                if (frequency > sampleRate / 2.0)
-                {
-                    frequency -= sampleRate;
-                }
-
-                delayed[k] = sign * spectrum[k] * Complex.Exp(
-                    new Complex(0, -Math.Tau * frequency * delayMs / 1000.0));
-            }
-
-            Fourier.Inverse(delayed, FourierOptions.Matlab);
-            (double LossDb, double DipDb)? loss = MeasureSumLoss(
-                delayed,
-                new List<Complex[]> { fixedFrame },
-                sampleRate,
-                bandLowHz,
-                bandHighHz,
-                // The frame shifted both responses by the guard, so a caller's
-                // anchor (stated in the responses' own coordinates) shifts with
-                // them; without the guard offset the window would sit that far
-                // early and fade over content it must not touch.
-                gateAnchorSample: gateAnchorSample + guardSamples);
-            if (loss is { } value)
-            {
-                points.Add(new JunctionSweepPoint(
-                    delayMs, value.LossDb, value.DipDb));
-            }
+            (double lossDb, double dipDb) = DetailedLoss(
+                bins, weightSum, delayMs, invertVariable);
+            points.Add(new JunctionSweepPoint(delayMs, lossDb, dipDb));
         }
 
         return points;
@@ -2500,8 +2511,11 @@ public static class VirtualCrossoverAnalysis
     /// re-running the channels' full DSP chains per candidate delta.
     /// <c>Evaluate(0)</c> reproduces <see cref="MeasureSumLoss"/> on the same
     /// responses. The direct-sound gate stays anchored where the responses
-    /// currently sit, which is exact for the probes' small deltas (a fraction
-    /// of the gate length).
+    /// currently sit and the rotation carries the variable channel's windowed
+    /// cut — window and all — to the probed time: the model's reading of
+    /// "delay this driver", the same one <see cref="JunctionLossSweep"/> draws
+    /// (see the plateau remarks there for what re-gating a moved channel
+    /// through a stationary window did instead).
     /// </summary>
     public sealed class SumLossEvaluator
     {

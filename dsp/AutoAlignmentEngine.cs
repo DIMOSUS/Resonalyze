@@ -1176,16 +1176,26 @@ public static class AutoAlignmentEngine
             if (lowerLatchedByPrediction || upperLatchedByPrediction)
             {
                 void LogConviction(
-                    AlignmentSnapshot side, double measuredMs, double predictedMs) =>
+                    AlignmentSnapshot side, double measuredMs, double predictedMs)
+                {
+                    double allowances = (measuredMs - predictedMs) /
+                        PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz);
+                    // Below the factor the predictor did not convict alone —
+                    // the comb arbitration above supplied the second witness
+                    // — and the line must not read as if it had.
+                    string basis = allowances >= PredictedArrivalConvictionFactor
+                        ? $"conviction needs {PredictedArrivalConvictionFactor:0.0}"
+                        : $"short of the predictor's own " +
+                          $"{PredictedArrivalConvictionFactor:0.0}, convicted by " +
+                          $"the comb's second witness";
                     log.AppendLine(
                         $"  {side.Channel.Name}: {measuredMs:0.000} ms in " +
                         $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but its " +
                         $"un-crossovered front, read through its own " +
                         $"chain, predicts {predictedMs:0.000} ms there (modal " +
                         $"latch behind the crossover; " +
-                        $"{(measuredMs - predictedMs) / PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz):0.0} " +
-                        $"allowances, conviction needs " +
-                        $"{PredictedArrivalConvictionFactor:0.0}) — re-anchored");
+                        $"{allowances:0.0} allowances, {basis}) — re-anchored");
+                }
                 if (lowerLatchedByPrediction)
                 {
                     LogConviction(pair.Lower, lowerArrival, lowerPrediction);

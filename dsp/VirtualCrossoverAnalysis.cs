@@ -1745,7 +1745,7 @@ public static class VirtualCrossoverAnalysis
     /// average at the band's low edge — its binding frequency — so the dip
     /// reads the SPECTRUM there instead of the window's own kernel. One
     /// scale-free rule sizes every junction: ~8.66 low-edge periods, which is
-    /// 133 ms for a 33–130 Hz sub band (the old fixed 85 ms was too short —
+    /// 262 ms for a 33–130 Hz sub band (the old fixed 85 ms was too short —
     /// the very kernel-reading this replaces) and 11.5 ms for a 750–3000 Hz
     /// mid/tweeter band, where 85 ms was mostly a car cabin's late
     /// reflections wearing a direct-sound gate's name.

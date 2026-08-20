@@ -356,7 +356,8 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
 
     private static double FrontMs(ProcessedChannel item) =>
         ProcessedChannels.StartAnchorIndex(
-            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate)
+            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate,
+            item.ValidRange)
         * 1_000.0 / item.Channel.SampleRate;
 
     private static string Describe(string displayName) =>

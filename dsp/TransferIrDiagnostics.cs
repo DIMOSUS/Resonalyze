@@ -527,10 +527,36 @@ public static class TransferIrDiagnostics
     /// </summary>
     public static IrStartEstimate? EstimateIrStart(
         IReadOnlyList<double> impulseResponse,
-        int sampleRate)
+        int sampleRate,
+        ValidSampleRange validRange = default)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
-        if (impulseResponse.Count < IrStartMinimumSamples || sampleRate <= 0)
+        if (sampleRate <= 0)
+        {
+            return null;
+        }
+
+        // A known valid range restricts the ANALYSIS to the measured content
+        // while every reported time stays in the full record's coordinates:
+        // a chain delay's silent prefix would otherwise sink the noise-floor
+        // estimate and let a record the SNR gate should refuse pose as a
+        // credible front (measured: 25 ms of zeros ahead of a short noise
+        // record lift its grade from ~6 to ~26 dB, past the 20 dB floor).
+        int rangeStart = 0;
+        if (validRange.IsKnown)
+        {
+            rangeStart = Math.Clamp(
+                validRange.StartSample, 0, impulseResponse.Count);
+            int rangeEnd = Math.Clamp(
+                validRange.EndSample, rangeStart, impulseResponse.Count);
+            var window = new double[rangeEnd - rangeStart];
+            for (int i = 0; i < window.Length; i++)
+            {
+                window[i] = impulseResponse[rangeStart + i];
+            }
+            impulseResponse = window;
+        }
+        if (impulseResponse.Count < IrStartMinimumSamples)
         {
             return null;
         }
@@ -555,17 +581,34 @@ public static class TransferIrDiagnostics
                 BandpassPassOctaves = Math.Log2(band.HighHz / band.LowHz),
                 BandpassFadeOctaves = 0.25
             });
+        double offsetMs = rangeStart * 1_000.0 / sampleRate;
         if (IsCredible(inBand))
         {
-            return CrossingsOf(inBand, band, sampleRate, dominantBandLimited: true);
+            return Offset(
+                CrossingsOf(inBand, band, sampleRate, dominantBandLimited: true),
+                offsetMs);
         }
 
         TimeAlignmentAnalysisResult fullBand = TimeAlignmentAnalysis.Analyze(
             impulseResponse, sampleRate, new TimeAlignmentAnalysisOptions());
         return IsCredible(fullBand)
-            ? CrossingsOf(fullBand, band, sampleRate, dominantBandLimited: false)
+            ? Offset(
+                CrossingsOf(fullBand, band, sampleRate, dominantBandLimited: false),
+                offsetMs)
             : null;
     }
+
+    // Shifts an estimate computed on a range-restricted window back into the
+    // full record's coordinates.
+    private static IrStartEstimate Offset(IrStartEstimate estimate, double offsetMs) =>
+        offsetMs == 0
+            ? estimate
+            : estimate with
+            {
+                StartMs = estimate.StartMs + offsetMs,
+                EarlyMs = estimate.EarlyMs + offsetMs,
+                LateMs = estimate.LateMs + offsetMs
+            };
 
     /// <summary>
     /// How far below the smoothed spectrum's peak the band
@@ -617,16 +660,24 @@ public static class TransferIrDiagnostics
     /// </summary>
     public static IrStartEstimate? EstimateIrStart(
         IReadOnlyList<Complex> impulseResponse,
-        int sampleRate)
+        int sampleRate,
+        ValidSampleRange validRange = default)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
-        int length = Math.Min(impulseResponse.Count, MaxAnalysisSamples);
+        // With a known range the head cap must count from the range's start,
+        // or a late-content record would be truncated before its own front;
+        // the double overload re-restricts in its own coordinates.
+        int rangeStart = validRange.IsKnown
+            ? Math.Clamp(validRange.StartSample, 0, impulseResponse.Count)
+            : 0;
+        int length = Math.Min(
+            impulseResponse.Count, rangeStart + MaxAnalysisSamples);
         var samples = new double[length];
         for (int i = 0; i < length; i++)
         {
             samples[i] = impulseResponse[i].Real;
         }
-        return EstimateIrStart(samples, sampleRate);
+        return EstimateIrStart(samples, sampleRate, validRange);
     }
 
     private static IrStartEstimate CrossingsOf(

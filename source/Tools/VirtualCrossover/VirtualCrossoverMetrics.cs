@@ -540,7 +540,8 @@ internal sealed class VirtualCrossoverMetrics
             // The same placement rule as the shown side's (see BuildCurves):
             // the earliest FRONT of the channels that went into this sum.
             jobs.Min(side => ProcessedChannels.StartAnchorIndex(
-                side.ProcessedIr!, side.ProcessedPeak, side.SampleRate)),
+                side.ProcessedIr!, side.ProcessedPeak, side.SampleRate,
+                side.ProcessedValidRange)),
             jobs[0].SampleRate,
             jobs.Count);
     }

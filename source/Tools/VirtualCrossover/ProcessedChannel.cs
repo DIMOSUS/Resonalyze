@@ -92,23 +92,30 @@ internal static class ProcessedChannels
     /// </para>
     /// </summary>
     public static int StartAnchorIndex(
-        Complex[] impulseResponse, int peakIndex, int sampleRate) =>
+        Complex[] impulseResponse,
+        int peakIndex,
+        int sampleRate,
+        ValidSampleRange validRange = default) =>
         Math.Clamp(
             (int)Math.Floor(
                 TransferIrStartCache.ResolveStartMs(
-                    impulseResponse, sampleRate, peakIndex)
+                    impulseResponse, sampleRate, peakIndex, validRange)
                 / 1_000.0 * sampleRate),
             0,
             Math.Max(0, impulseResponse.Length - 1));
 
     /// <summary>
     /// The shared window's anchor for a channel set: the earliest
-    /// <see cref="StartAnchorIndex"/> among them.
+    /// <see cref="StartAnchorIndex"/> among them, each read within its own
+    /// <see cref="ProcessedChannel.ValidRange"/> — a chain delay's silent
+    /// prefix must not certify a front here any more than in the junction
+    /// gates.
     /// </summary>
     public static int SharedStartAnchorIndex(
         IReadOnlyList<ProcessedChannel> processed) =>
         processed.Min(item => StartAnchorIndex(
-            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate));
+            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate,
+            item.ValidRange));
 
     public static List<ProcessedChannel> OrderByBand(IReadOnlyList<ProcessedChannel> processed) =>
         processed

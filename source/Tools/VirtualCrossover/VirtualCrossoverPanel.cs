@@ -2169,7 +2169,8 @@ public partial class VirtualCrossoverPanel : UserControl
                         ProcessedChannels.StartAnchorIndex(
                             item.ImpulseResponse,
                             item.PeakIndex,
-                            item.Channel.SampleRate),
+                            item.Channel.SampleRate,
+                            item.ValidRange),
                         item.Channel.SampleRate).Display;
                 curves.Add(new AcousticCurve(
                     item.Channel.Name, curve.Points, item.Color, 1.8, LineStyle.Solid));
@@ -3697,7 +3698,7 @@ public partial class VirtualCrossoverPanel : UserControl
         IReadOnlyList<ProcessedChannel> processed,
         int sampleRate) =>
         processed.Min(item => TransferIrStartCache.ResolveStartMs(
-            item.ImpulseResponse, sampleRate, item.PeakIndex));
+            item.ImpulseResponse, sampleRate, item.PeakIndex, item.ValidRange));
 
     /// <summary>Which way the window fails a channel.</summary>
     internal enum GateCutKind
@@ -4051,7 +4052,8 @@ public partial class VirtualCrossoverPanel : UserControl
         // processed FRONT, the same channel the shared window opens on), then
         // apply that exact value to every driver and the sum.
         ProcessedChannel anchor = processed.MinBy(item => ProcessedChannels.StartAnchorIndex(
-            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate))!;
+            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate,
+            item.ValidRange))!;
         var view = new ImpulseMeasurementView(anchor.ImpulseResponse, 0, sampleRate);
         PhaseAnalysisSettings settings = CreateVirtualPhaseSettings(
             gateOffsetMs,

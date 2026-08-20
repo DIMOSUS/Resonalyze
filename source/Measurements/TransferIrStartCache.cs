@@ -15,7 +15,8 @@ namespace Resonalyze;
 /// </summary>
 internal static class TransferIrStartCache
 {
-    private sealed record CachedStart(int SampleRate, double StartMs);
+    private sealed record CachedStart(
+        int SampleRate, ValidSampleRange ValidRange, double StartMs);
 
     private static readonly ConditionalWeakTable<Complex[], CachedStart> cache = new();
 
@@ -59,19 +60,22 @@ internal static class TransferIrStartCache
     public static double ResolveStartMs(
         Complex[] impulseResponse,
         int sampleRate,
-        int fallbackPeakIndex)
+        int fallbackPeakIndex,
+        ValidSampleRange validRange = default)
     {
         if (cache.TryGetValue(impulseResponse, out CachedStart? cached) &&
-            cached.SampleRate == sampleRate)
+            cached.SampleRate == sampleRate &&
+            cached.ValidRange == validRange)
         {
             return cached.StartMs;
         }
 
         double startMs = TransferIrDiagnostics.EstimateIrStart(
-            impulseResponse, sampleRate) is { } estimate
+            impulseResponse, sampleRate, validRange) is { } estimate
                 ? estimate.StartMs
                 : fallbackPeakIndex * 1_000.0 / sampleRate;
-        cache.AddOrUpdate(impulseResponse, new CachedStart(sampleRate, startMs));
+        cache.AddOrUpdate(
+            impulseResponse, new CachedStart(sampleRate, validRange, startMs));
         return startMs;
     }
 }

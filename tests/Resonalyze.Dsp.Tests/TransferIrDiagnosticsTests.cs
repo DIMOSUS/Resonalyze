@@ -262,6 +262,49 @@ public sealed class TransferIrDiagnosticsTests
         Assert.Null(TransferIrDiagnostics.DetectCrosstalkHead(impulseResponse, SampleRate));
     }
 
+    [Fact]
+    public void EstimateIrStart_DelayPrefixDoesNotInflateTheSnr()
+    {
+        // The same review catch already pinned for the broadband onset and
+        // the band-limited arrival, now for the IR-start estimator behind
+        // every Auto gate placement: a chain DELAY manufactures a silent
+        // prefix that sinks the noise-floor estimate, and a noise record the
+        // 20 dB SNR gate rightly refuses comes back "credible" with a start
+        // in the middle of the noise (measured here: refused raw, 22.5 ms
+        // through the blind read). The valid range restricts the analysis to
+        // the measured content while every reported time stays in the full
+        // record's coordinates.
+        var random = new Random(20_260_724);
+        var raw = new Complex[4_096];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
+        }
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            raw, new DspChannelChain(DelayMs: 25), 48_000,
+            out ValidSampleRange validRange);
+
+        Assert.Null(TransferIrDiagnostics.EstimateIrStart(raw, 48_000));
+        Assert.NotNull(TransferIrDiagnostics.EstimateIrStart(processed, 48_000));
+        Assert.Null(TransferIrDiagnostics.EstimateIrStart(
+            processed, 48_000, validRange));
+
+        // And a genuine front survives the guard with its position read in
+        // the FULL record's frame: the raw start plus the 25 ms delay.
+        var front = new Complex[8_192];
+        front[480] = Complex.One;
+        Complex[] frontDelayed = VirtualCrossoverAnalysis.ApplyChain(
+            front, new DspChannelChain(DelayMs: 25), 48_000,
+            out ValidSampleRange frontRange);
+        IrStartEstimate? plain =
+            TransferIrDiagnostics.EstimateIrStart(front, 48_000);
+        IrStartEstimate? guarded = TransferIrDiagnostics.EstimateIrStart(
+            frontDelayed, 48_000, frontRange);
+        Assert.NotNull(plain);
+        Assert.NotNull(guarded);
+        Assert.Equal(plain.Value.StartMs + 25.0, guarded.Value.StartMs, 2);
+    }
+
     [Theory]
     [InlineData(0.09)]
     [InlineData(0.15)]

@@ -88,4 +88,40 @@ public sealed class ProcessedChannelsTests
                 [low.Channel.Settings, high.Channel.Settings]),
             ProcessedChannels.GetCrossoverWindow([low, high]));
     }
+    [Fact]
+    public void SharedStartAnchorIndex_ReadsEachChannelWithinItsValidRange()
+    {
+        // A clean channel fronting at ~41.7 ms beside a noise channel whose
+        // chain delay manufactured a 25 ms silent prefix. Blind, the prefix
+        // inflates the noise record's SNR and the start estimator "finds" a
+        // front in the middle of the noise, ~22.5 ms — EARLIER than the clean
+        // channel's, so it would take over the shared display anchor. With
+        // the channels' valid ranges honored the noise record is refused,
+        // falls back to its (late) peak, and the clean front anchors.
+        var cleanIr = new Complex[8_192];
+        cleanIr[2_000] = Complex.One;
+        var random = new Random(20_260_724);
+        var noise = new Complex[4_096];
+        for (int i = 0; i < noise.Length; i++)
+        {
+            noise[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
+        }
+        Complex[] noisy = VirtualCrossoverAnalysis.ApplyChain(
+            noise, new DspChannelChain(DelayMs: 25), 48_000,
+            out ValidSampleRange noisyRange);
+
+        ProcessedChannel Item(Complex[] ir, ValidSampleRange range)
+        {
+            var channel = new VirtualCrossoverChannel("x") { SampleRate = 48_000 };
+            return new ProcessedChannel(
+                channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir),
+                OxyColors.White, range);
+        }
+
+        int anchor = ProcessedChannels.SharedStartAnchorIndex(
+            [Item(cleanIr, default), Item(noisy, noisyRange)]);
+
+        Assert.InRange(anchor, 1_900, 2_005);
+    }
+
 }

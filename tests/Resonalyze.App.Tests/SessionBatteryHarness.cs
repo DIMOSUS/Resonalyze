@@ -75,6 +75,24 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     /// </summary>
     public const string SessionsVariable = "RESONALYZE_SESSION_BATTERY_SESSIONS";
 
+    /// <summary>
+    /// Set to judge every session through the gate dialog's AUTO placement
+    /// (each set of settings windowed at its own earliest front) instead of
+    /// through the offset the session pinned.
+    /// <para>
+    /// A pinned gate is one ABSOLUTE window, so it does not follow a proposal
+    /// that moves a channel: on the archived v5 cabin the pin opens the window
+    /// at 10.06 ms and the saved tuning puts the mid and tweeter fronts at
+    /// 18.4/18.1 ms — inside the plateau — while the proposal brings them to
+    /// 12.6/12.4 ms, inside the window's own fade-in. Their level in the sum is
+    /// then set by the window, and the metric compares a windowing artifact.
+    /// The pinned reading is what the panel shows before the gate is re-placed,
+    /// so it stays the default; this switch is how the SAME comparison is read
+    /// with the window off the scales.
+    /// </para>
+    /// </summary>
+    public const string AutoGateVariable = "RESONALYZE_SESSION_BATTERY_AUTOGATE";
+
     // The archived cabins, in the order the branch's notes list them. Each entry
     // is a path under the root; the session file's own folder is what its
     // measurements are resolved against (VirtualCrossoverSourceLocator), so a
@@ -99,6 +117,10 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
 
     internal static string? RootDirectory =>
         Environment.GetEnvironmentVariable(SessionBatteryFactAttribute.RootVariable);
+
+    private static bool AutoGate =>
+        !string.IsNullOrWhiteSpace(
+            Environment.GetEnvironmentVariable(AutoGateVariable));
 
     [SessionBatteryFact]
     public void JudgeAutoDelayAgainstSavedSettings()
@@ -190,6 +212,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         report.AppendLine(
             $"  side {(rightSide ? "R" : "L")}, {participants.Count} channels, " +
             $"{participants[0].SampleRate} Hz, gate " +
+            $"{(AutoGate ? "AUTO (pin ignored)" : null)}" +
             $"{gate.OffsetMs?.ToString("0.00", CultureInfo.InvariantCulture) ?? "auto"} " +
             $"+ {project.PhaseGateLeftMs:0.#}/{project.PhaseGatePlateauMs:0.#}/" +
             $"{project.PhaseGateRightMs:0.#} ms, smoothing " +
@@ -216,6 +239,24 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 $"proposed {over.DelayMs,7:0.00} ms " +
                 $"{(over.InvertPolarity ? "INV" : "   ")}");
         }
+
+        // Where each set's fronts land against the window they are judged
+        // through. A PINNED gate is one absolute window for both sets, so a
+        // proposal that moves a channel far enough can put its own front into
+        // the window's left fade — and then the metric is reading the window,
+        // not the alignment. Printed so that bias is visible instead of
+        // silently deciding a comparison.
+        double leftEdgeMs = !AutoGate && gate.OffsetMs is { } pinned
+            ? pinned - project.PhaseGateLeftMs
+            : double.NaN;
+        report.AppendLine(
+            "    fronts (ms): " + string.Join(", ", saved.Select((item, index) =>
+                $"{item.Channel.Name} {FrontMs(item):0.00}->" +
+                $"{FrontMs(proposed[index]):0.00}")) +
+            (double.IsNaN(leftEdgeMs)
+                ? "   (gate follows the earliest front)"
+                : $"   (window opens {leftEdgeMs:0.00} ms, plateau to " +
+                  $"{gate.OffsetMs!.Value + project.PhaseGatePlateauMs:0.00} ms)"));
 
         List<VirtualCrossoverMetric.Entry> savedEntries = Judge(project, saved);
         List<VirtualCrossoverMetric.Entry> proposedEntries = Judge(project, proposed);
@@ -268,6 +309,11 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         report.AppendLine($"    ({stopwatch.Elapsed.TotalSeconds:0.0} s)");
         return comparisons;
     }
+
+    private static double FrontMs(ProcessedChannel item) =>
+        ProcessedChannels.StartAnchorIndex(
+            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate)
+        * 1_000.0 / item.Channel.SampleRate;
 
     private static string Describe(string displayName) =>
         string.IsNullOrWhiteSpace(displayName)
@@ -410,7 +456,9 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
             project.PhaseGateRightMs,
             Unwrap: false,
             SmoothingInverseOctaves: 0.0);
-        double? pinnedOffsetMs = project.PhaseGateFor(project.ActiveSideRight).OffsetMs;
+        double? pinnedOffsetMs = AutoGate
+            ? null
+            : project.PhaseGateFor(project.ActiveSideRight).OffsetMs;
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator,

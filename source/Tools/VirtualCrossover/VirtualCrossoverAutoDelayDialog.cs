@@ -1,4 +1,4 @@
-namespace Resonalyze;
+﻿namespace Resonalyze;
 
 /// <summary>
 /// The Auto delay dialog: the steering layout (LHD/RHD), the stereo scene
@@ -120,9 +120,9 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
             string singleSideTip =
                 "Only one side is measured, so this run aligns a single\r\n" +
                 "side and the L/R scene offset does not apply.";
-            radioLeftHandDrive.Enabled = false;
-            radioRightHandDrive.Enabled = false;
-            labelSceneOffset.Enabled = false;
+            UiStyle.SetTextEnabledLook(radioLeftHandDrive, false, interactive: true);
+            UiStyle.SetTextEnabledLook(radioRightHandDrive, false, interactive: true);
+            UiStyle.SetTextEnabledLook(labelSceneOffset, false);
             numericSceneOffset.Enabled = false;
             toolTip.SetToolTip(radioLeftHandDrive, singleSideTip);
             toolTip.SetToolTip(radioRightHandDrive, singleSideTip);
@@ -156,9 +156,9 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
     private void UpdateNearSideCutEnabled()
     {
         bool enabled = stereo && checkBoxGains.Checked;
-        labelNearSideCut.Enabled = enabled;
+        UiStyle.SetTextEnabledLook(labelNearSideCut, enabled);
         numericNearSideCut.Enabled = enabled;
-        labelNearSideCutHint.Enabled = enabled;
+        UiStyle.SetTextEnabledLook(labelNearSideCutHint, enabled);
     }
 
     // Once a proposal exists, any input change makes it stale: Apply must
@@ -208,13 +208,13 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         buttonRun.Enabled = false;
         buttonApply.Enabled = false;
         buttonCancel.Enabled = false;
-        radioLeftHandDrive.Enabled = false;
-        radioRightHandDrive.Enabled = false;
+        UiStyle.SetTextEnabledLook(radioLeftHandDrive, false, interactive: true);
+        UiStyle.SetTextEnabledLook(radioRightHandDrive, false, interactive: true);
         numericSceneOffset.Enabled = false;
-        checkBoxGains.Enabled = false;
-        labelNearSideCut.Enabled = false;
+        UiStyle.SetTextEnabledLook(checkBoxGains, false, interactive: true);
+        UiStyle.SetTextEnabledLook(labelNearSideCut, false);
         numericNearSideCut.Enabled = false;
-        labelNearSideCutHint.Enabled = false;
+        UiStyle.SetTextEnabledLook(labelNearSideCutHint, false);
         SetStatus("Aligning…", StatusNeutral);
         UseWaitCursor = true;
         try
@@ -256,10 +256,10 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
                 running = false;
                 buttonRun.Enabled = true;
                 buttonCancel.Enabled = true;
-                radioLeftHandDrive.Enabled = stereo;
-                radioRightHandDrive.Enabled = stereo;
+                UiStyle.SetTextEnabledLook(radioLeftHandDrive, stereo, interactive: true);
+                UiStyle.SetTextEnabledLook(radioRightHandDrive, stereo, interactive: true);
                 numericSceneOffset.Enabled = stereo;
-                checkBoxGains.Enabled = true;
+                UiStyle.SetTextEnabledLook(checkBoxGains, true, interactive: true);
                 UpdateNearSideCutEnabled();
                 UseWaitCursor = false;
             }

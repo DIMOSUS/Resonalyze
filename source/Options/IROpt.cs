@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
+using Resonalyze.Ui;
 
 namespace Resonalyze.Options
 {
@@ -138,7 +139,9 @@ namespace Resonalyze.Options
             SetItems(comboBandCenter, centres);
             comboBandCenter.SelectedItem = Nearest(centres, preferredCentreHz);
             comboBandCenter.Enabled = active;
-            labelBandCenter.Enabled = active;
+            // Through the shared helper, not Enabled: WinForms paints a disabled label in
+            // the system grey, which on this dark panel is all but black.
+            UiStyle.SetTextEnabledLook(labelBandCenter, active);
         }
 
         private static double NearestBandWidth(double octaves) =>

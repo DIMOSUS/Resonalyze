@@ -1,5 +1,6 @@
 using System.Numerics;
 using MathNet.Numerics.IntegralTransforms;
+using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze;
@@ -89,21 +90,25 @@ public sealed class NoiseSignal : IDisposable
 
     // Pink noise (-3 dB/octave) via Paul Kellett's economical filter bank, then
     // normalized to the same 0.5 peak as the white path so playback level matches.
+    // The coefficients live in Dsp.KellettPinkFilter, shared with the noise-tilt
+    // compensation, which must model this exact filter (the bank flattens below its
+    // lowest pole's corner) — a drifted copy would silently mis-compensate.
     private void FillPink(Random random)
     {
-        double b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+        IReadOnlyList<(double A, double G)> poles = KellettPinkFilter.Poles;
+        var states = new double[poles.Count];
+        double delayed = 0;
         double peak = 0;
         for (int sampleIndex = 0; sampleIndex < Samples; sampleIndex++)
         {
             double white = random.NextDouble() * 2.0 - 1.0;
-            b0 = 0.99886 * b0 + white * 0.0555179;
-            b1 = 0.99332 * b1 + white * 0.0750759;
-            b2 = 0.96900 * b2 + white * 0.1538520;
-            b3 = 0.86650 * b3 + white * 0.3104856;
-            b4 = 0.55000 * b4 + white * 0.5329522;
-            b5 = -0.7616 * b5 - white * 0.0168980;
-            double pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
-            b6 = white * 0.115926;
+            double pink = KellettPinkFilter.DirectGain * white + delayed;
+            for (int pole = 0; pole < states.Length; pole++)
+            {
+                states[pole] = poles[pole].A * states[pole] + poles[pole].G * white;
+                pink += states[pole];
+            }
+            delayed = KellettPinkFilter.DelayedGain * white;
 
             FloatData[sampleIndex] = (float)pink;
             double magnitude = Math.Abs(pink);
@@ -174,7 +179,9 @@ public sealed class NoiseSignal : IDisposable
     // the −6 dB/oct slope flattens): a fixed 0.99 coefficient put that corner
     // at ~76 Hz at 48 kHz but ~305 Hz at 192 kHz — the same "Brown" mode
     // changed its spectral shape with the sample rate.
-    private const double BrownCornerHz = 76.0;
+    // Shared with the noise-tilt compensation, whose leaky-integrator model must
+    // derive the same leak from the same corner.
+    internal const double BrownCornerHz = 76.0;
 
     private void FillBrown(Random random)
     {

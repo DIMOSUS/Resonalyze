@@ -91,6 +91,13 @@ internal sealed class LiveSpectrumController : IDisposable
     public bool TimerEnabled => timer.Enabled;
 
     /// <summary>
+    /// Whether the configured input carries a loopback reference channel — the
+    /// prerequisite of the Transfer Function mode. The options panel colours its
+    /// Transfer choice amber by this when the selection cannot take effect.
+    /// </summary>
+    public bool HasConfiguredLoopback => measurement.HasConfiguredLoopback;
+
+    /// <summary>
     /// Whether the live plot currently has a curve to show — a running capture or a
     /// kept last snapshot — i.e. whether a view-only SPL scale would actually hide
     /// something. The options panel colours its dB SPL choice amber by this, so the
@@ -123,8 +130,11 @@ internal sealed class LiveSpectrumController : IDisposable
         RenderingSpl && plotModelFactory.LiveSplOffsetDb == null;
 
     // The plot shows only the reference-free RTA (no transfer function or coherence)
-    // when the SPL view is active OR the capture has no loopback reference at all.
-    private bool RtaOnly => RenderingSpl || measurement.IsRtaCapture;
+    // when the effective analysis mode is RTA — selected, or forced by a missing
+    // loopback reference. SPL no longer forces this: the scale is only effective in
+    // RTA mode to begin with (see PlotModelFactory.EffectiveLiveSpectrumScale).
+    private bool RtaOnly =>
+        plotModelFactory.EffectiveLiveAnalysisMode == LiveAnalysisMode.Rta;
 
     // The reference-free RTA is normally optional, but it IS the only curve in the
     // RTA-only views, so it is always computed there even if its checkbox is off.
@@ -142,7 +152,8 @@ internal sealed class LiveSpectrumController : IDisposable
         bool RtaOnly,
         int SmoothingInverseOctaves,
         string? CalibrationId,
-        double? SplOffsetDb);
+        double? SplOffsetDb,
+        NoiseSpectralModel? TiltModel);
 
     private PeakHoldDisplayKey renderedPeakHoldKey;
 
@@ -152,7 +163,10 @@ internal sealed class LiveSpectrumController : IDisposable
         liveSpectrumOptions.SmoothingInverseOctaves,
         liveSpectrumOptions.CalibrationId,
         // The offset only shapes the display in SPL; in relative it is irrelevant.
-        RenderingSpl ? plotModelFactory.LiveSplOffsetDb : null);
+        RenderingSpl ? plotModelFactory.LiveSplOffsetDb : null,
+        // Null (off) and a flat model (white noise, band-law-only compensation)
+        // are different display transforms; the nullable keeps them distinct.
+        plotModelFactory.LiveTiltModel);
 
     /// <summary>
     /// Clears the running average and peak-hold envelope without interrupting
@@ -289,6 +303,22 @@ internal sealed class LiveSpectrumController : IDisposable
     }
 
     /// <summary>
+    /// Discards the accumulated spectra and the remembered curve. The host calls
+    /// this when an acquisition parameter (analysis mode, signal colour, window,
+    /// FFT length, overlap) changes while the analyzer is STOPPED: the kept curve
+    /// is a record of the previous setup, and the display transform reads the
+    /// options live — redrawing old data under the new parameters would silently
+    /// re-interpret it (the slope compensation, for one, would re-tilt a stopped
+    /// pink RTA as if the excitation had been white). A running analyzer needs no
+    /// call — its restart already begins a fresh accumulation.
+    /// </summary>
+    public void DiscardCapturedData()
+    {
+        measurement.ResetAccumulation();
+        ForgetLastCurve();
+    }
+
+    /// <summary>
     /// Drops display state that is incompatible with any calibration change.
     /// This must run even while another mode owns the visible plot.
     /// </summary>
@@ -300,103 +330,44 @@ internal sealed class LiveSpectrumController : IDisposable
     /// <summary>
     /// Reacts to any calibration change — an SPL anchor added/cleared, its offset
     /// re-measured, or a different microphone-correction file bound to the same mode.
-    /// This runs in EVERY app mode, not only while Live Spectrum is visible, because a
-    /// calibration change can force the signal either way — losing SPL normalizes a
-    /// <see cref="NoiseColor.Silent"/> RTA back to a real excitation, gaining it drops a
-    /// stale periodic-pink excitation back to Silent — and drops the now-incompatible
-    /// peak-hold envelope wherever the analyzer sits. It rebuilds the plot only when Live Spectrum is the visible
-    /// mode (a running one is restarted if a Silent capture must fall back; an idle one
-    /// simply re-renders). Returns whether the live signal type changed, so the caller
-    /// can persist the normalized options. Safe whether running or idle.
+    /// This runs in EVERY app mode, not only while Live Spectrum is visible, because
+    /// the change makes the peak-hold envelope incompatible wherever the analyzer
+    /// sits; the plot itself is rebuilt only when Live Spectrum is the visible mode.
+    /// The capture is never touched: the signal follows the ANALYSIS MODE, not the
+    /// calibration — a Silent RTA that loses SPL simply keeps running on the
+    /// relative axis. Safe whether running or idle.
     /// </summary>
-    public async Task<bool> RefreshCalibrationAsync()
+    public void RefreshCalibration()
     {
         InvalidateCalibration();
 
-        // A running capture whose signal no longer fits the effective scale must be
-        // restarted: a Silent RTA that lost SPL needs a real excitation, and a periodic
-        // pink capture that just gained SPL must drop its now-pointless excitation for
-        // the ambient mic-only RTA. Either way the playback and analysis path change, so
-        // stop it, normalize the signal, and restart on the corrected one.
-        bool restart = measurement.InProgress && SignalNeedsNormalization();
-        if (restart)
-        {
-            await StopAsync();
-        }
-
-        bool signalChanged = NormalizeSilentSignal();
-
-        if (restart && getCurrentMode() == Mode.LiveSpectrum)
-        {
-            await StartAsync();
-            return signalChanged;
-        }
-
-        // Only the VISIBLE Live Spectrum rebuilds its model here; in another mode the
-        // normalization above already removed the stale Silent, and the model is rebuilt
-        // when Live Spectrum next becomes visible (RestoreLastCurve).
         if (getCurrentMode() == Mode.LiveSpectrum)
         {
             RebuildModel();
         }
-
-        return signalChanged;
     }
 
-    // Forces the runtime signal to one the effective scale actually offers, so the
-    // stored NoiseColor never diverges from what the panel and the playback show. The
-    // two scale-exclusive signals swap symmetrically: Silent (an ambient RTA with no
-    // excitation) is SPL-only, so off SPL it falls back to periodic pink; periodic pink
-    // (the transfer-function reference) is relative-only, so under the reference-free
-    // SPL RTA it falls back to Silent — which also restores the original signal after a
-    // Silent→pink calibration-loss round-trip. The shared Pink/Brown/White colours are
-    // valid on both scales and are never touched.
-    internal static bool NormalizeSignalType(
-        LiveSpectrumOptions options,
-        MagnitudeScale effectiveScale)
+    // Forces the runtime signal to one the selected analysis mode actually offers, so
+    // the stored NoiseColor never diverges from what the panel and the playback show.
+    // Silent (an ambient RTA with no excitation) is the one mode-exclusive signal: a
+    // transfer function has nothing to correlate against without an excitation, so
+    // entering Transfer mode falls it back to periodic pink (the transfer reference).
+    // Every real excitation is valid in both modes and is never touched.
+    internal static bool NormalizeSignalType(LiveSpectrumOptions options)
     {
-        NoiseColor normalized = NormalizedSignalType(options.NoiseColor, effectiveScale);
-        if (normalized == options.NoiseColor)
+        if (options.AnalysisMode == LiveAnalysisMode.TransferFunction &&
+            options.NoiseColor == NoiseColor.Silent)
         {
-            return false;
+            options.NoiseColor = NoiseColor.PinkPeriodic;
+            return true;
         }
 
-        options.NoiseColor = normalized;
-        return true;
+        return false;
     }
-
-    private static NoiseColor NormalizedSignalType(
-        NoiseColor color,
-        MagnitudeScale effectiveScale)
-    {
-        bool spl = effectiveScale == MagnitudeScale.SoundPressureLevel;
-        if (color == NoiseColor.Silent && !spl)
-        {
-            return NoiseColor.PinkPeriodic;
-        }
-
-        if (color == NoiseColor.PinkPeriodic && spl)
-        {
-            return NoiseColor.Silent;
-        }
-
-        return color;
-    }
-
-    // Whether the current runtime signal is not valid for the effective scale and would
-    // be swapped by NormalizeSignalType. A running measurement must restart when it is,
-    // because either direction changes the playback (pink excitation ↔ zero) and the
-    // analysis path (transfer vs. mic-only RTA).
-    private bool SignalNeedsNormalization() =>
-        NormalizedSignalType(
-            liveSpectrumOptions.NoiseColor,
-            plotModelFactory.EffectiveLiveSpectrumScale) != liveSpectrumOptions.NoiseColor;
 
     private bool NormalizeSilentSignal()
     {
-        bool changed = NormalizeSignalType(
-            liveSpectrumOptions,
-            plotModelFactory.EffectiveLiveSpectrumScale);
+        bool changed = NormalizeSignalType(liveSpectrumOptions);
         if (changed)
         {
             measurement.RefreshPlaybackSignal();
@@ -586,11 +557,11 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
-        // The plot is the reference-free microphone (RTA) spectrum whenever the SPL
-        // view is active (the transfer function has no scalar SPL under noise) or the
-        // capture has no loopback at all (there is no transfer function to draw). In
-        // those RTA-only views the transfer function and coherence are hidden, the RTA
-        // is forced on, and the peak hold envelops it instead of the transfer curve.
+        // The plot is the reference-free microphone (RTA) spectrum whenever the
+        // effective analysis mode is RTA — selected, or forced by a capture with no
+        // loopback at all (there is no transfer function to draw). In the RTA-only
+        // views the transfer function and coherence are hidden, the RTA is forced
+        // on, and the peak hold envelops it instead of the transfer curve.
         bool rtaOnly = RtaOnly;
         renderedPeakHoldKey = CurrentPeakHoldKey();
 

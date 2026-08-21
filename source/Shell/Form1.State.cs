@@ -12,6 +12,14 @@ public partial class Form1
     {
         await liveSpectrumController.ReconfigureFromAsync(measurementSettings.Measurement);
         timeAlignmentController.RefreshConfiguration();
+        // The audio routing may have gained or lost the loopback reference — the
+        // prerequisite of the live Transfer mode — so an open live panel re-evaluates
+        // its amber states here, the one chokepoint every routing change passes.
+        dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
+            panel => panel.RefreshAvailability(
+                plotModelFactory.LiveSplOffsetDb.HasValue,
+                liveSpectrumController.HasDisplayableCurve,
+                liveSpectrumController.HasConfiguredLoopback));
     }
 
     private void PrepareSweepMeasurementForRun()

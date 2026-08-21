@@ -245,9 +245,10 @@ public partial class Form1
         // becomes (or stops being) a real conflict. Follow it on the open panel, so
         // the amber state is not frozen at whatever was true when the panel opened.
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
-            panel => panel.RefreshSplAvailability(
+            panel => panel.RefreshAvailability(
                 plotModelFactory.LiveSplOffsetDb.HasValue,
-                liveSpectrumController.HasDisplayableCurve));
+                liveSpectrumController.HasDisplayableCurve,
+                liveSpectrumController.HasConfiguredLoopback));
     }
 
     private void UpdatePlotLabelsPanel()

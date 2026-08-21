@@ -8,81 +8,57 @@ namespace Resonalyze.App.Tests;
 public sealed class LiveSpectrumControllerTests
 {
     [Fact]
-    public void MissingEffectiveSplCalibration_NormalizesSilentToPeriodicPink()
+    public void SilentEnteringTransferMode_NormalizesToPeriodicPink()
     {
+        // Silent is the one mode-exclusive signal: a transfer function has nothing to
+        // correlate against without an excitation, so entering Transfer mode swaps it
+        // for the transfer reference.
         var options = new LiveSpectrumOptions
         {
-            MagnitudeScale = MagnitudeScale.SoundPressureLevel,
+            AnalysisMode = LiveAnalysisMode.TransferFunction,
             NoiseColor = NoiseColor.Silent
         };
 
-        bool changed = LiveSpectrumController.NormalizeSignalType(
-            options,
-            MagnitudeScale.Relative);
+        bool changed = LiveSpectrumController.NormalizeSignalType(options);
 
         Assert.True(changed);
         Assert.Equal(NoiseColor.PinkPeriodic, options.NoiseColor);
     }
 
     [Fact]
-    public void NormalizeSignalType_KeepsSilentWhileSplIsEffective()
+    public void NormalizeSignalType_KeepsSilentInRtaMode()
     {
-        var options = new LiveSpectrumOptions { NoiseColor = NoiseColor.Silent };
-
-        bool changed = LiveSpectrumController.NormalizeSignalType(
-            options,
-            MagnitudeScale.SoundPressureLevel);
-
-        Assert.False(changed);
-        Assert.Equal(NoiseColor.Silent, options.NoiseColor);
-    }
-
-    [Fact]
-    public void NormalizeSignalType_LeavesANonSilentSignalUntouched()
-    {
-        var options = new LiveSpectrumOptions { NoiseColor = NoiseColor.Pink };
-
-        bool changed = LiveSpectrumController.NormalizeSignalType(
-            options,
-            MagnitudeScale.Relative);
-
-        Assert.False(changed);
-        Assert.Equal(NoiseColor.Pink, options.NoiseColor);
-    }
-
-    [Fact]
-    public void RestoredEffectiveSpl_NormalizesPeriodicPinkBackToSilent()
-    {
-        // The symmetric half of the fallback: after a Silent→pink calibration-loss the
-        // stored signal is periodic pink while the requested scale is still SPL. When SPL
-        // becomes effective again, periodic pink is invalid there (it is the transfer
-        // reference, pointless in the reference-free RTA), so it must swap back to Silent
-        // — never left playing an excitation the SPL panel cannot even display.
+        // In RTA mode Silent is valid at EITHER scale — an ambient RTA in dBFS is a
+        // legitimate display — so nothing (calibration changes included) swaps it.
         var options = new LiveSpectrumOptions
         {
-            MagnitudeScale = MagnitudeScale.SoundPressureLevel,
-            NoiseColor = NoiseColor.PinkPeriodic
+            AnalysisMode = LiveAnalysisMode.Rta,
+            NoiseColor = NoiseColor.Silent
         };
 
-        bool changed = LiveSpectrumController.NormalizeSignalType(
-            options,
-            MagnitudeScale.SoundPressureLevel);
+        bool changed = LiveSpectrumController.NormalizeSignalType(options);
 
-        Assert.True(changed);
+        Assert.False(changed);
         Assert.Equal(NoiseColor.Silent, options.NoiseColor);
     }
 
-    [Fact]
-    public void NormalizeSignalType_KeepsPeriodicPinkOnTheRelativeScale()
+    [Theory]
+    [InlineData(LiveAnalysisMode.TransferFunction, NoiseColor.Pink)]
+    [InlineData(LiveAnalysisMode.TransferFunction, NoiseColor.PinkPeriodic)]
+    [InlineData(LiveAnalysisMode.Rta, NoiseColor.PinkPeriodic)]
+    [InlineData(LiveAnalysisMode.Rta, NoiseColor.White)]
+    public void NormalizeSignalType_LeavesRealExcitationsUntouched(
+        LiveAnalysisMode mode,
+        NoiseColor color)
     {
-        var options = new LiveSpectrumOptions { NoiseColor = NoiseColor.PinkPeriodic };
+        // Every real excitation is valid in both modes — periodic pink included: in
+        // RTA it is simply a known (deterministic) excitation to measure.
+        var options = new LiveSpectrumOptions { AnalysisMode = mode, NoiseColor = color };
 
-        bool changed = LiveSpectrumController.NormalizeSignalType(
-            options,
-            MagnitudeScale.Relative);
+        bool changed = LiveSpectrumController.NormalizeSignalType(options);
 
         Assert.False(changed);
-        Assert.Equal(NoiseColor.PinkPeriodic, options.NoiseColor);
+        Assert.Equal(color, options.NoiseColor);
     }
 
     [Fact]
@@ -102,6 +78,104 @@ public sealed class LiveSpectrumControllerTests
 
         Assert.Null(peakHoldField.GetValue(controller));
     }
+
+    [Fact]
+    public async Task DiscardCapturedData_ClearsTheAccumulationAndTheKeptCurve()
+    {
+        // The idle-recolour hole: a stopped curve is a record of the PREVIOUS
+        // acquisition setup, while the display transform (the slope compensation
+        // above all) reads the options live. When an acquisition parameter changes
+        // without a restart, the host discards the stale data instead of letting
+        // the next redraw silently re-interpret it as the new excitation.
+        var factory = new FakeAudioSessionFactory(
+            streamingFactory: _ => new RecordingStreamingSession(
+                framesToRaise: 20,
+                failAfterFrames: false));
+        using var noise = new NoiseMeasurement(factory);
+        noise.Init(
+            44_100,
+            24,
+            0.5,
+            PlaybackChannel.Mono,
+            sequenceLength: 1024,
+            liveSpectrumOptions: new LiveSpectrumOptions
+            {
+                AnalysisMode = LiveAnalysisMode.Rta,
+                NoiseColor = NoiseColor.Pink
+            });
+
+        Task<bool> running = noise.RunAsync();
+        LiveSpectrumSnapshot? snapshot = null;
+        for (int attempt = 0; attempt < 100 && snapshot == null; attempt++)
+        {
+            await Task.Delay(10);
+            snapshot = noise.GetAccumulatedSpectrumSnapshot();
+        }
+        await noise.AbortAsync();
+        Assert.True(await running, noise.LastError?.ToString());
+        Assert.NotNull(snapshot);
+
+        var controller = (LiveSpectrumController)RuntimeHelpers.GetUninitializedObject(
+            typeof(LiveSpectrumController));
+        SetField(controller, "measurement", noise);
+        SetField(controller, "plotView", new OxyPlot.WindowsForms.PlotView());
+        SetField(controller, "lastSnapshot", snapshot);
+
+        controller.DiscardCapturedData();
+
+        Assert.Null(noise.GetAccumulatedSpectrumSnapshot());
+        Assert.Null(typeof(LiveSpectrumController)
+            .GetField("lastSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(controller));
+    }
+
+    [Fact]
+    public void TiltToggle_ChangesThePeakHoldDisplayKey()
+    {
+        // The peak-hold envelope holds FINISHED display values; toggling the noise
+        // tilt compensation reshapes the display, so it must change the display key
+        // (ApplyDisplayOptions then drops the stale envelope instead of max-ing the
+        // old values against tilted ones).
+        using var sweep = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.Rta,
+            NoiseColor = NoiseColor.Pink
+        };
+        var controller = (LiveSpectrumController)RuntimeHelpers.GetUninitializedObject(
+            typeof(LiveSpectrumController));
+        SetField(controller, "measurement", noise);
+        SetField(controller, "liveSpectrumOptions", options);
+        SetField(controller, "plotModelFactory", new PlotModelFactory(
+            sweep,
+            noise,
+            _ => null,
+            new PlotPresentationOptions(
+                FrequencyResponse: new FrequencyResponseOptions(),
+                PhaseResponse: new FrequencyResponseOptions(),
+                GroupDelay: new FrequencyResponseOptions(),
+                FrequencyResponseVisibility: new CurveVisibilityOptions(),
+                PhaseResponseVisibility: new CurveVisibilityOptions(),
+                GroupDelayVisibility: new CurveVisibilityOptions(),
+                ImpulseResponse: new ImpulseResponseOptions(),
+                LiveSpectrum: options,
+                Waterfall: new WaterfallGenerateOptions(),
+                BurstDecay: new WaterfallGenerateOptions())));
+
+        object before = CurrentPeakHoldKey(controller);
+        options.CompensateNoiseTilt = true;
+        object after = CurrentPeakHoldKey(controller);
+
+        Assert.NotEqual(before, after);
+    }
+
+    private static object CurrentPeakHoldKey(LiveSpectrumController controller) =>
+        typeof(LiveSpectrumController)
+            .GetMethod(
+                "CurrentPeakHoldKey",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(controller, [])!;
 
     [Fact]
     public void ViewOnlySpl_ExplainsTheSuppressedCurveInsteadOfAnEmptyPlot()

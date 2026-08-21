@@ -40,10 +40,45 @@ namespace Resonalyze
         Infinite
     }
 
+    /// <summary>
+    /// What the live analyzer measures.
+    /// <list type="bullet">
+    /// <item><see cref="TransferFunction"/> — the dual-channel H1 estimate of
+    /// microphone over loopback reference, with coherence. Needs a configured
+    /// loopback channel; without one the analyzer can only run reference-free,
+    /// so the effective mode falls back to <see cref="Rta"/>.</item>
+    /// <item><see cref="Rta"/> — the reference-free magnitude spectrum of the
+    /// microphone input alone. The only mode that can show absolute dB SPL, and
+    /// the only mode where the <see cref="NoiseColor.Silent"/> (ambient) signal
+    /// makes sense.</item>
+    /// </list>
+    /// </summary>
+    public enum LiveAnalysisMode
+    {
+        TransferFunction,
+        Rta
+    }
+
     public sealed class LiveSpectrumOptions
     {
+        /// <summary>
+        /// The selected analysis mode. The invariant that <see cref="NoiseColor.Silent"/>
+        /// exists only in <see cref="LiveAnalysisMode.Rta"/> is enforced at settings load
+        /// and by <c>LiveSpectrumController.NormalizeSignalType</c>, never assumed here.
+        /// </summary>
+        public LiveAnalysisMode AnalysisMode { get; set; } = LiveAnalysisMode.TransferFunction;
+
         /// <summary>Spectral colour of the excitation noise played during measurement.</summary>
         public NoiseColor NoiseColor { get; set; } = NoiseColor.PinkPeriodic;
+
+        /// <summary>
+        /// Compensates the tilt the excitation noise itself prints onto the
+        /// reference-free RTA display (pink reads −3 dB/octave on the per-bin dB
+        /// axis even through a flat system), so a flat system reads flat. RTA mode
+        /// only — the transfer function divides the excitation out — and inert for
+        /// <see cref="NoiseColor.Silent"/>, whose excitation spectrum is unknown.
+        /// </summary>
+        public bool CompensateNoiseTilt { get; set; }
 
         /// <summary>
         /// Which microphone calibration corrects the live curves, by id (see
@@ -108,8 +143,39 @@ namespace Resonalyze
         /// Vertical scale of the live plot. In <see cref="MagnitudeScale.SoundPressureLevel"/>
         /// the reference-free RTA (microphone) spectrum is shown in absolute dB SPL
         /// (mic + calibration offset). The transfer function is a dimensionless ratio
-        /// with no scalar SPL under noise excitation, so it is not shown on the SPL axis.
+        /// with no scalar SPL under noise excitation, so the scale takes effect only in
+        /// <see cref="LiveAnalysisMode.Rta"/>; a transfer plot always renders relative.
         /// </summary>
         public MagnitudeScale MagnitudeScale { get; set; } = MagnitudeScale.Relative;
+    }
+
+    /// <summary>
+    /// The spectral shape each excitation colour is actually SYNTHESISED with, as
+    /// the model the tilt compensation must undo (see
+    /// <see cref="Dsp.NoiseTiltCompensation"/>). Ideal power laws only where the
+    /// synthesis is one: periodic pink is exactly <c>1/√k</c> per bin and white is
+    /// flat, but random pink is the Kellett filter bank and brown a leaky
+    /// integrator — both flatten below their filter corners, and compensating a
+    /// nominal slope there would print an artificial bass roll-off onto a correct
+    /// measurement.
+    /// </summary>
+    internal static class NoiseColorTilt
+    {
+        /// <summary>
+        /// The spectral model of the colour, or null when the excitation spectrum is
+        /// unknown (<see cref="NoiseColor.Silent"/> — an external source) and no
+        /// compensation can be honest.
+        /// </summary>
+        public static NoiseSpectralModel? SpectralModel(NoiseColor color) => color switch
+        {
+            // Exactly 1/√k per synthesised bin: PSD ∝ 1/f → −10·log10(2) dB/octave.
+            NoiseColor.PinkPeriodic =>
+                NoiseSpectralModel.PowerLaw(-10.0 * Math.Log10(2.0)),
+            NoiseColor.Pink => NoiseSpectralModel.KellettPink,
+            NoiseColor.Brown =>
+                NoiseSpectralModel.LeakyIntegrator(NoiseSignal.BrownCornerHz),
+            NoiseColor.White => NoiseSpectralModel.PowerLaw(0.0),
+            _ => null
+        };
     }
 }

@@ -55,6 +55,51 @@ public sealed class LiveRtaRawCaptureTests
     }
 
     [Fact]
+    public void RelativeRawWithTilt_BakesTheCompensationTheDisplayApplies()
+    {
+        // The noise-tilt compensation is baked into the raw capture per bin, at the
+        // same spot the display path applies it (before the resample), so a captured
+        // overlay stays the compensated curve the user saw under any re-smoothing.
+        double[] spectrum = CreateSpectrum();
+        NoiseSpectralModel pink = NoiseSpectralModel.PowerLaw(-10.0 * Math.Log10(2.0));
+
+        foreach (int smoothing in new[] { 0, 6 })
+        {
+            // What the plot draws: bins to dB, per-bin compensation, then the resample.
+            List<SignalPoint> compensatedBins = BuildBinCurve(spectrum);
+            for (int i = 0; i < compensatedBins.Count; i++)
+            {
+                compensatedBins[i] = new SignalPoint(
+                    compensatedBins[i].X,
+                    compensatedBins[i].Y + NoiseTiltCompensation.BinCompensationDb(
+                        pink, compensatedBins[i].X, SampleRate));
+            }
+
+            List<SignalPoint> drawn = DataHelper.LogarithmicResample(
+                compensatedBins,
+                RawCurveRenderer.StartFrequency,
+                RawCurveRenderer.StopFrequency,
+                RawCurveRenderer.PointCount,
+                calibration: null,
+                SpectrumSmoothing.SmoothingOctaves(smoothing),
+                psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(smoothing));
+
+            List<SignalPoint> raw = LiveRtaRawCapture.BuildRelativeRaw(
+                spectrum, FftLength, SampleRate, pink);
+            List<SignalPoint> rendered = RawCurveRenderer.Render(
+                raw,
+                RawCurveRenderer.CaptureCalibrationCorrection(null),
+                smoothing);
+
+            Assert.Equal(drawn.Count, rendered.Count);
+            for (int i = 0; i < drawn.Count; i++)
+            {
+                Assert.Equal(drawn[i].Y, rendered[i].Y, precision: 9);
+            }
+        }
+    }
+
+    [Fact]
     public void RelativeRaw_IsTheUncalibratedBinSpectrumWithoutDc()
     {
         double[] spectrum = CreateSpectrum();

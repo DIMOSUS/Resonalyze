@@ -172,12 +172,13 @@ public partial class Form1
 
     // The Live Spectrum mirror of ResetSplViewOnlyDisplayForRun below: an analyzer
     // started while the display is view-only SPL would draw no curves at all, so
-    // drop the display to relative first (StartAsync then normalizes a Silent
-    // signal into a real excitation for the relative scale). Also called when a
-    // RUNNING analyzer loses its calibration, where staying in SPL would blank it.
+    // drop the display to relative first. Also called when a RUNNING analyzer loses
+    // its calibration, where staying in SPL would blank it. The signal is left
+    // alone — it follows the analysis mode, not the scale.
     private void ResetLiveSplViewOnlyDisplayForRun()
     {
-        if (liveSpectrumOptions.MagnitudeScale != Dsp.MagnitudeScale.SoundPressureLevel ||
+        if (plotModelFactory.EffectiveLiveSpectrumScale !=
+                Dsp.MagnitudeScale.SoundPressureLevel ||
             plotModelFactory.LiveSplOffsetDb.HasValue)
         {
             return;
@@ -188,7 +189,7 @@ public partial class Form1
         // An open panel must follow the reset, or its next apply-on-change would
         // write SPL right back into the options.
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
-            panel => panel.ForceRelativeScale());
+            panel => panel.ForceSplScaleOff());
     }
 
     // A sweep started in dB SPL only stays there when the RUN AHEAD can supply SPL —
@@ -270,29 +271,23 @@ public partial class Form1
             ResetLiveSplViewOnlyDisplayForRun();
         }
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
-            panel => panel.RefreshSplAvailability(
+            panel => panel.RefreshAvailability(
                 plotModelFactory.LiveSplOffsetDb.HasValue,
-                liveSpectrumController.HasDisplayableCurve));
+                liveSpectrumController.HasDisplayableCurve,
+                liveSpectrumController.HasConfiguredLoopback));
         // Persist the calibration itself up front so it survives even if the redraw
-        // below fails; the normalized live options are re-saved afterwards.
+        // below fails.
         ScheduleMeasurementSettingsSave();
 
         IReadOnlyList<AxisViewport> viewports = CaptureAxisViewports();
         try
         {
-            // Normalize Live Spectrum for the calibration change in EVERY mode — drop
-            // its stale peak hold, and fall a Silent RTA back to a real excitation once
-            // SPL is gone — not only while it is the visible mode; it rebuilds its own
-            // model only when visible, so any other mode still refreshes below.
-            bool liveSignalChanged = await liveSpectrumController.RefreshCalibrationAsync();
-
-            // If the live signal was normalized (Silent → periodic pink), capture the
-            // options so the change reaches disk: a plain schedule serializes the
-            // un-captured LiveSpectrum settings and would keep the stale Silent.
-            if (liveSignalChanged)
-            {
-                SaveMeasurementSettings();
-            }
+            // Refresh Live Spectrum for the calibration change in EVERY mode — drop
+            // its now-stale peak hold — not only while it is the visible mode; it
+            // rebuilds its own model only when visible, so any other mode still
+            // refreshes below. The capture and its signal are untouched: they
+            // follow the analysis mode, which a calibration cannot change.
+            liveSpectrumController.RefreshCalibration();
 
             if (CurrentMode != Mode.LiveSpectrum)
             {

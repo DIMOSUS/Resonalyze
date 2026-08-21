@@ -28,6 +28,9 @@ namespace Resonalyze.Options
         /// </summary>
         private void InitializeComponent()
         {
+            labelAnalysisMode = new Label();
+            radioModeTransfer = new RadioButton();
+            radioModeRta = new RadioButton();
             comboCalibration = new DarkComboBox();
             label2 = new Label();
             labelSignalType = new Label();
@@ -49,9 +52,10 @@ namespace Resonalyze.Options
             label10 = new Label();
             coherenceLimitComboBox = new DarkComboBox();
             buttonResetAverage = new Button();
-            labelScale = new Label();
-            radioMagnitudeRelative = new RadioButton();
-            radioMagnitudeSpl = new RadioButton();
+            labelSpl = new Label();
+            checkSpl = new CheckBox();
+            labelTilt = new Label();
+            checkTilt = new CheckBox();
             labelCurves = new Label();
             labelMainCurve = new Label();
             checkMainCurve = new CheckBox();
@@ -59,32 +63,45 @@ namespace Resonalyze.Options
             checkInputMagnitude = new CheckBox();
             SuspendLayout();
             //
-            // comboCalibration
+            // labelAnalysisMode
             //
-            comboCalibration.BackColor = Color.FromArgb(55, 60, 72);
-            comboCalibration.ForeColor = Color.White;
-            comboCalibration.Location = new Point(132, 214);
-            comboCalibration.Margin = new Padding(0);
-            comboCalibration.MinimumSize = new Size(36, 19);
-            comboCalibration.Name = "comboCalibration";
-            comboCalibration.Size = new Size(121, 23);
-            comboCalibration.TabIndex = 47;
+            labelAnalysisMode.AutoSize = true;
+            labelAnalysisMode.ForeColor = SystemColors.ControlLight;
+            labelAnalysisMode.Location = new Point(12, 13);
+            labelAnalysisMode.Name = "labelAnalysisMode";
+            labelAnalysisMode.Size = new Size(38, 15);
+            labelAnalysisMode.TabIndex = 74;
+            labelAnalysisMode.Text = "Mode";
             //
-            // label2
+            // radioModeTransfer
             //
-            label2.AutoSize = true;
-            label2.ForeColor = SystemColors.ControlLight;
-            label2.Location = new Point(12, 217);
-            label2.Name = "label2";
-            label2.Size = new Size(65, 15);
-            label2.TabIndex = 46;
-            label2.Text = "Calibration";
+            radioModeTransfer.AutoSize = true;
+            radioModeTransfer.Checked = true;
+            radioModeTransfer.ForeColor = SystemColors.ControlLight;
+            radioModeTransfer.Location = new Point(85, 11);
+            radioModeTransfer.Name = "radioModeTransfer";
+            radioModeTransfer.Size = new Size(67, 19);
+            radioModeTransfer.TabIndex = 75;
+            radioModeTransfer.TabStop = true;
+            radioModeTransfer.Text = "Transfer";
+            radioModeTransfer.UseVisualStyleBackColor = true;
+            //
+            // radioModeRta
+            //
+            radioModeRta.AutoSize = true;
+            radioModeRta.ForeColor = SystemColors.ControlLight;
+            radioModeRta.Location = new Point(168, 11);
+            radioModeRta.Name = "radioModeRta";
+            radioModeRta.Size = new Size(46, 19);
+            radioModeRta.TabIndex = 76;
+            radioModeRta.Text = "RTA";
+            radioModeRta.UseVisualStyleBackColor = true;
             //
             // labelSignalType
             //
             labelSignalType.AutoSize = true;
             labelSignalType.ForeColor = SystemColors.ControlLight;
-            labelSignalType.Location = new Point(12, 14);
+            labelSignalType.Location = new Point(12, 43);
             labelSignalType.Name = "labelSignalType";
             labelSignalType.Size = new Size(64, 15);
             labelSignalType.TabIndex = 37;
@@ -94,18 +111,39 @@ namespace Resonalyze.Options
             //
             signalTypeComboBox.BackColor = Color.FromArgb(55, 60, 72);
             signalTypeComboBox.ForeColor = Color.White;
-            signalTypeComboBox.Location = new Point(132, 11);
+            signalTypeComboBox.Location = new Point(132, 40);
             signalTypeComboBox.Margin = new Padding(0);
             signalTypeComboBox.MinimumSize = new Size(36, 19);
             signalTypeComboBox.Name = "signalTypeComboBox";
             signalTypeComboBox.Size = new Size(121, 23);
             signalTypeComboBox.TabIndex = 48;
             //
+            // label6
+            //
+            label6.AutoSize = true;
+            label6.ForeColor = SystemColors.ControlLight;
+            label6.Location = new Point(12, 72);
+            label6.Name = "label6";
+            label6.Size = new Size(48, 15);
+            label6.TabIndex = 55;
+            label6.Text = "Window";
+            //
+            // windowComboBox
+            //
+            windowComboBox.BackColor = Color.FromArgb(55, 60, 72);
+            windowComboBox.ForeColor = Color.White;
+            windowComboBox.Location = new Point(132, 69);
+            windowComboBox.Margin = new Padding(0);
+            windowComboBox.MinimumSize = new Size(36, 19);
+            windowComboBox.Name = "windowComboBox";
+            windowComboBox.Size = new Size(121, 23);
+            windowComboBox.TabIndex = 56;
+            //
             // label3
             //
             label3.AutoSize = true;
             label3.ForeColor = SystemColors.ControlLight;
-            label3.Location = new Point(12, 72);
+            label3.Location = new Point(12, 101);
             label3.Name = "label3";
             label3.Size = new Size(98, 15);
             label3.TabIndex = 49;
@@ -115,7 +153,7 @@ namespace Resonalyze.Options
             //
             sequenceLengthComboBox.BackColor = Color.FromArgb(55, 60, 72);
             sequenceLengthComboBox.ForeColor = Color.White;
-            sequenceLengthComboBox.Location = new Point(132, 69);
+            sequenceLengthComboBox.Location = new Point(132, 98);
             sequenceLengthComboBox.Margin = new Padding(0);
             sequenceLengthComboBox.MinimumSize = new Size(36, 19);
             sequenceLengthComboBox.Name = "sequenceLengthComboBox";
@@ -126,7 +164,7 @@ namespace Resonalyze.Options
             //
             label4.AutoSize = true;
             label4.ForeColor = SystemColors.ControlLight;
-            label4.Location = new Point(12, 101);
+            label4.Location = new Point(12, 130);
             label4.Name = "label4";
             label4.Size = new Size(48, 15);
             label4.TabIndex = 51;
@@ -136,7 +174,7 @@ namespace Resonalyze.Options
             //
             overlapComboBox.BackColor = Color.FromArgb(55, 60, 72);
             overlapComboBox.ForeColor = Color.White;
-            overlapComboBox.Location = new Point(132, 98);
+            overlapComboBox.Location = new Point(132, 127);
             overlapComboBox.Margin = new Padding(0);
             overlapComboBox.MinimumSize = new Size(36, 19);
             overlapComboBox.Name = "overlapComboBox";
@@ -147,7 +185,7 @@ namespace Resonalyze.Options
             //
             label5.AutoSize = true;
             label5.ForeColor = SystemColors.ControlLight;
-            label5.Location = new Point(12, 130);
+            label5.Location = new Point(12, 159);
             label5.Name = "label5";
             label5.Size = new Size(62, 15);
             label5.TabIndex = 53;
@@ -157,39 +195,18 @@ namespace Resonalyze.Options
             //
             comboSmoothingInverseOctaves.BackColor = Color.FromArgb(55, 60, 72);
             comboSmoothingInverseOctaves.ForeColor = Color.White;
-            comboSmoothingInverseOctaves.Location = new Point(132, 127);
+            comboSmoothingInverseOctaves.Location = new Point(132, 156);
             comboSmoothingInverseOctaves.Margin = new Padding(0);
             comboSmoothingInverseOctaves.MinimumSize = new Size(36, 19);
             comboSmoothingInverseOctaves.Name = "comboSmoothingInverseOctaves";
             comboSmoothingInverseOctaves.Size = new Size(121, 23);
             comboSmoothingInverseOctaves.TabIndex = 54;
             //
-            // label6
-            //
-            label6.AutoSize = true;
-            label6.ForeColor = SystemColors.ControlLight;
-            label6.Location = new Point(12, 43);
-            label6.Name = "label6";
-            label6.Size = new Size(48, 15);
-            label6.TabIndex = 55;
-            label6.Text = "Window";
-            //
-            // windowComboBox
-            //
-            windowComboBox.BackColor = Color.FromArgb(55, 60, 72);
-            windowComboBox.ForeColor = Color.White;
-            windowComboBox.Location = new Point(132, 40);
-            windowComboBox.Margin = new Padding(0);
-            windowComboBox.MinimumSize = new Size(36, 19);
-            windowComboBox.Name = "windowComboBox";
-            windowComboBox.Size = new Size(121, 23);
-            windowComboBox.TabIndex = 56;
-            //
             // label7
             //
             label7.AutoSize = true;
             label7.ForeColor = SystemColors.ControlLight;
-            label7.Location = new Point(12, 159);
+            label7.Location = new Point(12, 188);
             label7.Name = "label7";
             label7.Size = new Size(60, 15);
             label7.TabIndex = 57;
@@ -199,58 +216,18 @@ namespace Resonalyze.Options
             //
             averagingComboBox.BackColor = Color.FromArgb(55, 60, 72);
             averagingComboBox.ForeColor = Color.White;
-            averagingComboBox.Location = new Point(132, 156);
+            averagingComboBox.Location = new Point(132, 185);
             averagingComboBox.Margin = new Padding(0);
             averagingComboBox.MinimumSize = new Size(36, 19);
             averagingComboBox.Name = "averagingComboBox";
             averagingComboBox.Size = new Size(121, 23);
             averagingComboBox.TabIndex = 58;
             //
-            // label8
-            //
-            label8.AutoSize = true;
-            label8.ForeColor = SystemColors.ControlLight;
-            label8.Location = new Point(12, 360);
-            label8.Name = "label8";
-            label8.Size = new Size(60, 15);
-            label8.TabIndex = 59;
-            label8.Text = "Peak Hold";
-            //
-            // checkPeakHold
-            //
-            checkPeakHold.AutoSize = true;
-            checkPeakHold.ForeColor = SystemColors.ControlLight;
-            checkPeakHold.Location = new Point(238, 360);
-            checkPeakHold.Name = "checkPeakHold";
-            checkPeakHold.Size = new Size(15, 14);
-            checkPeakHold.TabIndex = 60;
-            checkPeakHold.UseVisualStyleBackColor = true;
-            //
-            // label9
-            //
-            label9.AutoSize = true;
-            label9.ForeColor = SystemColors.ControlLight;
-            label9.Location = new Point(12, 337);
-            label9.Name = "label9";
-            label9.Size = new Size(64, 15);
-            label9.TabIndex = 62;
-            label9.Text = "Coherence";
-            //
-            // checkCoherence
-            //
-            checkCoherence.AutoSize = true;
-            checkCoherence.ForeColor = SystemColors.ControlLight;
-            checkCoherence.Location = new Point(238, 337);
-            checkCoherence.Name = "checkCoherence";
-            checkCoherence.Size = new Size(15, 14);
-            checkCoherence.TabIndex = 63;
-            checkCoherence.UseVisualStyleBackColor = true;
-            //
             // label10
             //
             label10.AutoSize = true;
             label10.ForeColor = SystemColors.ControlLight;
-            label10.Location = new Point(12, 188);
+            label10.Location = new Point(12, 217);
             label10.Name = "label10";
             label10.Size = new Size(95, 15);
             label10.TabIndex = 64;
@@ -260,64 +237,79 @@ namespace Resonalyze.Options
             //
             coherenceLimitComboBox.BackColor = Color.FromArgb(55, 60, 72);
             coherenceLimitComboBox.ForeColor = Color.White;
-            coherenceLimitComboBox.Location = new Point(132, 185);
+            coherenceLimitComboBox.Location = new Point(132, 214);
             coherenceLimitComboBox.Margin = new Padding(0);
             coherenceLimitComboBox.MinimumSize = new Size(36, 19);
             coherenceLimitComboBox.Name = "coherenceLimitComboBox";
             coherenceLimitComboBox.Size = new Size(121, 23);
             coherenceLimitComboBox.TabIndex = 65;
             //
-            // buttonResetAverage
+            // label2
             //
-            buttonResetAverage.BackColor = Color.FromArgb(50, 55, 80);
-            buttonResetAverage.FlatStyle = FlatStyle.Popup;
-            buttonResetAverage.ForeColor = Color.White;
-            buttonResetAverage.Location = new Point(12, 386);
-            buttonResetAverage.Name = "buttonResetAverage";
-            buttonResetAverage.Size = new Size(241, 23);
-            buttonResetAverage.TabIndex = 61;
-            buttonResetAverage.Text = "Reset Average";
-            buttonResetAverage.UseVisualStyleBackColor = false;
+            label2.AutoSize = true;
+            label2.ForeColor = SystemColors.ControlLight;
+            label2.Location = new Point(12, 246);
+            label2.Name = "label2";
+            label2.Size = new Size(65, 15);
+            label2.TabIndex = 46;
+            label2.Text = "Calibration";
             //
-            // labelScale
+            // comboCalibration
             //
-            labelScale.AutoSize = true;
-            labelScale.ForeColor = SystemColors.ControlLight;
-            labelScale.Location = new Point(12, 245);
-            labelScale.Name = "labelScale";
-            labelScale.Size = new Size(35, 15);
-            labelScale.TabIndex = 71;
-            labelScale.Text = "Scale";
+            comboCalibration.BackColor = Color.FromArgb(55, 60, 72);
+            comboCalibration.ForeColor = Color.White;
+            comboCalibration.Location = new Point(132, 243);
+            comboCalibration.Margin = new Padding(0);
+            comboCalibration.MinimumSize = new Size(36, 19);
+            comboCalibration.Name = "comboCalibration";
+            comboCalibration.Size = new Size(121, 23);
+            comboCalibration.TabIndex = 47;
             //
-            // radioMagnitudeRelative
+            // labelSpl
             //
-            radioMagnitudeRelative.AutoSize = true;
-            radioMagnitudeRelative.Checked = true;
-            radioMagnitudeRelative.ForeColor = SystemColors.ControlLight;
-            radioMagnitudeRelative.Location = new Point(85, 243);
-            radioMagnitudeRelative.Name = "radioMagnitudeRelative";
-            radioMagnitudeRelative.Size = new Size(70, 19);
-            radioMagnitudeRelative.TabIndex = 72;
-            radioMagnitudeRelative.TabStop = true;
-            radioMagnitudeRelative.Text = "Relative";
-            radioMagnitudeRelative.UseVisualStyleBackColor = true;
+            labelSpl.AutoSize = true;
+            labelSpl.ForeColor = SystemColors.ControlLight;
+            labelSpl.Location = new Point(12, 275);
+            labelSpl.Name = "labelSpl";
+            labelSpl.Size = new Size(43, 15);
+            labelSpl.TabIndex = 77;
+            labelSpl.Text = "dB SPL";
             //
-            // radioMagnitudeSpl
+            // checkSpl
             //
-            radioMagnitudeSpl.AutoSize = true;
-            radioMagnitudeSpl.ForeColor = SystemColors.ControlLight;
-            radioMagnitudeSpl.Location = new Point(168, 243);
-            radioMagnitudeSpl.Name = "radioMagnitudeSpl";
-            radioMagnitudeSpl.Size = new Size(66, 19);
-            radioMagnitudeSpl.TabIndex = 73;
-            radioMagnitudeSpl.Text = "dB SPL";
-            radioMagnitudeSpl.UseVisualStyleBackColor = true;
+            checkSpl.AutoSize = true;
+            checkSpl.ForeColor = SystemColors.ControlLight;
+            checkSpl.Location = new Point(238, 275);
+            checkSpl.Name = "checkSpl";
+            checkSpl.Size = new Size(15, 14);
+            checkSpl.TabIndex = 78;
+            checkSpl.UseVisualStyleBackColor = true;
+            //
+            // labelTilt
+            //
+            labelTilt.AutoSize = true;
+            labelTilt.ForeColor = SystemColors.ControlLight;
+            labelTilt.Location = new Point(12, 298);
+            labelTilt.Name = "labelTilt";
+            labelTilt.Size = new Size(110, 15);
+            labelTilt.TabIndex = 79;
+            labelTilt.Text = "Slope compensation";
+            //
+            // checkTilt
+            //
+            checkTilt.AutoSize = true;
+            checkTilt.ForeColor = SystemColors.ControlLight;
+            checkTilt.Location = new Point(238, 298);
+            checkTilt.Name = "checkTilt";
+            checkTilt.Size = new Size(15, 14);
+            checkTilt.TabIndex = 80;
+            checkTilt.UseVisualStyleBackColor = true;
             //
             // labelCurves
             //
             labelCurves.AutoSize = true;
             labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
-            labelCurves.Location = new Point(12, 268);
+            labelCurves.Location = new Point(12, 321);
             labelCurves.Name = "labelCurves";
             labelCurves.Size = new Size(48, 15);
             labelCurves.TabIndex = 66;
@@ -327,7 +319,7 @@ namespace Resonalyze.Options
             //
             labelMainCurve.AutoSize = true;
             labelMainCurve.ForeColor = SystemColors.ControlLight;
-            labelMainCurve.Location = new Point(12, 291);
+            labelMainCurve.Location = new Point(12, 344);
             labelMainCurve.Name = "labelMainCurve";
             labelMainCurve.Size = new Size(67, 15);
             labelMainCurve.TabIndex = 67;
@@ -337,7 +329,7 @@ namespace Resonalyze.Options
             //
             checkMainCurve.AutoSize = true;
             checkMainCurve.ForeColor = SystemColors.ControlLight;
-            checkMainCurve.Location = new Point(238, 291);
+            checkMainCurve.Location = new Point(238, 344);
             checkMainCurve.Name = "checkMainCurve";
             checkMainCurve.Size = new Size(15, 14);
             checkMainCurve.TabIndex = 68;
@@ -347,7 +339,7 @@ namespace Resonalyze.Options
             //
             labelInputMagnitude.AutoSize = true;
             labelInputMagnitude.ForeColor = SystemColors.ControlLight;
-            labelInputMagnitude.Location = new Point(12, 314);
+            labelInputMagnitude.Location = new Point(12, 367);
             labelInputMagnitude.Name = "labelInputMagnitude";
             labelInputMagnitude.Size = new Size(67, 15);
             labelInputMagnitude.TabIndex = 69;
@@ -357,23 +349,79 @@ namespace Resonalyze.Options
             //
             checkInputMagnitude.AutoSize = true;
             checkInputMagnitude.ForeColor = SystemColors.ControlLight;
-            checkInputMagnitude.Location = new Point(238, 314);
+            checkInputMagnitude.Location = new Point(238, 367);
             checkInputMagnitude.Name = "checkInputMagnitude";
             checkInputMagnitude.Size = new Size(15, 14);
             checkInputMagnitude.TabIndex = 70;
             checkInputMagnitude.UseVisualStyleBackColor = true;
+            //
+            // label9
+            //
+            label9.AutoSize = true;
+            label9.ForeColor = SystemColors.ControlLight;
+            label9.Location = new Point(12, 390);
+            label9.Name = "label9";
+            label9.Size = new Size(64, 15);
+            label9.TabIndex = 62;
+            label9.Text = "Coherence";
+            //
+            // checkCoherence
+            //
+            checkCoherence.AutoSize = true;
+            checkCoherence.ForeColor = SystemColors.ControlLight;
+            checkCoherence.Location = new Point(238, 390);
+            checkCoherence.Name = "checkCoherence";
+            checkCoherence.Size = new Size(15, 14);
+            checkCoherence.TabIndex = 63;
+            checkCoherence.UseVisualStyleBackColor = true;
+            //
+            // label8
+            //
+            label8.AutoSize = true;
+            label8.ForeColor = SystemColors.ControlLight;
+            label8.Location = new Point(12, 413);
+            label8.Name = "label8";
+            label8.Size = new Size(60, 15);
+            label8.TabIndex = 59;
+            label8.Text = "Peak Hold";
+            //
+            // checkPeakHold
+            //
+            checkPeakHold.AutoSize = true;
+            checkPeakHold.ForeColor = SystemColors.ControlLight;
+            checkPeakHold.Location = new Point(238, 413);
+            checkPeakHold.Name = "checkPeakHold";
+            checkPeakHold.Size = new Size(15, 14);
+            checkPeakHold.TabIndex = 60;
+            checkPeakHold.UseVisualStyleBackColor = true;
+            //
+            // buttonResetAverage
+            //
+            buttonResetAverage.BackColor = Color.FromArgb(50, 55, 80);
+            buttonResetAverage.FlatStyle = FlatStyle.Popup;
+            buttonResetAverage.ForeColor = Color.White;
+            buttonResetAverage.Location = new Point(12, 439);
+            buttonResetAverage.Name = "buttonResetAverage";
+            buttonResetAverage.Size = new Size(241, 23);
+            buttonResetAverage.TabIndex = 61;
+            buttonResetAverage.Text = "Reset Average";
+            buttonResetAverage.UseVisualStyleBackColor = false;
             //
             // LiveSpectrumOpt
             //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 421);
+            ClientSize = new Size(265, 474);
+            Controls.Add(labelAnalysisMode);
+            Controls.Add(radioModeTransfer);
+            Controls.Add(radioModeRta);
             Controls.Add(signalTypeComboBox);
             Controls.Add(labelSignalType);
-            Controls.Add(labelScale);
-            Controls.Add(radioMagnitudeRelative);
-            Controls.Add(radioMagnitudeSpl);
+            Controls.Add(labelSpl);
+            Controls.Add(checkSpl);
+            Controls.Add(labelTilt);
+            Controls.Add(checkTilt);
             Controls.Add(checkInputMagnitude);
             Controls.Add(labelInputMagnitude);
             Controls.Add(checkMainCurve);
@@ -410,6 +458,9 @@ namespace Resonalyze.Options
         }
 
         #endregion
+        private Label labelAnalysisMode;
+        private RadioButton radioModeTransfer;
+        private RadioButton radioModeRta;
         private DarkComboBox comboCalibration;
         private Label label2;
         private Label labelSignalType;
@@ -431,9 +482,10 @@ namespace Resonalyze.Options
         private Label label10;
         private DarkComboBox coherenceLimitComboBox;
         private Button buttonResetAverage;
-        private Label labelScale;
-        private RadioButton radioMagnitudeRelative;
-        private RadioButton radioMagnitudeSpl;
+        private Label labelSpl;
+        private CheckBox checkSpl;
+        private Label labelTilt;
+        private CheckBox checkTilt;
         private Label labelCurves;
         private Label labelMainCurve;
         private CheckBox checkMainCurve;

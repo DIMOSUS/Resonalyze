@@ -579,7 +579,12 @@ internal sealed partial class MeasurementSettingsFile
 
     internal sealed class LiveSpectrumSettings
     {
+        // Null when the file predates the explicit analysis mode; ApplyTo infers it
+        // from what used to imply an RTA session (see there).
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public LiveAnalysisMode? AnalysisMode { get; set; }
         public NoiseColor NoiseColor { get; set; } = NoiseColor.PinkPeriodic;
+        public bool CompensateNoiseTilt { get; set; }
         // See FrequencyResponseSettings for the id and the two legacy fields.
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? CalibrationId { get; set; }
@@ -603,9 +608,13 @@ internal sealed partial class MeasurementSettingsFile
             LiveSpectrumOptions options) =>
             new()
             {
+                AnalysisMode = Enum.IsDefined(options.AnalysisMode)
+                    ? options.AnalysisMode
+                    : LiveAnalysisMode.TransferFunction,
                 NoiseColor = Enum.IsDefined(options.NoiseColor)
                     ? options.NoiseColor
                     : NoiseColor.PinkPeriodic,
+                CompensateNoiseTilt = options.CompensateNoiseTilt,
                 CalibrationId = options.CalibrationId,
                 SequenceLength = NormalizeSequenceLength(options.SequenceLength),
                 OverlapPercent = NormalizeOverlapPercent(options.OverlapPercent),
@@ -631,6 +640,26 @@ internal sealed partial class MeasurementSettingsFile
             options.NoiseColor = Enum.IsDefined(NoiseColor)
                 ? NoiseColor
                 : NoiseColor.PinkPeriodic;
+            // Settings written before the explicit mode existed: the SPL scale and
+            // the Silent signal were both RTA-exclusive back then, so either marks
+            // an RTA session; everything else was the transfer analyzer.
+            options.AnalysisMode = AnalysisMode is { } mode && Enum.IsDefined(mode)
+                ? mode
+                : MagnitudeScale == MagnitudeScale.SoundPressureLevel ||
+                    options.NoiseColor == NoiseColor.Silent
+                    ? LiveAnalysisMode.Rta
+                    : LiveAnalysisMode.TransferFunction;
+            // The invariant the panel and the controller both rely on: Silent exists
+            // only in RTA mode (a transfer function has nothing to correlate against
+            // without an excitation). Only a hand-edited file can break it — repair
+            // the signal, keeping the explicitly stated mode.
+            if (options.AnalysisMode == LiveAnalysisMode.TransferFunction &&
+                options.NoiseColor == NoiseColor.Silent)
+            {
+                options.NoiseColor = NoiseColor.PinkPeriodic;
+            }
+
+            options.CompensateNoiseTilt = CompensateNoiseTilt;
             options.CalibrationId = ResolveCalibrationId(
                 CalibrationId,
                 CalibrationMode,

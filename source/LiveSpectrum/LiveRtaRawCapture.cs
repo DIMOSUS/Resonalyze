@@ -29,12 +29,31 @@ internal static class LiveRtaRawCapture
     /// The raw samples of the relative (native dB) RTA: every FFT bin as (Hz, dB),
     /// uncalibrated. Mirrors the point construction inside the live magnitude resampler,
     /// so smoothing these with <see cref="RawCurveRenderer.Render"/> reproduces the trace.
+    /// An active noise-tilt compensation is BAKED IN, exactly as the display applies it
+    /// per bin before its resample: the captured overlay is a record of the compensated
+    /// curve the user saw, and stays that curve under the overlay's own smoothing.
     /// </summary>
     public static List<SignalPoint> BuildRelativeRaw(
         IReadOnlyList<double> amplitudeSpectrum,
         int fftLength,
-        int sampleRate) =>
+        int sampleRate,
+        NoiseSpectralModel? tiltCompensationModel = null)
+    {
         // The same bins-to-dB conversion the live magnitude resampler runs before it
         // smooths onto the display grid, so re-smoothing these reproduces the trace.
-        DataHelper.MagnitudeBinsToDecibels(amplitudeSpectrum, fftLength, sampleRate);
+        List<SignalPoint> bins =
+            DataHelper.MagnitudeBinsToDecibels(amplitudeSpectrum, fftLength, sampleRate);
+        if (tiltCompensationModel is { } model && sampleRate > 0)
+        {
+            for (int i = 0; i < bins.Count; i++)
+            {
+                bins[i] = new SignalPoint(
+                    bins[i].X,
+                    bins[i].Y + NoiseTiltCompensation.BinCompensationDb(
+                        model, bins[i].X, sampleRate));
+            }
+        }
+
+        return bins;
+    }
 }

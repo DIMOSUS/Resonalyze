@@ -1507,6 +1507,7 @@ public sealed class PlotModelFactoryTests
         measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         var options = new LiveSpectrumOptions
         {
+            AnalysisMode = LiveAnalysisMode.Rta,
             MagnitudeScale = MagnitudeScale.SoundPressureLevel
         };
 
@@ -1531,6 +1532,7 @@ public sealed class PlotModelFactoryTests
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         var options = new LiveSpectrumOptions
         {
+            AnalysisMode = LiveAnalysisMode.Rta,
             MagnitudeScale = MagnitudeScale.SoundPressureLevel
         };
         PlotModelFactory factory =
@@ -1569,6 +1571,7 @@ public sealed class PlotModelFactoryTests
         measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         var options = new LiveSpectrumOptions
         {
+            AnalysisMode = LiveAnalysisMode.Rta,
             CalibrationId = null,
             SmoothingInverseOctaves = 6,
             MagnitudeScale = MagnitudeScale.SoundPressureLevel
@@ -1642,6 +1645,7 @@ public sealed class PlotModelFactoryTests
         // must move the identical power-band curve by exactly the offset difference.
         var options = new LiveSpectrumOptions
         {
+            AnalysisMode = LiveAnalysisMode.Rta,
             CalibrationId = null,
             SmoothingInverseOctaves = 0,
             MagnitudeScale = MagnitudeScale.SoundPressureLevel
@@ -1664,5 +1668,142 @@ public sealed class PlotModelFactoryTests
             Assert.Equal(lower.Points[i].X, higher.Points[i].X, precision: 9);
             Assert.Equal(lower.Points[i].Y + 10.0, higher.Points[i].Y, precision: 6);
         }
+    }
+
+    [Fact]
+    public void LiveRtaTilt_FlattensPinkOnTheRelativeAxis()
+    {
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        // Periodic pink: the one colour whose synthesis is an exact power law, so
+        // its model is the mirrored straight line and the cancellation is exact.
+        // (Random pink models the Kellett bank instead — pinned in the dsp tests.)
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.Rta,
+            NoiseColor = NoiseColor.PinkPeriodic,
+            CompensateNoiseTilt = true,
+            SmoothingInverseOctaves = 0
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+
+        // An exactly pink spectrum (amplitude ∝ 1/√f) through a flat system: with
+        // the compensation on, the relative RTA must read flat — the per-bin line
+        // mirrors the noise exactly.
+        var magnitude = new double[(noise.SequenceLength / 2) + 1];
+        for (int k = 1; k < magnitude.Length; k++)
+        {
+            magnitude[k] = 0.1 / Math.Sqrt(k);
+        }
+
+        LineSeries compensated = factory.BuildInputMagnitudeSeries(magnitude);
+        Assert.NotEmpty(compensated.Points);
+        double reference = compensated.Points[0].Y;
+        Assert.All(
+            compensated.Points,
+            point => Assert.Equal(reference, point.Y, precision: 6));
+
+        // The same input with the compensation off keeps the noise's own slope, so
+        // the checkbox demonstrably does something: -3.01 dB per octave.
+        options.CompensateNoiseTilt = false;
+        LineSeries plain = factory.BuildInputMagnitudeSeries(magnitude);
+        OxyPlot.DataPoint low = PointNear(plain, 1000.0);
+        OxyPlot.DataPoint high = PointNear(plain, 4000.0);
+        // The grid points sit near, not exactly at, the probe frequencies, so the
+        // expected drop follows the actual span: amplitude ~ 1/sqrt(f).
+        // precision 2: the resample interpolates linearly between bins, which for a
+        // 1/sqrt(f) curve deviates from the analytic value by a few thousandths of a dB.
+        Assert.Equal(-10.0 * Math.Log10(high.X / low.X), high.Y - low.Y, precision: 2);
+    }
+
+    [Fact]
+    public void LiveRtaTilt_IsInertInTransferMode()
+    {
+        // The transfer function divides the excitation out, so the compensation must
+        // not touch the RTA overlay drawn inside Transfer mode even when its
+        // checkbox is stored on.
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.TransferFunction,
+            NoiseColor = NoiseColor.Pink,
+            CompensateNoiseTilt = true,
+            SmoothingInverseOctaves = 0
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+
+        Assert.Null(factory.LiveTiltModel);
+
+        var magnitude = new double[(noise.SequenceLength / 2) + 1];
+        for (int k = 1; k < magnitude.Length; k++)
+        {
+            magnitude[k] = 0.1 / Math.Sqrt(k);
+        }
+
+        LineSeries series = factory.BuildInputMagnitudeSeries(magnitude);
+        OxyPlot.DataPoint low = PointNear(series, 1000.0);
+        OxyPlot.DataPoint high = PointNear(series, 4000.0);
+        // precision 2: the resample interpolates linearly between bins, which for a
+        // 1/sqrt(f) curve deviates from the analytic value by a few thousandths of a dB.
+        Assert.Equal(-10.0 * Math.Log10(high.X / low.X), high.Y - low.Y, precision: 2);
+    }
+
+    [Fact]
+    public void LiveSplTilt_FlattensWhiteOnTheBandAxis()
+    {
+        // The band-power (SPL) display tilts even a flat white PSD by +3 dB/octave
+        // (band power grows with bandwidth), so the compensation there must follow
+        // the BAND law, not the per-bin line — a zero PSD slope still compensates.
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.Rta,
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel,
+            NoiseColor = NoiseColor.White,
+            CompensateNoiseTilt = true,
+            CalibrationId = null,
+            SmoothingInverseOctaves = 0
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+
+        var magnitude = new double[(noise.SequenceLength / 2) + 1];
+        Array.Fill(magnitude, 0.1);
+
+        LineSeries compensated = factory.BuildInputMagnitudeSeries(magnitude);
+        Assert.NotEmpty(compensated.Points);
+        // The compensation renders the same flat spectrum through the same band
+        // resampler and subtracts, so the cancellation is exact per point.
+        double reference = compensated.Points[0].Y;
+        Assert.All(
+            compensated.Points,
+            point => Assert.Equal(reference, point.Y, precision: 6));
+
+        options.CompensateNoiseTilt = false;
+        LineSeries plain = factory.BuildInputMagnitudeSeries(magnitude);
+        double at2K = PointNear(plain, 2000.0).Y;
+        double at8K = PointNear(plain, 8000.0).Y;
+        // Uncompensated white climbs ~3.01 dB per octave on the band axis.
+        Assert.Equal(2.0 * 10.0 * Math.Log10(2.0), at8K - at2K, precision: 1);
+    }
+
+    private static OxyPlot.DataPoint PointNear(LineSeries series, double frequency)
+    {
+        OxyPlot.DataPoint nearest = series.Points[0];
+        foreach (OxyPlot.DataPoint point in series.Points)
+        {
+            if (Math.Abs(Math.Log2(point.X / frequency)) <
+                Math.Abs(Math.Log2(nearest.X / frequency)))
+            {
+                nearest = point;
+            }
+        }
+
+        return nearest;
     }
 }

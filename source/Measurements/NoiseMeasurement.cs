@@ -90,8 +90,13 @@ namespace Resonalyze
         /// </summary>
         public bool IsMicOnly => !HasConfiguredLoopback;
 
+        // The analysis path follows the SELECTED mode, forced to RTA when no loopback
+        // reference exists to form a transfer function from. Not keyed on the signal:
+        // Silent is RTA-exclusive by invariant (settings load and the options panel
+        // both enforce it), and a mode change always restarts the capture (it is part
+        // of Form1's LiveSpectrumRestartSnapshot), so this cannot flip mid-run.
         public bool IsRtaCapture =>
-            IsMicOnly || LiveSpectrumOptions.NoiseColor == NoiseColor.Silent;
+            IsMicOnly || LiveSpectrumOptions.AnalysisMode == LiveAnalysisMode.Rta;
 
         /// <summary>
         /// The digital identity of the microphone input this analyzer is configured
@@ -516,6 +521,13 @@ namespace Resonalyze
             return success;
         }
 
+        // An RTA capture opens the microphone ALONE even when a loopback reference is
+        // configured: the reference-free analysis never reads it, and requesting it
+        // is not merely a wasted channel — WASAPI refuses to open an endpoint with
+        // fewer channels than the mic+loopback routing requires, and ASIO widens the
+        // captured channel window to span from the mic to the reference. The
+        // configured offsets themselves are kept (HasConfiguredLoopback still gates
+        // the Transfer mode's availability); only this session request drops them.
         private AudioSessionRequest BuildSessionRequest() =>
             AudioSessionRequestBuilder.Build(
                 AudioBackend,
@@ -523,9 +535,9 @@ namespace Resonalyze
                 Bits,
                 PlaybackChannel,
                 WaveInputChannelOffset,
-                WaveLoopbackInputChannelOffset,
+                IsRtaCapture ? null : WaveLoopbackInputChannelOffset,
                 AsioInputChannelOffset,
-                AsioLoopbackInputChannelOffset,
+                IsRtaCapture ? null : AsioLoopbackInputChannelOffset,
                 AsioOutputChannelOffset,
                 OutputDeviceNumber,
                 InputDeviceNumber,

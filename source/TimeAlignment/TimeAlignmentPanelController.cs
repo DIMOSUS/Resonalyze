@@ -40,6 +40,18 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // The fade the Auto mode puts around the detected pass band.
     private const double AutoBandFadeOctaves = 0.5;
 
+    // Names the reference both envelope curves are drawn against, so a Compare
+    // curve sitting below Main reads as the level difference it is.
+    private const string EnvelopeDecibelAxisTitle = "dB re Main peak";
+
+    // How far under its own maximum one envelope curve is drawn before the
+    // floor takes over, and how tall the envelope plot opens: a Compare record
+    // tens of dB under Main (a sub against a tweeter) would otherwise squeeze
+    // the arrivals into a sliver. The axis still PANS to the full range —
+    // only the opening view is bounded.
+    private const double CurveFloorDb = 80.0;
+    private const double EnvelopeOpeningSpanDb = 100.0;
+
     public TimeAlignmentPanelController(
         Form owner,
         TimeAlignmentPanel panel,
@@ -557,11 +569,21 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         TimeAlignmentAnalysisResult? compareResult = null)
     {
         double[] envelope = result.EnvelopeSamples;
-        if (envelope.Length == 0 || result.EnvelopePeak <= 0 || sampleRate <= 0)
+        if (envelope.Length == 0 || result.StrongestEnvelopePeak <= 0 || sampleRate <= 0)
         {
             ClearEnvelopePreview();
             return;
         }
+
+        // ONE reference for both curves: the Main record's strongest peak.
+        // Normalizing each curve by its own first-arrival level (what this plot
+        // used to do) makes the dB axis mean something different per curve — a
+        // record whose pick sits 6 dB below its peak and one whose pick sits 25
+        // dB below get drawn on references 19 dB apart, so two measurements of
+        // the same level read as 19 dB apart on screen. The prominence of a pick
+        // is an analysis figure, not a property of the record; the strongest
+        // peak is, so it is the only reference that keeps levels comparable.
+        double referenceAmplitude = result.StrongestEnvelopePeak;
 
         int radius = Math.Min(
             envelope.Length / 2,
@@ -585,6 +607,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         int step = Math.Max(1, radius * 2 / 600);
         LineSeries mainSeries = CreateEnvelopeSeries(
             result,
+            referenceAmplitude,
             sampleRate,
             radius,
             step,
@@ -597,10 +620,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         var model = CreatePreviewPlotModel("Envelope Around Peak");
         model.Axes.Add(CreateMillisecondsAxis(minMilliseconds, maxMilliseconds));
         var dbAxis = CreateDecibelAxis();
-        dbAxis.AbsoluteMaximum = maxDb + 30;
-        dbAxis.AbsoluteMinimum = minDb - 10;
-        dbAxis.Maximum = maxDb + 2;
-        dbAxis.Minimum = minDb - 2;
+        dbAxis.Title = EnvelopeDecibelAxisTitle;
+        ApplyEnvelopeDecibelRange(dbAxis, maxDb, minDb);
         model.Axes.Add(dbAxis);
 
         model.Series.Add(mainSeries);
@@ -608,6 +629,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             LineSeries compareSeries = CreateEnvelopeSeries(
                 compareResult.Value,
+                referenceAmplitude,
                 sampleRate,
                 radius,
                 step,
@@ -618,10 +640,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 out double compareMinDb);
             maxDb = Math.Max(maxDb, compareMaxDb);
             minDb = Math.Min(minDb, compareMinDb);
-            dbAxis.AbsoluteMaximum = maxDb + 30;
-            dbAxis.AbsoluteMinimum = minDb - 10;
-            dbAxis.Maximum = maxDb + 2;
-            dbAxis.Minimum = minDb - 2;
+            ApplyEnvelopeDecibelRange(dbAxis, maxDb, minDb);
             model.Series.Add(compareSeries);
         }
 
@@ -631,17 +650,32 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 model,
                 result,
                 compareResult.Value,
+                referenceAmplitude,
                 compareOffsetMilliseconds);
         }
         else
         {
-            AddMainPeakMarkers(model, result);
+            AddMainPeakMarkers(model, result, referenceAmplitude);
         }
         envelopePlotView.Model = model;
     }
 
-    private static LineSeries CreateEnvelopeSeries(
+    private static void ApplyEnvelopeDecibelRange(
+        LinearAxis axis,
+        double maxDb,
+        double minDb)
+    {
+        axis.AbsoluteMaximum = maxDb + 30;
+        axis.AbsoluteMinimum = minDb - 10;
+        axis.Maximum = maxDb + 2;
+        axis.Minimum = Math.Max(minDb - 2, maxDb - EnvelopeOpeningSpanDb);
+    }
+
+    // internal for the plot-construction tests: the reference both curves are
+    // drawn against is the whole point of this builder.
+    internal static LineSeries CreateEnvelopeSeries(
         TimeAlignmentAnalysisResult result,
+        double referenceAmplitude,
         int sampleRate,
         int radius,
         int step,
@@ -665,12 +699,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             int index = DspMath.WrapIndex(result.EnvelopePeakIndex + offset, envelope.Length);
             double milliseconds = offset * 1000.0 / sampleRate + xOffsetMilliseconds;
-            double relativeAmplitude = envelope[index] / result.EnvelopePeak;
+            double relativeAmplitude = envelope[index] / referenceAmplitude;
             double decibels = DataHelper.AmplitudeToDecibels(relativeAmplitude);
-            double clampedDecibels = Math.Max(-80, decibels);
-            series.Points.Add(new DataPoint(milliseconds, clampedDecibels));
-            localMaxDb = Math.Max(localMaxDb, clampedDecibels);
-            localMinDb = Math.Min(localMinDb, clampedDecibels);
+            series.Points.Add(new DataPoint(milliseconds, decibels));
+            localMaxDb = Math.Max(localMaxDb, decibels);
+            localMinDb = Math.Min(localMinDb, decibels);
         }
 
         // Min/max pooling per decimation bucket: sampling every Nth value would
@@ -706,14 +739,30 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             }
         }
 
+        // The floor rides under THIS curve's own maximum rather than under the
+        // shared reference: it is there to stop a null from dragging the axis
+        // to the numeric floor, and a Compare record genuinely quieter than
+        // Main must still be drawn whole instead of flattened onto an absolute
+        // line 80 dB under Main's peak.
+        double floorDb = localMaxDb - CurveFloorDb;
+        for (int i = 0; i < series.Points.Count; i++)
+        {
+            DataPoint point = series.Points[i];
+            if (point.Y < floorDb)
+            {
+                series.Points[i] = new DataPoint(point.X, floorDb);
+            }
+        }
+
         maxDb = localMaxDb;
-        minDb = localMinDb;
+        minDb = Math.Max(localMinDb, floorDb);
         return series;
     }
 
     private static void AddMainPeakMarkers(
         PlotModel model,
-        TimeAlignmentAnalysisResult mainResult)
+        TimeAlignmentAnalysisResult mainResult,
+        double referenceAmplitude)
     {
         double strongestMilliseconds =
             mainResult.StrongestDelayMilliseconds -
@@ -722,7 +771,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             model,
             "M First",
             0.0,
-            GetPeakMarkerDecibels(mainResult, mainResult.EnvelopePeakIndex),
+            GetPeakMarkerDecibels(mainResult, referenceAmplitude, mainResult.EnvelopePeakIndex),
             OxyColor.FromRgb(255, 96, 96),
             PlotCalloutDirection.LeftUp);
         if (Math.Abs(strongestMilliseconds) > 0.001)
@@ -731,7 +780,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 model,
                 "M Peak",
                 strongestMilliseconds,
-                GetPeakMarkerDecibels(mainResult, mainResult.StrongestEnvelopePeakIndex),
+                GetPeakMarkerDecibels(mainResult, referenceAmplitude, mainResult.StrongestEnvelopePeakIndex),
                 OxyColor.FromRgb(140, 170, 255),
                 PlotCalloutDirection.RightUp);
         }
@@ -741,12 +790,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         PlotModel model,
         TimeAlignmentAnalysisResult mainResult,
         TimeAlignmentAnalysisResult compareResult,
+        double referenceAmplitude,
         double compareFirstArrivalMilliseconds)
     {
         double mainFirstArrivalDecibels =
-            GetPeakMarkerDecibels(mainResult, mainResult.EnvelopePeakIndex);
+            GetPeakMarkerDecibels(mainResult, referenceAmplitude, mainResult.EnvelopePeakIndex);
         double compareFirstArrivalDecibels =
-            GetPeakMarkerDecibels(compareResult, compareResult.EnvelopePeakIndex);
+            GetPeakMarkerDecibels(compareResult, referenceAmplitude, compareResult.EnvelopePeakIndex);
         double mainStrongestMilliseconds =
             mainResult.StrongestDelayMilliseconds -
             mainResult.FirstArrivalDelayMilliseconds;
@@ -754,9 +804,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             compareResult.StrongestDelayMilliseconds -
             mainResult.FirstArrivalDelayMilliseconds;
         double mainStrongestDecibels =
-            GetPeakMarkerDecibels(mainResult, mainResult.StrongestEnvelopePeakIndex);
+            GetPeakMarkerDecibels(mainResult, referenceAmplitude, mainResult.StrongestEnvelopePeakIndex);
         double compareStrongestDecibels =
-            GetPeakMarkerDecibels(compareResult, compareResult.StrongestEnvelopePeakIndex);
+            GetPeakMarkerDecibels(compareResult, referenceAmplitude, compareResult.StrongestEnvelopePeakIndex);
 
         AddCalloutMarker(
             model,
@@ -822,18 +872,25 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         });
     }
 
-    private static double GetPeakMarkerDecibels(
+    internal static double GetPeakMarkerDecibels(
         TimeAlignmentAnalysisResult result,
+        double referenceAmplitude,
         int peakIndex)
     {
         if ((uint)peakIndex >= (uint)result.EnvelopeSamples.Length ||
-            result.EnvelopePeak <= 0)
+            referenceAmplitude <= 0)
         {
             return 0.0;
         }
 
-        double relativeAmplitude = result.EnvelopeSamples[peakIndex] / result.EnvelopePeak;
-        return Math.Max(-80, DataHelper.AmplitudeToDecibels(relativeAmplitude));
+        // Same floor the curve itself is drawn with, so a marker never parks
+        // under its own line on a record much quieter than the reference.
+        double peakDecibels = DataHelper.AmplitudeToDecibels(
+            result.StrongestEnvelopePeak / referenceAmplitude);
+        double relativeAmplitude = result.EnvelopeSamples[peakIndex] / referenceAmplitude;
+        return Math.Max(
+            peakDecibels - CurveFloorDb,
+            DataHelper.AmplitudeToDecibels(relativeAmplitude));
     }
 
     private void ClearEnvelopePreview()
@@ -846,6 +903,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         var model = CreatePreviewPlotModel("Envelope Around Peak");
         model.Axes.Add(CreateMillisecondsAxis(-50, 50));
         var dbAxis = CreateDecibelAxis();
+        dbAxis.Title = EnvelopeDecibelAxisTitle;
         dbAxis.AbsoluteMaximum = 0;
         dbAxis.AbsoluteMinimum = -80;
         dbAxis.Maximum = 0;

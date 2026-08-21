@@ -1,4 +1,4 @@
-using System.Windows.Forms;
+﻿using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.History;
 using Resonalyze.Options;
@@ -148,6 +148,15 @@ namespace Resonalyze
                 tag == LiveSpectrumController.LiveSpectrumInputMagnitudeTag
                     ? liveSpectrumController.BuildRawRtaCapture()
                     : plotModelFactory.BuildRawCurve(tag));
+            // The impulse view's axes are all view settings — unit, origin, scale,
+            // polarity — so its overlays store the record's own coordinates and are
+            // re-framed on every draw instead of freezing the ones they were taken in.
+            overlayCollection.SetImpulseCaptureProvider(
+                tag => plotModelFactory.BuildImpulseCapture(tag));
+            overlayCollection.SetImpulseFrameProvider(
+                () => CurrentMode == Mode.ImpulseResponse
+                    ? plotModelFactory.ImpulseFrame
+                    : null);
             modeController = dependencies.ModeController;
             commandController = dependencies.CommandController;
             timeAlignmentController = dependencies.TimeAlignmentController;

@@ -853,6 +853,16 @@ absolute timeline. When zero sits on an arrival, the tracker also reads the path
 length that time corresponds to in air. **Invert polarity** flips the displayed
 impulse and step the same view-only way.
 
+An [overlay](#plot-overlays) captured here stores the record's own coordinates —
+absolute sample indices and raw levels — and is redrawn under whatever framing the
+view has later, so it follows the time unit, the time zero, the amplitude scale and
+the polarity flip instead of staying frozen in the ones it was taken under. Levels
+are re-normalized against the LIVE record's peak, so how far the snapshot sits below
+what is being measured now stays readable. Two things cannot be undone that way and
+travel baked in: the band filter and the ETC smoothing are part of the values. A very
+long record is stored thinned to its extremes, so zooming an overlay to sample level
+shows the thinned outline where the live trace shows samples.
+
 Two markers name the instants the rest of the app acts on: the estimated
 **arrival** — the same shared figure the Auto gate offsets are anchored on — and
 the strongest **peak**, labelled with the record's signal-to-noise ratio whenever

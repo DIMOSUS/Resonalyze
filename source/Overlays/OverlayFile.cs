@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
@@ -114,6 +114,21 @@ public sealed class OverlayFile
     // fallback captures (imported, operations, legacy). Additive, so no file version
     // bump: older files deserialize to empty and older app builds ignore the property.
     public OverlayPoint[] RawSpectrum { get; set; } = Array.Empty<OverlayPoint>();
+
+    // Captured impulse traces only: the trace in the record's own ABSOLUTE sample
+    // indices and raw linear values, which is what lets the slot be re-drawn under the
+    // view's current time unit, time origin, amplitude scale and polarity. A
+    // frequency-domain overlay needs nothing like this — its axis means the same thing
+    // forever — but the impulse view's axes are all view settings, and a snapshot frozen
+    // in drawn coordinates silently lands where the live curve never would. Empty for
+    // every other mode and for legacy files, which keep the frozen Points. Additive, so
+    // no file version bump.
+    public OverlayPoint[] RawImpulse { get; set; } = Array.Empty<OverlayPoint>();
+
+    // Captured impulse traces only: the record's own peak at capture time, in the same
+    // raw units as RawImpulse. Used only when there is no live measurement to normalize
+    // against. Null for every other mode and for legacy files.
+    public double? RawImpulsePeakReference { get; set; }
 
     // Captured FR only: microphone correction frozen on the 1024 logarithmic output
     // frequencies. It is subtracted after smoothing, matching the primary FR path.

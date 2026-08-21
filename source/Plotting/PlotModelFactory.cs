@@ -218,6 +218,67 @@ internal sealed class PlotModelFactory
     }
 
     /// <summary>
+    /// An impulse trace in the framing-independent form an overlay stores (see
+    /// <see cref="ImpulseOverlayCapture"/>): absolute sample indices and raw linear
+    /// values, produced by re-running the trace under a canonical framing rather than
+    /// by unpicking what was drawn. Null when the tag is not an impulse trace or there
+    /// is no transfer IR behind it.
+    /// </summary>
+    public ImpulseOverlayCapture? BuildImpulseCapture(CurveTag tag)
+    {
+        if (tag.Mode != Mode.ImpulseResponse ||
+            !measurementContext.HasTransferImpulseResponse)
+        {
+            return null;
+        }
+
+        IImpulseMeasurement? source = tag.Source == CurveSource.Compare
+            ? TryCreateCompareMeasurement()?.Measurement
+            : measurementContext.CreatePrimaryMeasurement();
+        if (source == null)
+        {
+            return null;
+        }
+
+        // Everything that CANNOT be re-framed later stays as the view has it — the band
+        // and the envelope smoothing are part of the values. Everything that can is
+        // neutralized, so the stored numbers are the record's own.
+        var canonical = new ImpulseResponseOptions
+        {
+            ShowImpulse = tag.Kind == AnalysisCurveKind.Primary,
+            ShowEnvelope = tag.Kind == AnalysisCurveKind.ImpulseEnvelope,
+            ShowStep = tag.Kind == AnalysisCurveKind.ImpulseStep,
+            EnvelopeSmoothingMs = impulseResponseOptions.EnvelopeSmoothingMs,
+            NormalizeStepToImpulsePeak = impulseResponseOptions.NormalizeStepToImpulsePeak,
+            BandFilterOctaves = impulseResponseOptions.BandFilterOctaves,
+            BandCenterHz = impulseResponseOptions.BandCenterHz,
+            AmplitudeScale = ImpulseAmplitudeScale.Linear,
+            TimeUnit = ImpulseTimeUnit.Samples,
+            TimeOrigin = ImpulseTimeOrigin.RecordStart,
+            Invert = false,
+        };
+
+        ImpulseCurveSet set = DataHelper.GetImpulseCurves(
+            source, canonical, new ImpulseRenderFrame());
+        AnalysisCurve? curve = tag.Kind switch
+        {
+            AnalysisCurveKind.ImpulseEnvelope => set.Envelope,
+            AnalysisCurveKind.ImpulseStep => set.Step,
+            _ => set.Impulse
+        };
+        if (curve is not { Points.Count: > 1 })
+        {
+            return null;
+        }
+
+        return new ImpulseOverlayCapture(
+            ImpulseOverlayThinning.Thin(curve.Points),
+            tag.Kind,
+            set.PeakReference,
+            source.SampleRate);
+    }
+
+    /// <summary>
     /// The RAW (unsmoothed) samples of the live RTA trace plus the mode's current
     /// smoothing code, so a captured overlay stores the reference and re-applies its own
     /// smoothing. Only the relative RTA has such a form (see
@@ -928,9 +989,19 @@ internal sealed class PlotModelFactory
         return model;
     }
 
+    /// <summary>
+    /// The framing the impulse view is drawn in, so a stored overlay can be re-drawn
+    /// under the framing on screen NOW instead of the one it happened to be captured
+    /// in. Refreshed by every <see cref="CreateImpulseResponse"/> — overlays are added
+    /// to a model after it is built, so what they read is this build's.
+    /// </summary>
+    public ImpulseOverlayFrame ImpulseFrame { get; private set; }
+
     public PlotModel CreateImpulseResponse(bool includeCurves)
     {
         ImpulseResponseOptions opt = impulseResponseOptions;
+        ImpulseFrame = new ImpulseOverlayFrame(
+            opt, 0.0, null, expSweepMeasurement.SampleRate);
         // A band-limited view is NOT the record, and the title says so — the same reason
         // the Live Spectrum names an active tilt compensation instead of letting a
         // reshaped curve pass for the plain measurement.
@@ -956,6 +1027,8 @@ internal sealed class PlotModelFactory
             defaultSpan = ResolveImpulseDefaultSpan(main, opt, origin);
             ImpulseCurveSet mainSet = DataHelper.GetImpulseCurves(
                 main, opt, new ImpulseRenderFrame(origin));
+            ImpulseFrame = new ImpulseOverlayFrame(
+                opt, origin, mainSet.PeakReference, main.SampleRate);
             AddImpulseSeries(model, mainSet, main.SampleRate, origin, null, drawn, stepCurves);
 
             if (CompareSharesATimeReference() &&

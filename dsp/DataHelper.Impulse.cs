@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -134,7 +134,7 @@ namespace Resonalyze.Dsp
             {
                 data.Add(new SignalPoint(
                     ImpulseTime(i, opt, frame, sampleRate),
-                    ScaleAmplitude(samples[i], opt.AmplitudeScale, reference)));
+                    ScaleImpulseAmplitude(samples[i], opt.AmplitudeScale, reference)));
             }
 
             return data;
@@ -215,7 +215,7 @@ namespace Resonalyze.Dsp
             {
                 data.Add(new SignalPoint(
                     ImpulseTime(i, opt, frame, sampleRate),
-                    ScaleAmplitude(magnitude[i], opt.AmplitudeScale, reference)));
+                    ScaleImpulseAmplitude(magnitude[i], opt.AmplitudeScale, reference)));
             }
 
             return data;
@@ -263,7 +263,13 @@ namespace Resonalyze.Dsp
             return data;
         }
 
-        private static double ScaleAmplitude(
+        /// <summary>
+        /// One trace value in the view's amplitude scale. Public because the overlay
+        /// path re-scales a STORED trace with it: a snapshot keeps its raw linear
+        /// values, and going through this is what makes it land where the live curve
+        /// would rather than where it happened to be drawn.
+        /// </summary>
+        public static double ScaleImpulseAmplitude(
             double value,
             ImpulseAmplitudeScale scale,
             double reference) =>

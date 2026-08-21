@@ -1096,17 +1096,14 @@ internal sealed class PlotModelFactory
         ApplyCurveRange(
             timeAxis, point => point.X, drawn.Concat(stepCurves).ToArray());
         ApplyDefaultImpulseSpan(timeAxis, opt, defaultSpan);
-        // LEVEL is not bounded the same way. Overlays are attached to the model after it
-        // is built, and one captured from a louder record legitimately re-frames above
-        // 100 % or 0 dB against the current one; pinning the absolute bounds to the live
-        // curves would clip exactly the level difference the shared normalization exists
-        // to show, with no zoom able to reach it.
-        ApplyCurveRange(
-            valueAxis,
-            point => point.Y,
-            (stepOnLeft ? stepCurves : drawn).ToArray(),
-            bindAbsolute: false);
-        ApplyDefaultDecibelWindow(valueAxis, opt, stepOnLeft);
+        // LEVEL is not framed at all — the axis scales itself. Overlays are attached to
+        // the model AFTER it is built, and in OxyPlot an explicit Minimum/Maximum wins
+        // over the data range, so a snapshot from a louder record — which legitimately
+        // re-frames above 100 % or 0 dB against the current one — would open partly off
+        // screen and pinned absolute bounds would put it out of reach entirely. Left to
+        // itself the axis takes in whatever is drawn on it, live or attached later, which
+        // is what makes the shared normalization readable.
+        ApplyDecibelFloor(valueAxis, opt, stepOnLeft, drawn);
         model.Axes.Add(timeAxis);
         model.Axes.Add(valueAxis);
 
@@ -1122,12 +1119,6 @@ internal sealed class PlotModelFactory
             Title = stepOnLeft ? ImpulseValueUnit(opt.AmplitudeScale) : "step",
             IsAxisVisible = !stepOnLeft && stepCurves.Count > 0,
         };
-        if (!stepOnLeft)
-        {
-            ApplyCurveRange(
-                counterpartAxis, point => point.Y, stepCurves.ToArray(), bindAbsolute: false);
-        }
-
         model.Axes.Add(counterpartAxis);
         return model;
     }
@@ -1201,20 +1192,41 @@ internal sealed class PlotModelFactory
     // whole curve so the floor stays reachable by zooming out.
     private const double ImpulseDecibelWindow = 100.0;
 
-    private static void ApplyDefaultDecibelWindow(
+    // Only the FLOOR is pinned, and only in dB: the top is left to the data so a louder
+    // overlay still lifts it. Without the floor the axis would fit the silence the
+    // impulse dives to at every zero crossing and spend four fifths of the plot on it.
+    private static void ApplyDecibelFloor(
         LinearAxis axis,
         ImpulseResponseOptions opt,
-        bool stepOnLeft)
+        bool stepOnLeft,
+        IReadOnlyList<AnalysisCurve?> curves)
     {
-        if (stepOnLeft ||
-            opt.AmplitudeScale != ImpulseAmplitudeScale.Decibels ||
-            !double.IsFinite(axis.Maximum) ||
-            !double.IsFinite(axis.Minimum))
+        if (stepOnLeft || opt.AmplitudeScale != ImpulseAmplitudeScale.Decibels)
         {
             return;
         }
 
-        axis.Minimum = Math.Max(axis.Minimum, axis.Maximum - ImpulseDecibelWindow);
+        double maximum = double.NegativeInfinity;
+        foreach (AnalysisCurve? curve in curves)
+        {
+            if (curve == null)
+            {
+                continue;
+            }
+
+            foreach (SignalPoint point in curve.Points)
+            {
+                if (double.IsFinite(point.Y))
+                {
+                    maximum = Math.Max(maximum, point.Y);
+                }
+            }
+        }
+
+        if (double.IsFinite(maximum))
+        {
+            axis.Minimum = maximum - ImpulseDecibelWindow;
+        }
     }
 
     private static string ImpulseValueUnit(ImpulseAmplitudeScale scale) =>
@@ -1428,8 +1440,7 @@ internal sealed class PlotModelFactory
     private static void ApplyCurveRange(
         LinearAxis axis,
         Func<SignalPoint, double> selector,
-        AnalysisCurve?[] curves,
-        bool bindAbsolute = true)
+        params AnalysisCurve?[] curves)
     {
         double minimum = double.PositiveInfinity;
         double maximum = double.NegativeInfinity;
@@ -1466,11 +1477,8 @@ internal sealed class PlotModelFactory
 
         axis.Minimum = minimum;
         axis.Maximum = maximum;
-        if (bindAbsolute)
-        {
-            axis.AbsoluteMinimum = minimum;
-            axis.AbsoluteMaximum = maximum;
-        }
+        axis.AbsoluteMinimum = minimum;
+        axis.AbsoluteMaximum = maximum;
     }
 
     public PlotModel CreateAutocorrelation(bool includeCurves)

@@ -854,7 +854,8 @@ public sealed class PlotModelFactoryTests
     [InlineData(ImpulseAmplitudeScale.Linear)]
     [InlineData(ImpulseAmplitudeScale.PercentOfPeak)]
     [InlineData(ImpulseAmplitudeScale.Decibels)]
-    public void ImpulseResponse_LocksValueAxisToCurveRange(ImpulseAmplitudeScale scale)
+    public void ImpulseResponse_FramesTheTimeAxisAndOnlyTheDecibelFloor(
+        ImpulseAmplitudeScale scale)
     {
         var ir = new Complex[8192];
         int peak = 1024;
@@ -885,20 +886,21 @@ public sealed class PlotModelFactoryTests
         var timeAxis = model.Axes.First(axis =>
             axis.Position == OxyPlot.Axes.AxisPosition.Bottom);
 
-        double expectedMinY = series.Points.Min(point => point.Y);
+        // The level axis is left to scale itself so a later overlay can widen it (see
+        // ImpulseResponse_LevelAxisTakesInAnOverlayAttachedAfterTheBuild); only the dB
+        // floor is pinned, because the impulse dives to the deconvolution silence floor
+        // at every zero crossing and fitting to that spends most of the plot on it.
         double expectedMaxY = series.Points.Max(point => point.Y);
-        // The VISIBLE range opens on the drawn curve in every scale; the absolute bounds
-        // are deliberately left free, because an overlay attached after the build can
-        // legitimately re-frame above it (see
-        // ImpulseResponse_LeavesTheLevelAxisFreeToWidenForALouderOverlay).
-        Assert.Equal(expectedMaxY, valueAxis.Maximum, precision: 9);
-        // ...but the dB view OPENS on a 100 dB window: the impulse dives to the
-        // deconvolution silence floor at every zero crossing, and fitting the visible
-        // range to that spends most of the plot on arithmetic nobody reads.
-        double expectedVisibleMinY = scale == ImpulseAmplitudeScale.Decibels
-            ? Math.Max(expectedMinY, expectedMaxY - 100.0)
-            : expectedMinY;
-        Assert.Equal(expectedVisibleMinY, valueAxis.Minimum, precision: 9);
+        if (scale == ImpulseAmplitudeScale.Decibels)
+        {
+            Assert.Equal(expectedMaxY - 100.0, valueAxis.Minimum, precision: 9);
+        }
+        else
+        {
+            Assert.True(double.IsNaN(valueAxis.Minimum));
+        }
+
+        Assert.True(double.IsNaN(valueAxis.Maximum));
 
         // The time axis can REACH the whole record — the traces are built whole, so
         // zooming out ends at the end of the tail rather than at a length setting...
@@ -1055,29 +1057,80 @@ public sealed class PlotModelFactoryTests
         }
     }
 
-    [Fact]
-    public void ImpulseResponse_LeavesTheLevelAxisFreeToWidenForALouderOverlay()
+    [Theory]
+    [InlineData(ImpulseAmplitudeScale.Linear)]
+    [InlineData(ImpulseAmplitudeScale.PercentOfPeak)]
+    [InlineData(ImpulseAmplitudeScale.Decibels)]
+    public void ImpulseResponse_LevelAxisTakesInAnOverlayAttachedAfterTheBuild(
+        ImpulseAmplitudeScale scale)
     {
-        // Overlays join the model after it is built. A snapshot from a louder record
-        // re-frames above the live curve on purpose, and a pinned absolute bound would
-        // clip exactly the difference the shared normalization exists to show.
+        // Overlays join the model AFTER it is built, and a snapshot from a louder record
+        // re-frames above the live curve on purpose. An explicit Minimum/Maximum would
+        // win over the data range in OxyPlot, so the axis is left to scale itself and the
+        // level difference the shared normalization exists to show stays on screen.
         (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
         {
-            PlotModelFactory factory = CreateFactory(
-                measurement, noise, impulseOptions: new ImpulseResponseOptions());
+            var options = new ImpulseResponseOptions { AmplitudeScale = scale };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+            var model = factory.CreateImpulseResponse(includeCurves: true);
+            var valueAxis = model.Axes.First(axis =>
+                axis.Key == PlotModelFactory.ImpulseAxisKey);
+
+            // What an overlay louder than the live record looks like once re-framed. The
+            // linear case is read off the drawn curve: the axis has no data range yet,
+            // since nothing has updated the model.
+            double liveMaximum = ((OxyPlot.Series.LineSeries)model.Series[0])
+                .Points.Max(point => point.Y);
+            double louder = scale switch
+            {
+                ImpulseAmplitudeScale.Decibels => 6.0,
+                ImpulseAmplitudeScale.PercentOfPeak => 200.0,
+                _ => liveMaximum * 2.0
+            };
+            var overlay = new OxyPlot.Series.LineSeries
+            {
+                YAxisKey = PlotModelFactory.ImpulseAxisKey
+            };
+            overlay.Points.Add(new OxyPlot.DataPoint(0, 0));
+            overlay.Points.Add(new OxyPlot.DataPoint(1, louder));
+            model.Series.Add(overlay);
+            ((OxyPlot.IPlotModel)model).Update(true);
+
+            Assert.True(
+                valueAxis.ActualMaximum >= louder,
+                $"axis stopped at {valueAxis.ActualMaximum}, overlay reaches {louder}");
+        }
+    }
+
+    [Fact]
+    public void ImpulseResponse_PinsTheDecibelFloorButNotTheTop()
+    {
+        // The floor is what keeps the plot off the silence the impulse dives to at every
+        // zero crossing; the top has to stay free for the case above.
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions
+            {
+                AmplitudeScale = ImpulseAmplitudeScale.Decibels
+            };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
 
             var model = factory.CreateImpulseResponse(includeCurves: true);
             var valueAxis = model.Axes.First(axis =>
                 axis.Key == PlotModelFactory.ImpulseAxisKey);
-            var timeAxis = model.Axes.First(axis =>
-                axis.Position == OxyPlot.Axes.AxisPosition.Bottom);
+            var series = (OxyPlot.Series.LineSeries)model.Series[0];
 
-            Assert.Equal(double.MaxValue, valueAxis.AbsoluteMaximum);
-            Assert.Equal(double.MinValue, valueAxis.AbsoluteMinimum);
-            // Time stays bounded by the record, which is a real limit.
-            Assert.True(double.IsFinite(timeAxis.AbsoluteMaximum));
+            Assert.Equal(
+                series.Points.Max(point => point.Y) - 100.0,
+                valueAxis.Minimum,
+                precision: 9);
+            Assert.True(double.IsNaN(valueAxis.Maximum));
         }
     }
 

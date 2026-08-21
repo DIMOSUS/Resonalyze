@@ -40,10 +40,45 @@ namespace Resonalyze
         Infinite
     }
 
+    /// <summary>
+    /// What the live analyzer measures.
+    /// <list type="bullet">
+    /// <item><see cref="TransferFunction"/> — the dual-channel H1 estimate of
+    /// microphone over loopback reference, with coherence. Needs a configured
+    /// loopback channel; without one the analyzer can only run reference-free,
+    /// so the effective mode falls back to <see cref="Rta"/>.</item>
+    /// <item><see cref="Rta"/> — the reference-free magnitude spectrum of the
+    /// microphone input alone. The only mode that can show absolute dB SPL, and
+    /// the only mode where the <see cref="NoiseColor.Silent"/> (ambient) signal
+    /// makes sense.</item>
+    /// </list>
+    /// </summary>
+    public enum LiveAnalysisMode
+    {
+        TransferFunction,
+        Rta
+    }
+
     public sealed class LiveSpectrumOptions
     {
+        /// <summary>
+        /// The selected analysis mode. The invariant that <see cref="NoiseColor.Silent"/>
+        /// exists only in <see cref="LiveAnalysisMode.Rta"/> is enforced at settings load
+        /// and by <c>LiveSpectrumController.NormalizeSignalType</c>, never assumed here.
+        /// </summary>
+        public LiveAnalysisMode AnalysisMode { get; set; } = LiveAnalysisMode.TransferFunction;
+
         /// <summary>Spectral colour of the excitation noise played during measurement.</summary>
         public NoiseColor NoiseColor { get; set; } = NoiseColor.PinkPeriodic;
+
+        /// <summary>
+        /// Compensates the tilt the excitation noise itself prints onto the
+        /// reference-free RTA display (pink reads −3 dB/octave on the per-bin dB
+        /// axis even through a flat system), so a flat system reads flat. RTA mode
+        /// only — the transfer function divides the excitation out — and inert for
+        /// <see cref="NoiseColor.Silent"/>, whose excitation spectrum is unknown.
+        /// </summary>
+        public bool CompensateNoiseTilt { get; set; }
 
         /// <summary>
         /// Which microphone calibration corrects the live curves, by id (see
@@ -108,8 +143,34 @@ namespace Resonalyze
         /// Vertical scale of the live plot. In <see cref="MagnitudeScale.SoundPressureLevel"/>
         /// the reference-free RTA (microphone) spectrum is shown in absolute dB SPL
         /// (mic + calibration offset). The transfer function is a dimensionless ratio
-        /// with no scalar SPL under noise excitation, so it is not shown on the SPL axis.
+        /// with no scalar SPL under noise excitation, so the scale takes effect only in
+        /// <see cref="LiveAnalysisMode.Rta"/>; a transfer plot always renders relative.
         /// </summary>
         public MagnitudeScale MagnitudeScale { get; set; } = MagnitudeScale.Relative;
+    }
+
+    /// <summary>
+    /// The power spectral density each excitation colour is synthesised with, as the
+    /// dB-per-octave slope the tilt compensation must undo (see
+    /// <see cref="Dsp.NoiseTiltCompensation"/>). The synthesis is exact enough to
+    /// compensate analytically: periodic pink is exactly <c>1/√k</c> per bin, and the
+    /// Kellett pink filter tracks −3 dB/octave within a fraction of a dB.
+    /// </summary>
+    internal static class NoiseColorTilt
+    {
+        /// <summary>
+        /// The PSD slope of the colour in dB per octave, or null when the excitation
+        /// spectrum is unknown (<see cref="NoiseColor.Silent"/> — an external source)
+        /// and no compensation can be honest.
+        /// </summary>
+        public static double? PsdSlopeDbPerOctave(NoiseColor color) => color switch
+        {
+            // Pink: PSD ∝ 1/f → −10·log10(2) dB per octave.
+            NoiseColor.PinkPeriodic or NoiseColor.Pink => -10.0 * Math.Log10(2.0),
+            // Brown: PSD ∝ 1/f² → −20·log10(2) dB per octave.
+            NoiseColor.Brown => -20.0 * Math.Log10(2.0),
+            NoiseColor.White => 0.0,
+            _ => null
+        };
     }
 }

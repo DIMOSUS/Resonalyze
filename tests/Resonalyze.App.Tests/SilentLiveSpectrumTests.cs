@@ -6,7 +6,7 @@ namespace Resonalyze.App.Tests;
 public sealed class SilentLiveSpectrumTests
 {
     [Fact]
-    public async Task EffectiveSplFallback_RebuildsPlaybackAsPeriodicPink()
+    public async Task SilentEnteringTransferMode_RebuildsPlaybackAsPeriodicPink()
     {
         RecordingStreamingSession? session = null;
         var factory = new FakeAudioSessionFactory(
@@ -14,7 +14,13 @@ public sealed class SilentLiveSpectrumTests
                 framesToRaise: 1,
                 failAfterFrames: false));
         using var measurement = new NoiseMeasurement(factory);
-        var options = new LiveSpectrumOptions { NoiseColor = NoiseColor.Silent };
+        // A hand-off from an RTA session: the stored signal is still Silent while the
+        // selected mode is now Transfer, which needs a real excitation to reference.
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.TransferFunction,
+            NoiseColor = NoiseColor.Silent
+        };
         measurement.Init(
             44_100,
             24,
@@ -23,9 +29,7 @@ public sealed class SilentLiveSpectrumTests
             sequenceLength: 1024,
             liveSpectrumOptions: options);
 
-        Assert.True(LiveSpectrumController.NormalizeSignalType(
-            options,
-            MagnitudeScale.Relative));
+        Assert.True(LiveSpectrumController.NormalizeSignalType(options));
         measurement.RefreshPlaybackSignal();
 
         Task<bool> running = measurement.RunAsync();
@@ -48,10 +52,15 @@ public sealed class SilentLiveSpectrumTests
     public void NormalizedSilentSignal_IsCapturedAsPeriodicPinkForPersistence()
     {
         // The persistence follow-up: once the runtime signal is normalized away from
-        // Silent (SPL lost), capturing the live options for the settings file must
-        // record the normalized value, so a stale Silent cannot return on next launch.
-        var options = new LiveSpectrumOptions { NoiseColor = NoiseColor.Silent };
-        LiveSpectrumController.NormalizeSignalType(options, MagnitudeScale.Relative);
+        // Silent (Transfer mode selected), capturing the live options for the settings
+        // file must record the normalized value, so a stale Silent cannot return on
+        // next launch.
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.TransferFunction,
+            NoiseColor = NoiseColor.Silent
+        };
+        LiveSpectrumController.NormalizeSignalType(options);
 
         MeasurementSettingsFile.LiveSpectrumSettings captured =
             MeasurementSettingsFile.LiveSpectrumSettings.Capture(options);
@@ -68,7 +77,13 @@ public sealed class SilentLiveSpectrumTests
                 framesToRaise: 20,
                 failAfterFrames: false));
         using var measurement = new NoiseMeasurement(factory);
-        var options = new LiveSpectrumOptions { NoiseColor = NoiseColor.Silent };
+        // Silent lives in RTA mode only (the invariant NormalizeSignalType keeps), so
+        // the capture is configured the way the app would actually run it.
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.Rta,
+            NoiseColor = NoiseColor.Silent
+        };
         measurement.Init(
             44_100,
             24,

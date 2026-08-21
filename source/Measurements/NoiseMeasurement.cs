@@ -90,8 +90,13 @@ namespace Resonalyze
         /// </summary>
         public bool IsMicOnly => !HasConfiguredLoopback;
 
+        // The analysis path follows the SELECTED mode, forced to RTA when no loopback
+        // reference exists to form a transfer function from. Not keyed on the signal:
+        // Silent is RTA-exclusive by invariant (settings load and the options panel
+        // both enforce it), and a mode change always restarts the capture (it is part
+        // of Form1's LiveSpectrumRestartSnapshot), so this cannot flip mid-run.
         public bool IsRtaCapture =>
-            IsMicOnly || LiveSpectrumOptions.NoiseColor == NoiseColor.Silent;
+            IsMicOnly || LiveSpectrumOptions.AnalysisMode == LiveAnalysisMode.Rta;
 
         /// <summary>
         /// The digital identity of the microphone input this analyzer is configured

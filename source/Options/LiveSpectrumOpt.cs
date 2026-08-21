@@ -18,21 +18,34 @@ namespace Resonalyze.Options
         private WindowType userWindowType = WindowType.Hann;
         private int userOverlapPercent = 50;
 
-        // The user's RTA (input magnitude) choice, tracked independently so the SPL
-        // mode — which forces the RTA on and locks its checkbox — can restore the
-        // real preference when the plot returns to the relative scale.
+        // The user's RTA (input magnitude) choice, tracked independently so RTA mode
+        // — which forces the RTA on and locks its checkbox, it being the only curve
+        // there — can restore the real preference when the panel returns to Transfer
+        // mode.
         private bool userShowInputMagnitude;
 
-        // The user's last chosen signal, remembered so a scale switch keeps it when the
-        // new scale still offers it, and restores it on the way back. The two scales
-        // differ only by their exclusive signal: periodic pink (the transfer function's
-        // reference) is relative-only, Silent (an ambient RTA with no excitation) is
-        // SPL-only; the plain Pink/Brown/White excitations are shared.
+        // The user's last chosen signal, remembered so a mode switch keeps it when
+        // the new mode still offers it, and restores it on the way back. Silent (an
+        // ambient RTA with no excitation) is the one mode-exclusive signal — a
+        // transfer function has nothing to correlate against without an excitation —
+        // so it exists in RTA mode only; every real noise colour is shared.
         private NoiseColor userSignalType = NoiseColor.PinkPeriodic;
 
-        // The designer's normal dB SPL text colour, restored when the choice leaves
-        // the amber view-only state.
+        // The designer's normal text colours, restored when a choice leaves its
+        // amber conflict state.
         private readonly Color splChoiceReadyForeColor;
+        private readonly Color transferChoiceReadyForeColor;
+
+        // Whether the configured input carries a loopback reference — the
+        // prerequisite of Transfer mode. Without one the effective mode falls back
+        // to RTA, and a SELECTED Transfer choice is coloured amber to say so. Kept
+        // as a field so mode clicks can recolour between availability refreshes.
+        private bool hasTransferReference = true;
+
+        // Whether dB SPL currently has no matching calibration while a live curve
+        // exists that the view-only state would hide — the one situation the SPL
+        // choice is coloured amber for. Kept as a field for the same reason.
+        private bool splViewOnlyConflict;
 
         /// <summary>
         /// Raised when the user clicks Reset Average. Handled live (without an
@@ -43,7 +56,8 @@ namespace Resonalyze.Options
         public LiveSpectrumOpt()
         {
             InitializeComponent();
-            splChoiceReadyForeColor = radioMagnitudeSpl.ForeColor;
+            splChoiceReadyForeColor = labelSpl.ForeColor;
+            transferChoiceReadyForeColor = radioModeTransfer.ForeColor;
             SmoothingPresetOptions.Configure(
                 comboSmoothingInverseOctaves, includePsychoacoustic: true);
             buttonResetAverage.Click += (_, _) => ResetAverageRequested?.Invoke();
@@ -51,10 +65,11 @@ namespace Resonalyze.Options
             {
                 CaptureUserSignalType();
                 UpdatePeriodicPinkControls();
+                UpdateTiltAvailability();
             };
             windowComboBox.SelectionChangeCommitted += (_, _) => CaptureUserWindow();
             overlapComboBox.SelectionChangeCommitted += (_, _) => CaptureUserOverlap();
-            radioMagnitudeSpl.CheckedChanged += (_, _) => UpdateScaleDependentControls();
+            radioModeRta.CheckedChanged += (_, _) => UpdateModeDependentControls();
             checkInputMagnitude.Click += (_, _) => CaptureUserInputMagnitude();
             InitializeToolTips();
             Disposed += (_, _) => toolTip.Dispose();
@@ -64,10 +79,11 @@ namespace Resonalyze.Options
             LiveSpectrumOptions options,
             IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries,
             bool isSplAvailable,
-            bool hasLiveCurve)
+            bool hasLiveCurve,
+            bool hasTransferReference)
         {
-            // The signal list is populated per scale in UpdateScaleDependentControls
-            // below; remember the stored signal so it survives a scale round-trip.
+            // The signal list is populated per mode in UpdateModeDependentControls
+            // below; remember the stored signal so it survives a mode round-trip.
             signalTypeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             userSignalType = options.NoiseColor;
 
@@ -122,15 +138,19 @@ namespace Resonalyze.Options
             userShowInputMagnitude = options.ShowInputMagnitude;
             checkPeakHold.Checked = options.PeakHold;
             checkCoherence.Checked = options.ShowCoherence;
+            checkTilt.Checked = options.CompensateNoiseTilt;
 
             // The selection follows the options verbatim: dB SPL is choosable even
-            // without a matching calibration (view-only), so it must not be
-            // silently rewritten to relative here.
-            RefreshSplAvailability(isSplAvailable, hasLiveCurve);
-            bool spl = options.MagnitudeScale == MagnitudeScale.SoundPressureLevel;
-            radioMagnitudeSpl.Checked = spl;
-            radioMagnitudeRelative.Checked = !spl;
-            UpdateScaleDependentControls();
+            // without a matching calibration (view-only), and Transfer even without
+            // a loopback (effective mode falls back to RTA) — neither is silently
+            // rewritten here; amber and the tooltips do the explaining.
+            RefreshAvailability(isSplAvailable, hasLiveCurve, hasTransferReference);
+            checkSpl.Checked =
+                options.MagnitudeScale == MagnitudeScale.SoundPressureLevel;
+            bool rta = options.AnalysisMode == LiveAnalysisMode.Rta;
+            radioModeRta.Checked = rta;
+            radioModeTransfer.Checked = !rta;
+            UpdateModeDependentControls();
 
             MicrophoneCalibrationComboHelper.Configure(
                 comboCalibration,
@@ -151,35 +171,84 @@ namespace Resonalyze.Options
                 calibrationEntries);
 
         /// <summary>
-        /// Recolours the dB SPL choice, in both directions, without disturbing the
-        /// selection: the scale stays selectable either way and is merely view-only
+        /// Recolours the dB SPL and Transfer choices, in both directions, without
+        /// disturbing the selections: dB SPL stays selectable and is merely view-only
         /// (overlays, no live curves) until a matching SPL calibration exists for the
-        /// live input. The host calls this when the configured calibration changes
-        /// while the panel is open.
+        /// live input, and Transfer stays selectable while a missing loopback merely
+        /// forces the effective mode to RTA. The host calls this when the configured
+        /// calibration or the audio routing changes while the panel is open.
         /// </summary>
-        public void RefreshSplAvailability(bool isSplAvailable, bool hasLiveCurve)
+        public void RefreshAvailability(
+            bool isSplAvailable,
+            bool hasLiveCurve,
+            bool hasTransferReference)
         {
-            // The choice is never locked: without a calibration the dB SPL axis is
-            // still useful for VIEWING overlays captured in SPL, so it stays
+            // The SPL choice is never locked: without a calibration the dB SPL axis
+            // is still useful for VIEWING overlays captured in SPL, so it stays
             // clickable. Amber flags a REAL conflict only — a live curve exists that
             // the view-only state would hide. On a freshly started application there
             // is nothing to hide and nothing to warn about, so the choice keeps its
             // normal colour and the tooltip does the explaining.
-            bool viewOnlyConflict = !isSplAvailable && hasLiveCurve;
-            radioMagnitudeSpl.ForeColor = viewOnlyConflict
-                ? UiPalette.WarningAmber
-                : splChoiceReadyForeColor;
+            splViewOnlyConflict = !isSplAvailable && hasLiveCurve;
+            this.hasTransferReference = hasTransferReference;
+            UpdateSplChoiceColor();
+            UpdateTransferChoiceColor();
+            string splDescription = DescribeSplChoice(isSplAvailable, splViewOnlyConflict);
+            toolTip.SetToolTip(labelSpl, splDescription);
+            toolTip.SetToolTip(checkSpl, splDescription);
+        }
+
+        // Colour precedence for the dB SPL row: muted (not applicable in Transfer
+        // mode) → amber (a real view-only conflict) → normal. The label's colour is
+        // managed manually rather than through SetTextEnabledLook, which memorizes
+        // whatever colour it mutes and would hand a stale amber back on restore; the
+        // textless checkbox only needs its AutoCheck toggled.
+        private void UpdateSplChoiceColor()
+        {
+            bool rta = radioModeRta.Checked;
+            labelSpl.ForeColor = !rta
+                ? UiPalette.TextMuted
+                : splViewOnlyConflict
+                    ? UiPalette.WarningAmber
+                    : splChoiceReadyForeColor;
+            UiStyle.SetTextEnabledLook(checkSpl, rta, interactive: true);
+        }
+
+        // Amber flags a real, ACTIVE override only: Transfer is selected but the
+        // input has no loopback reference, so the analyzer actually runs as an RTA.
+        // An unselected Transfer choice keeps its normal colour; the tooltip warns.
+        private void UpdateTransferChoiceColor()
+        {
+            radioModeTransfer.ForeColor =
+                radioModeTransfer.Checked && !hasTransferReference
+                    ? UiPalette.WarningAmber
+                    : transferChoiceReadyForeColor;
             toolTip.SetToolTip(
-                radioMagnitudeSpl,
-                DescribeSplChoice(isSplAvailable, viewOnlyConflict));
+                radioModeTransfer, DescribeTransferChoice(hasTransferReference));
+        }
+
+        private static string DescribeTransferChoice(bool hasTransferReference)
+        {
+            const string Base =
+                "Dual-channel transfer function: the microphone divided by the " +
+                "loopback reference, with coherence.";
+            if (hasTransferReference)
+            {
+                return Base;
+            }
+
+            return Base + "\r\n" +
+                "No loopback reference channel is configured (Measurement Options), " +
+                "so the analyzer runs as a reference-free RTA regardless of this " +
+                "choice.";
         }
 
         private static string DescribeSplChoice(bool isSplAvailable, bool viewOnlyConflict)
         {
             const string Base =
-                "Absolute dB SPL. Shows the microphone (RTA) spectrum from the SPL " +
-                "calibration; the transfer function is a dimensionless ratio with no " +
-                "scalar SPL under noise, so it is hidden.";
+                "Shows the RTA in absolute dB SPL (microphone plus the SPL " +
+                "calibration offset). RTA mode only: the transfer function is a " +
+                "dimensionless ratio with no scalar SPL under noise excitation.";
             if (isSplAvailable)
             {
                 return Base;
@@ -204,14 +273,17 @@ namespace Resonalyze.Options
         }
 
         /// <summary>
-        /// Drops the scale selection back to relative. The host calls this when the
-        /// analyzer starts (or loses its calibration mid-run) while the display is
-        /// view-only SPL; switching back to SPL afterwards stays available.
+        /// Unchecks the dB SPL scale. The host calls this when the analyzer starts
+        /// (or loses its calibration mid-run) while the display is view-only SPL;
+        /// checking it again afterwards stays available.
         /// </summary>
-        public void ForceRelativeScale() => radioMagnitudeRelative.Checked = true;
+        public void ForceSplScaleOff() => checkSpl.Checked = false;
 
         public void SetOptions(LiveSpectrumOptions options)
         {
+            options.AnalysisMode = radioModeRta.Checked
+                ? LiveAnalysisMode.Rta
+                : LiveAnalysisMode.TransferFunction;
             options.NoiseColor =
                 signalTypeComboBox.SelectedItem is NoiseColorOption noiseColorOption
                     ? noiseColorOption.NoiseColor
@@ -237,7 +309,7 @@ namespace Resonalyze.Options
                     : AveragingSpeed.Medium;
             options.ShowMainCurve = checkMainCurve.Checked;
             // Persist the user's real RTA choice, not the value forced (and locked) on
-            // while SPL mode is selected.
+            // while RTA mode is selected.
             options.ShowInputMagnitude = userShowInputMagnitude;
             options.PeakHold = checkPeakHold.Checked;
             options.ShowCoherence = checkCoherence.Checked;
@@ -245,7 +317,11 @@ namespace Resonalyze.Options
                 coherenceLimitComboBox.SelectedItem is CoherenceLimitOption limitOption
                     ? limitOption.Percent
                     : CoherenceLimits[0];
-            options.MagnitudeScale = radioMagnitudeSpl.Checked
+            // The SPL and tilt checkboxes are merely muted (never rewritten) in
+            // Transfer mode, so these persist the user's real RTA-mode choices; the
+            // effective scale and tilt ignore them while Transfer is selected.
+            options.CompensateNoiseTilt = checkTilt.Checked;
+            options.MagnitudeScale = checkSpl.Checked
                 ? MagnitudeScale.SoundPressureLevel
                 : MagnitudeScale.Relative;
         }
@@ -307,62 +383,80 @@ namespace Resonalyze.Options
             }
         }
 
-        // In SPL mode the plot is the absolute microphone (RTA) spectrum. The transfer
-        // function and coherence are dimensionless ratios with no SPL under noise
-        // excitation, so their curve controls are disabled. The RTA is the one shown
-        // curve, so it is forced on and locked; its relative-mode preference is kept in
-        // userShowInputMagnitude and restored when the scale returns to relative.
-        private void UpdateScaleDependentControls()
+        // In RTA mode the plot is the reference-free microphone spectrum. The
+        // transfer function and coherence do not exist there, so their curve
+        // controls are muted; the RTA is the one shown curve, forced on and locked,
+        // its Transfer-mode preference kept in userShowInputMagnitude and restored
+        // on the way back. The dB SPL scale and the noise-slope compensation are
+        // properties of the RTA and are muted in Transfer mode instead.
+        private void UpdateModeDependentControls()
         {
-            bool spl = radioMagnitudeSpl.Checked;
-            UpdateSignalTypesForScale(spl);
+            bool rta = radioModeRta.Checked;
+            UpdateSignalTypesForMode(rta);
 
             // Mute (rather than WinForms-disable) the transfer/coherence controls so
             // they read as the theme's muted colour, not the near-black system grey.
-            UiStyle.SetTextEnabledLook(labelMainCurve, !spl);
-            UiStyle.SetTextEnabledLook(checkMainCurve, !spl, interactive: true);
-            UiStyle.SetTextEnabledLook(labelInputMagnitude, !spl);
-            UiStyle.SetTextEnabledLook(checkInputMagnitude, !spl, interactive: true);
-            UiStyle.SetTextEnabledLook(label9, !spl);
-            UiStyle.SetTextEnabledLook(checkCoherence, !spl, interactive: true);
-            UiStyle.SetTextEnabledLook(label10, !spl);
+            UiStyle.SetTextEnabledLook(labelMainCurve, !rta);
+            UiStyle.SetTextEnabledLook(checkMainCurve, !rta, interactive: true);
+            UiStyle.SetTextEnabledLook(labelInputMagnitude, !rta);
+            UiStyle.SetTextEnabledLook(checkInputMagnitude, !rta, interactive: true);
+            UiStyle.SetTextEnabledLook(label9, !rta);
+            UiStyle.SetTextEnabledLook(checkCoherence, !rta, interactive: true);
+            UiStyle.SetTextEnabledLook(label10, !rta);
             // The coherence-limit combo is a DarkComboBox, which mutes itself on Enabled.
-            coherenceLimitComboBox.Enabled = !spl;
+            coherenceLimitComboBox.Enabled = !rta;
 
-            checkInputMagnitude.Checked = spl || userShowInputMagnitude;
+            UpdateSplChoiceColor();
+            UpdateTiltAvailability();
+            UpdateTransferChoiceColor();
+
+            checkInputMagnitude.Checked = rta || userShowInputMagnitude;
         }
 
-        // The signal list follows the scale, differing only by the one scale-exclusive
-        // signal. SPL is a reference-free RTA, so periodic pink — which exists only to
-        // converge the transfer function fast — is dropped and Silent (an ambient RTA
-        // with no excitation) is offered alongside the plain Pink/Brown/White colours
-        // you can still play and measure the SPL of. The relative scale needs a known
-        // reference, so it drops Silent and offers periodic pink. The last signal is
-        // kept when the new scale still has it (Pink/Brown/White carry across), so a
-        // scale round-trip does not silently swap the excitation.
-        private void UpdateSignalTypesForScale(bool spl)
+        // The compensation needs a KNOWN excitation spectrum, so it is offered in
+        // RTA mode with a real noise signal only: the transfer function divides the
+        // excitation out, and Silent means an external source of unknown colour.
+        private void UpdateTiltAvailability()
+        {
+            bool applicable =
+                radioModeRta.Checked && SelectedNoiseColor() != NoiseColor.Silent;
+            UiStyle.SetTextEnabledLook(labelTilt, applicable);
+            UiStyle.SetTextEnabledLook(checkTilt, applicable, interactive: true);
+        }
+
+        private NoiseColor SelectedNoiseColor() =>
+            signalTypeComboBox.SelectedItem is NoiseColorOption option
+                ? option.NoiseColor
+                : NoiseColor.PinkPeriodic;
+
+        // The signal list follows the analysis mode. Silent (an ambient RTA with no
+        // excitation) is RTA-only — a transfer function has nothing to correlate
+        // against without an excitation — while every real noise colour, periodic
+        // pink included, is valid in both modes (in RTA it is simply a known
+        // excitation, and the one whose spectrum the slope compensation knows
+        // exactly). The last signal is kept when the new mode still has it, so a
+        // mode round-trip does not silently swap the excitation.
+        private void UpdateSignalTypesForMode(bool rta)
         {
             signalTypeComboBox.Items.Clear();
-            if (spl)
+            if (rta)
             {
                 signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.Silent, "Silent"));
             }
-            else
-            {
-                signalTypeComboBox.Items.Add(
-                    new NoiseColorOption(NoiseColor.PinkPeriodic, "Pink noise (periodic)"));
-            }
 
+            signalTypeComboBox.Items.Add(
+                new NoiseColorOption(NoiseColor.PinkPeriodic, "Pink noise (periodic)"));
             signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.Pink, "Pink noise"));
             signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.Brown, "Brown / red noise"));
             signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.White, "White noise"));
 
-            // Keep the remembered signal if this scale offers it; otherwise use the
-            // scale's exclusive default (Silent for SPL, periodic pink for relative).
+            // Keep the remembered signal if this mode offers it. Only Silent can be
+            // missing (leaving RTA for Transfer): fall back to the transfer
+            // reference, matching the controller's normalization.
             int index = TryFindNoiseColorIndex(userSignalType);
             if (index < 0)
             {
-                index = FindNoiseColorIndex(spl ? NoiseColor.Silent : NoiseColor.PinkPeriodic);
+                index = FindNoiseColorIndex(NoiseColor.PinkPeriodic);
             }
 
             signalTypeComboBox.SelectedIndex = index;
@@ -379,9 +473,9 @@ namespace Resonalyze.Options
             }
         }
 
-        // Only a real user toggle updates the remembered RTA preference. In SPL mode the
-        // checkbox is muted (AutoCheck off), so a click cannot change it — guard on that
-        // rather than Enabled, which stays true for the muted look.
+        // Only a real user toggle updates the remembered RTA preference. In RTA mode
+        // the checkbox is muted (AutoCheck off), so a click cannot change it — guard on
+        // that rather than Enabled, which stays true for the muted look.
         private void CaptureUserInputMagnitude()
         {
             if (checkInputMagnitude.AutoCheck)
@@ -523,12 +617,20 @@ namespace Resonalyze.Options
         private void InitializeToolTips()
         {
             toolTip.SetToolTip(
+                radioModeRta,
+                "Reference-free RTA: the magnitude spectrum of the microphone input " +
+                "alone, no loopback division. The only mode with an absolute dB SPL " +
+                "scale and the noise slope compensation.");
+            // radioModeTransfer's tooltip is owned by UpdateTransferChoiceColor: it
+            // names the loopback availability, which a static line here cannot.
+            toolTip.SetToolTip(
                 signalTypeComboBox,
                 "Excitation noise played during the measurement.\r\n" +
                 "• Pink noise (periodic): one FFT-length period of exactly pink noise, looped. Deterministic and leakage-free, so the transfer function converges fastest. Recommended.\r\n" +
                 "• Pink noise: continuous random pink noise, -3 dB/octave.\r\n" +
                 "• Brown / red noise: -6 dB/octave, more low-frequency drive for subwoofer and room-mode work.\r\n" +
-                "• White noise: equal energy per hertz.");
+                "• White noise: equal energy per hertz.\r\n" +
+                "• Silent (RTA mode only): no excitation — measures whatever the microphone hears (ambient noise or an external source).");
             toolTip.SetToolTip(
                 sequenceLengthComboBox,
                 "Sets the FFT block size. Longer sequences give finer frequency resolution but slower visual updates.");
@@ -565,13 +667,16 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 comboCalibration,
                 "Applies the selected microphone calibration file to Live Spectrum.");
-            toolTip.SetToolTip(
-                labelScale,
-                "Vertical scale of the live plot.");
-            toolTip.SetToolTip(
-                radioMagnitudeRelative,
-                "Native scale: the transfer function and RTA in relative dB.");
-            // radioMagnitudeSpl's tooltip is owned by RefreshSplAvailability: it
+            string tiltDescription =
+                "Compensates the spectral slope of the excitation noise itself, so a " +
+                "flat system reads flat whatever the noise colour (pink otherwise " +
+                "falls -3 dB per octave on the per-bin dB axis, and even a flat white " +
+                "PSD tilts +3 dB per octave on the banded dB SPL display). Pinned to " +
+                "the level at 1 kHz. Unavailable for Silent, whose excitation " +
+                "spectrum is unknown.";
+            toolTip.SetToolTip(labelTilt, tiltDescription);
+            toolTip.SetToolTip(checkTilt, tiltDescription);
+            // labelSpl's / checkSpl's tooltip is owned by RefreshAvailability: it
             // names the current availability state, which a static line here cannot.
         }
     }

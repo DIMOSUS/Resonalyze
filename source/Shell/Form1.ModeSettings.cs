@@ -137,7 +137,8 @@ public partial class Form1
                     liveSpectrumOptions,
                     microphoneCalibration.GetEntries(),
                     plotModelFactory.LiveSplOffsetDb.HasValue,
-                    liveSpectrumController.HasDisplayableCurve);
+                    liveSpectrumController.HasDisplayableCurve,
+                    liveSpectrumController.HasConfiguredLoopback);
                 opt.ResetAverageRequested += liveSpectrumController.ResetAverage;
             },
             ApplyLiveSpectrumOptionsAsync,
@@ -319,6 +320,10 @@ public partial class Form1
         double Maximum);
 
     private sealed record LiveSpectrumRestartSnapshot(
+        // The analysis mode switches both the playback role of the signal and the
+        // accumulation path (transfer vs. mic-only), so changing it must restart a
+        // running capture — it must never flip mid-run under the accumulators.
+        LiveAnalysisMode AnalysisMode,
         NoiseColor NoiseColor,
         WindowType WindowType,
         int SequenceLength,
@@ -326,6 +331,7 @@ public partial class Form1
     {
         public static LiveSpectrumRestartSnapshot Capture(LiveSpectrumOptions options) =>
             new(
+                options.AnalysisMode,
                 options.NoiseColor,
                 options.WindowType,
                 options.SequenceLength,

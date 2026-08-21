@@ -66,6 +66,84 @@ public sealed class VirtualCrossoverPhaseGateSettings
 }
 
 /// <summary>
+/// The EQ target as a session stores it. A flat mirror of the shape and the
+/// styling, deliberately not a reference to a preset: presets are a starting
+/// point whose numbers can change between versions, while a session has to open
+/// aiming at exactly the curve it was tuned against.
+/// </summary>
+/// <remarks>
+/// Nothing here is validated. A target is drawn, not applied — TargetCurveSpec.
+/// Evaluate already guards every divisor, so the worst a hand-corrupted field
+/// can do is make the curve invisible until it is reshaped. Throwing instead
+/// would move the whole session aside over a decoration.
+/// </remarks>
+public sealed class VirtualCrossoverTargetSettings
+{
+    public TargetPreset Preset { get; set; } = TargetPreset.Flat;
+    public double TiltDbPerOctave { get; set; }
+    public double BassShelfGainDb { get; set; }
+    public double BassShelfFrequencyHz { get; set; } = 100;
+    public double BassShelfWidthOctaves { get; set; } = 1.5;
+    public double TrebleShelfGainDb { get; set; }
+    public double TrebleShelfFrequencyHz { get; set; } = 5_000;
+    public double TrebleShelfWidthOctaves { get; set; } = 1.5;
+    public double PresenceGainDb { get; set; }
+    public double PresenceFrequencyHz { get; set; } = 3_000;
+    public double PresenceWidthOctaves { get; set; } = 1.0;
+    public double ToleranceDb { get; set; } = 3;
+    public TargetDeviationMode DeviationMode { get; set; } = TargetDeviationMode.Deviation;
+    public int ColorArgb { get; set; } = unchecked((int)0xFF37C8A0);
+    public double StrokeThickness { get; set; } = 2;
+    public OverlayLineStyle LineStyle { get; set; } = OverlayLineStyle.Dash;
+    public int SmoothingInverseOctaves { get; set; }
+
+    internal EqTargetCurve ToCurve() => new(
+        Preset,
+        new TargetCurveSpec(
+            TiltDbPerOctave,
+            BassShelfGainDb,
+            BassShelfFrequencyHz,
+            BassShelfWidthOctaves,
+            TrebleShelfGainDb,
+            TrebleShelfFrequencyHz,
+            TrebleShelfWidthOctaves,
+            PresenceGainDb,
+            PresenceFrequencyHz,
+            PresenceWidthOctaves),
+        ToleranceDb,
+        DeviationMode,
+        Color.FromArgb(ColorArgb),
+        StrokeThickness,
+        LineStyle,
+        SmoothingInverseOctaves);
+
+    internal static VirtualCrossoverTargetSettings FromCurve(EqTargetCurve curve)
+    {
+        ArgumentNullException.ThrowIfNull(curve);
+        return new VirtualCrossoverTargetSettings
+        {
+            Preset = curve.Preset,
+            TiltDbPerOctave = curve.Spec.TiltDbPerOctave,
+            BassShelfGainDb = curve.Spec.BassShelfGainDb,
+            BassShelfFrequencyHz = curve.Spec.BassShelfFrequencyHz,
+            BassShelfWidthOctaves = curve.Spec.BassShelfWidthOctaves,
+            TrebleShelfGainDb = curve.Spec.TrebleShelfGainDb,
+            TrebleShelfFrequencyHz = curve.Spec.TrebleShelfFrequencyHz,
+            TrebleShelfWidthOctaves = curve.Spec.TrebleShelfWidthOctaves,
+            PresenceGainDb = curve.Spec.PresenceGainDb,
+            PresenceFrequencyHz = curve.Spec.PresenceFrequencyHz,
+            PresenceWidthOctaves = curve.Spec.PresenceWidthOctaves,
+            ToleranceDb = curve.ToleranceDb,
+            DeviationMode = curve.DeviationMode,
+            ColorArgb = curve.Color.ToArgb(),
+            StrokeThickness = curve.StrokeThickness,
+            LineStyle = curve.LineStyle,
+            SmoothingInverseOctaves = curve.SmoothingInverseOctaves
+        };
+    }
+}
+
+/// <summary>
 /// One channel of the virtual crossover: which measurement feeds it and the DSP
 /// chain applied before the virtual sum. The source is re-resolved on load — by
 /// history entry first, then by file path, and finally beside the imported session
@@ -407,14 +485,53 @@ public sealed class VirtualCrossoverProjectFile
     public bool ActiveSideRight { get; set; }
 
     // Acoustic-plot view state shared by all channels.
+    //
+    // The Sum is answered PER VIEW. On the magnitude plot the sum is the point
+    // of the whole tool; on the phase plot it is one more trace across an
+    // already dense picture, and the same session usually wants it there and not
+    // here. The impulse view draws no sum at all, so it has no flag. This one
+    // stays the magnitude answer, so a file written by this build still opens
+    // the way it looks here in a build that knows the single flag only; the
+    // phase answer is additive and inherits it when the file predates it (see
+    // ShowSumCurveOnPhase).
     public bool ShowSumCurve { get; set; } = true;
+    public bool? ShowSumCurvePhase { get; set; }
     public bool ShowLossCurve { get; set; }
+
+    /// <summary>
+    /// Whether the Sum is drawn on the PHASE view. A file written before the two
+    /// views answered separately carries no such flag and inherits the magnitude
+    /// answer, which is exactly what it used to draw.
+    /// </summary>
+    [JsonIgnore]
+    public bool ShowSumCurveOnPhase
+    {
+        get => ShowSumCurvePhase ?? ShowSumCurve;
+        set => ShowSumCurvePhase = value;
+    }
     public bool ShowPhaseView { get; set; }
     // The main plot's impulse view (the gated IR preview promoted to the main
     // plot). Additive: older files lack it, and when set it wins over
     // ShowPhaseView. Kept as a second flag so files written by this version
     // still open in older builds (which fall back to magnitude/phase).
     public bool ShowImpulseView { get; set; }
+
+    // The EQ target curve drawn over the acoustic plot: whether it is shown, the
+    // level (dB) it hangs at, and the target itself. Additive: older files lack
+    // all three and open with the curve hidden, on the app's current target.
+    public bool ShowTargetCurve { get; set; }
+    public double TargetLevelDb { get; set; }
+
+    /// <summary>
+    /// The EQ target this session was tuned against — the whole custom shape,
+    /// not a preset name, so a session that travels aims at the curve its owner
+    /// drew rather than at whatever the receiving machine happened to have set.
+    /// Loading a session applies it as the app's target (the EQ Wizard owns and
+    /// persists that one definition); null in a file written before the target
+    /// was stored, and then the current target is kept and written on the next
+    /// save.
+    /// </summary>
+    public VirtualCrossoverTargetSettings? Target { get; set; }
     public int SmoothingInverseOctaves { get; set; } = 12;
 
     // The psychoacoustic magnitude smoothing mode (see SpectrumSmoothing in

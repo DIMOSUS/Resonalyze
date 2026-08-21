@@ -880,6 +880,178 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
+    [Fact]
+    public void ShowSumCurveOnPhase_WithNoAnswerOfItsOwn_InheritsTheMagnitudeOne()
+    {
+        // A session written before the two views answered separately carries one
+        // flag, and that is what it used to draw on BOTH plots. Inheriting it is
+        // what makes such a file open looking the way it was left.
+        var project = new VirtualCrossoverProjectFile { ShowSumCurve = false };
+        Assert.Null(project.ShowSumCurvePhase);
+        Assert.False(project.ShowSumCurveOnPhase);
+
+        project.ShowSumCurve = true;
+        Assert.True(project.ShowSumCurveOnPhase);
+    }
+
+    [Fact]
+    public void ShowSumCurveOnPhase_OnceAnswered_StopsFollowingTheMagnitudeOne()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile
+            {
+                ShowSumCurve = false,
+                ShowSumCurveOnPhase = true
+            };
+            Assert.False(saved.ShowSumCurve);
+            Assert.True(saved.ShowSumCurveOnPhase);
+
+            saved.Save(root);
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.False(loaded.ShowSumCurve);
+            Assert.True(loaded.ShowSumCurveOnPhase);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_ProjectWithoutATarget_LoadsWithTheCurveHidden()
+    {
+        // The EQ target on the acoustic plot is additive, like the all-pass above:
+        // a session written before it existed carries neither key. Where its
+        // absence lands matters — a target the user never asked for must not
+        // appear over their sum, and it must not appear at some inherited level.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile
+            {
+                ShowTargetCurve = true,
+                TargetLevelDb = -38
+            };
+            saved.Save(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            JsonObject project = file.AsObject();
+            Assert.True(project.Remove("showTargetCurve"));
+            Assert.True(project.Remove("targetLevelDb"));
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.False(loaded.ShowTargetCurve);
+            Assert.Equal(0, loaded.TargetLevelDb);
+            loaded.Validate();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_CarriesTheCustomTargetShapeUnchanged()
+    {
+        // The shape itself, not a preset name: a preset's numbers can change
+        // between versions, while a session has to open aiming at exactly the
+        // curve it was tuned against.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var curve = new EqTargetCurve(
+                TargetPreset.Custom,
+                new TargetCurveSpec(
+                    -0.65, 7.5, 92, 0.8, -2.5, 9_500, 0.65, 1.25, 2_650, 1.1),
+                ToleranceDb: 2.5,
+                TargetDeviationMode.Deviation,
+                System.Drawing.Color.FromArgb(255, 240, 120, 40),
+                StrokeThickness: 3.5,
+                OverlayLineStyle.DashDot,
+                SmoothingInverseOctaves: 6);
+            var saved = new VirtualCrossoverProjectFile
+            {
+                Target = VirtualCrossoverTargetSettings.FromCurve(curve)
+            };
+            saved.Save(root);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.NotNull(loaded.Target);
+            // Value equality on the record is the check: a field the mapping
+            // dropped would hand back a different curve than the one tuned.
+            Assert.Equal(curve, loaded.Target!.ToCurve());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_ProjectWithoutATarget_CarriesNone()
+    {
+        // Absence is a real state, and it means "no target of its own" rather
+        // than a default one: the panel keeps the app's current target and
+        // starts storing it, instead of retuning it to a flat line.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile { ShowTargetCurve = true }.Save(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file.AsObject().Remove("target");
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Null(loaded.Target);
+            loaded.Validate();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_KeepsTheTargetVisibilityAndLevel()
+    {
+        // The target SHAPE is the EQ Wizard's and is deliberately not stored
+        // here; the level is, because it belongs to this plot's dB reference.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile
+            {
+                ShowTargetCurve = true,
+                TargetLevelDb = -38.5
+            };
+            saved.Save(root);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.True(loaded.ShowTargetCurve);
+            Assert.Equal(-38.5, loaded.TargetLevelDb);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTemporaryDirectory()
     {
         string path = Path.Combine(

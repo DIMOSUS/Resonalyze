@@ -465,6 +465,16 @@ framing steps aside only where you took over, and **Home** hands an axis back to
 it. Frequency axes pan within 20 Hz – 20 kHz, the band the curves are computed
 over.
 
+Two Virtual DSP axes answer to their own rule on purpose. Its **Phase** view
+spans ±180°, the entire range a wrapped phase can occupy, so the height is
+locked: there is nothing above or below to travel to, and the limits dialog
+leaves that axis out rather than offering a range that would only push curves
+off screen. Its **Impulse** view zooms and pans in time — the millisecond around
+each arrival is the part worth reading, and the gate window it opens on is far
+wider — within that window, which stays the hard limit because the traces hold
+nothing outside it. Editing the gate re-frames the axis, since that is a new
+timeline; an ordinary redraw leaves your zoom alone.
+
 ## Mode Settings
 
 The **Mode Settings...** button opens the current mode's settings in a docked,
@@ -1282,16 +1292,35 @@ the side you are viewing, since the two sides' drivers sit at different
 distances; how the phase is READ stays project-wide, because two sides read
 through different windows could not be compared.
 
+A **Target** checkbox draws the EQ target over the prediction: the SAME target
+the EQ Wizard equalizes towards, shaped from either place through the same
+**Target...** dialog, so the tool that predicts the sum and the tool that
+corrects it aim at one curve rather than at two that drifted apart. These curves
+are transfer-function dB with no absolute reference, so the target has no level
+of its own here — the dB box beside the checkbox says where it hangs. The
+session stores both: that level, which belongs to this plot's dB reference and
+so stays put when the shape is retuned, and the target itself — the whole custom
+shape rather than a preset name, because a preset's numbers can change between
+versions while a session has to open aiming at the curve it was tuned against.
+Loading a session therefore sets the app's target to the one it carries, which
+is the same single target the EQ Wizard shows; a session written before targets
+were stored carries none, keeps yours, and starts carrying it. A target is a
+magnitude shape in dB, so it is offered on the Magnitude view only — and every
+curve toggle follows that rule, muted on the views that cannot draw its curve.
+The **Sum** keeps a separate answer per view, since the phase plot is usually one
+trace denser than you want it while the magnitude plot is where the sum is the
+whole point.
+
 A gate that opens **after** a driver has already arrived is refused rather than
 worked around. The panel judges the placement against every enabled channel and,
-when one falls outside the window, shows an amber line under the plot naming the
-side, the offset, and which channels are cut — with the whole arithmetic (the
-plateau, the fade-out, each channel's arrival and its leading-edge loss) in the
-tooltip. A curve gated that way is the reverberant tail rather than the driver,
-and the sum-loss read-out built from it describes nothing real, so **Auto delay**
-and **Auto crossover** decline to run until the gate is moved: an alignment
-computed through such a window would optimize the room's answer, not the
-loudspeaker.
+when one falls outside the window, shows an amber note in the top right corner —
+above the sum-loss read-out it invalidates — naming the side, the offset, and
+which channels are cut, with the whole arithmetic (the plateau, the fade-out,
+each channel's arrival and its leading-edge loss) in the tooltip. A curve gated
+that way is the reverberant tail rather than the driver, and the sum-loss
+read-out built from it describes nothing real, so **Auto delay** and **Auto
+crossover** decline to run until the gate is moved: an alignment computed
+through such a window would optimize the room's answer, not the loudspeaker.
 
 A second plot shows each DSP chain's own magnitude and phase (without the
 driver) — or, on its **Corr** mode, one adjacent pair's band-limited GCC-PHAT
@@ -1322,7 +1351,7 @@ offset's convention), plus a **Level Δ L−R** row for the by-ear gain trim tha
 finishes the centering.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
-value stays responsive with several channels loaded. A **calibration** selector
+value stays responsive with several channels loaded. The **Mic cal** selector
 applies one of your configured microphone corrections to the magnitude curves; it
 defaults to Off because the measurements are loopback-referenced. The session
 stores WHICH calibration it was tuned with; opening it on a machine that has no

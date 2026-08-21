@@ -968,7 +968,7 @@ public sealed class Overlay
         {
             Color = OxyColor.FromArgb(alpha, color.R, color.G, color.B),
             StrokeThickness = thickness,
-            LineStyle = ToOxyLineStyle(style),
+            LineStyle = OverlayLineStyles.ToOxy(style),
             Title = title,
             Tag = GetTag(part)
         };
@@ -1069,7 +1069,7 @@ public sealed class Overlay
         {
             Color = lineColor,
             StrokeThickness = thickness,
-            LineStyle = ToOxyLineStyle(style),
+            LineStyle = OverlayLineStyles.ToOxy(style),
             Title = $"{title} (target)",
             Tag = GetTag("target")
         };
@@ -2931,17 +2931,6 @@ public sealed class Overlay
         model.InvalidatePlot(true);
         collection.PlotView.Refresh();
         collection.NotifyPlotChanged();
-    }
-
-    private static LineStyle ToOxyLineStyle(OverlayLineStyle value)
-    {
-        return value switch
-        {
-            OverlayLineStyle.Dash => LineStyle.Dash,
-            OverlayLineStyle.Dot => LineStyle.Dot,
-            OverlayLineStyle.DashDot => LineStyle.DashDot,
-            _ => LineStyle.Solid
-        };
     }
 
     private void ShowStorageError(string message, Exception exception)

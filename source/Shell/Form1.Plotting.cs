@@ -207,6 +207,10 @@ public partial class Form1
         }
         virtualCrossoverPanel.Visible = descriptor.ShowsVirtualCrossoverPanel;
         virtualDspMetricLabel.Visible = descriptor.ShowsVirtualCrossoverPanel;
+        // The warning box only claims its corner when the panel has something to
+        // warn about; its text survives the mode switch that hid it.
+        virtualDspWarningLabel.Visible = descriptor.ShowsVirtualCrossoverPanel &&
+            virtualDspWarningLabel.Text.Length > 0;
         if (descriptor.ShowsVirtualCrossoverPanel)
         {
             virtualCrossoverPanel.OnPanelShown();

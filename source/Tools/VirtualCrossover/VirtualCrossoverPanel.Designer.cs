@@ -40,6 +40,11 @@ namespace Resonalyze
             buttonCopyLeftToRight = new Button();
             buttonCopyRightToLeft = new Button();
             labelView = new Label();
+            labelCurves = new Label();
+            checkBoxShowTarget = new CheckBox();
+            numericTargetLevel = new DarkNumericUpDown();
+            buttonTargetSettings = new Button();
+            labelCalibration = new Label();
             checkBoxShowSum = new CheckBox();
             checkBoxShowLoss = new CheckBox();
             radioViewMagnitude = new RadioButton();
@@ -56,7 +61,6 @@ namespace Resonalyze
             buttonSessionImport = new Button();
             buttonSessionExport = new Button();
             buttonAudition = new Button();
-            labelCrossoverWarning = new Label();
             dspModePanel = new Panel();
             labelDspMode = new Label();
             radioDspMagnitude = new RadioButton();
@@ -66,6 +70,7 @@ namespace Resonalyze
             comboBoxCorrelationPair = new DarkComboBox();
             panel1 = new Panel();
             panel2 = new Panel();
+            (numericTargetLevel).BeginInit();
             sideSelectorPanel.SuspendLayout();
             dspModePanel.SuspendLayout();
             panel1.SuspendLayout();
@@ -88,10 +93,10 @@ namespace Resonalyze
             // dspPlotView
             // 
             dspPlotView.BackColor = Color.FromArgb(40, 44, 80);
-            dspPlotView.Location = new Point(490, 455);
+            dspPlotView.Location = new Point(490, 470);
             dspPlotView.Name = "dspPlotView";
             dspPlotView.PanCursor = Cursors.Hand;
-            dspPlotView.Size = new Size(739, 275);
+            dspPlotView.Size = new Size(739, 260);
             dspPlotView.TabIndex = 2;
             dspPlotView.Text = "plotView2";
             dspPlotView.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -204,11 +209,74 @@ namespace Resonalyze
             labelView.AutoSize = true;
             labelView.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelView.ForeColor = Color.FromArgb(210, 214, 222);
-            labelView.Location = new Point(358, 414);
+            labelView.Location = new Point(358, 441);
             labelView.Name = "labelView";
             labelView.Size = new Size(33, 15);
             labelView.TabIndex = 6;
             labelView.Text = "View";
+            // 
+            // labelCurves
+            // 
+            labelCurves.AutoSize = true;
+            labelCurves.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelCurves.ForeColor = Color.FromArgb(210, 214, 222);
+            labelCurves.Location = new Point(358, 411);
+            labelCurves.Name = "labelCurves";
+            labelCurves.Size = new Size(42, 15);
+            labelCurves.TabIndex = 26;
+            labelCurves.Text = "Curves";
+            // 
+            // checkBoxShowTarget
+            // 
+            checkBoxShowTarget.AutoSize = true;
+            checkBoxShowTarget.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxShowTarget.ForeColor = Color.FromArgb(55, 200, 160);
+            checkBoxShowTarget.Location = new Point(549, 409);
+            checkBoxShowTarget.Name = "checkBoxShowTarget";
+            checkBoxShowTarget.Size = new Size(59, 19);
+            checkBoxShowTarget.TabIndex = 27;
+            checkBoxShowTarget.Text = "Target";
+            checkBoxShowTarget.UseVisualStyleBackColor = true;
+            // 
+            // numericTargetLevel
+            // 
+            numericTargetLevel.BackColor = Color.FromArgb(55, 60, 72);
+            numericTargetLevel.DecimalPlaces = 0;
+            numericTargetLevel.ForeColor = Color.White;
+            numericTargetLevel.Increment = new decimal(new int[] { 1, 0, 0, 0 });
+            numericTargetLevel.Location = new Point(616, 409);
+            numericTargetLevel.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
+            numericTargetLevel.Minimum = new decimal(new int[] { 120, 0, 0, int.MinValue });
+            numericTargetLevel.MinimumSize = new Size(36, 19);
+            numericTargetLevel.Name = "numericTargetLevel";
+            numericTargetLevel.Size = new Size(72, 19);
+            numericTargetLevel.TabIndex = 28;
+            numericTargetLevel.TextAlign = HorizontalAlignment.Right;
+            numericTargetLevel.ThousandsSeparator = false;
+            numericTargetLevel.Value = new decimal(new int[] { 0, 0, 0, 0 });
+            numericTargetLevel.ValueSuffix = "dB";
+            // 
+            // buttonTargetSettings
+            // 
+            buttonTargetSettings.FlatStyle = FlatStyle.Popup;
+            buttonTargetSettings.ForeColor = Color.White;
+            buttonTargetSettings.Location = new Point(696, 407);
+            buttonTargetSettings.Name = "buttonTargetSettings";
+            buttonTargetSettings.Size = new Size(80, 24);
+            buttonTargetSettings.TabIndex = 29;
+            buttonTargetSettings.Text = "Target...";
+            buttonTargetSettings.UseVisualStyleBackColor = true;
+            // 
+            // labelCalibration
+            // 
+            labelCalibration.AutoSize = true;
+            labelCalibration.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelCalibration.ForeColor = Color.FromArgb(210, 214, 222);
+            labelCalibration.Location = new Point(800, 411);
+            labelCalibration.Name = "labelCalibration";
+            labelCalibration.Size = new Size(45, 15);
+            labelCalibration.TabIndex = 30;
+            labelCalibration.Text = "Mic cal";
             // 
             // checkBoxShowSum
             // 
@@ -217,7 +285,7 @@ namespace Resonalyze
             checkBoxShowSum.CheckState = CheckState.Checked;
             checkBoxShowSum.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShowSum.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxShowSum.Location = new Point(403, 412);
+            checkBoxShowSum.Location = new Point(408, 409);
             checkBoxShowSum.Name = "checkBoxShowSum";
             checkBoxShowSum.Size = new Size(51, 19);
             checkBoxShowSum.TabIndex = 7;
@@ -229,7 +297,7 @@ namespace Resonalyze
             checkBoxShowLoss.AutoSize = true;
             checkBoxShowLoss.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShowLoss.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxShowLoss.Location = new Point(461, 412);
+            checkBoxShowLoss.Location = new Point(467, 409);
             checkBoxShowLoss.Name = "checkBoxShowLoss";
             checkBoxShowLoss.Size = new Size(74, 19);
             checkBoxShowLoss.TabIndex = 8;
@@ -279,7 +347,7 @@ namespace Resonalyze
             labelSmoothing.AutoSize = true;
             labelSmoothing.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelSmoothing.ForeColor = Color.FromArgb(210, 214, 222);
-            labelSmoothing.Location = new Point(779, 414);
+            labelSmoothing.Location = new Point(656, 441);
             labelSmoothing.Name = "labelSmoothing";
             labelSmoothing.Size = new Size(67, 15);
             labelSmoothing.TabIndex = 10;
@@ -289,7 +357,7 @@ namespace Resonalyze
             // 
             comboBoxSmoothing.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxSmoothing.ForeColor = Color.White;
-            comboBoxSmoothing.Location = new Point(853, 412);
+            comboBoxSmoothing.Location = new Point(731, 439);
             comboBoxSmoothing.MinimumSize = new Size(36, 19);
             comboBoxSmoothing.Name = "comboBoxSmoothing";
             comboBoxSmoothing.Size = new Size(100, 19);
@@ -300,7 +368,7 @@ namespace Resonalyze
             buttonAutoDelay.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoDelay.FlatStyle = FlatStyle.Popup;
             buttonAutoDelay.ForeColor = Color.White;
-            buttonAutoDelay.Location = new Point(359, 485);
+            buttonAutoDelay.Location = new Point(359, 500);
             buttonAutoDelay.Name = "buttonAutoDelay";
             buttonAutoDelay.Size = new Size(125, 24);
             buttonAutoDelay.TabIndex = 12;
@@ -312,7 +380,7 @@ namespace Resonalyze
             buttonAutoSetup.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoSetup.FlatStyle = FlatStyle.Popup;
             buttonAutoSetup.ForeColor = Color.White;
-            buttonAutoSetup.Location = new Point(359, 455);
+            buttonAutoSetup.Location = new Point(359, 470);
             buttonAutoSetup.Name = "buttonAutoSetup";
             buttonAutoSetup.Size = new Size(125, 24);
             buttonAutoSetup.TabIndex = 19;
@@ -345,7 +413,7 @@ namespace Resonalyze
             // 
             buttonPhaseGate.FlatStyle = FlatStyle.Popup;
             buttonPhaseGate.ForeColor = Color.White;
-            buttonPhaseGate.Location = new Point(959, 410);
+            buttonPhaseGate.Location = new Point(855, 437);
             buttonPhaseGate.Name = "buttonPhaseGate";
             buttonPhaseGate.Size = new Size(80, 24);
             buttonPhaseGate.TabIndex = 16;
@@ -356,7 +424,7 @@ namespace Resonalyze
             // 
             comboBoxCalibration.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxCalibration.ForeColor = Color.White;
-            comboBoxCalibration.Location = new Point(1047, 413);
+            comboBoxCalibration.Location = new Point(853, 409);
             comboBoxCalibration.MinimumSize = new Size(36, 19);
             comboBoxCalibration.Name = "comboBoxCalibration";
             comboBoxCalibration.Size = new Size(110, 19);
@@ -394,16 +462,6 @@ namespace Resonalyze
             buttonSessionExport.TabIndex = 18;
             buttonSessionExport.Text = "Save session...";
             buttonSessionExport.UseVisualStyleBackColor = true;
-            // 
-            // labelCrossoverWarning
-            // 
-            labelCrossoverWarning.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelCrossoverWarning.ForeColor = Color.FromArgb(235, 110, 95);
-            labelCrossoverWarning.Location = new Point(358, 434);
-            labelCrossoverWarning.Name = "labelCrossoverWarning";
-            labelCrossoverWarning.Size = new Size(870, 16);
-            labelCrossoverWarning.TabIndex = 19;
-            labelCrossoverWarning.Visible = false;
             // 
             // dspModePanel
             // 
@@ -496,7 +554,7 @@ namespace Resonalyze
             panel1.Controls.Add(radioViewMagnitude);
             panel1.Controls.Add(radioViewImpulse);
             panel1.Controls.Add(radioViewPhase);
-            panel1.Location = new Point(539, 410);
+            panel1.Location = new Point(399, 437);
             panel1.Name = "panel1";
             panel1.Size = new Size(233, 23);
             panel1.TabIndex = 24;
@@ -521,6 +579,11 @@ namespace Resonalyze
             Controls.Add(panel2);
             Controls.Add(panel1);
             Controls.Add(labelView);
+            Controls.Add(labelCurves);
+            Controls.Add(checkBoxShowTarget);
+            Controls.Add(numericTargetLevel);
+            Controls.Add(buttonTargetSettings);
+            Controls.Add(labelCalibration);
             Controls.Add(checkBoxShowSum);
             Controls.Add(checkBoxShowLoss);
             Controls.Add(labelSmoothing);
@@ -534,7 +597,6 @@ namespace Resonalyze
             Controls.Add(buttonSessionImport);
             Controls.Add(buttonSessionExport);
             Controls.Add(buttonAudition);
-            Controls.Add(labelCrossoverWarning);
             Controls.Add(dspModePanel);
             Controls.Add(channelListPanel);
             Controls.Add(buttonAddChannel);
@@ -547,6 +609,7 @@ namespace Resonalyze
             Name = "VirtualCrossoverPanel";
             Padding = new Padding(6);
             Size = new Size(1246, 770);
+            (numericTargetLevel).EndInit();
             sideSelectorPanel.ResumeLayout(false);
             sideSelectorPanel.PerformLayout();
             dspModePanel.ResumeLayout(false);
@@ -571,6 +634,11 @@ namespace Resonalyze
         private Button buttonCopyLeftToRight;
         private Button buttonCopyRightToLeft;
         private Label labelView;
+        private Label labelCurves;
+        private CheckBox checkBoxShowTarget;
+        private DarkNumericUpDown numericTargetLevel;
+        private Button buttonTargetSettings;
+        private Label labelCalibration;
         private CheckBox checkBoxShowSum;
         private CheckBox checkBoxShowLoss;
         private RadioButton radioViewMagnitude;
@@ -587,7 +655,6 @@ namespace Resonalyze
         private Button buttonSessionImport;
         private Button buttonSessionExport;
         private Button buttonAudition;
-        private Label labelCrossoverWarning;
         private Panel dspModePanel;
         private Label labelDspMode;
         private RadioButton radioDspMagnitude;

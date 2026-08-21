@@ -57,6 +57,7 @@ namespace Resonalyze
             virtualCrossoverPanel = new VirtualCrossoverPanel();
             eqResultsPanel = new EqResultsPanel();
             virtualDspMetricLabel = new Label();
+            virtualDspWarningLabel = new Label();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             (numericUpDown1).BeginInit();
@@ -422,6 +423,22 @@ namespace Resonalyze
             virtualDspMetricLabel.TabIndex = 31;
             virtualDspMetricLabel.Visible = false;
             // 
+            // virtualDspWarningLabel
+            // 
+            virtualDspWarningLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            virtualDspWarningLabel.AutoSize = true;
+            virtualDspWarningLabel.BackColor = Color.FromArgb(20, 22, 30);
+            virtualDspWarningLabel.BorderStyle = BorderStyle.FixedSingle;
+            virtualDspWarningLabel.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            virtualDspWarningLabel.ForeColor = Color.FromArgb(235, 110, 95);
+            virtualDspWarningLabel.Location = new Point(1268, 52);
+            virtualDspWarningLabel.MaximumSize = new Size(214, 0);
+            virtualDspWarningLabel.MinimumSize = new Size(214, 0);
+            virtualDspWarningLabel.Name = "virtualDspWarningLabel";
+            virtualDspWarningLabel.Padding = new Padding(8);
+            virtualDspWarningLabel.TabIndex = 32;
+            virtualDspWarningLabel.Visible = false;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -431,6 +448,7 @@ namespace Resonalyze
             Controls.Add(overlays);
             Controls.Add(chromeTitleBar);
             Controls.Add(eqResultsPanel);
+            Controls.Add(virtualDspWarningLabel);
             Controls.Add(virtualDspMetricLabel);
             Controls.Add(virtualCrossoverPanel);
             Controls.Add(signalGeneratorPanel);
@@ -485,6 +503,7 @@ namespace Resonalyze
         private VirtualCrossoverPanel virtualCrossoverPanel;
         private EqResultsPanel eqResultsPanel;
         private Label virtualDspMetricLabel;
+        private Label virtualDspWarningLabel;
         private Button buttonCompare;
     }
 }

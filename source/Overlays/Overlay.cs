@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using OxyPlot;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
@@ -240,8 +240,26 @@ public sealed class OverlayCollection
     public void SetRawCurveProvider(Func<CurveTag, RawCurveCapture?> provider) =>
         rawCurveProvider = provider;
 
+    private Func<CurveTag, ImpulseOverlayCapture?>? impulseCaptureProvider;
+    private Func<ImpulseOverlayFrame?>? impulseFrameProvider;
+
     internal RawCurveCapture? TryGetRawCapture(CurveTag tag) =>
         rawCurveProvider?.Invoke(tag);
+
+    // The time-domain twin of the raw curve provider: the shell wires these to the plot
+    // factory so a captured impulse trace is stored in the record's own coordinates and
+    // re-drawn under whatever framing the view has later.
+    internal void SetImpulseCaptureProvider(Func<CurveTag, ImpulseOverlayCapture?> provider) =>
+        impulseCaptureProvider = provider;
+
+    internal void SetImpulseFrameProvider(Func<ImpulseOverlayFrame?> provider) =>
+        impulseFrameProvider = provider;
+
+    internal ImpulseOverlayCapture? TryGetImpulseCapture(CurveTag tag) =>
+        impulseCaptureProvider?.Invoke(tag);
+
+    internal ImpulseOverlayFrame? TryGetImpulseFrame() =>
+        impulseFrameProvider?.Invoke();
 
     // Lands any debounced offset saves immediately; the shell calls this on
     // close so an offset changed within the debounce window still persists.
@@ -647,6 +665,11 @@ public sealed class Overlay
     // Sample rate of the captured measurement; null when unknown (imported text,
     // fallback captures, legacy files). Only consumers outside the plot read it.
     private int? capturedSampleRateHz;
+    // Captured impulse traces only: the trace in absolute samples and raw linear values,
+    // which is what lets it be re-drawn under the view's CURRENT time unit, time origin,
+    // amplitude scale and polarity instead of staying frozen in the ones it was captured
+    // under (see ImpulseOverlayCapture). Null for every other mode.
+    private ImpulseOverlayCapture? impulseCapture;
 
     // Operation kind. Each operand is either a captured slot (SourceSlotA/B) or, when
     // SourceCurveKeyA/B is set, a live analysis curve resolved from the plot by its
@@ -1506,6 +1529,11 @@ public sealed class Overlay
         // that do not octave-smooth) fall back to capturing the drawn curve as-is
         // at smoothing Off.
         RawCurveCapture? raw = tag != null ? collection.TryGetRawCapture(tag) : null;
+        // A time-domain trace has its own framing-independent form; it is stored beside
+        // the drawn points, which stay as the fallback for a slot with no live view to
+        // re-frame against.
+        ImpulseOverlayCapture? impulse =
+            tag != null ? collection.TryGetImpulseCapture(tag) : null;
         DataPoint[] points;
         List<SignalPoint>? spectrum;
         double[] calibrationCorrectionDb;
@@ -1570,7 +1598,8 @@ public sealed class Overlay
         rawCalibrationCorrectionDb = calibrationCorrectionDb;
         pointsCalibrationCorrectionDb = pointsCorrectionDb;
         capturedSmoothingCode = bakedSmoothing;
-        capturedSampleRateHz = sampleRateHz;
+        capturedSampleRateHz = sampleRateHz ?? impulse?.SampleRateHz;
+        impulseCapture = impulse;
         // The curve was drawn in the plot's current scale, so it carries that unit.
         capturedMagnitudeScale = collection.CurrentMagnitudeScale;
         capturedYAxisKey = string.IsNullOrEmpty(selected.YAxisKey)
@@ -1673,6 +1702,9 @@ public sealed class Overlay
         pointsCalibrationCorrectionDb = Array.Empty<double>();
         capturedSmoothingCode = null;
         capturedSampleRateHz = imported.Metadata.SampleRateHz;
+        // An imported text curve is whatever numbers the file held: there is no record
+        // behind it to re-frame against, so it keeps the drawn-points path.
+        impulseCapture = null;
         // Believe a declared unit; assume the current view's otherwise.
         capturedMagnitudeScale =
             imported.Metadata.Scale ?? collection.CurrentMagnitudeScale;
@@ -2317,6 +2349,15 @@ public sealed class Overlay
             pointsCalibrationCorrectionDb = file.PointsCalibrationCorrectionDb.ToArray();
             capturedSmoothingCode = file.CapturedSmoothingCode;
             capturedSampleRateHz = file.SampleRateHz;
+            impulseCapture = file.RawImpulse.Length >= 2
+                ? new ImpulseOverlayCapture(
+                    file.RawImpulse
+                        .Select(point => new SignalPoint(point.X, point.Y))
+                        .ToArray(),
+                    file.CapturedCurveKind ?? Resonalyze.Dsp.AnalysisCurveKind.Primary,
+                    file.RawImpulsePeakReference ?? 0.0,
+                    file.SampleRateHz ?? 0)
+                : null;
             capturedYAxisKey = GetCapturedYAxisKey(file);
             UpdateDrawPoints();
             SetAvailability(true);
@@ -2418,6 +2459,12 @@ public sealed class Overlay
             file.PointsCalibrationCorrectionDb = pointsCalibrationCorrectionDb.ToArray();
             file.CapturedSmoothingCode = capturedSmoothingCode;
             file.SampleRateHz = capturedSampleRateHz;
+            file.RawImpulse = impulseCapture is { } impulse
+                ? impulse.Samples
+                    .Select(point => new OverlayPoint(point.X, point.Y))
+                    .ToArray()
+                : Array.Empty<OverlayPoint>();
+            file.RawImpulsePeakReference = impulseCapture?.PeakReference;
             file.CapturedYAxisKey = capturedYAxisKey;
         }
 
@@ -2636,6 +2683,25 @@ public sealed class Overlay
     {
         double offset = (double)offsetControl.Value;
 
+        // A time-domain capture is re-drawn under the framing on screen NOW: its stored
+        // sample indices and raw values go through the view's current unit, origin,
+        // scale and polarity. Octave smoothing has no meaning on a time axis, so this
+        // path skips it rather than pretending the setting applies.
+        if (impulseCapture is { Samples.Count: > 1 } capture &&
+            collection.TryGetImpulseFrame() is { } frame)
+        {
+            DataPoint[] framed = ImpulseOverlayRenderer.Render(capture, frame);
+            if (offset != 0.0)
+            {
+                for (int i = 0; i < framed.Length; i++)
+                {
+                    framed[i] = new DataPoint(framed[i].X, framed[i].Y + offset);
+                }
+            }
+
+            return framed;
+        }
+
         // Exact path (FR captures): re-smooth the stored oversampled spectrum with the
         // SAME LogarithmicResample the mode's primary curve uses, so any width — Off =
         // raw — reproduces the on-screen reference rather than a re-smoothed decimation.
@@ -2730,6 +2796,7 @@ public sealed class Overlay
         pointsCalibrationCorrectionDb = Array.Empty<double>();
         capturedSmoothingCode = null;
         capturedSampleRateHz = null;
+        impulseCapture = null;
         operationConfigured = false;
         sourceSlotA = 0;
         sourceSlotB = 0;

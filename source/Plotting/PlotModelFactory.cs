@@ -18,6 +18,7 @@ internal sealed class PlotModelFactory
     public const string PhaseAxisKey = "phase";
     public const string GroupDelayAxisKey = "groupDelay";
     public const string ImpulseAxisKey = "impulse";
+    public const string ImpulseStepAxisKey = "impulseStep";
     public const string TimeAxisKey = "time";
     public const string AutocorrelationAxisKey = "autocorrelation";
 
@@ -214,6 +215,82 @@ internal sealed class PlotModelFactory
                 // TryCreateCompareMeasurement), so one rate covers both sources.
                 expSweepMeasurement.SampleRate > 0 ? expSweepMeasurement.SampleRate : null)
             : null;
+    }
+
+    /// <summary>
+    /// An impulse trace in the framing-independent form an overlay stores (see
+    /// <see cref="ImpulseOverlayCapture"/>): absolute sample indices and raw linear
+    /// values, produced by re-running the trace under a canonical framing rather than
+    /// by unpicking what was drawn. Null when the tag is not an impulse trace or there
+    /// is no transfer IR behind it.
+    /// </summary>
+    public ImpulseOverlayCapture? BuildImpulseCapture(CurveTag tag)
+    {
+        if (tag.Mode != Mode.ImpulseResponse ||
+            !measurementContext.HasTransferImpulseResponse)
+        {
+            return null;
+        }
+
+        IImpulseMeasurement? source = tag.Source == CurveSource.Compare
+            ? TryCreateCompareMeasurement()?.Measurement
+            : measurementContext.CreatePrimaryMeasurement();
+        if (source == null)
+        {
+            return null;
+        }
+
+        // Everything that CANNOT be re-framed later stays as the view has it — the band
+        // and the envelope smoothing are part of the values. Everything that can is
+        // neutralized, so the stored numbers are the record's own.
+        var canonical = new ImpulseResponseOptions
+        {
+            ShowImpulse = tag.Kind == AnalysisCurveKind.Primary,
+            ShowEnvelope = tag.Kind == AnalysisCurveKind.ImpulseEnvelope,
+            ShowStep = tag.Kind == AnalysisCurveKind.ImpulseStep,
+            EnvelopeSmoothingMs = impulseResponseOptions.EnvelopeSmoothingMs,
+            // Normalized against the record's own peak here so the ratio can be undone
+            // below into the RAW running integral. Storing a step already normalized
+            // would freeze two live decisions into the snapshot: the "against IR peak"
+            // toggle, and — for a Compare capture — the fact that the drawn Compare step
+            // is normalized against MAIN's peak while this canonical render knows only
+            // its own record.
+            NormalizeStepToImpulsePeak = true,
+            BandFilterOctaves = impulseResponseOptions.BandFilterOctaves,
+            BandCenterHz = impulseResponseOptions.BandCenterHz,
+            AmplitudeScale = ImpulseAmplitudeScale.Linear,
+            TimeUnit = ImpulseTimeUnit.Samples,
+            TimeOrigin = ImpulseTimeOrigin.RecordStart,
+            Invert = false,
+        };
+
+        ImpulseCurveSet set = DataHelper.GetImpulseCurves(
+            source, canonical, new ImpulseRenderFrame());
+        AnalysisCurve? curve = tag.Kind switch
+        {
+            AnalysisCurveKind.ImpulseEnvelope => set.Envelope,
+            AnalysisCurveKind.ImpulseStep => set.Step,
+            _ => set.Impulse
+        };
+        if (curve is not { Points.Count: > 1 })
+        {
+            return null;
+        }
+
+        // The step comes back as a ratio of the record's peak; multiplying it back out
+        // leaves the running integral itself, which the renderer normalizes with the
+        // view's own choice at the time it is drawn.
+        IReadOnlyList<SignalPoint> samples = tag.Kind == AnalysisCurveKind.ImpulseStep
+            ? curve.Points
+                .Select(point => new SignalPoint(point.X, point.Y * set.PeakReference))
+                .ToArray()
+            : curve.Points;
+
+        return new ImpulseOverlayCapture(
+            ImpulseOverlayThinning.Thin(samples),
+            tag.Kind,
+            set.PeakReference,
+            source.SampleRate);
     }
 
     /// <summary>
@@ -927,41 +1004,82 @@ internal sealed class PlotModelFactory
         return model;
     }
 
+    /// <summary>
+    /// The framing the impulse view is drawn in, so a stored overlay can be re-drawn
+    /// under the framing on screen NOW instead of the one it happened to be captured
+    /// in. Refreshed by every <see cref="CreateImpulseResponse"/> — overlays are added
+    /// to a model after it is built, so what they read is this build's.
+    /// </summary>
+    public ImpulseOverlayFrame ImpulseFrame { get; private set; }
+
     public PlotModel CreateImpulseResponse(bool includeCurves)
     {
+        ImpulseResponseOptions opt = impulseResponseOptions;
+        ImpulseFrame = new ImpulseOverlayFrame(
+            opt, 0.0, null, expSweepMeasurement.SampleRate);
+        // A band-limited view is NOT the record, and the title says so — the same reason
+        // the Live Spectrum names an active tilt compensation instead of letting a
+        // reshaped curve pass for the plain measurement.
+        string band = ImpulseBandLabel(opt, expSweepMeasurement.SampleRate);
         PlotModel model = PlotModelStyle.CreateTitledModel(
-            measurementContext.CreateTitle("Impulse Response"));
+            measurementContext.CreateTitle("Impulse Response" + band));
 
-        const string impulseTracker = "{0}\n{2:0} sample\n{4:0.00000000}";
-        AnalysisCurve? curve = null;
-        AnalysisCurve? compareCurve = null;
+        bool anyTrace = opt.ShowImpulse || opt.ShowEnvelope || opt.ShowStep;
+        var drawn = new List<AnalysisCurve?>();
+        var stepCurves = new List<AnalysisCurve?>();
+        (double Start, double End)? defaultSpan = null;
         if (measurementContext.CanIncludeCurves(includeCurves) &&
-            measurementContext.HasTransferImpulseResponse &&
-            impulseResponseOptions.ShowImpulse)
+            measurementContext.HasTransferImpulseResponse)
         {
-            // The transfer IR is shown whole on an absolute timeline from sample 0 to the
-            // peak plus the Length tail, so arrival times can be compared directly.
+            // The transfer IR is drawn whole, on the record's own timeline: the onset, the
+            // peak and the decay are one curve and two records can be read against one
+            // clock. Where the axis puts its zero and what the levels are normalized
+            // against are decided ONCE, from Main, and handed to both sets — resolving
+            // either per curve would subtract exactly the difference being compared.
+            //
+            // Resolved WHATEVER is switched on, because an overlay is framed by these two
+            // figures too and it can be the only thing on the plot: with the traces hidden
+            // the frame used to fall back to the record start and to the snapshot's own
+            // peak, so the overlay ignored the chosen time zero and its level difference
+            // against the current record disappeared. Visibility decides what is drawn,
+            // not what the view MEANS.
             IImpulseMeasurement main = measurementContext.CreatePrimaryMeasurement();
-            curve = DataHelper.GetImpulseFromStart(main, impulseResponseOptions);
-            AddLineSeries(model, curve, impulseTracker, Mode.ImpulseResponse, ImpulseAxisKey);
+            double origin = ResolveImpulseOriginSamples(main);
+            defaultSpan = ResolveImpulseDefaultSpan(main, opt, origin);
+            ImpulseCurveSet mainSet = DataHelper.GetImpulseCurves(
+                main, opt, new ImpulseRenderFrame(origin));
+            ImpulseFrame = new ImpulseOverlayFrame(
+                opt, origin, mainSet.PeakReference, main.SampleRate);
 
-            if (CompareSharesATimeReference() &&
-                TryCreateCompareMeasurement() is { } compare)
+            if (anyTrace)
             {
-                compareCurve = DataHelper.GetImpulseFromStart(
-                    compare.Measurement,
-                    impulseResponseOptions);
-                AddCompareLineSeries(
-                    model,
-                    compareCurve,
-                    impulseTracker,
-                    compare.DisplayName,
-                    Mode.ImpulseResponse);
+                AddImpulseSeries(
+                    model, mainSet, main.SampleRate, origin, null, drawn, stepCurves);
+
+                if (CompareSharesATimeReference() &&
+                    TryCreateCompareMeasurement() is { } compare)
+                {
+                    ImpulseCurveSet compareSet = DataHelper.GetImpulseCurves(
+                        compare.Measurement,
+                        opt,
+                        new ImpulseRenderFrame(origin, mainSet.PeakReference));
+                    AddImpulseSeries(
+                        model,
+                        compareSet,
+                        compare.Measurement.SampleRate,
+                        origin,
+                        compare.DisplayName,
+                        drawn,
+                        stepCurves);
+                }
+
+                // The markers annotate the live traces, so they follow them off the plot.
+                AddImpulseMarkers(model, main, mainSet, origin);
             }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse &&
-                 impulseResponseOptions.ShowImpulse)
+                 anyTrace)
         {
             AddRequiresTransferIrAnnotation(model);
         }
@@ -971,20 +1089,361 @@ internal sealed class PlotModelFactory
             Key = TimeAxisKey,
             Position = AxisPosition.Bottom,
             MajorGridlineStyle = LineStyle.Solid,
+            Title = opt.TimeUnit == ImpulseTimeUnit.Milliseconds ? "ms" : "samples",
         };
+        // The step never shares the level axis (see RenderStepTrace), so when it is the
+        // only trace it TAKES that axis rather than leaving an empty one labelled in
+        // units nothing on screen is drawn in.
+        bool stepOnLeft = ImpulseStepIsAlone(opt);
         var valueAxis = new LinearAxis
         {
-            Key = ImpulseAxisKey,
+            Key = stepOnLeft ? ImpulseStepAxisKey : ImpulseAxisKey,
             Position = AxisPosition.Left,
+            Title = stepOnLeft ? "step" : ImpulseValueUnit(opt.AmplitudeScale),
         };
-        // Lock both axes to the drawn curves (which already reflect the logarithmic
-        // toggle) so they are re-fit on every settings change and cannot be panned/zoomed
-        // away from the data. The Compare curve is included so it stays on-screen.
-        ApplyCurveRange(timeAxis, point => point.X, curve, compareCurve);
-        ApplyCurveRange(valueAxis, point => point.Y, curve, compareCurve);
+        // Time is bounded by the record — the traces are built whole, so zooming out
+        // reaches the end of the tail and panning cannot leave the data — and OPENS on
+        // the Length setting's worth of tail past the peak, the framing this mode has
+        // always had. Compare is included so it stays on-screen.
+        ApplyCurveRange(
+            timeAxis, point => point.X, drawn.Concat(stepCurves).ToArray());
+        ApplyDefaultImpulseSpan(timeAxis, opt, defaultSpan);
+        // LEVEL is not framed at all — the axis scales itself. Overlays are attached to
+        // the model AFTER it is built, and in OxyPlot an explicit Minimum/Maximum wins
+        // over the data range, so a snapshot from a louder record — which legitimately
+        // re-frames above 100 % or 0 dB against the current one — would open partly off
+        // screen and pinned absolute bounds would put it out of reach entirely. Left to
+        // itself the axis takes in whatever is drawn on it, live or attached later, which
+        // is what makes the shared normalization readable.
+        ApplyDecibelFloor(valueAxis, opt, stepOnLeft, drawn);
         model.Axes.Add(timeAxis);
         model.Axes.Add(valueAxis);
+
+        // The counterpart axis is always in the model, visible only when something is
+        // drawn against it. An overlay carries the axis key it was captured with, and a
+        // series whose key names no axis cannot bind — so a saved step slot with the step
+        // trace switched off, or a saved impulse slot beside a step-only view, would fail
+        // the redraw rather than simply not fitting.
+        var counterpartAxis = new LinearAxis
+        {
+            Key = stepOnLeft ? ImpulseAxisKey : ImpulseStepAxisKey,
+            Position = AxisPosition.Right,
+            Title = stepOnLeft ? ImpulseValueUnit(opt.AmplitudeScale) : "step",
+            IsAxisVisible = !stepOnLeft && stepCurves.Count > 0,
+        };
+        model.Axes.Add(counterpartAxis);
         return model;
+    }
+
+    private static bool ImpulseStepIsAlone(ImpulseResponseOptions opt) =>
+        opt.ShowStep && !opt.ShowImpulse && !opt.ShowEnvelope;
+
+    /// <summary>
+    /// The slice of the record the view opens on, in axis units: the start of the
+    /// record to the peak plus the Length setting's tail. A deconvolved record can run
+    /// for seconds, nearly all of it silence and noise floor, so opening on the whole
+    /// thing would show the response as one vertical line.
+    /// </summary>
+    private static (double Start, double End)? ResolveImpulseDefaultSpan(
+        IImpulseMeasurement measurement,
+        ImpulseResponseOptions opt,
+        double origin)
+    {
+        int available = measurement.ImpulseResponse?.Length ?? 0;
+        if (available <= 0)
+        {
+            return null;
+        }
+
+        double end = Math.Min(available - 1, measurement.PeakIndex + (double)opt.Length);
+        double ToAxis(double sample) =>
+            opt.TimeUnit == ImpulseTimeUnit.Milliseconds && measurement.SampleRate > 0
+                ? (sample - origin) * 1000.0 / measurement.SampleRate
+                : sample - origin;
+        return (ToAxis(0), ToAxis(end));
+    }
+
+    private static void ApplyDefaultImpulseSpan(
+        LinearAxis axis,
+        ImpulseResponseOptions opt,
+        (double Start, double End)? span)
+    {
+        if (span is not { } bounds || bounds.End <= bounds.Start)
+        {
+            return;
+        }
+
+        // Never past the data: the absolute bounds were fitted to the record above, and
+        // a visible range outside them is a view of nothing.
+        axis.Minimum = Math.Max(axis.AbsoluteMinimum, bounds.Start);
+        axis.Maximum = Math.Min(axis.AbsoluteMaximum, bounds.End);
+    }
+
+    // " — 250 Hz 1/3 octave", or empty when the whole record is drawn.
+    private static string ImpulseBandLabel(ImpulseResponseOptions opt, int sampleRate)
+    {
+        if (!opt.HasBandFilter(sampleRate))
+        {
+            return string.Empty;
+        }
+
+        string centre = opt.BandCenterHz >= 1_000.0
+            ? $"{opt.BandCenterHz / 1_000.0:0.###} kHz"
+            : $"{opt.BandCenterHz:0.#} Hz";
+        string width = Math.Abs(opt.BandFilterOctaves - 1.0) < 1e-9
+            ? "1 octave"
+            : $"1/{1.0 / opt.BandFilterOctaves:0.#} octave";
+        return $" — {centre} {width}";
+    }
+
+    // How much of the dB scale the view opens on. The impulse in dB dives to the
+    // silence floor at every zero crossing — on a deconvolved record that is −160 dB —
+    // so fitting the visible window to the data spends four fifths of the plot on
+    // arithmetic nobody is reading. The window opens 100 dB under the loudest point,
+    // which clears any real noise floor, while the ABSOLUTE range still covers the
+    // whole curve so the floor stays reachable by zooming out.
+    private const double ImpulseDecibelWindow = 100.0;
+
+    // Only the FLOOR is pinned, and only in dB: the top is left to the data so a louder
+    // overlay still lifts it. Without the floor the axis would fit the silence the
+    // impulse dives to at every zero crossing and spend four fifths of the plot on it.
+    private static void ApplyDecibelFloor(
+        LinearAxis axis,
+        ImpulseResponseOptions opt,
+        bool stepOnLeft,
+        IReadOnlyList<AnalysisCurve?> curves)
+    {
+        if (stepOnLeft || opt.AmplitudeScale != ImpulseAmplitudeScale.Decibels)
+        {
+            return;
+        }
+
+        double maximum = double.NegativeInfinity;
+        foreach (AnalysisCurve? curve in curves)
+        {
+            if (curve == null)
+            {
+                continue;
+            }
+
+            foreach (SignalPoint point in curve.Points)
+            {
+                if (double.IsFinite(point.Y))
+                {
+                    maximum = Math.Max(maximum, point.Y);
+                }
+            }
+        }
+
+        if (double.IsFinite(maximum))
+        {
+            axis.Minimum = maximum - ImpulseDecibelWindow;
+        }
+    }
+
+    private static string ImpulseValueUnit(ImpulseAmplitudeScale scale) =>
+        scale switch
+        {
+            ImpulseAmplitudeScale.Decibels => "dB",
+            ImpulseAmplitudeScale.PercentOfPeak => "%",
+            _ => string.Empty
+        };
+
+    /// <summary>
+    /// Where the impulse view's zero sits, in samples from the record start. The
+    /// first-arrival origin reads the SAME shared estimate the Auto gate offsets use,
+    /// so the view and the gates cannot disagree about where the response begins.
+    /// </summary>
+    private double ResolveImpulseOriginSamples(IImpulseMeasurement measurement) =>
+        impulseResponseOptions.TimeOrigin switch
+        {
+            ImpulseTimeOrigin.Peak => measurement.PeakIndex,
+            ImpulseTimeOrigin.FirstArrival =>
+                TransferIrStartCache.ResolveStartMs(measurement) is { } startMs &&
+                measurement.SampleRate > 0
+                    ? startMs * measurement.SampleRate / 1000.0
+                    : measurement.PeakIndex,
+            _ => 0.0
+        };
+
+    private void AddImpulseSeries(
+        PlotModel model,
+        ImpulseCurveSet set,
+        int sampleRate,
+        double origin,
+        string? compareName,
+        List<AnalysisCurve?> drawn,
+        List<AnalysisCurve?> stepCurves)
+    {
+        bool relative = impulseResponseOptions.TimeOrigin != ImpulseTimeOrigin.RecordStart;
+        string unit = ImpulseValueUnit(impulseResponseOptions.AmplitudeScale);
+
+        foreach (AnalysisCurve? curve in new[] { set.Impulse, set.Envelope, set.Step })
+        {
+            if (curve == null)
+            {
+                continue;
+            }
+
+            bool isStep = curve.Kind == AnalysisCurveKind.ImpulseStep;
+            var series = new ImpulseLineSeries
+            {
+                SampleRate = sampleRate,
+                TimeUnit = impulseResponseOptions.TimeUnit,
+                TimeIsRelative = relative,
+                // The step is a normalized ratio, never the level the other traces carry.
+                ValueUnit = isStep ? string.Empty : unit,
+                Color = OxyPlotAdapter.GetCurveColor(curve.Kind),
+                Title = compareName == null ? curve.Name : $"{curve.Name} · {compareName}",
+                YAxisKey = isStep ? ImpulseStepAxisKey : ImpulseAxisKey,
+                Tag = new CurveTag(
+                    Mode.ImpulseResponse,
+                    curve.Kind,
+                    compareName == null ? CurveSource.Main : CurveSource.Compare),
+            };
+            series.Points.AddRange(OxyPlotAdapter.ToDataPoints(curve.Points));
+            if (compareName != null)
+            {
+                series.LineStyle = LineStyle.Dash;
+                series.StrokeThickness = 1.5;
+                OxyColor color = series.Color;
+                series.Color = OxyColor.FromArgb(150, color.R, color.G, color.B);
+            }
+
+            model.Series.Add(series);
+            (isStep ? stepCurves : drawn).Add(curve);
+        }
+    }
+
+    // The two times the rest of the app reads off this record, marked where the view
+    // put them: the first arrival (the estimate every Auto gate offset is anchored on)
+    // and the strongest peak. They are what makes the mode legible as an instrument —
+    // the reader sees the same two instants the engine acts on.
+    private void AddImpulseMarkers(
+        PlotModel model,
+        IImpulseMeasurement measurement,
+        ImpulseCurveSet set,
+        double origin)
+    {
+        double ToAxis(double sample) =>
+            impulseResponseOptions.TimeUnit == ImpulseTimeUnit.Milliseconds &&
+            measurement.SampleRate > 0
+                ? (sample - origin) * 1000.0 / measurement.SampleRate
+                : sample - origin;
+
+        // The two captions are stacked by where they sit ALONG their lines, not by
+        // opposite text anchors: on a well-aimed record the arrival and the peak are a
+        // fraction of a millisecond apart on an axis spanning hundreds, so their labels
+        // start at very nearly the same pixel. Anchoring one from below hung it over the
+        // top edge of the plot area, which clipped it in half.
+        string valueAxisKey = ImpulseStepIsAlone(impulseResponseOptions)
+            ? ImpulseStepAxisKey
+            : ImpulseAxisKey;
+        if (TransferIrStartCache.ResolveStartMs(measurement) is { } startMs &&
+            measurement.SampleRate > 0)
+        {
+            AddImpulseMarker(
+                model,
+                ToAxis(startMs * measurement.SampleRate / 1000.0),
+                "arrival",
+                OxyColor.FromRgb(130, 220, 90),
+                ArrivalLabelPosition,
+                valueAxisKey);
+        }
+
+        // With a band selected the peak belongs to that band, not to the record, and the
+        // caption has to say which — the whole point of the pair of markers is how far
+        // apart the record's arrival and this band's peak are, which the caption states
+        // as a number rather than leaving it to be measured off the axis by eye.
+        string peakName = impulseResponseOptions.HasBandFilter(measurement.SampleRate)
+            ? "band peak"
+            : "peak";
+        string peakLabel = ResolveBandArrivalOffset(measurement, set) is { } offset
+            ? $"{peakName} · {offset:+0.00;-0.00} ms after arrival"
+            : peakName;
+        if (set.SnrDb is { } snr)
+        {
+            peakLabel += $" · SNR {snr:0} dB";
+        }
+
+        AddImpulseMarker(
+            model,
+            ToAxis(set.PeakSample),
+            peakLabel,
+            OxyColor.FromRgb(150, 170, 205),
+            PeakLabelPosition,
+            valueAxisKey);
+    }
+
+    /// <summary>
+    /// How long after the record's arrival the selected band peaks, in milliseconds —
+    /// the figure the band filter exists to produce, since a driver's low band does not
+    /// arrive when its broadband front does. Null when there is no band, no arrival
+    /// estimate, or — the case field data forced — when the record does not carry this
+    /// driver's energy at that centre at all.
+    /// <para>
+    /// That last guard is not a nicety. At 63 Hz a tweeter's record still has a "band
+    /// peak": across the archived cabins it landed 1.3, 5.4, 10.9 and 23.6 SECONDS after
+    /// the arrival, because what peaked was leakage and the maximum of leakage sits
+    /// wherever the noise happens to be loudest. Neither the band's level below the
+    /// broadband peak nor its own signal-to-noise separated those from the honest
+    /// readings; asking whether the centre lies inside the record's dominant band —
+    /// where the driver's energy actually is — separated every one of them. It errs
+    /// toward silence: some plausible midrange readings are refused too, which is the
+    /// right direction for a number presented as a measurement.
+    /// </para>
+    /// <para>
+    /// Deliberately NOT converted to a distance, unlike the tracker's reading of a
+    /// reflection: this delay is the driver's own build-up and group delay, not a path
+    /// through air, and stating it in centimetres would invite it to be read as one.
+    /// </para>
+    /// </summary>
+    private double? ResolveBandArrivalOffset(
+        IImpulseMeasurement measurement,
+        ImpulseCurveSet set)
+    {
+        if (!impulseResponseOptions.HasBandFilter(measurement.SampleRate) ||
+            TransferIrStartCache.ResolveStartMs(measurement) is not { } startMs ||
+            !TransferIrDominantBandCache.Covers(
+                measurement, impulseResponseOptions.BandCenterHz))
+        {
+            return null;
+        }
+
+        return set.PeakSample * 1000.0 / measurement.SampleRate - startMs;
+    }
+
+    // Where each caption sits along its own line, as a fraction from the bottom of the
+    // plot area: the arrival at the very top, the peak one line under it. Both hang
+    // DOWNWARDS from their anchor so neither can be cut off by the top edge.
+    private const double ArrivalLabelPosition = 1.0;
+    private const double PeakLabelPosition = 0.955;
+
+    private static void AddImpulseMarker(
+        PlotModel model,
+        double x,
+        string text,
+        OxyColor color,
+        double textLinePosition,
+        string valueAxisKey)
+    {
+        model.Annotations.Add(new LineAnnotation
+        {
+            Type = LineAnnotationType.Vertical,
+            X = x,
+            Color = OxyColor.FromAColor(140, color),
+            LineStyle = LineStyle.Dash,
+            StrokeThickness = 1.0,
+            Text = text,
+            TextColor = color,
+            TextOrientation = AnnotationTextOrientation.Horizontal,
+            TextLinePosition = textLinePosition,
+            TextVerticalAlignment = OxyPlot.VerticalAlignment.Top,
+            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left,
+            TextPadding = 4,
+            XAxisKey = TimeAxisKey,
+            YAxisKey = valueAxisKey,
+        });
     }
 
     // Fixes an axis to the curve's own min/max for the selected coordinate (both the visible

@@ -1,3 +1,6 @@
+using System.Numerics;
+using MathNet.Numerics.IntegralTransforms;
+
 namespace Resonalyze.Dsp;
 
 /// <summary>
@@ -5,6 +8,53 @@ namespace Resonalyze.Dsp;
 /// </summary>
 public static class BandpassWindow
 {
+    /// <summary>
+    /// Applies a frequency-domain mask to a real signal and returns the real part of
+    /// the result. The mask is real and even, so the filter is ZERO PHASE: it moves no
+    /// arrival in time, which is what makes a band-limited read of "when did this
+    /// arrive" honest — at the price of a symmetric pre-ringing skirt (see
+    /// <see cref="PeakSearchOptions.AnalysisKernelEnvelope"/>, which measures that skirt
+    /// so it is not mistaken for an earlier arrival).
+    ///
+    /// <paramref name="window"/> must be as long as <paramref name="signal"/>. The
+    /// transform is circular, so a caller filtering a CUT of a longer record should
+    /// zero-pad it first — otherwise a narrow low-frequency band, whose kernel is long,
+    /// wraps the tail back onto the head.
+    /// </summary>
+    public static double[] Apply(IReadOnlyList<double> signal, double[] window)
+    {
+        ArgumentNullException.ThrowIfNull(signal);
+        ArgumentNullException.ThrowIfNull(window);
+        if (window.Length != signal.Count)
+        {
+            throw new ArgumentException(
+                "Window and signal must be the same length.",
+                nameof(window));
+        }
+
+        var spectrum = new Complex[signal.Count];
+        for (int i = 0; i < signal.Count; i++)
+        {
+            spectrum[i] = new Complex(signal[i], 0.0);
+        }
+
+        Fourier.Forward(spectrum, FourierOptions.Matlab);
+        for (int i = 0; i < spectrum.Length; i++)
+        {
+            spectrum[i] *= window[i];
+        }
+
+        Fourier.Inverse(spectrum, FourierOptions.Matlab);
+
+        var filtered = new double[spectrum.Length];
+        for (int i = 0; i < spectrum.Length; i++)
+        {
+            filtered[i] = spectrum[i].Real;
+        }
+
+        return filtered;
+    }
+
     public static (double F1, double F2, double F3, double F4) BandAround(
         double centerHz,
         double passOctaves,

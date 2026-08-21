@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -10,6 +10,8 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
+
+using Resonalyze.Ui;
 
 namespace Resonalyze.Options
 {
@@ -1297,22 +1299,22 @@ namespace Resonalyze.Options
                 useAsio && asioDriverInfo.InputChannels.Count > 0;
             comboBoxAsioOutputChannel.Enabled =
                 useAsio && asioDriverInfo.OutputChannels.Count > 0;
-            labelAsioDriver.Enabled = useAsio;
-            labelAsioInputChannel.Enabled = useAsio;
-            labelAsioOutputChannel.Enabled = useAsio;
-            labelAsioSampleRate.Enabled = useAsio;
-            labelAsioSampleRateStatus.Enabled = useAsio;
-            labelAsioPlaybackLatency.Enabled = useAsio;
-            labelAsioPlaybackLatencyValue.Enabled = useAsio;
-            labelPlaybackDevice.Enabled = !useAsio;
-            labelRecordingDevice.Enabled = !useAsio;
-            labelWaveInputChannel.Enabled = !useAsio;
-            labelWaveLoopbackChannel.Enabled = !useAsio;
-            labelWaveLoopbackStatus.Enabled = !useAsio;
+            UiStyle.SetTextEnabledLook(labelAsioDriver, useAsio);
+            UiStyle.SetTextEnabledLook(labelAsioInputChannel, useAsio);
+            UiStyle.SetTextEnabledLook(labelAsioOutputChannel, useAsio);
+            UiStyle.SetTextEnabledLook(labelAsioSampleRate, useAsio);
+            UiStyle.SetTextEnabledLook(labelAsioSampleRateStatus, useAsio);
+            UiStyle.SetTextEnabledLook(labelAsioPlaybackLatency, useAsio);
+            UiStyle.SetTextEnabledLook(labelAsioPlaybackLatencyValue, useAsio);
+            UiStyle.SetTextEnabledLook(labelPlaybackDevice, !useAsio);
+            UiStyle.SetTextEnabledLook(labelRecordingDevice, !useAsio);
+            UiStyle.SetTextEnabledLook(labelWaveInputChannel, !useAsio);
+            UiStyle.SetTextEnabledLook(labelWaveLoopbackChannel, !useAsio);
+            UiStyle.SetTextEnabledLook(labelWaveLoopbackStatus, !useAsio);
             labelDeviceSettings.Visible = useWasapi;
             buttonDeviceSettings.Visible = useWasapi;
             buttonDeviceSettings.Enabled = useWasapi;
-            labelAsioLoopbackChannel.Enabled = useAsio;
+            UiStyle.SetTextEnabledLook(labelAsioLoopbackChannel, useAsio);
             // Refresh the stale marker: the calibration is pinned to one input, so
             // switching backend/device must flag it if it no longer matches.
             UpdateSplCalibrationButton();

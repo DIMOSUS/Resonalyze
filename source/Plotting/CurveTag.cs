@@ -46,6 +46,8 @@ public sealed record CurveTag(
         AnalysisCurveKind.MinimumPhaseGroupDelay => "Minimum-phase group delay",
         AnalysisCurveKind.ExcessGroupDelay => "Excess group delay",
         AnalysisCurveKind.InputSpectrum => "Input Spectrum (RTA)",
+        AnalysisCurveKind.ImpulseEnvelope => "Envelope (ETC)",
+        AnalysisCurveKind.ImpulseStep => "Step response",
         _ => mode switch
         {
             Mode.FrequencyResponse => "Magnitude",

@@ -31,7 +31,12 @@ public enum AnalysisCurveKind
     // measured − minimum that no minimum-phase equalizer can move. Appended at
     // the end: the kind is persisted in overlay files.
     MinimumPhaseGroupDelay,
-    ExcessGroupDelay
+    ExcessGroupDelay,
+    // The impulse view's derived time traces: the analytic-signal envelope (ETC)
+    // and the running integral of the impulse (step response). Appended for the
+    // same reason as the pair above.
+    ImpulseEnvelope,
+    ImpulseStep
 }
 
 /// <summary>

@@ -851,9 +851,11 @@ public sealed class PlotModelFactoryTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ImpulseResponse_LocksValueAxisToCurveRange(bool logarithmic)
+    [InlineData(ImpulseAmplitudeScale.Linear)]
+    [InlineData(ImpulseAmplitudeScale.PercentOfPeak)]
+    [InlineData(ImpulseAmplitudeScale.Decibels)]
+    public void ImpulseResponse_FramesTheTimeAxisAndOnlyTheDecibelFloor(
+        ImpulseAmplitudeScale scale)
     {
         var ir = new Complex[8192];
         int peak = 1024;
@@ -873,7 +875,7 @@ public sealed class PlotModelFactoryTests
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: ir, transferPeakIndex: peak);
 
-        var options = new ImpulseResponseOptions { Logarithmic = logarithmic, ShowImpulse = true };
+        var options = new ImpulseResponseOptions { AmplitudeScale = scale, ShowImpulse = true };
         PlotModelFactory factory =
             CreateFactory(measurement, noiseMeasurement, impulseOptions: options);
 
@@ -884,19 +886,326 @@ public sealed class PlotModelFactoryTests
         var timeAxis = model.Axes.First(axis =>
             axis.Position == OxyPlot.Axes.AxisPosition.Bottom);
 
-        double expectedMinY = series.Points.Min(point => point.Y);
+        // The level axis is left to scale itself so a later overlay can widen it (see
+        // ImpulseResponse_LevelAxisTakesInAnOverlayAttachedAfterTheBuild); only the dB
+        // floor is pinned, because the impulse dives to the deconvolution silence floor
+        // at every zero crossing and fitting to that spends most of the plot on it.
         double expectedMaxY = series.Points.Max(point => point.Y);
-        Assert.Equal(expectedMinY, valueAxis.Minimum, precision: 9);
-        Assert.Equal(expectedMaxY, valueAxis.Maximum, precision: 9);
-        Assert.Equal(expectedMinY, valueAxis.AbsoluteMinimum, precision: 9);
-        Assert.Equal(expectedMaxY, valueAxis.AbsoluteMaximum, precision: 9);
+        if (scale == ImpulseAmplitudeScale.Decibels)
+        {
+            Assert.Equal(expectedMaxY - 100.0, valueAxis.Minimum, precision: 9);
+        }
+        else
+        {
+            Assert.True(double.IsNaN(valueAxis.Minimum));
+        }
 
+        Assert.True(double.IsNaN(valueAxis.Maximum));
+
+        // The time axis can REACH the whole record — the traces are built whole, so
+        // zooming out ends at the end of the tail rather than at a length setting...
         double expectedMinX = series.Points.Min(point => point.X);
         double expectedMaxX = series.Points.Max(point => point.X);
-        Assert.Equal(expectedMinX, timeAxis.Minimum, precision: 9);
-        Assert.Equal(expectedMaxX, timeAxis.Maximum, precision: 9);
         Assert.Equal(expectedMinX, timeAxis.AbsoluteMinimum, precision: 9);
         Assert.Equal(expectedMaxX, timeAxis.AbsoluteMaximum, precision: 9);
+        // ...while it OPENS on the peak plus the Length tail, because a deconvolved
+        // record is mostly silence and opening on all of it draws the response as one
+        // vertical line.
+        double expectedVisibleMaxX = (peak + options.Length) * 1000.0 / 44_100.0;
+        Assert.Equal(expectedMinX, timeAxis.Minimum, precision: 9);
+        Assert.Equal(expectedVisibleMaxX, timeAxis.Maximum, precision: 9);
+        Assert.True(timeAxis.Maximum < timeAxis.AbsoluteMaximum);
+    }
+
+    private static (ExpSweepMeasurement Measurement, NoiseMeasurement Noise) BandedCabin(
+        double toneHz, int sampleRate = 48_000, int arrival = 480)
+    {
+        // A decaying tone: its dominant band sits around toneHz, which is what decides
+        // whether a band reading is offered at all.
+        var ir = new Complex[16_384];
+        for (int i = 0; i + arrival < ir.Length; i++)
+        {
+            double t = i / (double)sampleRate;
+            ir[arrival + i] = new Complex(
+                Math.Exp(-t * 400.0) * Math.Sin(2 * Math.PI * toneHz * t), 0);
+        }
+
+        int peak = 0;
+        for (int i = 0; i < ir.Length; i++)
+        {
+            if (Math.Abs(ir[i].Real) > Math.Abs(ir[peak].Real))
+            {
+                peak = i;
+            }
+        }
+
+        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000, sampleRate: sampleRate, bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir, transferPeakIndex: peak);
+        return (measurement, noise);
+    }
+
+    private static string ImpulsePeakMarkerText(OxyPlot.PlotModel model) =>
+        model.Annotations
+            .OfType<OxyPlot.Annotations.LineAnnotation>()
+            .Select(annotation => annotation.Text ?? string.Empty)
+            .Single(text => text.Contains("peak"));
+
+    [Fact]
+    public void ImpulseResponse_StatesHowLateTheBandPeaksWhenTheDriverPlaysThere()
+    {
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions
+            {
+                BandFilterOctaves = 1.0,
+                BandCenterHz = 250,
+                TimeUnit = ImpulseTimeUnit.Milliseconds
+            };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+
+            string text = ImpulsePeakMarkerText(
+                factory.CreateImpulseResponse(includeCurves: true));
+
+            Assert.Contains("band peak", text);
+            Assert.Contains("ms after arrival", text);
+        }
+    }
+
+    [Fact]
+    public void ImpulseResponse_RefusesTheBandOffsetWhereTheDriverDoesNotPlay()
+    {
+        // The field case this guard exists for: at 63 Hz a tweeter still has a "band
+        // peak", and across the archived cabins it landed seconds after the arrival
+        // because what peaked was leakage.
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(8_000);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions
+            {
+                BandFilterOctaves = 1.0,
+                BandCenterHz = 63,
+                TimeUnit = ImpulseTimeUnit.Milliseconds
+            };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+
+            string text = ImpulsePeakMarkerText(
+                factory.CreateImpulseResponse(includeCurves: true));
+
+            Assert.Contains("band peak", text);
+            Assert.DoesNotContain("after arrival", text);
+        }
+    }
+
+    [Fact]
+    public void ImpulseResponse_OffersNoBandOffsetWithoutABandFilter()
+    {
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            PlotModelFactory factory = CreateFactory(
+                measurement, noise, impulseOptions: new ImpulseResponseOptions());
+
+            string text = ImpulsePeakMarkerText(
+                factory.CreateImpulseResponse(includeCurves: true));
+
+            Assert.DoesNotContain("band", text);
+            Assert.DoesNotContain("after arrival", text);
+        }
+    }
+
+    [Theory]
+    [InlineData(true, false)]   // impulse only: the step axis must still exist
+    [InlineData(false, true)]   // step only: the level axis must still exist
+    public void ImpulseResponse_KeepsBothAxesForOverlaysCapturedOnTheOther(
+        bool showImpulse, bool showStep)
+    {
+        // An overlay carries the axis key it was captured with, and a series naming an
+        // axis the model does not have cannot bind — so switching a trace off must not
+        // take its axis out of the model.
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions
+            {
+                ShowImpulse = showImpulse,
+                ShowEnvelope = false,
+                ShowStep = showStep
+            };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+
+            var model = factory.CreateImpulseResponse(includeCurves: true);
+
+            Assert.Contains(model.Axes, axis => axis.Key == PlotModelFactory.ImpulseAxisKey);
+            Assert.Contains(
+                model.Axes, axis => axis.Key == PlotModelFactory.ImpulseStepAxisKey);
+        }
+    }
+
+    [Theory]
+    [InlineData(ImpulseAmplitudeScale.Linear)]
+    [InlineData(ImpulseAmplitudeScale.PercentOfPeak)]
+    [InlineData(ImpulseAmplitudeScale.Decibels)]
+    public void ImpulseResponse_LevelAxisTakesInAnOverlayAttachedAfterTheBuild(
+        ImpulseAmplitudeScale scale)
+    {
+        // Overlays join the model AFTER it is built, and a snapshot from a louder record
+        // re-frames above the live curve on purpose. An explicit Minimum/Maximum would
+        // win over the data range in OxyPlot, so the axis is left to scale itself and the
+        // level difference the shared normalization exists to show stays on screen.
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions { AmplitudeScale = scale };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+            var model = factory.CreateImpulseResponse(includeCurves: true);
+            var valueAxis = model.Axes.First(axis =>
+                axis.Key == PlotModelFactory.ImpulseAxisKey);
+
+            // What an overlay louder than the live record looks like once re-framed. The
+            // linear case is read off the drawn curve: the axis has no data range yet,
+            // since nothing has updated the model.
+            double liveMaximum = ((OxyPlot.Series.LineSeries)model.Series[0])
+                .Points.Max(point => point.Y);
+            double louder = scale switch
+            {
+                ImpulseAmplitudeScale.Decibels => 6.0,
+                ImpulseAmplitudeScale.PercentOfPeak => 200.0,
+                _ => liveMaximum * 2.0
+            };
+            var overlay = new OxyPlot.Series.LineSeries
+            {
+                YAxisKey = PlotModelFactory.ImpulseAxisKey
+            };
+            overlay.Points.Add(new OxyPlot.DataPoint(0, 0));
+            overlay.Points.Add(new OxyPlot.DataPoint(1, louder));
+            model.Series.Add(overlay);
+            ((OxyPlot.IPlotModel)model).Update(true);
+
+            Assert.True(
+                valueAxis.ActualMaximum >= louder,
+                $"axis stopped at {valueAxis.ActualMaximum}, overlay reaches {louder}");
+        }
+    }
+
+    [Fact]
+    public void ImpulseResponse_FramesOverlaysEvenWithEveryLiveTraceHidden()
+    {
+        // An overlay is framed by the view's origin and the live record's peak, and it
+        // can be the only thing on the plot. Resolving those inside the "is anything
+        // drawn" branch left it at the record start and at its own peak — ignoring the
+        // chosen time zero and erasing the level difference against the current record.
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions
+            {
+                ShowImpulse = false,
+                ShowEnvelope = false,
+                ShowStep = false,
+                TimeOrigin = ImpulseTimeOrigin.Peak,
+                AmplitudeScale = ImpulseAmplitudeScale.PercentOfPeak
+            };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+
+            var model = factory.CreateImpulseResponse(includeCurves: true);
+            ImpulseOverlayFrame frame = factory.ImpulseFrame;
+
+            Assert.Empty(model.Series);
+            Assert.Equal(measurement.Transfer!.PeakIndex, frame.OriginSamples, precision: 9);
+            Assert.NotNull(frame.ReferencePeak);
+            Assert.True(frame.ReferencePeak > 0.0);
+            Assert.Equal(measurement.SampleRate, frame.SampleRate);
+            Assert.Same(options, frame.Options);
+        }
+    }
+
+    [Fact]
+    public void ImpulseResponse_PinsTheDecibelFloorButNotTheTop()
+    {
+        // The floor is what keeps the plot off the silence the impulse dives to at every
+        // zero crossing; the top has to stay free for the case above.
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions
+            {
+                AmplitudeScale = ImpulseAmplitudeScale.Decibels
+            };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+
+            var model = factory.CreateImpulseResponse(includeCurves: true);
+            var valueAxis = model.Axes.First(axis =>
+                axis.Key == PlotModelFactory.ImpulseAxisKey);
+            var series = (OxyPlot.Series.LineSeries)model.Series[0];
+
+            Assert.Equal(
+                series.Points.Max(point => point.Y) - 100.0,
+                valueAxis.Minimum,
+                precision: 9);
+            Assert.True(double.IsNaN(valueAxis.Maximum));
+        }
+    }
+
+    [Fact]
+    public void ImpulseResponse_DrawsTheWholeRecordNotJustTheDefaultView()
+    {
+        var ir = new Complex[8192];
+        int peak = 1024;
+        ir[peak] = Complex.One;
+        // A late reflection well past peak + Length: it must exist in the curve, or no
+        // amount of zooming out could ever bring it on screen.
+        ir[7000] = new Complex(0.2, 0);
+
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir, transferPeakIndex: peak);
+
+        var options = new ImpulseResponseOptions
+        {
+            Length = 2048,
+            TimeUnit = ImpulseTimeUnit.Samples,
+            ShowImpulse = true
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noiseMeasurement, impulseOptions: options);
+
+        var model = factory.CreateImpulseResponse(includeCurves: true);
+        var series = (OxyPlot.Series.LineSeries)model.Series[0];
+        var timeAxis = model.Axes.First(axis =>
+            axis.Position == OxyPlot.Axes.AxisPosition.Bottom);
+
+        Assert.Equal(8192, series.Points.Count);
+        Assert.Equal(0.2, series.Points[7000].Y, precision: 9);
+        Assert.Equal(peak + options.Length, timeAxis.Maximum, precision: 9);
+        Assert.Equal(8191, timeAxis.AbsoluteMaximum, precision: 9);
     }
 
     [Fact]

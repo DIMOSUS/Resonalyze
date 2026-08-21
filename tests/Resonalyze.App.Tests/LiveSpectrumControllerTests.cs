@@ -80,6 +80,56 @@ public sealed class LiveSpectrumControllerTests
     }
 
     [Fact]
+    public async Task DiscardCapturedData_ClearsTheAccumulationAndTheKeptCurve()
+    {
+        // The idle-recolour hole: a stopped curve is a record of the PREVIOUS
+        // acquisition setup, while the display transform (the slope compensation
+        // above all) reads the options live. When an acquisition parameter changes
+        // without a restart, the host discards the stale data instead of letting
+        // the next redraw silently re-interpret it as the new excitation.
+        var factory = new FakeAudioSessionFactory(
+            streamingFactory: _ => new RecordingStreamingSession(
+                framesToRaise: 20,
+                failAfterFrames: false));
+        using var noise = new NoiseMeasurement(factory);
+        noise.Init(
+            44_100,
+            24,
+            0.5,
+            PlaybackChannel.Mono,
+            sequenceLength: 1024,
+            liveSpectrumOptions: new LiveSpectrumOptions
+            {
+                AnalysisMode = LiveAnalysisMode.Rta,
+                NoiseColor = NoiseColor.Pink
+            });
+
+        Task<bool> running = noise.RunAsync();
+        LiveSpectrumSnapshot? snapshot = null;
+        for (int attempt = 0; attempt < 100 && snapshot == null; attempt++)
+        {
+            await Task.Delay(10);
+            snapshot = noise.GetAccumulatedSpectrumSnapshot();
+        }
+        await noise.AbortAsync();
+        Assert.True(await running, noise.LastError?.ToString());
+        Assert.NotNull(snapshot);
+
+        var controller = (LiveSpectrumController)RuntimeHelpers.GetUninitializedObject(
+            typeof(LiveSpectrumController));
+        SetField(controller, "measurement", noise);
+        SetField(controller, "plotView", new OxyPlot.WindowsForms.PlotView());
+        SetField(controller, "lastSnapshot", snapshot);
+
+        controller.DiscardCapturedData();
+
+        Assert.Null(noise.GetAccumulatedSpectrumSnapshot());
+        Assert.Null(typeof(LiveSpectrumController)
+            .GetField("lastSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(controller));
+    }
+
+    [Fact]
     public void TiltToggle_ChangesThePeakHoldDisplayKey()
     {
         // The peak-hold envelope holds FINISHED display values; toggling the noise

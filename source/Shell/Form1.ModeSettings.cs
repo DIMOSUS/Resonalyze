@@ -155,6 +155,16 @@ public partial class Form1
         if (before != after)
         {
             await ApplyMeasurementConfigurationToControllersAsync();
+            // The snapshot names the ACQUISITION parameters. A running analyzer was
+            // just restarted onto a fresh accumulation; a stopped one still holds
+            // the previous setup's curve, which must not be redrawn under the new
+            // parameters — the display transform reads the options live, so e.g.
+            // the slope compensation would re-tilt a stopped pink RTA as if the
+            // excitation had been white.
+            if (!liveSpectrumController.InProgress)
+            {
+                liveSpectrumController.DiscardCapturedData();
+            }
         }
         else
         {

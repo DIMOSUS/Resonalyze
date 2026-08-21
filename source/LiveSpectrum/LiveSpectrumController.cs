@@ -303,6 +303,22 @@ internal sealed class LiveSpectrumController : IDisposable
     }
 
     /// <summary>
+    /// Discards the accumulated spectra and the remembered curve. The host calls
+    /// this when an acquisition parameter (analysis mode, signal colour, window,
+    /// FFT length, overlap) changes while the analyzer is STOPPED: the kept curve
+    /// is a record of the previous setup, and the display transform reads the
+    /// options live — redrawing old data under the new parameters would silently
+    /// re-interpret it (the slope compensation, for one, would re-tilt a stopped
+    /// pink RTA as if the excitation had been white). A running analyzer needs no
+    /// call — its restart already begins a fresh accumulation.
+    /// </summary>
+    public void DiscardCapturedData()
+    {
+        measurement.ResetAccumulation();
+        ForgetLastCurve();
+    }
+
+    /// <summary>
     /// Drops display state that is incompatible with any calibration change.
     /// This must run even while another mode owns the visible plot.
     /// </summary>

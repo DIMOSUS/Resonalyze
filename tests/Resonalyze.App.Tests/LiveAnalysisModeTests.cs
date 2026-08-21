@@ -54,6 +54,49 @@ public sealed class LiveAnalysisModeTests
         Assert.Contains(
             session!.LastPlaybackSignal!.MonoSamples,
             sample => sample != 0.0f);
+
+        // Mic-only in CAPTURE too, not just in analysis: the session request must
+        // not ask the backend for the loopback channel — WASAPI refuses an endpoint
+        // with fewer channels than the routing requires, and ASIO widens the
+        // captured window to span from the mic to the reference.
+        Assert.NotNull(factory.LastRequest);
+        Assert.Equal(0, factory.LastRequest!.Routing.MicrophoneChannel);
+        Assert.Null(factory.LastRequest.Routing.LoopbackChannel);
+    }
+
+    [Fact]
+    public async Task TransferCapture_StillRequestsTheLoopbackChannel()
+    {
+        // The counterpart pin: dropping the loopback from the request is an
+        // RTA-only behavior — the transfer capture must keep asking for it.
+        var factory = new FakeAudioSessionFactory(
+            streamingFactory: _ => new RecordingStreamingSession(
+                framesToRaise: 1,
+                failAfterFrames: false));
+        using var measurement = new NoiseMeasurement(factory);
+        measurement.Init(
+            44_100,
+            24,
+            0.5,
+            PlaybackChannel.Mono,
+            sequenceLength: 1024,
+            waveInputChannelOffset: 0,
+            waveLoopbackInputChannelOffset: 1,
+            liveSpectrumOptions: new LiveSpectrumOptions
+            {
+                AnalysisMode = LiveAnalysisMode.TransferFunction
+            });
+
+        Task<bool> running = measurement.RunAsync();
+        for (int attempt = 0; attempt < 100 && factory.LastRequest == null; attempt++)
+        {
+            await Task.Delay(10);
+        }
+        await measurement.AbortAsync();
+
+        Assert.True(await running, measurement.LastError?.ToString());
+        Assert.NotNull(factory.LastRequest);
+        Assert.Equal(1, factory.LastRequest!.Routing.LoopbackChannel);
     }
 
     [Fact]

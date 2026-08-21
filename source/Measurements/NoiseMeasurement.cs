@@ -521,6 +521,13 @@ namespace Resonalyze
             return success;
         }
 
+        // An RTA capture opens the microphone ALONE even when a loopback reference is
+        // configured: the reference-free analysis never reads it, and requesting it
+        // is not merely a wasted channel — WASAPI refuses to open an endpoint with
+        // fewer channels than the mic+loopback routing requires, and ASIO widens the
+        // captured channel window to span from the mic to the reference. The
+        // configured offsets themselves are kept (HasConfiguredLoopback still gates
+        // the Transfer mode's availability); only this session request drops them.
         private AudioSessionRequest BuildSessionRequest() =>
             AudioSessionRequestBuilder.Build(
                 AudioBackend,
@@ -528,9 +535,9 @@ namespace Resonalyze
                 Bits,
                 PlaybackChannel,
                 WaveInputChannelOffset,
-                WaveLoopbackInputChannelOffset,
+                IsRtaCapture ? null : WaveLoopbackInputChannelOffset,
                 AsioInputChannelOffset,
-                AsioLoopbackInputChannelOffset,
+                IsRtaCapture ? null : AsioLoopbackInputChannelOffset,
                 AsioOutputChannelOffset,
                 OutputDeviceNumber,
                 InputDeviceNumber,

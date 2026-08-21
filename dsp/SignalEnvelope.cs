@@ -151,12 +151,15 @@ public static class SignalEnvelope
             }
         }
 
+        int packetSpanSamples = (int)Math.Round(
+            ArrivalPacketMilliseconds * sampleRate / 1000.0);
         int firstArrivalIndex = EliminatePreRingingSidelobes(
             view,
             candidates,
             options.AnalysisKernelEnvelope,
             threshold,
-            strongestPeak);
+            strongestPeak,
+            packetSpanSamples);
         if (firstArrivalIndex >= 0)
         {
             return new PeakSearchResult(
@@ -308,17 +311,58 @@ public static class SignalEnvelope
     private const double SidelobeSymmetryRatio = 0.5;
     private const int SidelobeMirrorNeighborhood = 2;
 
+    // How long after a candidate a stronger peak still belongs to the SAME wave
+    // packet rather than being a separate arrival — the complement of
+    // <see cref="TimeAlignmentAnalysis"/>'s separate-arrival rule, and the same
+    // 1 ms, so the two never disagree about what one arrival is.
+    internal const double ArrivalPacketMilliseconds = 1.0;
+
+    // The share of its own packet's peak amplitude a candidate must reach to be
+    // read as that packet's front rather than a ripple on its foot. A wave
+    // packet's leading edge carries interference structure — a comb null a
+    // fraction of a millisecond before the front leaves a small bump above the
+    // search threshold — and taking that bump as "the arrival" reports a time
+    // that depends on the record's ripple, not on its path: two identical
+    // drivers in opposite doors then read one arrival at its packet peak and the
+    // other 20 dB down its own foot, and the level difference enters the
+    // measured DELAY (field pair: 0.31 ms of a 1.45 ms split; a tweeter pair:
+    // 0.125 ms). Measured on that cabin, foot ripples sit 19-21 dB under their
+    // packet while genuine fronts stay within 7 dB, so 25 % (-12 dB) separates
+    // them with margin on both sides. It is the same 25 % the broadband onset
+    // (<see cref="VirtualCrossoverAnalysis.EstimateBroadbandOnset"/>) calls the
+    // onset level, and it is deliberately LOCAL: the packet window is one
+    // millisecond, so a soft direct arrival buried under a room mode
+    // milliseconds later — what the 25 dB search depth exists to find — is
+    // nobody's foot ripple and stays selected.
+    private const double ArrivalPacketRiseRatio = 0.25;
+
+    // How deep the envelope must null between a candidate and a later stronger
+    // sample for the two to be RESOLVED events rather than one packet — the
+    // same 20 dB <see cref="TimeAlignmentAnalysis"/> calls a resolved valley,
+    // because destructive interference nulls faster than an envelope rises. The
+    // packet ends at the first such null: past it the record belongs to another
+    // arrival, and the rising edge of a reflection that peaks beyond the packet
+    // window must not be allowed to dwarf a genuine direct sound in front of it.
+    // Measured on the field cabin, real foot ripples dip at most 14.5 dB (the
+    // mid pair's own: 7.5 dB) before their packet's peak, so the two cases stay
+    // apart with margin.
+    internal const double ArrivalPacketResolvedValleyDb = 20.0;
+
     // Walks the threshold-passing local maxima from the latest to the earliest,
     // dropping every candidate that reads as a pre-ringing sidelobe of an
     // already-accepted later peak — a weak first arrival is itself a sidelobe
     // reference, so its own pre-ring cannot masquerade as an even earlier
-    // arrival. Returns the earliest surviving candidate, or -1 when none pass.
+    // arrival. Returns the earliest surviving candidate that also rises far
+    // enough within its own packet, or -1 when none pass. A dwarfed candidate
+    // still joins the sidelobe references: it is a real bump in the envelope and
+    // rings like one, whatever it is called.
     private static int EliminatePreRingingSidelobes(
         IReadOnlyList<double> envelope,
         IReadOnlyList<int> candidates,
         IReadOnlyList<double>? kernelEnvelope,
         double threshold,
-        double strongestPeak)
+        double strongestPeak,
+        int packetSpanSamples)
     {
         // Beyond this offset not even the strongest peak can ring above the
         // candidate threshold, so no threshold-passing candidate can be anyone's
@@ -359,11 +403,45 @@ public static class SignalEnvelope
             if (!isSidelobe)
             {
                 accepted.Add(candidate);
-                firstArrival = candidate;
+                if (RisesWithinItsPacket(envelope, candidate, packetSpanSamples))
+                {
+                    firstArrival = candidate;
+                }
             }
         }
 
         return firstArrival;
+    }
+
+    // Whether the candidate is the front of its own wave packet rather than a
+    // ripple on its foot: the strongest envelope sample of THAT PACKET may stand
+    // no more than the rise ratio above it. The packet runs one span forward and
+    // ends early at a null deep enough to resolve two events, so a genuine
+    // earlier arrival is never dwarfed by whatever rises after the null — the
+    // separate-arrival case, which keeps its own timing. The strongest peak of
+    // the record always passes (nothing outranks it inside its own packet), so
+    // the walk can never come back empty because of this test.
+    private static bool RisesWithinItsPacket(
+        IReadOnlyList<double> envelope,
+        int candidateIndex,
+        int packetSpanSamples)
+    {
+        double candidate = envelope[candidateIndex];
+        double resolvedFloor =
+            candidate * Math.Pow(10.0, -ArrivalPacketResolvedValleyDb / 20.0);
+        double packetPeak = candidate;
+        int last = Math.Min(envelope.Count - 1, candidateIndex + packetSpanSamples);
+        for (int i = candidateIndex + 1; i <= last; i++)
+        {
+            if (envelope[i] < resolvedFloor)
+            {
+                break;
+            }
+
+            packetPeak = Math.Max(packetPeak, envelope[i]);
+        }
+
+        return candidate >= packetPeak * ArrivalPacketRiseRatio;
     }
 
     // The analysis kernel's envelope level at |offset| samples from its centre,

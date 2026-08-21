@@ -607,4 +607,49 @@ public sealed class TimeAlignmentAnalysisTests
         Assert.Equal(baseline.FirstArrivalConfidence, weighted.FirstArrivalConfidence);
         Assert.Equal(baseline.StrongestConfidence, weighted.StrongestConfidence);
     }
+
+    [Fact]
+    public void Analyze_ReadsAPairOfIdenticalDriversAtTheSamePointOfTheirFronts()
+    {
+        // Two identical drivers in opposite doors, 1.5 ms of path apart, each
+        // front followed by a stronger cabin reflection — 0.625 ms on one side,
+        // 0.5 ms on the other, because the two doors are not mirror images. No
+        // ripple is placed by hand: band-limiting these two wavefronts is what
+        // leaves comb structure on the leading edge, and on the near record one
+        // of those bumps clears the search threshold 0.27 ms before its front.
+        // Reading it as the arrival reports 1.771 ms for a 1.5 ms split.
+        var near = new double[8_192];
+        near[500] = 0.6;
+        near[530] = 1.0;
+        var far = new double[8_192];
+        far[572] = 0.6;
+        far[596] = 1.0;
+        // The band the field pair was read in (33-7671 Hz), as centre and width.
+        var options = new TimeAlignmentAnalysisOptions
+        {
+            UseBandpassWindow = true,
+            BandpassCenterHz = 500,
+            BandpassPassOctaves = 7.9,
+            BandpassFadeOctaves = 0.5
+        };
+
+        TimeAlignmentAnalysisResult nearResult = TimeAlignmentAnalysis.Analyze(
+            near, SampleRate, options);
+        TimeAlignmentAnalysisResult farResult = TimeAlignmentAnalysis.Analyze(
+            far, SampleRate, options);
+
+        double splitMs =
+            farResult.FirstArrivalDelayMilliseconds -
+            nearResult.FirstArrivalDelayMilliseconds;
+        // (572 - 500) samples at 48 kHz = 1.5 ms.
+        Assert.InRange(splitMs, 1.45, 1.55);
+        // And the two figures are the same observable: both picks sit at the
+        // same depth under their own packet, so the delta is path, not level.
+        Assert.InRange(
+            Math.Abs(
+                nearResult.FirstArrivalProminenceDecibels -
+                farResult.FirstArrivalProminenceDecibels),
+            0.0,
+            1.0);
+    }
 }

@@ -321,6 +321,9 @@ public sealed class SignalEnvelopeTests
     {
         // Same early bump, but nothing at the mirrored position after the main
         // peak — a genuine earlier arrival, so it must stay the first arrival.
+        // It is also 14 dB under a stronger peak 0.125 ms later: the envelope
+        // nulls to zero between them, which resolves the two as separate events,
+        // so the packet-rise floor has no say here.
         var envelope = new double[64];
         envelope[13] = 0.05;
         envelope[14] = 0.2;
@@ -341,6 +344,158 @@ public sealed class SignalEnvelopeTests
             });
 
         Assert.Equal(14, result.SelectedIndex);
+        Assert.False(result.FallbackUsed);
+    }
+
+    [Fact]
+    public void FindPeak_RejectsARippleOnTheFootOfItsOwnWavePacket()
+    {
+        // A ripple 20 dB under the packet it belongs to, 0.83 ms ahead of that
+        // packet's peak, riding a foot that only dips 4 dB behind it — the comb
+        // structure a cabin leaves on a leading edge. It is too loud to be the
+        // transform's own pre-ringing (the symmetry rule keeps it) and too quiet,
+        // with nothing resolving it from the rise it sits on, to be the front.
+        // Reading it as the arrival is what made two identical drivers
+        // incomparable: one measured at its packet peak, the other 20 dB down
+        // its own foot.
+        var envelope = new double[4_096];
+        Ramp(envelope, 480, 500, 0.0, 0.10);   // foot rising to the ripple
+        Ramp(envelope, 500, 510, 0.10, 0.06);  // the ripple's own shallow dip
+        Ramp(envelope, 510, 540, 0.06, 1.0);   // on into the packet's peak
+        Ramp(envelope, 540, 600, 1.0, 0.0);
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                FirstPeakThresholdBelowMaxDb = 25,
+                FirstPeakMinimumSnrDb = 0
+            });
+
+        Assert.Equal(540, result.SelectedIndex);
+        Assert.False(result.FallbackUsed);
+    }
+
+    [Fact]
+    public void FindPeak_KeepsADirectArrivalResolvedFromTheNextPacketByANull()
+    {
+        // The same 20 dB gap inside the same millisecond, but the envelope nulls
+        // to nothing between the two: destructive interference resolves them, so
+        // these are two arrivals and the earlier one is the direct sound. Its
+        // timing must survive — the packet ends at the null, and what rises
+        // after it is somebody else's packet.
+        var envelope = new double[4_096];
+        Ramp(envelope, 480, 500, 0.0, 0.10);
+        Ramp(envelope, 500, 515, 0.10, 0.0);   // resolved: a null, not a dip
+        Ramp(envelope, 520, 540, 0.0, 1.0);
+        Ramp(envelope, 540, 600, 1.0, 0.0);
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                FirstPeakThresholdBelowMaxDb = 25,
+                FirstPeakMinimumSnrDb = 0
+            });
+
+        Assert.Equal(500, result.SelectedIndex);
+        Assert.False(result.FallbackUsed);
+    }
+
+    [Fact]
+    public void FindPeak_KeepsADirectArrivalWhenOnlyALaterPacketsRisingEdgeIsInReach()
+    {
+        // A reflection that PEAKS 1.25 ms after the direct sound — a separate
+        // arrival by every rule here — but whose rising edge is already inside
+        // the one-millisecond packet window, and by its end stands seven times
+        // the direct arrival. The look-ahead must not borrow that edge to dwarf
+        // the arrival in front of it.
+        var envelope = new double[4_096];
+        Ramp(envelope, 480, 500, 0.0, 0.10);
+        Ramp(envelope, 500, 515, 0.10, 0.0);
+        Ramp(envelope, 520, 560, 0.0, 1.0);    // rising through the window, peaking past it
+        Ramp(envelope, 560, 640, 1.0, 0.0);
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                FirstPeakThresholdBelowMaxDb = 25,
+                FirstPeakMinimumSnrDb = 0
+            });
+
+        Assert.Equal(500, result.SelectedIndex);
+        Assert.False(result.FallbackUsed);
+    }
+
+    // Writes a linear segment into the envelope, endpoints included, so a test
+    // can shape a real leading edge instead of isolated spikes: whether two
+    // bumps are one packet or two arrivals is a question about what lies
+    // BETWEEN them.
+    private static void Ramp(
+        double[] envelope, int from, int to, double fromValue, double toValue)
+    {
+        for (int i = from; i <= to; i++)
+        {
+            double position = (double)(i - from) / (to - from);
+            envelope[i] = fromValue + (toValue - fromValue) * position;
+        }
+    }
+
+    [Fact]
+    public void FindPeak_KeepsASoftArrivalWhenTheStrongPeakIsMillisecondsLater()
+    {
+        // The same 20 dB gap, but the strong peak sits 4.2 ms later — a room
+        // mode, not this arrival's own packet. The soft direct sound the 25 dB
+        // search depth exists to find must survive: the packet floor is local.
+        var envelope = new double[4_096];
+        envelope[500] = 0.1;
+        envelope[700] = 1.0;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                FirstPeakThresholdBelowMaxDb = 25,
+                FirstPeakMinimumSnrDb = 0
+            });
+
+        Assert.Equal(500, result.SelectedIndex);
+        Assert.False(result.FallbackUsed);
+    }
+
+    [Fact]
+    public void FindPeak_KeepsAFrontThatReachesAQuarterOfItsPacketPeak()
+    {
+        // The floor is a quarter of the packet's amplitude: a front at 0.3 of a
+        // 1.0 packet — connected to it, no null between them — is that packet's
+        // own leading edge and stays selected, so the guard cannot quietly
+        // promote every arrival to its strongest lobe.
+        var envelope = new double[4_096];
+        Ramp(envelope, 480, 500, 0.0, 0.3);
+        Ramp(envelope, 500, 510, 0.3, 0.25);
+        Ramp(envelope, 510, 540, 0.25, 1.0);
+        Ramp(envelope, 540, 600, 1.0, 0.0);
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                FirstPeakThresholdBelowMaxDb = 25,
+                FirstPeakMinimumSnrDb = 0
+            });
+
+        Assert.Equal(500, result.SelectedIndex);
         Assert.False(result.FallbackUsed);
     }
 

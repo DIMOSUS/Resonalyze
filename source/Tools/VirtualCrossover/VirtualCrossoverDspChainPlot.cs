@@ -111,7 +111,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         view.Model = initialMode == DspPlotMode.Correlation
             ? correlationModel
             : chainModel;
-        PlotInteraction.EnableDoubleClickAxisReset(view);
+        PlotInteraction.Enable(view);
     }
 
     private static PlotModel CreateCorrelationModel()

@@ -66,6 +66,7 @@ namespace Resonalyze
         private readonly IReadOnlyDictionary<ModeTab, ModeDescriptor> modeDescriptors;
         private readonly ActiveOverlaySlotTracker activeOverlaySlots = new();
         private readonly PlotLabelsPanelController plotLabelsPanelController;
+        private readonly PlotViewportMemory plotViewports;
         private readonly InputLevelMeterController inputLevelMeterController;
         private readonly DockedModeSettingsHost dockedModeSettingsHost;
         private readonly DockedModeSettingsHost dockedMeasurementSettingsHost;
@@ -94,7 +95,7 @@ namespace Resonalyze
             expSweepMeasurement = new ExpSweepMeasurement(audioSessionFactory);
             noiseMeasurement = new NoiseMeasurement(audioSessionFactory);
             ConfigureToolTips();
-            PlotInteraction.EnableDoubleClickAxisReset(plotView1);
+            PlotInteraction.Enable(plotView1);
             plotView1.Paint += (_, _) => AppProfiler.FrameMark("main-plot");
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             measurementSettingsSaver = new DebouncedSaver(
@@ -118,6 +119,7 @@ namespace Resonalyze
                 measurementHistoryService,
                 CaptureCurrentSessionSnapshot);
             Form1ControllerDependencies dependencies = CreateControllerDependencies();
+            plotViewports = dependencies.PlotViewports;
             overlayCollection = dependencies.OverlayCollection;
             plotLabelsPanelController = dependencies.PlotLabelsPanelController;
             plotModelFactory = dependencies.PlotModelFactory;

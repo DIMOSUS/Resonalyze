@@ -115,13 +115,16 @@ public partial class Form1
             async dialog =>
             {
                 object? keyBefore = viewResetKey?.Invoke();
-                IReadOnlyList<AxisViewport> axisViewports = CaptureAxisViewports();
                 apply(dialog);
                 SaveMeasurementSettings();
                 // When a setting changes the axis scale itself (e.g. linear <-> logarithmic),
-                // the old zoom is meaningless, so refit the view instead of restoring it.
-                bool refit = viewResetKey != null && !Equals(keyBefore, viewResetKey());
-                await RefreshCurrentModePlotAsync(refit ? null : axisViewports);
+                // the old zoom is meaningless, so drop it and let the view refit.
+                if (viewResetKey != null && !Equals(keyBefore, viewResetKey()))
+                {
+                    plotViewports.Forget(CurrentMode);
+                }
+
+                await RefreshCurrentModePlotAsync();
             },
             applyOnChange: true);
     }
@@ -174,8 +177,7 @@ public partial class Form1
         RefreshCurrentModePlot();
     }
 
-    private async Task RefreshCurrentModePlotAsync(
-        IReadOnlyList<AxisViewport>? restoreViewports = null)
+    private async Task RefreshCurrentModePlotAsync()
     {
         ModeDescriptor descriptor = GetActiveModeDescriptor();
         if (descriptor.CreatePlotModel == null || descriptor.Mode == Mode.LiveSpectrum)
@@ -196,14 +198,6 @@ public partial class Form1
             return;
         }
 
-        // Apply the saved zoom to the new model's axes BEFORE showing it. Overlays
-        // (e.g. a calculated overlay) force a synchronous repaint while drawing; if the
-        // zoom were restored only afterwards, that repaint would flash the default scale
-        // first, so the plot appears to jump on every settings change.
-        if (restoreViewports != null)
-        {
-            ApplyAxisViewports(model, restoreViewports);
-        }
         ShowPlotModel(model, shouldIncludeCurves, descriptor.ShowOverlayCurves);
     }
 
@@ -219,57 +213,6 @@ public partial class Form1
         bool includeCurves = GetActiveModeDescriptor().SupportsCurveDrawing &&
             CanDrawCurrentMeasurement();
         DrawSelectedMode(includeCurves);
-    }
-
-    private IReadOnlyList<AxisViewport> CaptureAxisViewports()
-    {
-        PlotModel? model = plotView1.Model;
-        if (model == null)
-        {
-            return Array.Empty<AxisViewport>();
-        }
-
-        // ActualMinimum/ActualMaximum only refresh on render, so a rebuild triggered
-        // before the previous paint settled (common with Compare, whose model is
-        // slower to build) would capture the nominal range and drop the user's zoom.
-        // Update the model in place first so the actual range reflects the live
-        // pan/zoom synchronously, independent of paint timing.
-        ((IPlotModel)model).Update(false);
-
-        var viewports = new List<AxisViewport>(model.Axes.Count);
-        foreach (Axis axis in model.Axes)
-        {
-            viewports.Add(new AxisViewport(
-                axis.Position,
-                axis.GetType(),
-                axis.ActualMinimum,
-                axis.ActualMaximum));
-        }
-
-        return viewports;
-    }
-
-    private static void ApplyAxisViewports(
-        PlotModel model,
-        IReadOnlyList<AxisViewport> viewports)
-    {
-        if (viewports.Count == 0)
-        {
-            return;
-        }
-
-        foreach (Axis axis in model.Axes)
-        {
-            AxisViewport? viewport = viewports.FirstOrDefault(
-                item => item.Position == axis.Position &&
-                    item.AxisType == axis.GetType());
-            if (viewport == null)
-            {
-                continue;
-            }
-
-            axis.Zoom(viewport.Minimum, viewport.Maximum);
-        }
     }
 
     private bool HasDockedModeSettings(ModeTab tab) =>
@@ -322,12 +265,6 @@ public partial class Form1
     {
         commandController.UpdateHistoryButton(dockedHistoryHost.IsOpen);
     }
-
-    private sealed record AxisViewport(
-        AxisPosition Position,
-        Type AxisType,
-        double Minimum,
-        double Maximum);
 
     private sealed record LiveSpectrumRestartSnapshot(
         // The analysis mode switches both the playback role of the signal and the

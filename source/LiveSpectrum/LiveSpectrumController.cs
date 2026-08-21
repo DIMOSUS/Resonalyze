@@ -11,6 +11,10 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly NoiseMeasurement measurement;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 33 };
     private readonly OxyPlot.WindowsForms.PlotView plotView;
+    // Model swaps go through the viewport memory, not straight at the view: a
+    // start, a stop or a settings change rebuilds the live model, and the zoom the
+    // user set while watching the analyzer has to survive that.
+    private readonly PlotViewportMemory plotViewports;
     private readonly PlotModelFactory plotModelFactory;
     private readonly OverlayCollection overlayCollection;
     private readonly Func<Mode> getCurrentMode;
@@ -61,6 +65,7 @@ internal sealed class LiveSpectrumController : IDisposable
         Form owner,
         NoiseMeasurement measurement,
         OxyPlot.WindowsForms.PlotView plotView,
+        PlotViewportMemory plotViewports,
         PlotModelFactory plotModelFactory,
         OverlayCollection overlayCollection,
         Func<Mode> getCurrentMode,
@@ -74,6 +79,7 @@ internal sealed class LiveSpectrumController : IDisposable
         this.owner = owner;
         this.measurement = measurement;
         this.plotView = plotView;
+        this.plotViewports = plotViewports;
         this.plotModelFactory = plotModelFactory;
         this.overlayCollection = overlayCollection;
         this.getCurrentMode = getCurrentMode;
@@ -395,7 +401,7 @@ internal sealed class LiveSpectrumController : IDisposable
             PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
         }
 
-        plotView.Model = model;
+        plotViewports.Show(model, getCurrentMode());
         updateOverlayAvailability();
         overlayCollection.Show(getCurrentMode());
         updatePlotLabels();
@@ -430,7 +436,7 @@ internal sealed class LiveSpectrumController : IDisposable
         // no longer gated on a configured loopback.
         SuspendPeakHold();
         lastSnapshot = null;
-        plotView.Model = plotModelFactory.CreateLiveSpectrum();
+        plotViewports.Show(plotModelFactory.CreateLiveSpectrum(), getCurrentMode());
         overlayCollection.Show(getCurrentMode());
         _ = measurement.RunAsync();
         timer.Start();
@@ -453,7 +459,7 @@ internal sealed class LiveSpectrumController : IDisposable
             PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
         }
 
-        plotView.Model = model;
+        plotViewports.Show(model, getCurrentMode());
         updateOverlayAvailability();
         overlayCollection.Show(getCurrentMode());
         updateRecordButton();

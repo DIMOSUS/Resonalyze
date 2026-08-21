@@ -30,11 +30,19 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly DarkNumericUpDown bandpassFadeOctavesNumeric;
     private readonly PlotView bandpassPlotView;
     private readonly PlotView envelopePlotView;
+    // Both previews are rebuilt from scratch on every configuration change, so a
+    // zoom into a junction would last exactly until the next edit without these.
+    private readonly PlotViewportMemory bandpassViewports;
+    private readonly PlotViewportMemory envelopeViewports;
     private readonly StatusRichTextBox statusTextBox;
     private readonly Font resultTableFont;
     // The band detected for the Auto mode on the last refresh (null when no
     // data or another mode is active); feeds the preview plot and the label.
     private DominantBand? lastAutoBand;
+    // Whether that band is the overlap of Main's and Compare's own bands rather
+    // than Main's alone; the label says which, because the two answer different
+    // questions ("where this driver plays" against "where these two meet").
+    private bool lastAutoBandIsShared;
     private bool disposed;
 
     // The fade the Auto mode puts around the detected pass band.
@@ -84,6 +92,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         bandpassFadeOctavesNumeric = panel.BandpassFadeOctavesNumeric;
         bandpassPlotView = panel.BandpassPlotView;
         envelopePlotView = panel.EnvelopePlotView;
+        // Same zoom, pan and limits gestures as the other analysis plots.
+        PlotInteraction.Enable(bandpassPlotView);
+        PlotInteraction.Enable(envelopePlotView);
+        bandpassViewports = new PlotViewportMemory(bandpassPlotView);
+        envelopeViewports = new PlotViewportMemory(envelopePlotView);
         statusTextBox = panel.StatusTextBox;
         statusTextBox.UseHandCursorAt = point => TryGetCopyableStatusLine(point, out _);
         statusTextBox.MouseClick += StatusTextBoxMouseClick;
@@ -182,11 +195,21 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             TimeAlignmentAnalysisSource mainAnalysisSource =
                 CleanForAnalysis(mainSource, mainCrosstalk);
 
-            // One options object per refresh: the Auto mode detects the band
-            // from the MAIN record and the Compare measurement is analyzed
-            // in the same band, so the delta column compares like with like.
-            TimeAlignmentAnalysisOptions analysisOptions =
-                CreateAnalysisOptions(mainAnalysisSource, wrapPeakPositions: true);
+            // The Compare record is resolved and cleaned BEFORE the band is
+            // chosen: in the Auto mode the band is the one both records share,
+            // and a band taken from Main alone would make the delta depend on
+            // which of the two was loaded as Main (a field mid pair: 32.7-7671
+            // Hz one way, 75.5-4695 Hz the other, and 0.3 ms of delta with it).
+            TimeAlignmentAnalysisSource? compareSource = TryGetCompareSource(
+                mainSource,
+                out string? compareWarning,
+                out CrosstalkHeadGate? compareCrosstalk);
+
+            // One options object per refresh, and the Compare measurement is
+            // analyzed in the same band, so the delta column compares like with
+            // like.
+            TimeAlignmentAnalysisOptions analysisOptions = CreateAnalysisOptions(
+                mainAnalysisSource, compareSource, wrapPeakPositions: true);
             UpdateAutoBandLabel();
             UpdateBandpassPreview();
 
@@ -213,10 +236,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 mainResult,
                 mainAnalysisSource.TransferCoherence);
             TimeAlignmentCompareAnalysis? compareAnalysis = AnalyzeCompare(
-                mainSource,
-                analysisOptions,
-                out string? compareWarning,
-                out CrosstalkHeadGate? compareCrosstalk);
+                compareSource, analysisOptions, ref compareWarning);
             TimeAlignmentArrivalProbe? compareProbe = compareAnalysis == null
                 ? null
                 : TimeAlignmentAnalysis.ProbeArrivalHonesty(
@@ -363,18 +383,23 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private TimeAlignmentAnalysisOptions CreateAnalysisOptions(
         TimeAlignmentAnalysisSource source,
+        TimeAlignmentAnalysisSource? compareSource,
         bool wrapPeakPositions)
     {
         double centerHz = options.BandpassCenterHz;
         double passOctaves = options.BandpassPassOctaves;
         double fadeOctaves = options.BandpassFadeOctaves;
         lastAutoBand = null;
+        lastAutoBandIsShared = false;
         if (options.BandMode == TimeAlignmentBandMode.AutoBand)
         {
-            DominantBand band = TransferIrDiagnostics.DetectDominantBand(
-                source.TransferImpulseResponse,
-                source.SampleRate,
-                coherence: source.TransferCoherence);
+            DominantBand band = DetectDominantBand(source);
+            if (compareSource is { } compare &&
+                TryDetectDominantBand(compare, out DominantBand compareBand))
+            {
+                (band, lastAutoBandIsShared) = SharedBand(band, compareBand);
+            }
+
             lastAutoBand = band;
             centerHz = Math.Sqrt(band.LowHz * band.HighHz);
             passOctaves = Math.Log2(band.HighHz / band.LowHz);
@@ -392,6 +417,53 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             PeakSearchWindowMilliseconds = options.PeakSearchWindowMilliseconds,
             WrapPeakPositions = wrapPeakPositions
         };
+    }
+
+    private static DominantBand DetectDominantBand(TimeAlignmentAnalysisSource source) =>
+        TransferIrDiagnostics.DetectDominantBand(
+            source.TransferImpulseResponse,
+            source.SampleRate,
+            coherence: source.TransferCoherence);
+
+    // A record whose coherence never clears the threshold has no dominant band,
+    // and the detector says so by throwing. For COMPARE that verdict must stay
+    // Compare's: before the band was agreed between the two records, such a
+    // failure was caught with the rest of the Compare handling and Main kept
+    // working, and it still has to — the band simply falls back to Main's own,
+    // which the label then stops calling shared. Main's own failure keeps
+    // reaching the refresh handler: with no band for the Main record there is
+    // no analysis to show.
+    internal static bool TryDetectDominantBand(
+        TimeAlignmentAnalysisSource source,
+        out DominantBand band)
+    {
+        try
+        {
+            band = DetectDominantBand(source);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            band = default;
+            return false;
+        }
+    }
+
+    // The band the two records are read in when both are present: the overlap of
+    // their own dominant bands. Two drivers are only comparable where both
+    // actually play — outside the overlap one of the curves is its own noise —
+    // and an overlap is symmetric, so loading the pair the other way round
+    // returns the same band and the same delta. Two records that share too
+    // little to carve a band (a subwoofer against a tweeter) keep MAIN's band:
+    // the reading is then Main's own, which the shared-band note says out loud.
+    internal static (DominantBand Band, bool Shared) SharedBand(
+        DominantBand main, DominantBand compare)
+    {
+        double low = Math.Max(main.LowHz, compare.LowHz);
+        double high = Math.Min(main.HighHz, compare.HighHz);
+        return high < low * VirtualCrossoverAnalysis.MinimumArrivalBandRatio
+            ? (main, false)
+            : (new DominantBand(low, high, Math.Clamp(main.PeakHz, low, high)), true);
     }
 
     private void ApplyOptionsToControls()
@@ -433,7 +505,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         autoBandLabel.Text = options.BandMode != TimeAlignmentBandMode.AutoBand
             ? "-"
             : lastAutoBand is { } band
-                ? $"detected: {band.LowHz:0}-{band.HighHz:0} Hz"
+                ? $"detected: {band.LowHz:0}-{band.HighHz:0} Hz" +
+                    (lastAutoBandIsShared ? " (shared with Compare)" : string.Empty)
                 : "detected: waiting for a record";
     }
 
@@ -442,7 +515,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         bool addCurve = options.BandMode == TimeAlignmentBandMode.ManualBand ||
             (options.BandMode == TimeAlignmentBandMode.AutoBand && lastAutoBand != null);
         PlotModel model = CreateBandpassPreviewModel(addCurve);
-        bandpassPlotView.Model = model;
+        bandpassViewports.Show(model, Mode.TimeAlignment);
     }
 
     private PlotModel CreateBandpassPreviewModel(bool addCurve)
@@ -504,9 +577,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return model;
     }
 
-    private TimeAlignmentCompareAnalysis? AnalyzeCompare(
+    // Resolves the Compare record into an analysis-ready source: the same
+    // hygiene Main gets (its own crosstalk detection on the raw IR, cleaned
+    // analysis in the banded modes), and no analysis yet — the band still has
+    // to be agreed between the two records.
+    private TimeAlignmentAnalysisSource? TryGetCompareSource(
         TimeAlignmentAnalysisSource mainSource,
-        TimeAlignmentAnalysisOptions analysisOptions,
         out string? warning,
         out CrosstalkHeadGate? crosstalk)
     {
@@ -538,23 +614,41 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             TimeAlignmentAnalysisSource compareSource =
                 CreateCompareSource(compareValue, snapshot);
-            // The Compare record gets the same hygiene as Main: its own
-            // detection on the raw IR, cleaned analysis in the banded modes.
             crosstalk = TransferIrDiagnostics.DetectCrosstalkHead(
                 compareSource.TransferImpulseResponse, compareSource.SampleRate);
-            compareSource = CleanForAnalysis(compareSource, crosstalk);
+            return CleanForAnalysis(compareSource, crosstalk);
+        }
+        catch (Exception exception)
+        {
+            warning = exception.Message;
+            return null;
+        }
+    }
+
+    private TimeAlignmentCompareAnalysis? AnalyzeCompare(
+        TimeAlignmentAnalysisSource? compareSource,
+        TimeAlignmentAnalysisOptions analysisOptions,
+        ref string? warning)
+    {
+        if (compareSource is not { } source)
+        {
+            return null;
+        }
+
+        try
+        {
             TimeAlignmentAnalysisResult compareResult = TimeAlignmentAnalysis.Analyze(
-                compareSource.TransferImpulseResponse,
-                compareSource.SampleRate,
+                source.TransferImpulseResponse,
+                source.SampleRate,
                 analysisOptions,
-                compareSource.TransferCoherence);
+                source.TransferCoherence);
             if (!compareResult.IsValid)
             {
                 warning = "Compare: no signal in the analysis band.";
                 return null;
             }
 
-            return new TimeAlignmentCompareAnalysis(compareSource, compareResult);
+            return new TimeAlignmentCompareAnalysis(source, compareResult);
         }
         catch (Exception exception)
         {
@@ -657,7 +751,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             AddMainPeakMarkers(model, result, referenceAmplitude);
         }
-        envelopePlotView.Model = model;
+        envelopeViewports.Show(model, Mode.TimeAlignment);
     }
 
     private static void ApplyEnvelopeDecibelRange(
@@ -895,7 +989,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void ClearEnvelopePreview()
     {
-        envelopePlotView.Model = CreateEmptyEnvelopePreviewModel();
+        envelopeViewports.Show(CreateEmptyEnvelopePreviewModel(), Mode.TimeAlignment);
     }
 
     private PlotModel CreateEmptyEnvelopePreviewModel()

@@ -1,4 +1,3 @@
-using OxyPlot;
 using OxyPlot.WindowsForms;
 
 namespace Resonalyze;
@@ -6,20 +5,14 @@ namespace Resonalyze;
 internal static class PlotInteraction
 {
     /// <summary>
-    /// Makes a double-click reset the axis under the cursor (or both axes when the
-    /// cursor is in the plot area) back to the scale defined when the model was built,
-    /// undoing any zoom or pan. The standard pan/zoom/track bindings are preserved.
+    /// Gives a plot the app's REW-shaped zoom, pan and limits gestures (see
+    /// <see cref="PlotGestureController"/>). Every plot view goes through here, so
+    /// the mouse behaves the same on the main plot, the EQ wizard and the Virtual
+    /// DSP views.
     /// </summary>
-    public static void EnableDoubleClickAxisReset(PlotView view)
+    public static void Enable(PlotView view)
     {
         ArgumentNullException.ThrowIfNull(view);
-
-        var controller = new PlotController();
-        controller.BindMouseDown(
-            OxyMouseButton.Left,
-            OxyModifierKeys.None,
-            clickCount: 2,
-            PlotCommands.ResetAt);
-        view.Controller = controller;
+        view.Controller = new PlotGestureController(view);
     }
 }

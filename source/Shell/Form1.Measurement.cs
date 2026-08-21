@@ -85,7 +85,7 @@ public partial class Form1
         await liveSpectrumController.AbortAsync();
 
         CurrentMode = mode;
-        plotView1.Model = null;
+        plotViewports.Show(null, mode);
         UpdatePlotLabelsPanel();
 
         if (OverlayCollection.SupportsMode(mode))
@@ -279,7 +279,6 @@ public partial class Form1
         // below fails.
         ScheduleMeasurementSettingsSave();
 
-        IReadOnlyList<AxisViewport> viewports = CaptureAxisViewports();
         try
         {
             // Refresh Live Spectrum for the calibration change in EVERY mode — drop
@@ -291,7 +290,7 @@ public partial class Form1
 
             if (CurrentMode != Mode.LiveSpectrum)
             {
-                await RefreshCurrentModePlotAsync(viewports);
+                await RefreshCurrentModePlotAsync();
             }
         }
         catch (Exception exception)

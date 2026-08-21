@@ -419,6 +419,52 @@ For acoustic measurements, microphone placement and room conditions strongly
 affect the result. For electrical loopback measurements, make sure the signal
 levels and impedances are safe for both devices.
 
+## Graph Zoom and Limits
+
+The analysis plot, the Time Alignment previews, the EQ Wizard and the Virtual DSP
+graphs all take the same mouse and keyboard controls, laid out to match REW's
+graph panel so there is nothing to relearn when you move between the two. (The
+small previews inside settings panels and dialogs — the impulse window, the gate
+preview, the history list — are fixed-scale by design and take none of this.)
+
+| Gesture | What it does |
+| --- | --- |
+| Wheel | Zooms both axes around the pointer |
+| **Alt** + wheel | The same, in fine steps |
+| **Shift** + wheel | Horizontal axis only |
+| **Ctrl** + wheel | Vertical axis only |
+| Wheel over an axis | Zooms that axis alone |
+| Wheel over the **end** of an axis | Moves that one limit, leaving the opposite end where it is |
+| `x` / **Shift**+`X` | Zooms the horizontal axis out / in by about two, around the pointer |
+| `y` / **Shift**+`Y` | The same for the vertical axis |
+| Middle-button drag | Variable zoom: right and left work the horizontal axis, up and down the vertical one |
+| **Ctrl** + right-button drag | Draws a zoom rectangle |
+| Right-button drag | Pans |
+| The **+** / **&minus;** buttons on the graph | Zoom the axis they sit against by about two, click after click; they appear while the pointer is over the plot, and hovering one names the axis it moves |
+| Double click | Opens the graph limits dialog |
+| **Ctrl+Z** | Steps back through the zoom-to-area, variable-zoom, zoom-button and fit-to-data moves (a wheel notch is its own undo — scroll it back) |
+| **Ctrl+Alt+F** / **Ctrl+Alt+Y** | Fit to data / fit the vertical axis to data |
+| **Home** or `A` | Back to the view's own default scale (also the **Defaults** button in the limits dialog) |
+
+The **graph limits** dialog types the same ranges exactly — top, bottom, left and
+right as numbers, plus **Fit to data**, **Fit Y to data** and **Defaults**, which
+hands the axes back to the scale the mode chose for them. Use it when two
+measurements have to be framed identically, for a screenshot or a before/after.
+
+A zoom survives a redraw: changing a setting, running a new measurement or
+toggling an overlay keeps the range you are looking at. The analysis plot
+remembers one range per mode, so Frequency Response and Impulse Response do not
+fight over a scale; the Time Alignment previews keep theirs across a
+reconfiguration, and the EQ Wizard and Virtual DSP graphs hold theirs until
+something changes what the axis means (loading a new wizard source, switching
+the Virtual DSP view between magnitude, phase and impulse).
+
+Axes you have **not** touched still scale themselves — the dB axis lifts its
+ceiling for a padded loopback, group delay fits its data — so the automatic
+framing steps aside only where you took over, and **Home** hands an axis back to
+it. Frequency axes pan within 20 Hz – 20 kHz, the band the curves are computed
+over.
+
 ## Mode Settings
 
 The **Mode Settings...** button opens the current mode's settings in a docked,
@@ -428,9 +474,10 @@ on the fly, redrawing the analysis while preserving the visible plot range. Each
 curve-based view groups its plotted curves under a **Curves:** heading with one
 checkbox per curve — Primary / HD2–HD4 / THD+N in Frequency Response, or
 measured / minimum / excess in Phase. Numeric and dropdown settings carry a small
-**R** button that resets them to the built-in default, double-clicking a plot
-axis restores its default scale, and the Frequency Response, Phase, Group Delay,
-Waterfall and Burst panels include a compact impulse-window preview.
+**R** button that resets them to the built-in default, the plot keeps the range
+you zoomed to (see [Graph Zoom and Limits](#graph-zoom-and-limits)), and the
+Frequency Response, Phase, Group Delay, Waterfall and Burst panels include a
+compact impulse-window preview.
 
 The **Tools** modes (EQ Wizard, Signal Generator, Virtual DSP) do not measure and
 do not draw the shell's curves: they bring their own sources and controls, so the
@@ -733,7 +780,13 @@ everywhere it is meaningful, always recomputed with the current mode's settings:
 
 - **Time Alignment** — the reference envelope is overlaid on the peak preview
   with its own markers, and the delay table gains a second block whose every
-  value shows the delta against the source (for example `1.006 (+0.010)`).
+  value shows the delta against the source (for example `1.006 (+0.010)`). In
+  **Auto** band mode the analysis band is then the one the two records SHARE —
+  the overlap of their own dominant bands, labelled `shared with Compare` —
+  because two arrivals are only comparable where both drivers play, and a band
+  taken from the source alone would make the delta depend on which of the pair
+  was loaded first. Records that barely overlap (a subwoofer against a tweeter)
+  keep the source's own band.
 - **Phase** and **Group Delay** — the reference curves use the identical
   gate/window and smoothing, drawn dashed and dimmed; Phase Auto detrend is
   resolved once from Main and reused, preserving their relative delay.
@@ -821,6 +874,24 @@ louder than that allows at a given distance, so a candidate above the ceiling is
 a genuine arrival no matter how the surroundings look (which keeps weak direct
 sound alive in reverberant bass), and one at or below it is confirmed as pre-ring
 by its mirror twin.
+
+It also refuses to read a **ripple on the foot of a wave packet** as that
+packet's arrival. A cabin's comb interference leaves small bumps a fraction of a
+millisecond ahead of a front; they are far too loud to be the transform's own
+ringing, so the rule above rightly keeps them, yet they are not the front. A
+candidate must reach a quarter of the strongest envelope level of its own packet
+— the level the broadband onset calls the onset — or the packet's own front is
+taken instead. The packet runs one millisecond forward and ends early at a null
+deep enough (20 dB) to resolve two events, because destructive interference nulls
+faster than an envelope rises: an earlier arrival separated from what follows by
+such a null is a separate arrival and keeps its own timing, however strong and
+however close the next packet is, and the rising edge of a later reflection can
+never be borrowed to dwarf the direct sound in front of it. A soft direct arrival
+sitting under a room mode milliseconds later still wins for the same reason,
+which is what the search depth exists for. Without this two identical drivers
+in opposite doors could be measured at different points of their fronts — one at
+its packet peak, the other 20 dB down its own foot — and the level difference
+lands in the reported delay: on a field pair, 0.31 ms of a 1.45 ms split.
 
 The second stage is what makes the numbers trustworthy. The transfer IR's
 spectrum already carries the microphone-to-loopback cross-phase, so whitening it

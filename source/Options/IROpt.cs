@@ -9,6 +9,10 @@ namespace Resonalyze.Options
     {
         private readonly WrappingToolTip toolTip = new();
 
+        // The record the offered bands have to fit inside; zero until Init runs, which
+        // offers the full ISO list rather than guessing a rate.
+        private int sampleRate;
+
         public IROpt()
         {
             InitializeComponent();
@@ -21,6 +25,7 @@ namespace Resonalyze.Options
         {
             // The settings file clamps to a wider range than the control; an
             // out-of-range persisted value must not throw when the panel opens.
+            sampleRate = expSweepMeasurement?.SampleRate ?? 0;
             numericLength.Value = numericLength.ClampValue(opt.Length);
             numericEnvelopeSmoothing.Value =
                 numericEnvelopeSmoothing.ClampValue(opt.EnvelopeSmoothingMs);
@@ -130,11 +135,31 @@ namespace Resonalyze.Options
         // meaningless without a band, so it greys out with the filter off.
         private void SyncBandCentres(double preferredCentreHz)
         {
-            bool active = comboBandWidth.SelectedItem is double width && width > 0.0;
-            double[] centres =
-                comboBandWidth.SelectedItem is double selected && selected < OctaveBand
-                    ? ThirdOctaveCentres
-                    : OctaveCentres;
+            double octaves = comboBandWidth.SelectedItem is double width ? width : 0.0;
+            bool active = octaves > 0.0;
+            double[] centres = active && octaves < OctaveBand
+                ? ThirdOctaveCentres
+                : OctaveCentres;
+            // Only the bands this record can actually carry are offered: the band is
+            // symmetric in octaves around its centre, so at 44.1 kHz a full octave at
+            // 16 kHz would ask for a passband past Nyquist and come back clipped on one
+            // side. The same rule decides it here and in the analysis
+            // (ImpulseResponseOptions.HasBandFilter), so the panel cannot offer a band
+            // the view would then refuse.
+            if (active && sampleRate > 0)
+            {
+                double[] realizable = centres
+                    .Where(centre => new ImpulseResponseOptions
+                    {
+                        BandFilterOctaves = octaves,
+                        BandCenterHz = centre
+                    }.HasBandFilter(sampleRate))
+                    .ToArray();
+                if (realizable.Length > 0)
+                {
+                    centres = realizable;
+                }
+            }
 
             SetItems(comboBandCenter, centres);
             comboBandCenter.SelectedItem = Nearest(centres, preferredCentreHz);

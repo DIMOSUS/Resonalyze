@@ -249,7 +249,13 @@ internal sealed class PlotModelFactory
             ShowEnvelope = tag.Kind == AnalysisCurveKind.ImpulseEnvelope,
             ShowStep = tag.Kind == AnalysisCurveKind.ImpulseStep,
             EnvelopeSmoothingMs = impulseResponseOptions.EnvelopeSmoothingMs,
-            NormalizeStepToImpulsePeak = impulseResponseOptions.NormalizeStepToImpulsePeak,
+            // Normalized against the record's own peak here so the ratio can be undone
+            // below into the RAW running integral. Storing a step already normalized
+            // would freeze two live decisions into the snapshot: the "against IR peak"
+            // toggle, and — for a Compare capture — the fact that the drawn Compare step
+            // is normalized against MAIN's peak while this canonical render knows only
+            // its own record.
+            NormalizeStepToImpulsePeak = true,
             BandFilterOctaves = impulseResponseOptions.BandFilterOctaves,
             BandCenterHz = impulseResponseOptions.BandCenterHz,
             AmplitudeScale = ImpulseAmplitudeScale.Linear,
@@ -271,8 +277,17 @@ internal sealed class PlotModelFactory
             return null;
         }
 
+        // The step comes back as a ratio of the record's peak; multiplying it back out
+        // leaves the running integral itself, which the renderer normalizes with the
+        // view's own choice at the time it is drawn.
+        IReadOnlyList<SignalPoint> samples = tag.Kind == AnalysisCurveKind.ImpulseStep
+            ? curve.Points
+                .Select(point => new SignalPoint(point.X, point.Y * set.PeakReference))
+                .ToArray()
+            : curve.Points;
+
         return new ImpulseOverlayCapture(
-            ImpulseOverlayThinning.Thin(curve.Points),
+            ImpulseOverlayThinning.Thin(samples),
             tag.Kind,
             set.PeakReference,
             source.SampleRate);
@@ -1074,33 +1089,46 @@ internal sealed class PlotModelFactory
             Position = AxisPosition.Left,
             Title = stepOnLeft ? "step" : ImpulseValueUnit(opt.AmplitudeScale),
         };
-        // The absolute bounds are the whole record — the traces are built whole, so
-        // zooming out reaches the end of the tail and panning cannot leave the data. What
-        // the view OPENS on is narrower: the Length setting's worth of tail past the peak,
-        // which is the framing this mode has always had. Compare is included so it stays
-        // on-screen.
+        // Time is bounded by the record — the traces are built whole, so zooming out
+        // reaches the end of the tail and panning cannot leave the data — and OPENS on
+        // the Length setting's worth of tail past the peak, the framing this mode has
+        // always had. Compare is included so it stays on-screen.
         ApplyCurveRange(
             timeAxis, point => point.X, drawn.Concat(stepCurves).ToArray());
+        ApplyDefaultImpulseSpan(timeAxis, opt, defaultSpan);
+        // LEVEL is not bounded the same way. Overlays are attached to the model after it
+        // is built, and one captured from a louder record legitimately re-frames above
+        // 100 % or 0 dB against the current one; pinning the absolute bounds to the live
+        // curves would clip exactly the level difference the shared normalization exists
+        // to show, with no zoom able to reach it.
         ApplyCurveRange(
             valueAxis,
             point => point.Y,
-            (stepOnLeft ? stepCurves : drawn).ToArray());
+            (stepOnLeft ? stepCurves : drawn).ToArray(),
+            bindAbsolute: false);
         ApplyDefaultDecibelWindow(valueAxis, opt, stepOnLeft);
-        ApplyDefaultImpulseSpan(timeAxis, opt, defaultSpan);
         model.Axes.Add(timeAxis);
         model.Axes.Add(valueAxis);
-        if (!stepOnLeft && stepCurves.Count > 0)
+
+        // The counterpart axis is always in the model, visible only when something is
+        // drawn against it. An overlay carries the axis key it was captured with, and a
+        // series whose key names no axis cannot bind — so a saved step slot with the step
+        // trace switched off, or a saved impulse slot beside a step-only view, would fail
+        // the redraw rather than simply not fitting.
+        var counterpartAxis = new LinearAxis
         {
-            var stepAxis = new LinearAxis
-            {
-                Key = ImpulseStepAxisKey,
-                Position = AxisPosition.Right,
-                Title = "step",
-            };
-            ApplyCurveRange(stepAxis, point => point.Y, stepCurves.ToArray());
-            model.Axes.Add(stepAxis);
+            Key = stepOnLeft ? ImpulseAxisKey : ImpulseStepAxisKey,
+            Position = AxisPosition.Right,
+            Title = stepOnLeft ? ImpulseValueUnit(opt.AmplitudeScale) : "step",
+            IsAxisVisible = !stepOnLeft && stepCurves.Count > 0,
+        };
+        if (!stepOnLeft)
+        {
+            ApplyCurveRange(
+                counterpartAxis, point => point.Y, stepCurves.ToArray(), bindAbsolute: false);
         }
 
+        model.Axes.Add(counterpartAxis);
         return model;
     }
 
@@ -1392,7 +1420,8 @@ internal sealed class PlotModelFactory
     private static void ApplyCurveRange(
         LinearAxis axis,
         Func<SignalPoint, double> selector,
-        params AnalysisCurve?[] curves)
+        AnalysisCurve?[] curves,
+        bool bindAbsolute = true)
     {
         double minimum = double.PositiveInfinity;
         double maximum = double.NegativeInfinity;
@@ -1429,8 +1458,11 @@ internal sealed class PlotModelFactory
 
         axis.Minimum = minimum;
         axis.Maximum = maximum;
-        axis.AbsoluteMinimum = minimum;
-        axis.AbsoluteMaximum = maximum;
+        if (bindAbsolute)
+        {
+            axis.AbsoluteMinimum = minimum;
+            axis.AbsoluteMaximum = maximum;
+        }
     }
 
     public PlotModel CreateAutocorrelation(bool includeCurves)

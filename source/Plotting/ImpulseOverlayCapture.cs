@@ -1,4 +1,4 @@
-using OxyPlot;
+﻿using OxyPlot;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -22,7 +22,10 @@ namespace Resonalyze;
 /// </summary>
 /// <param name="Kind">
 /// Which trace this is. The impulse and the step carry a polarity the view can flip;
-/// the envelope is a magnitude and has none.
+/// the envelope is a magnitude and has none. A step is stored as the RAW running
+/// integral, not as the ratio it is drawn as, so the view's normalization choice — and
+/// for a Compare capture, the main record's peak it is drawn against — apply when it is
+/// rendered rather than being frozen at capture.
 /// </param>
 /// <param name="PeakReference">
 /// The record's own peak at capture time, in the same raw units. It is the fallback
@@ -139,6 +142,37 @@ internal static class ImpulseOverlayRenderer
         bool invert = options.Invert && capture.Kind != AnalysisCurveKind.ImpulseEnvelope;
         double sign = invert ? -1.0 : 1.0;
 
+        // A step is stored raw, so the view's own normalization applies now: against the
+        // live reference peak, or against the snapshot's own extreme when the view is
+        // reading steps that way. The stored extreme survives thinning, which keeps
+        // bucket extremes rather than averages.
+        double stepDivisor = 1.0;
+        if (capture.Kind == AnalysisCurveKind.ImpulseStep)
+        {
+            if (options.NormalizeStepToImpulsePeak)
+            {
+                stepDivisor = reference;
+            }
+            else
+            {
+                double own = 0.0;
+                foreach (SignalPoint sample in capture.Samples)
+                {
+                    own = Math.Max(own, Math.Abs(sample.Y));
+                }
+
+                stepDivisor = own > 0.0 ? own : 1.0;
+            }
+        }
+
+        // Samples of a snapshot taken at another rate are not samples of THIS record:
+        // 441 at 44.1 kHz and 480 at 48 kHz are the same instant, and on a shared sample
+        // axis the stored index has to be restated in the live record's units before the
+        // origin — itself in those units — is taken off it.
+        double rateRatio = captureRate > 0 && frame.SampleRate > 0
+            ? frame.SampleRate / (double)captureRate
+            : 1.0;
+
         var points = new DataPoint[capture.Samples.Count];
         for (int i = 0; i < points.Length; i++)
         {
@@ -153,13 +187,11 @@ internal static class ImpulseOverlayRenderer
             }
             else
             {
-                x = sample.X - frame.OriginSamples;
+                x = sample.X * rateRatio - frame.OriginSamples;
             }
 
-            // The step is already a ratio of the reference it was normalized against, so
-            // it carries no level to re-scale — only its polarity can be flipped.
             double y = capture.Kind == AnalysisCurveKind.ImpulseStep
-                ? sample.Y * sign
+                ? sample.Y * sign / stepDivisor
                 : DataHelper.ScaleImpulseAmplitude(
                     sample.Y * sign, options.AmplitudeScale, reference);
             points[i] = new DataPoint(x, y);

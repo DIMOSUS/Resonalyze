@@ -887,10 +887,10 @@ public sealed class PlotModelFactoryTests
 
         double expectedMinY = series.Points.Min(point => point.Y);
         double expectedMaxY = series.Points.Max(point => point.Y);
-        // The zoom/pan bounds stay locked to the data in every scale, so nothing the
-        // curve contains is unreachable...
-        Assert.Equal(expectedMinY, valueAxis.AbsoluteMinimum, precision: 9);
-        Assert.Equal(expectedMaxY, valueAxis.AbsoluteMaximum, precision: 9);
+        // The VISIBLE range opens on the drawn curve in every scale; the absolute bounds
+        // are deliberately left free, because an overlay attached after the build can
+        // legitimately re-frame above it (see
+        // ImpulseResponse_LeavesTheLevelAxisFreeToWidenForALouderOverlay).
         Assert.Equal(expectedMaxY, valueAxis.Maximum, precision: 9);
         // ...but the dB view OPENS on a 100 dB window: the impulse dives to the
         // deconvolution silence floor at every zero crossing, and fitting the visible
@@ -1022,6 +1022,62 @@ public sealed class PlotModelFactoryTests
 
             Assert.DoesNotContain("band", text);
             Assert.DoesNotContain("after arrival", text);
+        }
+    }
+
+    [Theory]
+    [InlineData(true, false)]   // impulse only: the step axis must still exist
+    [InlineData(false, true)]   // step only: the level axis must still exist
+    public void ImpulseResponse_KeepsBothAxesForOverlaysCapturedOnTheOther(
+        bool showImpulse, bool showStep)
+    {
+        // An overlay carries the axis key it was captured with, and a series naming an
+        // axis the model does not have cannot bind — so switching a trace off must not
+        // take its axis out of the model.
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions
+            {
+                ShowImpulse = showImpulse,
+                ShowEnvelope = false,
+                ShowStep = showStep
+            };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+
+            var model = factory.CreateImpulseResponse(includeCurves: true);
+
+            Assert.Contains(model.Axes, axis => axis.Key == PlotModelFactory.ImpulseAxisKey);
+            Assert.Contains(
+                model.Axes, axis => axis.Key == PlotModelFactory.ImpulseStepAxisKey);
+        }
+    }
+
+    [Fact]
+    public void ImpulseResponse_LeavesTheLevelAxisFreeToWidenForALouderOverlay()
+    {
+        // Overlays join the model after it is built. A snapshot from a louder record
+        // re-frames above the live curve on purpose, and a pinned absolute bound would
+        // clip exactly the difference the shared normalization exists to show.
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            PlotModelFactory factory = CreateFactory(
+                measurement, noise, impulseOptions: new ImpulseResponseOptions());
+
+            var model = factory.CreateImpulseResponse(includeCurves: true);
+            var valueAxis = model.Axes.First(axis =>
+                axis.Key == PlotModelFactory.ImpulseAxisKey);
+            var timeAxis = model.Axes.First(axis =>
+                axis.Position == OxyPlot.Axes.AxisPosition.Bottom);
+
+            Assert.Equal(double.MaxValue, valueAxis.AbsoluteMaximum);
+            Assert.Equal(double.MinValue, valueAxis.AbsoluteMinimum);
+            // Time stays bounded by the record, which is a real limit.
+            Assert.True(double.IsFinite(timeAxis.AbsoluteMaximum));
         }
     }
 

@@ -511,8 +511,17 @@ public sealed class DataHelperImpulseTests
         Assert.Equal(plain.Impulse!.Points[100].Y, filtered.Impulse!.Points[100].Y, precision: 12);
     }
 
-    [Fact]
-    public void BandFilter_AboveNyquistIsIgnoredRatherThanApplied()
+    [Theory]
+    // Above Nyquist outright.
+    [InlineData(30_000.0, 1.0)]
+    // Centre under Nyquist, but the band is symmetric in OCTAVES around it: a full
+    // octave at 20 kHz asks for a passband to 28.3 kHz, which a 48 kHz record cannot
+    // carry, and the mask would simply stop at the end of the spectrum — a lopsided
+    // band under the name of a symmetric one.
+    [InlineData(20_000.0, 1.0)]
+    [InlineData(23_000.0, 1.0 / 3.0)]
+    public void BandFilter_ThatCannotBeRealizedIsRefusedRatherThanTruncated(
+        double centerHz, double octaves)
     {
         SyntheticMeasurement measurement = WithPeakAt(peakIndex: 100, length: 2_000);
 
@@ -520,12 +529,31 @@ public sealed class DataHelperImpulseTests
             measurement,
             Options(o =>
             {
-                o.BandFilterOctaves = 1.0;
-                o.BandCenterHz = 30_000; // above 24 kHz Nyquist
+                o.BandFilterOctaves = octaves;
+                o.BandCenterHz = centerHz;
             }),
             new ImpulseRenderFrame());
 
         Assert.Equal(1.0, set.Impulse!.Points[100].Y, precision: 12);
+    }
+
+    [Theory]
+    // The passband must fit; the fade skirt beyond it may clip, which costs roll-off
+    // steepness rather than the band's identity.
+    [InlineData(16_000.0, 1.0, 48_000, true)]
+    [InlineData(16_000.0, 1.0, 44_100, false)]   // 22.6 kHz passband against 22.05 Nyquist
+    [InlineData(20_000.0, 1.0 / 3.0, 44_100, false)]
+    [InlineData(20_000.0, 1.0 / 3.0, 48_000, true)]
+    public void HasBandFilter_AsksWhetherThePassbandFitsUnderNyquist(
+        double centerHz, double octaves, int sampleRate, bool expected)
+    {
+        var opt = new ImpulseResponseOptions
+        {
+            BandFilterOctaves = octaves,
+            BandCenterHz = centerHz
+        };
+
+        Assert.Equal(expected, opt.HasBandFilter(sampleRate));
     }
 
     [Fact]

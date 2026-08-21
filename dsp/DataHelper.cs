@@ -256,12 +256,26 @@ namespace Resonalyze.Dsp
         /// </summary>
         public double BandCenterHz { get; set; } = 1000.0;
 
-        /// <summary>Whether a band filter is selected and usable at this rate.</summary>
-        public bool HasBandFilter(int sampleRate) =>
-            BandFilterOctaves > 0.0 &&
-            BandCenterHz > 0.0 &&
-            sampleRate > 0 &&
-            BandCenterHz < sampleRate / 2.0;
+        /// <summary>
+        /// Whether a band filter is selected and can actually be REALIZED at this rate.
+        /// The centre being under Nyquist is not enough: the band is symmetric around it
+        /// in octaves, so a one-octave band at 16 kHz asks for a passband reaching
+        /// 22.6 kHz, which a 44.1 kHz record cannot carry. The mask would simply stop at
+        /// the end of the spectrum and the view would draw a lopsided band under the name
+        /// of a symmetric one. The fade skirt beyond the passband is allowed to clip —
+        /// that costs roll-off steepness, not the band's identity.
+        /// </summary>
+        public bool HasBandFilter(int sampleRate)
+        {
+            if (BandFilterOctaves <= 0.0 || BandCenterHz <= 0.0 || sampleRate <= 0)
+            {
+                return false;
+            }
+
+            (_, _, double passbandHighHz, _) = BandpassWindow.BandAround(
+                BandCenterHz, BandFilterOctaves, 0.0);
+            return passbandHighHz <= sampleRate / 2.0;
+        }
     }
 
     /// <summary>

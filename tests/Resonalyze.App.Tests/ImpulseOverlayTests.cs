@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OxyPlot;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
@@ -123,15 +123,57 @@ public sealed class ImpulseOverlayTests
     }
 
     [Fact]
-    public void Render_LeavesAStepAtItsStoredRatio()
+    public void Render_NormalizesAStoredStepWithTheViewsCurrentChoice()
     {
-        // The step is stored already normalized, so no scale re-applies to it — only
-        // its polarity can be flipped.
-        DataPoint[] points = ImpulseOverlayRenderer.Render(
-            Capture(AnalysisCurveKind.ImpulseStep),
-            Frame(o => o.AmplitudeScale = ImpulseAmplitudeScale.Decibels, reference: 4.0));
+        // A step is stored as the raw running integral, so the "against IR peak" toggle
+        // keeps working on a snapshot instead of being frozen at capture — and a Compare
+        // step lands against the main record's peak, as the live one does.
+        ImpulseOverlayCapture capture = Capture(AnalysisCurveKind.ImpulseStep);
 
-        Assert.Equal(0.5, points[1].Y, precision: 9);
+        DataPoint[] againstPeak = ImpulseOverlayRenderer.Render(
+            capture,
+            Frame(o => o.NormalizeStepToImpulsePeak = true, reference: 4.0));
+        DataPoint[] againstItself = ImpulseOverlayRenderer.Render(
+            capture,
+            Frame(o => o.NormalizeStepToImpulsePeak = false, reference: 4.0));
+
+        // Raw 0.5 against a live peak of 4.0...
+        Assert.Equal(0.125, againstPeak[1].Y, precision: 9);
+        // ...and against the snapshot's own extreme, which is that same 0.5.
+        Assert.Equal(1.0, againstItself[1].Y, precision: 9);
+    }
+
+    [Fact]
+    public void Render_TheAmplitudeScaleDoesNotTouchAStep()
+    {
+        ImpulseOverlayCapture capture = Capture(AnalysisCurveKind.ImpulseStep);
+
+        DataPoint[] linear = ImpulseOverlayRenderer.Render(
+            capture, Frame(o => o.AmplitudeScale = ImpulseAmplitudeScale.Linear));
+        DataPoint[] decibels = ImpulseOverlayRenderer.Render(
+            capture, Frame(o => o.AmplitudeScale = ImpulseAmplitudeScale.Decibels));
+
+        Assert.Equal(linear[1].Y, decibels[1].Y, precision: 12);
+    }
+
+    [Fact]
+    public void Render_RestatesAnotherClocksSamplesOnTheSampleAxis()
+    {
+        // 441 at 44.1 kHz and 480 at 48 kHz are the same instant. On a shared axis of
+        // SAMPLES the stored index has to be restated in the live record's units, or the
+        // snapshot sits 39 samples away from the event it shares with the live curve.
+        var capture = new ImpulseOverlayCapture(
+            [new SignalPoint(0, 0.0), new SignalPoint(441, 1.0)],
+            AnalysisCurveKind.Primary,
+            1.0,
+            44_100);
+
+        DataPoint[] points = ImpulseOverlayRenderer.Render(
+            capture,
+            Frame(o => o.TimeUnit = ImpulseTimeUnit.Samples, origin: 480, sampleRate: 48_000));
+
+        Assert.Equal(-480.0, points[0].X, precision: 9);
+        Assert.Equal(0.0, points[1].X, precision: 9);
     }
 
     [Fact]

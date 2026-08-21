@@ -61,7 +61,7 @@ public sealed class LiveRtaRawCaptureTests
         // same spot the display path applies it (before the resample), so a captured
         // overlay stays the compensated curve the user saw under any re-smoothing.
         double[] spectrum = CreateSpectrum();
-        double pinkSlope = -10.0 * Math.Log10(2.0);
+        NoiseSpectralModel pink = NoiseSpectralModel.PowerLaw(-10.0 * Math.Log10(2.0));
 
         foreach (int smoothing in new[] { 0, 6 })
         {
@@ -72,7 +72,7 @@ public sealed class LiveRtaRawCaptureTests
                 compensatedBins[i] = new SignalPoint(
                     compensatedBins[i].X,
                     compensatedBins[i].Y + NoiseTiltCompensation.BinCompensationDb(
-                        pinkSlope, compensatedBins[i].X));
+                        pink, compensatedBins[i].X, SampleRate));
             }
 
             List<SignalPoint> drawn = DataHelper.LogarithmicResample(
@@ -85,7 +85,7 @@ public sealed class LiveRtaRawCaptureTests
                 psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(smoothing));
 
             List<SignalPoint> raw = LiveRtaRawCapture.BuildRelativeRaw(
-                spectrum, FftLength, SampleRate, pinkSlope);
+                spectrum, FftLength, SampleRate, pink);
             List<SignalPoint> rendered = RawCurveRenderer.Render(
                 raw,
                 RawCurveRenderer.CaptureCalibrationCorrection(null),

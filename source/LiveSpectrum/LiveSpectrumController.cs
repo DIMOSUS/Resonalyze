@@ -153,7 +153,7 @@ internal sealed class LiveSpectrumController : IDisposable
         int SmoothingInverseOctaves,
         string? CalibrationId,
         double? SplOffsetDb,
-        double? TiltSlopeDbPerOctave);
+        NoiseSpectralModel? TiltModel);
 
     private PeakHoldDisplayKey renderedPeakHoldKey;
 
@@ -164,9 +164,9 @@ internal sealed class LiveSpectrumController : IDisposable
         liveSpectrumOptions.CalibrationId,
         // The offset only shapes the display in SPL; in relative it is irrelevant.
         RenderingSpl ? plotModelFactory.LiveSplOffsetDb : null,
-        // Null (off) and zero (white noise, band-law-only compensation) are
-        // different display transforms; the nullable keeps them distinct.
-        plotModelFactory.LiveTiltSlopeDbPerOctave);
+        // Null (off) and a flat model (white noise, band-law-only compensation)
+        // are different display transforms; the nullable keeps them distinct.
+        plotModelFactory.LiveTiltModel);
 
     /// <summary>
     /// Clears the running average and peak-hold envelope without interrupting

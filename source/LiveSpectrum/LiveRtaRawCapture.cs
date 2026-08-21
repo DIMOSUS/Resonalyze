@@ -37,19 +37,20 @@ internal static class LiveRtaRawCapture
         IReadOnlyList<double> amplitudeSpectrum,
         int fftLength,
         int sampleRate,
-        double? tiltCompensationSlopeDbPerOctave = null)
+        NoiseSpectralModel? tiltCompensationModel = null)
     {
         // The same bins-to-dB conversion the live magnitude resampler runs before it
         // smooths onto the display grid, so re-smoothing these reproduces the trace.
         List<SignalPoint> bins =
             DataHelper.MagnitudeBinsToDecibels(amplitudeSpectrum, fftLength, sampleRate);
-        if (tiltCompensationSlopeDbPerOctave is { } slope && slope != 0.0)
+        if (tiltCompensationModel is { } model && sampleRate > 0)
         {
             for (int i = 0; i < bins.Count; i++)
             {
                 bins[i] = new SignalPoint(
                     bins[i].X,
-                    bins[i].Y + NoiseTiltCompensation.BinCompensationDb(slope, bins[i].X));
+                    bins[i].Y + NoiseTiltCompensation.BinCompensationDb(
+                        model, bins[i].X, sampleRate));
             }
         }
 

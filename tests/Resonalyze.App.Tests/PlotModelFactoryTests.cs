@@ -1675,10 +1675,13 @@ public sealed class PlotModelFactoryTests
     {
         using ExpSweepMeasurement measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
+        // Periodic pink: the one colour whose synthesis is an exact power law, so
+        // its model is the mirrored straight line and the cancellation is exact.
+        // (Random pink models the Kellett bank instead — pinned in the dsp tests.)
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Rta,
-            NoiseColor = NoiseColor.Pink,
+            NoiseColor = NoiseColor.PinkPeriodic,
             CompensateNoiseTilt = true,
             SmoothingInverseOctaves = 0
         };
@@ -1732,7 +1735,7 @@ public sealed class PlotModelFactoryTests
         PlotModelFactory factory =
             CreateFactory(measurement, noise, liveSpectrumOptions: options);
 
-        Assert.Null(factory.LiveTiltSlopeDbPerOctave);
+        Assert.Null(factory.LiveTiltModel);
 
         var magnitude = new double[(noise.SequenceLength / 2) + 1];
         for (int k = 1; k < magnitude.Length; k++)

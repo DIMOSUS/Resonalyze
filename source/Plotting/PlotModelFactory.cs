@@ -142,16 +142,17 @@ internal sealed class PlotModelFactory
             : MagnitudeScale.Relative;
 
     /// <summary>
-    /// The PSD slope (dB/octave) the live RTA display compensates, or null when the
-    /// compensation is off, the mode is not RTA (the transfer function divides the
-    /// excitation out), or the signal is Silent (unknown excitation spectrum). Zero
-    /// is a real value — white noise still needs the band-power display compensated.
-    /// The peak-hold display key includes this, so toggling it drops the envelope.
+    /// The spectral model of the excitation the live RTA display compensates, or
+    /// null when the compensation is off, the mode is not RTA (the transfer function
+    /// divides the excitation out), or the signal is Silent (unknown excitation
+    /// spectrum). A flat model (white) is a real value — the band-power display
+    /// still needs compensating. The peak-hold display key includes this, so
+    /// toggling it drops the envelope.
     /// </summary>
-    public double? LiveTiltSlopeDbPerOctave =>
+    public NoiseSpectralModel? LiveTiltModel =>
         liveSpectrumOptions.CompensateNoiseTilt &&
         EffectiveLiveAnalysisMode == LiveAnalysisMode.Rta
-            ? NoiseColorTilt.PsdSlopeDbPerOctave(liveSpectrumOptions.NoiseColor)
+            ? NoiseColorTilt.SpectralModel(liveSpectrumOptions.NoiseColor)
             : null;
 
     // The dB offset applied to the live RTA / peak-hold curves when the plot is in
@@ -244,7 +245,7 @@ internal sealed class PlotModelFactory
             inputMagnitude,
             noiseMeasurement.SequenceLength,
             noiseMeasurement.SampleRate,
-            LiveTiltSlopeDbPerOctave);
+            LiveTiltModel);
         if (spectrum.Count < 2)
         {
             return DescribeWithoutRawForm(
@@ -1091,7 +1092,7 @@ internal sealed class PlotModelFactory
         bool renderSpl =
             EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
         bool rtaOnly = LiveRtaOnly;
-        string tiltSuffix = LiveTiltSlopeDbPerOctave != null ? " (noise-compensated)" : "";
+        string tiltSuffix = LiveTiltModel != null ? " (noise-compensated)" : "";
         PlotModel model = PlotModelStyle.CreateTitledModel(
             renderSpl
                 ? "Live Spectrum — dB SPL" + tiltSuffix
@@ -1207,10 +1208,10 @@ internal sealed class PlotModelFactory
     // (see NoiseTiltCompensation).
     private List<SignalPoint> ResampleLiveRta(double[] amplitudeSpectrum)
     {
-        double? tiltSlope = LiveTiltSlopeDbPerOctave;
+        NoiseSpectralModel? tiltModel = LiveTiltModel;
         if (EffectiveLiveSpectrumScale != MagnitudeScale.SoundPressureLevel)
         {
-            return ResampleLiveSpectrumMagnitude(amplitudeSpectrum, 0.0, tiltSlope);
+            return ResampleLiveSpectrumMagnitude(amplitudeSpectrum, 0.0, tiltModel);
         }
 
         double smoothingOctaves = SpectrumSmoothing.SmoothingOctaves(
@@ -1240,13 +1241,13 @@ internal sealed class PlotModelFactory
             bands[i] = new SignalPoint(bands[i].X, bands[i].Y - correction + offsetDb);
         }
 
-        if (tiltSlope is { } bandSlope)
+        if (tiltModel is { } bandModel)
         {
             // Rendered by the same resampler with the same parameters, so the grids
             // align index-for-index; a length mismatch would mean the parameters
             // diverged and the compensation would be misaligned — skip it then.
             double[] compensation = LiveTiltBandCompensation(
-                bandSlope, amplitudeSpectrum.Length, smoothingOctaves, psychoacoustic);
+                bandModel, amplitudeSpectrum.Length, smoothingOctaves, psychoacoustic);
             if (compensation.Length == bands.Count)
             {
                 for (int i = 0; i < bands.Count; i++)
@@ -1263,23 +1264,23 @@ internal sealed class PlotModelFactory
     // the band resampler — far too heavy for every ~30 fps tick — and depends only on
     // these parameters, so the last result is memoized until one of them changes.
     private double[]? liveTiltBandCompensation;
-    private (double Slope, int BinCount, int FftLength, int SampleRate,
+    private (NoiseSpectralModel Model, int BinCount, int FftLength, int SampleRate,
         double EnbwBins, double MainLobeBins, double SmoothingOctaves, bool Psycho)
         liveTiltBandKey;
 
     private double[] LiveTiltBandCompensation(
-        double slope,
+        NoiseSpectralModel model,
         int binCount,
         double smoothingOctaves,
         bool psychoacoustic)
     {
-        var key = (slope, binCount, noiseMeasurement.SequenceLength,
+        var key = (model, binCount, noiseMeasurement.SequenceLength,
             noiseMeasurement.SampleRate, noiseMeasurement.AnalysisWindowEnbwBins,
             noiseMeasurement.AnalysisWindowMainLobeBins, smoothingOctaves, psychoacoustic);
         if (liveTiltBandCompensation == null || !key.Equals(liveTiltBandKey))
         {
             liveTiltBandCompensation = NoiseTiltCompensation.BandCompensationDb(
-                slope,
+                model,
                 binCount,
                 noiseMeasurement.SequenceLength,
                 noiseMeasurement.SampleRate,
@@ -1308,22 +1309,22 @@ internal sealed class PlotModelFactory
     private List<SignalPoint> ResampleLiveSpectrumMagnitude(
         double[] magnitude,
         double offsetDb = 0.0,
-        double? tiltCompensationSlope = null)
+        NoiseSpectralModel? tiltCompensationModel = null)
     {
         List<SignalPoint> bins = DataHelper.MagnitudeBinsToDecibels(
             magnitude, noiseMeasurement.SequenceLength, noiseMeasurement.SampleRate, offsetDb);
 
         // Tilt compensation, per bin BEFORE the display resample — the same spot the
         // raw-curve capture bakes it in (LiveRtaRawCapture), so re-smoothing a
-        // captured raw curve reproduces this trace exactly. A zero slope is an exact
-        // identity on the per-bin display and skips the pass.
-        if (tiltCompensationSlope is { } slope && slope != 0.0)
+        // captured raw curve reproduces this trace exactly.
+        if (tiltCompensationModel is { } model)
         {
             for (int i = 0; i < bins.Count; i++)
             {
                 bins[i] = new SignalPoint(
                     bins[i].X,
-                    bins[i].Y + NoiseTiltCompensation.BinCompensationDb(slope, bins[i].X));
+                    bins[i].Y + NoiseTiltCompensation.BinCompensationDb(
+                        model, bins[i].X, noiseMeasurement.SampleRate));
             }
         }
 

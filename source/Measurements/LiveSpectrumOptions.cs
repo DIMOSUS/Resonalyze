@@ -150,26 +150,31 @@ namespace Resonalyze
     }
 
     /// <summary>
-    /// The power spectral density each excitation colour is synthesised with, as the
-    /// dB-per-octave slope the tilt compensation must undo (see
-    /// <see cref="Dsp.NoiseTiltCompensation"/>). The synthesis is exact enough to
-    /// compensate analytically: periodic pink is exactly <c>1/√k</c> per bin, and the
-    /// Kellett pink filter tracks −3 dB/octave within a fraction of a dB.
+    /// The spectral shape each excitation colour is actually SYNTHESISED with, as
+    /// the model the tilt compensation must undo (see
+    /// <see cref="Dsp.NoiseTiltCompensation"/>). Ideal power laws only where the
+    /// synthesis is one: periodic pink is exactly <c>1/√k</c> per bin and white is
+    /// flat, but random pink is the Kellett filter bank and brown a leaky
+    /// integrator — both flatten below their filter corners, and compensating a
+    /// nominal slope there would print an artificial bass roll-off onto a correct
+    /// measurement.
     /// </summary>
     internal static class NoiseColorTilt
     {
         /// <summary>
-        /// The PSD slope of the colour in dB per octave, or null when the excitation
-        /// spectrum is unknown (<see cref="NoiseColor.Silent"/> — an external source)
-        /// and no compensation can be honest.
+        /// The spectral model of the colour, or null when the excitation spectrum is
+        /// unknown (<see cref="NoiseColor.Silent"/> — an external source) and no
+        /// compensation can be honest.
         /// </summary>
-        public static double? PsdSlopeDbPerOctave(NoiseColor color) => color switch
+        public static NoiseSpectralModel? SpectralModel(NoiseColor color) => color switch
         {
-            // Pink: PSD ∝ 1/f → −10·log10(2) dB per octave.
-            NoiseColor.PinkPeriodic or NoiseColor.Pink => -10.0 * Math.Log10(2.0),
-            // Brown: PSD ∝ 1/f² → −20·log10(2) dB per octave.
-            NoiseColor.Brown => -20.0 * Math.Log10(2.0),
-            NoiseColor.White => 0.0,
+            // Exactly 1/√k per synthesised bin: PSD ∝ 1/f → −10·log10(2) dB/octave.
+            NoiseColor.PinkPeriodic =>
+                NoiseSpectralModel.PowerLaw(-10.0 * Math.Log10(2.0)),
+            NoiseColor.Pink => NoiseSpectralModel.KellettPink,
+            NoiseColor.Brown =>
+                NoiseSpectralModel.LeakyIntegrator(NoiseSignal.BrownCornerHz),
+            NoiseColor.White => NoiseSpectralModel.PowerLaw(0.0),
             _ => null
         };
     }

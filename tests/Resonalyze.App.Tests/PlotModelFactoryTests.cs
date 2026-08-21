@@ -915,6 +915,116 @@ public sealed class PlotModelFactoryTests
         Assert.True(timeAxis.Maximum < timeAxis.AbsoluteMaximum);
     }
 
+    private static (ExpSweepMeasurement Measurement, NoiseMeasurement Noise) BandedCabin(
+        double toneHz, int sampleRate = 48_000, int arrival = 480)
+    {
+        // A decaying tone: its dominant band sits around toneHz, which is what decides
+        // whether a band reading is offered at all.
+        var ir = new Complex[16_384];
+        for (int i = 0; i + arrival < ir.Length; i++)
+        {
+            double t = i / (double)sampleRate;
+            ir[arrival + i] = new Complex(
+                Math.Exp(-t * 400.0) * Math.Sin(2 * Math.PI * toneHz * t), 0);
+        }
+
+        int peak = 0;
+        for (int i = 0; i < ir.Length; i++)
+        {
+            if (Math.Abs(ir[i].Real) > Math.Abs(ir[peak].Real))
+            {
+                peak = i;
+            }
+        }
+
+        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000, sampleRate: sampleRate, bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir, transferPeakIndex: peak);
+        return (measurement, noise);
+    }
+
+    private static string ImpulsePeakMarkerText(OxyPlot.PlotModel model) =>
+        model.Annotations
+            .OfType<OxyPlot.Annotations.LineAnnotation>()
+            .Select(annotation => annotation.Text ?? string.Empty)
+            .Single(text => text.Contains("peak"));
+
+    [Fact]
+    public void ImpulseResponse_StatesHowLateTheBandPeaksWhenTheDriverPlaysThere()
+    {
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions
+            {
+                BandFilterOctaves = 1.0,
+                BandCenterHz = 250,
+                TimeUnit = ImpulseTimeUnit.Milliseconds
+            };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+
+            string text = ImpulsePeakMarkerText(
+                factory.CreateImpulseResponse(includeCurves: true));
+
+            Assert.Contains("band peak", text);
+            Assert.Contains("ms after arrival", text);
+        }
+    }
+
+    [Fact]
+    public void ImpulseResponse_RefusesTheBandOffsetWhereTheDriverDoesNotPlay()
+    {
+        // The field case this guard exists for: at 63 Hz a tweeter still has a "band
+        // peak", and across the archived cabins it landed seconds after the arrival
+        // because what peaked was leakage.
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(8_000);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions
+            {
+                BandFilterOctaves = 1.0,
+                BandCenterHz = 63,
+                TimeUnit = ImpulseTimeUnit.Milliseconds
+            };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+
+            string text = ImpulsePeakMarkerText(
+                factory.CreateImpulseResponse(includeCurves: true));
+
+            Assert.Contains("band peak", text);
+            Assert.DoesNotContain("after arrival", text);
+        }
+    }
+
+    [Fact]
+    public void ImpulseResponse_OffersNoBandOffsetWithoutABandFilter()
+    {
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            PlotModelFactory factory = CreateFactory(
+                measurement, noise, impulseOptions: new ImpulseResponseOptions());
+
+            string text = ImpulsePeakMarkerText(
+                factory.CreateImpulseResponse(includeCurves: true));
+
+            Assert.DoesNotContain("band", text);
+            Assert.DoesNotContain("after arrival", text);
+        }
+    }
+
     [Fact]
     public void ImpulseResponse_DrawsTheWholeRecordNotJustTheDefaultView()
     {

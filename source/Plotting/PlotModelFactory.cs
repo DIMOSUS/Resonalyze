@@ -1298,15 +1298,21 @@ internal sealed class PlotModelFactory
                 valueAxisKey);
         }
 
-        // With a band selected the peak belongs to that band, not to the record, and
-        // the caption has to say which — the whole point of the pair of markers is the
-        // distance between the record's arrival and where this band actually peaks.
+        // With a band selected the peak belongs to that band, not to the record, and the
+        // caption has to say which — the whole point of the pair of markers is how far
+        // apart the record's arrival and this band's peak are, which the caption states
+        // as a number rather than leaving it to be measured off the axis by eye.
         string peakName = impulseResponseOptions.HasBandFilter(measurement.SampleRate)
             ? "band peak"
             : "peak";
-        string peakLabel = set.SnrDb is { } snr
-            ? $"{peakName} · SNR {snr:0} dB"
+        string peakLabel = ResolveBandArrivalOffset(measurement, set) is { } offset
+            ? $"{peakName} · {offset:+0.00;-0.00} ms after arrival"
             : peakName;
+        if (set.SnrDb is { } snr)
+        {
+            peakLabel += $" · SNR {snr:0} dB";
+        }
+
         AddImpulseMarker(
             model,
             ToAxis(set.PeakSample),
@@ -1314,6 +1320,44 @@ internal sealed class PlotModelFactory
             OxyColor.FromRgb(150, 170, 205),
             OxyPlot.VerticalAlignment.Bottom,
             valueAxisKey);
+    }
+
+    /// <summary>
+    /// How long after the record's arrival the selected band peaks, in milliseconds —
+    /// the figure the band filter exists to produce, since a driver's low band does not
+    /// arrive when its broadband front does. Null when there is no band, no arrival
+    /// estimate, or — the case field data forced — when the record does not carry this
+    /// driver's energy at that centre at all.
+    /// <para>
+    /// That last guard is not a nicety. At 63 Hz a tweeter's record still has a "band
+    /// peak": across the archived cabins it landed 1.3, 5.4, 10.9 and 23.6 SECONDS after
+    /// the arrival, because what peaked was leakage and the maximum of leakage sits
+    /// wherever the noise happens to be loudest. Neither the band's level below the
+    /// broadband peak nor its own signal-to-noise separated those from the honest
+    /// readings; asking whether the centre lies inside the record's dominant band —
+    /// where the driver's energy actually is — separated every one of them. It errs
+    /// toward silence: some plausible midrange readings are refused too, which is the
+    /// right direction for a number presented as a measurement.
+    /// </para>
+    /// <para>
+    /// Deliberately NOT converted to a distance, unlike the tracker's reading of a
+    /// reflection: this delay is the driver's own build-up and group delay, not a path
+    /// through air, and stating it in centimetres would invite it to be read as one.
+    /// </para>
+    /// </summary>
+    private double? ResolveBandArrivalOffset(
+        IImpulseMeasurement measurement,
+        ImpulseCurveSet set)
+    {
+        if (!impulseResponseOptions.HasBandFilter(measurement.SampleRate) ||
+            TransferIrStartCache.ResolveStartMs(measurement) is not { } startMs ||
+            !TransferIrDominantBandCache.Covers(
+                measurement, impulseResponseOptions.BandCenterHz))
+        {
+            return null;
+        }
+
+        return set.PeakSample * 1000.0 / measurement.SampleRate - startMs;
     }
 
     private static void AddImpulseMarker(

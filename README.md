@@ -833,9 +833,14 @@ and the filter is the same raised-cosine bandpass the
 read the record through the same instrument. Zero phase means the filter delays
 nothing — at the price of a symmetric ring around each arrival, which is visible
 in the trace and is why an unfiltered arrival marker stays on the plot beside it.
-With a band selected the plot title names it, the peak marker becomes the **band
-peak**, and the distance from the record's **arrival** marker to that peak is the
-band's own delay.
+With a band selected the plot title names it and the peak marker becomes the **band
+peak**, captioned with how long after the record's arrival that band peaks — the
+figure the filter exists to produce, since a driver's low band does not arrive when
+its broadband front does. The caption appears only where the record actually carries
+the driver's energy at that centre: on the archived cabins a tweeter measured at
+63 Hz still had a "band peak", and it landed seconds after the arrival because what
+peaked there was leakage. It is stated as time and not as a distance on purpose —
+this delay is the driver's own build-up, not a path through air.
 
 **Amplitude scale** selects raw **Linear** sample values — absolute, and
 therefore comparable between records — or a normalization against the peak, in

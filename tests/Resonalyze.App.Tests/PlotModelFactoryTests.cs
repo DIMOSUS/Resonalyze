@@ -851,9 +851,10 @@ public sealed class PlotModelFactoryTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ImpulseResponse_LocksValueAxisToCurveRange(bool logarithmic)
+    [InlineData(ImpulseAmplitudeScale.Linear)]
+    [InlineData(ImpulseAmplitudeScale.PercentOfPeak)]
+    [InlineData(ImpulseAmplitudeScale.Decibels)]
+    public void ImpulseResponse_LocksValueAxisToCurveRange(ImpulseAmplitudeScale scale)
     {
         var ir = new Complex[8192];
         int peak = 1024;
@@ -873,7 +874,7 @@ public sealed class PlotModelFactoryTests
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: ir, transferPeakIndex: peak);
 
-        var options = new ImpulseResponseOptions { Logarithmic = logarithmic, ShowImpulse = true };
+        var options = new ImpulseResponseOptions { AmplitudeScale = scale, ShowImpulse = true };
         PlotModelFactory factory =
             CreateFactory(measurement, noiseMeasurement, impulseOptions: options);
 
@@ -886,10 +887,18 @@ public sealed class PlotModelFactoryTests
 
         double expectedMinY = series.Points.Min(point => point.Y);
         double expectedMaxY = series.Points.Max(point => point.Y);
-        Assert.Equal(expectedMinY, valueAxis.Minimum, precision: 9);
-        Assert.Equal(expectedMaxY, valueAxis.Maximum, precision: 9);
+        // The zoom/pan bounds stay locked to the data in every scale, so nothing the
+        // curve contains is unreachable...
         Assert.Equal(expectedMinY, valueAxis.AbsoluteMinimum, precision: 9);
         Assert.Equal(expectedMaxY, valueAxis.AbsoluteMaximum, precision: 9);
+        Assert.Equal(expectedMaxY, valueAxis.Maximum, precision: 9);
+        // ...but the dB view OPENS on a 100 dB window: the impulse dives to the
+        // deconvolution silence floor at every zero crossing, and fitting the visible
+        // range to that spends most of the plot on arithmetic nobody reads.
+        double expectedVisibleMinY = scale == ImpulseAmplitudeScale.Decibels
+            ? Math.Max(expectedMinY, expectedMaxY - 100.0)
+            : expectedMinY;
+        Assert.Equal(expectedVisibleMinY, valueAxis.Minimum, precision: 9);
 
         double expectedMinX = series.Points.Min(point => point.X);
         double expectedMaxX = series.Points.Max(point => point.X);

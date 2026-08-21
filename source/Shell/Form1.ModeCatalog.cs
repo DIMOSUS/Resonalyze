@@ -28,7 +28,12 @@ public partial class Form1
                     () => new IROpt(),
                     opt => opt.Init(expSweepMeasurement, impulseResponseOptions),
                     opt => opt.SetOptions(impulseResponseOptions),
-                    viewResetKey: () => impulseResponseOptions.Logarithmic)),
+                    // Each of these rescales or re-origins an axis, so a restored zoom
+                    // would describe a picture that no longer exists: refit instead.
+                    viewResetKey: () => (
+                        impulseResponseOptions.AmplitudeScale,
+                        impulseResponseOptions.TimeUnit,
+                        impulseResponseOptions.TimeOrigin))),
             [ModeTab.Frequency] = new(
                 ModeTab.Frequency,
                 Mode.FrequencyResponse,

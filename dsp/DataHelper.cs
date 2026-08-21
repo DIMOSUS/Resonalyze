@@ -162,16 +162,131 @@ namespace Resonalyze.Dsp
 
     }
 
+    /// <summary>
+    /// The unit the impulse view's time axis is drawn in. A pure display choice:
+    /// the samples are the record, the axis is only how it is read.
+    /// </summary>
+    public enum ImpulseTimeUnit
+    {
+        Samples,
+        Milliseconds
+    }
+
+    /// <summary>
+    /// Where the impulse view puts time zero. VIEW-ONLY: unlike REW's t=0 buttons
+    /// this never rewrites the measurement — Time Alignment, the Virtual DSP gate
+    /// pin and every saved offset are statements about the record's own absolute
+    /// timeline, and a tool that silently moved that origin would invalidate all
+    /// of them. Only the axis moves.
+    /// </summary>
+    public enum ImpulseTimeOrigin
+    {
+        RecordStart,
+        FirstArrival,
+        Peak
+    }
+
+    /// <summary>
+    /// The vertical scale of the impulse view.
+    /// </summary>
+    public enum ImpulseAmplitudeScale
+    {
+        /// <summary>Raw sample values, absolute and comparable between records.</summary>
+        Linear,
+
+        /// <summary>Percent of the reference peak (peak = 100 %).</summary>
+        PercentOfPeak,
+
+        /// <summary>Decibels relative to the reference peak (peak = 0 dB).</summary>
+        Decibels
+    }
+
     public sealed class ImpulseResponseOptions
     {
         public int Length { get; set; } = 4096;
-        public bool Logarithmic { get; set; }
 
         // Curve visibility. Impulse Response and Autocorrelation modes share this
         // options type but read their own flag.
         public bool ShowImpulse { get; set; } = true;
+        public bool ShowEnvelope { get; set; }
+        public bool ShowStep { get; set; }
         public bool ShowAutocorrelation { get; set; } = true;
+
+        public ImpulseTimeUnit TimeUnit { get; set; } = ImpulseTimeUnit.Milliseconds;
+        public ImpulseTimeOrigin TimeOrigin { get; set; } = ImpulseTimeOrigin.RecordStart;
+        public ImpulseAmplitudeScale AmplitudeScale { get; set; } =
+            ImpulseAmplitudeScale.Linear;
+
+        /// <summary>
+        /// Duration of the centred moving average applied to the envelope (ETC);
+        /// zero leaves it unsmoothed.
+        /// </summary>
+        public double EnvelopeSmoothingMs { get; set; }
+
+        /// <summary>
+        /// Flips the displayed polarity of the impulse and step traces. View-only —
+        /// the record is not modified, and the envelope (a magnitude) is unaffected.
+        /// </summary>
+        public bool Invert { get; set; }
+
+        /// <summary>
+        /// Normalizes the step response against the impulse peak rather than against
+        /// the step's own peak, so a step keeps its size relative to the impulse
+        /// instead of always filling the axis.
+        /// </summary>
+        public bool NormalizeStepToImpulsePeak { get; set; } = true;
+
+        /// <summary>
+        /// Width of the zero-phase band the traces are read through, in octaves
+        /// (1 = full octave, 1/3 = third octave); zero draws the broadband record.
+        /// The band answers "when does this band arrive" — a question a full-range
+        /// impulse cannot, because every band's arrival is buried in one waveform.
+        /// </summary>
+        public double BandFilterOctaves { get; set; }
+
+        /// <summary>
+        /// Centre of that band, in hertz. Ignored while
+        /// <see cref="BandFilterOctaves"/> is zero.
+        /// </summary>
+        public double BandCenterHz { get; set; } = 1000.0;
+
+        /// <summary>Whether a band filter is selected and usable at this rate.</summary>
+        public bool HasBandFilter(int sampleRate) =>
+            BandFilterOctaves > 0.0 &&
+            BandCenterHz > 0.0 &&
+            sampleRate > 0 &&
+            BandCenterHz < sampleRate / 2.0;
     }
+
+    /// <summary>
+    /// The view-only framing the impulse traces are rendered into: where the axis
+    /// zero sits (in samples from the record start, fractional so a sub-sample
+    /// arrival estimate lands where it actually is) and the peak every level is
+    /// normalized against. A null <c>ReferencePeak</c> makes the set use its own
+    /// peak; passing the main set's peak is what lets a Compare curve be read
+    /// against the same reference.
+    /// </summary>
+    public readonly record struct ImpulseRenderFrame(
+        double OriginSamples = 0.0,
+        double? ReferencePeak = null);
+
+    /// <summary>
+    /// The impulse view's traces, each null when its curve was not requested, plus
+    /// the framing figures a second (Compare) set needs to be drawn against the
+    /// same reference: the peak amplitude the levels were normalized against and
+    /// the sample it sits at, in the record's own absolute coordinates.
+    /// <c>SnrDb</c> is how far that peak stands above the record's noise floor,
+    /// and is present only when the envelope was computed — the figure is read
+    /// off that envelope, and computing one just to report it would cost a
+    /// transform per redraw for a line of text.
+    /// </summary>
+    public sealed record ImpulseCurveSet(
+        AnalysisCurve? Impulse,
+        AnalysisCurve? Envelope,
+        AnalysisCurve? Step,
+        double PeakReference,
+        int PeakSample,
+        double? SnrDb);
 
     /// <summary>
     /// Converts measured impulse responses into frequency-domain and time-domain plot data.

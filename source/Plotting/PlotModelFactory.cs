@@ -18,6 +18,7 @@ internal sealed class PlotModelFactory
     public const string PhaseAxisKey = "phase";
     public const string GroupDelayAxisKey = "groupDelay";
     public const string ImpulseAxisKey = "impulse";
+    public const string ImpulseStepAxisKey = "impulseStep";
     public const string TimeAxisKey = "time";
     public const string AutocorrelationAxisKey = "autocorrelation";
 
@@ -929,39 +930,55 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateImpulseResponse(bool includeCurves)
     {
+        ImpulseResponseOptions opt = impulseResponseOptions;
+        // A band-limited view is NOT the record, and the title says so — the same reason
+        // the Live Spectrum names an active tilt compensation instead of letting a
+        // reshaped curve pass for the plain measurement.
+        string band = ImpulseBandLabel(opt, expSweepMeasurement.SampleRate);
         PlotModel model = PlotModelStyle.CreateTitledModel(
-            measurementContext.CreateTitle("Impulse Response"));
+            measurementContext.CreateTitle("Impulse Response" + band));
 
-        const string impulseTracker = "{0}\n{2:0} sample\n{4:0.00000000}";
-        AnalysisCurve? curve = null;
-        AnalysisCurve? compareCurve = null;
+        bool anyTrace = opt.ShowImpulse || opt.ShowEnvelope || opt.ShowStep;
+        var drawn = new List<AnalysisCurve?>();
+        var stepCurves = new List<AnalysisCurve?>();
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse &&
-            impulseResponseOptions.ShowImpulse)
+            anyTrace)
         {
-            // The transfer IR is shown whole on an absolute timeline from sample 0 to the
-            // peak plus the Length tail, so arrival times can be compared directly.
+            // The transfer IR is shown whole from sample 0 to the peak plus the Length
+            // tail, on the record's own timeline: the onset, the peak and the decay are
+            // all on screen at once and two records can be read against one clock. Where
+            // the axis puts its zero and what the levels are normalized against are
+            // decided ONCE, from Main, and handed to both sets — resolving either of them
+            // per curve would subtract exactly the difference the comparison is for.
             IImpulseMeasurement main = measurementContext.CreatePrimaryMeasurement();
-            curve = DataHelper.GetImpulseFromStart(main, impulseResponseOptions);
-            AddLineSeries(model, curve, impulseTracker, Mode.ImpulseResponse, ImpulseAxisKey);
+            double origin = ResolveImpulseOriginSamples(main);
+            ImpulseCurveSet mainSet = DataHelper.GetImpulseCurves(
+                main, opt, new ImpulseRenderFrame(origin));
+            AddImpulseSeries(model, mainSet, main.SampleRate, origin, null, drawn, stepCurves);
 
             if (CompareSharesATimeReference() &&
                 TryCreateCompareMeasurement() is { } compare)
             {
-                compareCurve = DataHelper.GetImpulseFromStart(
+                ImpulseCurveSet compareSet = DataHelper.GetImpulseCurves(
                     compare.Measurement,
-                    impulseResponseOptions);
-                AddCompareLineSeries(
+                    opt,
+                    new ImpulseRenderFrame(origin, mainSet.PeakReference));
+                AddImpulseSeries(
                     model,
-                    compareCurve,
-                    impulseTracker,
+                    compareSet,
+                    compare.Measurement.SampleRate,
+                    origin,
                     compare.DisplayName,
-                    Mode.ImpulseResponse);
+                    drawn,
+                    stepCurves);
             }
+
+            AddImpulseMarkers(model, main, mainSet, origin);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse &&
-                 impulseResponseOptions.ShowImpulse)
+                 anyTrace)
         {
             AddRequiresTransferIrAnnotation(model);
         }
@@ -971,20 +988,240 @@ internal sealed class PlotModelFactory
             Key = TimeAxisKey,
             Position = AxisPosition.Bottom,
             MajorGridlineStyle = LineStyle.Solid,
+            Title = opt.TimeUnit == ImpulseTimeUnit.Milliseconds ? "ms" : "samples",
         };
+        // The step never shares the level axis (see RenderStepTrace), so when it is the
+        // only trace it TAKES that axis rather than leaving an empty one labelled in
+        // units nothing on screen is drawn in.
+        bool stepOnLeft = ImpulseStepIsAlone(opt);
         var valueAxis = new LinearAxis
         {
-            Key = ImpulseAxisKey,
+            Key = stepOnLeft ? ImpulseStepAxisKey : ImpulseAxisKey,
             Position = AxisPosition.Left,
+            Title = stepOnLeft ? "step" : ImpulseValueUnit(opt.AmplitudeScale),
         };
-        // Lock both axes to the drawn curves (which already reflect the logarithmic
-        // toggle) so they are re-fit on every settings change and cannot be panned/zoomed
-        // away from the data. The Compare curve is included so it stays on-screen.
-        ApplyCurveRange(timeAxis, point => point.X, curve, compareCurve);
-        ApplyCurveRange(valueAxis, point => point.Y, curve, compareCurve);
+        // Lock both axes to the drawn curves (which already reflect the scale and unit
+        // selections) so they are re-fit on every settings change and cannot be panned or
+        // zoomed away from the data. Compare is included so it stays on-screen.
+        ApplyCurveRange(
+            timeAxis, point => point.X, drawn.Concat(stepCurves).ToArray());
+        ApplyCurveRange(
+            valueAxis,
+            point => point.Y,
+            (stepOnLeft ? stepCurves : drawn).ToArray());
+        ApplyDefaultDecibelWindow(valueAxis, opt, stepOnLeft);
         model.Axes.Add(timeAxis);
         model.Axes.Add(valueAxis);
+        if (!stepOnLeft && stepCurves.Count > 0)
+        {
+            var stepAxis = new LinearAxis
+            {
+                Key = ImpulseStepAxisKey,
+                Position = AxisPosition.Right,
+                Title = "step",
+            };
+            ApplyCurveRange(stepAxis, point => point.Y, stepCurves.ToArray());
+            model.Axes.Add(stepAxis);
+        }
+
         return model;
+    }
+
+    private static bool ImpulseStepIsAlone(ImpulseResponseOptions opt) =>
+        opt.ShowStep && !opt.ShowImpulse && !opt.ShowEnvelope;
+
+    // " — 250 Hz 1/3 octave", or empty when the whole record is drawn.
+    private static string ImpulseBandLabel(ImpulseResponseOptions opt, int sampleRate)
+    {
+        if (!opt.HasBandFilter(sampleRate))
+        {
+            return string.Empty;
+        }
+
+        string centre = opt.BandCenterHz >= 1_000.0
+            ? $"{opt.BandCenterHz / 1_000.0:0.###} kHz"
+            : $"{opt.BandCenterHz:0.#} Hz";
+        string width = Math.Abs(opt.BandFilterOctaves - 1.0) < 1e-9
+            ? "1 octave"
+            : $"1/{1.0 / opt.BandFilterOctaves:0.#} octave";
+        return $" — {centre} {width}";
+    }
+
+    // How much of the dB scale the view opens on. The impulse in dB dives to the
+    // silence floor at every zero crossing — on a deconvolved record that is −160 dB —
+    // so fitting the visible window to the data spends four fifths of the plot on
+    // arithmetic nobody is reading. The window opens 100 dB under the loudest point,
+    // which clears any real noise floor, while the ABSOLUTE range still covers the
+    // whole curve so the floor stays reachable by zooming out.
+    private const double ImpulseDecibelWindow = 100.0;
+
+    private static void ApplyDefaultDecibelWindow(
+        LinearAxis axis,
+        ImpulseResponseOptions opt,
+        bool stepOnLeft)
+    {
+        if (stepOnLeft ||
+            opt.AmplitudeScale != ImpulseAmplitudeScale.Decibels ||
+            !double.IsFinite(axis.Maximum) ||
+            !double.IsFinite(axis.Minimum))
+        {
+            return;
+        }
+
+        axis.Minimum = Math.Max(axis.Minimum, axis.Maximum - ImpulseDecibelWindow);
+    }
+
+    private static string ImpulseValueUnit(ImpulseAmplitudeScale scale) =>
+        scale switch
+        {
+            ImpulseAmplitudeScale.Decibels => "dB",
+            ImpulseAmplitudeScale.PercentOfPeak => "%",
+            _ => string.Empty
+        };
+
+    /// <summary>
+    /// Where the impulse view's zero sits, in samples from the record start. The
+    /// first-arrival origin reads the SAME shared estimate the Auto gate offsets use,
+    /// so the view and the gates cannot disagree about where the response begins.
+    /// </summary>
+    private double ResolveImpulseOriginSamples(IImpulseMeasurement measurement) =>
+        impulseResponseOptions.TimeOrigin switch
+        {
+            ImpulseTimeOrigin.Peak => measurement.PeakIndex,
+            ImpulseTimeOrigin.FirstArrival =>
+                TransferIrStartCache.ResolveStartMs(measurement) is { } startMs &&
+                measurement.SampleRate > 0
+                    ? startMs * measurement.SampleRate / 1000.0
+                    : measurement.PeakIndex,
+            _ => 0.0
+        };
+
+    private void AddImpulseSeries(
+        PlotModel model,
+        ImpulseCurveSet set,
+        int sampleRate,
+        double origin,
+        string? compareName,
+        List<AnalysisCurve?> drawn,
+        List<AnalysisCurve?> stepCurves)
+    {
+        bool relative = impulseResponseOptions.TimeOrigin != ImpulseTimeOrigin.RecordStart;
+        string unit = ImpulseValueUnit(impulseResponseOptions.AmplitudeScale);
+
+        foreach (AnalysisCurve? curve in new[] { set.Impulse, set.Envelope, set.Step })
+        {
+            if (curve == null)
+            {
+                continue;
+            }
+
+            bool isStep = curve.Kind == AnalysisCurveKind.ImpulseStep;
+            var series = new ImpulseLineSeries
+            {
+                SampleRate = sampleRate,
+                TimeUnit = impulseResponseOptions.TimeUnit,
+                TimeIsRelative = relative,
+                // The step is a normalized ratio, never the level the other traces carry.
+                ValueUnit = isStep ? string.Empty : unit,
+                Color = OxyPlotAdapter.GetCurveColor(curve.Kind),
+                Title = compareName == null ? curve.Name : $"{curve.Name} · {compareName}",
+                YAxisKey = isStep ? ImpulseStepAxisKey : ImpulseAxisKey,
+                Tag = new CurveTag(
+                    Mode.ImpulseResponse,
+                    curve.Kind,
+                    compareName == null ? CurveSource.Main : CurveSource.Compare),
+            };
+            series.Points.AddRange(OxyPlotAdapter.ToDataPoints(curve.Points));
+            if (compareName != null)
+            {
+                series.LineStyle = LineStyle.Dash;
+                series.StrokeThickness = 1.5;
+                OxyColor color = series.Color;
+                series.Color = OxyColor.FromArgb(150, color.R, color.G, color.B);
+            }
+
+            model.Series.Add(series);
+            (isStep ? stepCurves : drawn).Add(curve);
+        }
+    }
+
+    // The two times the rest of the app reads off this record, marked where the view
+    // put them: the first arrival (the estimate every Auto gate offset is anchored on)
+    // and the strongest peak. They are what makes the mode legible as an instrument —
+    // the reader sees the same two instants the engine acts on.
+    private void AddImpulseMarkers(
+        PlotModel model,
+        IImpulseMeasurement measurement,
+        ImpulseCurveSet set,
+        double origin)
+    {
+        double ToAxis(double sample) =>
+            impulseResponseOptions.TimeUnit == ImpulseTimeUnit.Milliseconds &&
+            measurement.SampleRate > 0
+                ? (sample - origin) * 1000.0 / measurement.SampleRate
+                : sample - origin;
+
+        // Opposite text anchors stack the two captions instead of printing them on top
+        // of each other: on a well-aimed record the arrival and the peak are a fraction
+        // of a millisecond apart on an axis spanning hundreds, so their labels start at
+        // very nearly the same pixel.
+        string valueAxisKey = ImpulseStepIsAlone(impulseResponseOptions)
+            ? ImpulseStepAxisKey
+            : ImpulseAxisKey;
+        if (TransferIrStartCache.ResolveStartMs(measurement) is { } startMs &&
+            measurement.SampleRate > 0)
+        {
+            AddImpulseMarker(
+                model,
+                ToAxis(startMs * measurement.SampleRate / 1000.0),
+                "arrival",
+                OxyColor.FromRgb(130, 220, 90),
+                OxyPlot.VerticalAlignment.Top,
+                valueAxisKey);
+        }
+
+        // With a band selected the peak belongs to that band, not to the record, and
+        // the caption has to say which — the whole point of the pair of markers is the
+        // distance between the record's arrival and where this band actually peaks.
+        string peakName = impulseResponseOptions.HasBandFilter(measurement.SampleRate)
+            ? "band peak"
+            : "peak";
+        string peakLabel = set.SnrDb is { } snr
+            ? $"{peakName} · SNR {snr:0} dB"
+            : peakName;
+        AddImpulseMarker(
+            model,
+            ToAxis(set.PeakSample),
+            peakLabel,
+            OxyColor.FromRgb(150, 170, 205),
+            OxyPlot.VerticalAlignment.Bottom,
+            valueAxisKey);
+    }
+
+    private static void AddImpulseMarker(
+        PlotModel model,
+        double x,
+        string text,
+        OxyColor color,
+        OxyPlot.VerticalAlignment textPosition,
+        string valueAxisKey)
+    {
+        model.Annotations.Add(new LineAnnotation
+        {
+            Type = LineAnnotationType.Vertical,
+            X = x,
+            Color = OxyColor.FromAColor(140, color),
+            LineStyle = LineStyle.Dash,
+            StrokeThickness = 1.0,
+            Text = text,
+            TextColor = color,
+            TextOrientation = AnnotationTextOrientation.Horizontal,
+            TextVerticalAlignment = textPosition,
+            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left,
+            TextPadding = 4,
+            XAxisKey = TimeAxisKey,
+            YAxisKey = valueAxisKey,
+        });
     }
 
     // Fixes an axis to the curve's own min/max for the selected coordinate (both the visible

@@ -506,8 +506,28 @@ internal sealed partial class MeasurementSettingsFile
     internal sealed class ImpulseResponseSettings
     {
         public int Length { get; set; } = 4096;
-        public bool Logarithmic { get; set; }
+
+        /// <summary>
+        /// The pre-scale-selector setting: a plain "logarithmic amplitude" flag. It
+        /// is read only when <see cref="AmplitudeScale"/> is absent, so a file
+        /// written by an older build still opens the view the way its user left it,
+        /// and it is still WRITTEN (mirroring the scale) so a file written here
+        /// stays loadable by an older build, which cannot parse a null into its
+        /// non-nullable flag.
+        /// </summary>
+        public bool? Logarithmic { get; set; }
+
+        public ImpulseAmplitudeScale? AmplitudeScale { get; set; }
+        public ImpulseTimeUnit TimeUnit { get; set; } = ImpulseTimeUnit.Milliseconds;
+        public ImpulseTimeOrigin TimeOrigin { get; set; } = ImpulseTimeOrigin.RecordStart;
+        public double EnvelopeSmoothingMs { get; set; }
+        public bool Invert { get; set; }
+        public bool NormalizeStepToImpulsePeak { get; set; } = true;
+        public double BandFilterOctaves { get; set; }
+        public double BandCenterHz { get; set; } = 1000.0;
         public bool ShowImpulse { get; set; } = true;
+        public bool ShowEnvelope { get; set; }
+        public bool ShowStep { get; set; }
         public bool ShowAutocorrelation { get; set; } = true;
 
         public static ImpulseResponseSettings Capture(
@@ -515,16 +535,43 @@ internal sealed partial class MeasurementSettingsFile
             new()
             {
                 Length = options.Length,
-                Logarithmic = options.Logarithmic,
+                Logarithmic = options.AmplitudeScale == ImpulseAmplitudeScale.Decibels,
+                AmplitudeScale = options.AmplitudeScale,
+                TimeUnit = options.TimeUnit,
+                TimeOrigin = options.TimeOrigin,
+                EnvelopeSmoothingMs = options.EnvelopeSmoothingMs,
+                Invert = options.Invert,
+                NormalizeStepToImpulsePeak = options.NormalizeStepToImpulsePeak,
+                BandFilterOctaves = options.BandFilterOctaves,
+                BandCenterHz = options.BandCenterHz,
                 ShowImpulse = options.ShowImpulse,
+                ShowEnvelope = options.ShowEnvelope,
+                ShowStep = options.ShowStep,
                 ShowAutocorrelation = options.ShowAutocorrelation
             };
 
         public void ApplyTo(ImpulseResponseOptions options)
         {
             options.Length = Clamp(Length, 1, 262144);
-            options.Logarithmic = Logarithmic;
+            options.AmplitudeScale = AmplitudeScale
+                ?? (Logarithmic == true
+                    ? ImpulseAmplitudeScale.Decibels
+                    : ImpulseAmplitudeScale.Linear);
+            options.TimeUnit = TimeUnit;
+            options.TimeOrigin = TimeOrigin;
+            options.EnvelopeSmoothingMs = Math.Clamp(EnvelopeSmoothingMs, 0.0, 100.0);
+            options.Invert = Invert;
+            options.NormalizeStepToImpulsePeak = NormalizeStepToImpulsePeak;
+            // Anything outside the offered widths reads as "no band filter" rather than
+            // as an arbitrary one: a hand-edited width is not a band anyone chose.
+            options.BandFilterOctaves =
+                BandFilterOctaves > 0.0 && BandFilterOctaves <= 1.0
+                    ? BandFilterOctaves
+                    : 0.0;
+            options.BandCenterHz = BandCenterHz > 0.0 ? BandCenterHz : 1000.0;
             options.ShowImpulse = ShowImpulse;
+            options.ShowEnvelope = ShowEnvelope;
+            options.ShowStep = ShowStep;
             options.ShowAutocorrelation = ShowAutocorrelation;
         }
     }

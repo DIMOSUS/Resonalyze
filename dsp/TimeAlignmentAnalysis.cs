@@ -99,7 +99,7 @@ public static class TimeAlignmentAnalysis
                 options.BandpassCenterHz,
                 options.BandpassPassOctaves,
                 options.BandpassFadeOctaves);
-            analysisSignal = ApplyBandpassWindow(impulseResponse, window);
+            analysisSignal = BandpassWindow.Apply(impulseResponse, window);
             kernelEnvelope = BuildKernelEnvelope(window);
         }
         else
@@ -382,32 +382,6 @@ public static class TimeAlignmentAnalysis
             refinedByPhat);
     }
 
-    private static double[] ApplyBandpassWindow(
-        IReadOnlyList<double> signal,
-        double[] window)
-    {
-        var spectrum = new Complex[signal.Count];
-        for (int i = 0; i < signal.Count; i++)
-        {
-            spectrum[i] = new Complex(signal[i], 0.0);
-        }
-
-        Fourier.Forward(spectrum, FourierOptions.Matlab);
-        for (int i = 0; i < spectrum.Length; i++)
-        {
-            spectrum[i] *= window[i];
-        }
-
-        Fourier.Inverse(spectrum, FourierOptions.Matlab);
-
-        var filtered = new double[spectrum.Length];
-        for (int i = 0; i < spectrum.Length; i++)
-        {
-            filtered[i] = spectrum[i].Real;
-        }
-
-        return filtered;
-    }
 
     // The time response of the zero-phase bandpass mask, as an analytic
     // envelope indexed by |offset| from the kernel centre. The kernel is real

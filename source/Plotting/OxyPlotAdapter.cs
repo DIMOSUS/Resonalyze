@@ -40,6 +40,13 @@ internal static class OxyPlotAdapter
             .ToList();
     }
 
+    /// <summary>
+    /// The hue a curve of this kind is drawn in. Exposed so a mode that builds its
+    /// own series type (the impulse view's tracker-aware trace) still takes its
+    /// colours from the one table.
+    /// </summary>
+    public static OxyColor GetCurveColor(AnalysisCurveKind kind) => GetColor(kind);
+
     private static OxyColor GetColor(AnalysisCurveKind kind)
     {
         return kind switch
@@ -55,6 +62,11 @@ internal static class OxyPlotAdapter
             // excess = green" reads the same across modes.
             AnalysisCurveKind.MinimumPhaseGroupDelay => OxyColor.FromRgb(0, 200, 255),
             AnalysisCurveKind.ExcessGroupDelay => OxyColor.FromRgb(130, 220, 90),
+            // The impulse view's derived traces: the envelope rides directly on top of
+            // the orange impulse, so it takes a lighter amber of the same family, while
+            // the step — a different quantity on a different axis — steps out to blue.
+            AnalysisCurveKind.ImpulseEnvelope => OxyColor.FromRgb(255, 210, 80),
+            AnalysisCurveKind.ImpulseStep => OxyColor.FromRgb(120, 200, 255),
             _ => OxyColor.FromRgb(255, 127, 0)
         };
     }

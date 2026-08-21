@@ -232,8 +232,9 @@ Virtual DSP, the EQ Wizard, and Time Alignment are shown in the
   <tr>
     <td width="50%">
       <img src="assets/images/impulse.jpg" alt="Impulse response plot">
-      <p><strong>Impulse Response</strong> — inspect it, save it as readable JSON,
-      and reuse it across analysis modes without re-measuring.</p>
+      <p><strong>Impulse Response</strong> — impulse, envelope (ETC) and step on
+      one timeline, save it as readable JSON, and reuse it across analysis modes
+      without re-measuring.</p>
     </td>
     <td width="50%">
       <img src="assets/images/gd.jpg" alt="Group delay plot">
@@ -744,6 +745,58 @@ A reference is only drawn when its sample rate matches the current measurement.
 The source and Compare curves are also selectable as live operands in a
 [calculated overlay](#plot-overlays), so their difference can be watched live
 while you tune the analysis window.
+
+## Impulse Response
+
+The **Impulse Response** mode draws the **loopback transfer IR** from the record
+start through the peak and on into the tail, so the arrival, the reflections and
+the decay are one picture — and so two records can be read against one clock.
+
+Three traces share that timeline, each switched on under **Curves:**
+
+- the **impulse response** itself;
+- the **envelope (ETC)** — the analytic-signal envelope, where reflections read
+  as separate arrivals instead of as interference in the waveform. **ETC
+  smoothing** averages it over a chosen duration, centred so nothing moves in
+  time;
+- the **step response** — the running integral of the impulse: what the system
+  would do if the input jumped to a level and stayed there. It is always drawn
+  normalized on an axis of its own (against the impulse peak, or against its own
+  peak when **Step against IR peak** is cleared), because a record with any
+  low-frequency content integrates into a step many times the impulse peak.
+
+**Band filter** reads all three traces through a zero-phase band — a full octave or
+a third of one, centred on any ISO preferred frequency. This is how you see *when*
+a band arrives: a full-range impulse buries every band's arrival in one waveform,
+and the filter is the same raised-cosine bandpass the
+[Time Alignment](#time-alignment) probe uses, so the view and the delay estimator
+read the record through the same instrument. Zero phase means the filter delays
+nothing — at the price of a symmetric ring around each arrival, which is visible
+in the trace and is why an unfiltered arrival marker stays on the plot beside it.
+With a band selected the plot title names it, the peak marker becomes the **band
+peak**, and the distance from the record's **arrival** marker to that peak is the
+band's own delay.
+
+**Amplitude scale** selects raw **Linear** sample values — absolute, and
+therefore comparable between records — or a normalization against the peak, in
+**% of peak** or in **dB re peak**. With a [Compare](#compare) reference loaded,
+both curves are normalized against the *same* peak, the main record's: how far
+one sits below the other is the point of the comparison, and normalizing each to
+itself would erase exactly that.
+
+**Time axis** switches the unit between milliseconds and samples; the tracker
+reads both either way. **Time zero** chooses where the axis puts its origin — the
+record start, the estimated **first arrival**, or the **peak**. This is a view
+setting: the measurement is never rewritten, because Time Alignment, the Virtual
+DSP gate pins and every saved offset are statements about the record's own
+absolute timeline. When zero sits on an arrival, the tracker also reads the path
+length that time corresponds to in air. **Invert polarity** flips the displayed
+impulse and step the same view-only way.
+
+Two markers name the instants the rest of the app acts on: the estimated
+**arrival** — the same shared figure the Auto gate offsets are anchored on — and
+the strongest **peak**, labelled with the record's signal-to-noise ratio whenever
+the envelope is on screen to measure it against.
 
 ## Time Alignment
 

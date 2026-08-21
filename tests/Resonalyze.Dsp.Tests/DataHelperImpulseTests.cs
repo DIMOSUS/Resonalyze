@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -201,32 +201,38 @@ public sealed class DataHelperImpulseTests
     }
 
     [Fact]
-    public void Envelope_DecaysToTheEndInsteadOfWrappingBackUp()
+    public void Envelope_IsTheOneTheEngineReadsOffTheSameRecord()
     {
-        // The discrete Hilbert transform is circular: computed over the bare window,
-        // the onset's 1/t skirt wraps around and lifts the far end of the envelope
-        // tens of dB above the noise floor — a decay tail made of arithmetic. The
-        // envelope's last quarter must not out-level its third quarter.
+        // The view must not compute a VARIANT of the envelope the rest of the app works
+        // from. An earlier attempt padded the record before transforming, to keep the
+        // Hilbert kernel from wrapping; measured on the archived cabins that was the
+        // worse model — the record is one period of the deconvolution, and the padding's
+        // edge lifted its silent region three orders of magnitude, inflating the
+        // signal-to-noise figure by up to 32 dB against what Time Alignment reads.
         var ir = new Complex[8_192];
-        ir[200] = Complex.One;
+        for (int i = 0; i < 400; i++)
+        {
+            ir[200 + i] = new Complex(Math.Exp(-i / 60.0) * Math.Cos(i * 0.35), 0.0);
+        }
+
         var measurement = new SyntheticMeasurement(ir, SampleRate, 200);
 
         ImpulseCurveSet set = DataHelper.GetImpulseCurves(
             measurement,
-            Options(o =>
-            {
-                o.Length = 8_000;
-                o.ShowEnvelope = true;
-            }),
+            Options(o => o.ShowEnvelope = true),
             new ImpulseRenderFrame());
 
-        IReadOnlyList<SignalPoint> envelope = set.Envelope!.Points;
-        int third = envelope.Count * 3 / 4;
-        double thirdQuarterMax = envelope.Take(third).Skip(envelope.Count / 2).Max(p => p.Y);
-        double lastQuarterMax = envelope.Skip(third).Max(p => p.Y);
-        Assert.True(
-            lastQuarterMax <= thirdQuarterMax,
-            $"envelope rose from {thirdQuarterMax} to {lastQuarterMax} at the window end");
+        double[] expected = SignalEnvelope.Envelope(
+            ir.Select(sample => sample.Real).ToArray());
+        double peak = expected.Max();
+        Assert.Equal(
+            SignalEnvelope.EstimatePeakConfidenceDecibels(expected, peak),
+            set.SnrDb!.Value,
+            precision: 9);
+        for (int i = 0; i < expected.Length; i += 97)
+        {
+            Assert.Equal(expected[i], set.Envelope!.Points[i].Y, precision: 12);
+        }
     }
 
     [Fact]

@@ -871,7 +871,9 @@ shows the thinned outline where the live trace shows samples.
 Two markers name the instants the rest of the app acts on: the estimated
 **arrival** — the same shared figure the Auto gate offsets are anchored on — and
 the strongest **peak**, labelled with the record's signal-to-noise ratio whenever
-the envelope is on screen to measure it against.
+the envelope is on screen to measure it against — the same figure
+[Time Alignment](#time-alignment) reads off that record, because it is computed the
+same way from the same envelope.
 
 ## Time Alignment
 

@@ -44,7 +44,7 @@ namespace Resonalyze.Dsp
             // it: the band's peak is only worth reading against something.
             if (TryCreateBandWindow(opt, length, measurement.SampleRate) is { } band)
             {
-                samples = ApplyBandWithoutCircularWrap(samples, band);
+                samples = BandpassWindow.Apply(samples, band);
             }
 
             double ownPeak = 0.0;
@@ -77,9 +77,19 @@ namespace Resonalyze.Dsp
             double? snrDb = null;
             if (opt.ShowEnvelope)
             {
-                double[] envelope = EnvelopeWithoutCircularWrap(samples);
-                snrDb = ownPeak > 0.0
-                    ? SignalEnvelope.EstimatePeakConfidenceDecibels(envelope, ownPeak)
+                double[] envelope = SignalEnvelope.Envelope(samples);
+                // Against the ENVELOPE's peak, not the sample peak: the analytic
+                // magnitude rides above the samples it was built from, and Time
+                // Alignment grades the same record against its own envelope peak. The
+                // figure is only comparable with the engine's if it is the same figure.
+                double envelopePeak = 0.0;
+                for (int i = 0; i < envelope.Length; i++)
+                {
+                    envelopePeak = Math.Max(envelopePeak, envelope[i]);
+                }
+
+                snrDb = envelopePeak > 0.0
+                    ? SignalEnvelope.EstimatePeakConfidenceDecibels(envelope, envelopePeak)
                     : null;
                 SmoothEnvelopeInPlace(envelope, opt.EnvelopeSmoothingMs, measurement.SampleRate);
                 envelopeCurve = new AnalysisCurve(
@@ -145,9 +155,8 @@ namespace Resonalyze.Dsp
         // setting — the same shape the Time Alignment probe filters with.
         private const double BandFadeFraction = 0.5;
 
-        // The zero-phase band mask for the requested band, sized for the padded buffer
-        // the filter runs in; null when no band filter is selected or the record has no
-        // usable sample rate.
+        // The zero-phase band mask for the requested band; null when no band filter is
+        // selected or the record has no usable sample rate.
         private static double[]? TryCreateBandWindow(
             ImpulseResponseOptions opt,
             int length,
@@ -159,49 +168,23 @@ namespace Resonalyze.Dsp
             }
 
             return BandpassWindow.Create(
-                PaddedLength(length),
+                length,
                 sampleRate,
                 opt.BandCenterHz,
                 opt.BandFilterOctaves,
                 opt.BandFilterOctaves * BandFadeFraction);
         }
 
-        // Both the band mask and the Hilbert transform are circular over the analysis
-        // window, and both have kernels that reach far outside a single sample — the
-        // narrower the band, the longer its kernel. Everything that transforms here does
-        // it on a buffer twice the drawn length, so what wraps lands in the padding.
-        private static int PaddedLength(int length) =>
-            DspMath.NextPowerOfTwo(length * 2);
-
-        private static double[] ApplyBandWithoutCircularWrap(
-            double[] samples,
-            double[] window)
-        {
-            var padded = new double[window.Length];
-            Array.Copy(samples, padded, samples.Length);
-
-            double[] filtered = BandpassWindow.Apply(padded, window);
-            var result = new double[samples.Length];
-            Array.Copy(filtered, result, samples.Length);
-            return result;
-        }
-
-        // The discrete Hilbert transform is CIRCULAR, and the analysis window is a bare
-        // cut of the record: over it, the 1/t skirt of the onset wraps around the end
-        // and lifts the far side of the envelope by tens of dB — a decay tail that is
-        // pure arithmetic (a 175 ms window read −45 dB at its right edge against a
-        // −82 dB noise floor). Padding to twice the length parks the wrap beyond
-        // everything that is drawn, and the power-of-two length is the cheap FFT too.
-        private static double[] EnvelopeWithoutCircularWrap(double[] samples)
-        {
-            var padded = new double[PaddedLength(samples.Length)];
-            Array.Copy(samples, padded, samples.Length);
-
-            double[] full = SignalEnvelope.Envelope(padded);
-            var envelope = new double[samples.Length];
-            Array.Copy(full, envelope, samples.Length);
-            return envelope;
-        }
+        // Both the band mask and the Hilbert transform treat the buffer as circular, and
+        // that is CORRECT here: the traces are built over the whole record, which is one
+        // period of the deconvolution rather than a cut out of something longer. Padding
+        // the record and transforming that instead was measured on the archived cabins
+        // and is worse — the abrupt end of the record against the padding is an edge the
+        // transform spreads back inside, lifting the deconvolution's numerically silent
+        // region three orders of magnitude above the samples actually there (2e-9 against
+        // 1e-13) and inflating the noise-floor estimate that reads it. Left alone, the
+        // envelope tracks |x| by a constant ratio everywhere in the record, and the view's
+        // signal-to-noise figure is the one Time Alignment reads off the same record.
 
         private static List<SignalPoint> RenderMagnitudeTrace(
             double[] magnitude,

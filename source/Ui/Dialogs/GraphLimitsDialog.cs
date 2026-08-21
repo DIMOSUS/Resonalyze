@@ -1,4 +1,4 @@
-using OxyPlot;
+﻿using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.WindowsForms;
 
@@ -121,10 +121,21 @@ internal sealed partial class GraphLimitsDialog : Form
 
     // A logarithmic axis has no meaning at or below zero, so an unbounded one still
     // gets a positive floor.
-    private static decimal EditorLimit(double absoluteLimit, decimal fallback, bool logarithmic)
+    //
+    // The clamp happens in DOUBLE, before the cast. An axis that was never given absolute
+    // bounds carries OxyPlot's own defaults — double.MinValue and double.MaxValue — which
+    // are perfectly finite and some 290 orders of magnitude outside what a decimal can
+    // hold, so casting first threw OverflowException and took the double click down with
+    // it. Every mode that leaves an axis unbounded reaches this, the impulse view's level
+    // axis and the autocorrelation plot among them.
+    internal static decimal EditorLimit(
+        double absoluteLimit, decimal fallback, bool logarithmic)
     {
         decimal limit = double.IsFinite(absoluteLimit)
-            ? Math.Clamp((decimal)absoluteLimit, -DefaultEditorLimit, DefaultEditorLimit)
+            ? (decimal)Math.Clamp(
+                absoluteLimit,
+                (double)-DefaultEditorLimit,
+                (double)DefaultEditorLimit)
             : fallback;
         return logarithmic ? Math.Max(limit, 0.01m) : limit;
     }

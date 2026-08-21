@@ -1106,6 +1106,40 @@ public sealed class PlotModelFactoryTests
     }
 
     [Fact]
+    public void ImpulseResponse_FramesOverlaysEvenWithEveryLiveTraceHidden()
+    {
+        // An overlay is framed by the view's origin and the live record's peak, and it
+        // can be the only thing on the plot. Resolving those inside the "is anything
+        // drawn" branch left it at the record start and at its own peak — ignoring the
+        // chosen time zero and erasing the level difference against the current record.
+        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        using (measurement)
+        using (noise)
+        {
+            var options = new ImpulseResponseOptions
+            {
+                ShowImpulse = false,
+                ShowEnvelope = false,
+                ShowStep = false,
+                TimeOrigin = ImpulseTimeOrigin.Peak,
+                AmplitudeScale = ImpulseAmplitudeScale.PercentOfPeak
+            };
+            PlotModelFactory factory =
+                CreateFactory(measurement, noise, impulseOptions: options);
+
+            var model = factory.CreateImpulseResponse(includeCurves: true);
+            ImpulseOverlayFrame frame = factory.ImpulseFrame;
+
+            Assert.Empty(model.Series);
+            Assert.Equal(measurement.Transfer!.PeakIndex, frame.OriginSamples, precision: 9);
+            Assert.NotNull(frame.ReferencePeak);
+            Assert.True(frame.ReferencePeak > 0.0);
+            Assert.Equal(measurement.SampleRate, frame.SampleRate);
+            Assert.Same(options, frame.Options);
+        }
+    }
+
+    [Fact]
     public void ImpulseResponse_PinsTheDecibelFloorButNotTheTop()
     {
         // The floor is what keeps the plot off the silence the impulse dives to at every

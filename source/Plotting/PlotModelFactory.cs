@@ -1029,14 +1029,20 @@ internal sealed class PlotModelFactory
         var stepCurves = new List<AnalysisCurve?>();
         (double Start, double End)? defaultSpan = null;
         if (measurementContext.CanIncludeCurves(includeCurves) &&
-            measurementContext.HasTransferImpulseResponse &&
-            anyTrace)
+            measurementContext.HasTransferImpulseResponse)
         {
             // The transfer IR is drawn whole, on the record's own timeline: the onset, the
             // peak and the decay are one curve and two records can be read against one
             // clock. Where the axis puts its zero and what the levels are normalized
             // against are decided ONCE, from Main, and handed to both sets — resolving
             // either per curve would subtract exactly the difference being compared.
+            //
+            // Resolved WHATEVER is switched on, because an overlay is framed by these two
+            // figures too and it can be the only thing on the plot: with the traces hidden
+            // the frame used to fall back to the record start and to the snapshot's own
+            // peak, so the overlay ignored the chosen time zero and its level difference
+            // against the current record disappeared. Visibility decides what is drawn,
+            // not what the view MEANS.
             IImpulseMeasurement main = measurementContext.CreatePrimaryMeasurement();
             double origin = ResolveImpulseOriginSamples(main);
             defaultSpan = ResolveImpulseDefaultSpan(main, opt, origin);
@@ -1044,26 +1050,32 @@ internal sealed class PlotModelFactory
                 main, opt, new ImpulseRenderFrame(origin));
             ImpulseFrame = new ImpulseOverlayFrame(
                 opt, origin, mainSet.PeakReference, main.SampleRate);
-            AddImpulseSeries(model, mainSet, main.SampleRate, origin, null, drawn, stepCurves);
 
-            if (CompareSharesATimeReference() &&
-                TryCreateCompareMeasurement() is { } compare)
+            if (anyTrace)
             {
-                ImpulseCurveSet compareSet = DataHelper.GetImpulseCurves(
-                    compare.Measurement,
-                    opt,
-                    new ImpulseRenderFrame(origin, mainSet.PeakReference));
                 AddImpulseSeries(
-                    model,
-                    compareSet,
-                    compare.Measurement.SampleRate,
-                    origin,
-                    compare.DisplayName,
-                    drawn,
-                    stepCurves);
-            }
+                    model, mainSet, main.SampleRate, origin, null, drawn, stepCurves);
 
-            AddImpulseMarkers(model, main, mainSet, origin);
+                if (CompareSharesATimeReference() &&
+                    TryCreateCompareMeasurement() is { } compare)
+                {
+                    ImpulseCurveSet compareSet = DataHelper.GetImpulseCurves(
+                        compare.Measurement,
+                        opt,
+                        new ImpulseRenderFrame(origin, mainSet.PeakReference));
+                    AddImpulseSeries(
+                        model,
+                        compareSet,
+                        compare.Measurement.SampleRate,
+                        origin,
+                        compare.DisplayName,
+                        drawn,
+                        stepCurves);
+                }
+
+                // The markers annotate the live traces, so they follow them off the plot.
+                AddImpulseMarkers(model, main, mainSet, origin);
+            }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse &&

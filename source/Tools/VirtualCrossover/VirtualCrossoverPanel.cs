@@ -2395,12 +2395,14 @@ public partial class VirtualCrossoverPanel : UserControl
             dialog.LineStyle,
             dialog.SmoothingInverseOctaves);
         ApplyTargetLocally(edited);
+        // Save is where the session learns about it — see ApplyTargetLocally.
+        StoreTargetInProject(edited);
         TargetCurveChanged?.Invoke(edited);
     }
 
     // The dialog's live preview. It reports every field except the preset (which
     // it names only on Save), so the current preset rides through untouched —
-    // nothing drawn here reads it.
+    // nothing drawn here reads it, and nothing stores it either.
     private void ApplyTargetPreview(OverlayTargetPreview preview)
     {
         if (targetCurve is not { } current)
@@ -2420,11 +2422,17 @@ public partial class VirtualCrossoverPanel : UserControl
         });
     }
 
+    // Memory and plot only, deliberately NOT the session: this runs on every
+    // twitch of the dialog's live preview, and the autosave timer keeps ticking
+    // inside a modal dialog's message loop — a couple of seconds spent dragging
+    // a shelf would write an uncommitted preview to disk, to be found by the
+    // next launch if the app never got to Cancel. The preview does not even
+    // carry a preset, so what landed there would be the old preset's name over
+    // the new shape. Save stores; Cancel has nothing to undo.
     private void ApplyTargetLocally(EqTargetCurve value)
     {
         targetCurve = value;
         targetToggleColor = value.Color;
-        StoreTargetInProject(value);
         UpdateTargetToggleLook();
         RedrawAll();
     }

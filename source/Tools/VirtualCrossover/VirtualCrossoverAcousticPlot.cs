@@ -71,6 +71,13 @@ internal sealed class VirtualCrossoverAcousticPlot
     private readonly LogarithmicAxis frequencyAxis;
     private readonly LinearAxis timeAxis;
 
+    // The display window the impulse time axis was last armed to, so a redraw
+    // that lands on the same window leaves the user's zoom alone. A move smaller
+    // than this is recomputation noise rather than a new window — it is orders
+    // of magnitude below one sample at any rate the app records at.
+    private const double WindowMoveEpsilonMs = 1e-6;
+    private (double StartMs, double EndMs)? impulseWindow;
+
     public VirtualCrossoverAcousticPlot(PlotView view, string hint, AcousticView initialView)
     {
         ArgumentNullException.ThrowIfNull(view);
@@ -79,17 +86,18 @@ internal sealed class VirtualCrossoverAcousticPlot
         var model = new PlotModel();
         PlotModelStyle.AddFrequencyAxis(model);
         frequencyAxis = (LogarithmicAxis)model.Axes[^1];
-        // The impulse view runs on an absolute-time axis; its range follows the
-        // gate window on every impulse redraw, so it is static like the gate
-        // dialog's preview instead of pannable.
+        // The impulse view runs on an absolute-time axis. It zooms and pans like
+        // any other: the interesting part of an impulse view is the millisecond
+        // around each front, and the gate window it opens on is far wider than
+        // that. The window stays its hard limit — outside it the
+        // traces hold no data — and DrawImpulse only re-arms the range when the
+        // window itself moves, so a zoom survives the constant redraws.
         timeAxis = new LinearAxis
         {
             Position = AxisPosition.Bottom,
             Title = "ms",
             MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineStyle = LineStyle.Dot,
-            IsPanEnabled = false,
-            IsZoomEnabled = false
+            MinorGridlineStyle = LineStyle.Dot
         };
         // The absolute pan/zoom limits live in ConfigureForView: they differ
         // between the magnitude (dB), phase (deg) and impulse (normalized) views.
@@ -125,8 +133,9 @@ internal sealed class VirtualCrossoverAcousticPlot
     }
 
     // Magnitude and phase reuse one value axis object so pan/zoom of the frequency
-    // axis survives the toggle; only the value scale is re-armed. The impulse view
-    // additionally swaps the bottom axis to the linear ms one.
+    // axis survives the toggle; only the value scale and its zoom lock are
+    // re-armed. The impulse view additionally swaps the bottom axis to the linear
+    // ms one.
     public void ConfigureForView(AcousticView acousticView)
     {
         if (acousticView == AcousticView.Impulse)
@@ -161,6 +170,16 @@ internal sealed class VirtualCrossoverAcousticPlot
             valueAxis.Maximum = double.NaN;
             valueAxis.MajorStep = double.NaN;
         }
+
+        // ±180° is the ENTIRE range a wrapped phase can occupy, so there is
+        // nothing above or below to travel to: zooming the height would only cut
+        // curves off screen while implying the rest is somewhere out of view.
+        // Locked rather than merely bounded, which also drops the axis from the
+        // double-click limits dialog (it offers the zoomable axes only) and
+        // leaves a drag panning the frequency axis alone.
+        bool phase = acousticView == AcousticView.Phase;
+        valueAxis.IsZoomEnabled = !phase;
+        valueAxis.IsPanEnabled = !phase;
 
         ConfigureBottomAxis(acousticView);
         valueAxis.Reset();
@@ -244,10 +263,20 @@ internal sealed class VirtualCrossoverAcousticPlot
             return;
         }
 
-        // The axis is static (no pan/zoom), so simply re-arm it to the display
-        // window the series were built for.
+        // The window the series were built for is the axis's hard limit either
+        // way. The RANGE, though, is re-armed only when that window actually
+        // moves: the axis zooms now, and every chain edit redraws this view, so
+        // re-arming each time would throw away the zoom the user just set.
         timeAxis.AbsoluteMinimum = bounds.StartMs;
         timeAxis.AbsoluteMaximum = bounds.EndMs;
+        if (impulseWindow is { } previous &&
+            Math.Abs(previous.StartMs - bounds.StartMs) < WindowMoveEpsilonMs &&
+            Math.Abs(previous.EndMs - bounds.EndMs) < WindowMoveEpsilonMs)
+        {
+            return;
+        }
+
+        impulseWindow = bounds;
         timeAxis.Minimum = bounds.StartMs;
         timeAxis.Maximum = bounds.EndMs;
         timeAxis.Reset();

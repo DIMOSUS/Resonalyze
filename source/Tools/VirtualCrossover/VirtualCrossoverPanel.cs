@@ -160,6 +160,15 @@ public partial class VirtualCrossoverPanel : UserControl
     private bool loadingProject;
     private int pendingSourceLoads;
 
+    // The shared EQ target, null until the host wires it (and in the designer).
+    private EqTargetCurve? targetCurve;
+
+    // The colour the Target toggle wears while it is live: its curve's own, the
+    // way the Sum and Sum loss toggles wear theirs. Seeded from the designer and
+    // following the shared target from then on, so muting the toggle for a view
+    // that cannot show it has a colour to come back to.
+    private Color targetToggleColor;
+
     public VirtualCrossoverPanel()
     {
         InitializeComponent();
@@ -176,6 +185,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // Same idea for the shared curves: the toggles wear their plot colors.
         checkBoxShowSum.ForeColor = Color.FromArgb(SumColor.R, SumColor.G, SumColor.B);
         checkBoxShowLoss.ForeColor = Color.FromArgb(LossColor.R, LossColor.G, LossColor.B);
+        targetToggleColor = checkBoxShowTarget.ForeColor;
 
         metrics = new VirtualCrossoverMetrics(processingCoordinator, BuildMagnitudeCurve);
         acousticPlot = new VirtualCrossoverAcousticPlot(
@@ -192,6 +202,7 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonCaptureOverlay.Click += async (_, _) => await CaptureSumToOverlayAsync();
         buttonExport.Click += async (_, _) => await ExportTuningSheetAsync();
         buttonPhaseGate.Click += async (_, _) => await OpenPhaseGateDialogAsync();
+        buttonTargetSettings.Click += (_, _) => OpenTargetSettings();
         buttonSessionImport.Click += async (_, _) => await ImportSessionAsync();
         buttonSessionExport.Click += (_, _) => ExportSession();
         buttonAudition.Click += async (_, _) => await AuditionTrackAsync();
@@ -259,6 +270,54 @@ public partial class VirtualCrossoverPanel : UserControl
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Action<string, string>? MetricChanged { get; set; }
+
+    /// <summary>
+    /// Pushes the one warning line to the host: the text to show, the whole
+    /// explanation for its tooltip, and the colour to draw the text in. An empty
+    /// text means there is nothing to warn about and the host hides the line.
+    /// Wired by the host form, which shows it above the sum-loss read-out: a
+    /// warning belongs beside the numbers it invalidates, and the panel's own
+    /// area is plot and controls edge to edge.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<string, string, Color>? WarningChanged { get; set; }
+
+    /// <summary>
+    /// The EQ target curve this tool can draw over its predicted sum. Pushed by
+    /// the host, which holds the one definition shared with the EQ Wizard. A
+    /// value equal to the current one is ignored, so the host may push it on
+    /// every settings change without costing a redraw.
+    /// </summary>
+    internal void SetTargetCurve(EqTargetCurve value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (targetCurve == value)
+        {
+            return;
+        }
+
+        targetCurve = value;
+        targetToggleColor = value.Color;
+        StoreTargetInProject(value);
+        UpdateTargetToggleLook();
+        if (checkBoxShowTarget.Checked && radioViewMagnitude.Checked)
+        {
+            RedrawAll();
+        }
+    }
+
+    /// <summary>
+    /// Raised when this tool's own Target dialog edited the shared curve. The
+    /// host writes it back to the EQ Wizard, which owns and persists it — that
+    /// write-back is what makes the two panels show one target rather than two
+    /// that drifted apart.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<EqTargetCurve>? TargetCurveChanged { get; set; }
 
     /// <summary>
     /// Called by the host whenever the tool tab becomes active. The first call
@@ -382,13 +441,19 @@ public partial class VirtualCrossoverPanel : UserControl
         suppressProjectEvents = true;
         try
         {
-            checkBoxShowSum.Checked = project.ShowSumCurve;
             checkBoxShowLoss.Checked = project.ShowLossCurve;
+            checkBoxShowTarget.Checked = project.ShowTargetCurve;
+            numericTargetLevel.Value =
+                numericTargetLevel.ClampValue(project.TargetLevelDb);
             radioViewImpulse.Checked = project.ShowImpulseView;
             radioViewPhase.Checked =
                 !project.ShowImpulseView && project.ShowPhaseView;
             radioViewMagnitude.Checked =
                 !project.ShowImpulseView && !project.ShowPhaseView;
+            // After the radios: the Sum is remembered per view, so which answer
+            // applies is decided by the view this project opens on.
+            ApplySumToggleForView();
+            ApplyProjectTarget();
             radioSideRight.Checked = project.ActiveSideRight;
             radioSideLeft.Checked = !project.ActiveSideRight;
             acousticPlot.ConfigureForView(CurrentAcousticView());
@@ -591,6 +656,8 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         checkBoxShowSum.CheckedChanged += (_, _) => OnViewChanged();
         checkBoxShowLoss.CheckedChanged += (_, _) => OnViewChanged();
+        checkBoxShowTarget.CheckedChanged += (_, _) => OnViewChanged();
+        numericTargetLevel.ValueChanged += (_, _) => OnViewChanged();
         // Three-radio group: each fires on both the check and the uncheck, so
         // act only on the one that became checked to run the switch exactly
         // once per mode change.
@@ -1026,10 +1093,69 @@ public partial class VirtualCrossoverPanel : UserControl
     private void OnViewModeChanged()
     {
         acousticPlot.ConfigureForView(CurrentAcousticView());
-        // Fractional-octave smoothing shapes only the frequency-domain curves;
-        // grey it out in the impulse view where it has no effect.
-        comboBoxSmoothing.Enabled = !radioViewImpulse.Checked;
+        UpdateViewDependentControls();
+        // Before the write-back below: the toggle has to be carrying the new
+        // view's answer, or OnViewChanged would copy the old view's into it.
+        ApplySumToggleForView();
         OnViewChanged();
+    }
+
+    // Each curve toggle is muted on the views that cannot draw that curve: the
+    // Sum exists on the magnitude and phase plots but not among the impulse
+    // traces, the sum loss and the target are magnitude-only (a target is a dB
+    // shape — the same rule OverlayTargets.SupportsMode applies to overlay
+    // targets). Fractional-octave smoothing shapes the frequency-domain curves,
+    // so it is dead in the impulse view alone. The Target... button stays live
+    // everywhere: it switches to the view its dialog can preview on rather than
+    // sitting there greyed.
+    private void UpdateViewDependentControls()
+    {
+        comboBoxSmoothing.Enabled = !radioViewImpulse.Checked;
+        // These two wear a fixed plot colour, so the shared helper — which
+        // memorizes the colour it mutes — is safe for them.
+        Ui.UiStyle.SetTextEnabledLook(
+            checkBoxShowSum, !radioViewImpulse.Checked, interactive: true);
+        Ui.UiStyle.SetTextEnabledLook(
+            checkBoxShowLoss, radioViewMagnitude.Checked, interactive: true);
+        UpdateTargetToggleLook();
+        // DarkNumericUpDown paints its own disabled state in the palette's muted
+        // text, so this one can simply be disabled.
+        numericTargetLevel.Enabled = radioViewMagnitude.Checked;
+    }
+
+    // A CheckBox WinForms has disabled paints its text in a system grey that
+    // reads as near-black on this theme, so the toggle is muted the way
+    // UiStyle.SetTextEnabledLook mutes one — kept enabled, coloured by hand,
+    // with AutoCheck and TabStop carrying the disabling. Not through that helper
+    // itself: it memorizes the colour it muted, and this toggle is recoloured
+    // whenever the shared target is, so what came back could be a stale target's
+    // colour.
+    private void UpdateTargetToggleLook()
+    {
+        bool magnitude = radioViewMagnitude.Checked;
+        checkBoxShowTarget.ForeColor =
+            magnitude ? targetToggleColor : Ui.UiPalette.TextMuted;
+        checkBoxShowTarget.AutoCheck = magnitude;
+        checkBoxShowTarget.TabStop = magnitude;
+    }
+
+    // The Sum toggle carries one answer per view (see VirtualCrossoverProjectFile).
+    // The impulse view has no sum trace, so it writes nothing and shows the
+    // magnitude answer while its toggle is muted.
+    private void ApplySumToggleForView()
+    {
+        bool suppressed = suppressProjectEvents;
+        suppressProjectEvents = true;
+        try
+        {
+            checkBoxShowSum.Checked = radioViewPhase.Checked
+                ? project.ShowSumCurveOnPhase
+                : project.ShowSumCurve;
+        }
+        finally
+        {
+            suppressProjectEvents = suppressed;
+        }
     }
 
     private void OnViewChanged()
@@ -1039,8 +1165,18 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        project.ShowSumCurve = checkBoxShowSum.Checked;
+        if (radioViewPhase.Checked)
+        {
+            project.ShowSumCurveOnPhase = checkBoxShowSum.Checked;
+        }
+        else if (radioViewMagnitude.Checked)
+        {
+            project.ShowSumCurve = checkBoxShowSum.Checked;
+        }
+
         project.ShowLossCurve = checkBoxShowLoss.Checked;
+        project.ShowTargetCurve = checkBoxShowTarget.Checked;
+        project.TargetLevelDb = (double)numericTargetLevel.Value;
         project.ShowPhaseView = radioViewPhase.Checked;
         project.ShowImpulseView = radioViewImpulse.Checked;
         project.SetSmoothingCode(comboBoxSmoothing.SelectedItem is int value
@@ -1749,6 +1885,25 @@ public partial class VirtualCrossoverPanel : UserControl
             "Which adjacent channel pair the correlation view analyzes\r\n" +
             "(active side, ordered along the spectrum).");
         toolTip.SetToolTip(
+            checkBoxShowTarget,
+            "Draw the EQ target over the predicted sum: the SAME target the\r\n" +
+            "EQ Wizard is set to, so a shape tuned in either place is the\r\n" +
+            "one shape this app aims at. It is a magnitude reference, so it\r\n" +
+            "is offered on the Magnitude view only.");
+        toolTip.SetToolTip(
+            numericTargetLevel,
+            "The level the target hangs at. These curves are transfer-function\r\n" +
+            "dB with no absolute reference, so the target has no level of its\r\n" +
+            "own here: set it where you read the sum. Stored with the session,\r\n" +
+            "not with the target, so retuning the shape leaves it where it is.");
+        toolTip.SetToolTip(
+            buttonTargetSettings,
+            "Shape the target: preset, tilt, bass and treble shelves,\r\n" +
+            "presence, colour and line style, previewed live on this plot\r\n" +
+            "(which switches to the Magnitude view, the only one a dB shape\r\n" +
+            "means anything on). Saving writes the SAME target the EQ Wizard\r\n" +
+            "equalizes towards.");
+        toolTip.SetToolTip(
             comboBoxCalibration,
             "Microphone calibration applied to the magnitude curves —\r\n" +
             "and to the curves the Sum loss read-out is measured from,\r\n" +
@@ -2129,6 +2284,175 @@ public partial class VirtualCrossoverPanel : UserControl
             null);
     }
 
+    // The target travels with the session. It is handed to the HOST rather than
+    // kept here, because the app aims at one target: the EQ Wizard owns and
+    // persists it, and this panel gets it straight back through SetTargetCurve.
+    // A session written before targets were stored carries none — then the
+    // current target stays, and this session starts carrying it.
+    private void ApplyProjectTarget()
+    {
+        if (project.Target is { } stored)
+        {
+            TargetCurveChanged?.Invoke(stored.ToCurve());
+            return;
+        }
+
+        if (targetCurve is { } current)
+        {
+            project.Target = VirtualCrossoverTargetSettings.FromCurve(current);
+        }
+    }
+
+    // The frequency grid the target shape is drawn on. A target is parametric
+    // over frequency, not a measurement, so it spans the audio band on its own
+    // grid instead of borrowing whatever the loaded channels happen to cover.
+    private const double TargetGridLowHz = 20;
+    private const double TargetGridHighHz = 20_000;
+    private const int TargetGridPoints = 512;
+
+    // The EQ target as an acoustic curve: the shared shape (relative dB) hung at
+    // the level this session set. The level is asked for rather than fitted to
+    // the sum because Virtual DSP curves are transfer-function dB with no
+    // absolute reference — there is no level here that a fit could be honest
+    // about, so the one the user reads the sum at is the one that counts.
+    private AcousticCurve? BuildTargetCurve()
+    {
+        if (!checkBoxShowTarget.Checked || targetCurve is not { } target)
+        {
+            return null;
+        }
+
+        double level = (double)numericTargetLevel.Value;
+        IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(
+            TargetGridLowHz, TargetGridHighHz, TargetGridPoints);
+        var points = new SignalPoint[grid.Count];
+        for (int i = 0; i < grid.Count; i++)
+        {
+            points[i] = new SignalPoint(
+                grid[i], level + target.Spec.Evaluate(grid[i]));
+        }
+
+        return new AcousticCurve(
+            "Target",
+            points,
+            OxyColor.FromArgb(
+                target.Color.A, target.Color.R, target.Color.G, target.Color.B),
+            target.StrokeThickness,
+            OverlayLineStyles.ToOxy(target.LineStyle));
+    }
+
+    // The same isolated target dialog the EQ Wizard opens (no source picker, no
+    // overlay side effects), previewing on THIS plot. Cancel puts back what was
+    // there; Save hands the curve to the host, and that hand-off is what carries
+    // the edit to the wizard.
+    private void OpenTargetSettings()
+    {
+        if (targetCurve is not { } before)
+        {
+            return;
+        }
+
+        // Settings for an invisible curve are settings for nothing, so opening
+        // the dialog puts the target on screen: the Magnitude view, the only one
+        // a dB shape means anything on, with the curve shown. Both stay that way
+        // afterwards — the view radios and the checkbox are right there.
+        radioViewMagnitude.Checked = true;
+        checkBoxShowTarget.Checked = true;
+        // Opened as the EQ Wizard's dialog, not as this tool's: the mode is what
+        // decides which smoothing vocabulary the dialog offers, and one target
+        // edited from two places must not come back different depending on which
+        // button opened it.
+        using var dialog = new OverlayTargetSettingsDialog(
+            Mode.EqWizard,
+            "EQ target",
+            0,
+            before.Preset,
+            before.Spec,
+            before.ToleranceDb,
+            before.DeviationMode,
+            before.Color,
+            before.StrokeThickness,
+            before.LineStyle,
+            100,
+            before.SmoothingInverseOctaves,
+            [],
+            ApplyTargetPreview,
+            isolatedTarget: true);
+
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        {
+            ApplyTargetLocally(before);
+            return;
+        }
+
+        var edited = new EqTargetCurve(
+            dialog.Preset,
+            dialog.Spec,
+            dialog.ToleranceDb,
+            dialog.DeviationMode,
+            dialog.SelectedColor,
+            dialog.StrokeThickness,
+            dialog.LineStyle,
+            dialog.SmoothingInverseOctaves);
+        ApplyTargetLocally(edited);
+        // Save is where the session learns about it — see ApplyTargetLocally.
+        StoreTargetInProject(edited);
+        TargetCurveChanged?.Invoke(edited);
+    }
+
+    // The dialog's live preview. It reports every field except the preset (which
+    // it names only on Save), so the current preset rides through untouched —
+    // nothing drawn here reads it, and nothing stores it either.
+    private void ApplyTargetPreview(OverlayTargetPreview preview)
+    {
+        if (targetCurve is not { } current)
+        {
+            return;
+        }
+
+        ApplyTargetLocally(current with
+        {
+            Spec = preview.Spec,
+            ToleranceDb = preview.ToleranceDb,
+            DeviationMode = preview.DeviationMode,
+            Color = preview.Color,
+            StrokeThickness = preview.StrokeThickness,
+            LineStyle = preview.LineStyle,
+            SmoothingInverseOctaves = preview.SmoothingInverseOctaves
+        });
+    }
+
+    // Memory and plot only, deliberately NOT the session: this runs on every
+    // twitch of the dialog's live preview, and the autosave timer keeps ticking
+    // inside a modal dialog's message loop — a couple of seconds spent dragging
+    // a shelf would write an uncommitted preview to disk, to be found by the
+    // next launch if the app never got to Cancel. The preview does not even
+    // carry a preset, so what landed there would be the old preset's name over
+    // the new shape. Save stores; Cancel has nothing to undo.
+    private void ApplyTargetLocally(EqTargetCurve value)
+    {
+        targetCurve = value;
+        targetToggleColor = value.Color;
+        UpdateTargetToggleLook();
+        RedrawAll();
+    }
+
+    // The session stores the target it was tuned against, shape and all. Nothing
+    // is written before the project has loaded: the host pushes the app's target
+    // in while the form is built, long before this tool is first opened, and
+    // storing it then would schedule a save of the default project over the real
+    // one on disk.
+    private void StoreTargetInProject(EqTargetCurve value)
+    {
+        if (!initialized)
+        {
+            return;
+        }
+
+        project.Target = VirtualCrossoverTargetSettings.FromCurve(value);
+        ScheduleSave();
+    }
+
     private List<AcousticCurve> BuildMagnitudeCurves(
         List<ProcessedChannel> processed,
         List<AnalysisCurve>? magnitudes,
@@ -2140,6 +2464,12 @@ public partial class VirtualCrossoverPanel : UserControl
         // curve is spectrum-built right here, one channel after another.
         using var _ = AppProfiler.Zone("VirtualDSP.BuildMagnitudeCurves");
         var curves = new List<AcousticCurve>();
+        // First, so the measured curves and the sum read on top of the reference
+        // rather than under it.
+        if (BuildTargetCurve() is { } target)
+        {
+            curves.Add(target);
+        }
         for (int i = 0; i < processed.Count; i++)
         {
             ProcessedChannel item = processed[i];
@@ -2261,11 +2591,11 @@ public partial class VirtualCrossoverPanel : UserControl
         MetricChanged?.Invoke(compact, detail);
     }
 
-    // One warning line under the plot, and only one: the gate placement comes
-    // first because it decides whether the curves describe the channels at all
-    // — a window that opens after the drivers arrive turns every one of them
-    // into its own reverberant tail, and the crossover spread below is read off
-    // the applied delays, which stay true meanwhile.
+    // One warning line for the host to show, and only one: the gate placement
+    // comes first because it decides whether the curves describe the channels
+    // at all — a window that opens after the drivers arrive turns every one of
+    // them into its own reverberant tail, and the crossover spread below is
+    // read off the applied delays, which stay true meanwhile.
     private void UpdateWarnings(List<ProcessedChannel> processed)
     {
         gatePlacement = JudgeGatePlacement(processed);
@@ -2281,19 +2611,13 @@ public partial class VirtualCrossoverPanel : UserControl
         UpdateCrossoverWarning(processed);
     }
 
-    private void ShowWarning(string text, string detail, Color color)
-    {
-        labelCrossoverWarning.ForeColor = color;
-        labelCrossoverWarning.Text = text;
-        toolTip.SetToolTip(labelCrossoverWarning, detail);
-        labelCrossoverWarning.Visible = true;
-    }
+    private void ShowWarning(string text, string detail, Color color) =>
+        WarningChanged?.Invoke(text, detail, color);
 
-    private void HideWarning()
-    {
-        labelCrossoverWarning.Visible = false;
-        toolTip.SetToolTip(labelCrossoverWarning, string.Empty);
-    }
+    // The colour rides along with the empty text so the host needs one handler
+    // and no separate "clear" call; with nothing to say, it is never painted.
+    private void HideWarning() =>
+        WarningChanged?.Invoke(string.Empty, string.Empty, CrossoverWarningColor);
 
     // Amber for the gate: it says the view cannot be read yet, not that the
     // tuning is wrong. The crossover spread keeps the red it always had.
@@ -3847,7 +4171,7 @@ public partial class VirtualCrossoverPanel : UserControl
     /// them with. <see cref="AllowsPerCurvePhaseGate"/> makes the same
     /// comparison with no margin at all, which is right THERE: its penalty for
     /// reading a hair's difference as significant is one curve falling back to
-    /// the shared window. Here the penalty is an amber line and two refused
+    /// the shared window. Here the penalty is an amber note and two refused
     /// commands, so the difference has to be one the user can act on.
     /// </para>
     /// </summary>

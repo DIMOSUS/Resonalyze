@@ -178,6 +178,7 @@ namespace Resonalyze
                 measurementSettings.TargetDspQConvention = eqWizardPanel.TargetDspQConvention;
                 virtualCrossoverPanel.TargetDspQConvention =
                     eqWizardPanel.TargetDspQConvention;
+                virtualCrossoverPanel.SetTargetCurve(eqWizardPanel.TargetCurve);
                 ScheduleMeasurementSettingsSave();
             };
             signalGeneratorPanel.PlaybackSettingsProvider = CreateSignalGeneratorPlaybackSettings;
@@ -187,34 +188,32 @@ namespace Resonalyze
                 measurementSettings.TargetDspQConvention;
             RefreshCalibrationConsumers();
             virtualCrossoverPanel.OverlayCaptureRequested = SaveVirtualCrossoverOverlay;
+            // One EQ target, two panels. The wizard owns and persists it, so the
+            // shell pushes the current shape into Virtual DSP and hands back
+            // whatever its own Target dialog produced. The wizard ignores a value
+            // equal to what it holds, so the write-back cannot loop through the
+            // SettingsChanged handler above.
+            virtualCrossoverPanel.SetTargetCurve(eqWizardPanel.TargetCurve);
+            virtualCrossoverPanel.TargetCurveChanged = eqWizardPanel.ApplyTargetCurve;
             virtualCrossoverPanel.MetricChanged = (text, detail) =>
             {
                 virtualDspMetricLabel.Text = text;
                 virtualDspMetricDetail = detail;
             };
-            // The metric breakdown is long, and the automatic ToolTip auto-pops
-            // after seconds (capped at ~32 s) — unreadable. Shown manually it
-            // stays until the mouse leaves the label. The tip is placed fully
-            // to the LEFT of the label on purpose: a tip under the cursor
-            // steals the mouse, fires MouseLeave and flickers in a
-            // show-hide-show loop.
-            virtualDspMetricLabel.MouseEnter += (_, _) =>
+            // The panel's warning goes in the free right-hand column, above the
+            // read-out it invalidates: the panel itself runs plot edge to plot
+            // edge. Its detail is shown manually like the metric's, and a
+            // WinForms tooltip never wraps prose by itself, so wrap it here.
+            virtualCrossoverPanel.WarningChanged = (text, detail, color) =>
             {
-                if (virtualDspMetricDetail.Length == 0)
-                {
-                    return;
-                }
-
-                Size tipSize = TextRenderer.MeasureText(
-                    virtualDspMetricDetail, SystemFonts.StatusFont ?? Font);
-                toolTip1.Show(
-                    virtualDspMetricDetail,
-                    virtualDspMetricLabel,
-                    -tipSize.Width - 16,
-                    0);
+                virtualDspWarningLabel.ForeColor = color;
+                virtualDspWarningLabel.Text = text;
+                virtualDspWarningDetail = ToolTipTextWrapper.Wrap(detail);
+                virtualDspWarningLabel.Visible =
+                    text.Length > 0 && virtualCrossoverPanel.Visible;
             };
-            virtualDspMetricLabel.MouseLeave += (_, _) =>
-                toolTip1.Hide(virtualDspMetricLabel);
+            WirePersistentTooltip(virtualDspMetricLabel, () => virtualDspMetricDetail);
+            WirePersistentTooltip(virtualDspWarningLabel, () => virtualDspWarningDetail);
             modeDescriptors = CreateModeDescriptors();
             ApplyPersistedSettings();
             WireControllerEvents();
@@ -222,9 +221,32 @@ namespace Resonalyze
             WireFormEvents();
         }
 
-        // The full Virtual DSP metric breakdown, shown as a persistent tooltip
-        // by the MouseEnter wiring in the constructor.
+        // The full Virtual DSP metric breakdown and the warning's explanation,
+        // both shown as persistent tooltips by the wiring in the constructor.
         private string virtualDspMetricDetail = string.Empty;
+        private string virtualDspWarningDetail = string.Empty;
+
+        // These read-outs explain themselves at length, and an automatic ToolTip
+        // auto-pops after seconds (capped at ~32 s) — unreadable. Shown manually
+        // it stays until the mouse leaves the label. The tip is placed fully to
+        // the LEFT of the label on purpose: a tip under the cursor steals the
+        // mouse, fires MouseLeave and flickers in a show-hide-show loop.
+        private void WirePersistentTooltip(Control control, Func<string> detail)
+        {
+            control.MouseEnter += (_, _) =>
+            {
+                string text = detail();
+                if (text.Length == 0)
+                {
+                    return;
+                }
+
+                Size tipSize = TextRenderer.MeasureText(
+                    text, SystemFonts.StatusFont ?? Font);
+                toolTip1.Show(text, control, -tipSize.Width - 16, 0);
+            };
+            control.MouseLeave += (_, _) => toolTip1.Hide(control);
+        }
 
         // BeginInvoke can still throw if the handle is destroyed between the guard
         // and the call — measurement events arrive from audio worker threads while

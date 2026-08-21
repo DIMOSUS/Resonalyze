@@ -540,7 +540,7 @@ public partial class EqWizardPanel
             "Target",
             ToOxyColor(targetColor),
             targetStrokeThickness,
-            ToOxyLineStyle(targetLineStyle),
+            OverlayLineStyles.ToOxy(targetLineStyle),
             points);
     }
 
@@ -666,61 +666,92 @@ public partial class EqWizardPanel
         DrawSelectedCurves();
     }
 
+    /// <summary>
+    /// The target curve as one value. The wizard owns and persists it; the host
+    /// hands the same definition to the Virtual DSP tool, which draws it over
+    /// its predicted sum and can edit it back through
+    /// <see cref="ApplyTargetCurve"/>.
+    /// </summary>
+    internal EqTargetCurve TargetCurve => new(
+        targetPreset,
+        targetSpec,
+        targetToleranceDb,
+        targetDeviationMode,
+        targetColor,
+        targetStrokeThickness,
+        targetLineStyle,
+        targetSmoothingInverseOctaves);
+
+    /// <summary>
+    /// Takes a target edited elsewhere (the Virtual DSP tool's own Target
+    /// dialog). Redraws and persists exactly as an edit made here would, and
+    /// ignores a value equal to the current one, so the host can push on every
+    /// settings change without looping.
+    /// </summary>
+    internal void ApplyTargetCurve(EqTargetCurve value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (TargetCurve == value)
+        {
+            return;
+        }
+
+        AssignTargetCurve(value);
+        RaiseSettingsChanged();
+        DrawSelectedCurves();
+    }
+
+    private void AssignTargetCurve(EqTargetCurve value)
+    {
+        targetPreset = value.Preset;
+        targetSpec = value.Spec;
+        targetToleranceDb = value.ToleranceDb;
+        targetDeviationMode = value.DeviationMode;
+        targetColor = value.Color;
+        targetStrokeThickness = value.StrokeThickness;
+        targetLineStyle = value.LineStyle;
+        targetSmoothingInverseOctaves = value.SmoothingInverseOctaves;
+    }
+
     // Reuses the overlay target dialog in isolated mode (no source picker, no
     // overlay side effects); its live preview redraws the wizard plot. Cancel
     // reverts the previewed changes.
     private void OpenTargetSettings()
     {
-        (TargetPreset preset,
-            TargetCurveSpec spec,
-            double tolerance,
-            TargetDeviationMode deviation,
-            Color color,
-            double thickness,
-            OverlayLineStyle style,
-            int smoothing) before = (
-            targetPreset, targetSpec, targetToleranceDb, targetDeviationMode,
-            targetColor, targetStrokeThickness, targetLineStyle, targetSmoothingInverseOctaves);
-
+        EqTargetCurve before = TargetCurve;
         using var dialog = new OverlayTargetSettingsDialog(
             Mode.EqWizard,
             "EQ target",
             0,
-            targetPreset,
-            targetSpec,
-            targetToleranceDb,
-            targetDeviationMode,
-            targetColor,
-            targetStrokeThickness,
-            targetLineStyle,
+            before.Preset,
+            before.Spec,
+            before.ToleranceDb,
+            before.DeviationMode,
+            before.Color,
+            before.StrokeThickness,
+            before.LineStyle,
             100,
-            targetSmoothingInverseOctaves,
+            before.SmoothingInverseOctaves,
             Array.Empty<OverlaySlotOption>(),
             ApplyTargetPreview,
             isolatedTarget: true);
 
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
-            targetPreset = before.preset;
-            targetSpec = before.spec;
-            targetToleranceDb = before.tolerance;
-            targetDeviationMode = before.deviation;
-            targetColor = before.color;
-            targetStrokeThickness = before.thickness;
-            targetLineStyle = before.style;
-            targetSmoothingInverseOctaves = before.smoothing;
+            AssignTargetCurve(before);
             DrawSelectedCurves();
             return;
         }
 
-        targetPreset = dialog.Preset;
-        targetSpec = dialog.Spec;
-        targetToleranceDb = dialog.ToleranceDb;
-        targetDeviationMode = dialog.DeviationMode;
-        targetColor = dialog.SelectedColor;
-        targetStrokeThickness = dialog.StrokeThickness;
-        targetLineStyle = dialog.LineStyle;
-        targetSmoothingInverseOctaves = dialog.SmoothingInverseOctaves;
+        AssignTargetCurve(new EqTargetCurve(
+            dialog.Preset,
+            dialog.Spec,
+            dialog.ToleranceDb,
+            dialog.DeviationMode,
+            dialog.SelectedColor,
+            dialog.StrokeThickness,
+            dialog.LineStyle,
+            dialog.SmoothingInverseOctaves));
         RaiseSettingsChanged();
         DrawSelectedCurves();
     }
@@ -1021,24 +1052,28 @@ public partial class EqWizardPanel
         suppressSettingsSave = true;
         try
         {
-            targetPreset = settings.Preset;
-            targetSpec = new TargetCurveSpec(
-                settings.TiltDbPerOctave,
-                settings.BassShelfGainDb,
-                settings.BassShelfFrequencyHz,
-                settings.BassShelfWidthOctaves,
-                settings.TrebleShelfGainDb,
-                settings.TrebleShelfFrequencyHz,
-                settings.TrebleShelfWidthOctaves,
-                settings.PresenceGainDb,
-                settings.PresenceFrequencyHz,
-                settings.PresenceWidthOctaves);
-            targetToleranceDb = settings.ToleranceDb;
-            targetDeviationMode = settings.DeviationMode;
-            targetColor = Color.FromArgb(settings.TargetColorArgb);
-            targetStrokeThickness = settings.TargetStrokeThickness;
-            targetLineStyle = settings.TargetLineStyle;
-            targetSmoothingInverseOctaves = settings.TargetSmoothingInverseOctaves;
+            // Normalized like every target that comes off disk: the settings file
+            // can hold a non-finite number or an undefined enum, and this target
+            // goes on to fill the settings dialog, which cannot take either.
+            AssignTargetCurve(new EqTargetCurve(
+                settings.Preset,
+                new TargetCurveSpec(
+                    settings.TiltDbPerOctave,
+                    settings.BassShelfGainDb,
+                    settings.BassShelfFrequencyHz,
+                    settings.BassShelfWidthOctaves,
+                    settings.TrebleShelfGainDb,
+                    settings.TrebleShelfFrequencyHz,
+                    settings.TrebleShelfWidthOctaves,
+                    settings.PresenceGainDb,
+                    settings.PresenceFrequencyHz,
+                    settings.PresenceWidthOctaves),
+                settings.ToleranceDb,
+                settings.DeviationMode,
+                Color.FromArgb(settings.TargetColorArgb),
+                settings.TargetStrokeThickness,
+                settings.TargetLineStyle,
+                settings.TargetSmoothingInverseOctaves).Normalized());
             // Only the configured impulse-response preference is persisted: "own" belongs
             // to an imported curve, and no source is restored, so the effective choice
             // simply starts from that preference.
@@ -1121,7 +1156,4 @@ public partial class EqWizardPanel
 
     private static OxyColor ToOxyColor(Color color) =>
         OxyColor.FromArgb(color.A, color.R, color.G, color.B);
-
-    private static LineStyle ToOxyLineStyle(OverlayLineStyle style) =>
-        Enum.TryParse(style.ToString(), out LineStyle parsed) ? parsed : LineStyle.Solid;
 }

@@ -72,10 +72,11 @@ public sealed class VirtualCrossoverPhaseGateSettings
 /// aiming at exactly the curve it was tuned against.
 /// </summary>
 /// <remarks>
-/// Nothing here is validated. A target is drawn, not applied — TargetCurveSpec.
-/// Evaluate already guards every divisor, so the worst a hand-corrupted field
-/// can do is make the curve invisible until it is reshaped. Throwing instead
-/// would move the whole session aside over a decoration.
+/// A bad field here does not fail the load: <see cref="ToCurve"/> normalizes it
+/// away instead, because moving a whole tuning session aside over a decoration
+/// would be the worse answer. Normalizing is not optional though — a target is
+/// not only drawn, it also fills the settings dialog, and this file allows
+/// named floating-point literals (see EqTargetCurve.Normalized).
 /// </remarks>
 public sealed class VirtualCrossoverTargetSettings
 {
@@ -97,7 +98,10 @@ public sealed class VirtualCrossoverTargetSettings
     public OverlayLineStyle LineStyle { get; set; } = OverlayLineStyle.Dash;
     public int SmoothingInverseOctaves { get; set; }
 
-    internal EqTargetCurve ToCurve() => new(
+    // Normalized on the way out, never on the way in: what the app produces is
+    // already sound, and the file is the only place a NaN or an undefined enum
+    // can enter from.
+    internal EqTargetCurve ToCurve() => new EqTargetCurve(
         Preset,
         new TargetCurveSpec(
             TiltDbPerOctave,
@@ -115,7 +119,7 @@ public sealed class VirtualCrossoverTargetSettings
         Color.FromArgb(ColorArgb),
         StrokeThickness,
         LineStyle,
-        SmoothingInverseOctaves);
+        SmoothingInverseOctaves).Normalized();
 
     internal static VirtualCrossoverTargetSettings FromCurve(EqTargetCurve curve)
     {

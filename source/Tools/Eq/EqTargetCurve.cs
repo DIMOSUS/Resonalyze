@@ -27,4 +27,50 @@ internal sealed record EqTargetCurve(
     Color Color,
     double StrokeThickness,
     OverlayLineStyle LineStyle,
-    int SmoothingInverseOctaves);
+    int SmoothingInverseOctaves)
+{
+    /// <summary>
+    /// The same target with anything a stored file can hold but the UI cannot
+    /// take replaced by its default. Every target that arrives from disk goes
+    /// through this, because a target is not only drawn: it also fills the
+    /// settings dialog, where a non-finite number throws on the decimal cast
+    /// that clamps it into an input, and an enum value outside the list leaves a
+    /// combo box with no selection to read back. Both are reachable — the
+    /// session and settings files allow named floating-point literals, and the
+    /// enum converter accepts numbers as well as names.
+    /// </summary>
+    public EqTargetCurve Normalized()
+    {
+        TargetCurveSpec flat = TargetCurveSpec.FromPreset(TargetPreset.Flat);
+        return new EqTargetCurve(
+            Defined(Preset, TargetPreset.Flat),
+            new TargetCurveSpec(
+                Finite(Spec.TiltDbPerOctave, flat.TiltDbPerOctave),
+                Finite(Spec.BassShelfGainDb, flat.BassShelfGainDb),
+                Finite(Spec.BassShelfFrequencyHz, flat.BassShelfFrequencyHz),
+                Finite(Spec.BassShelfWidthOctaves, flat.BassShelfWidthOctaves),
+                Finite(Spec.TrebleShelfGainDb, flat.TrebleShelfGainDb),
+                Finite(Spec.TrebleShelfFrequencyHz, flat.TrebleShelfFrequencyHz),
+                Finite(Spec.TrebleShelfWidthOctaves, flat.TrebleShelfWidthOctaves),
+                Finite(Spec.PresenceGainDb, flat.PresenceGainDb),
+                Finite(Spec.PresenceFrequencyHz, flat.PresenceFrequencyHz),
+                Finite(Spec.PresenceWidthOctaves, flat.PresenceWidthOctaves)),
+            Finite(ToleranceDb, DefaultToleranceDb),
+            Defined(DeviationMode, TargetDeviationMode.Deviation),
+            Color,
+            Finite(StrokeThickness, DefaultStrokeThickness),
+            Defined(LineStyle, OverlayLineStyle.Dash),
+            SmoothingInverseOctaves);
+    }
+
+    // What a field the UI cannot take falls back to; the stored defaults.
+    private const double DefaultToleranceDb = 3;
+    private const double DefaultStrokeThickness = 2;
+
+    private static double Finite(double value, double fallback) =>
+        double.IsFinite(value) ? value : fallback;
+
+    private static T Defined<T>(T value, T fallback)
+        where T : struct, Enum =>
+        Enum.IsDefined(value) ? value : fallback;
+}

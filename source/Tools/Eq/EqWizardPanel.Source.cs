@@ -1052,24 +1052,28 @@ public partial class EqWizardPanel
         suppressSettingsSave = true;
         try
         {
-            targetPreset = settings.Preset;
-            targetSpec = new TargetCurveSpec(
-                settings.TiltDbPerOctave,
-                settings.BassShelfGainDb,
-                settings.BassShelfFrequencyHz,
-                settings.BassShelfWidthOctaves,
-                settings.TrebleShelfGainDb,
-                settings.TrebleShelfFrequencyHz,
-                settings.TrebleShelfWidthOctaves,
-                settings.PresenceGainDb,
-                settings.PresenceFrequencyHz,
-                settings.PresenceWidthOctaves);
-            targetToleranceDb = settings.ToleranceDb;
-            targetDeviationMode = settings.DeviationMode;
-            targetColor = Color.FromArgb(settings.TargetColorArgb);
-            targetStrokeThickness = settings.TargetStrokeThickness;
-            targetLineStyle = settings.TargetLineStyle;
-            targetSmoothingInverseOctaves = settings.TargetSmoothingInverseOctaves;
+            // Normalized like every target that comes off disk: the settings file
+            // can hold a non-finite number or an undefined enum, and this target
+            // goes on to fill the settings dialog, which cannot take either.
+            AssignTargetCurve(new EqTargetCurve(
+                settings.Preset,
+                new TargetCurveSpec(
+                    settings.TiltDbPerOctave,
+                    settings.BassShelfGainDb,
+                    settings.BassShelfFrequencyHz,
+                    settings.BassShelfWidthOctaves,
+                    settings.TrebleShelfGainDb,
+                    settings.TrebleShelfFrequencyHz,
+                    settings.TrebleShelfWidthOctaves,
+                    settings.PresenceGainDb,
+                    settings.PresenceFrequencyHz,
+                    settings.PresenceWidthOctaves),
+                settings.ToleranceDb,
+                settings.DeviationMode,
+                Color.FromArgb(settings.TargetColorArgb),
+                settings.TargetStrokeThickness,
+                settings.TargetLineStyle,
+                settings.TargetSmoothingInverseOctaves).Normalized());
             // Only the configured impulse-response preference is persisted: "own" belongs
             // to an imported curve, and no source is restored, so the effective choice
             // simply starts from that preference.

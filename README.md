@@ -779,11 +779,16 @@ It also refuses to read a **ripple on the foot of a wave packet** as that
 packet's arrival. A cabin's comb interference leaves small bumps a fraction of a
 millisecond ahead of a front; they are far too loud to be the transform's own
 ringing, so the rule above rightly keeps them, yet they are not the front. A
-candidate must reach a quarter of the strongest envelope level within one
-millisecond after it — the level the broadband onset calls the onset — or the
-packet's own front is taken instead. The window is deliberately one millisecond
-long, so a soft direct arrival sitting under a room mode milliseconds later still
-wins, which is what the search depth exists for. Without it two identical drivers
+candidate must reach a quarter of the strongest envelope level of its own packet
+— the level the broadband onset calls the onset — or the packet's own front is
+taken instead. The packet runs one millisecond forward and ends early at a null
+deep enough (20 dB) to resolve two events, because destructive interference nulls
+faster than an envelope rises: an earlier arrival separated from what follows by
+such a null is a separate arrival and keeps its own timing, however strong and
+however close the next packet is, and the rising edge of a later reflection can
+never be borrowed to dwarf the direct sound in front of it. A soft direct arrival
+sitting under a room mode milliseconds later still wins for the same reason,
+which is what the search depth exists for. Without this two identical drivers
 in opposite doors could be measured at different points of their fronts — one at
 its packet peak, the other 20 dB down its own foot — and the level difference
 lands in the reported delay: on a field pair, 0.31 ms of a 1.45 ms split.

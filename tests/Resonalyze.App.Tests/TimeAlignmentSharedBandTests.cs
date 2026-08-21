@@ -54,6 +54,54 @@ public sealed class TimeAlignmentSharedBandTests
     }
 
     [Fact]
+    public void TryDetectDominantBand_ReportsFailureInsteadOfThrowing()
+    {
+        // A record whose coherence never clears the trust threshold has no
+        // dominant band, and the detector says so by throwing. Asking for
+        // COMPARE's band must not take Main's analysis down with it, so the
+        // question is answered with false and Main's own band stands.
+        TimeAlignmentAnalysisSource source = Source(coherent: false);
+
+        bool detected = TimeAlignmentPanelController.TryDetectDominantBand(
+            source, out DominantBand band);
+
+        Assert.False(detected);
+        Assert.Equal(default, band);
+    }
+
+    [Fact]
+    public void TryDetectDominantBand_ReturnsTheBandOfAMeasurableRecord()
+    {
+        TimeAlignmentAnalysisSource source = Source(coherent: true);
+
+        bool detected = TimeAlignmentPanelController.TryDetectDominantBand(
+            source, out DominantBand band);
+
+        Assert.True(detected);
+        Assert.True(band.HighHz > band.LowHz);
+    }
+
+    private static TimeAlignmentAnalysisSource Source(bool coherent)
+    {
+        const int sampleRate = 48_000;
+        var impulseResponse = new double[8_192];
+        impulseResponse[100] = 1.0;
+        double[] coherence =
+            Enumerable.Repeat(coherent ? 1.0 : 0.0, sampleRate / 2).ToArray();
+        return new TimeAlignmentAnalysisSource(
+            "Compare",
+            "compare",
+            sampleRate,
+            24,
+            1.0,
+            PlaybackChannel.Mono,
+            SweepMeasurementMode.LoopbackTransfer,
+            impulseResponse,
+            coherence,
+            default);
+    }
+
+    [Fact]
     public void SharedBand_KeepsMainsBandWhenTheTwoRecordsBarelyOverlap()
     {
         // A subwoofer against a tweeter: the overlap is narrower than the

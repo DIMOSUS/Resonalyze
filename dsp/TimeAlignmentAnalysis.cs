@@ -309,8 +309,11 @@ public static class TimeAlignmentAnalysis
 
     // A valley this deep proves the two events resolved even when their
     // separation sits inside the analysis band's nominal ~1/BW blur —
-    // destructive interference nulls faster than the envelope's rise time.
-    private const double SeparateArrivalResolvedValleyDb = 20.0;
+    // destructive interference nulls faster than the envelope's rise time. The
+    // peak search ends a candidate's packet at the same null, for the same
+    // reason, so both live on one constant.
+    private const double SeparateArrivalResolvedValleyDb =
+        SignalEnvelope.ArrivalPacketResolvedValleyDb;
 
     // A peak position expressed in the search window's frame: its offset from
     // the window's start, which for a re-anchored (rotated) window is where

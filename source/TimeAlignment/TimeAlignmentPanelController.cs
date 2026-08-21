@@ -385,10 +385,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         if (options.BandMode == TimeAlignmentBandMode.AutoBand)
         {
             DominantBand band = DetectDominantBand(source);
-            if (compareSource is { } compare)
+            if (compareSource is { } compare &&
+                TryDetectDominantBand(compare, out DominantBand compareBand))
             {
-                (band, lastAutoBandIsShared) =
-                    SharedBand(band, DetectDominantBand(compare));
+                (band, lastAutoBandIsShared) = SharedBand(band, compareBand);
             }
 
             lastAutoBand = band;
@@ -415,6 +415,30 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             source.TransferImpulseResponse,
             source.SampleRate,
             coherence: source.TransferCoherence);
+
+    // A record whose coherence never clears the threshold has no dominant band,
+    // and the detector says so by throwing. For COMPARE that verdict must stay
+    // Compare's: before the band was agreed between the two records, such a
+    // failure was caught with the rest of the Compare handling and Main kept
+    // working, and it still has to — the band simply falls back to Main's own,
+    // which the label then stops calling shared. Main's own failure keeps
+    // reaching the refresh handler: with no band for the Main record there is
+    // no analysis to show.
+    internal static bool TryDetectDominantBand(
+        TimeAlignmentAnalysisSource source,
+        out DominantBand band)
+    {
+        try
+        {
+            band = DetectDominantBand(source);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            band = default;
+            return false;
+        }
+    }
 
     // The band the two records are read in when both are present: the overlap of
     // their own dominant bands. Two drivers are only comparable where both

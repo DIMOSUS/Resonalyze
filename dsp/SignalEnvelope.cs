@@ -336,6 +336,18 @@ public static class SignalEnvelope
     // nobody's foot ripple and stays selected.
     private const double ArrivalPacketRiseRatio = 0.25;
 
+    // How deep the envelope must null between a candidate and a later stronger
+    // sample for the two to be RESOLVED events rather than one packet — the
+    // same 20 dB <see cref="TimeAlignmentAnalysis"/> calls a resolved valley,
+    // because destructive interference nulls faster than an envelope rises. The
+    // packet ends at the first such null: past it the record belongs to another
+    // arrival, and the rising edge of a reflection that peaks beyond the packet
+    // window must not be allowed to dwarf a genuine direct sound in front of it.
+    // Measured on the field cabin, real foot ripples dip at most 14.5 dB (the
+    // mid pair's own: 7.5 dB) before their packet's peak, so the two cases stay
+    // apart with margin.
+    internal const double ArrivalPacketResolvedValleyDb = 20.0;
+
     // Walks the threshold-passing local maxima from the latest to the earliest,
     // dropping every candidate that reads as a pre-ringing sidelobe of an
     // already-accepted later peak — a weak first arrival is itself a sidelobe
@@ -402,23 +414,34 @@ public static class SignalEnvelope
     }
 
     // Whether the candidate is the front of its own wave packet rather than a
-    // ripple on its foot: the strongest envelope sample within one packet span
-    // after it may stand no more than the rise ratio above it. The strongest
-    // peak of the record always passes (nothing outranks it inside its own
-    // window), so the walk can never come back empty because of this test.
+    // ripple on its foot: the strongest envelope sample of THAT PACKET may stand
+    // no more than the rise ratio above it. The packet runs one span forward and
+    // ends early at a null deep enough to resolve two events, so a genuine
+    // earlier arrival is never dwarfed by whatever rises after the null — the
+    // separate-arrival case, which keeps its own timing. The strongest peak of
+    // the record always passes (nothing outranks it inside its own packet), so
+    // the walk can never come back empty because of this test.
     private static bool RisesWithinItsPacket(
         IReadOnlyList<double> envelope,
         int candidateIndex,
         int packetSpanSamples)
     {
-        double packetPeak = envelope[candidateIndex];
+        double candidate = envelope[candidateIndex];
+        double resolvedFloor =
+            candidate * Math.Pow(10.0, -ArrivalPacketResolvedValleyDb / 20.0);
+        double packetPeak = candidate;
         int last = Math.Min(envelope.Count - 1, candidateIndex + packetSpanSamples);
         for (int i = candidateIndex + 1; i <= last; i++)
         {
+            if (envelope[i] < resolvedFloor)
+            {
+                break;
+            }
+
             packetPeak = Math.Max(packetPeak, envelope[i]);
         }
 
-        return envelope[candidateIndex] >= packetPeak * ArrivalPacketRiseRatio;
+        return candidate >= packetPeak * ArrivalPacketRiseRatio;
     }
 
     // The analysis kernel's envelope level at |offset| samples from its centre,

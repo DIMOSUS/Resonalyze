@@ -8,12 +8,12 @@ namespace Resonalyze.Dsp
 {
     public static partial class DataHelper
     {
-        // The impulse traces from the very start of the response (sample 0) up to
-        // peakIndex plus opt.Length. The timeline is the record's own, so the onset,
-        // the peak and the decay tail are all visible at once and two records can be
-        // read against one clock; the view-only framing (where zero sits, what the
-        // levels are normalized against) arrives in the frame and never touches the
-        // data.
+        // The impulse traces over the WHOLE record, on its own timeline: the onset, the
+        // peak and the decay tail are one curve, and two records can be read against one
+        // clock. The traces are built whole rather than to a length setting so that
+        // navigating — zooming out to the tail, in to a sample — is a gesture and not a
+        // trip to the settings panel; how much of it the view OPENS on is the caller's
+        // framing, as is where zero sits and what the levels are normalized against.
         public static ImpulseCurveSet GetImpulseCurves(
             IImpulseMeasurement measurement,
             ImpulseResponseOptions opt,
@@ -22,11 +22,7 @@ namespace Resonalyze.Dsp
             ArgumentNullException.ThrowIfNull(measurement);
             ArgumentNullException.ThrowIfNull(opt);
 
-            int available = measurement.ImpulseResponse?.Length ?? 0;
-            int length = Math.Clamp(
-                measurement.PeakIndex + opt.Length,
-                1,
-                Math.Max(1, available));
+            int length = Math.Max(1, measurement.ImpulseResponse?.Length ?? 0);
             Complex[] extracted = ExtractWindow(measurement, 0, length);
 
             // The real part carries the response; the imaginary residue an IFFT leaves

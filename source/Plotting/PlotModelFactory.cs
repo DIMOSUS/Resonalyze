@@ -941,18 +941,19 @@ internal sealed class PlotModelFactory
         bool anyTrace = opt.ShowImpulse || opt.ShowEnvelope || opt.ShowStep;
         var drawn = new List<AnalysisCurve?>();
         var stepCurves = new List<AnalysisCurve?>();
+        (double Start, double End)? defaultSpan = null;
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse &&
             anyTrace)
         {
-            // The transfer IR is shown whole from sample 0 to the peak plus the Length
-            // tail, on the record's own timeline: the onset, the peak and the decay are
-            // all on screen at once and two records can be read against one clock. Where
-            // the axis puts its zero and what the levels are normalized against are
-            // decided ONCE, from Main, and handed to both sets — resolving either of them
-            // per curve would subtract exactly the difference the comparison is for.
+            // The transfer IR is drawn whole, on the record's own timeline: the onset, the
+            // peak and the decay are one curve and two records can be read against one
+            // clock. Where the axis puts its zero and what the levels are normalized
+            // against are decided ONCE, from Main, and handed to both sets — resolving
+            // either per curve would subtract exactly the difference being compared.
             IImpulseMeasurement main = measurementContext.CreatePrimaryMeasurement();
             double origin = ResolveImpulseOriginSamples(main);
+            defaultSpan = ResolveImpulseDefaultSpan(main, opt, origin);
             ImpulseCurveSet mainSet = DataHelper.GetImpulseCurves(
                 main, opt, new ImpulseRenderFrame(origin));
             AddImpulseSeries(model, mainSet, main.SampleRate, origin, null, drawn, stepCurves);
@@ -1000,9 +1001,11 @@ internal sealed class PlotModelFactory
             Position = AxisPosition.Left,
             Title = stepOnLeft ? "step" : ImpulseValueUnit(opt.AmplitudeScale),
         };
-        // Lock both axes to the drawn curves (which already reflect the scale and unit
-        // selections) so they are re-fit on every settings change and cannot be panned or
-        // zoomed away from the data. Compare is included so it stays on-screen.
+        // The absolute bounds are the whole record — the traces are built whole, so
+        // zooming out reaches the end of the tail and panning cannot leave the data. What
+        // the view OPENS on is narrower: the Length setting's worth of tail past the peak,
+        // which is the framing this mode has always had. Compare is included so it stays
+        // on-screen.
         ApplyCurveRange(
             timeAxis, point => point.X, drawn.Concat(stepCurves).ToArray());
         ApplyCurveRange(
@@ -1010,6 +1013,7 @@ internal sealed class PlotModelFactory
             point => point.Y,
             (stepOnLeft ? stepCurves : drawn).ToArray());
         ApplyDefaultDecibelWindow(valueAxis, opt, stepOnLeft);
+        ApplyDefaultImpulseSpan(timeAxis, opt, defaultSpan);
         model.Axes.Add(timeAxis);
         model.Axes.Add(valueAxis);
         if (!stepOnLeft && stepCurves.Count > 0)
@@ -1029,6 +1033,47 @@ internal sealed class PlotModelFactory
 
     private static bool ImpulseStepIsAlone(ImpulseResponseOptions opt) =>
         opt.ShowStep && !opt.ShowImpulse && !opt.ShowEnvelope;
+
+    /// <summary>
+    /// The slice of the record the view opens on, in axis units: the start of the
+    /// record to the peak plus the Length setting's tail. A deconvolved record can run
+    /// for seconds, nearly all of it silence and noise floor, so opening on the whole
+    /// thing would show the response as one vertical line.
+    /// </summary>
+    private static (double Start, double End)? ResolveImpulseDefaultSpan(
+        IImpulseMeasurement measurement,
+        ImpulseResponseOptions opt,
+        double origin)
+    {
+        int available = measurement.ImpulseResponse?.Length ?? 0;
+        if (available <= 0)
+        {
+            return null;
+        }
+
+        double end = Math.Min(available - 1, measurement.PeakIndex + (double)opt.Length);
+        double ToAxis(double sample) =>
+            opt.TimeUnit == ImpulseTimeUnit.Milliseconds && measurement.SampleRate > 0
+                ? (sample - origin) * 1000.0 / measurement.SampleRate
+                : sample - origin;
+        return (ToAxis(0), ToAxis(end));
+    }
+
+    private static void ApplyDefaultImpulseSpan(
+        LinearAxis axis,
+        ImpulseResponseOptions opt,
+        (double Start, double End)? span)
+    {
+        if (span is not { } bounds || bounds.End <= bounds.Start)
+        {
+            return;
+        }
+
+        // Never past the data: the absolute bounds were fitted to the record above, and
+        // a visible range outside them is a view of nothing.
+        axis.Minimum = Math.Max(axis.AbsoluteMinimum, bounds.Start);
+        axis.Maximum = Math.Min(axis.AbsoluteMaximum, bounds.End);
+    }
 
     // " — 250 Hz 1/3 octave", or empty when the whole record is drawn.
     private static string ImpulseBandLabel(ImpulseResponseOptions opt, int sampleRate)

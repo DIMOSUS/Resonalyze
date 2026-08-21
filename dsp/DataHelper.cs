@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -203,6 +203,12 @@ namespace Resonalyze.Dsp
 
     public sealed class ImpulseResponseOptions
     {
+        /// <summary>
+        /// How much of the tail past the peak the impulse view OPENS on, in samples.
+        /// The traces themselves are always built over the whole record — this frames
+        /// the default view, and every gesture and the graph-limits dialog can leave
+        /// it.
+        /// </summary>
         public int Length { get; set; } = 4096;
 
         // Curve visibility. Impulse Response and Autocorrelation modes share this

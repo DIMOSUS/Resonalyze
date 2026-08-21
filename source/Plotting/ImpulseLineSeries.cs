@@ -16,6 +16,17 @@ namespace Resonalyze;
 /// </summary>
 internal sealed class ImpulseLineSeries : LineSeries
 {
+    public ImpulseLineSeries()
+    {
+        // The traces carry the whole record — a 192 kHz sweep leaves a million samples
+        // per curve, and GDI+ draws a million line segments in forty SECONDS. The
+        // decimator collapses each column of pixels to the extremes that fall in it
+        // before anything is stroked (measured: 40 s to 76 ms). It works on transformed
+        // screen points, so zooming in restores full detail on its own, and the tracker
+        // still reads the real points behind it.
+        Decimator = OxyPlot.Decimator.Decimate;
+    }
+
     /// <summary>Samples per second, for the unit the axis is not drawn in.</summary>
     public required int SampleRate { get; init; }
 

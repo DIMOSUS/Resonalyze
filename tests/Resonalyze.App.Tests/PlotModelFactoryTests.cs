@@ -900,12 +900,59 @@ public sealed class PlotModelFactoryTests
             : expectedMinY;
         Assert.Equal(expectedVisibleMinY, valueAxis.Minimum, precision: 9);
 
+        // The time axis can REACH the whole record — the traces are built whole, so
+        // zooming out ends at the end of the tail rather than at a length setting...
         double expectedMinX = series.Points.Min(point => point.X);
         double expectedMaxX = series.Points.Max(point => point.X);
-        Assert.Equal(expectedMinX, timeAxis.Minimum, precision: 9);
-        Assert.Equal(expectedMaxX, timeAxis.Maximum, precision: 9);
         Assert.Equal(expectedMinX, timeAxis.AbsoluteMinimum, precision: 9);
         Assert.Equal(expectedMaxX, timeAxis.AbsoluteMaximum, precision: 9);
+        // ...while it OPENS on the peak plus the Length tail, because a deconvolved
+        // record is mostly silence and opening on all of it draws the response as one
+        // vertical line.
+        double expectedVisibleMaxX = (peak + options.Length) * 1000.0 / 44_100.0;
+        Assert.Equal(expectedMinX, timeAxis.Minimum, precision: 9);
+        Assert.Equal(expectedVisibleMaxX, timeAxis.Maximum, precision: 9);
+        Assert.True(timeAxis.Maximum < timeAxis.AbsoluteMaximum);
+    }
+
+    [Fact]
+    public void ImpulseResponse_DrawsTheWholeRecordNotJustTheDefaultView()
+    {
+        var ir = new Complex[8192];
+        int peak = 1024;
+        ir[peak] = Complex.One;
+        // A late reflection well past peak + Length: it must exist in the curve, or no
+        // amount of zooming out could ever bring it on screen.
+        ir[7000] = new Complex(0.2, 0);
+
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir, transferPeakIndex: peak);
+
+        var options = new ImpulseResponseOptions
+        {
+            Length = 2048,
+            TimeUnit = ImpulseTimeUnit.Samples,
+            ShowImpulse = true
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noiseMeasurement, impulseOptions: options);
+
+        var model = factory.CreateImpulseResponse(includeCurves: true);
+        var series = (OxyPlot.Series.LineSeries)model.Series[0];
+        var timeAxis = model.Axes.First(axis =>
+            axis.Position == OxyPlot.Axes.AxisPosition.Bottom);
+
+        Assert.Equal(8192, series.Points.Count);
+        Assert.Equal(0.2, series.Points[7000].Y, precision: 9);
+        Assert.Equal(peak + options.Length, timeAxis.Maximum, precision: 9);
+        Assert.Equal(8191, timeAxis.AbsoluteMaximum, precision: 9);
     }
 
     [Fact]

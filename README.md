@@ -805,6 +805,13 @@ The **Impulse Response** mode draws the **loopback transfer IR** from the record
 start through the peak and on into the tail, so the arrival, the reflections and
 the decay are one picture — and so two records can be read against one clock.
 
+The traces are built over the whole record, so navigating it is a gesture and not
+a trip to the settings panel: zoom out to the end of the tail, in to a single
+sample, with the usual [graph controls](#graph-zoom-and-limits). **Length** only
+frames the view the mode OPENS on — that much tail past the peak — because a
+deconvolved record is mostly silence and opening on all of it would draw the
+response as one vertical line.
+
 Three traces share that timeline, each switched on under **Curves:**
 
 - the **impulse response** itself;

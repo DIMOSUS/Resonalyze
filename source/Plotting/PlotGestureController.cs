@@ -59,6 +59,16 @@ internal sealed class PlotGestureController : PlotController
     private PlotModel? buttonsModel;
     private PlotZoomButton? hoveredButton;
 
+    // What the undo stack was recorded against. A snapshot names its axes by key,
+    // and the same key means a different quantity from one build to the next — the
+    // "decibel" axis is dBr in one and dB SPL in the next — so an entry is only ever
+    // replayed onto the same model showing the same quantities. The identity is
+    // needed on top of the model reference because the Virtual DSP acoustic view
+    // re-arms ONE axis object between dB, degrees and milliseconds without
+    // replacing the model, and the EQ wizard re-arms its dB axis for a new source.
+    private PlotModel? undoModel;
+    private IReadOnlyList<AxisIdentity> undoAxes = Array.Empty<AxisIdentity>();
+
     public PlotGestureController(PlotView view)
     {
         ArgumentNullException.ThrowIfNull(view);
@@ -347,6 +357,7 @@ internal sealed class PlotGestureController : PlotController
 
     private void PushZoomUndo()
     {
+        DropUndoOfAnotherModel();
         IReadOnlyList<PlotAxisViewport> viewports = PlotAxisViewport.Capture(view.ActualModel);
         if (viewports.Count == 0)
         {
@@ -362,6 +373,7 @@ internal sealed class PlotGestureController : PlotController
 
     private void UndoZoom()
     {
+        DropUndoOfAnotherModel();
         if (zoomUndo.Last == null)
         {
             return;
@@ -372,4 +384,49 @@ internal sealed class PlotGestureController : PlotController
         PlotAxisViewport.Apply(view.ActualModel, viewports);
         view.InvalidatePlot(false);
     }
+
+    /// <summary>
+    /// Forgets the zoom history as soon as the plot is not showing what it was
+    /// recorded from: a different model (a mode switch, a new measurement, a
+    /// rebuild), or the same model with an axis re-armed to a different quantity.
+    /// What carries a zoom across a rebuild is <see cref="PlotViewportMemory"/>,
+    /// which knows the mode and is told when an axis changes meaning; the undo
+    /// stack knows neither, so it does not try to outlive either change.
+    /// </summary>
+    private void DropUndoOfAnotherModel()
+    {
+        IReadOnlyList<AxisIdentity> axes = DescribeAxes(view.ActualModel);
+        if (ReferenceEquals(undoModel, view.ActualModel) && axes.SequenceEqual(undoAxes))
+        {
+            return;
+        }
+
+        zoomUndo.Clear();
+        undoModel = view.ActualModel;
+        undoAxes = axes;
+    }
+
+    private static IReadOnlyList<AxisIdentity> DescribeAxes(PlotModel? model) =>
+        model == null
+            ? Array.Empty<AxisIdentity>()
+            : model.Axes
+                .Select(axis => new AxisIdentity(
+                    axis.Key,
+                    axis.Title,
+                    axis.GetType(),
+                    axis.AbsoluteMinimum,
+                    axis.AbsoluteMaximum))
+                .ToList();
+
+    /// <summary>
+    /// What an axis MEANS, as far as a stored range is concerned: what it is called
+    /// and the hard limits it is armed with. Re-arming those is how the app says
+    /// "this axis now shows something else".
+    /// </summary>
+    private readonly record struct AxisIdentity(
+        string? Key,
+        string? Title,
+        Type AxisType,
+        double AbsoluteMinimum,
+        double AbsoluteMaximum);
 }

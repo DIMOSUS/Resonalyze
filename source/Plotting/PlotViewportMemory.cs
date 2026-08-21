@@ -31,6 +31,11 @@ internal sealed class PlotViewportMemory
     // that matches is still the model's own decision.
     private IReadOnlyList<PlotAxisViewport> trackedNominal = Array.Empty<PlotAxisViewport>();
 
+    // The nominal entries of the axes whose zoom was carried over into the model on
+    // screen. Rebase must not refresh THOSE, or the carried-over zoom would become
+    // the axis's "own" range and stop being remembered.
+    private IReadOnlyList<PlotAxisViewport> restoredNominal = Array.Empty<PlotAxisViewport>();
+
     public PlotViewportMemory(PlotView view)
     {
         ArgumentNullException.ThrowIfNull(view);
@@ -53,15 +58,49 @@ internal sealed class PlotViewportMemory
         // applied on top of it — that is what "the user has not touched this axis"
         // will be compared against next time.
         IReadOnlyList<PlotAxisViewport> nominal = PlotAxisViewport.Capture(model);
-        if (savedByMode.TryGetValue(mode, out IReadOnlyList<PlotAxisViewport>? saved))
-        {
-            PlotAxisViewport.Apply(model, saved);
-        }
+        IReadOnlyList<PlotAxisViewport> applied =
+            savedByMode.TryGetValue(mode, out IReadOnlyList<PlotAxisViewport>? saved)
+                ? PlotAxisViewport.Apply(model, saved)
+                : Array.Empty<PlotAxisViewport>();
 
         view.Model = model;
         trackedModel = model;
         trackedMode = mode;
         trackedNominal = nominal;
+        restoredNominal = applied.Count == 0
+            ? Array.Empty<PlotAxisViewport>()
+            : nominal.Where(entry => applied.Any(entry.SameAxis)).ToList();
+    }
+
+    /// <summary>
+    /// Re-reads the model's own ranges after the caller has finished filling it.
+    /// <see cref="Show"/> takes its baseline when the model goes on screen, but the
+    /// overlays are drawn a moment later, and on an auto-scaled axis (the
+    /// autocorrelation pair, whose axes take their range from the data) a checked
+    /// overlay widens that range with nobody having touched the plot. Without this
+    /// the next rebuild would read the widening as a zoom and pin an axis the user
+    /// never moved.
+    ///
+    /// Axes whose zoom was just restored keep the baseline they were restored
+    /// against — see <see cref="restoredNominal"/>.
+    /// </summary>
+    public void Rebase()
+    {
+        if (trackedModel == null)
+        {
+            return;
+        }
+
+        IReadOnlyList<PlotAxisViewport> refreshed = PlotAxisViewport.Capture(trackedModel);
+        if (restoredNominal.Count == 0)
+        {
+            trackedNominal = refreshed;
+            return;
+        }
+
+        trackedNominal = refreshed
+            .Select(entry => restoredNominal.FirstOrDefault(entry.SameAxis) ?? entry)
+            .ToList();
     }
 
     /// <summary>

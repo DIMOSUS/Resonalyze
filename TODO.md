@@ -233,6 +233,16 @@ close.
 
 ## Plotting
 
+- [ ] **The graph limits dialog and the on-graph zoom buttons see one vertical
+  axis per plot.** `PlotAxisZoom.FindZoomableAxis` returns the first visible,
+  zoomable axis of an orientation, which is all any analysis plot has — except
+  the Virtual DSP correlation view, which carries `corr-r` on the left and
+  `corr-score` on the right. The wheel still zooms the right-hand axis (hovering
+  it routes the gesture there), but the buttons and the dialog only ever reach
+  the left one. Fixing it means letting both surfaces enumerate the vertical
+  axes rather than picking one, and deciding what a "Top/Bottom" pair means with
+  two of them.
+
 - [ ] ★ **Snapshot read-model instead of the two live measurement objects in
   `PlotModelFactory`.** The factory and `MeasurementPlotContext` are constructed
   with `ExpSweepMeasurement` and `NoiseMeasurement` themselves and read 22

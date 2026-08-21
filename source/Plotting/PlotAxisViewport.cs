@@ -57,15 +57,17 @@ internal sealed record PlotAxisViewport(
         return viewports;
     }
 
-    public static void Apply(
+    /// <returns>The snapshots that were actually put back.</returns>
+    public static IReadOnlyList<PlotAxisViewport> Apply(
         PlotModel? model,
         IReadOnlyList<PlotAxisViewport>? viewports)
     {
         if (model == null || viewports == null || viewports.Count == 0)
         {
-            return;
+            return Array.Empty<PlotAxisViewport>();
         }
 
+        var applied = new List<PlotAxisViewport>(viewports.Count);
         foreach (Axis axis in model.Axes)
         {
             PlotAxisViewport? viewport = Match(axis, viewports);
@@ -78,7 +80,10 @@ internal sealed record PlotAxisViewport(
             }
 
             axis.Zoom(viewport.Minimum, viewport.Maximum);
+            applied.Add(viewport);
         }
+
+        return applied;
     }
 
     /// <summary>True when both snapshots describe the same axis of the same plot.</summary>

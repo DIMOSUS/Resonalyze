@@ -121,6 +121,53 @@ public sealed class PlotViewportMemoryTests
     }
 
     [Fact]
+    public void Rebase_KeepsAnOverlayWideningOutOfTheRememberedZoom()
+    {
+        // The autocorrelation shape: axes that take their range from the data, and a
+        // mode that allows overlays. Overlays are drawn AFTER the model is shown, so
+        // a checked one widens the range with nobody having touched the plot.
+        using var view = new PlotView();
+        var memory = new PlotViewportMemory(view);
+        PlotModel first = AutoScaledModel();
+        memory.Show(first, Mode.Autocorrelation);
+        AddCurve(first, -40, 40);
+        // What the repaint that follows an overlay does: recompute the data ranges,
+        // which is what widens an auto-scaled axis.
+        ((IPlotModel)first).Update(true);
+        memory.Rebase();
+
+        PlotModel second = AutoScaledModel();
+        memory.Show(second, Mode.Autocorrelation);
+        Update(second);
+
+        // The second model carries no overlay yet, so its axis must show its OWN
+        // data, not the range the overlay stretched the first one to.
+        Axis time = Axis(second, PlotModelFactory.TimeAxisKey);
+        Assert.True(time.ActualMinimum > -20);
+        Assert.True(time.ActualMaximum < 20);
+    }
+
+    [Fact]
+    public void Rebase_LeavesACarriedOverZoomRemembered()
+    {
+        using var view = new PlotView();
+        var memory = new PlotViewportMemory(view);
+        memory.Show(FrequencyModel(), Mode.FrequencyResponse);
+        Axis(view.Model, PlotModelFactory.FrequencyAxisKey).Zoom(100, 500);
+
+        // A rebuild carries the zoom over; the rebase that follows the overlays must
+        // not adopt it as the axis's own range, or the NEXT rebuild would drop it.
+        memory.Show(FrequencyModel(), Mode.FrequencyResponse);
+        memory.Rebase();
+        PlotModel third = FrequencyModel();
+        memory.Show(third, Mode.FrequencyResponse);
+        Update(third);
+
+        Assert.Equal(100, Axis(third, PlotModelFactory.FrequencyAxisKey).ActualMinimum, 6);
+        Assert.Equal(500, Axis(third, PlotModelFactory.FrequencyAxisKey).ActualMaximum, 6);
+    }
+
+    [Fact]
     public void Apply_RestoresByAxisKeyAndNotByPositionAlone()
     {
         // Phase and group delay both hang a left-hand LinearAxis off the same plot
@@ -146,6 +193,37 @@ public sealed class PlotViewportMemoryTests
 
         Assert.Equal(-5, groupDelay.ActualMinimum, 6);
         Assert.Equal(5, groupDelay.ActualMaximum, 6);
+    }
+
+    // The autocorrelation pair: neither axis states a range, so both follow the data.
+    private static PlotModel AutoScaledModel()
+    {
+        var model = new PlotModel();
+        model.Axes.Add(new LinearAxis
+        {
+            Key = PlotModelFactory.TimeAxisKey,
+            Position = AxisPosition.Bottom,
+        });
+        model.Axes.Add(new LinearAxis
+        {
+            Key = PlotModelFactory.AutocorrelationAxisKey,
+            Position = AxisPosition.Left,
+        });
+        AddCurve(model, -5, 5);
+        return model;
+    }
+
+    private static void AddCurve(PlotModel model, double fromMs, double toMs)
+    {
+        var series = new LineSeries
+        {
+            XAxisKey = PlotModelFactory.TimeAxisKey,
+            YAxisKey = PlotModelFactory.AutocorrelationAxisKey,
+        };
+        series.Points.Add(new DataPoint(fromMs, 0));
+        series.Points.Add(new DataPoint(0, 1));
+        series.Points.Add(new DataPoint(toMs, 0));
+        model.Series.Add(series);
     }
 
     private static PlotModel FrequencyModel(double decibelMaximum = 0)

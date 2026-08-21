@@ -404,6 +404,7 @@ internal sealed class LiveSpectrumController : IDisposable
         plotViewports.Show(model, getCurrentMode());
         updateOverlayAvailability();
         overlayCollection.Show(getCurrentMode());
+        plotViewports.Rebase();
         updatePlotLabels();
     }
 
@@ -438,6 +439,7 @@ internal sealed class LiveSpectrumController : IDisposable
         lastSnapshot = null;
         plotViewports.Show(plotModelFactory.CreateLiveSpectrum(), getCurrentMode());
         overlayCollection.Show(getCurrentMode());
+        plotViewports.Rebase();
         _ = measurement.RunAsync();
         timer.Start();
         updateRecordButton();
@@ -462,6 +464,7 @@ internal sealed class LiveSpectrumController : IDisposable
         plotViewports.Show(model, getCurrentMode());
         updateOverlayAvailability();
         overlayCollection.Show(getCurrentMode());
+        plotViewports.Rebase();
         updateRecordButton();
         updatePlotLabels();
     }

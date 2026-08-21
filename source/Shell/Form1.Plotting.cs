@@ -53,6 +53,11 @@ public partial class Form1
         {
             UpdatePlotLabelsPanel();
         }
+
+        // The overlays join the model AFTER it is shown, and on an auto-scaled axis
+        // they move its range without anyone touching the plot. Re-baseline here so
+        // that widening is not mistaken for a zoom and pinned.
+        plotViewports.Rebase();
     }
 
     private void UpdateOverlayAvailability()

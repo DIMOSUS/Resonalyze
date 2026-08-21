@@ -418,6 +418,52 @@ For acoustic measurements, microphone placement and room conditions strongly
 affect the result. For electrical loopback measurements, make sure the signal
 levels and impedances are safe for both devices.
 
+## Graph Zoom and Limits
+
+The analysis plot, the Time Alignment previews, the EQ Wizard and the Virtual DSP
+graphs all take the same mouse and keyboard controls, laid out to match REW's
+graph panel so there is nothing to relearn when you move between the two. (The
+small previews inside settings panels and dialogs — the impulse window, the gate
+preview, the history list — are fixed-scale by design and take none of this.)
+
+| Gesture | What it does |
+| --- | --- |
+| Wheel | Zooms both axes around the pointer |
+| **Alt** + wheel | The same, in fine steps |
+| **Shift** + wheel | Horizontal axis only |
+| **Ctrl** + wheel | Vertical axis only |
+| Wheel over an axis | Zooms that axis alone |
+| Wheel over the **end** of an axis | Moves that one limit, leaving the opposite end where it is |
+| `x` / **Shift**+`X` | Zooms the horizontal axis out / in by about two, around the pointer |
+| `y` / **Shift**+`Y` | The same for the vertical axis |
+| Middle-button drag | Variable zoom: right and left work the horizontal axis, up and down the vertical one |
+| **Ctrl** + right-button drag | Draws a zoom rectangle |
+| Right-button drag | Pans |
+| The **+** / **&minus;** buttons on the graph | Zoom the axis they sit against by about two, click after click; they appear while the pointer is over the plot, and hovering one names the axis it moves |
+| Double click | Opens the graph limits dialog |
+| **Ctrl+Z** | Steps back through the zoom-to-area, variable-zoom, zoom-button and fit-to-data moves (a wheel notch is its own undo — scroll it back) |
+| **Ctrl+Alt+F** / **Ctrl+Alt+Y** | Fit to data / fit the vertical axis to data |
+| **Home** or `A` | Back to the view's own default scale (also the **Defaults** button in the limits dialog) |
+
+The **graph limits** dialog types the same ranges exactly — top, bottom, left and
+right as numbers, plus **Fit to data**, **Fit Y to data** and **Defaults**, which
+hands the axes back to the scale the mode chose for them. Use it when two
+measurements have to be framed identically, for a screenshot or a before/after.
+
+A zoom survives a redraw: changing a setting, running a new measurement or
+toggling an overlay keeps the range you are looking at. The analysis plot
+remembers one range per mode, so Frequency Response and Impulse Response do not
+fight over a scale; the Time Alignment previews keep theirs across a
+reconfiguration, and the EQ Wizard and Virtual DSP graphs hold theirs until
+something changes what the axis means (loading a new wizard source, switching
+the Virtual DSP view between magnitude, phase and impulse).
+
+Axes you have **not** touched still scale themselves — the dB axis lifts its
+ceiling for a padded loopback, group delay fits its data — so the automatic
+framing steps aside only where you took over, and **Home** hands an axis back to
+it. Frequency axes pan within 20 Hz – 20 kHz, the band the curves are computed
+over.
+
 ## Mode Settings
 
 The **Mode Settings...** button opens the current mode's settings in a docked,
@@ -427,9 +473,10 @@ on the fly, redrawing the analysis while preserving the visible plot range. Each
 curve-based view groups its plotted curves under a **Curves:** heading with one
 checkbox per curve — Primary / HD2–HD4 / THD+N in Frequency Response, or
 measured / minimum / excess in Phase. Numeric and dropdown settings carry a small
-**R** button that resets them to the built-in default, double-clicking a plot
-axis restores its default scale, and the Frequency Response, Phase, Group Delay,
-Waterfall and Burst panels include a compact impulse-window preview.
+**R** button that resets them to the built-in default, the plot keeps the range
+you zoomed to (see [Graph Zoom and Limits](#graph-zoom-and-limits)), and the
+Frequency Response, Phase, Group Delay, Waterfall and Burst panels include a
+compact impulse-window preview.
 
 The **Tools** modes (EQ Wizard, Signal Generator, Virtual DSP) do not measure and
 do not draw the shell's curves: they bring their own sources and controls, so the

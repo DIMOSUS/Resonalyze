@@ -30,6 +30,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly DarkNumericUpDown bandpassFadeOctavesNumeric;
     private readonly PlotView bandpassPlotView;
     private readonly PlotView envelopePlotView;
+    // Both previews are rebuilt from scratch on every configuration change, so a
+    // zoom into a junction would last exactly until the next edit without these.
+    private readonly PlotViewportMemory bandpassViewports;
+    private readonly PlotViewportMemory envelopeViewports;
     private readonly StatusRichTextBox statusTextBox;
     private readonly Font resultTableFont;
     // The band detected for the Auto mode on the last refresh (null when no
@@ -88,6 +92,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         bandpassFadeOctavesNumeric = panel.BandpassFadeOctavesNumeric;
         bandpassPlotView = panel.BandpassPlotView;
         envelopePlotView = panel.EnvelopePlotView;
+        // Same zoom, pan and limits gestures as the other analysis plots.
+        PlotInteraction.Enable(bandpassPlotView);
+        PlotInteraction.Enable(envelopePlotView);
+        bandpassViewports = new PlotViewportMemory(bandpassPlotView);
+        envelopeViewports = new PlotViewportMemory(envelopePlotView);
         statusTextBox = panel.StatusTextBox;
         statusTextBox.UseHandCursorAt = point => TryGetCopyableStatusLine(point, out _);
         statusTextBox.MouseClick += StatusTextBoxMouseClick;
@@ -506,7 +515,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         bool addCurve = options.BandMode == TimeAlignmentBandMode.ManualBand ||
             (options.BandMode == TimeAlignmentBandMode.AutoBand && lastAutoBand != null);
         PlotModel model = CreateBandpassPreviewModel(addCurve);
-        bandpassPlotView.Model = model;
+        bandpassViewports.Show(model, Mode.TimeAlignment);
     }
 
     private PlotModel CreateBandpassPreviewModel(bool addCurve)
@@ -742,7 +751,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             AddMainPeakMarkers(model, result, referenceAmplitude);
         }
-        envelopePlotView.Model = model;
+        envelopeViewports.Show(model, Mode.TimeAlignment);
     }
 
     private static void ApplyEnvelopeDecibelRange(
@@ -980,7 +989,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void ClearEnvelopePreview()
     {
-        envelopePlotView.Model = CreateEmptyEnvelopePreviewModel();
+        envelopeViewports.Show(CreateEmptyEnvelopePreviewModel(), Mode.TimeAlignment);
     }
 
     private PlotModel CreateEmptyEnvelopePreviewModel()

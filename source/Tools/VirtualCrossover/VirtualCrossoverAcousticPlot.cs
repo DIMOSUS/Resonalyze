@@ -120,7 +120,7 @@ internal sealed class VirtualCrossoverAcousticPlot
 
         view.Model = model;
         ConfigureForView(initialView);
-        PlotInteraction.EnableDoubleClickAxisReset(view);
+        PlotInteraction.Enable(view);
         plotLabels = new PlotLabelsPanelController(view, () => Mode.VirtualCrossover);
     }
 

@@ -14,6 +14,10 @@ internal static class PlotModelStyle
             TitleFontSize = 14
         };
 
+    // The audio band is the DEFAULT view and the hard fence for panning, but not a
+    // fixed scale: zoom is what lets a 40 Hz mode or a crossover region be read at
+    // the same resolution REW gives it. The absolute limits stay at the band the
+    // curves are computed over, so a pan cannot wander off the data.
     public static void AddFrequencyAxis(PlotModel model)
     {
         model.Axes.Add(new LogarithmicAxis
@@ -24,7 +28,6 @@ internal static class PlotModelStyle
             AbsoluteMaximum = 20000,
             Minimum = 20,
             Maximum = 20000,
-            IsZoomEnabled = false,
             MajorGridlineStyle = LineStyle.Solid,
         });
     }

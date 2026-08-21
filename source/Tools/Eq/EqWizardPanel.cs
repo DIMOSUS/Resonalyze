@@ -435,7 +435,7 @@ public partial class EqWizardPanel : UserControl
 
         plotWizard.Model = model;
         UpdateEqAxisRange();
-        PlotInteraction.EnableDoubleClickAxisReset(plotWizard);
+        PlotInteraction.Enable(plotWizard);
 
         // Reuse the main plot's bottom legend so the curve list looks identical.
         plotLabels = new PlotLabelsPanelController(plotWizard, () => Mode.EqWizard);

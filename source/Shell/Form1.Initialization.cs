@@ -47,10 +47,12 @@ public partial class Form1
                 Waterfall: waterfallGenOptions,
                 BurstDecay: burstDecayGenOptions));
         createdPlotModelFactory.SetCompareSourceProvider(compareSelection.GetAnalysisSource);
+        PlotViewportMemory createdPlotViewports = new(plotView1);
         LiveSpectrumController createdLiveSpectrumController = new(
             this,
             noiseMeasurement,
             plotView1,
+            createdPlotViewports,
             createdPlotModelFactory,
             createdOverlayCollection,
             () => CurrentMode,
@@ -94,6 +96,7 @@ public partial class Form1
         DockedModeSettingsHost createdDockedHistoryHost = new(this, plotView1);
 
         return new Form1ControllerDependencies(
+            createdPlotViewports,
             createdOverlayCollection,
             createdPlotLabelsPanelController,
             createdPlotModelFactory,
@@ -257,6 +260,7 @@ public partial class Form1
     }
 
     private sealed record Form1ControllerDependencies(
+        PlotViewportMemory PlotViewports,
         OverlayCollection OverlayCollection,
         PlotLabelsPanelController PlotLabelsPanelController,
         PlotModelFactory PlotModelFactory,

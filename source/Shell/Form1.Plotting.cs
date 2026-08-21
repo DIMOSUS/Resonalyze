@@ -42,7 +42,7 @@ public partial class Form1
         bool showOverlay)
     {
         using var _ = AppProfiler.Zone("Form1.ShowPlotModel");
-        plotView1.Model = model;
+        plotViewports.Show(model, CurrentMode);
         UpdatePeakInfo();
 
         if (includeCurves && showOverlay)

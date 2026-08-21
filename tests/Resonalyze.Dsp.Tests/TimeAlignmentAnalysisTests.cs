@@ -607,4 +607,42 @@ public sealed class TimeAlignmentAnalysisTests
         Assert.Equal(baseline.FirstArrivalConfidence, weighted.FirstArrivalConfidence);
         Assert.Equal(baseline.StrongestConfidence, weighted.StrongestConfidence);
     }
+
+    [Fact]
+    public void Analyze_ReadsAPairOfIdenticalDriversAtTheSamePointOfTheirFronts()
+    {
+        // Two identical drivers in opposite doors, 1.5 ms of path apart. Each
+        // front is followed by a stronger cabin reflection 0.625 ms later — the
+        // shape a door mid really has — and ONE of the two also carries a small
+        // ripple on the foot of its packet, 0.6 ms ahead of its front, which is
+        // exactly how a cabin's comb interference shows up. Reading that ripple
+        // as an arrival used to report 2.125 ms for a 1.5 ms split, and to mark
+        // the two curves at levels 20 dB apart while calling both "First".
+        var near = new double[8_192];
+        near[470] = 0.06; // foot ripple, ~24 dB under the packet
+        near[500] = 0.6;  // front
+        near[530] = 1.0;  // cabin reflection
+        var far = new double[8_192];
+        far[572] = 0.6;
+        far[602] = 1.0;
+
+        TimeAlignmentAnalysisResult nearResult = TimeAlignmentAnalysis.Analyze(
+            near, SampleRate, new TimeAlignmentAnalysisOptions());
+        TimeAlignmentAnalysisResult farResult = TimeAlignmentAnalysis.Analyze(
+            far, SampleRate, new TimeAlignmentAnalysisOptions());
+
+        double splitMs =
+            farResult.FirstArrivalDelayMilliseconds -
+            nearResult.FirstArrivalDelayMilliseconds;
+        // (572 - 500) samples at 48 kHz = 1.5 ms.
+        Assert.InRange(splitMs, 1.45, 1.55);
+        // And the two figures are the same observable: both picks sit at the
+        // same depth under their own packet, so the delta is path, not level.
+        Assert.InRange(
+            Math.Abs(
+                nearResult.FirstArrivalProminenceDecibels -
+                farResult.FirstArrivalProminenceDecibels),
+            0.0,
+            1.0);
+    }
 }

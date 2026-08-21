@@ -296,8 +296,11 @@ public static class TimeAlignmentAnalysis
 
     // How much later than the first arrival the strongest peak must sit before it
     // is called a separate arrival (reflection or room mode) rather than the same
-    // smeared direct sound.
-    private const double SeparateArrivalThresholdMilliseconds = 1.0;
+    // smeared direct sound. The peak search reads the same span from the other
+    // side — inside it, a candidate far below the packet's peak is that packet's
+    // foot, not an arrival — so both live on one constant.
+    private const double SeparateArrivalThresholdMilliseconds =
+        SignalEnvelope.ArrivalPacketMilliseconds;
 
     // How deep the envelope must dip between the two peaks before they count as
     // separate arrivals: two events have a real valley between them, one broad

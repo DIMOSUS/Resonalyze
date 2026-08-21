@@ -1,4 +1,5 @@
 using OxyPlot;
+using OxyPlot.Axes;
 using OxyPlot.WindowsForms;
 
 namespace Resonalyze;
@@ -12,11 +13,13 @@ namespace Resonalyze;
 /// the same contract, kept per mode so the frequency plot and the impulse plot do
 /// not fight over one range.
 ///
-/// Only the axes the user MOVED are carried over, found by comparing what an axis
-/// shows now against what it showed when its model was built. An untouched axis
-/// keeps whatever the next model computes for it, so the automatic behaviours
+/// Only the axes the user MOVED are carried over, and they are found by asking the
+/// axes themselves (<see cref="PlotAxisViewport.CaptureOverrides"/>) rather than by
+/// remembering what the model looked like when it was drawn — which would depend on
+/// WHEN the baseline was taken, and overlays arrive after the draw. An untouched
+/// axis keeps whatever the next model computes for it, so the automatic behaviours
 /// still work: the dB ceiling that lifts for a padded loopback, the group-delay
-/// axis that fits its data, the impulse axes that follow the curve.
+/// axis that fits its data, an auto-scaled axis that widens for an overlay.
 /// </summary>
 internal sealed class PlotViewportMemory
 {
@@ -25,16 +28,6 @@ internal sealed class PlotViewportMemory
 
     private PlotModel? trackedModel;
     private Mode? trackedMode;
-
-    // What the tracked model's axes showed before the user touched them. Anything
-    // that differs from this is a zoom or a pan and is worth carrying over; anything
-    // that matches is still the model's own decision.
-    private IReadOnlyList<PlotAxisViewport> trackedNominal = Array.Empty<PlotAxisViewport>();
-
-    // The nominal entries of the axes whose zoom was carried over into the model on
-    // screen. Rebase must not refresh THOSE, or the carried-over zoom would become
-    // the axis's "own" range and stop being remembered.
-    private IReadOnlyList<PlotAxisViewport> restoredNominal = Array.Empty<PlotAxisViewport>();
 
     public PlotViewportMemory(PlotView view)
     {
@@ -53,54 +46,14 @@ internal sealed class PlotViewportMemory
     public void Show(PlotModel? model, Mode mode)
     {
         Remember();
-
-        // The new model's own idea of its scale, read before the carry-over is
-        // applied on top of it — that is what "the user has not touched this axis"
-        // will be compared against next time.
-        IReadOnlyList<PlotAxisViewport> nominal = PlotAxisViewport.Capture(model);
-        IReadOnlyList<PlotAxisViewport> applied =
-            savedByMode.TryGetValue(mode, out IReadOnlyList<PlotAxisViewport>? saved)
-                ? PlotAxisViewport.Apply(model, saved)
-                : Array.Empty<PlotAxisViewport>();
+        if (savedByMode.TryGetValue(mode, out IReadOnlyList<PlotAxisViewport>? saved))
+        {
+            PlotAxisViewport.Apply(model, saved);
+        }
 
         view.Model = model;
         trackedModel = model;
         trackedMode = mode;
-        trackedNominal = nominal;
-        restoredNominal = applied.Count == 0
-            ? Array.Empty<PlotAxisViewport>()
-            : nominal.Where(entry => applied.Any(entry.SameAxis)).ToList();
-    }
-
-    /// <summary>
-    /// Re-reads the model's own ranges after the caller has finished filling it.
-    /// <see cref="Show"/> takes its baseline when the model goes on screen, but the
-    /// overlays are drawn a moment later, and on an auto-scaled axis (the
-    /// autocorrelation pair, whose axes take their range from the data) a checked
-    /// overlay widens that range with nobody having touched the plot. Without this
-    /// the next rebuild would read the widening as a zoom and pin an axis the user
-    /// never moved.
-    ///
-    /// Axes whose zoom was just restored keep the baseline they were restored
-    /// against — see <see cref="restoredNominal"/>.
-    /// </summary>
-    public void Rebase()
-    {
-        if (trackedModel == null)
-        {
-            return;
-        }
-
-        IReadOnlyList<PlotAxisViewport> refreshed = PlotAxisViewport.Capture(trackedModel);
-        if (restoredNominal.Count == 0)
-        {
-            trackedNominal = refreshed;
-            return;
-        }
-
-        trackedNominal = refreshed
-            .Select(entry => restoredNominal.FirstOrDefault(entry.SameAxis) ?? entry)
-            .ToList();
     }
 
     /// <summary>
@@ -111,10 +64,16 @@ internal sealed class PlotViewportMemory
     public void Forget(Mode mode)
     {
         savedByMode.Remove(mode);
-        if (trackedMode == mode)
+        if (trackedMode != mode || trackedModel == null)
         {
-            // Stop the model on screen from putting the same range straight back.
-            trackedNominal = PlotAxisViewport.Capture(trackedModel);
+            return;
+        }
+
+        // The model on screen still carries the user's range; drop it there too, or
+        // the capture that runs on the next redraw would save it straight back.
+        foreach (Axis axis in trackedModel.Axes)
+        {
+            axis.Reset();
         }
     }
 
@@ -125,26 +84,15 @@ internal sealed class PlotViewportMemory
             return;
         }
 
-        List<PlotAxisViewport> moved = PlotAxisViewport.Capture(trackedModel)
-            .Where(IsMoved)
-            .ToList();
+        IReadOnlyList<PlotAxisViewport> moved = PlotAxisViewport.CaptureOverrides(trackedModel);
         if (moved.Count == 0)
         {
-            // Everything is back where the model put it — a reset, or a mode that was
-            // never touched. Forget the mode so the next model is free to scale itself.
+            // Nothing is forced any more — a reset, or a mode that was never
+            // touched. Forget it, so the next model is free to scale itself.
             savedByMode.Remove(mode);
             return;
         }
 
         savedByMode[mode] = moved;
-    }
-
-    private bool IsMoved(PlotAxisViewport viewport)
-    {
-        PlotAxisViewport? nominal = trackedNominal.FirstOrDefault(viewport.SameAxis);
-
-        // An axis with no nominal to compare against is one this model gained after
-        // the capture; leave it to the model rather than pinning a range nobody set.
-        return nominal != null && !viewport.SameRange(nominal);
     }
 }

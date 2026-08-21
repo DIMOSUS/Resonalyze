@@ -29,6 +29,7 @@ internal sealed record PlotAxisViewport(
     // not a user's gesture — the smallest wheel step moves an axis by percents.
     private const double RangeTolerance = 1e-6;
 
+    /// <summary>Every axis's visible range, whoever decided it.</summary>
     public static IReadOnlyList<PlotAxisViewport> Capture(PlotModel? model)
     {
         if (model == null)
@@ -46,28 +47,85 @@ internal sealed record PlotAxisViewport(
         var viewports = new List<PlotAxisViewport>(model.Axes.Count);
         foreach (Axis axis in model.Axes)
         {
-            viewports.Add(new PlotAxisViewport(
-                string.IsNullOrEmpty(axis.Key) ? null : axis.Key,
-                axis.Position,
-                axis.GetType(),
-                axis.ActualMinimum,
-                axis.ActualMaximum));
+            viewports.Add(Describe(axis, axis.ActualMinimum, axis.ActualMaximum));
         }
 
         return viewports;
     }
 
-    /// <returns>The snapshots that were actually put back.</returns>
-    public static IReadOnlyList<PlotAxisViewport> Apply(
+    /// <summary>
+    /// Only the ranges a USER has forced on the axes — the ones the model did not
+    /// choose for itself.
+    ///
+    /// OxyPlot keeps exactly that distinction in <c>Axis.ViewMinimum</c> /
+    /// <c>ViewMaximum</c>, which are <c>protected</c>, so it is read the only way the
+    /// public API allows: reset the axes (which is what drops an override), let the
+    /// model recompute the range it wants, and put back the ones that turn out to
+    /// differ. What the plot shows is left exactly as it was found.
+    ///
+    /// Asking the axes rather than remembering what they looked like when the model
+    /// was shown is what makes the answer independent of WHEN it is asked. Overlays
+    /// join a plot after it is drawn — a mode switch restores its slots after the
+    /// draw, Show All and the slot check boxes act later still — and on an
+    /// auto-scaled axis they widen the range through the DATA, not through an
+    /// override, so no arrival order can make that read as a zoom.
+    /// </summary>
+    public static IReadOnlyList<PlotAxisViewport> CaptureOverrides(PlotModel? model)
+    {
+        if (model == null)
+        {
+            return Array.Empty<PlotAxisViewport>();
+        }
+
+        var plot = (IPlotModel)model;
+        plot.Update(false);
+        List<PlotAxisViewport> shown = model.Axes
+            .Select(axis => Describe(axis, axis.ActualMinimum, axis.ActualMaximum))
+            .ToList();
+
+        foreach (Axis axis in model.Axes)
+        {
+            axis.Reset();
+        }
+
+        plot.Update(false);
+
+        var overrides = new List<PlotAxisViewport>();
+        for (int index = 0; index < model.Axes.Count; index++)
+        {
+            Axis axis = model.Axes[index];
+            PlotAxisViewport wasShowing = shown[index];
+            if (!double.IsFinite(wasShowing.Minimum) ||
+                !double.IsFinite(wasShowing.Maximum) ||
+                wasShowing.SameRange(Describe(axis, axis.ActualMinimum, axis.ActualMaximum)))
+            {
+                continue;
+            }
+
+            axis.Zoom(wasShowing.Minimum, wasShowing.Maximum);
+            overrides.Add(wasShowing);
+        }
+
+        return overrides;
+    }
+
+    private static PlotAxisViewport Describe(Axis axis, double minimum, double maximum) =>
+        new(
+            string.IsNullOrEmpty(axis.Key) ? null : axis.Key,
+            axis.Position,
+            axis.GetType(),
+            minimum,
+            maximum);
+
+    public static void Apply(
         PlotModel? model,
         IReadOnlyList<PlotAxisViewport>? viewports)
     {
         if (model == null || viewports == null || viewports.Count == 0)
         {
-            return Array.Empty<PlotAxisViewport>();
+            return;
         }
 
-        var applied = new List<PlotAxisViewport>(viewports.Count);
         foreach (Axis axis in model.Axes)
         {
             PlotAxisViewport? viewport = Match(axis, viewports);
@@ -80,10 +138,7 @@ internal sealed record PlotAxisViewport(
             }
 
             axis.Zoom(viewport.Minimum, viewport.Maximum);
-            applied.Add(viewport);
         }
-
-        return applied;
     }
 
     /// <summary>True when both snapshots describe the same axis of the same plot.</summary>

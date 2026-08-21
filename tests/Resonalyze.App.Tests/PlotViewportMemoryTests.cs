@@ -120,51 +120,65 @@ public sealed class PlotViewportMemoryTests
         Assert.Equal(20_000, Axis(second, PlotModelFactory.FrequencyAxisKey).ActualMaximum, 6);
     }
 
-    [Fact]
-    public void Rebase_KeepsAnOverlayWideningOutOfTheRememberedZoom()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Show_KeepsAnOverlayWideningOutOfTheRememberedZoom(bool overlayArrivesAfterTheDraw)
     {
         // The autocorrelation shape: axes that take their range from the data, and a
-        // mode that allows overlays. Overlays are drawn AFTER the model is shown, so
-        // a checked one widens the range with nobody having touched the plot.
+        // mode that allows overlays. An overlay can join the model at the draw or
+        // well after it — a mode switch restores the saved slots only after
+        // ModeController has drawn, and Show All acts later still — and neither is a
+        // user zoom.
         using var view = new PlotView();
         var memory = new PlotViewportMemory(view);
         PlotModel first = AutoScaledModel();
+        if (!overlayArrivesAfterTheDraw)
+        {
+            AddCurve(first, -40, 40);
+        }
+
         memory.Show(first, Mode.Autocorrelation);
-        AddCurve(first, -40, 40);
+        if (overlayArrivesAfterTheDraw)
+        {
+            AddCurve(first, -40, 40);
+        }
+
         // What the repaint that follows an overlay does: recompute the data ranges,
         // which is what widens an auto-scaled axis.
         ((IPlotModel)first).Update(true);
-        memory.Rebase();
 
         PlotModel second = AutoScaledModel();
         memory.Show(second, Mode.Autocorrelation);
         Update(second);
 
-        // The second model carries no overlay yet, so its axis must show its OWN
-        // data, not the range the overlay stretched the first one to.
+        // The second model carries no overlay, so its axis must show its OWN data,
+        // not the range the overlay stretched the first one to.
         Axis time = Axis(second, PlotModelFactory.TimeAxisKey);
         Assert.True(time.ActualMinimum > -20);
         Assert.True(time.ActualMaximum < 20);
     }
 
     [Fact]
-    public void Rebase_LeavesACarriedOverZoomRemembered()
+    public void Show_KeepsAZoomWhileAnOverlayWidensTheOtherAxis()
     {
+        // Both at once: the user forced the time axis, an overlay widened the value
+        // axis. One is a zoom to carry, the other is the model scaling itself.
         using var view = new PlotView();
         var memory = new PlotViewportMemory(view);
-        memory.Show(FrequencyModel(), Mode.FrequencyResponse);
-        Axis(view.Model, PlotModelFactory.FrequencyAxisKey).Zoom(100, 500);
+        PlotModel first = AutoScaledModel();
+        memory.Show(first, Mode.Autocorrelation);
+        Axis(first, PlotModelFactory.TimeAxisKey).Zoom(-1, 1);
+        AddCurve(first, -40, 40);
+        ((IPlotModel)first).Update(true);
 
-        // A rebuild carries the zoom over; the rebase that follows the overlays must
-        // not adopt it as the axis's own range, or the NEXT rebuild would drop it.
-        memory.Show(FrequencyModel(), Mode.FrequencyResponse);
-        memory.Rebase();
-        PlotModel third = FrequencyModel();
-        memory.Show(third, Mode.FrequencyResponse);
-        Update(third);
+        PlotModel second = AutoScaledModel();
+        memory.Show(second, Mode.Autocorrelation);
+        Update(second);
 
-        Assert.Equal(100, Axis(third, PlotModelFactory.FrequencyAxisKey).ActualMinimum, 6);
-        Assert.Equal(500, Axis(third, PlotModelFactory.FrequencyAxisKey).ActualMaximum, 6);
+        Assert.Equal(-1, Axis(second, PlotModelFactory.TimeAxisKey).ActualMinimum, 6);
+        Assert.Equal(1, Axis(second, PlotModelFactory.TimeAxisKey).ActualMaximum, 6);
+        Assert.True(Axis(second, PlotModelFactory.AutocorrelationAxisKey).ActualMaximum < 2);
     }
 
     [Fact]

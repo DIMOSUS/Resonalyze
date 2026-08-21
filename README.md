@@ -195,9 +195,10 @@ offer a manual download.
   Chebyshev crossovers, all-pass and PEQ, with the complex sum, sum loss, phase
   tracking, junction read-outs, Δ L−R timing, **Auto crossover**, a stereo-aware
   **Auto delay**, a headphone audition, sessions and tuning-sheet export
-- **Live Spectrum** — real-time loopback transfer function with selectable
-  excitation (leakage-free periodic pink, pink, brown/red, white) and coherence,
-  plus a Silent mode that measures the ambient room
+- **Live Spectrum** — a real-time loopback transfer function with coherence, or a
+  reference-free RTA in relative dB or dB SPL, with selectable excitation
+  (leakage-free periodic pink, pink, brown/red, white, or Silent for the ambient
+  room) and compensation of the noise's own spectral slope
 - **Compare** a second measurement (file or History) across Time Alignment,
   Phase, Group Delay, Frequency Response and Impulse Response, and **overlays** —
   captured, calculated and target curves with styling, curve math,
@@ -223,8 +224,9 @@ Virtual DSP, the EQ Wizard, and Time Alignment are shown in the
     </td>
     <td width="50%">
       <img src="assets/images/noise.jpg" alt="Live Spectrum plot">
-      <p><strong>Live Spectrum</strong> — loopback transfer function with
-      selectable excitation noise, coherence, peak hold, and a dB SPL RTA.</p>
+      <p><strong>Live Spectrum</strong> — a loopback transfer function with
+      coherence and peak hold, or a reference-free RTA in dB SPL, on selectable
+      excitation noise.</p>
     </td>
   </tr>
   <tr>
@@ -540,6 +542,35 @@ stick in the car. Measurement options otherwise apply as you edit them and touch
 the audio session only when its identity changed; the audio backend, the device
 format and its device panel commit together with **Apply settings**.
 
+### Protective high-pass
+
+Most installs keep a **protective high-pass** in the external DSP so that nothing
+— a sweep included — reaches a tweeter or a small midrange below its safe band.
+That filter is part of what the microphone hears, while the loopback reference is
+captured *before* the DSP, so the measured transfer response carries the
+protection as if it were the driver's own roll-off.
+
+The **HPF** row tells Resonalyze which filter is in the way: `Butterworth` (6 dB
+steps up to 48 dB/oct) or `Linkwitz-Riley` (12 / 24 / 48 dB/oct), plus its corner
+frequency. The measurement then divides that known magnitude **and phase** out of
+the loopback-referenced transfer impulse response — the equivalent of filtering
+the clean reference through the same high-pass before dividing, while the
+full-band loopback stays available to the H1 estimator and its coherence.
+
+Inversion has a limit. The compensation is capped at **40 dB** of boost, because
+deeper into the stop band the protection has buried the driver under the noise
+floor and no arithmetic brings it back. Confidence is full until 6 dB before that
+ceiling and fades to zero along a raised cosine at it; the same fade multiplies
+the coherence curve, so a frequency the compensation could not recover reads as
+untrustworthy instead of as a confident number. Analyses that choose a band to
+work in read that masked coherence and stay out of the unrecoverable region —
+[Time Alignment](#time-alignment)'s dominant band above all, which would otherwise
+happily time a driver on boosted noise.
+
+Leave it `Off` when there is no protection in the chain, or when the loopback is
+taken *after* the DSP — the reference already contains the filter then, and the
+division has removed it before this setting could.
+
 ### MME Compatibility
 
 Use **MME Compatibility** for ordinary Windows playback and recording devices.
@@ -598,34 +629,53 @@ the noise floor pays for it in coherence.
 
 ## Live Spectrum
 
-The **Live Spectrum** mode is a live, dual-FFT **transfer-function** analyzer. It
-plays a continuous excitation signal, uses the configured loopback channel as a
-reference, and shows the real-time relationship from loopback to microphone,
-which suppresses input-side content not correlated with the playback signal.
-Alongside it a **coherence** curve (γ²) is drawn on a secondary 0-to-1 axis:
-values near 1 mark trustworthy frequencies, low values flag bands dominated by
-noise, reflections, or non-linear behavior. The estimate averages in the power
-domain, and on-screen smoothing is referenced to wall-clock time, so the response
-stays consistent regardless of overlap and sequence length.
+The **Live Spectrum** mode runs in one of two explicitly chosen **Mode**s.
 
-Without a loopback it still runs, as a single-channel RTA: the microphone's own
-spectrum, with no transfer function and no coherence. That is the mode the car
-workflow actually wants — a moving-microphone average in dB SPL, where there is
-no reference to divide by. A **Scale** control switches between relative dB and
-**dB SPL** (offered only while a matching
-[SPL anchor](#sound-pressure-level-db-spl) applies). In dB SPL the transfer
-function is hidden — a dimensionless ratio has no absolute level under noise
-excitation — and the whole plot becomes the microphone **RTA** on a true dB SPL
-axis, integrated as power per fractional-octave band. Because dB SPL needs no
-excitation, it also unlocks a **Silent** signal type — an ambient RTA.
+**Transfer** is a live, dual-FFT **transfer-function** analyzer. It plays a
+continuous excitation signal, uses the configured loopback channel as a reference,
+and shows the real-time relationship from loopback to microphone, which suppresses
+input-side content not correlated with the playback signal. Alongside it a
+**coherence** curve (γ²) is drawn on a secondary 0-to-1 axis: values near 1 mark
+trustworthy frequencies, low values flag bands dominated by noise, reflections, or
+non-linear behavior. The estimate averages in the power domain, and on-screen
+smoothing is referenced to wall-clock time, so the response stays consistent
+regardless of overlap and sequence length. The mode needs a loopback reference:
+without one the choice turns amber and the analyzer runs reference-free anyway,
+because there is nothing to divide by.
+
+**RTA** is that reference-free analyzer as a deliberate choice — the microphone's
+own magnitude spectrum, no transfer function and no coherence. It is what the car
+workflow actually wants: a moving-microphone average, where there is no reference
+to divide by. It captures the microphone alone even when a loopback is configured,
+so the sound card is asked for exactly the channel that is used.
+
+Two checkboxes belong to RTA and are muted in Transfer:
+
+- **dB SPL** puts the RTA on a true absolute axis (mic level plus the
+  [SPL anchor](#sound-pressure-level-db-spl) offset), integrated as power per
+  fractional-octave band. A transfer function is a dimensionless ratio with no
+  scalar level under noise excitation, which is why the scale exists here only.
+- **Slope compensation** removes the tilt the *excitation itself* prints on the
+  curve, so a flat system reads flat whatever the noise colour: pink otherwise
+  falls 3 dB per octave on the per-bin dB axis, and on the banded dB SPL display
+  even flat white noise climbs 3 dB per octave, since a band's power grows with
+  its width. What is subtracted is the shape the chosen noise really has —
+  modelled from the generator's own filters, not from a nominal slope, so brown's
+  leaky integrator and pink's filter bank are compensated to their true response
+  and not to a straight line their bass does not follow. The curve is pinned at
+  1 kHz, the plot title says it is compensated, and an overlay captured from it
+  keeps the compensation. `Silent` has no known excitation spectrum, so the
+  checkbox is unavailable there.
 
 **Signal Type** selects the excitation: **Pink noise (periodic)** (the default —
 one FFT-length period of exactly pink noise, looped; being periodic with the
 analysis block it is measured **leakage-free** with a rectangular window and
 converges almost instantly, so **Window** is forced to `Rectangular` and
 **Overlap** to `Off`), **Pink noise** (continuous random, −3 dB/octave), **Brown
-/ red noise** (−6 dB/octave, for subwoofer and room-mode work), or **White
-noise** (flat energy per hertz).
+/ red noise** (−6 dB/octave, for subwoofer and room-mode work), **White noise**
+(flat energy per hertz), or — in RTA only — **Silent**, which plays nothing and
+measures whatever the microphone hears: the ambient room, or an external source
+playing its own material.
 
 Further settings: **Sequence Length** (the FFT block size), **Overlap** (`Off` /
 `50%` / `75%`, reclaiming the samples a tapering window attenuates at the block
@@ -634,11 +684,14 @@ tones, `Blackman-Harris` for leakage suppression, or `Rectangular`), and
 **Averaging** (`Fast` / `Medium` / `Slow` time constants, or `Infinite`, with
 **Reset Average**). The drawn curves are the **Main curve**, **Peak Hold**,
 **Coherence**, and **RTA (input)** — the plain magnitude spectrum of the
-microphone alone, which under dB SPL becomes calibrated absolute sound pressure
-and the only curve, and which can be captured into an overlay slot and equalized
-in the [EQ Wizard](#choosing-what-to-equalize). **Coherence Limit** draws any
-frequency below the chosen percentage (default `25%`) dimmed and dashed, and a
-**processing overload** warning appears if the CPU cannot keep up.
+microphone alone, drawn beside the transfer function while you are in Transfer
+mode, and the whole plot in RTA mode, where it can be captured into an overlay
+slot and equalized in the [EQ Wizard](#choosing-what-to-equalize).
+**Coherence Limit** draws any frequency below the chosen percentage (default
+`25%`) dimmed and dashed, and a **processing overload** warning appears if the CPU
+cannot keep up. Changing anything the capture itself depends on — the mode, the
+signal, the window, the FFT length, the overlap — clears the accumulated average
+rather than redrawing the previous run's data under the new settings.
 
 Every magnitude-smoothing selector (Frequency Response, Live Spectrum, Fourier
 Waterfall, Virtual DSP, EQ Wizard, magnitude overlays) also offers
@@ -747,7 +800,11 @@ The measured time, distance, and sample count are clickable: click a result line
 to copy just the numeric value to the clipboard. With the bandpass window
 enabled, a frequency-domain preview of the pass band is shown along with the
 envelope around the detected peak; selecting a [Compare](#compare) reference
-overlays its envelope there and adds a second delay-table block.
+overlays its envelope there and adds a second delay-table block. Both envelopes
+are drawn against **one** reference — the Main record's strongest peak, named in
+the axis title — because how far a pick sits below its own peak is a figure of the
+analysis, while the peak is a property of the record: normalizing each curve to
+its own pick made two records that differ by 4 dB read 19 dB apart.
 
 ## Saving and Loading Impulse Responses
 
@@ -1077,13 +1134,29 @@ the side you are viewing, since the two sides' drivers sit at different
 distances; how the phase is READ stays project-wide, because two sides read
 through different windows could not be compared.
 
+A gate that opens **after** a driver has already arrived is refused rather than
+worked around. The panel judges the placement against every enabled channel and,
+when one falls outside the window, shows an amber line under the plot naming the
+side, the offset, and which channels are cut — with the whole arithmetic (the
+plateau, the fade-out, each channel's arrival and its leading-edge loss) in the
+tooltip. A curve gated that way is the reverberant tail rather than the driver,
+and the sum-loss read-out built from it describes nothing real, so **Auto delay**
+and **Auto crossover** decline to run until the gate is moved: an alignment
+computed through such a window would optimize the room's answer, not the
+loudspeaker.
+
 A second plot shows each DSP chain's own magnitude and phase (without the
-driver) — or, on its **Corr** mode, one adjacent pair's band-limited
-cross-correlation, raw and GCC-PHAT whitened, plus the junction's **prior-free
-acoustic score** for both polarities. That score is the acoustics alone, while
-the searches also weigh the arrival prior and the lobe/onset/scene locks, so the
-gap between the solid marker (the current alignment) and the dashed one (the
-envelope-arrival estimate) is that trade, drawn.
+driver) — or, on its **Corr** mode, one adjacent pair's band-limited GCC-PHAT
+whitened cross-correlation together with its **direct twin**, the same comb read
+on the drivers' direct sound alone, plus the junction's **prior-free acoustic
+score** for both polarities. That score is the acoustics alone, while the searches
+also weigh the arrival prior and the lobe/onset/scene locks, so the gap between
+the solid marker (the current alignment) and the dashed one (the envelope-arrival
+estimate) is that trade, drawn. The direct twin is the engine's **polarity
+witness**: where the summation score is too close to call between a lag and its
+inverted rival, the wavefronts within a period or two of the front decide it,
+because that is the part of the record the drivers made and the room had not yet
+answered.
 
 A **Junction phase** block reads each adjacent pair's steady-state cross-phase in
 a time-sized window (~0.68 s of the processed IR) — the regime sustained program
@@ -1133,8 +1206,15 @@ machine's file describes its microphone, not yours.
   junction (an inverted junction — a subwoofer against its midbass is the classic
   — seeds from the trough, with the polarity decision left to the sum search);
   then a fractional-delay search minimizing the sum-loss metric at each junction,
-  through the same direct-sound gate as the displayed metric so late room
-  reflections do not steer it. At mid/tweeter-class junctions the search is
+  through a direct-sound window so late room reflections do not steer it. That
+  window is the junction's own: it opens on the earliest **front** of the two
+  channels being joined, read in their shared band (never later than the peak, and
+  falling back to it where the band carries no measurable arrival), and it is
+  sized by that band rather than by a fixed span — a 60 Hz handover needs
+  milliseconds a tweeter pair does not. The displayed curves are anchored by the
+  same rule and differ only in span. The window also **travels with its channel**
+  as the search shifts it, because a fixed window over moving content measures the
+  window instead of the sum. At mid/tweeter-class junctions the search is
   additionally **locked to the drivers' broadband IR onsets**, so the summation
   comb can fine-tune only within the physically correct lobe. Candidates are
   scored by in-band average loss *and* the depth of the deepest smoothed notch,
@@ -1243,8 +1323,14 @@ level, while the Live Spectrum RTA needs only `SPL = mic level + anchor offset`.
 
 The anchor is valid only at the gain it was captured at, so a changed digital
 input is flagged (the **Calibrate** button turns gold) and the dialog warns that
-the analog preamp gain must not move after calibrating. Where an SPL reading
-cannot be honored the plot falls back to relative dB and says so. The anchor is
+the analog preamp gain must not move after calibrating.
+
+Selecting dB SPL never depends on having an anchor, because the scale is also how
+you *view* curves captured in it: without one the plot keeps the dB SPL axis and
+becomes **view-only** — overlays recorded in dB SPL are drawn, the measurement's
+own curves are not (raw dBFS on an absolute axis would read as absurd pressures),
+and a notice on the plot says why. Starting a measurement in that state drops the
+display back to relative first, so a fresh run is never born hidden. The anchor is
 saved with the measurement settings and stamped onto every captured impulse
 response.
 

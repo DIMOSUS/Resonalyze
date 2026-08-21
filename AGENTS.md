@@ -118,6 +118,33 @@ Tests use xUnit. DSP tests are deterministic and synthetic: `tests/Resonalyze.Ds
 
 The build treats warnings as errors (`Directory.Build.props`), excluding only the NuGet audit warnings `NU1901`–`NU1904`, which can appear against an unchanged dependency when an advisory is published. There are no suppressions anywhere in the tree — no `#pragma warning disable`, no `NoWarn` — and that is meant to stay true.
 
+## Documentation
+
+`README.md` is the product's only user-facing manual — there is no separate help,
+no wiki, no release notes describing behaviour. A feature that is not there does
+not exist for anyone who did not write it.
+
+So a change that alters what the user sees or does is **not finished until the
+README says so**, in the same commit. That covers a new control or dialog, a new
+setting or default, a refusal or warning the user can hit, a renamed or removed
+control, and any change to what a curve, axis or read-out means. Purely internal
+work (a refactor, a test, an optimization that no dial exposes) needs nothing.
+
+Two failure modes, both seen in this repository:
+
+- **A shipped feature nobody documented.** The protective high-pass compensation
+  landed with a Record Settings block, persistence and a settings migration, and
+  went five commits without a line of README.
+- **Prose that quietly became false.** A retired curve was still listed in the
+  Virtual DSP section, and the Live Spectrum scale paragraph described a control
+  that had been replaced. Adding a paragraph is not enough: **grep the README for
+  the terms your change makes obsolete** and fix what you find, because a stale
+  sentence is worse than a missing one — a reader has no way to tell it is wrong.
+
+When a change alters a panel the README screenshots, say so in the PR description
+so the owner can re-capture; the images live in `assets/images/` and are not
+generated.
+
 ## Code Style
 
 Enforced by `.editorconfig`; notable deviations from common C# defaults:

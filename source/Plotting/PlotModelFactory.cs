@@ -1307,10 +1307,11 @@ internal sealed class PlotModelFactory
                 ? (sample - origin) * 1000.0 / measurement.SampleRate
                 : sample - origin;
 
-        // Opposite text anchors stack the two captions instead of printing them on top
-        // of each other: on a well-aimed record the arrival and the peak are a fraction
-        // of a millisecond apart on an axis spanning hundreds, so their labels start at
-        // very nearly the same pixel.
+        // The two captions are stacked by where they sit ALONG their lines, not by
+        // opposite text anchors: on a well-aimed record the arrival and the peak are a
+        // fraction of a millisecond apart on an axis spanning hundreds, so their labels
+        // start at very nearly the same pixel. Anchoring one from below hung it over the
+        // top edge of the plot area, which clipped it in half.
         string valueAxisKey = ImpulseStepIsAlone(impulseResponseOptions)
             ? ImpulseStepAxisKey
             : ImpulseAxisKey;
@@ -1322,7 +1323,7 @@ internal sealed class PlotModelFactory
                 ToAxis(startMs * measurement.SampleRate / 1000.0),
                 "arrival",
                 OxyColor.FromRgb(130, 220, 90),
-                OxyPlot.VerticalAlignment.Top,
+                ArrivalLabelPosition,
                 valueAxisKey);
         }
 
@@ -1346,7 +1347,7 @@ internal sealed class PlotModelFactory
             ToAxis(set.PeakSample),
             peakLabel,
             OxyColor.FromRgb(150, 170, 205),
-            OxyPlot.VerticalAlignment.Bottom,
+            PeakLabelPosition,
             valueAxisKey);
     }
 
@@ -1388,12 +1389,18 @@ internal sealed class PlotModelFactory
         return set.PeakSample * 1000.0 / measurement.SampleRate - startMs;
     }
 
+    // Where each caption sits along its own line, as a fraction from the bottom of the
+    // plot area: the arrival at the very top, the peak one line under it. Both hang
+    // DOWNWARDS from their anchor so neither can be cut off by the top edge.
+    private const double ArrivalLabelPosition = 1.0;
+    private const double PeakLabelPosition = 0.955;
+
     private static void AddImpulseMarker(
         PlotModel model,
         double x,
         string text,
         OxyColor color,
-        OxyPlot.VerticalAlignment textPosition,
+        double textLinePosition,
         string valueAxisKey)
     {
         model.Annotations.Add(new LineAnnotation
@@ -1406,7 +1413,8 @@ internal sealed class PlotModelFactory
             Text = text,
             TextColor = color,
             TextOrientation = AnnotationTextOrientation.Horizontal,
-            TextVerticalAlignment = textPosition,
+            TextLinePosition = textLinePosition,
+            TextVerticalAlignment = OxyPlot.VerticalAlignment.Top,
             TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left,
             TextPadding = 4,
             XAxisKey = TimeAxisKey,

@@ -23,11 +23,11 @@ public sealed class TimeAlignmentEnvelopePlotTests
         TimeAlignmentAnalysisResult main = MakeResult(peak: 1.0, arrivalBelowPeakDb: 6);
         TimeAlignmentAnalysisResult compare = MakeResult(peak: 1.0, arrivalBelowPeakDb: 25);
 
-        (double mainMax, _) = Draw(main, main.StrongestEnvelopePeak);
-        (double compareMax, _) = Draw(compare, main.StrongestEnvelopePeak);
+        DrawnCurve mainCurve = Draw(main, main.StrongestEnvelopePeak);
+        DrawnCurve compareCurve = Draw(compare, main.StrongestEnvelopePeak);
 
-        Assert.Equal(0.0, mainMax, 3);
-        Assert.Equal(0.0, compareMax, 3);
+        Assert.Equal(0.0, mainCurve.PointsMaxDb, 3);
+        Assert.Equal(0.0, compareCurve.PointsMaxDb, 3);
     }
 
     [Fact]
@@ -38,11 +38,11 @@ public sealed class TimeAlignmentEnvelopePlotTests
         // of it: only the level difference may reach the plot.
         TimeAlignmentAnalysisResult compare = MakeResult(peak: 0.5, arrivalBelowPeakDb: 25);
 
-        (double mainMax, _) = Draw(main, main.StrongestEnvelopePeak);
-        (double compareMax, _) = Draw(compare, main.StrongestEnvelopePeak);
+        DrawnCurve mainCurve = Draw(main, main.StrongestEnvelopePeak);
+        DrawnCurve compareCurve = Draw(compare, main.StrongestEnvelopePeak);
 
-        Assert.Equal(0.0, mainMax, 3);
-        Assert.Equal(-6.02, compareMax, 2);
+        Assert.Equal(0.0, mainCurve.PointsMaxDb, 3);
+        Assert.Equal(-6.02, compareCurve.PointsMaxDb, 2);
     }
 
     [Fact]
@@ -60,10 +60,10 @@ public sealed class TimeAlignmentEnvelopePlotTests
         double compareArrivalDb = TimeAlignmentPanelController.GetPeakMarkerDecibels(
             compare, reference, compare.EnvelopePeakIndex);
 
-        (double compareMax, _) = Draw(compare, reference);
+        DrawnCurve compareCurve = Draw(compare, reference);
         double prominenceDb = 20.0 * Math.Log10(
             compare.EnvelopePeak / compare.StrongestEnvelopePeak);
-        Assert.Equal(compareMax, comparePeakDb, 3);
+        Assert.Equal(compareCurve.PointsMaxDb, comparePeakDb, 3);
         Assert.Equal(comparePeakDb + prominenceDb, compareArrivalDb, 3);
     }
 
@@ -76,20 +76,26 @@ public sealed class TimeAlignmentEnvelopePlotTests
         TimeAlignmentAnalysisResult main = MakeResult(peak: 1.0, arrivalBelowPeakDb: 6);
         TimeAlignmentAnalysisResult compare = MakeResult(peak: 0.01, arrivalBelowPeakDb: 6);
 
-        (double mainMax, double mainMin) = Draw(main, main.StrongestEnvelopePeak);
-        (double compareMax, double compareMin) = Draw(compare, main.StrongestEnvelopePeak);
+        DrawnCurve mainCurve = Draw(main, main.StrongestEnvelopePeak);
+        DrawnCurve compareCurve = Draw(compare, main.StrongestEnvelopePeak);
 
-        Assert.Equal(0.0, mainMax, 3);
-        Assert.Equal(-80.0, mainMin, 1);
-        Assert.Equal(-40.0, compareMax, 1);
-        Assert.Equal(-120.0, compareMin, 1);
+        Assert.Equal(0.0, mainCurve.PointsMaxDb, 3);
+        Assert.Equal(-80.0, mainCurve.PointsMinDb, 1);
+        Assert.Equal(-40.0, compareCurve.PointsMaxDb, 1);
+        Assert.Equal(-120.0, compareCurve.PointsMinDb, 1);
+
+        // The axis figures must describe the line that was actually drawn:
+        // clamping only the reported minimum would leave the plot wrong while
+        // every assertion above still passed.
+        Assert.Equal(compareCurve.PointsMinDb, compareCurve.MinDb, 6);
+        Assert.Equal(compareCurve.PointsMaxDb, compareCurve.MaxDb, 6);
     }
 
-    private static (double MaxDb, double MinDb) Draw(
+    private static DrawnCurve Draw(
         TimeAlignmentAnalysisResult result,
         double referenceAmplitude)
     {
-        TimeAlignmentPanelController.CreateEnvelopeSeries(
+        LineSeries series = TimeAlignmentPanelController.CreateEnvelopeSeries(
             result,
             referenceAmplitude,
             SampleRate,
@@ -100,7 +106,18 @@ public sealed class TimeAlignmentEnvelopePlotTests
             strokeThickness: 2,
             out double maxDb,
             out double minDb);
-        return (maxDb, minDb);
+        return new DrawnCurve(series, maxDb, minDb);
+    }
+
+    // The points are what the user sees; MaxDb/MinDb only size the axis. Every
+    // assertion below reads the points, and the floor test also pins the two to
+    // each other — a reported range that no longer described the drawn line
+    // would leave the plot wrong with the axis still looking right.
+    private sealed record DrawnCurve(LineSeries Series, double MaxDb, double MinDb)
+    {
+        public double PointsMaxDb => Series.Points.Max(point => point.Y);
+
+        public double PointsMinDb => Series.Points.Min(point => point.Y);
     }
 
     // An envelope with two humps: the arrival at index 400 and the strongest

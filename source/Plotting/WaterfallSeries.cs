@@ -68,8 +68,6 @@ namespace Resonalyze
     {
         public WaterfallSeries()
         {
-            // {0} is the series title by convention; the coordinates are {1}/{2}.
-            TrackerFormatString = "X: {1:0.000}\r\nY: {2:0.000}";
             RawSlices = new List<Slice>();
             ResampleSlices = new List<Slice>();
             GenerateOptions = new WaterfallGenerateOptions();
@@ -102,29 +100,19 @@ namespace Resonalyze
         public WaterfallGenerateOptions GenerateOptions { get; set; }
 
         /// <summary>
-        /// Gets the point on the series that is nearest the specified point.
+        /// No point: a waterfall is a projected surface rather than a curve, so the
+        /// cursor is never over a measured point. Its X is a per-slice projection of
+        /// frequency and its Y is the hidden -1..1 axis that projection is drawn
+        /// against, so a readout of either would describe the drawing rather than
+        /// the measurement.
+        ///
+        /// This answer has to be safe on a plain click, not only while tracking:
+        /// <c>ControllerBase.HandleMouseDown</c> lets the model hit-test its series
+        /// before any binding is consulted, so throwing in here took the app down on
+        /// any mouse press over the plot.
         /// </summary>
-        /// <param name="point">The point.</param>
-        /// <param name="interpolate">Interpolate the series if this flag is set to <c>true</c>.</param>
-        /// <returns>A TrackerHitResult for the current hit.</returns>
-        public override TrackerHitResult GetNearestPoint(ScreenPoint point, bool interpolate)
-        {
-            var p = this.InverseTransform(point);
-            //var it = this.Solve(p.X, p.Y, (int)this.ColorAxis.ActualMaximum + 1);
-            return new TrackerHitResult
-            {
-                Series = this,
-                DataPoint = p,
-                Position = point,
-                Index = -1,
-                Text = StringHelper.Format(
-                    this.ActualCulture,
-                    this.TrackerFormatString,
-                    string.Empty,
-                    p.X,
-                    p.Y)
-            };
-        }
+        public override TrackerHitResult? GetNearestPoint(ScreenPoint point, bool interpolate) =>
+            null;
 
         /// <summary>
         /// Renders the series on the specified render context.

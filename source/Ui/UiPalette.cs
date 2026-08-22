@@ -23,6 +23,9 @@ internal static class UiPalette
     public static Color AccentBlueStrong => Color.FromArgb(36, 86, 210);
     public static Color AccentBlueSoft => Color.FromArgb(106, 173, 255);
     public static Color AccentBlueSoftHover => Color.FromArgb(150, 210, 255);
+    // The bright end of the title bar update notice pulse: pale enough to read as a
+    // glow against the near-black bar, still blue enough to stay the link colour.
+    public static Color AccentBlueGlow => Color.FromArgb(196, 228, 255);
     public static Color AccentBlueMuted => Color.FromArgb(54, 58, 68);
     public static Color AccentBlueMutedAlt => Color.FromArgb(150, 32, 22);
     public static Color AccentBlueWarning => Color.FromArgb(196, 43, 28);

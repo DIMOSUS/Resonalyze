@@ -25,6 +25,17 @@ internal sealed class ChromeTitleBar : Panel
     private const int HtBottomLeft = 16;
     private const int HtBottomRight = 17;
 
+    // Windows" "Show animations in Windows" switch - the platform reduced-motion
+    // setting (SPI_GETCLIENTAREAANIMATION).
+    private const int SpiGetClientAreaAnimation = 0x1042;
+
+    // The update notice breathes instead of sitting still: a slow fade between the
+    // version label ordinary grey and the accent blue catches the eye on a title
+    // bar nobody is looking at, without a blink flashing. The period is long
+    // enough to read as breathing rather than as a warning light.
+    private const int UpdatePulsePeriodMs = 1_800;
+    private const int UpdatePulseIntervalMs = 40;
+
     private readonly Dictionary<ModeTab, Button> modeTabButtons = new();
 
     private Form form = null!;
@@ -34,6 +45,8 @@ internal sealed class ChromeTitleBar : Panel
     private Button? toolsDropDownButton;
     private ContextMenuStrip? toolsMenu;
     private ModeTab lastToolsTab = ModeTab.ToolsVirtualCrossover;
+    private System.Windows.Forms.Timer? updatePulseTimer;
+    private int updatePulseElapsedMs;
     private float dpiScale = 1f;
     private int titleBarHeight = BarHeight;
     private int windowButtonWidth;
@@ -129,6 +142,14 @@ internal sealed class ChromeTitleBar : Panel
         IntPtr wParam,
         IntPtr lParam);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SystemParametersInfo(
+        uint action,
+        uint parameter,
+        ref bool value,
+        uint update);
+
     public void SetActiveModeTab(ModeTab activeTab)
     {
         if (IsToolsTab(activeTab))
@@ -154,6 +175,7 @@ internal sealed class ChromeTitleBar : Panel
         UpdateVersionLabel(
             $"{ApplicationVersionInfo.GetDisplayVersion()}  Update available",
             releaseUrl);
+        StartUpdatePulse();
     }
 
     public static Point GetPointFromLParam(IntPtr lParam)
@@ -387,6 +409,7 @@ internal sealed class ChromeTitleBar : Panel
         if (disposing)
         {
             toolsMenu?.Dispose();
+            DetachUpdatePulse();
         }
 
         base.Dispose(disposing);
@@ -618,6 +641,107 @@ internal sealed class ChromeTitleBar : Panel
         UpdateTabBarLayout(tabBar);
     }
 
+    // Runs until the user follows the link - once they have opened the release
+    // page the notice has done its job and settles on the plain accent colour.
+    // Skipped entirely when Windows is set to show no animations.
+    private void StartUpdatePulse()
+    {
+        if (updatePulseTimer != null || !AnimationsEnabled())
+        {
+            return;
+        }
+
+        updatePulseTimer = new System.Windows.Forms.Timer
+        {
+            Interval = UpdatePulseIntervalMs
+        };
+        updatePulseTimer.Tick += UpdatePulseTick;
+        // Nobody reads a title bar that sits behind another window, and this repaints
+        // 25 times a second: the pulse follows the window's focus and parks on the
+        // plain accent colour meanwhile, so the notice is still highlighted there.
+        form.Activated += ResumeUpdatePulse;
+        form.Deactivate += SuspendUpdatePulse;
+        updatePulseTimer.Start();
+    }
+
+    private void ResumeUpdatePulse(object? sender, EventArgs e)
+    {
+        updatePulseTimer?.Start();
+    }
+
+    private void SuspendUpdatePulse(object? sender, EventArgs e)
+    {
+        if (updatePulseTimer == null)
+        {
+            return;
+        }
+
+        updatePulseTimer.Stop();
+        SetUpdateLinkColor(UiPalette.AccentBlueSoft);
+    }
+
+    private void UpdatePulseTick(object? sender, EventArgs e)
+    {
+        updatePulseElapsedMs =
+            (updatePulseElapsedMs + UpdatePulseIntervalMs) % UpdatePulsePeriodMs;
+        // A raised cosine, so the fade eases in and out instead of turning around
+        // at a corner the eye reads as a flicker.
+        double amount = 0.5 - 0.5 * Math.Cos(
+            2 * Math.PI * updatePulseElapsedMs / UpdatePulsePeriodMs);
+        SetUpdateLinkColor(Blend(
+            UiPalette.AccentBlueGlow, UiPalette.TitleBarText, amount));
+    }
+
+    private void StopUpdatePulse()
+    {
+        if (updatePulseTimer == null)
+        {
+            return;
+        }
+
+        DetachUpdatePulse();
+        SetUpdateLinkColor(UiPalette.AccentBlueSoft);
+    }
+
+    // Releases the timer and the form subscriptions without touching the label, so
+    // it is also safe from Dispose.
+    private void DetachUpdatePulse()
+    {
+        if (updatePulseTimer == null)
+        {
+            return;
+        }
+
+        form.Activated -= ResumeUpdatePulse;
+        form.Deactivate -= SuspendUpdatePulse;
+        updatePulseTimer.Stop();
+        updatePulseTimer.Dispose();
+        updatePulseTimer = null;
+    }
+
+    // ActiveLinkColor stays put: it paints while the link is held down, and a
+    // pressed link that keeps fading reads as a rendering glitch.
+    private void SetUpdateLinkColor(Color color)
+    {
+        versionLabel.LinkColor = color;
+        versionLabel.VisitedLinkColor = color;
+    }
+
+    private static Color Blend(Color foreground, Color background, double amount) =>
+        Color.FromArgb(
+            (int)(foreground.R * amount + background.R * (1 - amount)),
+            (int)(foreground.G * amount + background.G * (1 - amount)),
+            (int)(foreground.B * amount + background.B * (1 - amount)));
+
+    // Assume animations are welcome when the query fails: a missing answer is no
+    // reason to drop a notice the user asked the app to show.
+    private static bool AnimationsEnabled()
+    {
+        bool enabled = true;
+        return !SystemParametersInfo(SpiGetClientAreaAnimation, 0, ref enabled, 0) ||
+            enabled;
+    }
+
     private int GetModeTabWidth(string text) =>
         Math.Max(
             Scale(70),
@@ -639,13 +763,14 @@ internal sealed class ChromeTitleBar : Panel
             titleBarHeight - Scale(5));
     }
 
-    private static void VersionLabelLinkClicked(object? sender, LinkLabelLinkClickedEventArgs e)
+    private void VersionLabelLinkClicked(object? sender, LinkLabelLinkClickedEventArgs e)
     {
         if (e.Link?.LinkData is not string url || string.IsNullOrWhiteSpace(url))
         {
             return;
         }
 
+        StopUpdatePulse();
         Form? owner = sender is Control control
             ? control.FindForm()
             : null;

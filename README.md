@@ -158,8 +158,11 @@ data: by default every build keeps settings, history, overlays, Virtual DSP stat
 and logs in `%LocalAppData%\Resonalyze`. To make a `.zip` build fully portable,
 create an empty file named `portable.flag` next to `Resonalyze.exe`. When a newer
 release is detected, the version label in the title bar changes to **Update
-available**: installed builds can start an **Automatic Update**, portable builds
-offer a manual download.
+available** and breathes slowly between grey and blue so it is noticed on a bar
+nobody looks at: installed builds can start an **Automatic Update**, portable
+builds offer a manual download. The pulse pauses while the window is in the
+background, stops once you follow the link, and never starts at all when Windows
+is set to show no animations (Settings → Accessibility → Visual effects).
 
 > **Windows SmartScreen note:** the builds are not code-signed (certificates are
 > expensive for a free open-source project), so the first launch may show a

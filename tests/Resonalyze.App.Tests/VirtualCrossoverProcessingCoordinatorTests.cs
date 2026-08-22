@@ -11,28 +11,34 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     private static readonly TimeSpan RendezvousTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Keeps the thread pool below its own minimum by <paramref name="needed"/>
-    /// threads, so the work items a test parks get threads created on demand
-    /// instead of waiting to be injected. Above the minimum the pool adds about
-    /// one thread per second, which is how a runner busy with the rest of the
-    /// suite turned the rendezvous below into a five-second timeout on CI.
-    /// Measured against this coordinator on a 16-core machine with 96 pool
-    /// threads parked: the two consumers never met inside five seconds, and met
-    /// in 0.5 s with this held.
+    /// Holds the thread pool below its own minimum while a test parks worker
+    /// threads, so its work items get threads created on demand. Above the
+    /// minimum the pool adds about one thread per second, which is how a runner
+    /// busy with the rest of the suite turned the rendezvous below into a
+    /// five-second timeout on CI. Measured against this coordinator on a
+    /// 16-core machine with 96 pool threads parked: the two consumers never met
+    /// inside five seconds, and met in 0.5 s with this held.
+    /// <para>
+    /// The minimum is a threshold, not an allocation — nothing here belongs to
+    /// this test. The headroom therefore covers the threads it parks AND one
+    /// per test collection xUnit may run beside it, since a neighbour taking
+    /// a thread in between would otherwise put the pool back on its throttle.
+    /// </para>
     /// </summary>
-    private sealed class PooledThreads : IDisposable
+    private sealed class PoolHeadroom : IDisposable
     {
         private readonly int workers;
         private readonly int completionPorts;
 
-        internal PooledThreads(int needed)
+        internal PoolHeadroom(int parking)
         {
             ThreadPool.GetMinThreads(out workers, out completionPorts);
             ThreadPool.GetMaxThreads(out int maximumWorkers, out _);
             ThreadPool.GetAvailableThreads(out int availableWorkers, out _);
             int busy = maximumWorkers - availableWorkers;
+            int headroom = parking + Environment.ProcessorCount;
             ThreadPool.SetMinThreads(
-                Math.Min(maximumWorkers, Math.Max(workers, busy + needed)),
+                Math.Min(maximumWorkers, Math.Max(workers, busy + headroom)),
                 completionPorts);
         }
 
@@ -200,7 +206,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task Invalidate_DropsInFlightResultAndDoesNotPopulateCache()
     {
-        using var threads = new PooledThreads(needed: 2);
+        using var pool = new PoolHeadroom(parking: 2);
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         int processCount = 0;
@@ -307,7 +313,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task RunAuxiliaryAsync_InvalidateCancelsWork()
     {
-        using var threads = new PooledThreads(needed: 2);
+        using var pool = new PoolHeadroom(parking: 2);
         using var entered = new ManualResetEventSlim();
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         long revision = coordinator.Invalidate();
@@ -330,7 +336,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task ProcessAsync_SameRevisionAllowsConcurrentConsumers()
     {
-        using var threads = new PooledThreads(needed: 3);
+        using var pool = new PoolHeadroom(parking: 3);
         using var entered = new CountdownEvent(2);
         using var release = new ManualResetEventSlim();
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
@@ -359,7 +365,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task ProcessAsync_InvalidateCancelsAllConcurrentConsumers()
     {
-        using var threads = new PooledThreads(needed: 3);
+        using var pool = new PoolHeadroom(parking: 3);
         using var entered = new CountdownEvent(2);
         using var release = new ManualResetEventSlim();
         using var coordinator = new VirtualCrossoverProcessingCoordinator(

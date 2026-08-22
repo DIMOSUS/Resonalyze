@@ -1430,6 +1430,17 @@ machine's file describes its microphone, not yours.
   reaches the localization region are pinned to the scene, because the image
   outranks the handover there; a final scene-preserving pass may then shift both
   sides of a pair by one shared delta to recover what the pin cost.
+  A run only proposes: the dialog answers with a report and nothing is written
+  until **Apply**. It carries a row per channel — a value the run changes reads
+  `before -> after`, one it leaves alone `value (kept)` — over a summary naming
+  the channels each kind of change lands on and the **predicted sum loss**: the
+  [sum loss](#complex-vector-sum) averaged over the crossover window, before and
+  after, per side in a stereo run, with what the proposal buys (or costs)
+  spelled out. Every delay also carries a **confidence** — how decisively the
+  measurement supported that pick, with `ref` the anchor the others align to and
+  `locked` a pick its onset/scene constraint made rather than the acoustics — and
+  a `LOW` one is named in a warning line, the margin behind it in the notes
+  under the table.
 - **Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves, or
   feed it onward to the EQ Wizard.

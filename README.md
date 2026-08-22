@@ -1221,15 +1221,20 @@ coming back.) Loading any other source ends the session and hides both
 buttons.
 
 A return is refused — with the filters kept, ready for an export or a fresh
-edit — when what the bank was tuned against has changed since: the channel
-removed or replaced by another project, that side given a different
-measurement, the pair switched between stereo and mono (which moves where the
-settings live), or the microphone calibration changed. That last one is why the
-wizard locks its own calibration selector during a session: a bank fitted under
-one correction and summed under another is not the same bank, and the Virtual
-DSP panel's own selector is a tab switch away. Edits to the **chain** —
-crossover, gain, delay, all-pass — are deliberately not refused: those are your
-own knobs on your own channel, and the bank stays yours to apply.
+edit — when what the bank was tuned against has changed since. The line runs
+through the **magnitude the bank was fitted to**: the channel removed or
+replaced by another project, that side given a different measurement, the
+**crossover** moved, or the microphone calibration changed; plus the pair
+switching between stereo and mono, which moves where the settings live.
+Calibration is on that list for the same reason the wizard locks its own
+calibration selector during a session — a bank fitted under one correction and
+summed under another is not the same bank, and the Virtual DSP panel's own
+selector is a tab switch away.
+
+**Gain, delay, polarity and the all-pass are not** refused, because none of them
+bends the shape the bank corrects: a delay and an all-pass are magnitude-flat, a
+polarity flip is −1 at every frequency, and a gain change slides the curve
+without changing it. A finished tune is not worth discarding over those.
 
 ### Auto Tune
 

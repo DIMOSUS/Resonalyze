@@ -221,10 +221,10 @@ namespace Resonalyze
                     this,
                     "This PEQ cannot be returned: what it was tuned against has " +
                     "changed since. The channel may have been removed or replaced " +
-                    "by another project, given a different measurement, switched " +
-                    "between stereo and mono, or the microphone calibration may " +
-                    "have moved — a bank fitted under one of those does not belong " +
-                    "to the other." +
+                    "by another project, given a different measurement, had its " +
+                    "crossover moved, switched between stereo and mono, or the " +
+                    "microphone calibration may have changed — a bank fitted " +
+                    "against one of those does not belong to the other." +
                     Environment.NewLine + Environment.NewLine +
                     "The filters stay here: export them, or start a fresh edit from " +
                     "the channel's PEQ menu to tune against what it shows now.",

@@ -460,21 +460,63 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
-    public void ReturnAfterAChainEdit_IsAllowed()
+    public void ReturnAfterTheCrossoverChanged_Refuses()
     {
-        // The line the refusals stop at: crossover, gain, delay and the all-pass are
-        // the user's own knobs on their own channel. The bank stays theirs to apply,
-        // and throwing away real work over a change they made on purpose would be
-        // worse than the staleness it guards.
+        // The crossover is the one chain stage that BENDS the magnitude: the bank was
+        // fitted to a shape that a different corner or slope no longer produces.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
-        channel.Settings.GainDb = -9;
         channel.Settings.LowPassEdge =
             channel.Settings.LowPassEdge with { FrequencyHz = 900 };
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 1, calibrationId: null));
+        Assert.Empty(channel.Settings.PeqBands);
+
+        // Switching it off entirely is a change too.
+        VirtualDspEqReturnToken fresh = TokenFor(channel, rightSide: false);
+        channel.Settings.CrossoverKind = CrossoverKind.Off;
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, fresh, curve, projectGeneration: 1, calibrationId: null));
+        Assert.Empty(channel.Settings.PeqBands);
+    }
+
+    [Fact]
+    public void ReturnAfterAMagnitudeFlatChainEdit_IsAllowed()
+    {
+        // Where the refusals stop, and why: a delay and an all-pass are magnitude-flat
+        // by construction, a polarity flip is -1 at every frequency, and a gain change
+        // slides the curve without bending it. None of them makes the bank wrong, so
+        // none of them is worth throwing a finished tune away over.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
+        channel.Settings.GainDb = -9;
+        channel.Settings.DelayMs = 4.2;
+        channel.Settings.InvertPolarity = !channel.Settings.InvertPolarity;
+        channel.Settings.AllPassFrequencyHz = 1_200;
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1, calibrationId: null));
+        Assert.Equal(curve.Bands, channel.Settings.PeqBands);
+    }
+
+    [Fact]
+    public void ARawSessionIsImmuneToCrossoverEdits()
+    {
+        // A raw handoff's curve is measured WITHOUT the chain, so the crossover cannot
+        // have shaped it and changing one cannot invalidate the bank.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqHandoffRequest request = Build(channel, withChain: false);
+        channel.Settings.LowPassEdge =
+            channel.Settings.LowPassEdge with { FrequencyHz = 900 };
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.Null(request.Token.Crossover);
+        Assert.True(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, request.Token, curve,
+            projectGeneration: 1, calibrationId: null));
         Assert.Equal(curve.Bands, channel.Settings.PeqBands);
     }
 
@@ -496,10 +538,17 @@ public sealed class VirtualDspEqHandoffTests
             new[] { channel }, token, curve, projectGeneration: 5, calibrationId: null));
         Assert.Empty(channel.Settings.PeqBands);
 
-        // The same token against the generation it was taken in still lands.
+        // The generation ALONE is what refuses it: an untouched channel of the same
+        // shape, addressed at its own generation, still lands — so the test cannot
+        // pass merely because some other guard happened to fire.
+        VirtualCrossoverChannel untouched = BuildChannel();
+        VirtualDspEqReturnToken control =
+            TokenFor(untouched, rightSide: false) with { ProjectGeneration = 4 };
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { untouched }, control, curve, projectGeneration: 5, calibrationId: null));
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve, projectGeneration: 4, calibrationId: null));
-        Assert.Equal(curve.Bands, channel.Settings.PeqBands);
+            new[] { untouched }, control, curve, projectGeneration: 4, calibrationId: null));
+        Assert.Equal(curve.Bands, untouched.Settings.PeqBands);
     }
 
     [Fact]
@@ -529,6 +578,7 @@ public sealed class VirtualDspEqHandoffTests
             ProjectGeneration: 1,
             channel.SideState(rightSide).SourceRevision,
             channel.Pair.Mono,
+            channel.SideSettings(rightSide).ToChain().Crossover,
             CalibrationId: null);
 
     private static EqWizardGatedPreviewRequest Preview(

@@ -28,6 +28,15 @@ namespace Resonalyze;
 /// <see cref="VirtualCrossoverChannelPairSettings.SideFor"/> delivers, so a pair that
 /// changed since would route the bank to the other side's settings.
 /// </param>
+/// <param name="Crossover">
+/// The crossover the curve was shaped by. It is the one chain stage that MOVES the
+/// magnitude a bank is fitted to, so a bank fitted through one and applied through
+/// another corrects a shape that is no longer there. Gain, delay, polarity and the
+/// all-pass are deliberately absent: a delay and an all-pass are magnitude-flat by
+/// construction (<see cref="DspChannelChain.Response"/> multiplies by a unit-modulus
+/// term for each), a polarity flip is −1 everywhere, and a gain change slides the
+/// whole curve without touching its shape — none of them makes the bank wrong.
+/// </param>
 /// <param name="CalibrationId">
 /// The microphone correction the curve was tuned under. The wizard's own selector is
 /// DISABLED during a handoff precisely because a bank fitted under one correction and
@@ -41,6 +50,7 @@ internal sealed record VirtualDspEqReturnToken(
     long ProjectGeneration,
     int SourceRevision,
     bool Mono,
+    CrossoverSpec? Crossover,
     string? CalibrationId);
 
 /// <summary>
@@ -221,6 +231,9 @@ internal static class VirtualDspEqHandoff
                 projectGeneration,
                 state.SourceRevision,
                 channel.Pair.Mono,
+                // From the preview chain, so it is exactly the crossover the wizard's
+                // curve was built through — including "none" for a raw handoff.
+                previewChain.Crossover,
                 MicrophoneCalibrationIds.Normalize(calibrationId)));
     }
 
@@ -240,12 +253,15 @@ internal static class VirtualDspEqHandoff
     /// whatever session replaced it.
     /// </param>
     /// <remarks>
-    /// What is refused is a return that would land somewhere ELSE, or against a
-    /// measurement that no longer exists — changes the user cannot see from the
-    /// wizard, which still shows the curve it opened on. Edits to the CHAIN
-    /// (crossover, gain, delay, all-pass) are deliberately not refused: those are the
-    /// user's own knobs on their own channel, the bank remains theirs to apply, and
-    /// refusing it would throw away real work over a decision they made on purpose.
+    /// What is refused is a return that would land somewhere ELSE, or against a curve
+    /// that no longer exists — changes the user cannot see from the wizard, which
+    /// still shows what it opened on. The line runs through the MAGNITUDE the bank was
+    /// fitted to: a replaced measurement, a changed calibration and a changed
+    /// crossover all move it, so all three refuse. Gain, delay, polarity and the
+    /// all-pass do not — a delay and an all-pass are magnitude-flat, a polarity flip
+    /// is −1 at every frequency, and a gain change slides the curve without bending
+    /// it — so a bank stays correct across them and is not thrown away over knobs the
+    /// user turned on purpose.
     /// </remarks>
     public static bool TryApplyReturn(
         IReadOnlyList<VirtualCrossoverChannel> channels,
@@ -285,6 +301,14 @@ internal static class VirtualDspEqHandoff
             return false;
         }
 
+        // And the crossover must still be the one that shaped the curve: it is the
+        // only chain stage that bends the magnitude the bank was fitted to.
+        // CrossoverSpec and its edges are records, so this compares by value.
+        if (!Equals(token.Crossover, CrossoverFor(token)))
+        {
+            return false;
+        }
+
         // And the measurement must still be the one it was tuned against. The side is
         // read PHYSICALLY here: a mono token addresses the left slot, which is the
         // slot its curve came from, and the effective accessor would answer the same
@@ -304,6 +328,15 @@ internal static class VirtualDspEqHandoff
         settings.PeqSourceName = "EQ Wizard";
         return true;
     }
+
+    // The crossover the token's side runs now, in the same form the handoff recorded:
+    // the settings' own spec for a chain handoff, and none for a raw one — which is
+    // what the raw preview chain (Identity) carries, so a raw session stays immune to
+    // crossover edits exactly as its curve is.
+    private static CrossoverSpec? CrossoverFor(VirtualDspEqReturnToken token) =>
+        token.Crossover == null
+            ? null
+            : token.Channel.Pair.SideFor(token.RightSide).ToChain().Crossover;
 
     // The Auto Tune window a channel's crossover implies: its passband, corner to
     // corner. Beyond the corners the chain is rolling the driver off on purpose and a

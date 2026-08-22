@@ -97,6 +97,11 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private readonly List<VirtualCrossoverChannel> channels = new();
 
+    // Which loaded project the blocks currently describe; bumped by every bind.
+    // Read only by the EQ Wizard handoff, whose return address has to outlive a
+    // trip to another mode and must not survive a project replacing this one.
+    private long projectGeneration;
+
     // The model-to-control binding. VirtualCrossoverChannel is UI-free, so the
     // panel owns the mapping to each block's control; only the binding methods
     // (ApplySettingsToControl, UpdateSourceButton, tooltips…) look it up, and
@@ -455,6 +460,12 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         project = newProject;
         relinkDirectory = null;
+        // A new project on the same blocks. The channel OBJECTS are reused when the
+        // count matches (see the rebind below), so nothing about a channel reference
+        // says which session it now describes — this counter does, and an EQ Wizard
+        // handoff taken from the old one is refused by it rather than landing on a
+        // channel the user never opened.
+        projectGeneration++;
         // Match the block list to the project's channel count (validated into the
         // supported range on load), so an imported 2- or 6-channel session shows
         // exactly its channels.
@@ -1789,8 +1800,15 @@ public partial class VirtualCrossoverPanel : UserControl
         // the curve travels through — the DSP chain without its PEQ, or nothing.
         bool hasMeasurement =
             channel.SideState(channel.ActiveRight).TransferImpulseResponse != null;
+        // Said HERE, before the trip: a bypassed block draws its raw response on
+        // this plot, so the wizard's curve will not be the one on screen. It is
+        // still the right curve to tune a PEQ against — the chain the bank will
+        // live in — and the item names the exception rather than hiding it.
+        bool bypassed = channel.Pair.Bypass;
         var editItem = new ToolStripMenuItem(
-            "Edit in EQ Wizard",
+            bypassed
+                ? "Edit in EQ Wizard (chain — block is bypassed)"
+                : "Edit in EQ Wizard",
             null,
             (_, _) => RequestPeqHandoff(channel, withChain: true))
         {
@@ -1798,7 +1816,12 @@ public partial class VirtualCrossoverPanel : UserControl
             ToolTipText = "Tune this channel's PEQ in the EQ Wizard against its\r\n" +
                 "response through the DSP chain with the PEQ itself bypassed,\r\n" +
                 "windowed as this plot windows it. A Return button brings\r\n" +
-                "the result back to this channel."
+                "the result back to this channel." +
+                (bypassed
+                    ? "\r\nThis block is BYPASSED, so the plot is drawing its raw\r\n" +
+                      "response — the wizard will show the chain instead, which is\r\n" +
+                      "what the PEQ is for once bypass comes off."
+                    : string.Empty)
         };
         menu.Items.Add(editItem);
         var editRawItem = new ToolStripMenuItem(
@@ -1839,9 +1862,16 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         MagnitudeGateSnapshot snapshot = magnitudeGate;
-        int? renderAnchor = lastProcessedRender is { Channels.Count: >= 2 } render
-            ? ProcessedChannels.SharedStartAnchorIndex(render.Channels)
-            : null;
+        // Only a render that still describes the CURRENT settings may place the
+        // window: a delay or crossover edit invalidates the coordinator and queues a
+        // new pass, and until it lands this capture belongs to the previous chain —
+        // pairing a new chain with an old anchor. Stale means no anchor, and the
+        // builder falls back to reading the channel's own front.
+        int? renderAnchor =
+            lastProcessedRender is { Channels.Count: >= 2 } render &&
+            processingCoordinator.IsCurrent(render.Revision)
+                ? ProcessedChannels.SharedStartAnchorIndex(render.Channels)
+                : null;
         VirtualDspEqHandoffRequest request;
         try
         {
@@ -1854,7 +1884,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 renderAnchor,
                 (double)numericTargetLevel.Value,
                 snapshot.SmoothingInverseOctaves,
-                project.CalibrationId);
+                project.CalibrationId,
+                projectGeneration);
         }
         catch (InvalidOperationException)
         {
@@ -1875,7 +1906,8 @@ public partial class VirtualCrossoverPanel : UserControl
     internal bool TryApplyPeqFromWizard(
         VirtualDspEqReturnToken token, EqualizationCurve curve)
     {
-        if (!VirtualDspEqHandoff.TryApplyReturn(channels, token, curve))
+        if (!VirtualDspEqHandoff.TryApplyReturn(
+                channels, token, curve, projectGeneration))
         {
             return false;
         }

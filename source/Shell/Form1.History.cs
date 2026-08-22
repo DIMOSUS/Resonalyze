@@ -61,16 +61,20 @@ public partial class Form1
     private async void HandleHistoryEntryActivated(Guid entryId) =>
         await ActivateHistoryEntryAsync(entryId);
 
-    // The activation itself, as an awaitable step: the Virtual DSP "Open in
-    // analyzers" jump runs it and then lands on a specific tab, which needs to
-    // sequence AFTER the restore (the snapshot restores its own saved mode).
-    private async Task ActivateHistoryEntryAsync(Guid entryId)
+    // The activation itself, as an awaitable step reporting whether the entry
+    // actually LANDED: the Virtual DSP "Open in analyzers" jump runs it and then
+    // lands on a specific tab (which has to sequence AFTER the restore, since the
+    // snapshot selects its own saved mode) — and falls back to the channel's file
+    // when this returns false. Every early exit here is such a case: a running
+    // sweep, an entry whose backing file is gone (GetSnapshotAsync answers null),
+    // a newer activation overtaking this one, or a load that threw.
+    private async Task<bool> ActivateHistoryEntryAsync(Guid entryId)
     {
         // Restoring a snapshot while a sweep is running would call Init on an
         // active measurement and fail; ignore the activation instead.
         if (expSweepMeasurement.InProgress)
         {
-            return;
+            return false;
         }
 
         // Two rapid activations race: a slow file-backed entry can finish
@@ -85,7 +89,7 @@ public partial class Form1
                 await measurementHistoryService.GetSnapshotAsync(entryId);
             if (snapshot == null || revision != historyRestoreRevision)
             {
-                return;
+                return false;
             }
 
             // Before leaving the current entry, write the live working state back
@@ -105,13 +109,15 @@ public partial class Form1
             {
                 if (revision != historyRestoreRevision)
                 {
-                    return;
+                    return false;
                 }
 
                 await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
                 if (revision != historyRestoreRevision)
                 {
-                    return;
+                    // The measurement DID land, but a newer activation is already
+                    // replacing it; this caller must not act on it either way.
+                    return false;
                 }
 
                 sessionTracker.MarkRestored(entryId);
@@ -127,6 +133,7 @@ public partial class Form1
                     dialog.SelectedEntryId ?? entryId,
                     entryId);
             });
+            return true;
         }
         catch (Exception exception)
         {
@@ -136,6 +143,7 @@ public partial class Form1
                 "History",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
+            return false;
         }
     }
 

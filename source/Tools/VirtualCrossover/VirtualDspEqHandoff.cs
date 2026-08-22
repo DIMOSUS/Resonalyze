@@ -5,13 +5,21 @@ namespace Resonalyze;
 
 /// <summary>
 /// The write-back address of a PEQ handoff: which channel's which side the edited
-/// bank belongs to. The side is recorded at handoff time — the user can flip the
-/// L/R selector while the wizard is open, and the result must still land where it
-/// was taken from, not where the panel happens to be looking.
+/// bank belongs to, in which project. The side is recorded at handoff time — the
+/// user can flip the L/R selector while the wizard is open, and the result must
+/// still land where it was taken from, not where the panel happens to be looking.
 /// </summary>
+/// <param name="ProjectGeneration">
+/// Which loaded project the address belongs to. The channel reference alone cannot
+/// say: binding a project REUSES the runtime channel objects when the channel count
+/// matches (<c>channels[i].Pair = project.Pairs[i]</c>), so after an import the same
+/// object holds a different session's settings and a bank returned against it would
+/// land, silently, on a channel the user never opened the wizard from.
+/// </param>
 internal sealed record VirtualDspEqReturnToken(
     VirtualCrossoverChannel Channel,
-    bool RightSide);
+    bool RightSide,
+    long ProjectGeneration);
 
 /// <summary>
 /// Everything one Virtual DSP channel side sends into the EQ Wizard: the curve to
@@ -82,7 +90,8 @@ internal static class VirtualDspEqHandoff
         int? renderAnchorIndex,
         double targetLevelDb,
         int smoothingInverseOctaves,
-        string? calibrationId)
+        string? calibrationId,
+        long projectGeneration)
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(gateTemplate);
@@ -184,24 +193,33 @@ internal static class VirtualDspEqHandoff
             // active, so the token says LEFT outright: if the pair stops being mono
             // while the wizard is open, the result still lands on the set the tune
             // was taken from, not on a right slot it never saw.
-            new VirtualDspEqReturnToken(channel, rightSide && !channel.Pair.Mono));
+            new VirtualDspEqReturnToken(
+                channel, rightSide && !channel.Pair.Mono, projectGeneration));
     }
 
     /// <summary>
     /// Lands a finished bank back on the side it was taken from. False — and no write —
-    /// when the channel is no longer in the panel's set (removed, or replaced by a
-    /// project import); the caller keeps the wizard open so the tune is not lost.
+    /// when the channel is gone (removed) or the project it belonged to has been
+    /// replaced since; the caller keeps the wizard open so the tune is not lost.
     /// </summary>
+    /// <param name="projectGeneration">
+    /// The panel's CURRENT project generation. Checked first and on its own: the
+    /// channel object survives a project bind when the channel count matches, so
+    /// membership alone would happily write a bank tuned against one session into
+    /// whatever session replaced it.
+    /// </param>
     public static bool TryApplyReturn(
         IReadOnlyList<VirtualCrossoverChannel> channels,
         VirtualDspEqReturnToken token,
-        EqualizationCurve curve)
+        EqualizationCurve curve,
+        long projectGeneration)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(token);
         ArgumentNullException.ThrowIfNull(curve);
 
-        if (!channels.Contains(token.Channel))
+        if (token.ProjectGeneration != projectGeneration ||
+            !channels.Contains(token.Channel))
         {
             return false;
         }

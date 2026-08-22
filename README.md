@@ -1176,6 +1176,13 @@ uses, the smoothing selector starting on that panel's value.
 **Edit raw in EQ Wizard** hands over the raw measurement instead — the panel's
 Raw curve — for tuning the driver itself irrespective of the chain.
 
+One case parts from "the curve you just left", deliberately: a **bypassed**
+block contributes its raw signal, so the plot is not drawing that chain at all.
+The handoff still opens on the chain, because that is what the PEQ will live in
+the moment bypass comes off — a bank tuned against a crossover-less curve would
+be wrong for the setup. The menu item says so before the trip (it reads *chain —
+block is bypassed*), and so does the source description in the wizard.
+
 That identity extends to the corrected curve: **Source + EQ** is not the bare
 curve with the filters' ideal magnitude added on top, the way an equalizer
 normally previews itself. The wizard runs the whole chain — the bank being

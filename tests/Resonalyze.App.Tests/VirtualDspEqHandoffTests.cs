@@ -363,14 +363,14 @@ public sealed class VirtualDspEqHandoffTests
     public void ReturnLandsOnTheSideTheTokenNames_NotTheActiveOne()
     {
         VirtualCrossoverChannel channel = BuildChannel();
-        var token = new VirtualDspEqReturnToken(channel, RightSide: true);
+        var token = new VirtualDspEqReturnToken(channel, RightSide: true, ProjectGeneration: 1);
         // The user flipped back to the left side while editing.
         channel.ActiveRight = false;
         var curve = new EqualizationCurve(
             new[] { new PeqBand(250, 3, -6) }, preampDb: -1.5);
 
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve));
+            new[] { channel }, token, curve, projectGeneration: 1));
 
         VirtualCrossoverChannelSettings right = channel.Pair.SideFor(rightSide: true);
         Assert.Equal(curve.Bands, right.PeqBands);
@@ -384,12 +384,12 @@ public sealed class VirtualDspEqHandoffTests
     public void ReturnToAPairGoneMono_LandsOnItsSurvivingSet()
     {
         VirtualCrossoverChannel channel = BuildChannel();
-        var token = new VirtualDspEqReturnToken(channel, RightSide: true);
+        var token = new VirtualDspEqReturnToken(channel, RightSide: true, ProjectGeneration: 1);
         channel.Pair.Mono = true;
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve));
+            new[] { channel }, token, curve, projectGeneration: 1));
 
         // Mono routes both sides to the single left set; a write into the
         // unreachable right slot would silently vanish.
@@ -397,15 +397,39 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void ReturnAfterTheProjectWasReplaced_RefusesEvenThoughTheChannelSurvives()
+    {
+        // Binding a project REUSES the runtime channel objects when the channel count
+        // matches — only its Pair is swapped — so the object the token names is still
+        // in the panel's list afterwards while describing a different session. Without
+        // the generation this wrote a bank tuned against one car into another.
+        VirtualCrossoverChannel channel = BuildChannel();
+        var token = new VirtualDspEqReturnToken(
+            channel, RightSide: false, ProjectGeneration: 4);
+        // What an import does to the very object the token holds.
+        channel.Pair = new VirtualCrossoverChannelPairSettings();
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 5));
+        Assert.Empty(channel.Settings.PeqBands);
+
+        // The same token against the generation it was taken in still lands.
+        Assert.True(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 4));
+        Assert.Equal(curve.Bands, channel.Settings.PeqBands);
+    }
+
+    [Fact]
     public void ReturnToAChannelNoLongerInThePanel_RefusesAndWritesNothing()
     {
         VirtualCrossoverChannel removed = BuildChannel();
         VirtualCrossoverChannel survivor = BuildChannel();
-        var token = new VirtualDspEqReturnToken(removed, RightSide: false);
+        var token = new VirtualDspEqReturnToken(removed, RightSide: false, ProjectGeneration: 1);
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { survivor }, token, curve));
+            new[] { survivor }, token, curve, projectGeneration: 1));
 
         Assert.Empty(removed.Settings.PeqBands);
         Assert.Empty(survivor.Settings.PeqBands);
@@ -431,7 +455,8 @@ public sealed class VirtualDspEqHandoffTests
         double? pinnedGateOffsetMs = null,
         int? renderAnchorIndex = 480,
         double targetLevelDb = -41,
-        string? calibrationId = null) =>
+        string? calibrationId = null,
+        long projectGeneration = 1) =>
         VirtualDspEqHandoff.Build(
             channel,
             channel.ActiveRight,
@@ -441,7 +466,8 @@ public sealed class VirtualDspEqHandoffTests
             renderAnchorIndex,
             targetLevelDb,
             smoothingInverseOctaves: 0,
-            calibrationId);
+            calibrationId,
+            projectGeneration);
 
     // A channel whose left side holds a synthetic measurement: a decaying wavelet
     // arriving at sample 480 (10 ms), through a full DSP chain so every stage has

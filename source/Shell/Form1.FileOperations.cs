@@ -203,10 +203,15 @@ public partial class Form1
             return;
         }
 
+        // The entry is TRIED, not trusted: it can still be listed while the file
+        // behind it is gone, in which case the restore lands nothing — and Virtual
+        // DSP may well have relocated that measurement and handed a working path
+        // alongside. Falling through on failure is what keeps the jump from leaving
+        // the previous measurement on screen and calling it done.
         if (historyEntryId is { } entryId &&
-            measurementHistoryService.FindById(entryId) != null)
+            measurementHistoryService.FindById(entryId) != null &&
+            await ActivateHistoryEntryAsync(entryId))
         {
-            await ActivateHistoryEntryAsync(entryId);
             await SelectModeAsync(ModeTab.Frequency);
             return;
         }

@@ -217,6 +217,10 @@ public partial class EqWizardPanel : UserControl
         DrawSelectedCurves();
     }
 
+    // The nominal range last armed onto the EQ-gain axis, so a redraw can tell "the
+    // range this panel chose" from "the view the user zoomed to".
+    private (double Lower, double Upper)? eqAxisNominal;
+
     // Sizes the right EQ-gain axis so it reads as the boost/cut budget yet still contains
     // the drawn filter curve, whose overlapping bands can sum well past a single band's
     // limit. The curve extent (its actual min/max in dB) extends the budget-based range;
@@ -235,10 +239,27 @@ public partial class EqWizardPanel : UserControl
             (double)numericGainMax.Value,
             curveMinDb,
             curveMaxDb);
-        eqAxis.Minimum = lower;
-        eqAxis.Maximum = upper;
+        // The nominal range is always the hard pan/zoom limit — the curve holds
+        // nothing beyond it. The RANGE, though, is re-armed only when the nominal
+        // itself moved (a budget edit, a curve outgrowing a snap step): the axis
+        // zooms and pans now, and this runs on every redraw, so re-arming each
+        // time would throw away the zoom the user just set — the same rule the
+        // Virtual DSP impulse view follows for its time axis.
         eqAxis.AbsoluteMinimum = lower;
         eqAxis.AbsoluteMaximum = upper;
+        if (eqAxisNominal is { } previous &&
+            Math.Abs(previous.Lower - lower) < 1e-9 &&
+            Math.Abs(previous.Upper - upper) < 1e-9)
+        {
+            return;
+        }
+
+        eqAxisNominal = (lower, upper);
+        eqAxis.Minimum = lower;
+        eqAxis.Maximum = upper;
+        // Drops any user override along with the stale range: a new nominal means
+        // the curve or the budget no longer fits the view the user had.
+        eqAxis.Reset();
     }
 
     private void InitializeToolTips()
@@ -376,9 +397,11 @@ public partial class EqWizardPanel : UserControl
 
         // A dedicated right-hand axis for the EQ filter curve, centred on 0 dB so the
         // correction shape is readable whatever the source's level. It owns no gridlines
-        // (the left axis draws them) and is a fixed reference, not pannable; its range
-        // follows the boost/cut budget so the curve cannot fall off it. A subtle 0-line
-        // marks unity gain.
+        // (the left axis draws them). Its NOMINAL range follows the boost/cut budget so
+        // the curve cannot fall off it, and that range is the hard pan/zoom limit —
+        // within it the axis zooms and pans like any other (hover it and scroll, or
+        // drag), for reading a correction's fine structure without the whole budget's
+        // height. A subtle 0-line marks unity gain.
         model.Axes.Add(new LinearAxis
         {
             Key = EqGainAxisKey,
@@ -392,9 +415,7 @@ public partial class EqWizardPanel : UserControl
             ExtraGridlines = new[] { 0.0 },
             ExtraGridlineColor = OxyColor.FromAColor(60, OxyColors.White),
             ExtraGridlineStyle = LineStyle.Solid,
-            Title = "EQ (dB)",
-            IsPanEnabled = false,
-            IsZoomEnabled = false
+            Title = "EQ (dB)"
         });
 
         model.Annotations.Add(new PlotWatermarkAnnotation

@@ -479,6 +479,14 @@ wider — within that window, which stays the hard limit because the traces hold
 nothing outside it. Editing the gate re-frames the axis, since that is a new
 timeline; an ordinary redraw leaves your zoom alone.
 
+The EQ Wizard's right-hand **EQ (dB)** axis follows the impulse view's rule:
+it zooms and pans within its nominal range — the boost/cut budget plus the
+drawn curve, which is its hard limit because the curve holds nothing beyond it
+— so a correction's fine structure can be read without the whole budget's
+height. An ordinary redraw keeps your zoom; changing the Min/Max Gain budget
+(or a curve outgrowing the range) re-frames the axis, since the old view no
+longer fits what it must show.
+
 ## Mode Settings
 
 The **Mode Settings...** button opens the current mode's settings in a docked,

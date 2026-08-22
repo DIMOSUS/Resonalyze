@@ -318,71 +318,77 @@ public partial class Form1
     // its own curves is not in the impulse response — an imported IR is uncalibrated.
     private async Task ImportRewImpulseResponseAsync(string path)
     {
-        // Claimed before the read, not after it: parsing a few hundred thousand
-        // samples and running the fractional shift takes long enough for the record
-        // button to start a sweep in between, and this import would then arrive on
-        // top of it. The claim is held until the result is published.
-        using var claim = expSweepMeasurement.Claim();
-        string text = await File.ReadAllTextAsync(path);
-        RewImpulseResponseTextFile file = await Task.Run(
-            () => RewImpulseResponseTextFile.Parse(text));
-        // The sweep this result would be filed under is generated at the configured
-        // rate; a file at another rate is not describing the same signal, and the
-        // state applied afterwards would report a rate the measurement does not have.
-        int configuredSampleRate =
-            measurementSettings.Measurement.BuildConfiguration().Signal.SampleRate;
-        if (file.SampleRate != configuredSampleRate)
+        RewImpulseResponseTextFile file;
+        // Claimed BEFORE the read: parsing a few hundred thousand samples and
+        // running the fractional shift takes long enough for the record button to
+        // start a sweep in between, and this import would then arrive on top of it.
+        // Released once the result is published and before the redraw below — a busy
+        // measurement draws no curves, and the notice that follows is modal, so a
+        // claim held to the end of the method would outlast the dialog on screen.
+        using (expSweepMeasurement.Claim())
         {
-            throw new InvalidOperationException(
-                $"This export is {file.SampleRate} Hz while the measurement is configured " +
-                $"for {configuredSampleRate} Hz. Set the sample rate in Measurement Options " +
-                "to match the file, then import it again.");
+            string text = await File.ReadAllTextAsync(path);
+            file = await Task.Run(
+                () => RewImpulseResponseTextFile.Parse(text));
+            // The sweep this result would be filed under is generated at the configured
+            // rate; a file at another rate is not describing the same signal, and the
+            // state applied afterwards would report a rate the measurement does not have.
+            int configuredSampleRate =
+                measurementSettings.Measurement.BuildConfiguration().Signal.SampleRate;
+            if (file.SampleRate != configuredSampleRate)
+            {
+                throw new InvalidOperationException(
+                    $"This export is {file.SampleRate} Hz while the measurement is configured " +
+                    $"for {configuredSampleRate} Hz. Set the sample rate in Measurement Options " +
+                    "to match the file, then import it again.");
+            }
+
+            if (!file.IsLoopbackReferenced)
+            {
+                // The shape is real; the position is its own. Placing it here would give it
+                // an arrival time that means nothing and would be summed with real ones.
+                throw new InvalidOperationException(
+                    "This export was not measured against a loopback timing reference" +
+                    (string.IsNullOrWhiteSpace(file.Excitation)
+                        ? string.Empty
+                        : $" (REW says: \u201c{file.Excitation}\u201d)") +
+                    ". Its shape is real, but nothing ties its zero to anything outside its " +
+                    "own measurement, so it cannot be placed on this session's time base. " +
+                    "Measure it in REW with a loopback as the timing reference to import it.");
+            }
+
+            double[] samples = file.Samples;
+            double[] referenced = await Task.Run(file.ToLoopbackReferencedImpulseResponse);
+            // The band REW swept. A header without it is not worth refusing the file over,
+            // but the fallback is a guess and says so in the notes below.
+            double lowHz = file.LowFrequencyHz ?? DefaultImportedLowFrequencyHz;
+            double highHz = file.HighFrequencyHz ?? (file.SampleRate / 2.0);
+            // The sweep, not the impulse response: REW keeps the IR shorter than the sweep
+            // that produced it, and the harmonic geometry is keyed to the sweep's length.
+            double sweepSeconds =
+                (file.SweepLengthSamples ?? samples.Length) / (double)file.SampleRate;
+            expSweepMeasurement.RestoreImpulseResponse(
+                lowHz,
+                highHz,
+                file.SampleRate,
+                ImportedBitDepth,
+                sweepSeconds,
+                // REW does not say which output it played through, and guessing a side
+                // would put a channel name on a measurement that never carried one.
+                PlaybackChannel.Mono,
+                ToComplex(samples),
+                PeakIndexOf(samples),
+                SweepMeasurementMode.LoopbackTransfer,
+                ToComplex(referenced),
+                PeakIndexOf(referenced),
+                transferCoherence: null,
+                averageRunCount: file.SweepCount ?? 1,
+                acceptedAverageRunCount: file.SweepCount ?? 1,
+                achievedLowFrequencyHz: lowHz,
+                achievedHighFrequencyHz: highHz,
+                timingReference: TimingReference.SynchronizedLoopback);
         }
 
-        if (!file.IsLoopbackReferenced)
-        {
-            // The shape is real; the position is its own. Placing it here would give it
-            // an arrival time that means nothing and would be summed with real ones.
-            throw new InvalidOperationException(
-                "This export was not measured against a loopback timing reference" +
-                (string.IsNullOrWhiteSpace(file.Excitation)
-                    ? string.Empty
-                    : $" (REW says: \u201c{file.Excitation}\u201d)") +
-                ". Its shape is real, but nothing ties its zero to anything outside its " +
-                "own measurement, so it cannot be placed on this session's time base. " +
-                "Measure it in REW with a loopback as the timing reference to import it.");
-        }
-
-        double[] samples = file.Samples;
-        double[] referenced = await Task.Run(file.ToLoopbackReferencedImpulseResponse);
-        // The band REW swept. A header without it is not worth refusing the file over,
-        // but the fallback is a guess and says so in the notes below.
-        double lowHz = file.LowFrequencyHz ?? DefaultImportedLowFrequencyHz;
-        double highHz = file.HighFrequencyHz ?? (file.SampleRate / 2.0);
-        // The sweep, not the impulse response: REW keeps the IR shorter than the sweep
-        // that produced it, and the harmonic geometry is keyed to the sweep's length.
-        double sweepSeconds =
-            (file.SweepLengthSamples ?? samples.Length) / (double)file.SampleRate;
-        expSweepMeasurement.RestoreImpulseResponse(
-            lowHz,
-            highHz,
-            file.SampleRate,
-            ImportedBitDepth,
-            sweepSeconds,
-            // REW does not say which output it played through, and guessing a side
-            // would put a channel name on a measurement that never carried one.
-            PlaybackChannel.Mono,
-            ToComplex(samples),
-            PeakIndexOf(samples),
-            SweepMeasurementMode.LoopbackTransfer,
-            ToComplex(referenced),
-            PeakIndexOf(referenced),
-            transferCoherence: null,
-            averageRunCount: file.SweepCount ?? 1,
-            acceptedAverageRunCount: file.SweepCount ?? 1,
-            achievedLowFrequencyHz: lowHz,
-            achievedHighFrequencyHz: highHz,
-            timingReference: TimingReference.SynchronizedLoopback);
         // Like a recorded sweep and unlike a loaded file: nothing on disk holds this
         // impulse response in this program's terms, so it enters the session as a
         // measurement rather than as a file that could be saved back over its source.

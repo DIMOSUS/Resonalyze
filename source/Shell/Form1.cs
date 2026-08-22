@@ -207,6 +207,8 @@ namespace Resonalyze
             virtualCrossoverPanel.OpenSourceInAnalyzersRequested =
                 (entryId, filePath) =>
                     _ = OpenVirtualDspSourceInAnalyzersAsync(entryId, filePath);
+            eqWizardPanel.BackToVirtualDspRequested = () =>
+                _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
             eqWizardPanel.ReturnPeqRequested = (token, curve) =>
             {
                 if (virtualCrossoverPanel.TryApplyPeqFromWizard(token, curve))

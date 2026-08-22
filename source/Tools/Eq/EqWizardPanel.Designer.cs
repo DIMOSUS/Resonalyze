@@ -76,6 +76,7 @@
             comboBoxQConvention = new DarkComboBox();
             labelQConvention = new Label();
             buttonReturnToDsp = new Button();
+            buttonBackToDsp = new Button();
             (NumericTargetOffset).BeginInit();
             (NumericGain).BeginInit();
             (numericToHz).BeginInit();
@@ -553,6 +554,18 @@
             buttonReturnToDsp.UseVisualStyleBackColor = false;
             buttonReturnToDsp.Visible = false;
             //
+            // buttonBackToDsp
+            //
+            buttonBackToDsp.FlatStyle = FlatStyle.Popup;
+            buttonBackToDsp.ForeColor = Color.White;
+            buttonBackToDsp.Location = new Point(2, 401);
+            buttonBackToDsp.Name = "buttonBackToDsp";
+            buttonBackToDsp.Size = new Size(186, 24);
+            buttonBackToDsp.TabIndex = 65;
+            buttonBackToDsp.Text = "Back without applying";
+            buttonBackToDsp.UseVisualStyleBackColor = true;
+            buttonBackToDsp.Visible = false;
+            //
             // comboBoxQConvention
             //
             comboBoxQConvention.BackColor = Color.FromArgb(55, 60, 72);
@@ -585,6 +598,7 @@
             Controls.Add(labelQConvention);
             Controls.Add(comboBoxQConvention);
             Controls.Add(buttonReturnToDsp);
+            Controls.Add(buttonBackToDsp);
             Controls.Add(buttonUndo);
             Controls.Add(buttonRedo);
             Controls.Add(buttonResetBands);
@@ -664,5 +678,6 @@
         private DarkComboBox comboBoxQConvention;
         private Label labelQConvention;
         private Button buttonReturnToDsp;
+        private Button buttonBackToDsp;
     }
 }

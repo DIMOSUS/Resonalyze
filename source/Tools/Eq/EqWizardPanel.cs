@@ -113,6 +113,7 @@ public partial class EqWizardPanel : UserControl
         };
         buttonAutoTune.Click += (_, _) => AutoTune();
         buttonReturnToDsp.Click += (_, _) => ReturnPeqToVirtualDsp();
+        buttonBackToDsp.Click += (_, _) => BackToVirtualDsp();
         buttonOverlaySettings.Click += (_, _) => OpenTargetSettings();
         buttonImport.Click += (_, _) => ImportPeq();
         buttonExport.Click += (_, _) => ExportPeq();
@@ -267,6 +268,15 @@ public partial class EqWizardPanel : UserControl
         SetTip(buttonSource,
             "Choose the curve to equalize: an impulse response (file or history), " +
             "a captured overlay slot, or a measured curve from a text file.");
+        SetTip(buttonReturnToDsp,
+            "Send the edited bank (bands and preamp) back to the Virtual DSP " +
+            "channel this curve came from, and switch to that tool.");
+        SetTip(buttonBackToDsp,
+            "Switch back to Virtual DSP WITHOUT applying: the channel keeps the " +
+            "PEQ it had, and the filters stay here — exportable, or one Ctrl+Z " +
+            "chain back to what the bank held before the handoff. (Simply " +
+            "clicking the Virtual DSP tab instead keeps this session open for " +
+            "coming back.)");
         SetTip(buttonOverlaySettings,
             "Edit the target curve this mode corrects toward (isolated to the EQ " +
             "Wizard; not tied to any overlay).");

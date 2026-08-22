@@ -1206,10 +1206,14 @@ untouched.
 finished bank (bands and preamp) back to the channel side it came from, named
 "EQ Wizard" in its read-out, and switches back to the Virtual DSP tab. The
 address is remembered from the handoff, so flipping the L/R selector while
-editing does not misdeliver the result. Loading any other source ends the
-session and hides the button; and if the channel itself is gone by the time
-Return is pressed (removed, or the project replaced), the wizard says so and
-keeps the filters, ready for an export instead.
+editing does not misdeliver the result. **Back without applying** beside it
+leaves the same way with nothing written: the channel keeps the PEQ it had,
+and the wizard keeps the edits — exportable, or one Ctrl+Z chain back to the
+pre-handoff bank. (A plain tab switch, by contrast, keeps the session open for
+coming back.) Loading any other source ends the session and hides both
+buttons; and if the channel itself is gone by the time Return is pressed
+(removed, or the project replaced), the wizard says so and keeps the filters,
+ready for an export instead.
 
 ### Auto Tune
 

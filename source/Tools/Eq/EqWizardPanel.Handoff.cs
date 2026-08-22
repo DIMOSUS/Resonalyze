@@ -26,6 +26,17 @@ public partial class EqWizardPanel
     { get; set; }
 
     /// <summary>
+    /// Raised when the user leaves the session WITHOUT applying: the host switches
+    /// back to Virtual DSP and nothing is written anywhere — the channel keeps the
+    /// PEQ it had, and the wizard keeps the edits (still exportable, still one
+    /// Ctrl+Z chain back to the pre-handoff bank).
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action? BackToVirtualDspRequested { get; set; }
+
+    /// <summary>
     /// Installs a channel side sent over by the Virtual DSP tool: its curve becomes
     /// the source, its PEQ seeds the bank (one undo step — Ctrl+Z is the handoff's
     /// cancel), its crossover sets the Auto Tune window, and the Return button
@@ -59,6 +70,7 @@ public partial class EqWizardPanel
 
         virtualDspToken = request.Token;
         buttonReturnToDsp.Visible = true;
+        buttonBackToDsp.Visible = true;
         RaiseSettingsChanged();
     }
 
@@ -107,9 +119,25 @@ public partial class EqWizardPanel
             token, new EqualizationCurve(bank.Bands, bank.PreampDb));
     }
 
+    // Leaves the session without applying: nothing lands on the channel, the wizard
+    // keeps its edits, and the host takes the user back to Virtual DSP. Distinct
+    // from simply clicking that tab — the tab switch keeps the session (and the
+    // Return button) alive for coming back; this one says the editing is over.
+    private void BackToVirtualDsp()
+    {
+        if (virtualDspToken == null)
+        {
+            return;
+        }
+
+        EndVirtualDspHandoff();
+        BackToVirtualDspRequested?.Invoke();
+    }
+
     private void EndVirtualDspHandoff()
     {
         virtualDspToken = null;
         buttonReturnToDsp.Visible = false;
+        buttonBackToDsp.Visible = false;
     }
 }

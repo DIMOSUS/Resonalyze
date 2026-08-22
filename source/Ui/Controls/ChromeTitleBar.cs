@@ -661,7 +661,18 @@ internal sealed class ChromeTitleBar : Panel
         // plain accent colour meanwhile, so the notice is still highlighted there.
         form.Activated += ResumeUpdatePulse;
         form.Deactivate += SuspendUpdatePulse;
-        updatePulseTimer.Start();
+        // The check that brings this notice runs asynchronously at startup, so it can
+        // land while the user is already in another application — and the Deactivate
+        // that would have parked the pulse fired long before there was one. Start
+        // suspended in that case and let the next Activated pick it up.
+        if (Form.ActiveForm == form)
+        {
+            updatePulseTimer.Start();
+        }
+        else
+        {
+            SetUpdateLinkColor(UiPalette.AccentBlueSoft);
+        }
     }
 
     private void ResumeUpdatePulse(object? sender, EventArgs e)

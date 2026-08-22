@@ -745,11 +745,11 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // The "L→R" / "R→L" commands: copy the DSP-chain part of one side's
-    // settings (gain, crossover, PEQ) onto the other for the channels the user
-    // picks. Sources and delays stay side-specific — each side has its own
-    // measurement and its own arrival — and polarity stays with the alignment.
-    // Mono pairs have one settings set and are not offered.
+    // The "L→R" / "R→L" commands: copy one side's chain onto the other for the
+    // channels AND the chain parts the user picks in the dialog (see
+    // VirtualCrossoverCopySideDialog for what is ticked by default and why).
+    // The source is never copied — each side has its own measurement — and mono
+    // pairs, having one settings set, are not offered.
     private void CopySideSettings(bool fromRight)
     {
         List<VirtualCrossoverChannel> candidates = channels
@@ -772,18 +772,21 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
         using var dialog = new VirtualCrossoverCopySideDialog(fromRight, labels);
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
-            dialog.SelectedIndices.Count == 0)
+            dialog.SelectedIndices.Count == 0 ||
+            dialog.Scope.IsEmpty)
         {
             return;
         }
 
+        VirtualCrossoverCopyScope scope = dialog.Scope;
         bool targetSideShown = project.ActiveSideRight == !fromRight;
         foreach (int index in dialog.SelectedIndices)
         {
             VirtualCrossoverChannel channel = candidates[index];
             CopyChainSettings(
                 channel.SideSettings(fromRight),
-                channel.SideSettings(!fromRight));
+                channel.SideSettings(!fromRight),
+                scope);
             if (targetSideShown)
             {
                 ApplySettingsToControl(channel);
@@ -794,22 +797,53 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // The POSITION-INDEPENDENT part of one side, copied onto the other: the settings
-    // that describe the driver rather than where it sits. Delay, polarity and the
-    // all-pass are deliberately not among them — each aligns a driver against its own
-    // side's geometry, and a left tweeter's phase correction is not a right tweeter's.
+    // The parts of one side's chain the dialog ticked, written onto the other side;
+    // everything else is left as the target had it. The default ticks are the
+    // crossover and the PEQ — the magnitude shape, which describes the driver —
+    // while gain, delay, polarity and the all-pass are opt-in, because each aligns a
+    // driver against its own side's level and geometry, and a left tweeter's arrival
+    // is not a right tweeter's. The source measurement is never among them.
     // PeqBand is an immutable record, so a fresh list is a deep enough copy.
     private static void CopyChainSettings(
         VirtualCrossoverChannelSettings from,
-        VirtualCrossoverChannelSettings to)
+        VirtualCrossoverChannelSettings to,
+        VirtualCrossoverCopyScope scope)
     {
-        to.GainDb = from.GainDb;
-        to.CrossoverKind = from.CrossoverKind;
-        to.HighPassEdge = from.HighPassEdge;
-        to.LowPassEdge = from.LowPassEdge;
-        to.PeqPreampDb = from.PeqPreampDb;
-        to.PeqBands = from.PeqBands.ToList();
-        to.PeqSourceName = from.PeqSourceName;
+        if (scope.Gain)
+        {
+            to.GainDb = from.GainDb;
+        }
+
+        if (scope.Delay)
+        {
+            to.DelayMs = from.DelayMs;
+        }
+
+        if (scope.InvertPolarity)
+        {
+            to.InvertPolarity = from.InvertPolarity;
+        }
+
+        if (scope.Crossover)
+        {
+            to.CrossoverKind = from.CrossoverKind;
+            to.HighPassEdge = from.HighPassEdge;
+            to.LowPassEdge = from.LowPassEdge;
+        }
+
+        if (scope.AllPass)
+        {
+            to.AllPassType = from.AllPassType;
+            to.AllPassFrequencyHz = from.AllPassFrequencyHz;
+            to.AllPassQ = from.AllPassQ;
+        }
+
+        if (scope.Peq)
+        {
+            to.PeqPreampDb = from.PeqPreampDb;
+            to.PeqBands = from.PeqBands.ToList();
+            to.PeqSourceName = from.PeqSourceName;
+        }
     }
 
     // The side radios double as source indicators (● has at least one source,
@@ -1216,11 +1250,13 @@ public partial class VirtualCrossoverPanel : UserControl
             control.AllPassFrequencyInput.Value = control.AllPassFrequencyInput
                 .ClampValue(settings.AllPassFrequencyHz);
             control.AllPassQInput.Value = control.AllPassQInput.ClampValue(settings.AllPassQ);
-            control.ShowRawCheckBox.Checked = settings.ShowRawCurve;
-            control.ShowProcessedCheckBox.Checked = settings.ShowProcessedCurve;
-            control.BypassCheckBox.Checked = settings.Bypass;
+            // The four block-wide switches come off the PAIR, so the block keeps
+            // showing the same answer whichever side is on screen.
+            control.ShowRawCheckBox.Checked = channel.Pair.ShowRawCurve;
+            control.ShowProcessedCheckBox.Checked = channel.Pair.ShowProcessedCurve;
+            control.BypassCheckBox.Checked = channel.Pair.Bypass;
             control.MonoCheckBox.Checked = channel.Pair.Mono;
-            control.Muted = !settings.Enabled;
+            control.Muted = !channel.Pair.Enabled;
             control.Collapsed = channel.Pair.Collapsed;
         });
 
@@ -1242,10 +1278,10 @@ public partial class VirtualCrossoverPanel : UserControl
         settings.AllPassType = allPass.Type;
         settings.AllPassFrequencyHz = allPass.FrequencyHz;
         settings.AllPassQ = allPass.Q;
-        settings.ShowRawCurve = control.ShowRawCheckBox.Checked;
-        settings.ShowProcessedCurve = control.ShowProcessedCheckBox.Checked;
-        settings.Enabled = !control.Muted;
-        settings.Bypass = control.BypassCheckBox.Checked;
+        channel.Pair.ShowRawCurve = control.ShowRawCheckBox.Checked;
+        channel.Pair.ShowProcessedCurve = control.ShowProcessedCheckBox.Checked;
+        channel.Pair.Enabled = !control.Muted;
+        channel.Pair.Bypass = control.BypassCheckBox.Checked;
         channel.Pair.Mono = control.MonoCheckBox.Checked;
     }
 
@@ -1936,16 +1972,18 @@ public partial class VirtualCrossoverPanel : UserControl
             "● — at least one source is loaded on this side.");
         toolTip.SetToolTip(
             buttonCopyLeftToRight,
-            "Copy the LEFT side's gain, crossover and PEQ onto the\r\n" +
-            "RIGHT side for the channels you pick. Sources, delay,\r\n" +
-            "polarity and all-pass stay with their side; mono channels\r\n" +
-            "are not offered.");
+            "Copy the LEFT side onto the RIGHT side: a dialog picks the\r\n" +
+            "channels and the parts of the chain — crossover and PEQ by\r\n" +
+            "default, gain, delay, polarity and the all-pass on request.\r\n" +
+            "Sources stay with their side; mono channels are not\r\n" +
+            "offered.");
         toolTip.SetToolTip(
             buttonCopyRightToLeft,
-            "Copy the RIGHT side's gain, crossover and PEQ onto the\r\n" +
-            "LEFT side for the channels you pick. Sources, delay,\r\n" +
-            "polarity and all-pass stay with their side; mono channels\r\n" +
-            "are not offered.");
+            "Copy the RIGHT side onto the LEFT side: a dialog picks the\r\n" +
+            "channels and the parts of the chain — crossover and PEQ by\r\n" +
+            "default, gain, delay, polarity and the all-pass on request.\r\n" +
+            "Sources stay with their side; mono channels are not\r\n" +
+            "offered.");
         toolTip.SetToolTip(
             buttonAutoSetup,
             "Crossover wizard: detect each channel's driver type from\r\n" +
@@ -2120,13 +2158,13 @@ public partial class VirtualCrossoverPanel : UserControl
             {
                 VirtualCrossoverChannel channel = channels[i];
                 VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
-                if (!channel.Settings.Enabled ||
+                if (!channel.Pair.Enabled ||
                     state.ProcessingSource is not { } source)
                 {
                     continue;
                 }
 
-                DspChannelChain chain = channel.Settings.Bypass
+                DspChannelChain chain = channel.Pair.Bypass
                     ? DspChannelChain.Identity
                     : channel.Settings.ToChain();
                 snapshots.Add(new VirtualCrossoverChannelSnapshot(
@@ -2473,7 +2511,7 @@ public partial class VirtualCrossoverPanel : UserControl
         for (int i = 0; i < processed.Count; i++)
         {
             ProcessedChannel item = processed[i];
-            if (item.Channel.Settings.ShowRawCurve)
+            if (item.Channel.Pair.ShowRawCurve)
             {
                 AnalysisCurve raw = BuildRawMagnitudeCurve(
                     item.Channel.TransferImpulseResponse!,
@@ -2487,7 +2525,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     LineStyle.Solid));
             }
 
-            if (item.Channel.Settings.ShowProcessedCurve)
+            if (item.Channel.Pair.ShowProcessedCurve)
             {
                 AnalysisCurve curve = magnitudes != null
                     ? magnitudes[i]
@@ -2640,7 +2678,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private void UpdateCrossoverWarning(List<ProcessedChannel> processed)
     {
         List<ProcessedChannel> active = processed
-            .Where(item => !item.Channel.Settings.Bypass)
+            .Where(item => !item.Channel.Pair.Bypass)
             .ToList();
         if (active.Count < 2)
         {
@@ -2712,7 +2750,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // AlignmentReprocessor.
         List<VirtualCrossoverChannel> participants = channels
             .Where(channel =>
-                channel.Settings.Enabled && channel.TransferImpulseResponse != null)
+                channel.Pair.Enabled && channel.TransferImpulseResponse != null)
             .ToList();
         if (participants.Count < 2)
         {
@@ -2727,7 +2765,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // now and applies later, once bypass is switched off. Refuse the run
         // instead of computing an alignment that is wrong on both counts.
         List<VirtualCrossoverChannel> bypassed = participants
-            .Where(channel => channel.Settings.Bypass)
+            .Where(channel => channel.Pair.Bypass)
             .ToList();
         if (bypassed.Count > 0)
         {
@@ -3207,7 +3245,7 @@ public partial class VirtualCrossoverPanel : UserControl
         var right = new List<VirtualCrossoverSideAlignmentChannel>();
         foreach (VirtualCrossoverChannel channel in channels)
         {
-            if (channel.SideSettings(false).Enabled &&
+            if (channel.Pair.Enabled &&
                 channel.SideState(false).TransferImpulseResponse != null)
             {
                 var side = new VirtualCrossoverSideAlignmentChannel(channel, false);
@@ -3219,7 +3257,7 @@ public partial class VirtualCrossoverPanel : UserControl
             }
 
             if (!channel.Pair.Mono &&
-                channel.SideSettings(true).Enabled &&
+                channel.Pair.Enabled &&
                 channel.SideState(true).TransferImpulseResponse != null)
             {
                 right.Add(new VirtualCrossoverSideAlignmentChannel(channel, true));
@@ -3243,11 +3281,12 @@ public partial class VirtualCrossoverPanel : UserControl
             .Distinct()
             .ToList();
 
-        // Same reasoning as the single-side run: a bypassed side processes
+        // Same reasoning as the single-side run: a bypassed channel processes
         // through the identity chain, so the computed delay would silently not
-        // apply — refuse instead of proposing a wrong alignment.
+        // apply — refuse instead of proposing a wrong alignment. Bypass belongs
+        // to the block, so it takes both of its sides out at once.
         List<VirtualCrossoverSideAlignmentChannel> bypassed = union
-            .Where(item => item.Settings.Bypass)
+            .Where(item => item.Runtime.Pair.Bypass)
             .ToList();
         if (bypassed.Count > 0)
         {
@@ -3740,7 +3779,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // the Sum off, hidden channels' banks are skipped entirely.
         bool includeSum = processed.Count >= 2 && checkBoxShowSum.Checked;
         List<ProcessedChannel> gatedChannels = processed
-            .Where(item => includeSum || item.Channel.Settings.ShowProcessedCurve)
+            .Where(item => includeSum || item.Channel.Pair.ShowProcessedCurve)
             .ToList();
 
         // Read the gate and project state ONCE, here on the UI thread; the
@@ -3773,7 +3812,7 @@ public partial class VirtualCrossoverPanel : UserControl
         foreach ((ProcessedChannel item, Complex[] spectrum, int extractionStart)
             in gated)
         {
-            if (item.Channel.Settings.ShowProcessedCurve)
+            if (item.Channel.Pair.ShowProcessedCurve)
             {
                 jobs.Add((
                     item.Channel.Name, item.Color, 1.8, spectrum, extractionStart));
@@ -3848,7 +3887,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // Only the shown traces set the gate offset and the ms-axis window, so
         // an auto gate never centers on a channel whose curve is hidden.
         List<ProcessedChannel> shown = processed
-            .Where(item => item.Channel.Settings.ShowProcessedCurve)
+            .Where(item => item.Channel.Pair.ShowProcessedCurve)
             .ToList();
         if (shown.Count == 0)
         {
@@ -4542,7 +4581,7 @@ public partial class VirtualCrossoverPanel : UserControl
         for (int i = 0; i < channels.Count; i++)
         {
             VirtualCrossoverChannel channel = channels[i];
-            if (!channel.Settings.Enabled || channel.TransferImpulseResponse == null)
+            if (!channel.Pair.Enabled || channel.TransferImpulseResponse == null)
             {
                 continue;
             }
@@ -4552,7 +4591,7 @@ public partial class VirtualCrossoverPanel : UserControl
             // unreadable sawtooth and swamp the filter group delay (its effect is
             // visible on the acoustic plot). A bypassed channel draws its flat
             // identity chain.
-            DspChannelChain chain = channel.Settings.Bypass
+            DspChannelChain chain = channel.Pair.Bypass
                 ? DspChannelChain.Identity
                 : channel.Settings.ToChain() with { DelayMs = 0 };
             curves.Add(new DspChainCurve(
@@ -4965,7 +5004,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private void OpenAutoSetupWizard()
     {
         var participating = channels
-            .Where(channel => channel.Settings.Enabled &&
+            .Where(channel => channel.Pair.Enabled &&
                 channel.TransferImpulseResponse != null)
             .ToList();
         if (participating.Count < 2)

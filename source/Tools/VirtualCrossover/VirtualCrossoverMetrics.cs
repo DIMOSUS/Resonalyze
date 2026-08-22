@@ -219,19 +219,23 @@ internal sealed class VirtualCrossoverMetrics
             VirtualCrossoverChannel channel = channels[channelIndex];
             bool mono = channel.Pair.Mono;
 
+            // Mute and Bypass belong to the block, so they answer for both sides at
+            // once; only the measurements are per side.
+            if (!channel.Pair.Enabled || channel.Pair.Bypass)
+            {
+                continue;
+            }
+
             VirtualCrossoverChannelSettings leftSettings = channel.SideSettings(false);
             VirtualCrossoverChannelState leftState = channel.PhysicalSideState(false);
-            if (!leftSettings.Enabled || leftSettings.Bypass ||
-                leftState.ProcessingSource is not { } leftSource)
+            if (leftState.ProcessingSource is not { } leftSource)
             {
                 continue;
             }
 
             VirtualCrossoverChannelSettings rightSettings = channel.SideSettings(true);
             VirtualCrossoverChannelState rightState = channel.PhysicalSideState(true);
-            if (!mono &&
-                (!rightSettings.Enabled || rightSettings.Bypass ||
-                    rightState.ProcessingSource is not { }))
+            if (!mono && rightState.ProcessingSource is not { })
             {
                 continue;
             }
@@ -483,13 +487,13 @@ internal sealed class VirtualCrossoverMetrics
             VirtualCrossoverChannelSettings settings =
                 channel.SideSettings(rightSide);
             VirtualCrossoverChannelState state = channel.SideState(rightSide);
-            if (!settings.Enabled ||
+            if (!channel.Pair.Enabled ||
                 state.ProcessingSource is not { } source)
             {
                 continue;
             }
 
-            DspChannelChain chain = settings.Bypass
+            DspChannelChain chain = channel.Pair.Bypass
                 ? DspChannelChain.Identity
                 : settings.ToChain();
             jobs.Add(new SideProcessJob

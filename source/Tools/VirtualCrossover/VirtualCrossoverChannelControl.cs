@@ -368,13 +368,15 @@ public partial class VirtualCrossoverChannelControl : UserControl
             buttonMute,
             "Mute the channel: exclude it from the sum, the loss,\r\n" +
             "the metric, Auto delay and both plots — a quick\r\n" +
-            "\"what changes without this driver\" check.");
+            "\"what changes without this driver\" check.\r\n" +
+            "Shared by both sides — the driver pair is muted as one.");
         toolTip.SetToolTip(
             checkBoxBypass,
             "Bypass the DSP chain: feed the raw measured signal with\r\n" +
             "no gain, delay, polarity, crossover, all-pass or PEQ —\r\n" +
             "the driver's natural band-pass, for an A/B against the\r\n" +
-            "processed result.");
+            "processed result.\r\n" +
+            "Shared by both sides, like Mute.");
         toolTip.SetToolTip(
             checkBoxMono,
             "One physical driver serving both sides (typically the\r\n" +
@@ -477,11 +479,15 @@ public partial class VirtualCrossoverChannelControl : UserControl
             checkBoxShowRaw,
             "Plot this channel's raw measured response — the driver\r\n" +
             "before the DSP chain, drawn translucent for an A/B\r\n" +
-            "against the processed trace.");
+            "against the processed trace.\r\n" +
+            "The toggle is shared by both sides; each side draws its\r\n" +
+            "own measurement.");
         toolTip.SetToolTip(
             checkBoxShowProcessed,
             "Plot this channel's processed response — the measured\r\n" +
-            "driver after gain, delay, polarity, the crossover and PEQ.");
+            "driver after gain, delay, polarity, the crossover and PEQ.\r\n" +
+            "The toggle is shared by both sides; each side draws its\r\n" +
+            "own measurement.");
     }
 
     /// <summary>

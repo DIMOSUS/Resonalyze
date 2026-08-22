@@ -157,14 +157,24 @@ public sealed class VirtualCrossoverTargetSettings
 /// </summary>
 public sealed class VirtualCrossoverChannelSettings
 {
-    public bool Enabled { get; set; } = true;
-
-    /// <summary>
-    /// When set (and the channel is enabled), the channel contributes its raw
-    /// measured signal with the whole DSP chain bypassed — no gain, delay,
-    /// polarity, crossover or PEQ — for an A/B against the processed result.
-    /// </summary>
-    public bool Bypass { get; set; }
+    // Schema v6 payload, kept only so an older file deserializes for migration:
+    // Mute, Bypass and the two curve toggles describe the BLOCK rather than one
+    // side's measurement, so v7 moved them onto the pair (see
+    // VirtualCrossoverChannelPairSettings and the migration that folds these up).
+    // Nullable purely to tell "absent" from a real value; nothing but Migrate
+    // reads them, and it clears them once the pair carries the answer.
+    [JsonPropertyName("enabled")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyEnabled { get; set; }
+    [JsonPropertyName("bypass")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyBypass { get; set; }
+    [JsonPropertyName("showRawCurve")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyShowRawCurve { get; set; }
+    [JsonPropertyName("showProcessedCurve")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyShowProcessedCurve { get; set; }
 
     public string DisplayName { get; set; } = string.Empty;
     public string? SourceFilePath { get; set; }
@@ -221,10 +231,6 @@ public sealed class VirtualCrossoverChannelSettings
     public List<PeqBand> PeqBands { get; set; } = new();
     /// <summary>The PEQ file the bands came from; display only.</summary>
     public string? PeqSourceName { get; set; }
-
-    // Per-channel curve visibility on the acoustic plot.
-    public bool ShowRawCurve { get; set; }
-    public bool ShowProcessedCurve { get; set; } = true;
 
     public bool HasSource =>
         HistoryEntryId.HasValue || !string.IsNullOrWhiteSpace(SourceFilePath);
@@ -351,6 +357,27 @@ public sealed class VirtualCrossoverChannelPairSettings
     /// </summary>
     public bool Collapsed { get; set; }
 
+    /// <summary>
+    /// Whether the channel takes part at all — Mute in the tool. Shared by both
+    /// sides, like everything below: these four switches describe the BLOCK, not a
+    /// measurement. A driver pair is one part of the system, and muting the left
+    /// tweeter while the right one still plays describes no setup worth predicting;
+    /// per side they also made a side switch quietly change what the plot drew.
+    /// Moved here in schema v7 (see the migration).
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// When set (and the channel is enabled), the channel contributes its raw
+    /// measured signal with the whole DSP chain bypassed — no gain, delay,
+    /// polarity, crossover or PEQ — for an A/B against the processed result.
+    /// </summary>
+    public bool Bypass { get; set; }
+
+    // Curve visibility on the acoustic plot, per channel block.
+    public bool ShowRawCurve { get; set; }
+    public bool ShowProcessedCurve { get; set; } = true;
+
     public VirtualCrossoverChannelSettings Left { get; set; } = new();
     public VirtualCrossoverChannelSettings Right { get; set; } = new();
 
@@ -382,7 +409,7 @@ public sealed class VirtualCrossoverProjectFile
     // step in Migrate below. Files from a NEWER version (a downgraded app)
     // are never migrated: LoadOrDefault backs them up and starts fresh,
     // LoadFrom rejects them with an explicit error.
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
     public const int MaximumChannelCount = 8;
     private const string FileName = "virtual-crossover.json";
 
@@ -872,6 +899,44 @@ public sealed class VirtualCrossoverProjectFile
                 legacyUseCalibration: false);
             file.CalibrationMode = null;
             file.Version = 6;
+        }
+        if (file.Version == 6)
+        {
+            // v6 kept Mute, Bypass and the two curve toggles per SIDE, so switching
+            // sides could silently change what the block contributed and what the plot
+            // drew. They belong to the block, and v7 moves them onto the pair.
+            // The pair inherits the sides that actually carry a measurement — the single
+            // left slot of a mono pair, the one loaded side of a half-loaded pair — so
+            // every project that could not disagree opens exactly as it looked. Where two
+            // loaded sides DID disagree the louder answer wins: muted, bypassed and
+            // "curve shown" each survive, because a mute lost in a migration is the one
+            // outcome the tuner has no way to see coming.
+            foreach (VirtualCrossoverChannelPairSettings pair in file.Pairs)
+            {
+                VirtualCrossoverChannelSettings[] both = [pair.Left, pair.Right];
+                List<VirtualCrossoverChannelSettings> sides = pair.Mono
+                    ? [pair.Left]
+                    : both.Where(side => side.HasSource).ToList();
+                if (sides.Count == 0)
+                {
+                    sides = [pair.Left];
+                }
+
+                pair.Enabled = sides.TrueForAll(side => side.LegacyEnabled ?? true);
+                pair.Bypass = sides.Exists(side => side.LegacyBypass ?? false);
+                pair.ShowRawCurve = sides.Exists(side => side.LegacyShowRawCurve ?? false);
+                pair.ShowProcessedCurve =
+                    sides.Exists(side => side.LegacyShowProcessedCurve ?? true);
+                foreach (VirtualCrossoverChannelSettings side in both)
+                {
+                    side.LegacyEnabled = null;
+                    side.LegacyBypass = null;
+                    side.LegacyShowRawCurve = null;
+                    side.LegacyShowProcessedCurve = null;
+                }
+            }
+
+            file.Version = 7;
         }
 
         // The scene offset's wire SIGN and the layout flag state one fact

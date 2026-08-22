@@ -158,8 +158,11 @@ data: by default every build keeps settings, history, overlays, Virtual DSP stat
 and logs in `%LocalAppData%\Resonalyze`. To make a `.zip` build fully portable,
 create an empty file named `portable.flag` next to `Resonalyze.exe`. When a newer
 release is detected, the version label in the title bar changes to **Update
-available**: installed builds can start an **Automatic Update**, portable builds
-offer a manual download.
+available** and breathes slowly between grey and blue so it is noticed on a bar
+nobody looks at: installed builds can start an **Automatic Update**, portable
+builds offer a manual download. The pulse pauses while the window is in the
+background, stops once you follow the link, and never starts at all when Windows
+is set to show no animations (Settings → Accessibility → Visual effects).
 
 > **Windows SmartScreen note:** the builds are not code-signed (certificates are
 > expensive for a free open-source project), so the first launch may show a
@@ -1245,7 +1248,8 @@ The **Virtual DSP** (under the **Tools** tab) is the summation-prediction
 workflow taken to its conclusion: measure each driver once, then design the whole
 DSP setup virtually. Channels (A, B, C, …) are stereo **L/R pairs**, each side
 picking its own measurement and running its own chain. **L / R** radios switch
-which side the controls edit, **L→R** / **R→L** copy chain settings across sides,
+which side the controls edit, **L→R** / **R→L** copy chain settings across sides
+(a dialog picks the channels and which parts travel — see below),
 and a **Mono** checkbox turns a pair into a single shared driver — the typical
 one-subwoofer car layout — feeding both sides' sums. The setup grows from two up
 to eight pairs, and **+/−** folds a block down to its header. Every channel in a
@@ -1271,9 +1275,22 @@ Each channel runs through:
 - **Mute** and **Bypass** — Mute removes a channel from the plots, sum, loss
   metric and Auto delay; Bypass keeps it in the sum but feeds its raw measured
   signal, for an A/B against the processed result (Auto delay refuses to run
-  while any participant is bypassed)
+  while any participant is bypassed). Both belong to the BLOCK: they are shared
+  by its two sides, so muting a driver mutes the pair rather than half of it
 - **IR polarity** — a measured Normal / Inverted / Unknown indicator read from the
   transfer IR, independent of the virtual polarity switch
+
+**L→R** / **R→L** ask before they act: a dialog lists the stereo pairs (mono
+pairs have a single settings set, so they never appear) and the parts of the
+chain to carry over — **Gain**, **Delay**, **Invert**, **Crossover**,
+**All-pass** and **PEQ**. The crossover and the PEQ are ticked by default,
+because the magnitude shape describes the driver. Everything that aligns a side
+against its own level and geometry starts unticked — gain, delay, polarity and
+the all-pass, which belongs with them precisely because it is the tool for a
+junction a delay and a polarity flip cannot fix, and that junction is the
+side's own. Sources are never copied: every side keeps its own measurement.
+**Mute**, **Bypass** and the two curve toggles are absent from the list because
+they are shared by the two sides already — there is nothing to copy.
 
 Because every stage is linear and the measurements are loopback-referenced
 transfer IRs, multiplying each measurement by its chain and summing the results
@@ -1282,7 +1299,9 @@ capture after dialing those settings into the hardware. The filters are evaluate
 as the **digital biquad cascades a real DSP runs**, so the prediction matches
 miniDSP-class hardware up to Nyquist, not just an analog textbook curve.
 
-The acoustic plot shows raw and processed curves per channel for the active side,
+The acoustic plot shows raw and processed curves per channel for the active side
+(the two per-channel curve checkboxes belong to the block, so a side switch
+redraws the same curves from the other side's measurement),
 the complex **Sum**, the **opposite side's Sum** as a dashed translucent curve,
 and the **Sum loss** curve, with a **Phase view** toggle and a **Sum loss**
 read-out (avg / dip per junction plus a total). Its **Gate...** dialog exposes

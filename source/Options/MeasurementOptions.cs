@@ -2088,15 +2088,26 @@ namespace Resonalyze.Options
             SampleRateResolution resolution = SampleRateOptions.Resolve(
                 GetSupportedSampleRates(),
                 preferredSampleRate,
-                comboBoxSampleRate.Items.Count > 0);
+                comboBoxSampleRate.Items.Count > 0,
+                IsAsioSampleRateProbeFailure());
             sampleRateProbeFailed = resolution.ProbeFailed;
             sampleRateFellBackFrom = resolution.FellBackFrom;
-            if (resolution.ProbeFailed)
+            if (resolution.Rates.Length == 0)
             {
                 // Nothing is rebuilt on the absence of an answer: the list and the
                 // user's selection stand, and the status line says the driver did not
                 // report. Rebuilding here is what used to replace a working 96 kHz with
                 // 44.1 and persist it on the next Apply.
+                //
+                // The flags above have just changed, and the last thing to write the
+                // status line was RefreshAsioDriverInfo, before Resolve ran — so it is
+                // still rendered from the previous state and would keep a stale
+                // supported/not-supported sentence. Write it here too, exactly as the
+                // settled path below does.
+                if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
+                {
+                    UpdateAsioStatusLabels();
+                }
                 return;
             }
 
@@ -2135,6 +2146,14 @@ namespace Resonalyze.Options
                 UpdateAsioStatusLabels();
             }
         }
+
+        // The driver name is what decides whether there is anything to preserve, the
+        // same test RefreshAsioDriverInfo uses for the saved channel routing.
+        private bool IsAsioSampleRateProbeFailure() =>
+            SampleRateOptions.IsProbeFailure(
+                comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio,
+                asioDriverInfo.DriverName,
+                asioDriverInfo.SupportedSampleRates.Count);
 
         private IReadOnlyList<int> GetSupportedSampleRates()
         {

@@ -3,6 +3,20 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
+/// <summary>
+/// A collection that runs beside no other (xUnit honours
+/// <c>DisableParallelization</c> against every other collection, not just
+/// within this one). The tests below park real pool threads and wait for them
+/// to meet; sharing the pool with the rest of the suite is what let a busy
+/// runner turn that rendezvous into a timeout.
+/// </summary>
+[CollectionDefinition(ThreadPoolSensitive.Name, DisableParallelization = true)]
+public sealed class ThreadPoolSensitive
+{
+    internal const string Name = "Thread pool sensitive";
+}
+
+[Collection(ThreadPoolSensitive.Name)]
 public sealed class VirtualCrossoverProcessingCoordinatorTests
 {
     // A net under the rendezvous below, not a schedule: the threads meet as
@@ -12,17 +26,16 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
 
     /// <summary>
     /// Holds the thread pool below its own minimum while a test parks worker
-    /// threads, so its work items get threads created on demand. Above the
-    /// minimum the pool adds about one thread per second, which is how a runner
-    /// busy with the rest of the suite turned the rendezvous below into a
-    /// five-second timeout on CI. Measured against this coordinator on a
-    /// 16-core machine with 96 pool threads parked: the two consumers never met
-    /// inside five seconds, and met in 0.5 s with this held.
+    /// threads, so its work items get threads created on demand rather than
+    /// injected about one per second. The collection above is what keeps the
+    /// rest of the suite off this pool; this covers what isolation cannot — a
+    /// runner whose core count, and with it the pool's minimum, is smaller than
+    /// the number of threads one test parks. Note that a minimum is a threshold
+    /// and not an allocation: it only holds because nothing else is running.
     /// <para>
-    /// The minimum is a threshold, not an allocation — nothing here belongs to
-    /// this test. The headroom therefore covers the threads it parks AND one
-    /// per test collection xUnit may run beside it, since a neighbour taking
-    /// a thread in between would otherwise put the pool back on its throttle.
+    /// Measured against this coordinator on a 16-core machine with 96 pool
+    /// threads parked: the two consumers never met inside five seconds, and met
+    /// in 0.5 s with this held.
     /// </para>
     /// </summary>
     private sealed class PoolHeadroom : IDisposable
@@ -36,7 +49,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             ThreadPool.GetMaxThreads(out int maximumWorkers, out _);
             ThreadPool.GetAvailableThreads(out int availableWorkers, out _);
             int busy = maximumWorkers - availableWorkers;
-            int headroom = parking + Environment.ProcessorCount;
+            int headroom = parking + 1;
             ThreadPool.SetMinThreads(
                 Math.Min(maximumWorkers, Math.Max(workers, busy + headroom)),
                 completionPorts);

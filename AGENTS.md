@@ -149,11 +149,19 @@ generated.
 ## Pull requests
 
 Unless the owner asks for something else, a finished pull request is merged
-**squashed, with its branch deleted**:
-`gh pr merge <n> --squash --delete-branch`. `main` therefore carries one commit
-per PR, titled like the PR and holding its description as the body — so write
-that description as the commit message the repository is going to keep, and
-correct it there if the branch outgrew it.
+**squashed, with its branch deleted**. The repository's squash default builds
+the body from the branch's commit messages (`squash_merge_commit_message` is
+`COMMIT_MESSAGES`), so hand the description over explicitly or `main` gets a
+list of commit subjects where the PR's own text belongs:
+
+```powershell
+gh pr merge <n> --squash --delete-branch `
+  --subject "<the PR title> (#<n>)" --body-file <the description>
+```
+
+`main` therefore carries one commit per PR, holding that description as its
+message — so write the description as the commit message the repository is
+going to keep, and correct it there if the branch outgrew it.
 
 ## Code Style
 

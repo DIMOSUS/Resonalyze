@@ -63,7 +63,7 @@ public partial class Form1
     }
 
     private async void HandleHistoryEntryActivated(Guid entryId) =>
-        await ActivateHistoryEntryAsync(entryId);
+        await ActivateHistoryEntryAsync(entryId, ++measurementActivationRevision);
 
     /// <summary>How an attempt to activate a history entry ended.</summary>
     private enum HistoryActivation
@@ -90,7 +90,16 @@ public partial class Form1
     // DSP "Open in analyzers" jump runs it and then lands on a specific tab (which has
     // to sequence AFTER the restore, since the snapshot selects its own saved mode) —
     // and falls back to the channel's file only on Unavailable.
-    private async Task<HistoryActivation> ActivateHistoryEntryAsync(Guid entryId)
+    /// <param name="revision">
+    /// The activation token for THIS request, taken by the caller. A parameter rather
+    /// than something taken here, because one user action must own exactly one
+    /// revision: the Virtual DSP jump may run this and then fall back to the
+    /// channel's file, and if this method minted a second number the jump's own
+    /// check against the counter would be stale by construction — every fallback
+    /// dropped, which is precisely the case the fallback exists for.
+    /// </param>
+    private async Task<HistoryActivation> ActivateHistoryEntryAsync(
+        Guid entryId, long revision)
     {
         // Restoring a snapshot while a sweep is running would call Init on an
         // active measurement and fail; ignore the activation instead.
@@ -104,7 +113,6 @@ public partial class Form1
         // the UI on the earlier selection. The newest activation wins; stale
         // loads are dropped at every await boundary (the same revision guard
         // the async plot rebuild uses).
-        long revision = ++measurementActivationRevision;
         try
         {
             MeasurementHistorySnapshot? snapshot =

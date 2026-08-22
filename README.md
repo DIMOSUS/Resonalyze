@@ -1221,20 +1221,22 @@ coming back.) Loading any other source ends the session and hides both
 buttons.
 
 A return is refused — with the filters kept, ready for an export or a fresh
-edit — when what the bank was tuned against has changed since. The line runs
-through the **magnitude the bank was fitted to**: the channel removed or
-replaced by another project, that side given a different measurement, the
-**crossover** moved, or the microphone calibration changed; plus the pair
-switching between stereo and mono, which moves where the settings live.
-Calibration is on that list for the same reason the wizard locks its own
-calibration selector during a session — a bank fitted under one correction and
-summed under another is not the same bank, and the Virtual DSP panel's own
-selector is a tab switch away.
+edit — when what the bank was tuned against has changed since: the channel
+removed or replaced by another project, that side given a different
+measurement, the microphone calibration changed, the pair switched between
+stereo and mono (which moves where the settings live), or **any change to the
+chain** the curve was built through. Calibration is on that list for the same
+reason the wizard locks its own calibration selector during a session — a bank
+fitted under one correction and summed under another is not the same bank, and
+the Virtual DSP panel's own selector is a tab switch away.
 
-**Gain, delay, polarity and the all-pass are not** refused, because none of them
-bends the shape the bank corrects: a delay and an all-pass are magnitude-flat, a
-polarity flip is −1 at every frequency, and a gain change slides the curve
-without changing it. A finished tune is not worth discarding over those.
+A **polarity flip** is the one exception, and the only one: it is −1 at every
+frequency, so it changes neither the shape the bank corrects nor the level it
+was fitted against. The rest of the chain does, measured rather than assumed —
+the crossover bends the curve outright, a gain slides it against the absolute
+target the bank's preamp was fitted to, and a delay or an all-pass moves what
+the analysis window catches (at 192 kHz, where the window is at its shortest,
+by as much as 1.7 and 4.8 dB at the extremes the controls allow).
 
 ### Auto Tune
 

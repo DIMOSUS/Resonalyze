@@ -218,7 +218,7 @@ public partial class Form1
         if (historyEntryId is { } entryId &&
             measurementHistoryService.FindById(entryId) != null)
         {
-            switch (await ActivateHistoryEntryAsync(entryId))
+            switch (await ActivateHistoryEntryAsync(entryId, revision))
             {
                 case HistoryActivation.Landed:
                     await SelectModeAsync(ModeTab.Frequency);

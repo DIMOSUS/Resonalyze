@@ -460,6 +460,23 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void ReturnAfterTheGainChanged_Refuses()
+    {
+        // The gain does not bend the curve, but the handoff carries the panel's
+        // ABSOLUTE target level and the bank's preamp was fitted against it. Moving
+        // the channel 6 dB after the fact leaves the returned tune exactly 6 dB off
+        // the target the wizard was aiming at — while still drawing the old level.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
+        channel.Settings.GainDb -= 6;
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 1, calibrationId: null));
+        Assert.Empty(channel.Settings.PeqBands);
+    }
+
+    [Fact]
     public void ReturnAfterTheCrossoverChanged_Refuses()
     {
         // The crossover is the one chain stage that BENDS the magnitude: the bank was
@@ -483,22 +500,37 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
-    public void ReturnAfterAGainDelayOrAllPassEdit_IsAllowed()
+    public void ReturnAfterADelayOrAllPassEdit_Refuses()
     {
-        // Where the refusals stop. Not argued from |H| — measured through the real
-        // filter-then-window path in SteadyStateWindowTests: at 48 kHz these edits
-        // move the gated curve's SHAPE by under 0.01 dB, and even at 192 kHz, where
-        // the window is clamped to 171 ms, the worst case (an all-pass at 60 Hz with
-        // Q 10, ~106 ms of group delay) reaches 0.5 dB — a fraction of the window's
-        // own 1.34 dB error on a comparable band. A bank stays correct across them,
-        // so a finished tune is not thrown away over knobs the user turned on
-        // purpose. The crossover, which moves the curve by many dB, is refused.
+        // Swept across the ranges the UI allows, these are NOT free: at 192 kHz, where
+        // the rate clamps the window to 171 ms, a delay edit moves the gated shape by
+        // up to 1.70 dB and an all-pass by 4.77 dB (40 Hz, Q 20 — 318 ms of group
+        // delay against that window). See SteadyStateWindowTests.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqReturnToken delayToken = TokenFor(channel, rightSide: false);
+        channel.Settings.DelayMs += 4.2;
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, delayToken, curve,
+            projectGeneration: 1, calibrationId: null));
+
+        VirtualDspEqReturnToken apToken = TokenFor(channel, rightSide: false);
+        channel.Settings.AllPassQ = 20;
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, apToken, curve,
+            projectGeneration: 1, calibrationId: null));
+        Assert.Empty(channel.Settings.PeqBands);
+    }
+
+    [Fact]
+    public void ReturnAfterAPolarityFlip_IsAllowed()
+    {
+        // The one chain stage that survives: a polarity flip is -1 at every frequency,
+        // so it changes neither the shape the bank corrects nor the level it was
+        // fitted against — measured as exactly 0 dB at every rate.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
-        channel.Settings.GainDb = -9;
-        channel.Settings.DelayMs = 4.2;
         channel.Settings.InvertPolarity = !channel.Settings.InvertPolarity;
-        channel.Settings.AllPassFrequencyHz = 1_200;
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
@@ -516,7 +548,8 @@ public sealed class VirtualDspEqHandoffTests
         VirtualCrossoverChannel channel = BuildChannel();
         channel.Settings.CrossoverKind = CrossoverKind.Off;
         VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
-        Assert.Equal(CrossoverSpec.Off, request.Token.Crossover);
+        Assert.Equal(CrossoverSpec.Off, request.Token.PreviewChain.Crossover);
+        Assert.True(request.Token.WithChain);
 
         channel.Settings.CrossoverKind = CrossoverKind.HighPass;
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
@@ -538,7 +571,7 @@ public sealed class VirtualDspEqHandoffTests
             channel.Settings.LowPassEdge with { FrequencyHz = 900 };
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
-        Assert.Null(request.Token.Crossover);
+        Assert.False(request.Token.WithChain);
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, request.Token, curve,
             projectGeneration: 1, calibrationId: null));
@@ -603,7 +636,8 @@ public sealed class VirtualDspEqHandoffTests
             ProjectGeneration: 1,
             channel.SideState(rightSide).SourceRevision,
             channel.Pair.Mono,
-            channel.SideSettings(rightSide).ToChain().Crossover,
+            channel.SideSettings(rightSide).ToChain() with { Peq = null },
+            WithChain: true,
             CalibrationId: null);
 
     private static EqWizardGatedPreviewRequest Preview(

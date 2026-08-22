@@ -28,15 +28,25 @@ namespace Resonalyze;
 /// <see cref="VirtualCrossoverChannelPairSettings.SideFor"/> delivers, so a pair that
 /// changed since would route the bank to the other side's settings.
 /// </param>
-/// <param name="Crossover">
-/// The crossover the curve was shaped by. It is the one chain stage that MOVES the
-/// magnitude a bank is fitted to, so a bank fitted through one and applied through
-/// another corrects a shape that is no longer there. Gain, delay, polarity and the
-/// all-pass are deliberately absent — measured, not assumed: through the real
-/// filter-then-window path they move the gated curve's shape by under 0.01 dB at
-/// 48 kHz, and at most ~0.5 dB at 192 kHz in the worst case a chain can produce (an
-/// all-pass at 60 Hz with Q 10, piling ~106 ms of group delay against a window the
-/// rate clamps to 171 ms). See SteadyStateWindowTests, which pins those bounds.
+/// <param name="PreviewChain">
+/// The chain the curve was built through, PEQ excluded — the thing the bank was
+/// fitted against. Compared whole on return, with only the polarity normalized away.
+/// <para>
+/// Measured, not assumed. Through the real filter-then-window path, swept across the
+/// ranges the UI itself allows (delay to 100 ms; all-pass 10 Hz..24 kHz, Q to 20),
+/// the worst SHAPE shift a single edit produces is: polarity exactly 0 at every rate
+/// (|−x·w| = |x·w|); delay 0.000 dB at 48 kHz but 1.70 dB at 192 kHz, where the rate
+/// clamps the window to 171 ms; all-pass 0.27 dB at 48 kHz and 4.77 dB at 192 kHz
+/// (40 Hz, Q 20 — 318 ms of group delay against that window). Gain leaves the shape
+/// alone at every setting, but the handoff carries an ABSOLUTE target level and the
+/// bank's preamp was fitted against it, so a moved gain leaves the tune exactly that
+/// many dB off the target. Only polarity survives all of it.
+/// </para>
+/// </param>
+/// <param name="WithChain">
+/// Whether the curve was built through the chain at all. A raw handoff is measured
+/// before any of it, so chain edits cannot invalidate its bank — and its recorded
+/// chain is the identity, which would otherwise compare unequal to a real one.
 /// </param>
 /// <param name="CalibrationId">
 /// The microphone correction the curve was tuned under. The wizard's own selector is
@@ -51,7 +61,8 @@ internal sealed record VirtualDspEqReturnToken(
     long ProjectGeneration,
     int SourceRevision,
     bool Mono,
-    CrossoverSpec? Crossover,
+    DspChannelChain PreviewChain,
+    bool WithChain,
     string? CalibrationId);
 
 /// <summary>
@@ -234,7 +245,8 @@ internal static class VirtualDspEqHandoff
                 channel.Pair.Mono,
                 // From the preview chain, so it is exactly the crossover the wizard's
                 // curve was built through — including "none" for a raw handoff.
-                previewChain.Crossover,
+                previewChain,
+                withChain,
                 MicrophoneCalibrationIds.Normalize(calibrationId)));
     }
 
@@ -257,11 +269,11 @@ internal static class VirtualDspEqHandoff
     /// What is refused is a return that would land somewhere ELSE, or against a curve
     /// that no longer exists — changes the user cannot see from the wizard, which
     /// still shows what it opened on. The line runs through the MAGNITUDE the bank was
-    /// fitted to: a replaced measurement, a changed calibration and a changed
-    /// crossover all move it, so all three refuse. Gain, delay, polarity and the
-    /// all-pass move it by hundredths of a dB (see the bounds pinned in
-    /// SteadyStateWindowTests), so a bank stays correct across them and is not thrown
-    /// away over knobs the user turned on purpose.
+    /// fitted to, or the LEVEL it was fitted against. A replaced measurement, a
+    /// changed calibration and any change to the chain (gain, delay, crossover,
+    /// all-pass) move one of those — measured across the UI's own ranges, see
+    /// <see cref="VirtualDspEqReturnToken.PreviewChain"/> — so all of them refuse.
+    /// A polarity flip is the single exception, because it changes neither.
     /// </remarks>
     public static bool TryApplyReturn(
         IReadOnlyList<VirtualCrossoverChannel> channels,
@@ -301,10 +313,20 @@ internal static class VirtualDspEqHandoff
             return false;
         }
 
-        // And the crossover must still be the one that shaped the curve: it is the
-        // only chain stage that bends the magnitude the bank was fitted to.
-        // CrossoverSpec and its edges are records, so this compares by value.
-        if (!Equals(token.Crossover, CrossoverFor(token)))
+        // And the chain must still be the one the curve was built through. Compared
+        // WHOLE — every stage of it moves either the shape the bank corrects or the
+        // level it was fitted against (see PreviewChain for the measured figures) —
+        // with polarity normalized away, the one stage that provably changes neither.
+        // DspChannelChain and its specs are records, so this is value equality; the
+        // PEQ is null on both sides, so its reference equality never enters.
+        if (token.WithChain &&
+            !Equals(
+                Comparable(token.PreviewChain),
+                Comparable(
+                    token.Channel.Pair.SideFor(token.RightSide).ToChain() with
+                    {
+                        Peq = null
+                    })))
         {
             return false;
         }
@@ -329,14 +351,11 @@ internal static class VirtualDspEqHandoff
         return true;
     }
 
-    // The crossover the token's side runs now, in the same form the handoff recorded:
-    // the settings' own spec for a chain handoff, and none for a raw one — which is
-    // what the raw preview chain (Identity) carries, so a raw session stays immune to
-    // crossover edits exactly as its curve is.
-    private static CrossoverSpec? CrossoverFor(VirtualDspEqReturnToken token) =>
-        token.Crossover == null
-            ? null
-            : token.Channel.Pair.SideFor(token.RightSide).ToChain().Crossover;
+    // A chain reduced to what can invalidate a bank: everything except the polarity,
+    // which is -1 at every frequency and so leaves both the shape and the level alone
+    // (measured as exactly 0 at every rate).
+    private static DspChannelChain Comparable(DspChannelChain chain) =>
+        chain with { InvertPolarity = false };
 
     // The Auto Tune window a channel's crossover implies: its passband, corner to
     // corner. Beyond the corners the chain is rolling the driver off on purpose and a

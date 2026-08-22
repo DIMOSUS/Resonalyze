@@ -130,71 +130,69 @@ public sealed class SteadyStateWindowTests
     }
 
     // Which chain stages actually move the GATED magnitude — measured through the real
-    // filter → window → FFT path, not argued from the ideal transfer function. It is
-    // the evidence behind the EQ Wizard handoff's return policy (a bank is refused
-    // when the magnitude it corrects has moved), and this PR has already been wrong
-    // once by reasoning from |H| alone, so the policy is held to a measurement.
+    // filter → window → FFT path, not argued from the ideal transfer function, and
+    // swept across the ranges the UI itself allows (delay to 100 ms; all-pass 10 Hz..
+    // 24 kHz with Q to 20). It is the evidence behind the
+    // EQ Wizard handoff's return policy — a bank is refused when what it was fitted to
+    // has moved — and this PR has already been wrong twice by reasoning from |H| alone
+    // and then by measuring too narrow a case, so the policy is held to the sweep.
     //
-    // The window is the handoff's: frozen at handoff time, which is what makes a later
-    // DELAY edit interesting — the response slides under a window that does not move.
+    // The window is the handoff's: frozen at handoff time, which is what makes a DELAY
+    // edit matter — the response slides under a window that does not move.
     [Theory]
-    // Rate, edit, and the bound it must stay under (dB, shape only: a pure level
-    // offset is removed first, because a bank corrects shape).
-    [InlineData(48_000, ChainEdit.Gain, 0.01)]
     [InlineData(48_000, ChainEdit.Delay, 0.01)]
-    [InlineData(48_000, ChainEdit.Polarity, 0.01)]
-    [InlineData(48_000, ChainEdit.ExtremeAllPass, 0.01)]
-    // At 192 kHz the window is clamped to 171 ms, and an all-pass at 60 Hz with Q 10
-    // piles up ~106 ms of group delay — enough of the response to move past the
-    // fade-out to shift the reading. Still under a tenth of the window's own error
-    // for a comparable band (1.34 dB), which is why the policy stands; pinned so it
-    // cannot grow unnoticed.
-    [InlineData(192_000, ChainEdit.Gain, 0.01)]
-    [InlineData(192_000, ChainEdit.Delay, 0.05)]
-    [InlineData(192_000, ChainEdit.Polarity, 0.01)]
-    [InlineData(192_000, ChainEdit.ExtremeAllPass, 0.60)]
-    public void MagnitudeFlatChainStages_BarelyMoveTheGatedCurve(
+    [InlineData(48_000, ChainEdit.AllPass, 0.40)]
+    // At 192 kHz the window is clamped to 171 ms, and both stages then move the
+    // reading by dB: this is why neither is allowed to change under an open handoff.
+    [InlineData(192_000, ChainEdit.Delay, 2.00)]
+    [InlineData(192_000, ChainEdit.AllPass, 5.20)]
+    public void DelayAndAllPass_MoveTheGatedCurve_AtTheLimitsTheUiAllows(
         int sampleRate, ChainEdit edit, double boundDb)
     {
-        var baseChain = new DspChannelChain(
-            GainDb: -2,
-            DelayMs: 0.8,
-            InvertPolarity: false,
-            Crossover: new CrossoverSpec(
-                CrossoverKind.BandPass,
-                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
-                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)),
-            Peq: null,
-            AllPass: new AllPassSpec(AllPassType.SecondOrder, 300, 1.0));
-        DspChannelChain edited = edit switch
-        {
-            ChainEdit.Gain => baseChain with { GainDb = -8 },
-            ChainEdit.Delay => baseChain with { DelayMs = 20.0 },
-            ChainEdit.Polarity => baseChain with { InvertPolarity = true },
-            _ => baseChain with
-            {
-                AllPass = new AllPassSpec(AllPassType.SecondOrder, 60, 10)
-            }
-        };
+        double worst = WorstOverSweep(sampleRate, edit);
 
-        double worst = WorstShapeShiftDb(sampleRate, baseChain, edited);
-
+        // An upper bound, so a regression that made things WORSE is caught...
         Assert.True(
             worst < boundDb,
             $"{edit} at {sampleRate} Hz moved the gated curve by {worst:0.000} dB");
+
+        // ...and, at the clamped rate, a lower one: the guard that refuses these edits
+        // is only justified while they really do move the curve. If this ever stops
+        // being true (a rate-scaled FFT would do it), the policy should be revisited
+        // rather than kept out of habit.
+        if (sampleRate == 192_000)
+        {
+            Assert.True(
+                worst > 1.0,
+                $"{edit} now moves the curve only {worst:0.000} dB — the refusal may " +
+                "no longer be earning its cost");
+        }
+    }
+
+    [Theory]
+    [InlineData(48_000)]
+    [InlineData(192_000)]
+    public void APolarityFlip_MovesNothing(int sampleRate)
+    {
+        // The single chain stage the handoff lets change under it, and the reason is
+        // exact rather than empirical: |-x·w| = |x·w| for any window at all.
+        var baseChain = BaseChain();
+
+        Assert.Equal(
+            0,
+            WorstShapeShiftDb(
+                sampleRate, baseChain, baseChain with { InvertPolarity = true }),
+            10);
     }
 
     [Fact]
     public void ACrossoverEdit_MovesTheGatedCurveByFarMore()
     {
-        // The other side of the same policy: the crossover is refused precisely
-        // because it is not in the class above. Without this, tightening the bounds
-        // there could quietly make the distinction meaningless.
-        var baseChain = new DspChannelChain(
-            Crossover: new CrossoverSpec(
-                CrossoverKind.BandPass,
-                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
-                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)));
+        // The clearest member of the refused class, at the rate where everything else
+        // is quietest: even with the full 682 ms window a moved corner is worth many
+        // dB, so the distinction between "refuse" and "allow" can never come down to
+        // measurement noise.
+        DspChannelChain baseChain = BaseChain();
         DspChannelChain edited = baseChain with
         {
             Crossover = new CrossoverSpec(
@@ -206,12 +204,60 @@ public sealed class SteadyStateWindowTests
         Assert.True(WorstShapeShiftDb(48_000, baseChain, edited) > 5.0);
     }
 
+    private static DspChannelChain BaseChain() => new(
+        GainDb: -2,
+        DelayMs: 0.8,
+        InvertPolarity: false,
+        Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)),
+        Peq: null,
+        AllPass: new AllPassSpec(AllPassType.SecondOrder, 300, 1.0));
+
+    // The worst the edit can do anywhere in the range the UI offers — the figure the
+    // policy needs, rather than one convenient setting's.
+    private static double WorstOverSweep(int sampleRate, ChainEdit edit)
+    {
+        DspChannelChain baseChain = BaseChain();
+        double worst = 0;
+        if (edit == ChainEdit.Delay)
+        {
+            foreach (double ms in new[] { 2.0, 10.0, 25.0, 50.0, 100.0 })
+            {
+                worst = Math.Max(
+                    worst,
+                    WorstShapeShiftDb(sampleRate, baseChain, baseChain with { DelayMs = ms }));
+            }
+
+            return worst;
+        }
+
+        // 20 is VirtualCrossoverChannelSettings.MaximumAllPassQ — the UI's own
+        // ceiling, in the app project this one cannot reference.
+        foreach (double q in new[] { 1.0, 5.0, 10.0, 20.0 })
+        {
+            foreach (double hz in new[] { 10.0, 40.0, 120.0, 2_000.0 })
+            {
+                worst = Math.Max(
+                    worst,
+                    WorstShapeShiftDb(
+                        sampleRate,
+                        baseChain,
+                        baseChain with
+                        {
+                            AllPass = new AllPassSpec(AllPassType.SecondOrder, hz, q)
+                        }));
+            }
+        }
+
+        return worst;
+    }
+
     public enum ChainEdit
     {
-        Gain,
         Delay,
-        Polarity,
-        ExtremeAllPass
+        AllPass
     }
 
     // The largest SHAPE difference the two chains produce through one frozen gate,

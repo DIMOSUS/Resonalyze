@@ -1907,7 +1907,7 @@ public partial class VirtualCrossoverPanel : UserControl
         VirtualDspEqReturnToken token, EqualizationCurve curve)
     {
         if (!VirtualDspEqHandoff.TryApplyReturn(
-                channels, token, curve, projectGeneration))
+                channels, token, curve, projectGeneration, project.CalibrationId))
         {
             return false;
         }

@@ -1218,9 +1218,18 @@ leaves the same way with nothing written: the channel keeps the PEQ it had,
 and the wizard keeps the edits — exportable, or one Ctrl+Z chain back to the
 pre-handoff bank. (A plain tab switch, by contrast, keeps the session open for
 coming back.) Loading any other source ends the session and hides both
-buttons; and if the channel itself is gone by the time Return is pressed
-(removed, or the project replaced), the wizard says so and keeps the filters,
-ready for an export instead.
+buttons.
+
+A return is refused — with the filters kept, ready for an export or a fresh
+edit — when what the bank was tuned against has changed since: the channel
+removed or replaced by another project, that side given a different
+measurement, the pair switched between stereo and mono (which moves where the
+settings live), or the microphone calibration changed. That last one is why the
+wizard locks its own calibration selector during a session: a bank fitted under
+one correction and summed under another is not the same bank, and the Virtual
+DSP panel's own selector is a tab switch away. Edits to the **chain** —
+crossover, gain, delay, all-pass — are deliberately not refused: those are your
+own knobs on your own channel, and the bank stays yours to apply.
 
 ### Auto Tune
 

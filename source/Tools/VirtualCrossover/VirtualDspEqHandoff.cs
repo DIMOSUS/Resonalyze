@@ -28,12 +28,20 @@ namespace Resonalyze;
 /// <see cref="VirtualCrossoverChannelPairSettings.SideFor"/> delivers, so a pair that
 /// changed since would route the bank to the other side's settings.
 /// </param>
+/// <param name="CalibrationId">
+/// The microphone correction the curve was tuned under. The wizard's own selector is
+/// DISABLED during a handoff precisely because a bank fitted under one correction and
+/// summed under another is not the same bank — and the Virtual DSP panel's selector,
+/// reachable by a plain tab switch, would otherwise walk around that lock from the
+/// other side.
+/// </param>
 internal sealed record VirtualDspEqReturnToken(
     VirtualCrossoverChannel Channel,
     bool RightSide,
     long ProjectGeneration,
     int SourceRevision,
-    bool Mono);
+    bool Mono,
+    string? CalibrationId);
 
 /// <summary>
 /// Everything one Virtual DSP channel side sends into the EQ Wizard: the curve to
@@ -212,7 +220,8 @@ internal static class VirtualDspEqHandoff
                 rightSide && !channel.Pair.Mono,
                 projectGeneration,
                 state.SourceRevision,
-                channel.Pair.Mono));
+                channel.Pair.Mono,
+                MicrophoneCalibrationIds.Normalize(calibrationId)));
     }
 
     /// <summary>
@@ -220,6 +229,10 @@ internal static class VirtualDspEqHandoff
     /// when the channel is gone (removed) or the project it belonged to has been
     /// replaced since; the caller keeps the wizard open so the tune is not lost.
     /// </summary>
+    /// <param name="calibrationId">
+    /// The panel's CURRENT microphone calibration, compared against the one the bank
+    /// was fitted under.
+    /// </param>
     /// <param name="projectGeneration">
     /// The panel's CURRENT project generation. Checked first and on its own: the
     /// channel object survives a project bind when the channel count matches, so
@@ -238,7 +251,8 @@ internal static class VirtualDspEqHandoff
         IReadOnlyList<VirtualCrossoverChannel> channels,
         VirtualDspEqReturnToken token,
         EqualizationCurve curve,
-        long projectGeneration)
+        long projectGeneration,
+        string? calibrationId)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(token);
@@ -246,6 +260,19 @@ internal static class VirtualDspEqHandoff
 
         if (token.ProjectGeneration != projectGeneration ||
             !channels.Contains(token.Channel))
+        {
+            return false;
+        }
+
+        // The correction the curve was read through must still be the one the sum is
+        // predicted through. The wizard disables its own selector for exactly this
+        // reason; the Virtual DSP panel's selector is reachable by a plain tab switch,
+        // which a session deliberately survives, so the same rule has to hold here or
+        // the lock is decorative.
+        if (!string.Equals(
+                token.CalibrationId,
+                MicrophoneCalibrationIds.Normalize(calibrationId),
+                StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

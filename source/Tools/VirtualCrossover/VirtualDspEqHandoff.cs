@@ -226,7 +226,7 @@ internal static class VirtualDspEqHandoff
         }
 
         (double MinHz, double MaxHz)? window = withChain
-            ? AutoTuneWindow(settings)
+            ? PassbandFor(settings)
             : null;
 
         string side = channel.Pair.Mono ? "mono" : rightSide ? "R" : "L";
@@ -452,11 +452,17 @@ internal static class VirtualDspEqHandoff
     private static DspChannelChain Comparable(DspChannelChain chain) =>
         chain with { InvertPolarity = false };
 
-    // The Auto Tune window a channel's crossover implies: its passband, corner to
-    // corner. Beyond the corners the chain is rolling the driver off on purpose and a
-    // fit would chase the slope. No crossover means no opinion — the wizard's window
-    // stays where the user left it.
-    private static (double MinHz, double MaxHz)? AutoTuneWindow(
+    /// <summary>
+    /// The band a channel's crossover confines it to: its passband, corner to corner.
+    /// Null when it has no crossover — then it has no opinion, and a caller keeps
+    /// whatever range it had (the wizard's Auto Tune window stays where the user left
+    /// it; an exported tuning sheet states the full range).
+    /// </summary>
+    /// <remarks>
+    /// Beyond the corners the chain is rolling the driver off on purpose, so a fit
+    /// there would chase the slope rather than the driver.
+    /// </remarks>
+    internal static (double MinHz, double MaxHz)? PassbandFor(
         VirtualCrossoverChannelSettings settings) =>
         settings.CrossoverKind switch
         {

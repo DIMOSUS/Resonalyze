@@ -97,6 +97,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private readonly List<VirtualCrossoverChannel> channels = new();
 
+    // The EQ Wizard's own export machinery, reused whole so a channel's bank leaves
+    // through exactly the formats, shelf/preamp rules and warnings the wizard uses.
+    private readonly EqWizardImportExportCoordinator peqExport = new();
+
     // Which loaded project the blocks currently describe; bumped by every bind.
     // Read only by the EQ Wizard handoff, whose return address has to outlive a
     // trip to another mode and must not survive a project replacing this one.
@@ -1792,8 +1796,24 @@ public partial class VirtualCrossoverPanel : UserControl
     // Clear) that changes while the panel is open.
     private void ShowPeqMenu(VirtualCrossoverChannel channel)
     {
+        VirtualCrossoverChannelSettings peqSettings = channel.Settings;
+        bool hasPeq =
+            peqSettings.PeqBands.Count > 0 || peqSettings.PeqPreampDb != 0;
+
         var menu = new ContextMenuStrip();
         menu.Items.Add("Load from file…", null, (_, _) => LoadPeq(channel));
+        var saveItem = new ToolStripMenuItem(
+            "Save to file…",
+            null,
+            (_, _) => SavePeq(channel))
+        {
+            Enabled = hasPeq,
+            ToolTipText =
+                "Write this channel's bank out as an EQ profile (or a tuning\r\n" +
+                "sheet PDF) — the whole tune can be built here without a file,\r\n" +
+                "so this is where it leaves for the hardware."
+        };
+        menu.Items.Add(saveItem);
         menu.Items.Add(new ToolStripSeparator());
 
         // Both wizard entries need a measurement to show a curve; the choice is what
@@ -1836,13 +1856,12 @@ public partial class VirtualCrossoverPanel : UserControl
         menu.Items.Add(editRawItem);
 
         menu.Items.Add(new ToolStripSeparator());
-        VirtualCrossoverChannelSettings settings = channel.Settings;
         var clearItem = new ToolStripMenuItem(
             "Clear",
             null,
             (_, _) => ClearPeq(channel))
         {
-            Enabled = settings.PeqBands.Count > 0 || settings.PeqPreampDb != 0
+            Enabled = hasPeq
         };
         menu.Items.Add(clearItem);
 
@@ -1938,6 +1957,69 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
         return true;
     }
+
+    // Writes one channel's bank out through the SAME coordinator, formats and
+    // warnings the EQ Wizard exports with — the tune can now be built entirely in
+    // these two panels, so this is the door to the hardware and it must not be a
+    // second, subtly different exporter.
+    private void SavePeq(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        var curve = new EqualizationCurve(settings.PeqBands, settings.PeqPreampDb);
+        string side = channel.Pair.Mono ? "mono" : channel.ActiveRight ? "R" : "L";
+        using var dialog = new SaveFileDialog
+        {
+            AddExtension = true,
+            DefaultExt = peqExport.DefaultExportExtension,
+            FileName = $"channel-{channel.Name}-{side}",
+            Filter = peqExport.ExportFilter,
+            RestoreDirectory = true,
+            Title = $"Save channel {channel.Name} PEQ"
+        };
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        {
+            return;
+        }
+
+        EqWizardExportTarget target = peqExport.ResolveExportTarget(dialog.FilterIndex);
+        if (!ConfirmPeqExportLoss(EqExportWarnings.ShelvingBandsDropped(target, curve)) ||
+            !ConfirmPeqExportLoss(EqExportWarnings.PreampDropped(target, curve)))
+        {
+            return;
+        }
+
+        // The band the sheet states it was tuned over: this channel's own passband
+        // when it has a crossover, the full range when it does not.
+        (double minHz, double maxHz) =
+            VirtualDspEqHandoff.PassbandFor(settings) ?? (20.0, 20_000.0);
+        EqWizardFileResult result = peqExport.Export(
+            new EqWizardExportRequest(
+                dialog.FileName,
+                target,
+                curve,
+                ProjectSampleRateHz,
+                $"Channel {channel.Name} ({side})",
+                minHz,
+                maxHz,
+                // No fit statistics: these bands were not necessarily fitted here,
+                // and a sheet is better with the figure absent than invented.
+                Stats: null,
+                TargetDspQConvention));
+        if (!result.Success)
+        {
+            ShowError("PEQ could not be exported.", result.Exception!.Message);
+        }
+    }
+
+    // Nothing to say means nothing to ask — the same rule the wizard's export follows.
+    private bool ConfirmPeqExportLoss(string? warning) =>
+        warning == null ||
+        MessageBox.Show(
+            FindForm(),
+            warning,
+            "Virtual DSP",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning) == DialogResult.Yes;
 
     private void LoadPeq(VirtualCrossoverChannel channel)
     {

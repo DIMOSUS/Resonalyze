@@ -1378,10 +1378,15 @@ Each channel runs through:
   lining drivers up where a delay and a polarity flip are both too blunt — a
   sub-to-midbass hand-off at 60–100 Hz is the classic case — with a live read-out
   of the group delay it adds (≈ 4Q/ω₀)
-- **PEQ** — one button, four doors: **Load from file…** (any format the EQ
-  Wizard imports), **Edit in EQ Wizard** and **Edit raw in EQ Wizard** (the
+- **PEQ** — one button, five doors: **Load from file…** (any format the EQ
+  Wizard imports), **Save to file…** (any format it exports, plus a tuning-sheet
+  PDF), **Edit in EQ Wizard** and **Edit raw in EQ Wizard** (the
   [handoff](#editing-a-virtual-dsp-channels-peq) that opens the wizard on this
-  channel's own curve and brings the result back), and **Clear**
+  channel's own curve and brings the result back), and **Clear**. With the
+  handoff there, a whole tune can be built between these two panels without a
+  file in between — so Save is where it leaves for the hardware, going out
+  through the same formats, shelf/preamp rules and warnings the wizard's own
+  export uses. The sheet states the channel's passband when it has a crossover
 - **Mute** and **Bypass** — Mute removes a channel from the plots, sum, loss
   metric and Auto delay; Bypass keeps it in the sum but feeds its raw measured
   signal, for an A/B against the processed result (Auto delay refuses to run

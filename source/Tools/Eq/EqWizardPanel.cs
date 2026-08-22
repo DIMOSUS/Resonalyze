@@ -862,58 +862,24 @@ public partial class EqWizardPanel : UserControl
     // out and decides; the coordinator drops them either way.
     private bool ConfirmShelvingBandsDropped(
         EqWizardExportTarget target,
-        EqualizationCurve curve)
-    {
-        int dropped = EqWizardImportExportCoordinator.CountShelvingBandsDroppedBy(
-            target, curve);
-        if (dropped == 0)
-        {
-            return true;
-        }
+        EqualizationCurve curve) =>
+        ConfirmExportLoss(EqExportWarnings.ShelvingBandsDropped(target, curve));
 
-        string filters = dropped == 1 ? "shelving filter" : $"{dropped} shelving filters";
-        return MessageBox.Show(
-            FindForm(),
-            $"{target.Name} cannot carry a shelving filter the way this EQ defines " +
-            $"one, so the {filters} would be left out." +
-            Environment.NewLine + Environment.NewLine +
-            "The exported profile will hold the peaking filters and the preamp only, " +
-            "and will not match the curve on screen. Export anyway?",
-            "EQ Wizard",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning) == DialogResult.Yes;
-    }
-
-    // A format whose layout has no preamp slot exports the bands only, so the whole
-    // curve lands on the device that many dB off the tune on screen — and, unlike a
-    // dropped band, nothing in the file says so. Tell the user the number to enter
-    // in the device's own gain control; they decide.
     private bool ConfirmPreampDropped(
         EqWizardExportTarget target,
-        EqualizationCurve curve)
-    {
-        double preampDb = EqWizardImportExportCoordinator.PreampDroppedBy(target, curve);
-        if (preampDb == 0)
-        {
-            return true;
-        }
+        EqualizationCurve curve) =>
+        ConfirmExportLoss(EqExportWarnings.PreampDropped(target, curve));
 
-        string gain = FormattableString.Invariant($"{preampDb:+0.0;-0.0} dB");
-        // The preamp is signed: leaving out a cut makes the export louder than the
-        // curve on screen, leaving out a boost makes it quieter. Say which.
-        string direction = preampDb < 0 ? "louder" : "quieter";
-        return MessageBox.Show(
+    // Nothing to say means nothing to ask: the panel only interrupts when the export
+    // is going to cost the user something.
+    private bool ConfirmExportLoss(string? warning) =>
+        warning == null ||
+        MessageBox.Show(
             FindForm(),
-            $"{target.Name} has no place for the preamp, so the {gain} would be left " +
-            $"out and the exported bands alone are that much {direction} than the tune " +
-            "on screen." +
-            Environment.NewLine + Environment.NewLine +
-            $"Enter {gain} in the channel's own gain control on the device after " +
-            "importing the bands. Export anyway?",
+            warning,
             "EQ Wizard",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning) == DialogResult.Yes;
-    }
 
     // Loads a PEQ using the format chosen in the dialog and applies it. Parsing
     // tolerates broken or hand-edited files, so only file access can fail here.

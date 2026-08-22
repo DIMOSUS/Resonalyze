@@ -14,6 +14,18 @@ public partial class EqWizardPanel
     // whose curve is no longer the one on screen.
     private VirtualDspEqReturnToken? virtualDspToken;
 
+    // The Target Level box's own range, captured before a handoff ever narrows it to
+    // what the Virtual DSP panel can express. Read from the control rather than
+    // repeated as literals, so the designer stays the single place that states it.
+    private decimal? defaultTargetOffsetMinimum;
+    private decimal? defaultTargetOffsetMaximum;
+
+    private decimal DefaultTargetOffsetMinimum =>
+        defaultTargetOffsetMinimum ??= NumericTargetOffset.Minimum;
+
+    private decimal DefaultTargetOffsetMaximum =>
+        defaultTargetOffsetMaximum ??= NumericTargetOffset.Maximum;
+
     /// <summary>
     /// Raised when the user sends the edited bank back to Virtual DSP. The host owns
     /// what happens next — landing the bank and switching the mode — because the
@@ -59,6 +71,10 @@ public partial class EqWizardPanel
         // Virtual DSP would otherwise land afterwards, still holding the current
         // generation, and replace the channel that was just handed over — taking the
         // session with it (ApplySource ends one).
+        // Read before the narrowing below, so the wizard's own range is what gets
+        // restored when the session ends.
+        _ = DefaultTargetOffsetMinimum;
+        _ = DefaultTargetOffsetMaximum;
         sourceLoadGeneration++;
         // The DSP panel's smoothing first, so the source lands rendered exactly as
         // that plot showed it; the selector then lives its own life.
@@ -79,6 +95,15 @@ public partial class EqWizardPanel
         // where the user just saw it, whatever the wizard's previous offset was —
         // the one case where a source load moves the Target Level, and even then it
         // is only carrying the user's own setting from the panel they came from.
+        //
+        // The box is also narrowed to what the panel can express while the session
+        // runs. This box is wider by design (an absolute dB SPL source needs the
+        // room), and the level travels BACK: a value the panel cannot hold would
+        // arrive there silently clamped, and the tune would realize a height it was
+        // never fitted to. Prevented rather than refused afterwards — the user
+        // cannot dial a level that will not survive the trip.
+        NumericTargetOffset.Minimum = (decimal)request.TargetLevelMinDb;
+        NumericTargetOffset.Maximum = (decimal)request.TargetLevelMaxDb;
         NumericTargetOffset.Value = NumericTargetOffset.ClampValue(request.TargetLevelDb);
 
         virtualDspToken = request.Token;
@@ -151,6 +176,9 @@ public partial class EqWizardPanel
 
     private void EndVirtualDspHandoff()
     {
+        // The box goes back to the wizard's own range, which its other sources need.
+        NumericTargetOffset.Minimum = DefaultTargetOffsetMinimum;
+        NumericTargetOffset.Maximum = DefaultTargetOffsetMaximum;
         virtualDspToken = null;
         buttonReturnToDsp.Visible = false;
         buttonBackToDsp.Visible = false;

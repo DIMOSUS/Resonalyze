@@ -630,6 +630,61 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void ChangingHowThePhaseViewReads_DoesNotRefuseTheReturn()
+    {
+        // The gate template is shared with the phase and impulse views, and the
+        // magnitude forces Fixed and ignores its FDW cycles, detrend and unwrap
+        // entirely. Refusing over those would cost a finished tune because the user
+        // changed a view the handoff's curve never came from.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.True(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve,
+            projectGeneration: 1, calibrationId: null,
+            GateTemplate with
+            {
+                FdwCycles = 8,
+                DetrendMode = PhaseDetrendMode.Manual,
+                ManualDetrendMilliseconds = 3,
+                Unwrap = true
+            },
+            null,
+            TargetLevel));
+        Assert.Equal(curve.Bands, channel.Settings.PeqBands);
+    }
+
+    [Fact]
+    public void ChangingTheMagnitudeWindowItself_StillRefuses()
+    {
+        // The other half: the durations and the mode ARE what the magnitude reads.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve,
+            projectGeneration: 1, calibrationId: null,
+            GateTemplate with { PlateauMs = 400 }, null, TargetLevel));
+        Assert.Empty(channel.Settings.PeqBands);
+    }
+
+    [Fact]
+    public void TheRequestCarriesTheLevelRangeThePanelCanHold()
+    {
+        // The wizard's own box is wider than the panel's, and the level travels back:
+        // without the range the wizard could offer a level that arrives clamped, and
+        // the tune would realize a height it was never fitted to.
+        VirtualCrossoverChannel channel = BuildChannel();
+
+        VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
+
+        Assert.Equal(-120, request.TargetLevelMinDb);
+        Assert.Equal(60, request.TargetLevelMaxDb);
+    }
+
+    [Fact]
     public void ARawSessionIsImmuneToTheProcessedGatePin()
     {
         // A raw handoff anchors on the measurement's own peak and never reads the
@@ -776,6 +831,8 @@ public sealed class VirtualDspEqHandoffTests
             pinnedGateOffsetMs,
             renderAnchorIndex,
             targetLevelDb,
+            targetLevelMinDb: -120,
+            targetLevelMaxDb: 60,
             smoothingInverseOctaves: 0,
             calibrationId,
             projectGeneration);

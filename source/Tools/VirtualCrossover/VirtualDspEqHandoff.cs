@@ -122,6 +122,8 @@ internal sealed record VirtualDspEqHandoffRequest(
     double? AutoTuneMinHz,
     double? AutoTuneMaxHz,
     double TargetLevelDb,
+    double TargetLevelMinDb,
+    double TargetLevelMaxDb,
     int SmoothingInverseOctaves,
     VirtualDspEqReturnToken Token);
 
@@ -170,6 +172,8 @@ internal static class VirtualDspEqHandoff
         double? pinnedGateOffsetMs,
         int? renderAnchorIndex,
         double targetLevelDb,
+        double targetLevelMinDb,
+        double targetLevelMaxDb,
         int smoothingInverseOctaves,
         string? calibrationId,
         long projectGeneration)
@@ -269,6 +273,13 @@ internal static class VirtualDspEqHandoff
             window?.MinHz,
             window?.MaxHz,
             targetLevelDb,
+            // The range the panel can actually express. The wizard's own box is
+            // wider (an absolute dB SPL curve needs the room), and a level outside
+            // this would come back silently clamped — the returned tune realizing a
+            // height it was not fitted to, which is exactly what carrying the level
+            // was for.
+            targetLevelMinDb,
+            targetLevelMaxDb,
             smoothingInverseOctaves,
             // A mono pair's handoff reads the single left set whichever side is
             // active, so the token says LEFT outright: if the pair stops being mono
@@ -364,7 +375,7 @@ internal static class VirtualDspEqHandoff
         // VirtualCrossoverPanel.BuildRawMagnitudeCurve — a raw response lives in its
         // own time), so refusing a raw return because that pin moved would throw work
         // away over something its curve never read.
-        if (!Equals(token.GateTemplate, gateTemplate) ||
+        if (!Equals(Comparable(token.GateTemplate), Comparable(gateTemplate)) ||
             (token.WithChain &&
                 !Nullable.Equals(token.PinnedGateOffsetMs, pinnedGateOffsetMs)) ||
             !token.TargetLevelDb.Equals(targetLevelDb))
@@ -417,6 +428,23 @@ internal static class VirtualDspEqHandoff
         settings.PeqSourceName = "EQ Wizard";
         return true;
     }
+
+    // A gate reduced to what the MAGNITUDE actually reads. The template is shared
+    // with the phase and impulse views, which is where FDW cycles, the detrend and
+    // the unwrap belong — the magnitude forces Fixed and ignores them (see the
+    // magnitudeGate rebuild in VirtualCrossoverPanel). Comparing them would refuse a
+    // return because the user changed how the PHASE view reads, which the handoff's
+    // curve never saw. The offset is carried separately, as the pin.
+    private static PhaseAnalysisSettings Comparable(PhaseAnalysisSettings gate) =>
+        gate with
+        {
+            FdwCycles = 0,
+            DetrendMode = PhaseDetrendMode.Off,
+            ManualDetrendMilliseconds = 0,
+            GateOffsetMs = 0,
+            Unwrap = false,
+            SmoothingInverseOctaves = 0
+        };
 
     // A chain reduced to what can invalidate a bank: everything except the polarity,
     // which is -1 at every frequency and so leaves both the shape and the level alone

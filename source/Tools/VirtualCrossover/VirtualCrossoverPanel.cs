@@ -1883,6 +1883,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 snapshot.PinnedOffsetMs,
                 renderAnchor,
                 (double)numericTargetLevel.Value,
+                (double)numericTargetLevel.Minimum,
+                (double)numericTargetLevel.Maximum,
                 snapshot.SmoothingInverseOctaves,
                 project.CalibrationId,
                 projectGeneration);

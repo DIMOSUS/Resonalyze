@@ -90,6 +90,46 @@ namespace Resonalyze.Dsp
         public const double DefaultPhaseDetrendMs = 0.0;
         public const double DefaultPhaseSmoothingInverseOctaves = 12.0;
 
+        // The steady-state magnitude window (milliseconds): ONE definition for every
+        // magnitude curve the Virtual DSP tool and the EQ Wizard draw, long enough
+        // that what is shown is the response the ear hears — tonal balance with the
+        // cabin, and an EQ band's full depth even at high Q in the bass (a Q 10 bell
+        // at 60 Hz rings for ~100 ms; a short gate reads a fraction of its gain).
+        // Deliberately NOT taken from the user's gate: that gate exists to time
+        // junctions and shapes the phase and impulse views, where cutting before the
+        // first reflection is the point. Magnitude and phase answer different
+        // questions and read different windows.
+        //
+        // In milliseconds, not samples, so the analysed TIME does not shrink with the
+        // sample rate — but the carve is clamped to GatedFftLength samples
+        // (ResolveGatePlacement trims the fades coherently), so the effective length
+        // is min(682 ms, 32768 samples): the full 682 ms up to 48 kHz, 341 ms at
+        // 96 kHz, 171 ms at 192 kHz — still resolving ~6 Hz, and dozens of times the
+        // junction gate it replaces.
+        public const double SteadyStateLeftMs = 2.0;
+        public const double SteadyStatePlateauMs = 500.0;
+        public const double SteadyStateRightMs = 180.0;
+
+        /// <summary>
+        /// The steady-state window as sample counts for the plain (non-gated)
+        /// spectrum path, trimmed exactly the way the gated carve trims itself
+        /// (total clamped to <see cref="DataHelper.GatedFftLength"/>, then the fades
+        /// cut to fit) — so the two paths realize one window definition.
+        /// </summary>
+        public static (int Window, int LeftTukey, int RightTukey)
+            SteadyStateWindowSamples(int sampleRate)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
+            int left = (int)Math.Round(SteadyStateLeftMs / 1_000.0 * sampleRate);
+            int plateau = (int)Math.Round(SteadyStatePlateauMs / 1_000.0 * sampleRate);
+            int right = (int)Math.Round(SteadyStateRightMs / 1_000.0 * sampleRate);
+            int window = Math.Clamp(
+                left + plateau + right, 1, DataHelper.GatedFftLength);
+            left = Math.Min(left, window);
+            right = Math.Min(right, window - left);
+            return (window, left, right);
+        }
+
         // Auto keeps the gate offset snapped to the estimated IR start
         // (TransferIrDiagnostics.EstimateIrStart) whenever the measurement
         // changes; off leaves the offset to the user. Default on: a first-run

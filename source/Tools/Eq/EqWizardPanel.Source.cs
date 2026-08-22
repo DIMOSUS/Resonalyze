@@ -13,12 +13,6 @@ namespace Resonalyze;
 // overlay UI or the current measurement.
 public partial class EqWizardPanel
 {
-    // A fat analysis window so the low end reads clearly (finer LF resolution than
-    // the short measurement-preview window). Zero-padded when the IR is shorter.
-    private const int SourceWindow = 32768;
-    private const int SourceLeftTukey = 256;
-    private const int SourceRightTukey = 2048;
-
     private const int DefaultSampleRateHz = 48_000;
 
     private static readonly int[] SelectableSampleRatesHz =
@@ -448,11 +442,18 @@ public partial class EqWizardPanel
             return EqWizardGatedPreview.Render(BuildGatedPreviewRequest(source, bank: null));
         }
 
+        // The same steady-state window every magnitude curve in the Virtual DSP tool
+        // reads — one definition in milliseconds, realized here as sample counts at
+        // this measurement's rate. Long, so the low end resolves and a bass EQ band's
+        // full depth is visible; zero-padded when the IR is shorter.
+        (int window, int leftTukey, int rightTukey) =
+            FrequencyResponseOptions.SteadyStateWindowSamples(
+                source.Measurement!.SampleRate);
         var options = new FrequencyResponseOptions
         {
-            Window = SourceWindow,
-            LeftTukeyWindow = SourceLeftTukey,
-            RightTukeyWindow = SourceRightTukey,
+            Window = window,
+            LeftTukeyWindow = leftTukey,
+            RightTukeyWindow = rightTukey,
             SmoothingInverseOctaves = SourceSmoothingInverseOctaves,
             Offset = 0,
             CalibrationId = calibrationId

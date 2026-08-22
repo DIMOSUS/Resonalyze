@@ -86,9 +86,9 @@ public partial class VirtualCrossoverPanel : UserControl
             PhaseDetrendMode.Off,
             ManualDetrendMilliseconds: 0.0,
             GateOffsetMs: 0.0,
-            LeftMs: FrequencyResponseOptions.DefaultPhaseLeftMs,
-            PlateauMs: FrequencyResponseOptions.DefaultPhasePlateauMs,
-            RightMs: FrequencyResponseOptions.DefaultPhaseRightMs,
+            LeftMs: FrequencyResponseOptions.SteadyStateLeftMs,
+            PlateauMs: FrequencyResponseOptions.SteadyStatePlateauMs,
+            RightMs: FrequencyResponseOptions.SteadyStateRightMs,
             Unwrap: false,
             SmoothingInverseOctaves: 0.0),
         PinnedOffsetMs: null,
@@ -2164,9 +2164,14 @@ public partial class VirtualCrossoverPanel : UserControl
             "Run Auto delay afterward to phase-align the result.");
         toolTip.SetToolTip(
             buttonPhaseGate,
-            "Configure the gate for the magnitude, phase and impulse\r\n" +
-            "views: offset and Tukey fades, with an IR preview — cut the\r\n" +
-            "window before the first reflection for clean traces.\r\n" +
+            "Configure the gate for the phase and impulse views: offset\r\n" +
+            "and Tukey fades, with an IR preview — cut the window before\r\n" +
+            "the first reflection for clean traces.\r\n" +
+            "The MAGNITUDE view deliberately ignores these durations: it\r\n" +
+            "reads a long fixed steady-state window (what the ear hears,\r\n" +
+            "cabin included — and the full depth of a bass EQ band, which\r\n" +
+            "a junction-length gate cannot contain). Only the gate's\r\n" +
+            "OFFSET carries over, saying where that window opens.\r\n" +
             "Where the gate SITS — its offset and the detrend τ — belongs\r\n" +
             "to the side you are viewing (L or R): their drivers arrive at\r\n" +
             "different times, so fitting one no longer disturbs the other.\r\n" +
@@ -2227,14 +2232,23 @@ public partial class VirtualCrossoverPanel : UserControl
                 PhaseDetrendMode.Off,
                 manualDetrendMilliseconds: 0.0) with
             {
-                // The magnitude always reads the FIXED gate. FDW cannot hold
-                // the summed response: its high-frequency windows are shorter
-                // than the channels' arrival spread, so no single window keeps
-                // every channel's treble inside the one summed IR, and the
-                // drawn Sum and the loss read-out collapse. The dialog's
-                // Window mode and FDW cycles therefore shape the PHASE view
-                // only.
-                WindowMode = PhaseWindowMode.Fixed
+                // The magnitude reads the FIXED steady-state window, not the
+                // dialog's gate. Two reasons, one per parameter. Mode: FDW cannot
+                // hold the summed response — its high-frequency windows are
+                // shorter than the channels' arrival spread, so no single window
+                // keeps every channel's treble inside the one summed IR, and the
+                // drawn Sum and the loss read-out collapse. Length: tonal balance
+                // is a steady-state question — a short junction gate cannot even
+                // contain a bass EQ band's own ringing, so under it a Q 5 cut at
+                // 100 Hz draws at a fraction of its real depth. The dialog's
+                // durations, window mode and FDW cycles therefore shape the
+                // PHASE and IMPULSE views only; its OFFSET (the pin, or the
+                // shared front anchor when unpinned) still says where this
+                // window opens.
+                WindowMode = PhaseWindowMode.Fixed,
+                LeftMs = FrequencyResponseOptions.SteadyStateLeftMs,
+                PlateauMs = FrequencyResponseOptions.SteadyStatePlateauMs,
+                RightMs = FrequencyResponseOptions.SteadyStateRightMs
             },
             PinnedGateOffsetMs,
             project.PhaseGateFor(!project.ActiveSideRight).OffsetMs,

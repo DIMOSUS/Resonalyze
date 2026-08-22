@@ -1162,23 +1162,23 @@ A [Virtual DSP](#virtual-dsp) channel's PEQ row opens the wizard on that
 channel directly — **Edit in EQ Wizard** on its menu, taking the side the
 panel is showing (a mono pair hands over its single set). The wizard then
 shows the very curve the user just left: the measurement through the channel's
-DSP chain **with the PEQ bypassed** — the one stage under edit — windowed by
-the same gate the Virtual DSP magnitude view draws with, under the same
-microphone calibration, the smoothing selector starting on that panel's value.
+DSP chain **with the PEQ bypassed** — the one stage under edit — under the same
+steady-state window and microphone calibration the Virtual DSP magnitude view
+uses, the smoothing selector starting on that panel's value.
 **Edit raw in EQ Wizard** hands over the raw measurement instead — the panel's
 Raw curve — for tuning the driver itself irrespective of the chain.
 
-That identity extends to the corrected curve, which is what makes the handoff
-worth the trip: **Source + EQ** is not the bare curve with the filters' ideal
-magnitude added on top, the way an equalizer normally previews itself. A window
-does not commute with a filter — under a short gate a narrow band's own ringing
-falls outside the window, and the two readings part by several dB in the bass
-(about 4 dB for a Q 5 band at 100 Hz under a 6 ms gate, a few hundredths above
-1 kHz). So the wizard runs the whole chain — the bank being edited included —
-through one pass and gates the result, exactly as the panel does for a channel
-carrying that PEQ. The **Tuning results** figures are measured against that same
-honest curve. It costs a pair of transforms per edit, so it is computed off the
-UI thread and the last finished curve stays on screen while the next one runs.
+That identity extends to the corrected curve: **Source + EQ** is not the bare
+curve with the filters' ideal magnitude added on top, the way an equalizer
+normally previews itself. The wizard runs the whole chain — the bank being
+edited included — through one pass and windows the result, exactly as the panel
+does for a channel carrying that PEQ, so the preview is the panel's own
+arithmetic rather than an approximation of it. (A window does not commute with a
+filter; the steady-state window is long enough that the two would rarely part
+visibly, but the honest path holds by construction, not by luck.) The **Tuning
+results** figures are measured against that same curve. It costs a pair of
+transforms per edit, so it is computed off the UI thread and the last finished
+curve stays on screen while the next one runs.
 
 The channel's bands and preamp seed the filter bank as one undo step (the bank
 is the wizard's single global one, so Ctrl+Z is the way back to what it held),
@@ -1375,6 +1375,18 @@ the IR preview, Tukey controls, and gate offset. Where the gate SITS belongs to
 the side you are viewing, since the two sides' drivers sit at different
 distances; how the phase is READ stays project-wide, because two sides read
 through different windows could not be compared.
+
+The gate's durations shape the **phase and impulse views only**. The magnitude
+view — channels, Sum, Sum loss and the read-out built from them — deliberately
+reads a long fixed **steady-state window** (~680 ms, clamped to 32768 samples at
+high rates) that only takes the gate's OFFSET, saying where it opens. The two
+views answer different questions: phase is timed on the direct sound, where
+cutting before the first reflection is the point, while tonal balance is what
+the ear hears with the cabin — and a junction-length gate cannot even contain a
+bass EQ band's own ringing, so under it a Q 5 cut at 100 Hz would draw at a
+fraction of its real depth. One window definition serves every magnitude curve
+here and in the [EQ Wizard](#eq-wizard), which is what keeps the two tools
+showing the same curve for the same channel.
 
 A **Target** checkbox draws the EQ target over the prediction: the SAME target
 the EQ Wizard equalizes towards, shaped from either place through the same

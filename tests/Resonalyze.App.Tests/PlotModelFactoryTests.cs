@@ -795,6 +795,17 @@ public sealed class PlotModelFactoryTests
             Math.Abs(summedAt300 - mainAt300) < 1.5,
             $"the sum read {summedAt300:0.00} dB at 300 Hz against the early " +
             $"driver's own {mainAt300:0.00} dB");
+
+        // And the documented invariant survives the window bookkeeping: the loss
+        // divides the windowed sum by the individually windowed magnitudes, so a
+        // sum window that lost a driver the denominators kept would show up here
+        // as a loss far from the triangle inequality's <= 0. The epsilon covers
+        // the windows' different (per-record) placements, nothing more.
+        AnalysisCurve? loss = factory.TryBuildComplexSumLossCurve();
+        Assert.NotNull(loss);
+        Assert.All(loss.Points, point => Assert.True(
+            point.Y <= 0.1,
+            $"summation loss reads +{point.Y:0.000} dB at {point.X:0.#} Hz"));
     }
 
     // A decaying wavelet from `onset`: returns the sample where the record peaks.

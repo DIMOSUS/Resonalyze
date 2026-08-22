@@ -2293,9 +2293,19 @@ internal sealed class PlotModelFactory
             length - 1);
         int anchorIndex = Math.Min(mainStart, compareStart);
 
+        // The view's PeakIndex stays a PEAK — the earlier record's, the right
+        // fallback if the explicit anchor ever went away — rather than smuggling
+        // the anchor through a field that means something else.
+        int peakIndex = Math.Min(
+            Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, length - 1),
+            Math.Clamp(
+                compare.TransferPeakIndex + (int)Math.Round(delaySamples),
+                0,
+                length - 1));
+
         FrequencyResponseOptions curveOptions = options ?? frequencyResponseOptions;
         return DataHelper.GetPrimarySpectrum(
-            new ImpulseMeasurementView(sum, anchorIndex, expSweepMeasurement.SampleRate),
+            new ImpulseMeasurementView(sum, peakIndex, expSweepMeasurement.SampleRate),
             curveOptions,
             GetCalibration(curveOptions),
             anchorIndex);

@@ -63,6 +63,47 @@ internal static class SampleRateOptions
         !string.IsNullOrWhiteSpace(asioDriverName) &&
         reportedRateCount == 0;
 
+    /// <summary>
+    /// Refuses, on the way to configuration, a rate the devices never reported.
+    /// </summary>
+    /// <remarks>
+    /// For the backends that derive their list by asking the devices — Wave, and WASAPI
+    /// Exclusive — an empty list is an ANSWER: no rate works for this configuration. The
+    /// combo is then empty, and an empty combo is where the panel's own
+    /// <c>GetSelectedSampleRate</c> falls back to <see cref="FallbackSampleRate"/>. Without
+    /// this check that fallback becomes configuration: Apply persists 44.1 kHz for an
+    /// endpoint pair that has just said it cannot open it. ASIO must not be routed through
+    /// here — there an empty list can be a driver that refused to open, which is the
+    /// silence <see cref="IsProbeFailure"/> exists to tell apart, and refusing on it would
+    /// block a configuration that works.
+    /// </remarks>
+    /// <param name="deviceDescription">
+    /// How to name the devices in the message; the sentence continues from it.
+    /// </param>
+    /// <exception cref="InvalidOperationException">
+    /// The list is empty, or the rate is not in it.
+    /// </exception>
+    public static void ValidateSelectedRate(
+        IReadOnlyList<int> supportedRates,
+        int sampleRate,
+        string deviceDescription)
+    {
+        ArgumentNullException.ThrowIfNull(supportedRates);
+
+        if (supportedRates.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"{deviceDescription} report no sample rate in common for the current " +
+                "configuration. Change the devices, the channel counts or the bit depth.");
+        }
+
+        if (!supportedRates.Contains(sampleRate))
+        {
+            throw new InvalidOperationException(
+                $"{deviceDescription} do not support {sampleRate} Hz for the current configuration.");
+        }
+    }
+
     /// <param name="probeFailed">
     /// Whether the probe produced no answer at all. An empty <paramref name="supportedRates"/>
     /// cannot stand in for this: it is a real answer everywhere except ASIO — WASAPI Shared

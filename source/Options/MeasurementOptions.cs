@@ -562,7 +562,23 @@ namespace Resonalyze.Options
                 wasapiRenderEndpointId = renderEndpoint.Id;
                 if (audioBackend == AudioBackend.WasapiShared)
                 {
+                    // Shared never takes the rate from the combo, so no fallback of the
+                    // combo's can reach the configuration through it.
                     sampleRate = captureEndpoint.PreferredFormat.SampleRate;
+                }
+                else if (audioBackend == AudioBackend.WasapiExclusive)
+                {
+                    // Exclusive does take it from the combo, and the combo can be empty:
+                    // an endpoint pair with no rate in common is a real answer, and
+                    // GetSelectedSampleRate then answers with its own 44.1 kHz fallback.
+                    // Persisting that is persisting a format the endpoints just refused.
+                    // Checked here, after the availability test above, so an endpoint that
+                    // is simply gone keeps its own message instead of being reported as a
+                    // rate mismatch.
+                    SampleRateOptions.ValidateSelectedRate(
+                        GetSupportedSampleRates(),
+                        sampleRate,
+                        "The WASAPI Exclusive endpoints");
                 }
             }
             if (audioBackend != AudioBackend.Asio &&
@@ -1259,8 +1275,9 @@ namespace Resonalyze.Options
             // marker left by an earlier automatic fallback describes an action that is
             // now over, and UpdateAsioStatusLabels would otherwise keep reporting
             // "96000 Hz is not offered — changed to 48000 Hz" about a rate the user
-            // chose. The probe verdict is left alone; it is still the last thing the
-            // driver actually said.
+            // chose. The probe verdict is not cleared here but re-taken below: the
+            // re-probe for the new rate is a fresh answer, and RefreshAsioDriverInfo
+            // settles the flag from it before the status line is written.
             sampleRateFellBackFrom = null;
 
             // The achieved band and its cycle-quantized duration depend on the
@@ -1454,6 +1471,13 @@ namespace Resonalyze.Options
                 ? asioDriver.DriverName
                 : null;
             asioDriverInfo = AsioDeviceCatalog.GetDriverInfo(driverName, sampleRate);
+            // The probe just happened, so its verdict is settled here rather than
+            // wherever the rate list is next rebuilt. Not every caller rebuilds one:
+            // a manual rate change re-probes for the latency figures alone, and
+            // leaving the flag behind let a probe that has since SUCCEEDED still be
+            // reported as "the driver did not report its rates". RefreshSampleRateOptions
+            // recomputes the same predicate for the resolution it acts on.
+            sampleRateProbeFailed = IsAsioSampleRateProbeFailure();
 
             comboBoxAsioInputChannel.Items.Clear();
             comboBoxAsioLoopbackChannel.Items.Clear();
@@ -1902,24 +1926,14 @@ namespace Resonalyze.Options
             }
         }
 
-        private void ValidateSelectedWaveSampleRate(int sampleRate)
-        {
-            IReadOnlyList<int> supportedRates = GetSupportedSampleRates();
-            // Empty is an answer here, never silence: a Wave pair reports no rate in
-            // common only when there is none. Skipping validation on it let the rate
-            // sitting in the combo through to a device that cannot open it.
-            if (supportedRates.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    "Wave devices report no sample rate in common for the current " +
-                    "configuration. Change the devices, the channel counts or the bit depth.");
-            }
-            if (!supportedRates.Contains(sampleRate))
-            {
-                throw new InvalidOperationException(
-                    $"Wave devices do not support {sampleRate} Hz for the current configuration.");
-            }
-        }
+        // Empty is an answer here, never silence: a Wave pair reports no rate in common
+        // only when there is none. Skipping validation on it let the rate sitting in the
+        // combo through to a device that cannot open it.
+        private void ValidateSelectedWaveSampleRate(int sampleRate) =>
+            SampleRateOptions.ValidateSelectedRate(
+                GetSupportedSampleRates(),
+                sampleRate,
+                "Wave devices");
 
         private static int FindInputChannelOptionIndex(
             DarkComboBox comboBox,

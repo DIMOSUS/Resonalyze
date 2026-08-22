@@ -116,4 +116,46 @@ public sealed class SampleRateOptionsTests
             expected,
             SampleRateOptions.IsProbeFailure(isAsio, driverName, reportedRateCount));
     }
+
+    // The other end of the same rule, and the round-three finding. An empty list left
+    // the combo empty, where the panel answers with its own 44.1 kHz fallback — so
+    // Apply has to refuse it, or the fallback becomes the saved configuration for an
+    // endpoint pair that just said it cannot open it.
+    [Fact]
+    public void AnEmptyListIsRefusedOnTheWayToConfiguration()
+    {
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => SampleRateOptions.ValidateSelectedRate(
+                [],
+                SampleRateOptions.FallbackSampleRate,
+                "The WASAPI Exclusive endpoints"));
+
+        // The way out is not another rate — there is none — so the message has to point
+        // at what can actually change.
+        Assert.Contains("no sample rate in common", error.Message);
+        Assert.Contains("The WASAPI Exclusive endpoints", error.Message);
+        Assert.Contains("bit depth", error.Message);
+    }
+
+    [Fact]
+    public void ARateNobodyReportedIsRefusedAndNamed()
+    {
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => SampleRateOptions.ValidateSelectedRate(
+                [44_100, 48_000],
+                96_000,
+                "Wave devices"));
+
+        Assert.Contains("96000 Hz", error.Message);
+        Assert.Contains("Wave devices", error.Message);
+    }
+
+    [Fact]
+    public void AReportedRatePasses()
+    {
+        SampleRateOptions.ValidateSelectedRate(
+            [44_100, 48_000, 96_000],
+            96_000,
+            "Wave devices");
+    }
 }

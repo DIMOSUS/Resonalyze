@@ -203,9 +203,10 @@ namespace Resonalyze
             InitCore(configuration);
         }
 
-        // The body of Init without its guard, for the one caller that already
-        // holds the measurement busy itself (see ImportRecordedSweep) and would
-        // otherwise have to drop that claim across the call to re-enter here.
+        // The body of Init without its guard, for the callers that already hold
+        // the measurement busy themselves (see ImportRecordedSweep and
+        // RestoreImpulseResponse) and would otherwise have to drop that claim
+        // across the call to re-enter here.
         private void InitCore(SweepMeasurementConfiguration configuration)
         {
             SweepSignalConfiguration signal = configuration.Signal;
@@ -510,7 +511,7 @@ namespace Resonalyze
                 throw new ArgumentOutOfRangeException(nameof(transferPeakIndex));
             }
 
-            Init(new SweepMeasurementConfiguration(
+            InitCore(new SweepMeasurementConfiguration(
                 new SweepSignalConfiguration(
                     lowFrequencyHz,
                     highFrequencyHz,
@@ -537,7 +538,7 @@ namespace Resonalyze
                     AverageRunCount,
                     ConfirmEachAverageRun),
                 ProtectiveHighPass));
-            // Init just set these from the sweep it regenerated; the recorded
+            // InitCore just set these from the sweep it regenerated; the recorded
             // geometry wins, since that sweep is a reconstruction and this result
             // came from the original one. The length matters as much as the band:
             // generation is capped at MaxDurationSeconds while a stored sweep may

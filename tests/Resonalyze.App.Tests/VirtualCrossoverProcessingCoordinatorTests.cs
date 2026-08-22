@@ -5,6 +5,41 @@ namespace Resonalyze.App.Tests;
 
 public sealed class VirtualCrossoverProcessingCoordinatorTests
 {
+    // A net under the rendezvous below, not a schedule: the threads meet as
+    // soon as the pool has one to give them, so anything approaching this is a
+    // hang worth failing on.
+    private static readonly TimeSpan RendezvousTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Keeps the thread pool below its own minimum by <paramref name="needed"/>
+    /// threads, so the work items a test parks get threads created on demand
+    /// instead of waiting to be injected. Above the minimum the pool adds about
+    /// one thread per second, which is how a runner busy with the rest of the
+    /// suite turned the rendezvous below into a five-second timeout on CI.
+    /// Measured against this coordinator on a 16-core machine with 96 pool
+    /// threads parked: the two consumers never met inside five seconds, and met
+    /// in 0.5 s with this held.
+    /// </summary>
+    private sealed class PooledThreads : IDisposable
+    {
+        private readonly int workers;
+        private readonly int completionPorts;
+
+        internal PooledThreads(int needed)
+        {
+            ThreadPool.GetMinThreads(out workers, out completionPorts);
+            ThreadPool.GetMaxThreads(out int maximumWorkers, out _);
+            ThreadPool.GetAvailableThreads(out int availableWorkers, out _);
+            int busy = maximumWorkers - availableWorkers;
+            ThreadPool.SetMinThreads(
+                Math.Min(maximumWorkers, Math.Max(workers, busy + needed)),
+                completionPorts);
+        }
+
+        public void Dispose() =>
+            ThreadPool.SetMinThreads(workers, completionPorts);
+    }
+
     [Fact]
     public void ChannelSnapshot_PreservesEveryChainStage()
     {
@@ -165,6 +200,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task Invalidate_DropsInFlightResultAndDoesNotPopulateCache()
     {
+        using var threads = new PooledThreads(needed: 2);
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         int processCount = 0;
@@ -173,7 +209,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             {
                 Interlocked.Increment(ref processCount);
                 entered.Set();
-                Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
+                Assert.True(release.Wait(RendezvousTimeout));
                 return source.Apply(chain, sampleRate);
             });
         var source = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 4, 1.0));
@@ -183,7 +219,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             [new VirtualCrossoverChannelSnapshot(0, source, 48_000, DspChannelChain.Identity)]);
 
         Task<VirtualCrossoverRenderResult?> oldTask = coordinator.ProcessAsync(oldSnapshot);
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(entered.Wait(RendezvousTimeout));
         long newRevision = coordinator.Invalidate();
         release.Set();
 
@@ -271,6 +307,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task RunAuxiliaryAsync_InvalidateCancelsWork()
     {
+        using var threads = new PooledThreads(needed: 2);
         using var entered = new ManualResetEventSlim();
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         long revision = coordinator.Invalidate();
@@ -284,7 +321,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
                 return new object();
             });
 
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(entered.Wait(RendezvousTimeout));
         coordinator.Invalidate();
 
         Assert.Null(await work);
@@ -293,13 +330,14 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task ProcessAsync_SameRevisionAllowsConcurrentConsumers()
     {
+        using var threads = new PooledThreads(needed: 3);
         using var entered = new CountdownEvent(2);
         using var release = new ManualResetEventSlim();
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
             (source, chain, sampleRate, cancellationToken) =>
             {
                 entered.Signal();
-                Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
+                Assert.True(release.Wait(RendezvousTimeout));
                 cancellationToken.ThrowIfCancellationRequested();
                 return source.Apply(chain, sampleRate);
             });
@@ -311,7 +349,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
 
         Task<VirtualCrossoverRenderResult?> leftTask = coordinator.ProcessAsync(left);
         Task<VirtualCrossoverRenderResult?> rightTask = coordinator.ProcessAsync(right);
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(entered.Wait(RendezvousTimeout));
         release.Set();
 
         Assert.NotNull(await leftTask);
@@ -321,13 +359,14 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task ProcessAsync_InvalidateCancelsAllConcurrentConsumers()
     {
+        using var threads = new PooledThreads(needed: 3);
         using var entered = new CountdownEvent(2);
         using var release = new ManualResetEventSlim();
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
             (source, chain, sampleRate, cancellationToken) =>
             {
                 entered.Signal();
-                Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
+                Assert.True(release.Wait(RendezvousTimeout));
                 cancellationToken.ThrowIfCancellationRequested();
                 return source.Apply(chain, sampleRate);
             });
@@ -337,7 +376,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             CreateSnapshot(revision, 0, false, 3));
         Task<VirtualCrossoverRenderResult?> rightTask = coordinator.ProcessAsync(
             CreateSnapshot(revision, 0, true, 11));
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(entered.Wait(RendezvousTimeout));
         coordinator.Invalidate();
         release.Set();
 

@@ -146,8 +146,26 @@ public partial class Form1
         }
     }
 
-    private async Task LoadImpulseResponseFileAsync(string path) =>
-        ApplyImpulseResponseFile(await ImpulseResponseFile.LoadAsync(path), path);
+    // A plain Load is a request to make a measurement current like any other, so it
+    // takes the shared revision and checks it between reading and installing. The
+    // Load button being disabled meanwhile is not the same guard: it stops a second
+    // Load, not a mode switch to Virtual DSP and an Open in analyzers, which would
+    // otherwise land first and then be overwritten by this file arriving late.
+    //
+    // (The WAV import needs none of this: it holds an ExpSweepMeasurement claim for
+    // its whole decode, and every other path refuses to start while the measurement
+    // is busy — mutual exclusion rather than a race resolved afterwards.)
+    private async Task LoadImpulseResponseFileAsync(string path)
+    {
+        long revision = ++measurementActivationRevision;
+        ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
+        if (revision != measurementActivationRevision)
+        {
+            return;
+        }
+
+        ApplyImpulseResponseFile(file, path);
+    }
 
     // The install half, split from the read so a caller that must not land a stale
     // result can check its own guard between the two — reading a large file takes

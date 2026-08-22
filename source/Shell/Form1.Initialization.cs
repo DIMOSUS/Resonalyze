@@ -191,6 +191,10 @@ public partial class Form1
         {
             if (success)
             {
+                // A finished sweep is the current measurement, so it supersedes any
+                // read still in flight — a file picked before the run started must
+                // not land on top of what was just measured.
+                measurementActivationRevision++;
                 buttonRecord.Text = "Ready";
                 plotModelFactory.SetImpulseResponseFileName(null);
                 SetImpulseResponseAvailability(true);

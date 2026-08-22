@@ -345,6 +345,10 @@ public partial class Form1
     // overlays' own on-disk files are left intact.
     private async Task StartNewSessionAsync()
     {
+        // Emptying the session is a decision about which measurement is current too:
+        // without this, a load or activation still reading would land afterwards and
+        // quietly un-empty it.
+        measurementActivationRevision++;
         sessionTracker.PersistCurrentSessionState();
 
         if (liveSpectrumController.InProgress)

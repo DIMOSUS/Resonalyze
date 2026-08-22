@@ -113,20 +113,7 @@ public sealed class SteadyStateWindowTests
         // the same curve as the gated carve placed at that start.
         const int sampleRate = 48_000;
         const int onset = 960; // 20 ms
-        var impulse = new Complex[65_536];
-        int peak = 0;
-        for (int i = 0; onset + i < impulse.Length; i++)
-        {
-            double t = i / (double)sampleRate;
-            // A 60 Hz burst whose envelope rises over ~3 ms and decays over
-            // ~80 ms: the envelope maximum lands ~10 ms after the onset.
-            impulse[onset + i] = Math.Sin(2 * Math.PI * 60 * t) *
-                (1 - Math.Exp(-t / 0.003)) * Math.Exp(-t / 0.080);
-            if (impulse[onset + i].Magnitude > impulse[peak].Magnitude)
-            {
-                peak = onset + i;
-            }
-        }
+        (Complex[] impulse, int peak) = RisingBurst(sampleRate, onset);
 
         var measurement = new WindowMeasurement(impulse, peak, sampleRate);
         int anchor = TransferIrStartCache.ResolveStartIndex(
@@ -180,6 +167,70 @@ public sealed class SteadyStateWindowTests
             Math.Abs(at60Start - at60Peak) > 0.5,
             $"fixture: start- and peak-anchored windows read within " +
             $"{Math.Abs(at60Start - at60Peak):0.000} dB of each other at 60 Hz");
+    }
+
+    [Fact]
+    public void AnExplicitAnchorOverridesTheEstimator()
+    {
+        // The contract a COMPOSITE caller stands on (the Compare complex sum):
+        // the anchor it passes is where the window opens, estimator or not —
+        // run on a mixed record, the estimator would read the dominant band's
+        // front, which a later, louder arrival can own.
+        const int sampleRate = 48_000;
+        const int onset = 960;
+        (Complex[] impulse, int peak) = RisingBurst(sampleRate, onset);
+        var measurement = new WindowMeasurement(impulse, peak, sampleRate);
+        int estimated = TransferIrStartCache.ResolveStartIndex(
+            impulse, sampleRate, peak);
+        Assert.NotEqual(peak, estimated); // the override must actually differ
+
+        (int window, int left, int right) =
+            FrequencyResponseOptions.SteadyStateWindowSamples(sampleRate);
+        double toMs = 1_000.0 / sampleRate;
+        var options = new FrequencyResponseOptions
+        {
+            Window = window,
+            LeftTukeyWindow = left,
+            RightTukeyWindow = right,
+            SmoothingInverseOctaves = 0,
+            UseCalibration = false
+        };
+        AnalysisCurve overridden = DataHelper.GetPrimarySpectrum(
+            measurement, options, calibration: null, anchorIndex: peak);
+        AnalysisCurve atPeak = Carved(measurement, peak * toMs,
+            left * toMs, (window - left - right) * toMs, right * toMs);
+
+        Assert.True(
+            Math.Abs(AtHz(overridden, 60) - AtHz(atPeak, 60)) < 0.05,
+            $"the explicit anchor read {AtHz(overridden, 60):0.000} dB against " +
+            $"the same anchor's carve at {AtHz(atPeak, 60):0.000} dB");
+        Assert.NotEqual(
+            AtHz(atPeak, 60),
+            AtHz(DataHelper.GetPrimarySpectrum(
+                measurement, options, calibration: null), 60),
+            precision: 1);
+    }
+
+    // A 60 Hz burst whose envelope rises over ~3 ms and decays over ~80 ms:
+    // the envelope maximum lands ~10 ms after the onset — the LF-driver shape
+    // whose peak-anchored window discards the direct arrival.
+    private static (Complex[] Impulse, int Peak) RisingBurst(
+        int sampleRate, int onset)
+    {
+        var impulse = new Complex[65_536];
+        int peak = 0;
+        for (int i = 0; onset + i < impulse.Length; i++)
+        {
+            double t = i / (double)sampleRate;
+            impulse[onset + i] = Math.Sin(2 * Math.PI * 60 * t) *
+                (1 - Math.Exp(-t / 0.003)) * Math.Exp(-t / 0.080);
+            if (impulse[onset + i].Magnitude > impulse[peak].Magnitude)
+            {
+                peak = onset + i;
+            }
+        }
+
+        return (impulse, peak);
     }
 
     private static AnalysisCurve Carved(

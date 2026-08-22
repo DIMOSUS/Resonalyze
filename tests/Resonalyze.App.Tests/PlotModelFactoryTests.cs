@@ -738,6 +738,104 @@ public sealed class PlotModelFactoryTests
     }
 
     [Fact]
+    public void ComplexSum_WindowsAtTheEarlierRecordsOwnStart_NotTheSumsDominantBand()
+    {
+        // Two drivers, the honest hard case: a quiet low-frequency arrival first,
+        // a louder high-frequency one 30 ms later. The summed record's dominant
+        // band belongs to the LOUD driver, so a start estimated on the sum itself
+        // reads the late front — and a window opening there cuts the early driver
+        // out of the sum while its own curve keeps it. The sum must window at the
+        // earlier of the two records' own starts instead.
+        const int sampleRate = 44_100;
+        var mainIr = new Complex[8_192];
+        int mainPeak = Wavelet(mainIr, onset: 441, hz: 300, amplitude: 0.05,
+            decaySeconds: 0.02, sampleRate);
+        var compareIr = new Complex[8_192];
+        int comparePeak = Wavelet(compareIr, onset: 1_764, hz: 3_000, amplitude: 1.0,
+            decaySeconds: 0.005, sampleRate);
+
+        using var measurement = CreateTransferMeasurement(mainIr, mainPeak, sampleRate);
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference", sampleRate, compareIr, comparePeak));
+
+        // The fixture must actually discriminate: on the summed record the
+        // estimator locks onto the loud driver's late front, past the early
+        // driver AND the window's whole fade-in.
+        var sum = new Complex[8_192];
+        for (int i = 0; i < sum.Length; i++)
+        {
+            sum[i] = mainIr[i] + compareIr[i];
+        }
+        int mainStart = TransferIrStartCache.ResolveStartIndex(
+            mainIr, sampleRate, mainPeak);
+        int sumStart = TransferIrStartCache.ResolveStartIndex(
+            sum, sampleRate, Math.Min(mainPeak, comparePeak));
+        var options = new FrequencyResponseOptions();
+        Assert.True(
+            sumStart > mainStart + options.LeftTukeyWindow,
+            $"fixture: the sum's own estimated start {sumStart} did not lock " +
+            $"onto the late driver (main starts at {mainStart})");
+
+        AnalysisCurve? summed = factory.TryBuildComplexSumCurve();
+        Assert.NotNull(summed);
+
+        // In the early driver's band the loud driver contributes next to
+        // nothing, so the sum must read the early driver's own level there — a
+        // window anchored on the sum's dominant band loses it by far more.
+        AnalysisCurve main = DataHelper.GetPrimarySpectrum(
+            new ImpulseMeasurementView(mainIr, mainPeak, sampleRate),
+            options,
+            calibration: null);
+        double summedAt300 = At(summed.Points, 300);
+        double mainAt300 = At(main.Points, 300);
+        Assert.True(
+            Math.Abs(summedAt300 - mainAt300) < 1.5,
+            $"the sum read {summedAt300:0.00} dB at 300 Hz against the early " +
+            $"driver's own {mainAt300:0.00} dB");
+    }
+
+    // A decaying wavelet from `onset`: returns the sample where the record peaks.
+    private static int Wavelet(
+        Complex[] impulse,
+        int onset,
+        double hz,
+        double amplitude,
+        double decaySeconds,
+        int sampleRate)
+    {
+        int peak = onset;
+        for (int i = 0; onset + i < impulse.Length; i++)
+        {
+            double t = i / (double)sampleRate;
+            impulse[onset + i] += amplitude * Math.Sin(2 * Math.PI * hz * t) *
+                Math.Exp(-t / decaySeconds);
+            if (impulse[onset + i].Magnitude > impulse[peak].Magnitude)
+            {
+                peak = onset + i;
+            }
+        }
+
+        return peak;
+    }
+
+    private static double At(IReadOnlyList<SignalPoint> points, double hz)
+    {
+        SignalPoint best = points[0];
+        foreach (SignalPoint point in points)
+        {
+            if (Math.Abs(point.X - hz) < Math.Abs(best.X - hz))
+            {
+                best = point;
+            }
+        }
+
+        return best.Y;
+    }
+
+    [Fact]
     public void ComplexSum_RequiresMatchingSampleRateAndTransferIr()
     {
         using var measurement = CreateTransferMeasurement();
@@ -1609,12 +1707,18 @@ public sealed class PlotModelFactoryTests
     {
         var transferImpulse = new Complex[2048];
         transferImpulse[peakSample] = Complex.One;
+        return CreateTransferMeasurement(transferImpulse, peakSample, 44_100);
+    }
+
+    private static ExpSweepMeasurement CreateTransferMeasurement(
+        Complex[] transferImpulse, int peakSample, int sampleRate)
+    {
 
         var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
-            sampleRate: 44_100,
+            sampleRate: sampleRate,
             bits: 24,
             sweepDurationSeconds: 1.0,
             playChannel: PlaybackChannel.Mono,

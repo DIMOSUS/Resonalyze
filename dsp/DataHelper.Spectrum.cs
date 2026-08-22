@@ -34,14 +34,26 @@ namespace Resonalyze.Dsp
         /// by GetSpectrum for its primary curve and directly for derived responses
         /// (e.g. the complex sum of two transfer impulse responses), where the
         /// per-curve visibility gating of GetSpectrum must not apply.
+        /// <para>
+        /// <paramref name="anchorIndex"/> overrides where the window opens. A
+        /// COMPOSITE record (a sum of arrivals) must pass the earliest of its
+        /// parts' own starts: run on the mixed record, the start estimator reads
+        /// the front of the record's dominant band, which a later, louder
+        /// arrival can own — the same reason the Virtual DSP tool anchors its
+        /// shared window at the min of per-channel starts
+        /// (ProcessedChannels.SharedStartAnchorIndex) rather than estimating on
+        /// the sum. Single records leave it null.
+        /// </para>
         /// </summary>
         public static AnalysisCurve GetPrimarySpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
-            CalibrationFile? calibration)
+            CalibrationFile? calibration,
+            int? anchorIndex = null)
         {
             List<SignalPoint> data = LogarithmicResample(
-                GetOversampledPrimarySpectrum(measurement, frequencyResponseOptions),
+                GetOversampledPrimarySpectrum(
+                    measurement, frequencyResponseOptions, anchorIndex),
                 20,
                 20000,
                 1024,
@@ -63,19 +75,21 @@ namespace Resonalyze.Dsp
         /// </summary>
         public static List<SignalPoint> GetOversampledPrimarySpectrum(
             IImpulseMeasurement measurement,
-            FrequencyResponseOptions frequencyResponseOptions)
+            FrequencyResponseOptions frequencyResponseOptions,
+            int? anchorIndex = null)
         {
+            int anchor = anchorIndex ?? MagnitudeAnchorIndex(measurement);
             if (frequencyResponseOptions.MagnitudeWindowMode ==
                 PhaseWindowMode.FrequencyDependent)
             {
-                return GetFdwPrimarySpectrum(measurement, frequencyResponseOptions);
+                return GetFdwPrimarySpectrum(
+                    measurement, frequencyResponseOptions, anchor);
             }
 
             double leftTukeyWindow = (double)frequencyResponseOptions.LeftTukeyWindow / frequencyResponseOptions.Window * 2.0;
             double rightTukeyWindow = (double)frequencyResponseOptions.RightTukeyWindow / frequencyResponseOptions.Window * 2.0;
             double[] window = Windowing.TukeyWindow(frequencyResponseOptions.Window, leftTukeyWindow, rightTukeyWindow);
-            int h1Start = MagnitudeAnchorIndex(measurement) -
-                frequencyResponseOptions.LeftTukeyWindow;
+            int h1Start = anchor - frequencyResponseOptions.LeftTukeyWindow;
             return GetOversampledSpectrumData(measurement, h1Start, window);
         }
 
@@ -106,7 +120,8 @@ namespace Resonalyze.Dsp
         // of the settings record are phase-only and never reach the bank.
         private static List<SignalPoint> GetFdwPrimarySpectrum(
             IImpulseMeasurement measurement,
-            FrequencyResponseOptions options)
+            FrequencyResponseOptions options,
+            int anchorIndex)
         {
             double toMilliseconds = 1000.0 / measurement.SampleRate;
             int plateau = Math.Max(
@@ -116,7 +131,7 @@ namespace Resonalyze.Dsp
                 options.MagnitudeFdwCycles,
                 PhaseDetrendMode.Off,
                 ManualDetrendMilliseconds: 0.0,
-                GateOffsetMs: MagnitudeAnchorIndex(measurement) * toMilliseconds,
+                GateOffsetMs: anchorIndex * toMilliseconds,
                 LeftMs: options.LeftTukeyWindow * toMilliseconds,
                 PlateauMs: plateau * toMilliseconds,
                 RightMs: options.RightTukeyWindow * toMilliseconds,

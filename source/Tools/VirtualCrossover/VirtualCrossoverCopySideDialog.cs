@@ -1,15 +1,29 @@
 namespace Resonalyze;
 
 /// <summary>
-/// The channel picker behind the Virtual DSP "L→R" / "R→L" commands: which
-/// pairs have their DSP settings (gain, crossover, PEQ) copied from one side
-/// onto the other. Mono pairs never appear here — they have a single settings
-/// set by definition. Sources and delays are deliberately not copied: each
-/// side has its own measurement and its own arrival timing.
+/// The picker behind the Virtual DSP "L→R" / "R→L" commands: which pairs have
+/// their settings copied from one side onto the other, and which parts of the
+/// chain travel with them. Mono pairs never appear here — they have a single
+/// settings set by definition. Sources are never copied: each side picks its
+/// own measurement.
+/// <para>
+/// The default selection is the POSITION-INDEPENDENT part of the chain — the
+/// filter shape, which describes the driver. Gain, delay and polarity are
+/// offered too, but off by default: each is tuned against the side's own level
+/// and geometry, and a left tweeter's arrival is not a right tweeter's.
+/// </para>
 /// </summary>
 internal sealed class VirtualCrossoverCopySideDialog : Form
 {
     private readonly List<CheckBox> channelBoxes = new();
+    private readonly CheckBox gainBox = CreateScopeBox("Gain", checkedByDefault: false);
+    private readonly CheckBox delayBox = CreateScopeBox("Delay", checkedByDefault: false);
+    private readonly CheckBox invertBox = CreateScopeBox("Invert", checkedByDefault: false);
+    private readonly CheckBox crossoverBox = CreateScopeBox("Crossover", checkedByDefault: true);
+    private readonly CheckBox allPassBox = CreateScopeBox("All-pass", checkedByDefault: true);
+    private readonly CheckBox peqBox = CreateScopeBox("PEQ", checkedByDefault: true);
+    private readonly Button copyButton =
+        UiStyle.CreateDialogButton("Copy", DialogResult.OK, accent: true);
 
     public VirtualCrossoverCopySideDialog(
         bool fromRightToLeft,
@@ -18,65 +32,102 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         ArgumentNullException.ThrowIfNull(channelLabels);
 
         SuspendLayout();
-        Text = fromRightToLeft ? "Copy R → L" : "Copy L → R";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        ShowInTaskbar = false;
-        StartPosition = FormStartPosition.CenterParent;
-        BackColor = Color.FromArgb(40, 44, 54);
-        ForeColor = Color.White;
-        Font = new Font("Segoe UI", 9F);
-        AutoScaleMode = AutoScaleMode.Font;
+        UiStyle.ApplyDarkDialog(
+            this,
+            new Size(340, 300),
+            fromRightToLeft ? "Copy R → L" : "Copy L → R");
+        // The channel list is as long as the project has stereo pairs, so the
+        // dialog sizes itself around the finished layout instead of around
+        // hand-computed 96-DPI coordinates that a scaled font would overrun.
+        AutoSize = true;
+        AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
-        var caption = new Label
+        var layout = new TableLayoutPanel
         {
             AutoSize = true,
-            ForeColor = Color.FromArgb(210, 214, 222),
-            Location = new Point(12, 12),
-            Text = "Copy gain, crossover and PEQ for the selected channels.\n" +
-                "Sources and delays stay with their side."
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            Dock = DockStyle.Fill
         };
-        Controls.Add(caption);
+        layout.Controls.Add(new Label
+        {
+            AutoSize = true,
+            ForeColor = UiPalette.TextHighlight,
+            Margin = new Padding(0, 0, 0, 12),
+            Text = "Pick the channels, then the parts of the chain to copy.\n" +
+                "Sources always stay with their side; gain, delay and polarity\n" +
+                "are tuned per side, so they start off."
+        });
 
-        int y = 52;
+        layout.Controls.Add(CreateSectionLabel("Channels"));
+        var channelList = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.TopDown,
+            Margin = new Padding(4, 0, 0, 12),
+            WrapContents = false
+        };
         foreach (string label in channelLabels)
         {
             var box = new CheckBox
             {
                 AutoSize = true,
                 Checked = true,
-                Location = new Point(16, y),
+                Margin = new Padding(0, 2, 0, 2),
                 Text = label
             };
+            box.CheckedChanged += (_, _) => UpdateCopyEnabled();
             channelBoxes.Add(box);
-            Controls.Add(box);
-            y += 25;
+            channelList.Controls.Add(box);
         }
 
-        var okButton = new Button
+        layout.Controls.Add(channelList);
+
+        layout.Controls.Add(CreateSectionLabel("What to copy"));
+        // Two columns that read as the split they are: what belongs to the side
+        // (left, off) against what belongs to the driver (right, on).
+        var scopeTable = new TableLayoutPanel
         {
-            BackColor = Color.FromArgb(46, 51, 67),
-            DialogResult = DialogResult.OK,
-            FlatStyle = FlatStyle.Popup,
-            Location = new Point(160, y + 10),
-            Size = new Size(80, 26),
-            Text = "Copy"
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            Margin = new Padding(4, 0, 0, 12)
         };
-        var cancelButton = new Button
+        scopeTable.Controls.Add(gainBox, 0, 0);
+        scopeTable.Controls.Add(crossoverBox, 1, 0);
+        scopeTable.Controls.Add(delayBox, 0, 1);
+        scopeTable.Controls.Add(allPassBox, 1, 1);
+        scopeTable.Controls.Add(invertBox, 0, 2);
+        scopeTable.Controls.Add(peqBox, 1, 2);
+        foreach (CheckBox box in ScopeBoxes)
         {
-            BackColor = Color.FromArgb(46, 51, 67),
-            DialogResult = DialogResult.Cancel,
-            FlatStyle = FlatStyle.Popup,
-            Location = new Point(248, y + 10),
-            Size = new Size(80, 26),
-            Text = "Cancel"
+            box.CheckedChanged += (_, _) => UpdateCopyEnabled();
+        }
+
+        layout.Controls.Add(scopeTable);
+
+        var buttons = new FlowLayoutPanel
+        {
+            Anchor = AnchorStyles.Right,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.RightToLeft,
+            Margin = new Padding(0),
+            WrapContents = false
         };
-        Controls.Add(okButton);
-        Controls.Add(cancelButton);
-        AcceptButton = okButton;
+        Button cancelButton = UiStyle.CreateDialogButton(
+            "Cancel",
+            DialogResult.Cancel,
+            accent: false);
+        buttons.Controls.Add(cancelButton);
+        buttons.Controls.Add(copyButton);
+        layout.Controls.Add(buttons);
+
+        Controls.Add(layout);
+        AcceptButton = copyButton;
         CancelButton = cancelButton;
-        ClientSize = new Size(340, y + 46);
+        UpdateCopyEnabled();
         ResumeLayout(false);
         PerformLayout();
     }
@@ -87,4 +138,63 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         .Where(item => item.Checked)
         .Select(item => item.index)
         .ToList();
+
+    /// <summary>The parts of the chain the user asked to carry over.</summary>
+    public VirtualCrossoverCopyScope Scope => new(
+        Gain: gainBox.Checked,
+        Delay: delayBox.Checked,
+        InvertPolarity: invertBox.Checked,
+        Crossover: crossoverBox.Checked,
+        AllPass: allPassBox.Checked,
+        Peq: peqBox.Checked);
+
+    private IEnumerable<CheckBox> ScopeBoxes =>
+        [gainBox, delayBox, invertBox, crossoverBox, allPassBox, peqBox];
+
+    private static CheckBox CreateScopeBox(string text, bool checkedByDefault)
+    {
+        return new CheckBox
+        {
+            AutoSize = true,
+            Checked = checkedByDefault,
+            Margin = new Padding(0, 2, 20, 2),
+            Text = text
+        };
+    }
+
+    private static Label CreateSectionLabel(string text)
+    {
+        return new Label
+        {
+            AutoSize = true,
+            Font = new Font("Segoe UI Semibold", 9F),
+            ForeColor = UiPalette.TextSecondary,
+            Margin = new Padding(0, 0, 0, 6),
+            Text = text
+        };
+    }
+
+    // A copy with no channel or no part selected would do nothing at all, which
+    // is worth saying with the button rather than with a silent no-op.
+    private void UpdateCopyEnabled()
+    {
+        copyButton.Enabled = channelBoxes.Exists(box => box.Checked) && !Scope.IsEmpty;
+    }
+}
+
+/// <summary>
+/// Which parts of a channel's chain a side-to-side copy carries. Everything the
+/// user did not tick is left as the target side had it.
+/// </summary>
+internal readonly record struct VirtualCrossoverCopyScope(
+    bool Gain,
+    bool Delay,
+    bool InvertPolarity,
+    bool Crossover,
+    bool AllPass,
+    bool Peq)
+{
+    /// <summary>True when the copy would carry nothing.</summary>
+    public bool IsEmpty =>
+        !Gain && !Delay && !InvertPolarity && !Crossover && !AllPass && !Peq;
 }

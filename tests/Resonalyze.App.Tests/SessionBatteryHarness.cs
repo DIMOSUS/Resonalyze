@@ -198,8 +198,8 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         seen.Add(fingerprint, name);
         List<VirtualCrossoverChannel> participants = channels
             .Where(channel =>
-                channel.Settings.Enabled &&
-                !channel.Settings.Bypass &&
+                channel.Pair.Enabled &&
+                !channel.Pair.Bypass &&
                 channel.TransferImpulseResponse != null)
             .ToList();
         report.AppendLine();

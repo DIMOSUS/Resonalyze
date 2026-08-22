@@ -332,10 +332,13 @@ public sealed class VirtualCrossoverProjectFileTests
             original.StereoLevelDifferenceDb = -1.5;
             original.ActiveSideRight = true;
             original.Pairs[0].Mono = true;
+            // Mute, Bypass and the curve toggles belong to the PAIR, not to a side.
+            original.Pairs[0].Enabled = false;
+            original.Pairs[0].Bypass = true;
+            original.Pairs[0].ShowRawCurve = true;
+            original.Pairs[0].ShowProcessedCurve = false;
             original.Pairs[0].Left = new VirtualCrossoverChannelSettings
             {
-                Enabled = false,
-                Bypass = true,
                 DisplayName = "Woofer",
                 SourceFilePath = @"C:\measurements\woofer.json",
                 HistoryEntryId = Guid.NewGuid(),
@@ -347,9 +350,7 @@ public sealed class VirtualCrossoverProjectFileTests
                     CrossoverFilterFamily.Butterworth, 1_800, 18),
                 PeqPreampDb = -1.5,
                 PeqBands = [new PeqBand(120, 2.0, -4.0), new PeqBand(900, 1.0, 2.0)],
-                PeqSourceName = "woofer-peq.txt",
-                ShowRawCurve = true,
-                ShowProcessedCurve = false
+                PeqSourceName = "woofer-peq.txt"
             };
 
             original.Save(root);
@@ -382,11 +383,16 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(original.ActiveSideRight, loaded.ActiveSideRight);
             Assert.Equal(original.Pairs.Count, loaded.Pairs.Count);
             Assert.True(loaded.Pairs[0].Mono);
+            Assert.Equal(original.Pairs[0].Enabled, loaded.Pairs[0].Enabled);
+            Assert.Equal(original.Pairs[0].Bypass, loaded.Pairs[0].Bypass);
+            Assert.Equal(
+                original.Pairs[0].ShowRawCurve, loaded.Pairs[0].ShowRawCurve);
+            Assert.Equal(
+                original.Pairs[0].ShowProcessedCurve,
+                loaded.Pairs[0].ShowProcessedCurve);
 
             VirtualCrossoverChannelSettings expected = original.Pairs[0].Left;
             VirtualCrossoverChannelSettings actual = loaded.Pairs[0].Left;
-            Assert.Equal(expected.Enabled, actual.Enabled);
-            Assert.Equal(expected.Bypass, actual.Bypass);
             Assert.Equal(expected.DisplayName, actual.DisplayName);
             Assert.Equal(expected.SourceFilePath, actual.SourceFilePath);
             Assert.Equal(expected.HistoryEntryId, actual.HistoryEntryId);
@@ -399,8 +405,6 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(expected.PeqPreampDb, actual.PeqPreampDb);
             Assert.Equal(expected.PeqBands, actual.PeqBands);
             Assert.Equal(expected.PeqSourceName, actual.PeqSourceName);
-            Assert.Equal(expected.ShowRawCurve, actual.ShowRawCurve);
-            Assert.Equal(expected.ShowProcessedCurve, actual.ShowProcessedCurve);
         }
         finally
         {
@@ -1045,6 +1049,105 @@ public sealed class VirtualCrossoverProjectFileTests
 
             Assert.True(loaded.ShowTargetCurve);
             Assert.Equal(-38.5, loaded.TargetLevelDb);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_V6Project_ReadsTheSwitchesOffTheLoadedSides()
+    {
+        // v6 kept Mute, Bypass and the curve toggles per side. The pair inherits the
+        // sides that actually carry a measurement, so a mono pair (its right slot is
+        // unreachable and still holds the defaults) opens exactly as it looked.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Save(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 6;
+            JsonObject pair = file["pairs"]![0]!.AsObject();
+            pair["mono"] = true;
+            foreach (string moved in
+                new[] { "enabled", "bypass", "showRawCurve", "showProcessedCurve" })
+            {
+                pair.Remove(moved);
+            }
+
+            JsonObject left = pair["left"]!.AsObject();
+            left["sourceFilePath"] = @"C:\measurements\sub.json";
+            left["enabled"] = false;
+            left["bypass"] = true;
+            left["showRawCurve"] = true;
+            left["showProcessedCurve"] = false;
+            // The unreachable right slot still holds v6 defaults; they must not win.
+            JsonObject right = pair["right"]!.AsObject();
+            right["enabled"] = true;
+            right["bypass"] = false;
+            right["showRawCurve"] = false;
+            right["showProcessedCurve"] = true;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(VirtualCrossoverProjectFile.CurrentVersion, loaded.Version);
+            Assert.False(loaded.Pairs[0].Enabled);
+            Assert.True(loaded.Pairs[0].Bypass);
+            Assert.True(loaded.Pairs[0].ShowRawCurve);
+            Assert.False(loaded.Pairs[0].ShowProcessedCurve);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_V6ProjectWhoseSidesDisagree_KeepsTheLouderAnswer()
+    {
+        // Two loaded sides could hold opposite switches, and one answer has to win.
+        // Muted, bypassed and "curve shown" each survive: a mute lost in a migration
+        // is the one outcome the tuner has no way to see coming.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Save(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 6;
+            JsonObject pair = file["pairs"]![0]!.AsObject();
+            foreach (string moved in
+                new[] { "enabled", "bypass", "showRawCurve", "showProcessedCurve" })
+            {
+                pair.Remove(moved);
+            }
+
+            JsonObject left = pair["left"]!.AsObject();
+            left["sourceFilePath"] = @"C:\measurements	weeter-l.json";
+            left["enabled"] = false;
+            left["bypass"] = false;
+            left["showRawCurve"] = true;
+            JsonObject right = pair["right"]!.AsObject();
+            right["sourceFilePath"] = @"C:\measurements	weeter-r.json";
+            right["enabled"] = true;
+            right["bypass"] = true;
+            right["showRawCurve"] = false;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.False(loaded.Pairs[0].Enabled);
+            Assert.True(loaded.Pairs[0].Bypass);
+            Assert.True(loaded.Pairs[0].ShowRawCurve);
         }
         finally
         {

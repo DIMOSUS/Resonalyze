@@ -200,12 +200,6 @@ public partial class Form1
     // included — and the tab switch queues after it, because the restore selects
     // the entry's own saved mode on the way. A file-backed source switches first
     // and then loads exactly as the Load button would, ceremony and all.
-    // Newest-wins for the jump, the same contract the history restore keeps: reading
-    // a channel's measurement takes long enough that a second jump (another channel's
-    // menu, or the History window) can finish first, and the slower read must not then
-    // overwrite it.
-    private long analyzerJumpRevision;
-
     private async Task OpenVirtualDspSourceInAnalyzersAsync(
         Guid? historyEntryId, string? filePath)
     {
@@ -214,7 +208,7 @@ public partial class Form1
             return;
         }
 
-        long revision = ++analyzerJumpRevision;
+        long revision = ++measurementActivationRevision;
 
         // The entry is TRIED, not trusted: it can still be listed while the file
         // behind it is gone, in which case the restore lands nothing — and Virtual
@@ -250,11 +244,6 @@ public partial class Form1
             await liveSpectrumController.AbortAsync();
         }
 
-        // This request supersedes an in-flight history restore too — otherwise a
-        // slow one started before it would land afterwards and win. The two
-        // mechanisms both mean "make a measurement current", so the newest request
-        // has to be newest to both of them.
-        historyRestoreRevision++;
         await SelectModeAsync(ModeTab.Frequency);
         commandController.SetSaveAvailable(false);
         commandController.SetLoadAvailable(false);
@@ -264,7 +253,7 @@ public partial class Form1
             // landed its measurement while this file was still being read, and
             // installing this one now would put the older channel back on screen.
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(filePath);
-            if (revision != analyzerJumpRevision)
+            if (revision != measurementActivationRevision)
             {
                 return;
             }

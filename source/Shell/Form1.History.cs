@@ -5,9 +5,13 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    // Monotonic token for history restores: the newest activation wins and
-    // stale async loads are dropped instead of overwriting a newer selection.
-    private long historyRestoreRevision;
+    // Monotonic token for EVERY request that makes some measurement the current one
+    // — a history entry activated from its window, and the Virtual DSP "Open in
+    // analyzers" jump by either of its routes. One counter on purpose: each of those
+    // reads asynchronously and then installs, so "the newest wins" only holds if they
+    // all bump and all check the SAME number. Two counters made it hold in one
+    // direction and not the other.
+    private long measurementActivationRevision;
 
     // Serializes the restore itself: the restore mutates the current IR, the
     // controllers and the mode across several awaits, so two interleaved
@@ -100,12 +104,12 @@ public partial class Form1
         // the UI on the earlier selection. The newest activation wins; stale
         // loads are dropped at every await boundary (the same revision guard
         // the async plot rebuild uses).
-        long revision = ++historyRestoreRevision;
+        long revision = ++measurementActivationRevision;
         try
         {
             MeasurementHistorySnapshot? snapshot =
                 await measurementHistoryService.GetSnapshotAsync(entryId);
-            if (revision != historyRestoreRevision)
+            if (revision != measurementActivationRevision)
             {
                 return HistoryActivation.Superseded;
             }
@@ -129,13 +133,13 @@ public partial class Form1
             await historyRestoreGate.WaitAsync();
             try
             {
-                if (revision != historyRestoreRevision)
+                if (revision != measurementActivationRevision)
                 {
                     return HistoryActivation.Superseded;
                 }
 
                 await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
-                if (revision != historyRestoreRevision)
+                if (revision != measurementActivationRevision)
                 {
                     // The measurement DID land, but a newer activation is already
                     // replacing it; this caller must not act on it either way.

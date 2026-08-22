@@ -32,10 +32,11 @@ namespace Resonalyze;
 /// The crossover the curve was shaped by. It is the one chain stage that MOVES the
 /// magnitude a bank is fitted to, so a bank fitted through one and applied through
 /// another corrects a shape that is no longer there. Gain, delay, polarity and the
-/// all-pass are deliberately absent: a delay and an all-pass are magnitude-flat by
-/// construction (<see cref="DspChannelChain.Response"/> multiplies by a unit-modulus
-/// term for each), a polarity flip is −1 everywhere, and a gain change slides the
-/// whole curve without touching its shape — none of them makes the bank wrong.
+/// all-pass are deliberately absent — measured, not assumed: through the real
+/// filter-then-window path they move the gated curve's shape by under 0.01 dB at
+/// 48 kHz, and at most ~0.5 dB at 192 kHz in the worst case a chain can produce (an
+/// all-pass at 60 Hz with Q 10, piling ~106 ms of group delay against a window the
+/// rate clamps to 171 ms). See SteadyStateWindowTests, which pins those bounds.
 /// </param>
 /// <param name="CalibrationId">
 /// The microphone correction the curve was tuned under. The wizard's own selector is
@@ -258,10 +259,9 @@ internal static class VirtualDspEqHandoff
     /// still shows what it opened on. The line runs through the MAGNITUDE the bank was
     /// fitted to: a replaced measurement, a changed calibration and a changed
     /// crossover all move it, so all three refuse. Gain, delay, polarity and the
-    /// all-pass do not — a delay and an all-pass are magnitude-flat, a polarity flip
-    /// is −1 at every frequency, and a gain change slides the curve without bending
-    /// it — so a bank stays correct across them and is not thrown away over knobs the
-    /// user turned on purpose.
+    /// all-pass move it by hundredths of a dB (see the bounds pinned in
+    /// SteadyStateWindowTests), so a bank stays correct across them and is not thrown
+    /// away over knobs the user turned on purpose.
     /// </remarks>
     public static bool TryApplyReturn(
         IReadOnlyList<VirtualCrossoverChannel> channels,

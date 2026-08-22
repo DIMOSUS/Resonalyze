@@ -483,12 +483,16 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
-    public void ReturnAfterAMagnitudeFlatChainEdit_IsAllowed()
+    public void ReturnAfterAGainDelayOrAllPassEdit_IsAllowed()
     {
-        // Where the refusals stop, and why: a delay and an all-pass are magnitude-flat
-        // by construction, a polarity flip is -1 at every frequency, and a gain change
-        // slides the curve without bending it. None of them makes the bank wrong, so
-        // none of them is worth throwing a finished tune away over.
+        // Where the refusals stop. Not argued from |H| — measured through the real
+        // filter-then-window path in SteadyStateWindowTests: at 48 kHz these edits
+        // move the gated curve's SHAPE by under 0.01 dB, and even at 192 kHz, where
+        // the window is clamped to 171 ms, the worst case (an all-pass at 60 Hz with
+        // Q 10, ~106 ms of group delay) reaches 0.5 dB — a fraction of the window's
+        // own 1.34 dB error on a comparable band. A bank stays correct across them,
+        // so a finished tune is not thrown away over knobs the user turned on
+        // purpose. The crossover, which moves the curve by many dB, is refused.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
         channel.Settings.GainDb = -9;
@@ -500,6 +504,27 @@ public sealed class VirtualDspEqHandoffTests
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1, calibrationId: null));
         Assert.Equal(curve.Bands, channel.Settings.PeqBands);
+    }
+
+    [Fact]
+    public void AChainSessionWithNoCrossoverStillNoticesOneBeingTurnedOn()
+    {
+        // The distinction a null crossover could blur: "raw handoff, no crossover in
+        // the curve" versus "chain handoff whose crossover happened to be off". They
+        // stay apart because ToChain yields CrossoverSpec.Off — a value, not null —
+        // while only DspChannelChain.Identity (the raw preview chain) carries null.
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Settings.CrossoverKind = CrossoverKind.Off;
+        VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
+        Assert.Equal(CrossoverSpec.Off, request.Token.Crossover);
+
+        channel.Settings.CrossoverKind = CrossoverKind.HighPass;
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, request.Token, curve,
+            projectGeneration: 1, calibrationId: null));
+        Assert.Empty(channel.Settings.PeqBands);
     }
 
     [Fact]

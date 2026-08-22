@@ -799,9 +799,9 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // The parts of one side's chain the dialog ticked, written onto the other side;
     // everything else is left as the target had it. The default ticks are the
-    // POSITION-INDEPENDENT settings — the ones that describe the driver rather than
-    // where it sits — while gain, delay and polarity are opt-in, because each aligns
-    // a driver against its own side's level and geometry, and a left tweeter's arrival
+    // crossover and the PEQ — the magnitude shape, which describes the driver —
+    // while gain, delay, polarity and the all-pass are opt-in, because each aligns a
+    // driver against its own side's level and geometry, and a left tweeter's arrival
     // is not a right tweeter's. The source measurement is never among them.
     // PeqBand is an immutable record, so a fresh list is a deep enough copy.
     private static void CopyChainSettings(
@@ -1973,15 +1973,15 @@ public partial class VirtualCrossoverPanel : UserControl
         toolTip.SetToolTip(
             buttonCopyLeftToRight,
             "Copy the LEFT side onto the RIGHT side: a dialog picks the\r\n" +
-            "channels and the parts of the chain — crossover, all-pass\r\n" +
-            "and PEQ by default, gain, delay and polarity on request.\r\n" +
+            "channels and the parts of the chain — crossover and PEQ by\r\n" +
+            "default, gain, delay, polarity and the all-pass on request.\r\n" +
             "Sources stay with their side; mono channels are not\r\n" +
             "offered.");
         toolTip.SetToolTip(
             buttonCopyRightToLeft,
             "Copy the RIGHT side onto the LEFT side: a dialog picks the\r\n" +
-            "channels and the parts of the chain — crossover, all-pass\r\n" +
-            "and PEQ by default, gain, delay and polarity on request.\r\n" +
+            "channels and the parts of the chain — crossover and PEQ by\r\n" +
+            "default, gain, delay, polarity and the all-pass on request.\r\n" +
             "Sources stay with their side; mono channels are not\r\n" +
             "offered.");
         toolTip.SetToolTip(

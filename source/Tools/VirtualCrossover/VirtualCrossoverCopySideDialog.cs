@@ -7,10 +7,13 @@ namespace Resonalyze;
 /// settings set by definition. Sources are never copied: each side picks its
 /// own measurement.
 /// <para>
-/// The default selection is the POSITION-INDEPENDENT part of the chain — the
-/// filter shape, which describes the driver. Gain, delay and polarity are
-/// offered too, but off by default: each is tuned against the side's own level
-/// and geometry, and a left tweeter's arrival is not a right tweeter's.
+/// The default selection is the crossover and the PEQ — the magnitude shape,
+/// which describes the driver. Everything that aligns one side against its own
+/// level and geometry is offered too but starts off: gain, delay, polarity and
+/// the all-pass. The all-pass belongs with them rather than with the filters,
+/// because it exists exactly where a delay and a polarity flip are too blunt —
+/// it is tuned against that side's own junction, and a left tweeter's arrival is
+/// not a right tweeter's.
 /// </para>
 /// </summary>
 internal sealed class VirtualCrossoverCopySideDialog : Form
@@ -20,7 +23,7 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
     private readonly CheckBox delayBox = CreateScopeBox("Delay", checkedByDefault: false);
     private readonly CheckBox invertBox = CreateScopeBox("Invert", checkedByDefault: false);
     private readonly CheckBox crossoverBox = CreateScopeBox("Crossover", checkedByDefault: true);
-    private readonly CheckBox allPassBox = CreateScopeBox("All-pass", checkedByDefault: true);
+    private readonly CheckBox allPassBox = CreateScopeBox("All-pass", checkedByDefault: false);
     private readonly CheckBox peqBox = CreateScopeBox("PEQ", checkedByDefault: true);
     private readonly Button copyButton =
         UiStyle.CreateDialogButton("Copy", DialogResult.OK, accent: true);
@@ -55,8 +58,8 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
             ForeColor = UiPalette.TextHighlight,
             Margin = new Padding(0, 0, 0, 12),
             Text = "Pick the channels, then the parts of the chain to copy.\n" +
-                "Sources always stay with their side; gain, delay and polarity\n" +
-                "are tuned per side, so they start off."
+                "Sources always stay with their side; gain, delay, polarity and\n" +
+                "the all-pass are tuned per side, so they start off."
         });
 
         layout.Controls.Add(CreateSectionLabel("Channels"));
@@ -85,8 +88,8 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         layout.Controls.Add(channelList);
 
         layout.Controls.Add(CreateSectionLabel("What to copy"));
-        // Two columns that read as the split they are: what belongs to the side
-        // (left, off) against what belongs to the driver (right, on).
+        // Two columns that read as the split they are: what aligns this side
+        // (left, off) against what shapes the driver (right, on).
         var scopeTable = new TableLayoutPanel
         {
             AutoSize = true,
@@ -97,9 +100,9 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         scopeTable.Controls.Add(gainBox, 0, 0);
         scopeTable.Controls.Add(crossoverBox, 1, 0);
         scopeTable.Controls.Add(delayBox, 0, 1);
-        scopeTable.Controls.Add(allPassBox, 1, 1);
+        scopeTable.Controls.Add(peqBox, 1, 1);
         scopeTable.Controls.Add(invertBox, 0, 2);
-        scopeTable.Controls.Add(peqBox, 1, 2);
+        scopeTable.Controls.Add(allPassBox, 0, 3);
         foreach (CheckBox box in ScopeBoxes)
         {
             box.CheckedChanged += (_, _) => UpdateCopyEnabled();

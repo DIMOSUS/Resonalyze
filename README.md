@@ -1283,13 +1283,14 @@ Each channel runs through:
 **L→R** / **R→L** ask before they act: a dialog lists the stereo pairs (mono
 pairs have a single settings set, so they never appear) and the parts of the
 chain to carry over — **Gain**, **Delay**, **Invert**, **Crossover**,
-**All-pass** and **PEQ**. The filters are ticked by default because they
-describe the driver; gain, delay and polarity start unticked, because each is
-tuned against that side's own level and geometry — a left tweeter's arrival is
-not a right tweeter's. Sources are never copied: every side keeps its own
-measurement. **Mute**, **Bypass** and the two curve toggles are absent from the
-list because they are shared by the two sides already — there is nothing to
-copy.
+**All-pass** and **PEQ**. The crossover and the PEQ are ticked by default,
+because the magnitude shape describes the driver. Everything that aligns a side
+against its own level and geometry starts unticked — gain, delay, polarity and
+the all-pass, which belongs with them precisely because it is the tool for a
+junction a delay and a polarity flip cannot fix, and that junction is the
+side's own. Sources are never copied: every side keeps its own measurement.
+**Mute**, **Bypass** and the two curve toggles are absent from the list because
+they are shared by the two sides already — there is nothing to copy.
 
 Because every stage is linear and the measurements are loopback-referenced
 transfer IRs, multiplying each measurement by its chain and summing the results

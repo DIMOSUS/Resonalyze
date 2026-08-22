@@ -45,6 +45,10 @@ namespace Resonalyze.Options
         private IReadOnlyList<AudioEndpointDescriptor> wasapiRenderEndpoints = Array.Empty<AudioEndpointDescriptor>();
         private IReadOnlyList<AsioDeviceInfo> asioDrivers = Array.Empty<AsioDeviceInfo>();
         private AsioDriverInfo asioDriverInfo = AsioDeviceCatalog.EmptyDriverInfo;
+        // What the last rate probe amounted to, so the status line can say which of the
+        // three situations it is in rather than pronouncing on a rate it did not test.
+        private bool sampleRateProbeFailed;
+        private int? sampleRateFellBackFrom;
         private bool initializing;
         private string? microphoneCalibration0DegreesPath;
         private List<MicrophoneCalibrationDefinition> additionalMicrophoneCalibrations = [];
@@ -560,7 +564,23 @@ namespace Resonalyze.Options
                 wasapiRenderEndpointId = renderEndpoint.Id;
                 if (audioBackend == AudioBackend.WasapiShared)
                 {
+                    // Shared never takes the rate from the combo, so no fallback of the
+                    // combo's can reach the configuration through it.
                     sampleRate = captureEndpoint.PreferredFormat.SampleRate;
+                }
+                else if (audioBackend == AudioBackend.WasapiExclusive)
+                {
+                    // Exclusive does take it from the combo, and the combo can be empty:
+                    // an endpoint pair with no rate in common is a real answer, and
+                    // GetSelectedSampleRate then answers with its own 44.1 kHz fallback.
+                    // Persisting that is persisting a format the endpoints just refused.
+                    // Checked here, after the availability test above, so an endpoint that
+                    // is simply gone keeps its own message instead of being reported as a
+                    // rate mismatch.
+                    SampleRateOptions.ValidateSelectedRate(
+                        GetSupportedSampleRates(),
+                        sampleRate,
+                        "The WASAPI Exclusive endpoints");
                 }
             }
             if (audioBackend != AudioBackend.Asio &&
@@ -1253,6 +1273,15 @@ namespace Resonalyze.Options
                 return;
             }
 
+            // The user picked this rate, so nothing was taken away from them: the
+            // marker left by an earlier automatic fallback describes an action that is
+            // now over, and UpdateAsioStatusLabels would otherwise keep reporting
+            // "96000 Hz is not offered — changed to 48000 Hz" about a rate the user
+            // chose. The probe verdict is not cleared here but re-taken below: the
+            // re-probe for the new rate is a fresh answer, and RefreshAsioDriverInfo
+            // settles the flag from it before the status line is written.
+            sampleRateFellBackFrom = null;
+
             // The achieved band and its cycle-quantized duration depend on the
             // sample rate, so re-preview on any change (not just for ASIO). The
             // rate itself belongs to the audio backend group and is not applied
@@ -1444,6 +1473,13 @@ namespace Resonalyze.Options
                 ? asioDriver.DriverName
                 : null;
             asioDriverInfo = AsioDeviceCatalog.GetDriverInfo(driverName, sampleRate);
+            // The probe just happened, so its verdict is settled here rather than
+            // wherever the rate list is next rebuilt. Not every caller rebuilds one:
+            // a manual rate change re-probes for the latency figures alone, and
+            // leaving the flag behind let a probe that has since SUCCEEDED still be
+            // reported as "the driver did not report its rates". RefreshSampleRateOptions
+            // recomputes the same predicate for the resolution it acts on.
+            sampleRateProbeFailed = IsAsioSampleRateProbeFailure();
 
             comboBoxAsioInputChannel.Items.Clear();
             comboBoxAsioLoopbackChannel.Items.Clear();
@@ -1501,12 +1537,30 @@ namespace Resonalyze.Options
             }
 
             int sampleRate = GetSelectedSampleRate();
-            labelAsioSampleRateStatus.Text = asioDriverInfo.SupportsSampleRate
-                ? $"{sampleRate} Hz supported"
-                : $"{sampleRate} Hz not supported";
-            labelAsioSampleRateStatus.ForeColor = asioDriverInfo.SupportsSampleRate
-                ? Color.LightGreen
-                : Color.LightSalmon;
+            if (sampleRateProbeFailed)
+            {
+                // The number is the live selection and the verdict came from the last
+                // probe; when that probe told us nothing the two must not be combined
+                // into a confident sentence about a rate nobody tested.
+                labelAsioSampleRateStatus.Text =
+                    $"{sampleRate} Hz kept — the driver did not report its rates";
+                labelAsioSampleRateStatus.ForeColor = Color.Khaki;
+            }
+            else if (sampleRateFellBackFrom is int previous)
+            {
+                labelAsioSampleRateStatus.Text =
+                    $"{previous} Hz is not offered by this driver — changed to {sampleRate} Hz";
+                labelAsioSampleRateStatus.ForeColor = Color.LightSalmon;
+            }
+            else
+            {
+                labelAsioSampleRateStatus.Text = asioDriverInfo.SupportsSampleRate
+                    ? $"{sampleRate} Hz supported"
+                    : $"{sampleRate} Hz not supported";
+                labelAsioSampleRateStatus.ForeColor = asioDriverInfo.SupportsSampleRate
+                    ? Color.LightGreen
+                    : Color.LightSalmon;
+            }
             labelAsioPlaybackLatencyValue.Text =
                 asioDriverInfo.PlaybackLatency > 0
                     ? $"{asioDriverInfo.PlaybackLatency} samples"
@@ -1874,15 +1928,14 @@ namespace Resonalyze.Options
             }
         }
 
-        private void ValidateSelectedWaveSampleRate(int sampleRate)
-        {
-            IReadOnlyList<int> supportedRates = GetSupportedSampleRates();
-            if (supportedRates.Count > 0 && !supportedRates.Contains(sampleRate))
-            {
-                throw new InvalidOperationException(
-                    $"Wave devices do not support {sampleRate} Hz for the current configuration.");
-            }
-        }
+        // Empty is an answer here, never silence: a Wave pair reports no rate in common
+        // only when there is none. Skipping validation on it let the rate sitting in the
+        // combo through to a device that cannot open it.
+        private void ValidateSelectedWaveSampleRate(int sampleRate) =>
+            SampleRateOptions.ValidateSelectedRate(
+                GetSupportedSampleRates(),
+                sampleRate,
+                "Wave devices");
 
         private static int FindInputChannelOptionIndex(
             DarkComboBox comboBox,
@@ -2065,15 +2118,37 @@ namespace Resonalyze.Options
 
         private void RefreshSampleRateOptions(int preferredSampleRate)
         {
-            int fallbackSampleRate = 44_100;
-            IReadOnlyList<int> supportedRates = GetSupportedSampleRates();
-            int[] availableRates = supportedRates.Count > 0
-                ? supportedRates.ToArray()
-                : [fallbackSampleRate];
+            SampleRateResolution resolution = SampleRateOptions.Resolve(
+                GetSupportedSampleRates(),
+                preferredSampleRate,
+                comboBoxSampleRate.Items.Count > 0,
+                IsAsioSampleRateProbeFailure());
+            sampleRateProbeFailed = resolution.ProbeFailed;
+            sampleRateFellBackFrom = resolution.FellBackFrom;
+            if (resolution.Rates is null)
+            {
+                // Nothing is rebuilt on the absence of an answer: the list and the
+                // user's selection stand, and the status line says the driver did not
+                // report. Rebuilding here is what used to replace a working 96 kHz with
+                // 44.1 and persist it on the next Apply.
+                //
+                // The flags above have just changed, and the last thing to write the
+                // status line was RefreshAsioDriverInfo, before Resolve ran — so it is
+                // still rendered from the previous state and would keep a stale
+                // supported/not-supported sentence. Write it here too, exactly as the
+                // settled path below does.
+                if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
+                {
+                    UpdateAsioStatusLabels();
+                }
+                return;
+            }
 
-            int selectedSampleRate = availableRates.Contains(preferredSampleRate)
-                ? preferredSampleRate
-                : availableRates[0];
+            int[] availableRates = resolution.Rates;
+            int selectedSampleRate = resolution.Selected;
+            // An empty list is a real outcome, not a missing one: no rate works for this
+            // configuration, so the combo offers nothing and Apply refuses. Filling in the
+            // configured rate here is what used to hand the user a rate no device reported.
 
             bool wasInitializing = initializing;
             initializing = true;
@@ -2095,7 +2170,26 @@ namespace Resonalyze.Options
             {
                 RefreshSweepBandPreview();
             }
+
+            // The status line pairs a number taken from the selection with a verdict
+            // taken from the probe, so it can only be written once the selection has
+            // settled. RefreshAsioDriverInfo writes it before this method has filled the
+            // combo, when GetSelectedSampleRate still answers with its own fallback —
+            // which is how "96000" in the list came to sit above "44100 Hz supported"
+            // in green. Writing it again here is what keeps the two halves in step.
+            if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
+            {
+                UpdateAsioStatusLabels();
+            }
         }
+
+        // The driver name is what decides whether there is anything to preserve, the
+        // same test RefreshAsioDriverInfo uses for the saved channel routing.
+        private bool IsAsioSampleRateProbeFailure() =>
+            SampleRateOptions.IsProbeFailure(
+                comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio,
+                asioDriverInfo.DriverName,
+                asioDriverInfo.SupportedSampleRates.Count);
 
         private IReadOnlyList<int> GetSupportedSampleRates()
         {

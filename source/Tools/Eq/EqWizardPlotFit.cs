@@ -73,33 +73,6 @@ internal static class EqWizardPlotFit
             maximum + PanMarginDb);
     }
 
-    /// <summary>
-    /// Whether a drawn curve is at least partially visible in the given default view:
-    /// some finite level falls inside [Minimum, Maximum]. Loading a new source keeps
-    /// the user's target level when the target passes this test — re-suggesting would
-    /// discard a deliberately placed target that can still be seen; only a target
-    /// entirely off-screen (typically a relative ↔ SPL datum change of tens of dB)
-    /// gets landed on the new source.
-    /// </summary>
-    public static bool IsCurveVisible(
-        IEnumerable<SignalPoint> points,
-        EqWizardAxisRange range)
-    {
-        ArgumentNullException.ThrowIfNull(points);
-
-        foreach (SignalPoint point in points)
-        {
-            if (double.IsFinite(point.Y) &&
-                point.Y >= range.Minimum &&
-                point.Y <= range.Maximum)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /// <summary>The major-step the right EQ-gain axis snaps its bounds to.</summary>
     private const double EqGainAxisStepDb = 6;
 
@@ -123,44 +96,5 @@ internal static class EqWizardPlotFit
         return (
             Math.Floor(low / EqGainAxisStepDb) * EqGainAxisStepDb - EqGainAxisStepDb,
             Math.Ceiling(high / EqGainAxisStepDb) * EqGainAxisStepDb + EqGainAxisStepDb);
-    }
-
-    /// <summary>
-    /// The target offset that lands the target curve on the source: the gap between their
-    /// mean levels inside the tuning window, in whole dB. Without it an absolute (SPL)
-    /// source and a relative target start tens of dB apart and the first Auto Tune tries
-    /// to close a gap that is only a datum difference.
-    /// </summary>
-    public static double SuggestTargetOffsetDb(
-        IEnumerable<SignalPoint> sourcePoints,
-        Func<double, double> evaluateTarget,
-        double minHz,
-        double maxHz)
-    {
-        ArgumentNullException.ThrowIfNull(sourcePoints);
-        ArgumentNullException.ThrowIfNull(evaluateTarget);
-
-        double sourceSum = 0;
-        double targetSum = 0;
-        int count = 0;
-        foreach (SignalPoint point in sourcePoints)
-        {
-            if (point.X < minHz || point.X > maxHz || !double.IsFinite(point.Y))
-            {
-                continue;
-            }
-
-            double target = evaluateTarget(point.X);
-            if (!double.IsFinite(target))
-            {
-                continue;
-            }
-
-            sourceSum += point.Y;
-            targetSum += target;
-            count++;
-        }
-
-        return count == 0 ? 0 : Math.Round((sourceSum - targetSum) / count);
     }
 }

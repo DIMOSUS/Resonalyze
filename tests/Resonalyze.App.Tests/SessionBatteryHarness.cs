@@ -490,17 +490,20 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         List<ProcessedChannel> processed)
     {
         var template = new PhaseAnalysisSettings(
-            // The magnitude always reads the FIXED gate, whatever the session's
-            // window mode says — FDW cannot hold a summed response (see
-            // VirtualCrossoverPanel.RequestRedraw).
+            // The magnitude reads the FIXED steady-state window, whatever the
+            // session's gate says — the panel's own rule (see the magnitudeGate
+            // rebuild in VirtualCrossoverPanel.RequestRedraw): the session gate
+            // times junctions and shapes the phase/impulse views, while the
+            // magnitude — and therefore this judge — reads the response the ear
+            // hears. Only the session's OFFSET (its pin) still places the window.
             PhaseWindowMode.Fixed,
             project.PhaseFdwCycles,
             PhaseDetrendMode.Off,
             ManualDetrendMilliseconds: 0.0,
             GateOffsetMs: 0.0,
-            project.PhaseGateLeftMs,
-            project.PhaseGatePlateauMs,
-            project.PhaseGateRightMs,
+            FrequencyResponseOptions.SteadyStateLeftMs,
+            FrequencyResponseOptions.SteadyStatePlateauMs,
+            FrequencyResponseOptions.SteadyStateRightMs,
             Unwrap: false,
             SmoothingInverseOctaves: 0.0);
         double? pinnedOffsetMs = AutoGate

@@ -13,12 +13,6 @@ namespace Resonalyze;
 // overlay UI or the current measurement.
 public partial class EqWizardPanel
 {
-    // A fat analysis window so the low end reads clearly (finer LF resolution than
-    // the short measurement-preview window). Zero-padded when the IR is shorter.
-    private const int SourceWindow = 32768;
-    private const int SourceLeftTukey = 256;
-    private const int SourceRightTukey = 2048;
-
     private const int DefaultSampleRateHz = 48_000;
 
     private static readonly int[] SelectableSampleRatesHz =
@@ -43,6 +37,7 @@ public partial class EqWizardPanel
         EqualizationCurve.LogFrequencyGrid(20, 20_000, 512).ToArray();
 
     private readonly EqWizardSourceResolver sourceResolver = new();
+    private readonly EqWizardPreviewOrchestrator previewOrchestrator = new();
     private EqWizardCurveSource? loadedSource;
     private EqWizardCurve? cachedSourceCurve;
     private bool sourceCurveDirty = true;
@@ -315,12 +310,18 @@ public partial class EqWizardPanel
     // target starts.
     private void ApplySource(EqWizardCurveSource source)
     {
+        // Installing a source ends any Virtual DSP handoff: the Return button must
+        // never send a bank tuned against some OTHER curve back to a channel. A
+        // handoff itself re-establishes its session right after this call.
+        EndVirtualDspHandoff();
         loadedSource = source;
 
-        // Settle every selector that feeds the curve, fit the axis, and place the target
-        // before drawing, all with redraws suppressed: the axis fit and the offset both
-        // need the source curve, so this computes it once (cached) instead of once per
-        // side effect, and the single draw at the end paints the finished state.
+        // Settle every selector that feeds the curve and fit the axis before drawing,
+        // all with redraws suppressed, so the single draw at the end paints the
+        // finished state. The Target Level is deliberately NOT touched: it is the
+        // user's knob alone, wherever the new source lands relative to it — a Virtual
+        // DSP handoff carries its own panel's level in, and every other source keeps
+        // whatever the user last set.
         suppressRedraw = true;
         try
         {
@@ -331,7 +332,6 @@ public partial class EqWizardPanel
             InvalidateSourceCurve();
 
             ApplyAxisForSource();
-            SuggestTargetOffsetUnlessTargetVisible();
         }
         finally
         {
@@ -362,6 +362,14 @@ public partial class EqWizardPanel
         {
             return EqWizardCalibrationChoice.Microphone(preferredIrCalibrationId);
         }
+        // A Virtual DSP channel is pinned to the correction its panel renders with:
+        // a PEQ fitted under one calibration and summed under another would break the
+        // handoff's identity. The selector is disabled (SupportsCalibration is false)
+        // and the standing IR preference stays untouched.
+        if (source.Kind == EqWizardSourceKind.VirtualDspChannel)
+        {
+            return EqWizardCalibrationChoice.Microphone(source.PinnedCalibrationId);
+        }
 
         return EqWizardCalibrationChoice.Off;
     }
@@ -382,7 +390,28 @@ public partial class EqWizardPanel
         return cachedSourceCurve;
     }
 
-    private void InvalidateSourceCurve() => sourceCurveDirty = true;
+    private void InvalidateSourceCurve()
+    {
+        sourceCurveDirty = true;
+        // The corrected preview is built from the same measurement, gate and
+        // calibration, so whatever invalidated the bare curve invalidated it too.
+        InvalidateGatedPreview();
+    }
+
+    // One render request for the loaded gated source: the panel's live gate,
+    // calibration and smoothing, plus the bank to substitute (null for the bare
+    // curve). Captured here, on the UI thread, so the render itself touches no control.
+    private EqWizardGatedPreviewRequest BuildGatedPreviewRequest(
+        EqWizardCurveSource source, EqualizationCurve? bank) =>
+        new(
+            source.PreviewImpulseResponse!,
+            source.PreviewChain!,
+            bank,
+            source.Measurement!.PeakIndex,
+            source.Measurement.SampleRate,
+            source.GateSettings!,
+            calibrationResolver?.Invoke(calibrationChoice.MicrophoneCalibrationId),
+            SourceSmoothingInverseOctaves);
 
     private EqWizardCurve? ComputeSourceCurve()
     {
@@ -403,11 +432,28 @@ public partial class EqWizardPanel
         // Only a configured calibration can be applied while computing an FR; "own"
         // belongs to an imported curve and never reaches here.
         string? calibrationId = calibrationChoice.MicrophoneCalibrationId;
+
+        // A Virtual DSP channel reads through the gate it arrived with — the same
+        // DataHelper call, template and offset the DSP panel's magnitude view uses —
+        // so the wizard shows the very curve the user just left on that plot. The bare
+        // curve is the corrected one's own path with no bank, so the two cannot drift.
+        if (source.IsGated)
+        {
+            return EqWizardGatedPreview.Render(BuildGatedPreviewRequest(source, bank: null));
+        }
+
+        // The same steady-state window every magnitude curve in the Virtual DSP tool
+        // reads — one definition in milliseconds, realized here as sample counts at
+        // this measurement's rate. Long, so the low end resolves and a bass EQ band's
+        // full depth is visible; zero-padded when the IR is shorter.
+        (int window, int leftTukey, int rightTukey) =
+            FrequencyResponseOptions.SteadyStateWindowSamples(
+                source.Measurement!.SampleRate);
         var options = new FrequencyResponseOptions
         {
-            Window = SourceWindow,
-            LeftTukeyWindow = SourceLeftTukey,
-            RightTukeyWindow = SourceRightTukey,
+            Window = window,
+            LeftTukeyWindow = leftTukey,
+            RightTukeyWindow = rightTukey,
             SmoothingInverseOctaves = SourceSmoothingInverseOctaves,
             Offset = 0,
             CalibrationId = calibrationId
@@ -544,10 +590,28 @@ public partial class EqWizardPanel
             points);
     }
 
-    private EqWizardCurve BuildSourcePlusEqCurve(
+    private EqWizardCurve? BuildSourcePlusEqCurve(
         IReadOnlyList<DataPoint> sourcePoints,
         EqualizationCurve eq)
     {
+        // A gated source is filtered and THEN windowed — a window does not commute with
+        // a filter, and at the Virtual DSP gate lengths the difference reaches several
+        // dB in the bass (see EqWizardGatedPreview). That render is far too heavy for a
+        // fader frame, so it runs asynchronously and the last landed one is drawn while
+        // the next is in flight.
+        if (loadedSource is { IsGated: true } gated)
+        {
+            RequestGatedPreview(gated, eq);
+            return landedGatedPreview == null
+                ? null
+                : new EqWizardCurve(
+                    "Source + EQ",
+                    SourcePlusEqColor,
+                    2,
+                    LineStyle.Solid,
+                    landedGatedPreview);
+        }
+
         var points = new DataPoint[sourcePoints.Count];
         for (int i = 0; i < sourcePoints.Count; i++)
         {
@@ -559,6 +623,103 @@ public partial class EqWizardPanel
         }
 
         return new EqWizardCurve("Source + EQ", SourcePlusEqColor, 2, LineStyle.Solid, points);
+    }
+
+    // ------------------------------------------------- gated corrected preview
+
+    // The last render that landed, in plot coordinates, and the bank it belongs to.
+    // Kept on screen while a newer render is in flight: blanking the curve on every
+    // keystroke would strobe it.
+    private IReadOnlyList<DataPoint>? landedGatedPreview;
+    private PeqBankState? landedGatedPreviewBank;
+    private bool gatedPreviewInFlight;
+
+    /// <summary>
+    /// Becoming visible is what starts a gated preview: it is deliberately not started
+    /// while the panel is hidden (see <see cref="RequestGatedPreview"/>), so a handoff
+    /// installed on the way in has nothing drawn for its corrected curve until here.
+    /// </summary>
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible && IsHandleCreated && loadedSource is { IsGated: true })
+        {
+            DrawSelectedCurves();
+        }
+    }
+
+    private void InvalidateGatedPreview()
+    {
+        previewOrchestrator.Invalidate();
+        landedGatedPreview = null;
+        landedGatedPreviewBank = null;
+    }
+
+    // Starts a render unless the landed one already answers for this bank. The bank is
+    // the identity: two redraws for the same filters (a target nudge, a selection
+    // change) must not re-run a pair of transforms.
+    private void RequestGatedPreview(EqWizardCurveSource source, EqualizationCurve eq)
+    {
+        // Nothing is started before the panel exists on screen. A handoff installs its
+        // source while the wizard is still the hidden mode (the shell hands over, THEN
+        // switches tabs), and making the window pumps messages — a render landing inside
+        // that pump would draw into a half-created control. Becoming visible redraws,
+        // and the render starts from there.
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        var bank = new PeqBankState(eq.Bands, eq.PreampDb);
+        if (gatedPreviewInFlight || bank.Equals(landedGatedPreviewBank))
+        {
+            return;
+        }
+
+        EqWizardGatedPreviewRequest request = BuildGatedPreviewRequest(source, eq);
+        gatedPreviewInFlight = true;
+        _ = RenderGatedPreviewAsync(request, bank);
+    }
+
+    private async Task RenderGatedPreviewAsync(
+        EqWizardGatedPreviewRequest request, PeqBankState bank)
+    {
+        try
+        {
+            IReadOnlyList<SignalPoint>? points =
+                await previewOrchestrator.RenderLatestAsync(request);
+            // A render started before the panel was ever shown can finish before its
+            // handle exists — the wizard is built while another mode is on screen, and
+            // a handoff installs its source on the way in. Touching the plot then
+            // forces creation out of order; the curve is simply picked up by the first
+            // real draw instead.
+            if (IsDisposed || !IsHandleCreated || points == null)
+            {
+                return;
+            }
+
+            landedGatedPreview = points
+                .Select(point => new DataPoint(point.X, point.Y))
+                .ToArray();
+            landedGatedPreviewBank = bank;
+        }
+        catch (Exception exception)
+        {
+            // A preview that throws must not take the panel with it: the curve simply
+            // stays as it was, and the bank is still exportable.
+            System.Diagnostics.Debug.WriteLine($"EQ Wizard preview failed: {exception}");
+        }
+        finally
+        {
+            gatedPreviewInFlight = false;
+        }
+
+        if (!IsDisposed && IsHandleCreated)
+        {
+            // The bank may have moved on while this rendered; drawing now both paints
+            // what landed and starts the follow-up render for the newer bank.
+            DrawSelectedCurves();
+        }
     }
 
     private void UpdateSourceHint()
@@ -607,56 +768,6 @@ public partial class EqWizardPanel
                 GetSourceCurve()?.Points.Select(point => new SignalPoint(point.X, point.Y))
                     ?? Enumerable.Empty<SignalPoint>())
             : EqWizardPlotFit.ImpulseResponseRange;
-
-    // Landing the target on a fresh source is a RESCUE, not a policy: when the target
-    // at its current offset is still at least partially inside the new source's
-    // default view, the user's placement survives the switch — two sources at similar
-    // levels must not reset a deliberately moved target. Only a target entirely
-    // off-screen (typically a relative ↔ SPL datum change of tens of dB, in either
-    // direction) is landed on the new source, which also un-strands an offset left
-    // over from the previous one.
-    private void SuggestTargetOffsetUnlessTargetVisible()
-    {
-        if (EqWizardPlotFit.IsCurveVisible(
-                CurrentTargetPoints(), ComputeAxisRangeForSource()))
-        {
-            return;
-        }
-
-        SuggestTargetOffset();
-    }
-
-    // The target as it would be drawn right now: the current spec and offset on the
-    // grid the plot uses — the source's frequencies, or the default 20 Hz .. 20 kHz
-    // grid when the source has no usable curve.
-    private IEnumerable<SignalPoint> CurrentTargetPoints()
-    {
-        double offset = (double)NumericTargetOffset.Value;
-        IEnumerable<double> frequencies = GetSourceCurve() is { Points.Count: >= 2 } source
-            ? source.Points.Select(point => point.X)
-            : DefaultTargetGrid;
-        return frequencies.Select(
-            frequency => new SignalPoint(frequency, targetSpec.Evaluate(frequency) + offset));
-    }
-
-    // Lands the target on the freshly loaded source's own level: the gap between their
-    // mean levels inside the tuning window, most important for an absolute (SPL) curve,
-    // which starts tens of dB from a relative target.
-    private void SuggestTargetOffset()
-    {
-        if (GetSourceCurve() is not { Points.Count: >= 2 } source)
-        {
-            return;
-        }
-
-        (double minHz, double maxHz) = GetFrequencyWindow();
-        double offset = EqWizardPlotFit.SuggestTargetOffsetDb(
-            source.Points.Select(point => new SignalPoint(point.X, point.Y)),
-            targetSpec.Evaluate,
-            minHz,
-            maxHz);
-        NumericTargetOffset.Value = NumericTargetOffset.ClampValue(offset);
-    }
 
     // ---------------------------------------------------------------- target
 
@@ -823,6 +934,14 @@ public partial class EqWizardPanel
             comboBoxCalibration.Enabled =
                 comboBoxCalibration.Items.Count > 1 &&
                 (loadedSource?.SupportsCalibration ?? true);
+            // The disabled selector still SHOWS a Virtual DSP channel's pinned
+            // correction; the tooltip says why it cannot be changed from here.
+            toolTip.SetToolTip(
+                comboBoxCalibration,
+                loadedSource is { Kind: EqWizardSourceKind.VirtualDspChannel }
+                    ? "Follows the Virtual DSP panel's calibration selector while a " +
+                      "DSP channel is loaded — change it there."
+                    : string.Empty);
         }
         finally
         {
@@ -911,7 +1030,17 @@ public partial class EqWizardPanel
     {
         get
         {
-            if (loadedSource is { Kind: EqWizardSourceKind.ImpulseResponse, SampleRateHz: int rate })
+            // Every measurement-backed source states its own rate exactly, and the
+            // filters are realized at it downstream — the gated preview filters the
+            // IR at the measurement's rate, and Virtual DSP runs the returned bank at
+            // the project's. Letting the combo answer instead would design and export
+            // biquads for one rate while two other places realize them at another.
+            if (loadedSource is
+                {
+                    Kind: EqWizardSourceKind.ImpulseResponse
+                        or EqWizardSourceKind.VirtualDspChannel,
+                    SampleRateHz: int rate
+                })
             {
                 return rate;
             }
@@ -1019,10 +1148,14 @@ public partial class EqWizardPanel
             suppressSampleRateEvents = false;
         }
 
-        // An impulse response is authoritative, so its rate is shown but locked; an
+        // A measurement is authoritative, so its rate is shown but locked — an
+        // impulse response and a Virtual DSP channel alike (see EqSampleRate). An
         // imported curve only suggests one, so it stays editable for a differing DSP.
-        comboBoxSampleRate.Enabled =
-            loadedSource is not { Kind: EqWizardSourceKind.ImpulseResponse };
+        comboBoxSampleRate.Enabled = loadedSource is not
+        {
+            Kind: EqWizardSourceKind.ImpulseResponse
+                or EqWizardSourceKind.VirtualDspChannel
+        };
     }
 
     private void OnSampleRateChanged()

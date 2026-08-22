@@ -86,9 +86,9 @@ public partial class VirtualCrossoverPanel : UserControl
             PhaseDetrendMode.Off,
             ManualDetrendMilliseconds: 0.0,
             GateOffsetMs: 0.0,
-            LeftMs: FrequencyResponseOptions.DefaultPhaseLeftMs,
-            PlateauMs: FrequencyResponseOptions.DefaultPhasePlateauMs,
-            RightMs: FrequencyResponseOptions.DefaultPhaseRightMs,
+            LeftMs: FrequencyResponseOptions.SteadyStateLeftMs,
+            PlateauMs: FrequencyResponseOptions.SteadyStatePlateauMs,
+            RightMs: FrequencyResponseOptions.SteadyStateRightMs,
             Unwrap: false,
             SmoothingInverseOctaves: 0.0),
         PinnedOffsetMs: null,
@@ -96,6 +96,15 @@ public partial class VirtualCrossoverPanel : UserControl
         SmoothingInverseOctaves: 12);
 
     private readonly List<VirtualCrossoverChannel> channels = new();
+
+    // The EQ Wizard's own export machinery, reused whole so a channel's bank leaves
+    // through exactly the formats, shelf/preamp rules and warnings the wizard uses.
+    private readonly EqWizardImportExportCoordinator peqExport = new();
+
+    // Which loaded project the blocks currently describe; bumped by every bind.
+    // Read only by the EQ Wizard handoff, whose return address has to outlive a
+    // trip to another mode and must not survive a project replacing this one.
+    private long projectGeneration;
 
     // The model-to-control binding. VirtualCrossoverChannel is UI-free, so the
     // panel owns the mapping to each block's control; only the binding methods
@@ -320,6 +329,28 @@ public partial class VirtualCrossoverPanel : UserControl
     internal Action<EqTargetCurve>? TargetCurveChanged { get; set; }
 
     /// <summary>
+    /// Raised when the user picks "Edit in EQ Wizard" on a channel's PEQ menu. The
+    /// host hands the request to the wizard and switches the mode; the result comes
+    /// back through <see cref="TryApplyPeqFromWizard"/>.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<VirtualDspEqHandoffRequest>? EditPeqInWizardRequested { get; set; }
+
+    /// <summary>
+    /// Raised when the user picks "Open in analyzers" on a channel's source menu:
+    /// the host loads this side's measurement into the analysis modes and lands on
+    /// Frequency Response. The arguments mirror the persisted source reference in
+    /// the priority the panel itself resolves it — the history entry when it still
+    /// exists, else the located file path; at least one is non-null.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<Guid?, string?>? OpenSourceInAnalyzersRequested { get; set; }
+
+    /// <summary>
     /// Called by the host whenever the tool tab becomes active. The first call
     /// loads the saved project and re-resolves its sources.
     /// </summary>
@@ -433,6 +464,12 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         project = newProject;
         relinkDirectory = null;
+        // A new project on the same blocks. The channel OBJECTS are reused when the
+        // count matches (see the rebind below), so nothing about a channel reference
+        // says which session it now describes — this counter does, and an EQ Wizard
+        // handoff taken from the old one is refused by it rather than landing on a
+        // channel the user never opened.
+        projectGeneration++;
         // Match the block list to the project's channel count (validated into the
         // supported range on load), so an imported 2- or 6-channel session shows
         // exactly its channels.
@@ -893,8 +930,7 @@ public partial class VirtualCrossoverPanel : UserControl
         channelControls[channel] = control;
         control.SettingsChanged += (_, _) => OnChannelSettingsChanged(channel);
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
-        control.PeqLoadClicked += (_, _) => LoadPeq(channel);
-        control.PeqClearClicked += (_, _) => ClearPeq(channel);
+        control.PeqMenuClicked += (_, _) => ShowPeqMenu(channel);
         control.CollapsedChanged += (_, _) => OnChannelCollapsedChanged(channel);
         return channel;
     }
@@ -1301,6 +1337,32 @@ public partial class VirtualCrossoverPanel : UserControl
 
         menu.Items.Add(new ToolStripSeparator());
 
+        // The jump out of the tune: this side's measurement, inspected with the full
+        // analysis toolset. Enabled only when the reference actually resolves — a
+        // stored path that no longer exists (and no surviving history entry) would
+        // otherwise offer a jump to nowhere.
+        ToolStripMenuItem openItem = new("Open in analyzers");
+        openItem.ToolTipText =
+            "Load this side's measurement into the analysis modes\r\n" +
+            "(lands on Frequency Response) — the full toolset on the\r\n" +
+            "very measurement this channel is tuned on.";
+        (Guid? entryId, string? filePath) = ResolveAnalyzerReference(channel.Settings);
+        openItem.Enabled =
+            OpenSourceInAnalyzersRequested != null && (entryId != null || filePath != null);
+        openItem.Click += (_, _) =>
+        {
+            // Re-resolved at click time: the file can vanish (or the history entry
+            // be deleted) while the menu is open.
+            (Guid? id, string? path) = ResolveAnalyzerReference(channel.Settings);
+            if (id != null || path != null)
+            {
+                OpenSourceInAnalyzersRequested?.Invoke(id, path);
+            }
+        };
+        menu.Items.Add(openItem);
+
+        menu.Items.Add(new ToolStripSeparator());
+
         ToolStripMenuItem clearItem = new("Clear");
         clearItem.Enabled = channel.Settings.HasSource;
         clearItem.Click += (_, _) => ClearSource(channel);
@@ -1308,6 +1370,20 @@ public partial class VirtualCrossoverPanel : UserControl
 
         Button sourceButton = ControlFor(channel).SourceButton;
         menu.Show(sourceButton, new Point(0, sourceButton.Height));
+    }
+
+    // The source reference in openable form, resolved the same way the silent
+    // restore resolves it (LoadSnapshotFromReferenceAsync): the history entry
+    // first — it survives file moves — else the file path located through the
+    // session-folder search. (null, null) when nothing resolves.
+    private (Guid? HistoryEntryId, string? FilePath) ResolveAnalyzerReference(
+        VirtualCrossoverChannelSettings settings)
+    {
+        Guid? entryId =
+            settings.HistoryEntryId is { } id && HistoryService?.FindById(id) != null
+                ? id
+                : null;
+        return (entryId, LocateSource(settings));
     }
 
     private void PopulateHistoryMenu(ToolStripMenuItem historyItem, VirtualCrossoverChannel channel)
@@ -1715,6 +1791,236 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // -------------------------------------------------------------------- PEQ
 
+    // The PEQ button's action menu. Rebuilt on every click: the enabled states
+    // follow channel state (a measurement for the wizard entries, a loaded PEQ for
+    // Clear) that changes while the panel is open.
+    private void ShowPeqMenu(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings peqSettings = channel.Settings;
+        bool hasPeq =
+            peqSettings.PeqBands.Count > 0 || peqSettings.PeqPreampDb != 0;
+
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Load from file…", null, (_, _) => LoadPeq(channel));
+        var saveItem = new ToolStripMenuItem(
+            "Save to file…",
+            null,
+            (_, _) => SavePeq(channel))
+        {
+            Enabled = hasPeq,
+            ToolTipText =
+                "Write this channel's bank out as an EQ profile (or a tuning\r\n" +
+                "sheet PDF) — the whole tune can be built here without a file,\r\n" +
+                "so this is where it leaves for the hardware."
+        };
+        menu.Items.Add(saveItem);
+        menu.Items.Add(new ToolStripSeparator());
+
+        // Both wizard entries need a measurement to show a curve; the choice is what
+        // the curve travels through — the DSP chain without its PEQ, or nothing.
+        bool hasMeasurement =
+            channel.SideState(channel.ActiveRight).TransferImpulseResponse != null;
+        // Said HERE, before the trip: a bypassed block draws its raw response on
+        // this plot, so the wizard's curve will not be the one on screen. It is
+        // still the right curve to tune a PEQ against — the chain the bank will
+        // live in — and the item names the exception rather than hiding it.
+        bool bypassed = channel.Pair.Bypass;
+        var editItem = new ToolStripMenuItem(
+            bypassed
+                ? "Edit in EQ Wizard (chain — block is bypassed)"
+                : "Edit in EQ Wizard",
+            null,
+            (_, _) => RequestPeqHandoff(channel, withChain: true))
+        {
+            Enabled = hasMeasurement,
+            ToolTipText = "Tune this channel's PEQ in the EQ Wizard against its\r\n" +
+                "response through the DSP chain with the PEQ itself bypassed,\r\n" +
+                "windowed as this plot windows it. A Return button brings\r\n" +
+                "the result back to this channel." +
+                (bypassed
+                    ? "\r\nThis block is BYPASSED, so the plot is drawing its raw\r\n" +
+                      "response — the wizard will show the chain instead, which is\r\n" +
+                      "what the PEQ is for once bypass comes off."
+                    : string.Empty)
+        };
+        menu.Items.Add(editItem);
+        var editRawItem = new ToolStripMenuItem(
+            "Edit raw in EQ Wizard",
+            null,
+            (_, _) => RequestPeqHandoff(channel, withChain: false))
+        {
+            Enabled = hasMeasurement,
+            ToolTipText = "The same handoff against the raw measurement — the\r\n" +
+                "driver before the DSP chain, as the Raw curve draws it."
+        };
+        menu.Items.Add(editRawItem);
+
+        menu.Items.Add(new ToolStripSeparator());
+        var clearItem = new ToolStripMenuItem(
+            "Clear",
+            null,
+            (_, _) => ClearPeq(channel))
+        {
+            Enabled = hasPeq
+        };
+        menu.Items.Add(clearItem);
+
+        Button anchor = ControlFor(channel).PeqMenuButton;
+        menu.Show(anchor, new Point(0, anchor.Height));
+    }
+
+    // Builds the handoff for the active side and hands it to the host. The gate
+    // pieces mirror what the magnitude view draws with: the shared template, the
+    // active side's pin, and the last redraw's window anchor so an unpinned gate
+    // opens exactly where the plot's did.
+    private void RequestPeqHandoff(VirtualCrossoverChannel channel, bool withChain)
+    {
+        if (EditPeqInWizardRequested is not { } requested)
+        {
+            return;
+        }
+
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        // Only a render that still describes the CURRENT settings may place the
+        // window: a delay or crossover edit invalidates the coordinator and queues a
+        // new pass, and until it lands this capture belongs to the previous chain —
+        // pairing a new chain with an old anchor. Stale means no anchor, and the
+        // builder falls back to reading the channel's own front.
+        int? renderAnchor =
+            lastProcessedRender is { Channels.Count: >= 2 } render &&
+            processingCoordinator.IsCurrent(render.Revision)
+                ? ProcessedChannels.SharedStartAnchorIndex(render.Channels)
+                : null;
+        VirtualDspEqHandoffRequest request;
+        try
+        {
+            request = VirtualDspEqHandoff.Build(
+                channel,
+                channel.ActiveRight,
+                withChain,
+                snapshot.Template,
+                snapshot.PinnedOffsetMs,
+                renderAnchor,
+                (double)numericTargetLevel.Value,
+                (double)numericTargetLevel.Minimum,
+                (double)numericTargetLevel.Maximum,
+                snapshot.SmoothingInverseOctaves,
+                project.CalibrationId,
+                projectGeneration);
+        }
+        catch (InvalidOperationException)
+        {
+            // The measurement vanished between opening the menu and choosing — a
+            // silent no-op, like a deleted history entry in the source picker.
+            return;
+        }
+
+        requested(request);
+    }
+
+    /// <summary>
+    /// Lands a bank edited in the EQ Wizard back on the side it was taken from.
+    /// False — and nothing written — when that channel is no longer here (removed,
+    /// or replaced wholesale by a project import); the host tells the user and
+    /// leaves the wizard open so the tune is not lost.
+    /// </summary>
+    internal bool TryApplyPeqFromWizard(
+        VirtualDspEqReturnToken token,
+        EqualizationCurve curve,
+        double targetLevelDb)
+    {
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        if (!VirtualDspEqHandoff.TryApplyReturn(
+                channels,
+                token,
+                curve,
+                projectGeneration,
+                project.CalibrationId,
+                snapshot.Template,
+                snapshot.PinnedOffsetMs,
+                (double)numericTargetLevel.Value))
+        {
+            return false;
+        }
+
+        // The level travels back with the bank: it is where the tune was fitted to
+        // hang, and the guard above has already established that this panel's own
+        // answer is still the one the wizard started from — so writing it cannot
+        // overwrite a decision made here meanwhile.
+        if (!((double)numericTargetLevel.Value).Equals(targetLevelDb))
+        {
+            numericTargetLevel.Value = numericTargetLevel.ClampValue(targetLevelDb);
+        }
+
+        UpdatePeqReadouts(token.Channel);
+        ScheduleSave();
+        RedrawAll();
+        return true;
+    }
+
+    // Writes one channel's bank out through the SAME coordinator, formats and
+    // warnings the EQ Wizard exports with — the tune can now be built entirely in
+    // these two panels, so this is the door to the hardware and it must not be a
+    // second, subtly different exporter.
+    private void SavePeq(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        var curve = new EqualizationCurve(settings.PeqBands, settings.PeqPreampDb);
+        string side = channel.Pair.Mono ? "mono" : channel.ActiveRight ? "R" : "L";
+        using var dialog = new SaveFileDialog
+        {
+            AddExtension = true,
+            DefaultExt = peqExport.DefaultExportExtension,
+            FileName = $"channel-{channel.Name}-{side}",
+            Filter = peqExport.ExportFilter,
+            RestoreDirectory = true,
+            Title = $"Save channel {channel.Name} PEQ"
+        };
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        {
+            return;
+        }
+
+        EqWizardExportTarget target = peqExport.ResolveExportTarget(dialog.FilterIndex);
+        if (!ConfirmPeqExportLoss(EqExportWarnings.ShelvingBandsDropped(target, curve)) ||
+            !ConfirmPeqExportLoss(EqExportWarnings.PreampDropped(target, curve)))
+        {
+            return;
+        }
+
+        // The band the sheet states it was tuned over: this channel's own passband
+        // when it has a crossover, the full range when it does not.
+        (double minHz, double maxHz) =
+            VirtualDspEqHandoff.PassbandFor(settings) ?? (20.0, 20_000.0);
+        EqWizardFileResult result = peqExport.Export(
+            new EqWizardExportRequest(
+                dialog.FileName,
+                target,
+                curve,
+                ProjectSampleRateHz,
+                $"Channel {channel.Name} ({side})",
+                minHz,
+                maxHz,
+                // No fit statistics: these bands were not necessarily fitted here,
+                // and a sheet is better with the figure absent than invented.
+                Stats: null,
+                TargetDspQConvention));
+        if (!result.Success)
+        {
+            ShowError("PEQ could not be exported.", result.Exception!.Message);
+        }
+    }
+
+    // Nothing to say means nothing to ask — the same rule the wizard's export follows.
+    private bool ConfirmPeqExportLoss(string? warning) =>
+        warning == null ||
+        MessageBox.Show(
+            FindForm(),
+            warning,
+            "Virtual DSP",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning) == DialogResult.Yes;
+
     private void LoadPeq(VirtualCrossoverChannel channel)
     {
         IReadOnlyList<IEqProfileFormat> formats = EqProfileFormats.Importable;
@@ -1993,9 +2299,14 @@ public partial class VirtualCrossoverPanel : UserControl
             "Run Auto delay afterward to phase-align the result.");
         toolTip.SetToolTip(
             buttonPhaseGate,
-            "Configure the gate for the magnitude, phase and impulse\r\n" +
-            "views: offset and Tukey fades, with an IR preview — cut the\r\n" +
-            "window before the first reflection for clean traces.\r\n" +
+            "Configure the gate for the phase and impulse views: offset\r\n" +
+            "and Tukey fades, with an IR preview — cut the window before\r\n" +
+            "the first reflection for clean traces.\r\n" +
+            "The MAGNITUDE view deliberately ignores these durations: it\r\n" +
+            "reads a long fixed steady-state window (what the ear hears,\r\n" +
+            "cabin included — and the full depth of a bass EQ band, which\r\n" +
+            "a junction-length gate cannot contain). Only the gate's\r\n" +
+            "OFFSET carries over, saying where that window opens.\r\n" +
             "Where the gate SITS — its offset and the detrend τ — belongs\r\n" +
             "to the side you are viewing (L or R): their drivers arrive at\r\n" +
             "different times, so fitting one no longer disturbs the other.\r\n" +
@@ -2056,14 +2367,23 @@ public partial class VirtualCrossoverPanel : UserControl
                 PhaseDetrendMode.Off,
                 manualDetrendMilliseconds: 0.0) with
             {
-                // The magnitude always reads the FIXED gate. FDW cannot hold
-                // the summed response: its high-frequency windows are shorter
-                // than the channels' arrival spread, so no single window keeps
-                // every channel's treble inside the one summed IR, and the
-                // drawn Sum and the loss read-out collapse. The dialog's
-                // Window mode and FDW cycles therefore shape the PHASE view
-                // only.
-                WindowMode = PhaseWindowMode.Fixed
+                // The magnitude reads the FIXED steady-state window, not the
+                // dialog's gate. Two reasons, one per parameter. Mode: FDW cannot
+                // hold the summed response — its high-frequency windows are
+                // shorter than the channels' arrival spread, so no single window
+                // keeps every channel's treble inside the one summed IR, and the
+                // drawn Sum and the loss read-out collapse. Length: tonal balance
+                // is a steady-state question — a short junction gate cannot even
+                // contain a bass EQ band's own ringing, so under it a Q 5 cut at
+                // 100 Hz draws at a fraction of its real depth. The dialog's
+                // durations, window mode and FDW cycles therefore shape the
+                // PHASE and IMPULSE views only; its OFFSET (the pin, or the
+                // shared front anchor when unpinned) still says where this
+                // window opens.
+                WindowMode = PhaseWindowMode.Fixed,
+                LeftMs = FrequencyResponseOptions.SteadyStateLeftMs,
+                PlateauMs = FrequencyResponseOptions.SteadyStatePlateauMs,
+                RightMs = FrequencyResponseOptions.SteadyStateRightMs
             },
             PinnedGateOffsetMs,
             project.PhaseGateFor(!project.ActiveSideRight).OffsetMs,

@@ -68,10 +68,12 @@ namespace Resonalyze.Dsp
             int plateau = MillisecondsToSamples(plateauMs, sampleRate);
             int right = MillisecondsToSamples(rightMs, sampleRate);
 
-            int gate = Math.Clamp(left + plateau + right, 1, GatedFftLength);
-            // Keep the fades coherent if the clamp had to trim the gate.
-            left = Math.Min(left, gate);
-            right = Math.Min(right, gate - left);
+            // Keep the fades coherent if the clamp had to trim the gate — sharing the
+            // loss between plateau and fade-out rather than emptying the plateau
+            // first. See FrequencyResponseOptions.TrimGateToFft, which the
+            // non-gated spectrum path calls for the same window.
+            (int gate, left, right) =
+                FrequencyResponseOptions.TrimGateToFft(left, plateau, right);
 
             double leftNorm = (double)left / gate * 2.0;
             double rightNorm = (double)right / gate * 2.0;

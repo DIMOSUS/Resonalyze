@@ -146,9 +146,32 @@ public partial class Form1
         }
     }
 
+    // A plain Load is a request to make a measurement current like any other, so it
+    // takes the shared revision and checks it between reading and installing. The
+    // Load button being disabled meanwhile is not the same guard: it stops a second
+    // Load, not a mode switch to Virtual DSP and an Open in analyzers, which would
+    // otherwise land first and then be overwritten by this file arriving late.
+    //
+    // (The WAV import needs none of this: it holds an ExpSweepMeasurement claim for
+    // its whole decode, and every other path refuses to start while the measurement
+    // is busy — mutual exclusion rather than a race resolved afterwards.)
     private async Task LoadImpulseResponseFileAsync(string path)
     {
+        long revision = ++measurementActivationRevision;
         ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
+        if (revision != measurementActivationRevision)
+        {
+            return;
+        }
+
+        ApplyImpulseResponseFile(file, path);
+    }
+
+    // The install half, split from the read so a caller that must not land a stale
+    // result can check its own guard between the two — reading a large file takes
+    // long enough for a newer request to overtake it.
+    private void ApplyImpulseResponseFile(ImpulseResponseFile file, string path)
+    {
         (double restoredLowHz, double restoredHighHz) = file.ResolveSweepBand();
         (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();
         expSweepMeasurement.RestoreImpulseResponse(
@@ -185,6 +208,90 @@ public partial class Form1
         // available (not just view-only) for it.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
+    }
+
+    // The Virtual DSP "Open in analyzers" jump: brings one channel side's
+    // measurement into the analysis modes and lands on Frequency Response (every
+    // analyzer tab reads the same loaded measurement, so one landing tab serves
+    // them all). A history-backed source goes through the standard entry
+    // activation — the full restore the History window runs, saved working state
+    // included — and the tab switch queues after it, because the restore selects
+    // the entry's own saved mode on the way. A file-backed source switches first
+    // and then loads exactly as the Load button would, ceremony and all.
+    private async Task OpenVirtualDspSourceInAnalyzersAsync(
+        Guid? historyEntryId, string? filePath)
+    {
+        if (expSweepMeasurement.InProgress)
+        {
+            return;
+        }
+
+        long revision = ++measurementActivationRevision;
+
+        // The entry is TRIED, not trusted: it can still be listed while the file
+        // behind it is gone, in which case the restore lands nothing — and Virtual
+        // DSP may well have relocated that measurement and handed a working path
+        // alongside. Falling through on Unavailable is what keeps the jump from
+        // leaving the previous measurement on screen and calling it done.
+        if (historyEntryId is { } entryId &&
+            measurementHistoryService.FindById(entryId) != null)
+        {
+            switch (await ActivateHistoryEntryAsync(entryId, revision))
+            {
+                case HistoryActivation.Landed:
+                    await SelectModeAsync(ModeTab.Frequency);
+                    return;
+
+                // A newer activation — another channel's jump, or the History
+                // window's own — is already landing. Falling back to this
+                // channel's file would race it and could overwrite the newer
+                // measurement with this older one; the newest request wins,
+                // exactly as it does inside the activation itself.
+                case HistoryActivation.Superseded:
+                    return;
+            }
+        }
+
+        if (filePath == null)
+        {
+            return;
+        }
+
+        if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
+        {
+            await liveSpectrumController.AbortAsync();
+        }
+
+        await SelectModeAsync(ModeTab.Frequency);
+        commandController.SetSaveAvailable(false);
+        commandController.SetLoadAvailable(false);
+        try
+        {
+            // Read, then check, then install: a jump started later may already have
+            // landed its measurement while this file was still being read, and
+            // installing this one now would put the older channel back on screen.
+            ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(filePath);
+            if (revision != measurementActivationRevision)
+            {
+                return;
+            }
+
+            ApplyImpulseResponseFile(file, filePath);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                $"Failed to load the impulse response.\r\n\r\n{exception.Message}",
+                "Load failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            commandController.SetSaveAvailable(expSweepMeasurement.HasImpulseResponse);
+            FinalizeMeasurementCommandState();
+        }
     }
 
     // A sweep recorded elsewhere — a phone, a handheld recorder, a DAW — analyzed

@@ -112,6 +112,8 @@ public partial class EqWizardPanel : UserControl
             RaiseSettingsChanged();
         };
         buttonAutoTune.Click += (_, _) => AutoTune();
+        buttonReturnToDsp.Click += (_, _) => ReturnPeqToVirtualDsp();
+        buttonBackToDsp.Click += (_, _) => BackToVirtualDsp();
         buttonOverlaySettings.Click += (_, _) => OpenTargetSettings();
         buttonImport.Click += (_, _) => ImportPeq();
         buttonExport.Click += (_, _) => ExportPeq();
@@ -216,6 +218,10 @@ public partial class EqWizardPanel : UserControl
         DrawSelectedCurves();
     }
 
+    // The nominal range last armed onto the EQ-gain axis, so a redraw can tell "the
+    // range this panel chose" from "the view the user zoomed to".
+    private (double Lower, double Upper)? eqAxisNominal;
+
     // Sizes the right EQ-gain axis so it reads as the boost/cut budget yet still contains
     // the drawn filter curve, whose overlapping bands can sum well past a single band's
     // limit. The curve extent (its actual min/max in dB) extends the budget-based range;
@@ -234,10 +240,27 @@ public partial class EqWizardPanel : UserControl
             (double)numericGainMax.Value,
             curveMinDb,
             curveMaxDb);
-        eqAxis.Minimum = lower;
-        eqAxis.Maximum = upper;
+        // The nominal range is always the hard pan/zoom limit — the curve holds
+        // nothing beyond it. The RANGE, though, is re-armed only when the nominal
+        // itself moved (a budget edit, a curve outgrowing a snap step): the axis
+        // zooms and pans now, and this runs on every redraw, so re-arming each
+        // time would throw away the zoom the user just set — the same rule the
+        // Virtual DSP impulse view follows for its time axis.
         eqAxis.AbsoluteMinimum = lower;
         eqAxis.AbsoluteMaximum = upper;
+        if (eqAxisNominal is { } previous &&
+            Math.Abs(previous.Lower - lower) < 1e-9 &&
+            Math.Abs(previous.Upper - upper) < 1e-9)
+        {
+            return;
+        }
+
+        eqAxisNominal = (lower, upper);
+        eqAxis.Minimum = lower;
+        eqAxis.Maximum = upper;
+        // Drops any user override along with the stale range: a new nominal means
+        // the curve or the budget no longer fits the view the user had.
+        eqAxis.Reset();
     }
 
     private void InitializeToolTips()
@@ -245,6 +268,15 @@ public partial class EqWizardPanel : UserControl
         SetTip(buttonSource,
             "Choose the curve to equalize: an impulse response (file or history), " +
             "a captured overlay slot, or a measured curve from a text file.");
+        SetTip(buttonReturnToDsp,
+            "Send the edited bank (bands and preamp) back to the Virtual DSP " +
+            "channel this curve came from, and switch to that tool.");
+        SetTip(buttonBackToDsp,
+            "Switch back to Virtual DSP WITHOUT applying: the channel keeps the " +
+            "PEQ it had, and the filters stay here — exportable, or one Ctrl+Z " +
+            "chain back to what the bank held before the handoff. (Simply " +
+            "clicking the Virtual DSP tab instead keeps this session open for " +
+            "coming back.)");
         SetTip(buttonOverlaySettings,
             "Edit the target curve this mode corrects toward (isolated to the EQ " +
             "Wizard; not tied to any overlay).");
@@ -375,9 +407,11 @@ public partial class EqWizardPanel : UserControl
 
         // A dedicated right-hand axis for the EQ filter curve, centred on 0 dB so the
         // correction shape is readable whatever the source's level. It owns no gridlines
-        // (the left axis draws them) and is a fixed reference, not pannable; its range
-        // follows the boost/cut budget so the curve cannot fall off it. A subtle 0-line
-        // marks unity gain.
+        // (the left axis draws them). Its NOMINAL range follows the boost/cut budget so
+        // the curve cannot fall off it, and that range is the hard pan/zoom limit —
+        // within it the axis zooms and pans like any other (hover it and scroll, or
+        // drag), for reading a correction's fine structure without the whole budget's
+        // height. A subtle 0-line marks unity gain.
         model.Axes.Add(new LinearAxis
         {
             Key = EqGainAxisKey,
@@ -391,9 +425,7 @@ public partial class EqWizardPanel : UserControl
             ExtraGridlines = new[] { 0.0 },
             ExtraGridlineColor = OxyColor.FromAColor(60, OxyColors.White),
             ExtraGridlineStyle = LineStyle.Solid,
-            Title = "EQ (dB)",
-            IsPanEnabled = false,
-            IsZoomEnabled = false
+            Title = "EQ (dB)"
         });
 
         model.Annotations.Add(new PlotWatermarkAnnotation
@@ -830,58 +862,24 @@ public partial class EqWizardPanel : UserControl
     // out and decides; the coordinator drops them either way.
     private bool ConfirmShelvingBandsDropped(
         EqWizardExportTarget target,
-        EqualizationCurve curve)
-    {
-        int dropped = EqWizardImportExportCoordinator.CountShelvingBandsDroppedBy(
-            target, curve);
-        if (dropped == 0)
-        {
-            return true;
-        }
+        EqualizationCurve curve) =>
+        ConfirmExportLoss(EqExportWarnings.ShelvingBandsDropped(target, curve));
 
-        string filters = dropped == 1 ? "shelving filter" : $"{dropped} shelving filters";
-        return MessageBox.Show(
-            FindForm(),
-            $"{target.Name} cannot carry a shelving filter the way this EQ defines " +
-            $"one, so the {filters} would be left out." +
-            Environment.NewLine + Environment.NewLine +
-            "The exported profile will hold the peaking filters and the preamp only, " +
-            "and will not match the curve on screen. Export anyway?",
-            "EQ Wizard",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning) == DialogResult.Yes;
-    }
-
-    // A format whose layout has no preamp slot exports the bands only, so the whole
-    // curve lands on the device that many dB off the tune on screen — and, unlike a
-    // dropped band, nothing in the file says so. Tell the user the number to enter
-    // in the device's own gain control; they decide.
     private bool ConfirmPreampDropped(
         EqWizardExportTarget target,
-        EqualizationCurve curve)
-    {
-        double preampDb = EqWizardImportExportCoordinator.PreampDroppedBy(target, curve);
-        if (preampDb == 0)
-        {
-            return true;
-        }
+        EqualizationCurve curve) =>
+        ConfirmExportLoss(EqExportWarnings.PreampDropped(target, curve));
 
-        string gain = FormattableString.Invariant($"{preampDb:+0.0;-0.0} dB");
-        // The preamp is signed: leaving out a cut makes the export louder than the
-        // curve on screen, leaving out a boost makes it quieter. Say which.
-        string direction = preampDb < 0 ? "louder" : "quieter";
-        return MessageBox.Show(
+    // Nothing to say means nothing to ask: the panel only interrupts when the export
+    // is going to cost the user something.
+    private bool ConfirmExportLoss(string? warning) =>
+        warning == null ||
+        MessageBox.Show(
             FindForm(),
-            $"{target.Name} has no place for the preamp, so the {gain} would be left " +
-            $"out and the exported bands alone are that much {direction} than the tune " +
-            "on screen." +
-            Environment.NewLine + Environment.NewLine +
-            $"Enter {gain} in the channel's own gain control on the device after " +
-            "importing the bands. Export anyway?",
+            warning,
             "EQ Wizard",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning) == DialogResult.Yes;
-    }
 
     // Loads a PEQ using the format chosen in the dialog and applies it. Parsing
     // tolerates broken or hand-edited files, so only file access can fail here.

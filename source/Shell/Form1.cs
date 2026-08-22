@@ -195,6 +195,45 @@ namespace Resonalyze
             // SettingsChanged handler above.
             virtualCrossoverPanel.SetTargetCurve(eqWizardPanel.TargetCurve);
             virtualCrossoverPanel.TargetCurveChanged = eqWizardPanel.ApplyTargetCurve;
+            // The PEQ handoff, both directions: a channel side goes into the wizard
+            // for editing and the finished bank comes back, the active mode following
+            // the work each way. The only failure is a channel that no longer exists —
+            // then the wizard stays open so the tune is not lost with it.
+            virtualCrossoverPanel.EditPeqInWizardRequested = request =>
+            {
+                eqWizardPanel.BeginVirtualDspHandoff(request);
+                _ = modeController.SelectAsync(ModeTab.ToolsEqWizard);
+            };
+            virtualCrossoverPanel.OpenSourceInAnalyzersRequested =
+                (entryId, filePath) =>
+                    _ = OpenVirtualDspSourceInAnalyzersAsync(entryId, filePath);
+            eqWizardPanel.BackToVirtualDspRequested = () =>
+                _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
+            eqWizardPanel.ReturnPeqRequested = (token, curve, targetLevelDb) =>
+            {
+                if (virtualCrossoverPanel.TryApplyPeqFromWizard(
+                        token, curve, targetLevelDb))
+                {
+                    _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
+                    return;
+                }
+
+                MessageBox.Show(
+                    this,
+                    "This PEQ cannot be returned: what it was tuned against has " +
+                    "changed since. The channel may have been removed or replaced " +
+                    "by another project, given a different measurement, had its " +
+                    "DSP chain edited, its PEQ replaced or cleared, its gate moved, " +
+                    "switched between stereo and mono, or the microphone calibration " +
+                    "or target level may have changed — a bank fitted against one of " +
+                    "those does not belong to the other." +
+                    Environment.NewLine + Environment.NewLine +
+                    "The filters stay here: export them, or start a fresh edit from " +
+                    "the channel's PEQ menu to tune against what it shows now.",
+                    "EQ Wizard",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            };
             virtualCrossoverPanel.MetricChanged = (text, detail) =>
             {
                 virtualDspMetricLabel.Text = text;

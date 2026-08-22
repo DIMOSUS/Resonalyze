@@ -1,3 +1,4 @@
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -12,7 +13,16 @@ internal enum EqWizardSourceKind
     OverlaySlot,
 
     /// <summary>A curve imported from a text file.</summary>
-    TextCurve
+    TextCurve,
+
+    /// <summary>
+    /// One Virtual DSP channel side handed over for PEQ editing. An impulse response
+    /// like <see cref="ImpulseResponse"/>, but rendered through the gate the Virtual
+    /// DSP plot draws with (<see cref="EqWizardCurveSource.GateSettings"/>) and pinned
+    /// to that panel's microphone calibration, so the wizard shows the very curve the
+    /// user just left.
+    /// </summary>
+    VirtualDspChannel
 }
 
 /// <summary>
@@ -45,6 +55,50 @@ internal sealed record EqWizardCurveSource
     /// loopback-transfer impulse response; imported curves never carry it.
     /// </summary>
     public IReadOnlyList<SignalPoint>? Coherence { get; init; }
+
+    // --- Virtual DSP channel sources ----------------------------------------------
+
+    /// <summary>
+    /// The gate the source's FR is computed through, offset already resolved — the same
+    /// <see cref="PhaseAnalysisSettings"/> the Virtual DSP magnitude view uses, so the
+    /// wizard's source curve is the one that plot draws. Null for every other source;
+    /// those use the wizard's own fixed analysis window.
+    /// </summary>
+    public PhaseAnalysisSettings? GateSettings { get; init; }
+
+    /// <summary>
+    /// The microphone calibration the Virtual DSP panel renders with, which this source
+    /// is pinned to: the wizard applies it but disables its selector, because a PEQ
+    /// fitted under one correction and summed under another would break the very
+    /// identity the handoff promises. Null (Off) is a real value. Meaningless for other
+    /// kinds.
+    /// </summary>
+    public string? PinnedCalibrationId { get; init; }
+
+    /// <summary>
+    /// The channel's ORIGINAL measurement, before any of its chain — what the corrected
+    /// preview is built from.
+    /// </summary>
+    /// <remarks>
+    /// A gate does not commute with a filter, so "the source curve plus the filter's
+    /// ideal magnitude" is NOT what the panel draws once the bank rings longer than the
+    /// window: a 6 ms gate cannot resolve a Q 5 band at 100 Hz, and the two readings part
+    /// by several dB there. The preview therefore runs the WHOLE chain — the edited bank
+    /// included — through one <see cref="VirtualCrossoverAnalysis.ApplyChain"/> and gates
+    /// the result, exactly as the panel does. One pass, from the original measurement:
+    /// re-filtering the already-bypassed response a second time would pad and wrap twice
+    /// and no longer match.
+    /// </remarks>
+    public Complex[]? PreviewImpulseResponse { get; init; }
+
+    /// <summary>
+    /// The channel's chain with the PEQ left out — the edited bank is substituted into it
+    /// for each preview. Identity for a raw handoff, which is measured without the chain.
+    /// </summary>
+    public DspChannelChain? PreviewChain { get; init; }
+
+    /// <summary>Whether this source's curves are built through a gate, not the wizard's own window.</summary>
+    public bool IsGated => GateSettings != null && PreviewImpulseResponse != null;
 
     // --- imported curve sources ---------------------------------------------------
 
@@ -105,7 +159,9 @@ internal sealed record EqWizardCurveSource
     /// form was stored, or — for the no-raw modes that correct additively per frequency (a
     /// dB SPL RTA or FR) — when the correction baked into its points travelled with it.
     /// Without either, the correction is already fused into the numbers and applying
-    /// another would double it.
+    /// another would double it. A Virtual DSP channel is deliberately absent: its
+    /// correction is applied, but it is the DSP panel's choice
+    /// (<see cref="PinnedCalibrationId"/>) and its selector stays disabled here.
     /// </summary>
     public bool SupportsCalibration =>
         Kind == EqWizardSourceKind.ImpulseResponse || HasOwnCalibration;
@@ -134,7 +190,7 @@ internal sealed record EqWizardCurveSource
     /// rather than being smoothed by a near-enough algorithm.
     /// </remarks>
     public bool SupportsSmoothing =>
-        Kind == EqWizardSourceKind.ImpulseResponse ||
+        Kind is EqWizardSourceKind.ImpulseResponse or EqWizardSourceKind.VirtualDspChannel ||
         RawSpectrum != null ||
         (CapturedSmoothingCode == 0 && CurveKind == AnalysisCurveKind.InputSpectrum);
 }

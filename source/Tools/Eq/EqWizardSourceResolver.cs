@@ -250,9 +250,18 @@ internal sealed class EqWizardSourceResolver
     /// a log axis). Returns null when the file carries no coherence.
     /// </summary>
     internal static IReadOnlyList<SignalPoint>? ExtractTransferCoherence(
-        ImpulseResponseFile file)
+        ImpulseResponseFile file) =>
+        ExtractTransferCoherence(file.TransferCoherence, file.SampleRate);
+
+    /// <summary>
+    /// The same conversion from the raw bins themselves, for a caller holding them
+    /// without the file — a Virtual DSP channel side keeps its measurement's coherence
+    /// in its runtime state.
+    /// </summary>
+    internal static IReadOnlyList<SignalPoint>? ExtractTransferCoherence(
+        double[]? transferCoherence, int sampleRate)
     {
-        if (file.TransferCoherence is not { Length: > 1 } coherence || file.SampleRate <= 0)
+        if (transferCoherence is not { Length: > 1 } coherence || sampleRate <= 0)
         {
             return null;
         }
@@ -261,7 +270,7 @@ internal sealed class EqWizardSourceResolver
         var points = new List<SignalPoint>(coherence.Length - 1);
         for (int k = 1; k < coherence.Length; k++)
         {
-            double frequency = (double)k * file.SampleRate / fftLength;
+            double frequency = (double)k * sampleRate / fftLength;
             double gammaSquared = coherence[k];
             if (double.IsFinite(frequency) && frequency > 0 && double.IsFinite(gammaSquared))
             {

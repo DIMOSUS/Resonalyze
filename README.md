@@ -207,7 +207,8 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   captured, calculated and target curves with styling, curve math,
   import/export, saved per-mode state, and a live editing preview
 - **EQ Wizard** — up to 32 PEQ bands toward its own target, from an IR, an
-  overlay slot or a text curve, with Auto Tune, cross-tool import/export and a
+  overlay slot, a text curve or a Virtual DSP channel handed over for editing
+  (and returned with one click), with Auto Tune, cross-tool import/export and a
   printable tuning-sheet PDF
 - **Signal Generator**, **Measurement History** with per-entry working state, a
   compact Mic/Loop level meter, and four audio backends (MME Compatibility, ASIO,
@@ -477,6 +478,14 @@ each arrival is the part worth reading, and the gate window it opens on is far
 wider — within that window, which stays the hard limit because the traces hold
 nothing outside it. Editing the gate re-frames the axis, since that is a new
 timeline; an ordinary redraw leaves your zoom alone.
+
+The EQ Wizard's right-hand **EQ (dB)** axis follows the impulse view's rule:
+it zooms and pans within its nominal range — the boost/cut budget plus the
+drawn curve, which is its hard limit because the curve holds nothing beyond it
+— so a correction's fine structure can be read without the whole budget's
+height. An ordinary redraw keeps your zoom; changing the Min/Max Gain budget
+(or a curve outgrowing the range) re-frames the axis, since the old view no
+longer fits what it must show.
 
 ## Mode Settings
 
@@ -1149,6 +1158,95 @@ its own right-hand dB axis), and a shaded **error fill**. Click a band card to
 overlay that band's contribution as a dashed curve. Each card carries its
 **frequency**, **Q**, and **gain**, and the panel adds a **Target Level**, a
 **Gain** (preamp), a **Bands** count, source **Smoothing**, and **Bypass**.
+The Target Level is the user's knob alone — loading a source never moves it, so
+a deliberately placed target survives every source switch (an absolute dB SPL
+curve simply needs the level dialed to its datum once). The one exception
+carries rather than guesses: a Virtual DSP handoff brings that panel's own
+target level along, below.
+
+### Editing a Virtual DSP channel's PEQ
+
+A [Virtual DSP](#virtual-dsp) channel's PEQ row opens the wizard on that
+channel directly — **Edit in EQ Wizard** on its menu, taking the side the
+panel is showing (a mono pair hands over its single set). The wizard then
+shows the very curve the user just left: the measurement through the channel's
+DSP chain **with the PEQ bypassed** — the one stage under edit — under the same
+steady-state window and microphone calibration the Virtual DSP magnitude view
+uses, the smoothing selector starting on that panel's value. Smoothing is the
+one thing that then goes its own way: it is a reading width, not part of the
+tune — the filters do what they do at any smoothing — so turning it here
+changes what you look at and what Auto Tune fits against, without making the
+resulting bank belong to a different channel.
+**Edit raw in EQ Wizard** hands over the raw measurement instead — the panel's
+Raw curve — for tuning the driver itself irrespective of the chain.
+
+One case parts from "the curve you just left", deliberately: a **bypassed**
+block contributes its raw signal, so the plot is not drawing that chain at all.
+The handoff still opens on the chain, because that is what the PEQ will live in
+the moment bypass comes off — a bank tuned against a crossover-less curve would
+be wrong for the setup. The menu item says so before the trip (it reads *chain —
+block is bypassed*), and so does the source description in the wizard.
+
+That identity extends to the corrected curve: **Source + EQ** is not the bare
+curve with the filters' ideal magnitude added on top, the way an equalizer
+normally previews itself. The wizard runs the whole chain — the bank being
+edited included — through one pass and windows the result, exactly as the panel
+does for a channel carrying that PEQ, so the preview is the panel's own
+arithmetic rather than an approximation of it. (A window does not commute with a
+filter; the steady-state window is long enough that the two would rarely part
+visibly, but the honest path holds by construction, not by luck.) The **Tuning
+results** figures are measured against that same curve. It costs a pair of
+transforms per edit, so it is computed off the UI thread and the last finished
+curve stays on screen while the next one runs.
+
+The channel's bands and preamp seed the filter bank as one undo step (the bank
+is the wizard's single global one, so Ctrl+Z is the way back to what it held),
+and the **From / To** window lands on the channel's crossover corners — beyond
+them the chain is rolling the driver off on purpose, and a fit would chase the
+slope (a raw edit, or a channel with no crossover, leaves the window alone).
+The **Target Level** arrives from the Virtual DSP panel verbatim: the handoff
+curve is rendered in that plot's own dB frame, so one target means one height
+too — the curve hangs exactly where it hung a click ago.
+The **Calibration** selector comes up pinned to the Virtual DSP panel's choice
+and disabled: a PEQ fitted under one correction and summed under another would
+break the identity above, so the correction is changed where it lives. The
+wizard's standing calibration preference for impulse responses survives
+untouched.
+
+**Return PEQ to Virtual DSP** — visible only during such a session — sends the
+finished bank (bands and preamp) back to the channel side it came from, named
+"EQ Wizard" in its read-out, and switches back to the Virtual DSP tab. The
+address is remembered from the handoff, so flipping the L/R selector while
+editing does not misdeliver the result. **Back without applying** beside it
+leaves the same way with nothing written: the channel keeps the PEQ it had,
+and the wizard keeps the edits — exportable, or one Ctrl+Z chain back to the
+pre-handoff bank. (A plain tab switch, by contrast, keeps the session open for
+coming back.) Loading any other source ends the session and hides both
+buttons.
+
+The **Target Level** travels back with the bank. It is your knob in the wizard,
+the bank's preamp is fitted against wherever you put it, and returning the
+filters without it would realize a tune aimed at a height the panel does not
+have.
+
+A return is refused — with the filters kept, ready for an export or a fresh
+edit — when what the bank was tuned against has changed since: the channel
+removed or replaced by another project, that side given a different
+measurement, its PEQ loaded or cleared from the panel meanwhile, the gate
+moved, the microphone calibration or the panel's own target level changed, the
+pair switched between stereo and mono (which moves where the settings live), or
+**any change to the chain** the curve was built through. Calibration is on that list for the same
+reason the wizard locks its own calibration selector during a session — a bank
+fitted under one correction and summed under another is not the same bank, and
+the Virtual DSP panel's own selector is a tab switch away.
+
+A **polarity flip** is the one exception, and the only one: it is −1 at every
+frequency, so it changes neither the shape the bank corrects nor the level it
+was fitted against. The rest of the chain does, measured rather than assumed —
+the crossover bends the curve outright, a gain slides it against the absolute
+target the bank's preamp was fitted to, and a delay or an all-pass moves what
+the analysis window catches (at 192 kHz, where the window is at its shortest,
+by as much as 1.7 and 4.8 dB at the extremes the controls allow).
 
 ### Auto Tune
 
@@ -1255,6 +1353,15 @@ one-subwoofer car layout — feeding both sides' sums. The setup grows from two 
 to eight pairs, and **+/−** folds a block down to its header. Every channel in a
 project must share one sample rate.
 
+The source button's menu also carries **Open in analyzers**: it loads that
+side's own measurement into the analysis modes and lands on Frequency Response,
+so the driver this channel is tuned on can be inspected with the full toolset —
+impulse, phase, group delay, waterfall, overlays — and then left again. A
+history-backed source restores the entry exactly as the History window would
+(its saved working state included); a file-backed one loads as the **Load**
+button does. The entry is greyed out when neither the history entry nor the
+file behind the channel resolves any more.
+
 Each channel runs through:
 
 - **Gain** (dB) — relative levels are only honest when the measurements share one
@@ -1271,7 +1378,15 @@ Each channel runs through:
   lining drivers up where a delay and a polarity flip are both too blunt — a
   sub-to-midbass hand-off at 60–100 Hz is the classic case — with a live read-out
   of the group delay it adds (≈ 4Q/ω₀)
-- **PEQ** — load a parametric EQ profile (any format the EQ Wizard imports)
+- **PEQ** — one button, five doors: **Load from file…** (any format the EQ
+  Wizard imports), **Save to file…** (any format it exports, plus a tuning-sheet
+  PDF), **Edit in EQ Wizard** and **Edit raw in EQ Wizard** (the
+  [handoff](#editing-a-virtual-dsp-channels-peq) that opens the wizard on this
+  channel's own curve and brings the result back), and **Clear**. With the
+  handoff there, a whole tune can be built between these two panels without a
+  file in between — so Save is where it leaves for the hardware, going out
+  through the same formats, shelf/preamp rules and warnings the wizard's own
+  export uses. The sheet states the channel's passband when it has a crossover
 - **Mute** and **Bypass** — Mute removes a channel from the plots, sum, loss
   metric and Auto delay; Bypass keeps it in the sum but feeds its raw measured
   signal, for an A/B against the processed result (Auto delay refuses to run
@@ -1310,6 +1425,18 @@ the IR preview, Tukey controls, and gate offset. Where the gate SITS belongs to
 the side you are viewing, since the two sides' drivers sit at different
 distances; how the phase is READ stays project-wide, because two sides read
 through different windows could not be compared.
+
+The gate's durations shape the **phase and impulse views only**. The magnitude
+view — channels, Sum, Sum loss and the read-out built from them — deliberately
+reads a long fixed **steady-state window** (~680 ms, clamped to 32768 samples at
+high rates) that only takes the gate's OFFSET, saying where it opens. The two
+views answer different questions: phase is timed on the direct sound, where
+cutting before the first reflection is the point, while tonal balance is what
+the ear hears with the cabin — and a junction-length gate cannot even contain a
+bass EQ band's own ringing, so under it a Q 5 cut at 100 Hz would draw at a
+fraction of its real depth. One window definition serves every magnitude curve
+here and in the [EQ Wizard](#eq-wizard), which is what keeps the two tools
+showing the same curve for the same channel.
 
 A **Target** checkbox draws the EQ target over the prediction: the SAME target
 the EQ Wizard equalizes towards, shaped from either place through the same

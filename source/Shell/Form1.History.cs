@@ -5,9 +5,13 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    // Monotonic token for history restores: the newest activation wins and
-    // stale async loads are dropped instead of overwriting a newer selection.
-    private long historyRestoreRevision;
+    // Monotonic token for EVERY request that makes some measurement the current one
+    // — a history entry activated from its window, and the Virtual DSP "Open in
+    // analyzers" jump by either of its routes. One counter on purpose: each of those
+    // reads asynchronously and then installs, so "the newest wins" only holds if they
+    // all bump and all check the SAME number. Two counters made it hold in one
+    // direction and not the other.
+    private long measurementActivationRevision;
 
     // Serializes the restore itself: the restore mutates the current IR, the
     // controllers and the mode across several awaits, so two interleaved
@@ -58,13 +62,50 @@ public partial class Form1
         });
     }
 
-    private async void HandleHistoryEntryActivated(Guid entryId)
+    private async void HandleHistoryEntryActivated(Guid entryId) =>
+        await ActivateHistoryEntryAsync(entryId, ++measurementActivationRevision);
+
+    /// <summary>How an attempt to activate a history entry ended.</summary>
+    private enum HistoryActivation
+    {
+        /// <summary>The entry's measurement is now the current one.</summary>
+        Landed,
+
+        /// <summary>
+        /// Nothing landed and nothing else is coming: the entry could not be read (its
+        /// backing file is gone), a sweep is running, or the load threw. A caller with
+        /// another way to the same measurement may take it.
+        /// </summary>
+        Unavailable,
+
+        /// <summary>
+        /// A NEWER activation is already replacing this one. Nothing landed here, but
+        /// the caller must not substitute anything either — its own fallback would
+        /// race the newer request and could overwrite it.
+        /// </summary>
+        Superseded
+    }
+
+    // The activation itself, as an awaitable step reporting how it ended: the Virtual
+    // DSP "Open in analyzers" jump runs it and then lands on a specific tab (which has
+    // to sequence AFTER the restore, since the snapshot selects its own saved mode) —
+    // and falls back to the channel's file only on Unavailable.
+    /// <param name="revision">
+    /// The activation token for THIS request, taken by the caller. A parameter rather
+    /// than something taken here, because one user action must own exactly one
+    /// revision: the Virtual DSP jump may run this and then fall back to the
+    /// channel's file, and if this method minted a second number the jump's own
+    /// check against the counter would be stale by construction — every fallback
+    /// dropped, which is precisely the case the fallback exists for.
+    /// </param>
+    private async Task<HistoryActivation> ActivateHistoryEntryAsync(
+        Guid entryId, long revision)
     {
         // Restoring a snapshot while a sweep is running would call Init on an
         // active measurement and fail; ignore the activation instead.
         if (expSweepMeasurement.InProgress)
         {
-            return;
+            return HistoryActivation.Unavailable;
         }
 
         // Two rapid activations race: a slow file-backed entry can finish
@@ -72,14 +113,17 @@ public partial class Form1
         // the UI on the earlier selection. The newest activation wins; stale
         // loads are dropped at every await boundary (the same revision guard
         // the async plot rebuild uses).
-        long revision = ++historyRestoreRevision;
         try
         {
             MeasurementHistorySnapshot? snapshot =
                 await measurementHistoryService.GetSnapshotAsync(entryId);
-            if (snapshot == null || revision != historyRestoreRevision)
+            if (revision != measurementActivationRevision)
             {
-                return;
+                return HistoryActivation.Superseded;
+            }
+            if (snapshot == null)
+            {
+                return HistoryActivation.Unavailable;
             }
 
             // Before leaving the current entry, write the live working state back
@@ -97,15 +141,17 @@ public partial class Form1
             await historyRestoreGate.WaitAsync();
             try
             {
-                if (revision != historyRestoreRevision)
+                if (revision != measurementActivationRevision)
                 {
-                    return;
+                    return HistoryActivation.Superseded;
                 }
 
                 await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
-                if (revision != historyRestoreRevision)
+                if (revision != measurementActivationRevision)
                 {
-                    return;
+                    // The measurement DID land, but a newer activation is already
+                    // replacing it; this caller must not act on it either way.
+                    return HistoryActivation.Superseded;
                 }
 
                 sessionTracker.MarkRestored(entryId);
@@ -121,6 +167,7 @@ public partial class Form1
                     dialog.SelectedEntryId ?? entryId,
                     entryId);
             });
+            return HistoryActivation.Landed;
         }
         catch (Exception exception)
         {
@@ -130,6 +177,7 @@ public partial class Form1
                 "History",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
+            return HistoryActivation.Unavailable;
         }
     }
 
@@ -297,6 +345,10 @@ public partial class Form1
     // overlays' own on-disk files are left intact.
     private async Task StartNewSessionAsync()
     {
+        // Emptying the session is a decision about which measurement is current too:
+        // without this, a load or activation still reading would land afterwards and
+        // quietly un-empty it.
+        measurementActivationRevision++;
         sessionTracker.PersistCurrentSessionState();
 
         if (liveSpectrumController.InProgress)

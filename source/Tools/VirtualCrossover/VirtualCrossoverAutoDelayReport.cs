@@ -253,7 +253,11 @@ internal static class VirtualCrossoverAutoDelayReport
             return $"{after} dB (unchanged)";
         }
 
-        double gained = forecast.AfterDb - forecast.BeforeDb;
+        // Read off the ROUNDED figures this line prints, not the raw ones: a
+        // pair straddling a rounding boundary (-2.449 -> -2.451) would
+        // otherwise show an arrow that moved 0.1 dB next to "0.0 dB worse".
+        double gained = Rounded(forecast.AfterDb, GainDecimals)
+            - Rounded(forecast.BeforeDb, GainDecimals);
         return $"{before} -> {after} dB " +
             $"({Fixed(Math.Abs(gained), GainDecimals)} dB " +
             $"{(gained > 0 ? "better" : "worse")})";
@@ -418,10 +422,16 @@ internal static class VirtualCrossoverAutoDelayReport
     // "-0.00" and reading as a change against a plain "0.00".
     private static string Fixed(double value, int decimals)
     {
-        double rounded = Math.Round(value, decimals, MidpointRounding.AwayFromZero);
+        double rounded = Rounded(value, decimals);
         return (rounded == 0 ? 0 : rounded)
             .ToString($"F{decimals}", CultureInfo.InvariantCulture);
     }
+
+    // What the report prints, as a number: the one place that decides how a
+    // figure rounds, so a difference taken between two of them agrees with
+    // the two figures themselves.
+    private static double Rounded(double value, int decimals) =>
+        Math.Round(value, decimals, MidpointRounding.AwayFromZero);
 
     private static void AppendRow(
         StringBuilder text, IReadOnlyList<string> cells, IReadOnlyList<int> widths)

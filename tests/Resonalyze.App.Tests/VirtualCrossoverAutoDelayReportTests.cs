@@ -158,6 +158,26 @@ public sealed class VirtualCrossoverAutoDelayReportTests
         Assert.DoesNotContain("->", Row(report, "A L"));
     }
 
+    // The forecast's arrow and its verdict have to agree: both are read off
+    // the rounded figures the line prints, so a pair straddling a rounding
+    // boundary cannot show a moved arrow next to "0.0 dB worse".
+    [Theory]
+    [InlineData(-2.449, -2.451, "-2.4 -> -2.5 dB (0.1 dB worse)")]
+    [InlineData(-2.451, -2.449, "-2.5 -> -2.4 dB (0.1 dB better)")]
+    [InlineData(-2.44, -2.43, "-2.4 dB (unchanged)")]
+    public void Format_ReadsTheForecastVerdictOffThePrintedFigures(
+        double beforeDb, double afterDb, string expected)
+    {
+        string report = VirtualCrossoverAutoDelayReport.Format(
+            [Outcome("A L", 1.0, 1.0)],
+            stereo: false,
+            new AutoDelayRunRequest(0, RightHandDrive: false, AdjustGains: false, 0),
+            leftSumLoss: new AutoDelaySumLossForecast(beforeDb, afterDb));
+
+        Assert.Contains(expected, report);
+        Assert.DoesNotContain("0.0 dB", report);
+    }
+
     [Fact]
     public void Format_RightHandDriveNamesTheLeftSideAsLeading()
     {

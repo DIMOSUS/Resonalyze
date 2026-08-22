@@ -75,6 +75,7 @@
             buttonRedo = new Button();
             comboBoxQConvention = new DarkComboBox();
             labelQConvention = new Label();
+            buttonReturnToDsp = new Button();
             (NumericTargetOffset).BeginInit();
             (NumericGain).BeginInit();
             (numericToHz).BeginInit();
@@ -539,6 +540,19 @@
             buttonRedo.Text = "Redo";
             buttonRedo.UseVisualStyleBackColor = true;
             //
+            // buttonReturnToDsp
+            //
+            buttonReturnToDsp.BackColor = Color.FromArgb(46, 51, 67);
+            buttonReturnToDsp.FlatStyle = FlatStyle.Popup;
+            buttonReturnToDsp.ForeColor = Color.White;
+            buttonReturnToDsp.Location = new Point(2, 371);
+            buttonReturnToDsp.Name = "buttonReturnToDsp";
+            buttonReturnToDsp.Size = new Size(186, 26);
+            buttonReturnToDsp.TabIndex = 64;
+            buttonReturnToDsp.Text = "Return PEQ to Virtual DSP";
+            buttonReturnToDsp.UseVisualStyleBackColor = false;
+            buttonReturnToDsp.Visible = false;
+            //
             // comboBoxQConvention
             //
             comboBoxQConvention.BackColor = Color.FromArgb(55, 60, 72);
@@ -570,6 +584,7 @@
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(labelQConvention);
             Controls.Add(comboBoxQConvention);
+            Controls.Add(buttonReturnToDsp);
             Controls.Add(buttonUndo);
             Controls.Add(buttonRedo);
             Controls.Add(buttonResetBands);
@@ -648,5 +663,6 @@
         private Button buttonRedo;
         private DarkComboBox comboBoxQConvention;
         private Label labelQConvention;
+        private Button buttonReturnToDsp;
     }
 }

@@ -47,6 +47,21 @@ public sealed class EqWizardCalibrationTests
     }
 
     [Fact]
+    public void UpdatedIrPreference_SurvivesAVirtualDspHandoff()
+    {
+        // A Virtual DSP handoff pins the wizard's effective calibration to whatever
+        // the DSP panel renders with. That pin is the DSP project's choice, not the
+        // user's standing preference for impulse responses — installing it must not
+        // overwrite what returning to an IR restores.
+        string? next = EqWizardCalibration.UpdatedIrPreference(
+            current: "cal1",
+            loadedKind: EqWizardSourceKind.VirtualDspChannel,
+            chosen: EqWizardCalibrationChoice.Microphone("dsp-cal"));
+
+        Assert.Equal("cal1", next);
+    }
+
+    [Fact]
     public void UpdatedIrPreference_AdoptsAChoiceMadeAgainstAnImpulseResponse()
     {
         // Choosing a calibration while an impulse response (or nothing) is loaded IS a

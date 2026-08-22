@@ -1,0 +1,207 @@
+using System.Numerics;
+using Resonalyze.Dsp;
+
+namespace Resonalyze;
+
+/// <summary>
+/// The write-back address of a PEQ handoff: which channel's which side the edited
+/// bank belongs to. The side is recorded at handoff time — the user can flip the
+/// L/R selector while the wizard is open, and the result must still land where it
+/// was taken from, not where the panel happens to be looking.
+/// </summary>
+internal sealed record VirtualDspEqReturnToken(
+    VirtualCrossoverChannel Channel,
+    bool RightSide);
+
+/// <summary>
+/// Everything one Virtual DSP channel side sends into the EQ Wizard: the curve to
+/// equalize (rendered through the DSP plot's own gate and calibration), the PEQ the
+/// channel already holds (the wizard's bank starts from it), the Auto Tune window
+/// the channel's crossover implies, where the shared target hangs on the DSP plot,
+/// and the address the result returns to.
+/// </summary>
+/// <remarks>
+/// <see cref="TargetLevelDb"/> is valid in the wizard VERBATIM: the source is
+/// rendered in the same dB frame as the Virtual DSP plot (same gate, same
+/// calibration), so "one target" means one height too — the wizard's Target Level
+/// starts exactly where the user just saw the curve hang, instead of being
+/// re-suggested against the channel and quietly drifting.
+/// </remarks>
+internal sealed record VirtualDspEqHandoffRequest(
+    EqWizardCurveSource Source,
+    EqualizationCurve BankSeed,
+    double? AutoTuneMinHz,
+    double? AutoTuneMaxHz,
+    double TargetLevelDb,
+    int SmoothingInverseOctaves,
+    VirtualDspEqReturnToken Token);
+
+/// <summary>
+/// Builds and lands PEQ handoffs between the Virtual DSP tool and the EQ Wizard.
+/// UI-free: the panel supplies its gate snapshot's pieces and shows the result; the
+/// rules — what travels, how the curve is windowed, where the result may land — are
+/// all here, where a test can hold them.
+/// </summary>
+internal static class VirtualDspEqHandoff
+{
+    /// <summary>
+    /// Prepares one channel side for the wizard. With <paramref name="withChain"/> the
+    /// curve is the side's measurement through its DSP chain WITHOUT the PEQ — gain,
+    /// delay, polarity, crossover and all-pass stay, so "Source + EQ" in the wizard IS
+    /// the processed curve the sum predicts — windowed by the gate the processed view
+    /// draws with. Without it the curve is the raw measurement under the same gate
+    /// anchored on its own peak: exactly the panel's Raw curve.
+    /// </summary>
+    /// <param name="gateTemplate">
+    /// The magnitude gate's <see cref="PhaseAnalysisSettings"/> template; its offset is
+    /// resolved here and overwritten.
+    /// </param>
+    /// <param name="pinnedGateOffsetMs">
+    /// The user's pinned gate offset for the active side, or null when the gate is on
+    /// Auto. Raw ignores it, like the panel's Raw curve does — a raw response lives in
+    /// its own time and a processed-view pin would clip it into the left fade.
+    /// </param>
+    /// <param name="renderAnchorIndex">
+    /// The window anchor the last redraw used for the active side's channel curves (the
+    /// shared earliest-arrival start), so an unpinned gate opens exactly where the plot's
+    /// does. Null when no render exists to follow — the curve then opens on its own
+    /// front, the same rule the plot applies to a lone channel.
+    /// </param>
+    public static VirtualDspEqHandoffRequest Build(
+        VirtualCrossoverChannel channel,
+        bool rightSide,
+        bool withChain,
+        PhaseAnalysisSettings gateTemplate,
+        double? pinnedGateOffsetMs,
+        int? renderAnchorIndex,
+        double targetLevelDb,
+        int smoothingInverseOctaves,
+        string? calibrationId)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+        ArgumentNullException.ThrowIfNull(gateTemplate);
+
+        VirtualCrossoverChannelState state = channel.SideState(rightSide);
+        VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
+        if (state.TransferImpulseResponse is null || state.ProcessingSource is null)
+        {
+            throw new InvalidOperationException(
+                "The channel side has no measurement to hand to the EQ Wizard.");
+        }
+
+        int sampleRate = state.SampleRate;
+        Complex[] response;
+        int anchorIndex;
+        double gateOffsetMs;
+        if (withChain)
+        {
+            // The chain minus the very thing under edit. Delay and polarity are
+            // magnitude-transparent but keep the response in the processed view's
+            // time, where the pinned offset and the render anchor point.
+            DspChannelChain chain = settings.ToChain() with { Peq = null };
+            response = state.ProcessingSource.Apply(chain, sampleRate);
+            anchorIndex = renderAnchorIndex ?? ProcessedChannels.StartAnchorIndex(
+                response,
+                VirtualCrossoverAnalysis.FindPeakIndex(response),
+                sampleRate,
+                VirtualCrossoverAnalysis.ChainValidRange(
+                    state.ProcessingSource.SampleCount,
+                    chain,
+                    sampleRate,
+                    response.Length));
+            gateOffsetMs = pinnedGateOffsetMs ?? anchorIndex * 1_000.0 / sampleRate;
+        }
+        else
+        {
+            response = state.TransferImpulseResponse;
+            anchorIndex = state.TransferPeakIndex;
+            gateOffsetMs = anchorIndex * 1_000.0 / sampleRate;
+        }
+
+        (double MinHz, double MaxHz)? window = withChain
+            ? AutoTuneWindow(settings)
+            : null;
+
+        string side = channel.Pair.Mono ? "mono" : rightSide ? "R" : "L";
+        string variant = withChain ? "DSP" : "raw";
+        var source = new EqWizardCurveSource
+        {
+            Kind = EqWizardSourceKind.VirtualDspChannel,
+            DisplayName = $"Ch {channel.Name} · {side} ({variant})",
+            Description =
+                $"Virtual DSP channel {channel.Name}, {SideDescription(channel, rightSide)}" +
+                (string.IsNullOrWhiteSpace(settings.DisplayName)
+                    ? string.Empty
+                    : $" — {settings.DisplayName}") +
+                (withChain
+                    ? "\r\nDSP chain applied (PEQ bypassed), windowed by the Virtual DSP gate."
+                    : "\r\nRaw measurement, windowed by the Virtual DSP gate at its own peak."),
+            Measurement = new ImpulseMeasurementView(response, anchorIndex, sampleRate),
+            Coherence = EqWizardSourceResolver.ExtractTransferCoherence(
+                state.TransferCoherence, sampleRate),
+            GateSettings = gateTemplate with { GateOffsetMs = gateOffsetMs },
+            PinnedCalibrationId = calibrationId,
+            SampleRateHz = sampleRate,
+            CurveKind = AnalysisCurveKind.Primary
+        };
+
+        return new VirtualDspEqHandoffRequest(
+            source,
+            new EqualizationCurve(settings.PeqBands, settings.PeqPreampDb),
+            window?.MinHz,
+            window?.MaxHz,
+            targetLevelDb,
+            smoothingInverseOctaves,
+            // A mono pair's handoff reads the single left set whichever side is
+            // active, so the token says LEFT outright: if the pair stops being mono
+            // while the wizard is open, the result still lands on the set the tune
+            // was taken from, not on a right slot it never saw.
+            new VirtualDspEqReturnToken(channel, rightSide && !channel.Pair.Mono));
+    }
+
+    /// <summary>
+    /// Lands a finished bank back on the side it was taken from. False — and no write —
+    /// when the channel is no longer in the panel's set (removed, or replaced by a
+    /// project import); the caller keeps the wizard open so the tune is not lost.
+    /// </summary>
+    public static bool TryApplyReturn(
+        IReadOnlyList<VirtualCrossoverChannel> channels,
+        VirtualDspEqReturnToken token,
+        EqualizationCurve curve)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(token);
+        ArgumentNullException.ThrowIfNull(curve);
+
+        if (!channels.Contains(token.Channel))
+        {
+            return false;
+        }
+
+        // SideFor, not the active side: the user may have flipped L/R (or made the
+        // pair mono, which routes both sides to the surviving left set) while editing.
+        VirtualCrossoverChannelSettings settings = token.Channel.Pair.SideFor(token.RightSide);
+        settings.PeqBands = curve.Bands.ToList();
+        settings.PeqPreampDb = curve.PreampDb;
+        settings.PeqSourceName = "EQ Wizard";
+        return true;
+    }
+
+    // The Auto Tune window a channel's crossover implies: its passband, corner to
+    // corner. Beyond the corners the chain is rolling the driver off on purpose and a
+    // fit would chase the slope. No crossover means no opinion — the wizard's window
+    // stays where the user left it.
+    private static (double MinHz, double MaxHz)? AutoTuneWindow(
+        VirtualCrossoverChannelSettings settings) =>
+        settings.CrossoverKind switch
+        {
+            CrossoverKind.BandPass =>
+                (settings.HighPassEdge.FrequencyHz, settings.LowPassEdge.FrequencyHz),
+            CrossoverKind.HighPass => (settings.HighPassEdge.FrequencyHz, 20_000),
+            CrossoverKind.LowPass => (20, settings.LowPassEdge.FrequencyHz),
+            _ => null
+        };
+
+    private static string SideDescription(VirtualCrossoverChannel channel, bool rightSide) =>
+        channel.Pair.Mono ? "mono" : rightSide ? "right side" : "left side";
+}

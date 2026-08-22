@@ -315,12 +315,18 @@ public partial class EqWizardPanel
     // target starts.
     private void ApplySource(EqWizardCurveSource source)
     {
+        // Installing a source ends any Virtual DSP handoff: the Return button must
+        // never send a bank tuned against some OTHER curve back to a channel. A
+        // handoff itself re-establishes its session right after this call.
+        EndVirtualDspHandoff();
         loadedSource = source;
 
-        // Settle every selector that feeds the curve, fit the axis, and place the target
-        // before drawing, all with redraws suppressed: the axis fit and the offset both
-        // need the source curve, so this computes it once (cached) instead of once per
-        // side effect, and the single draw at the end paints the finished state.
+        // Settle every selector that feeds the curve and fit the axis before drawing,
+        // all with redraws suppressed, so the single draw at the end paints the
+        // finished state. The Target Level is deliberately NOT touched: it is the
+        // user's knob alone, wherever the new source lands relative to it — a Virtual
+        // DSP handoff carries its own panel's level in, and every other source keeps
+        // whatever the user last set.
         suppressRedraw = true;
         try
         {
@@ -331,7 +337,6 @@ public partial class EqWizardPanel
             InvalidateSourceCurve();
 
             ApplyAxisForSource();
-            SuggestTargetOffsetUnlessTargetVisible();
         }
         finally
         {
@@ -361,6 +366,14 @@ public partial class EqWizardPanel
         if (source.Kind == EqWizardSourceKind.ImpulseResponse)
         {
             return EqWizardCalibrationChoice.Microphone(preferredIrCalibrationId);
+        }
+        // A Virtual DSP channel is pinned to the correction its panel renders with:
+        // a PEQ fitted under one calibration and summed under another would break the
+        // handoff's identity. The selector is disabled (SupportsCalibration is false)
+        // and the standing IR preference stays untouched.
+        if (source.Kind == EqWizardSourceKind.VirtualDspChannel)
+        {
+            return EqWizardCalibrationChoice.Microphone(source.PinnedCalibrationId);
         }
 
         return EqWizardCalibrationChoice.Off;
@@ -403,6 +416,19 @@ public partial class EqWizardPanel
         // Only a configured calibration can be applied while computing an FR; "own"
         // belongs to an imported curve and never reaches here.
         string? calibrationId = calibrationChoice.MicrophoneCalibrationId;
+
+        // A Virtual DSP channel reads through the gate it arrived with — the same
+        // DataHelper call, template and offset the DSP panel's magnitude view uses —
+        // so the wizard shows the very curve the user just left on that plot.
+        if (source.GateSettings is { } gate)
+        {
+            return DataHelper.GetGatedPrimarySpectrum(
+                source.Measurement!,
+                gate,
+                calibrationResolver?.Invoke(calibrationId),
+                SourceSmoothingInverseOctaves).Points;
+        }
+
         var options = new FrequencyResponseOptions
         {
             Window = SourceWindow,
@@ -608,56 +634,6 @@ public partial class EqWizardPanel
                     ?? Enumerable.Empty<SignalPoint>())
             : EqWizardPlotFit.ImpulseResponseRange;
 
-    // Landing the target on a fresh source is a RESCUE, not a policy: when the target
-    // at its current offset is still at least partially inside the new source's
-    // default view, the user's placement survives the switch — two sources at similar
-    // levels must not reset a deliberately moved target. Only a target entirely
-    // off-screen (typically a relative ↔ SPL datum change of tens of dB, in either
-    // direction) is landed on the new source, which also un-strands an offset left
-    // over from the previous one.
-    private void SuggestTargetOffsetUnlessTargetVisible()
-    {
-        if (EqWizardPlotFit.IsCurveVisible(
-                CurrentTargetPoints(), ComputeAxisRangeForSource()))
-        {
-            return;
-        }
-
-        SuggestTargetOffset();
-    }
-
-    // The target as it would be drawn right now: the current spec and offset on the
-    // grid the plot uses — the source's frequencies, or the default 20 Hz .. 20 kHz
-    // grid when the source has no usable curve.
-    private IEnumerable<SignalPoint> CurrentTargetPoints()
-    {
-        double offset = (double)NumericTargetOffset.Value;
-        IEnumerable<double> frequencies = GetSourceCurve() is { Points.Count: >= 2 } source
-            ? source.Points.Select(point => point.X)
-            : DefaultTargetGrid;
-        return frequencies.Select(
-            frequency => new SignalPoint(frequency, targetSpec.Evaluate(frequency) + offset));
-    }
-
-    // Lands the target on the freshly loaded source's own level: the gap between their
-    // mean levels inside the tuning window, most important for an absolute (SPL) curve,
-    // which starts tens of dB from a relative target.
-    private void SuggestTargetOffset()
-    {
-        if (GetSourceCurve() is not { Points.Count: >= 2 } source)
-        {
-            return;
-        }
-
-        (double minHz, double maxHz) = GetFrequencyWindow();
-        double offset = EqWizardPlotFit.SuggestTargetOffsetDb(
-            source.Points.Select(point => new SignalPoint(point.X, point.Y)),
-            targetSpec.Evaluate,
-            minHz,
-            maxHz);
-        NumericTargetOffset.Value = NumericTargetOffset.ClampValue(offset);
-    }
-
     // ---------------------------------------------------------------- target
 
     private void OnTargetOffsetChanged()
@@ -823,6 +799,14 @@ public partial class EqWizardPanel
             comboBoxCalibration.Enabled =
                 comboBoxCalibration.Items.Count > 1 &&
                 (loadedSource?.SupportsCalibration ?? true);
+            // The disabled selector still SHOWS a Virtual DSP channel's pinned
+            // correction; the tooltip says why it cannot be changed from here.
+            toolTip.SetToolTip(
+                comboBoxCalibration,
+                loadedSource is { Kind: EqWizardSourceKind.VirtualDspChannel }
+                    ? "Follows the Virtual DSP panel's calibration selector while a " +
+                      "DSP channel is loaded — change it there."
+                    : string.Empty);
         }
         finally
         {

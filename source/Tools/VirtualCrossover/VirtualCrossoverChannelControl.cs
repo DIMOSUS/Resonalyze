@@ -107,11 +107,12 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// <summary>Raised when the user clicks the source button; the host shows the picker menu.</summary>
     public event EventHandler? SourceClicked;
 
-    /// <summary>Raised when the user clicks Load next to PEQ; the host shows the file dialog.</summary>
-    public event EventHandler? PeqLoadClicked;
-
-    /// <summary>Raised when the user clicks Clear next to PEQ.</summary>
-    public event EventHandler? PeqClearClicked;
+    /// <summary>
+    /// Raised when the user clicks the PEQ button; the host shows the action menu
+    /// (load, edit in the EQ Wizard, clear) — the choices' availability depends on
+    /// channel state only the host holds.
+    /// </summary>
+    public event EventHandler? PeqMenuClicked;
 
     /// <summary>
     /// Raised when the user folds or unfolds the block. Separate from
@@ -151,6 +152,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal Button MuteButton => buttonMute;
     internal Button CollapseButton => buttonCollapse;
     internal Label PeqInfoLabel => labelPeqInfo;
+    internal Button PeqMenuButton => buttonPeqMenu;
     internal Label TotalGainLabel => labelTotalGain;
     internal CheckBox ShowRawCheckBox => checkBoxShowRaw;
     internal CheckBox ShowProcessedCheckBox => checkBoxShowProcessed;
@@ -467,13 +469,11 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "it reaches many milliseconds and cannot be undone by EQ.\r\n" +
             "Rough audibility: ~10 ms in the bass, ~2 ms up top.");
         toolTip.SetToolTip(
-            buttonPeqLoad,
-            "Load a parametric EQ for this channel from a file\r\n" +
-            "(an EQ Wizard export or a compatible PEQ list); the bands\r\n" +
-            "add on top of the crossover in the processed response.");
-        toolTip.SetToolTip(
-            buttonPeqClear,
-            "Remove the loaded PEQ from this channel.");
+            buttonPeqMenu,
+            "This channel's parametric EQ: load it from a file\r\n" +
+            "(an EQ Wizard export or a compatible PEQ list), edit or\r\n" +
+            "create it in the EQ Wizard, or clear it. The bands add\r\n" +
+            "on top of the crossover in the processed response.");
 
         toolTip.SetToolTip(
             checkBoxShowRaw,
@@ -632,8 +632,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             RaiseSettingsChanged();
         };
         buttonCollapse.Click += (_, _) => Collapsed = !Collapsed;
-        buttonPeqLoad.Click += (_, _) => PeqLoadClicked?.Invoke(this, EventArgs.Empty);
-        buttonPeqClear.Click += (_, _) => PeqClearClicked?.Invoke(this, EventArgs.Empty);
+        buttonPeqMenu.Click += (_, _) => PeqMenuClicked?.Invoke(this, EventArgs.Empty);
 
         numericGain.ValueChanged += (_, _) =>
         {

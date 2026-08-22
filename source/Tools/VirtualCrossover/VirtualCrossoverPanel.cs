@@ -320,6 +320,28 @@ public partial class VirtualCrossoverPanel : UserControl
     internal Action<EqTargetCurve>? TargetCurveChanged { get; set; }
 
     /// <summary>
+    /// Raised when the user picks "Edit in EQ Wizard" on a channel's PEQ menu. The
+    /// host hands the request to the wizard and switches the mode; the result comes
+    /// back through <see cref="TryApplyPeqFromWizard"/>.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<VirtualDspEqHandoffRequest>? EditPeqInWizardRequested { get; set; }
+
+    /// <summary>
+    /// Raised when the user picks "Open in analyzers" on a channel's source menu:
+    /// the host loads this side's measurement into the analysis modes and lands on
+    /// Frequency Response. The arguments mirror the persisted source reference in
+    /// the priority the panel itself resolves it — the history entry when it still
+    /// exists, else the located file path; at least one is non-null.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<Guid?, string?>? OpenSourceInAnalyzersRequested { get; set; }
+
+    /// <summary>
     /// Called by the host whenever the tool tab becomes active. The first call
     /// loads the saved project and re-resolves its sources.
     /// </summary>
@@ -893,8 +915,7 @@ public partial class VirtualCrossoverPanel : UserControl
         channelControls[channel] = control;
         control.SettingsChanged += (_, _) => OnChannelSettingsChanged(channel);
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
-        control.PeqLoadClicked += (_, _) => LoadPeq(channel);
-        control.PeqClearClicked += (_, _) => ClearPeq(channel);
+        control.PeqMenuClicked += (_, _) => ShowPeqMenu(channel);
         control.CollapsedChanged += (_, _) => OnChannelCollapsedChanged(channel);
         return channel;
     }
@@ -1301,6 +1322,32 @@ public partial class VirtualCrossoverPanel : UserControl
 
         menu.Items.Add(new ToolStripSeparator());
 
+        // The jump out of the tune: this side's measurement, inspected with the full
+        // analysis toolset. Enabled only when the reference actually resolves — a
+        // stored path that no longer exists (and no surviving history entry) would
+        // otherwise offer a jump to nowhere.
+        ToolStripMenuItem openItem = new("Open in analyzers");
+        openItem.ToolTipText =
+            "Load this side's measurement into the analysis modes\r\n" +
+            "(lands on Frequency Response) — the full toolset on the\r\n" +
+            "very measurement this channel is tuned on.";
+        (Guid? entryId, string? filePath) = ResolveAnalyzerReference(channel.Settings);
+        openItem.Enabled =
+            OpenSourceInAnalyzersRequested != null && (entryId != null || filePath != null);
+        openItem.Click += (_, _) =>
+        {
+            // Re-resolved at click time: the file can vanish (or the history entry
+            // be deleted) while the menu is open.
+            (Guid? id, string? path) = ResolveAnalyzerReference(channel.Settings);
+            if (id != null || path != null)
+            {
+                OpenSourceInAnalyzersRequested?.Invoke(id, path);
+            }
+        };
+        menu.Items.Add(openItem);
+
+        menu.Items.Add(new ToolStripSeparator());
+
         ToolStripMenuItem clearItem = new("Clear");
         clearItem.Enabled = channel.Settings.HasSource;
         clearItem.Click += (_, _) => ClearSource(channel);
@@ -1308,6 +1355,20 @@ public partial class VirtualCrossoverPanel : UserControl
 
         Button sourceButton = ControlFor(channel).SourceButton;
         menu.Show(sourceButton, new Point(0, sourceButton.Height));
+    }
+
+    // The source reference in openable form, resolved the same way the silent
+    // restore resolves it (LoadSnapshotFromReferenceAsync): the history entry
+    // first — it survives file moves — else the file path located through the
+    // session-folder search. (null, null) when nothing resolves.
+    private (Guid? HistoryEntryId, string? FilePath) ResolveAnalyzerReference(
+        VirtualCrossoverChannelSettings settings)
+    {
+        Guid? entryId =
+            settings.HistoryEntryId is { } id && HistoryService?.FindById(id) != null
+                ? id
+                : null;
+        return (entryId, LocateSource(settings));
     }
 
     private void PopulateHistoryMenu(ToolStripMenuItem historyItem, VirtualCrossoverChannel channel)
@@ -1714,6 +1775,116 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // -------------------------------------------------------------------- PEQ
+
+    // The PEQ button's action menu. Rebuilt on every click: the enabled states
+    // follow channel state (a measurement for the wizard entries, a loaded PEQ for
+    // Clear) that changes while the panel is open.
+    private void ShowPeqMenu(VirtualCrossoverChannel channel)
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Load from file…", null, (_, _) => LoadPeq(channel));
+        menu.Items.Add(new ToolStripSeparator());
+
+        // Both wizard entries need a measurement to show a curve; the choice is what
+        // the curve travels through — the DSP chain without its PEQ, or nothing.
+        bool hasMeasurement =
+            channel.SideState(channel.ActiveRight).TransferImpulseResponse != null;
+        var editItem = new ToolStripMenuItem(
+            "Edit in EQ Wizard",
+            null,
+            (_, _) => RequestPeqHandoff(channel, withChain: true))
+        {
+            Enabled = hasMeasurement,
+            ToolTipText = "Tune this channel's PEQ in the EQ Wizard against its\r\n" +
+                "response through the DSP chain with the PEQ itself bypassed,\r\n" +
+                "windowed as this plot windows it. A Return button brings\r\n" +
+                "the result back to this channel."
+        };
+        menu.Items.Add(editItem);
+        var editRawItem = new ToolStripMenuItem(
+            "Edit raw in EQ Wizard",
+            null,
+            (_, _) => RequestPeqHandoff(channel, withChain: false))
+        {
+            Enabled = hasMeasurement,
+            ToolTipText = "The same handoff against the raw measurement — the\r\n" +
+                "driver before the DSP chain, as the Raw curve draws it."
+        };
+        menu.Items.Add(editRawItem);
+
+        menu.Items.Add(new ToolStripSeparator());
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        var clearItem = new ToolStripMenuItem(
+            "Clear",
+            null,
+            (_, _) => ClearPeq(channel))
+        {
+            Enabled = settings.PeqBands.Count > 0 || settings.PeqPreampDb != 0
+        };
+        menu.Items.Add(clearItem);
+
+        Button anchor = ControlFor(channel).PeqMenuButton;
+        menu.Show(anchor, new Point(0, anchor.Height));
+    }
+
+    // Builds the handoff for the active side and hands it to the host. The gate
+    // pieces mirror what the magnitude view draws with: the shared template, the
+    // active side's pin, and the last redraw's window anchor so an unpinned gate
+    // opens exactly where the plot's did.
+    private void RequestPeqHandoff(VirtualCrossoverChannel channel, bool withChain)
+    {
+        if (EditPeqInWizardRequested is not { } requested)
+        {
+            return;
+        }
+
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        int? renderAnchor = lastProcessedRender is { Channels.Count: >= 2 } render
+            ? ProcessedChannels.SharedStartAnchorIndex(render.Channels)
+            : null;
+        VirtualDspEqHandoffRequest request;
+        try
+        {
+            request = VirtualDspEqHandoff.Build(
+                channel,
+                channel.ActiveRight,
+                withChain,
+                snapshot.Template,
+                snapshot.PinnedOffsetMs,
+                renderAnchor,
+                (double)numericTargetLevel.Value,
+                snapshot.SmoothingInverseOctaves,
+                project.CalibrationId);
+        }
+        catch (InvalidOperationException)
+        {
+            // The measurement vanished between opening the menu and choosing — a
+            // silent no-op, like a deleted history entry in the source picker.
+            return;
+        }
+
+        requested(request);
+    }
+
+    /// <summary>
+    /// Lands a bank edited in the EQ Wizard back on the side it was taken from.
+    /// False — and nothing written — when that channel is no longer here (removed,
+    /// or replaced wholesale by a project import); the host tells the user and
+    /// leaves the wizard open so the tune is not lost.
+    /// </summary>
+    internal bool TryApplyPeqFromWizard(
+        VirtualDspEqReturnToken token, EqualizationCurve curve)
+    {
+        if (!VirtualDspEqHandoff.TryApplyReturn(channels, token, curve))
+        {
+            return false;
+        }
+
+        UpdatePeqReadouts(token.Channel);
+        ScheduleSave();
+        RedrawAll();
+        return true;
+    }
 
     private void LoadPeq(VirtualCrossoverChannel channel)
     {

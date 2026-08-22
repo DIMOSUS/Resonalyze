@@ -187,6 +187,63 @@ public partial class Form1
             panel => panel.RefreshSplAvailability());
     }
 
+    // The Virtual DSP "Open in analyzers" jump: brings one channel side's
+    // measurement into the analysis modes and lands on Frequency Response (every
+    // analyzer tab reads the same loaded measurement, so one landing tab serves
+    // them all). A history-backed source goes through the standard entry
+    // activation — the full restore the History window runs, saved working state
+    // included — and the tab switch queues after it, because the restore selects
+    // the entry's own saved mode on the way. A file-backed source switches first
+    // and then loads exactly as the Load button would, ceremony and all.
+    private async Task OpenVirtualDspSourceInAnalyzersAsync(
+        Guid? historyEntryId, string? filePath)
+    {
+        if (expSweepMeasurement.InProgress)
+        {
+            return;
+        }
+
+        if (historyEntryId is { } entryId &&
+            measurementHistoryService.FindById(entryId) != null)
+        {
+            await ActivateHistoryEntryAsync(entryId);
+            await SelectModeAsync(ModeTab.Frequency);
+            return;
+        }
+
+        if (filePath == null)
+        {
+            return;
+        }
+
+        if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
+        {
+            await liveSpectrumController.AbortAsync();
+        }
+
+        await SelectModeAsync(ModeTab.Frequency);
+        commandController.SetSaveAvailable(false);
+        commandController.SetLoadAvailable(false);
+        try
+        {
+            await LoadImpulseResponseFileAsync(filePath);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                $"Failed to load the impulse response.\r\n\r\n{exception.Message}",
+                "Load failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            commandController.SetSaveAvailable(expSweepMeasurement.HasImpulseResponse);
+            FinalizeMeasurementCommandState();
+        }
+    }
+
     // A sweep recorded elsewhere — a phone, a handheld recorder, a DAW — analyzed
     // against the sweep the CURRENT settings describe, which is the same signal
     // the measurement options export as a WAV file. The outcome is a measurement

@@ -207,7 +207,8 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   captured, calculated and target curves with styling, curve math,
   import/export, saved per-mode state, and a live editing preview
 - **EQ Wizard** — up to 32 PEQ bands toward its own target, from an IR, an
-  overlay slot or a text curve, with Auto Tune, cross-tool import/export and a
+  overlay slot, a text curve or a Virtual DSP channel handed over for editing
+  (and returned with one click), with Auto Tune, cross-tool import/export and a
   printable tuning-sheet PDF
 - **Signal Generator**, **Measurement History** with per-entry working state, a
   compact Mic/Loop level meter, and four audio backends (MME Compatibility, ASIO,
@@ -1149,6 +1150,49 @@ its own right-hand dB axis), and a shaded **error fill**. Click a band card to
 overlay that band's contribution as a dashed curve. Each card carries its
 **frequency**, **Q**, and **gain**, and the panel adds a **Target Level**, a
 **Gain** (preamp), a **Bands** count, source **Smoothing**, and **Bypass**.
+The Target Level is the user's knob alone — loading a source never moves it, so
+a deliberately placed target survives every source switch (an absolute dB SPL
+curve simply needs the level dialed to its datum once). The one exception
+carries rather than guesses: a Virtual DSP handoff brings that panel's own
+target level along, below.
+
+### Editing a Virtual DSP channel's PEQ
+
+A [Virtual DSP](#virtual-dsp) channel's PEQ row opens the wizard on that
+channel directly — **Edit in EQ Wizard** on its menu, taking the side the
+panel is showing (a mono pair hands over its single set). The wizard then
+shows the very curve the user just left: the measurement through the channel's
+DSP chain **with the PEQ bypassed** — the one stage under edit — windowed by
+the same gate the Virtual DSP magnitude view draws with, under the same
+microphone calibration, the smoothing selector starting on that panel's value.
+That identity is the point:
+**Source + EQ** in the wizard IS the processed curve the sum prediction uses,
+so what looks flat here is what sums there. **Edit raw in EQ Wizard** hands
+over the raw measurement instead — the panel's Raw curve — for tuning the
+driver itself irrespective of the chain.
+
+The channel's bands and preamp seed the filter bank as one undo step (the bank
+is the wizard's single global one, so Ctrl+Z is the way back to what it held),
+and the **From / To** window lands on the channel's crossover corners — beyond
+them the chain is rolling the driver off on purpose, and a fit would chase the
+slope (a raw edit, or a channel with no crossover, leaves the window alone).
+The **Target Level** arrives from the Virtual DSP panel verbatim: the handoff
+curve is rendered in that plot's own dB frame, so one target means one height
+too — the curve hangs exactly where it hung a click ago.
+The **Calibration** selector comes up pinned to the Virtual DSP panel's choice
+and disabled: a PEQ fitted under one correction and summed under another would
+break the identity above, so the correction is changed where it lives. The
+wizard's standing calibration preference for impulse responses survives
+untouched.
+
+**Return PEQ to Virtual DSP** — visible only during such a session — sends the
+finished bank (bands and preamp) back to the channel side it came from, named
+"EQ Wizard" in its read-out, and switches back to the Virtual DSP tab. The
+address is remembered from the handoff, so flipping the L/R selector while
+editing does not misdeliver the result. Loading any other source ends the
+session and hides the button; and if the channel itself is gone by the time
+Return is pressed (removed, or the project replaced), the wizard says so and
+keeps the filters, ready for an export instead.
 
 ### Auto Tune
 
@@ -1255,6 +1299,15 @@ one-subwoofer car layout — feeding both sides' sums. The setup grows from two 
 to eight pairs, and **+/−** folds a block down to its header. Every channel in a
 project must share one sample rate.
 
+The source button's menu also carries **Open in analyzers**: it loads that
+side's own measurement into the analysis modes and lands on Frequency Response,
+so the driver this channel is tuned on can be inspected with the full toolset —
+impulse, phase, group delay, waterfall, overlays — and then left again. A
+history-backed source restores the entry exactly as the History window would
+(its saved working state included); a file-backed one loads as the **Load**
+button does. The entry is greyed out when neither the history entry nor the
+file behind the channel resolves any more.
+
 Each channel runs through:
 
 - **Gain** (dB) — relative levels are only honest when the measurements share one
@@ -1271,7 +1324,10 @@ Each channel runs through:
   lining drivers up where a delay and a polarity flip are both too blunt — a
   sub-to-midbass hand-off at 60–100 Hz is the classic case — with a live read-out
   of the group delay it adds (≈ 4Q/ω₀)
-- **PEQ** — load a parametric EQ profile (any format the EQ Wizard imports)
+- **PEQ** — one button, four doors: **Load from file…** (any format the EQ
+  Wizard imports), **Edit in EQ Wizard** and **Edit raw in EQ Wizard** (the
+  [handoff](#editing-a-virtual-dsp-channels-peq) that opens the wizard on this
+  channel's own curve and brings the result back), and **Clear**
 - **Mute** and **Bypass** — Mute removes a channel from the plots, sum, loss
   metric and Auto delay; Bypass keeps it in the sum but feeds its raw measured
   signal, for an A/B against the processed result (Auto delay refuses to run

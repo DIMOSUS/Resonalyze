@@ -195,6 +195,35 @@ namespace Resonalyze
             // SettingsChanged handler above.
             virtualCrossoverPanel.SetTargetCurve(eqWizardPanel.TargetCurve);
             virtualCrossoverPanel.TargetCurveChanged = eqWizardPanel.ApplyTargetCurve;
+            // The PEQ handoff, both directions: a channel side goes into the wizard
+            // for editing and the finished bank comes back, the active mode following
+            // the work each way. The only failure is a channel that no longer exists —
+            // then the wizard stays open so the tune is not lost with it.
+            virtualCrossoverPanel.EditPeqInWizardRequested = request =>
+            {
+                eqWizardPanel.BeginVirtualDspHandoff(request);
+                _ = modeController.SelectAsync(ModeTab.ToolsEqWizard);
+            };
+            virtualCrossoverPanel.OpenSourceInAnalyzersRequested =
+                (entryId, filePath) =>
+                    _ = OpenVirtualDspSourceInAnalyzersAsync(entryId, filePath);
+            eqWizardPanel.ReturnPeqRequested = (token, curve) =>
+            {
+                if (virtualCrossoverPanel.TryApplyPeqFromWizard(token, curve))
+                {
+                    _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
+                    return;
+                }
+
+                MessageBox.Show(
+                    this,
+                    "The channel this PEQ was edited for is no longer in the " +
+                    "Virtual DSP project. The filters stay here — export them, or " +
+                    "start another edit from a channel's PEQ menu.",
+                    "EQ Wizard",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            };
             virtualCrossoverPanel.MetricChanged = (text, detail) =>
             {
                 virtualDspMetricLabel.Text = text;

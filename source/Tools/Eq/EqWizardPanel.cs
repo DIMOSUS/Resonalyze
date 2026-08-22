@@ -112,6 +112,7 @@ public partial class EqWizardPanel : UserControl
             RaiseSettingsChanged();
         };
         buttonAutoTune.Click += (_, _) => AutoTune();
+        buttonReturnToDsp.Click += (_, _) => ReturnPeqToVirtualDsp();
         buttonOverlaySettings.Click += (_, _) => OpenTargetSettings();
         buttonImport.Click += (_, _) => ImportPeq();
         buttonExport.Click += (_, _) => ExportPeq();

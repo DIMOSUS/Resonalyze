@@ -51,8 +51,7 @@ namespace Resonalyze
             comboBoxLowPassFamily = new DarkComboBox();
             comboBoxLowPassSlope = new DarkComboBox();
             labelPeq = new Label();
-            buttonPeqLoad = new Button();
-            buttonPeqClear = new Button();
+            buttonPeqMenu = new Button();
             labelPeqInfo = new Label();
             labelCurves = new Label();
             checkBoxShowRaw = new CheckBox();
@@ -342,30 +341,18 @@ namespace Resonalyze
             labelPeq.Size = new Size(29, 15);
             labelPeq.TabIndex = 18;
             labelPeq.Text = "PEQ";
-            // 
-            // buttonPeqLoad
-            // 
-            buttonPeqLoad.FlatStyle = FlatStyle.Popup;
-            buttonPeqLoad.ForeColor = Color.White;
-            buttonPeqLoad.Location = new Point(70, 181);
-            buttonPeqLoad.Name = "buttonPeqLoad";
-            buttonPeqLoad.Size = new Size(66, 19);
-            buttonPeqLoad.TabIndex = 19;
-            buttonPeqLoad.Text = "Load...";
-            buttonPeqLoad.UseCompatibleTextRendering = true;
-            buttonPeqLoad.UseVisualStyleBackColor = true;
-            // 
-            // buttonPeqClear
-            // 
-            buttonPeqClear.FlatStyle = FlatStyle.Popup;
-            buttonPeqClear.ForeColor = Color.White;
-            buttonPeqClear.Location = new Point(142, 181);
-            buttonPeqClear.Name = "buttonPeqClear";
-            buttonPeqClear.Size = new Size(56, 19);
-            buttonPeqClear.TabIndex = 20;
-            buttonPeqClear.Text = "Clear";
-            buttonPeqClear.UseCompatibleTextRendering = true;
-            buttonPeqClear.UseVisualStyleBackColor = true;
+            //
+            // buttonPeqMenu
+            //
+            buttonPeqMenu.FlatStyle = FlatStyle.Popup;
+            buttonPeqMenu.ForeColor = Color.White;
+            buttonPeqMenu.Location = new Point(70, 181);
+            buttonPeqMenu.Name = "buttonPeqMenu";
+            buttonPeqMenu.Size = new Size(128, 19);
+            buttonPeqMenu.TabIndex = 19;
+            buttonPeqMenu.Text = "Load / Edit…";
+            buttonPeqMenu.UseCompatibleTextRendering = true;
+            buttonPeqMenu.UseVisualStyleBackColor = true;
             // 
             // labelPeqInfo
             // 
@@ -586,8 +573,7 @@ namespace Resonalyze
             Controls.Add(comboBoxLowPassFamily);
             Controls.Add(comboBoxLowPassSlope);
             Controls.Add(labelPeq);
-            Controls.Add(buttonPeqLoad);
-            Controls.Add(buttonPeqClear);
+            Controls.Add(buttonPeqMenu);
             Controls.Add(labelPeqInfo);
             Controls.Add(labelCurves);
             Controls.Add(checkBoxShowRaw);
@@ -635,8 +621,7 @@ namespace Resonalyze
         private DarkComboBox comboBoxLowPassFamily;
         private DarkComboBox comboBoxLowPassSlope;
         private Label labelPeq;
-        private Button buttonPeqLoad;
-        private Button buttonPeqClear;
+        private Button buttonPeqMenu;
         private Label labelPeqInfo;
         private Label labelCurves;
         private CheckBox checkBoxShowRaw;

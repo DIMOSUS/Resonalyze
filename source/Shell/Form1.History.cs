@@ -58,7 +58,13 @@ public partial class Form1
         });
     }
 
-    private async void HandleHistoryEntryActivated(Guid entryId)
+    private async void HandleHistoryEntryActivated(Guid entryId) =>
+        await ActivateHistoryEntryAsync(entryId);
+
+    // The activation itself, as an awaitable step: the Virtual DSP "Open in
+    // analyzers" jump runs it and then lands on a specific tab, which needs to
+    // sequence AFTER the restore (the snapshot restores its own saved mode).
+    private async Task ActivateHistoryEntryAsync(Guid entryId)
     {
         // Restoring a snapshot while a sweep is running would call Init on an
         // active measurement and fail; ignore the activation instead.

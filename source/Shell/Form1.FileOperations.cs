@@ -206,14 +206,25 @@ public partial class Form1
         // The entry is TRIED, not trusted: it can still be listed while the file
         // behind it is gone, in which case the restore lands nothing — and Virtual
         // DSP may well have relocated that measurement and handed a working path
-        // alongside. Falling through on failure is what keeps the jump from leaving
-        // the previous measurement on screen and calling it done.
+        // alongside. Falling through on Unavailable is what keeps the jump from
+        // leaving the previous measurement on screen and calling it done.
         if (historyEntryId is { } entryId &&
-            measurementHistoryService.FindById(entryId) != null &&
-            await ActivateHistoryEntryAsync(entryId))
+            measurementHistoryService.FindById(entryId) != null)
         {
-            await SelectModeAsync(ModeTab.Frequency);
-            return;
+            switch (await ActivateHistoryEntryAsync(entryId))
+            {
+                case HistoryActivation.Landed:
+                    await SelectModeAsync(ModeTab.Frequency);
+                    return;
+
+                // A newer activation — another channel's jump, or the History
+                // window's own — is already landing. Falling back to this
+                // channel's file would race it and could overwrite the newer
+                // measurement with this older one; the newest request wins,
+                // exactly as it does inside the activation itself.
+                case HistoryActivation.Superseded:
+                    return;
+            }
         }
 
         if (filePath == null)

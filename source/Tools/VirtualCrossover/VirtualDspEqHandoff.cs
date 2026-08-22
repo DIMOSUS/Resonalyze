@@ -16,10 +16,24 @@ namespace Resonalyze;
 /// object holds a different session's settings and a bank returned against it would
 /// land, silently, on a channel the user never opened the wizard from.
 /// </param>
+/// <param name="SourceRevision">
+/// The measurement the bank was tuned against, by the side state's own load counter.
+/// A session survives a trip back to Virtual DSP by the tab, and picking a new
+/// measurement for that side there leaves a bank computed from a curve that no longer
+/// exists — invisible at the moment of Return, because the wizard still shows the old
+/// one.
+/// </param>
+/// <param name="Mono">
+/// Whether the pair was mono when the handoff was taken. It decides WHERE
+/// <see cref="VirtualCrossoverChannelPairSettings.SideFor"/> delivers, so a pair that
+/// changed since would route the bank to the other side's settings.
+/// </param>
 internal sealed record VirtualDspEqReturnToken(
     VirtualCrossoverChannel Channel,
     bool RightSide,
-    long ProjectGeneration);
+    long ProjectGeneration,
+    int SourceRevision,
+    bool Mono);
 
 /// <summary>
 /// Everything one Virtual DSP channel side sends into the EQ Wizard: the curve to
@@ -194,7 +208,11 @@ internal static class VirtualDspEqHandoff
             // while the wizard is open, the result still lands on the set the tune
             // was taken from, not on a right slot it never saw.
             new VirtualDspEqReturnToken(
-                channel, rightSide && !channel.Pair.Mono, projectGeneration));
+                channel,
+                rightSide && !channel.Pair.Mono,
+                projectGeneration,
+                state.SourceRevision,
+                channel.Pair.Mono));
     }
 
     /// <summary>
@@ -208,6 +226,14 @@ internal static class VirtualDspEqHandoff
     /// membership alone would happily write a bank tuned against one session into
     /// whatever session replaced it.
     /// </param>
+    /// <remarks>
+    /// What is refused is a return that would land somewhere ELSE, or against a
+    /// measurement that no longer exists — changes the user cannot see from the
+    /// wizard, which still shows the curve it opened on. Edits to the CHAIN
+    /// (crossover, gain, delay, all-pass) are deliberately not refused: those are the
+    /// user's own knobs on their own channel, the bank remains theirs to apply, and
+    /// refusing it would throw away real work over a decision they made on purpose.
+    /// </remarks>
     public static bool TryApplyReturn(
         IReadOnlyList<VirtualCrossoverChannel> channels,
         VirtualDspEqReturnToken token,
@@ -224,8 +250,27 @@ internal static class VirtualDspEqHandoff
             return false;
         }
 
-        // SideFor, not the active side: the user may have flipped L/R (or made the
-        // pair mono, which routes both sides to the surviving left set) while editing.
+        // The pair's routing must still be the one the address was written for: mono
+        // sends both sides to the left set, so a pair that changed since would deliver
+        // the bank to settings the tune was never taken from.
+        if (token.Mono != token.Channel.Pair.Mono)
+        {
+            return false;
+        }
+
+        // And the measurement must still be the one it was tuned against. The side is
+        // read PHYSICALLY here: a mono token addresses the left slot, which is the
+        // slot its curve came from, and the effective accessor would answer the same
+        // — but only while the pair is still mono, which is no longer this check's
+        // business to assume.
+        VirtualCrossoverChannelState state =
+            token.Channel.PhysicalSideState(token.RightSide);
+        if (state.SourceRevision != token.SourceRevision)
+        {
+            return false;
+        }
+
+        // SideFor, not the active side: the user may have flipped L/R while editing.
         VirtualCrossoverChannelSettings settings = token.Channel.Pair.SideFor(token.RightSide);
         settings.PeqBands = curve.Bands.ToList();
         settings.PeqPreampDb = curve.PreampDb;

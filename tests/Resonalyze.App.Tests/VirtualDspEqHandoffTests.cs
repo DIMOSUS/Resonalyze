@@ -363,7 +363,7 @@ public sealed class VirtualDspEqHandoffTests
     public void ReturnLandsOnTheSideTheTokenNames_NotTheActiveOne()
     {
         VirtualCrossoverChannel channel = BuildChannel();
-        var token = new VirtualDspEqReturnToken(channel, RightSide: true, ProjectGeneration: 1);
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: true);
         // The user flipped back to the left side while editing.
         channel.ActiveRight = false;
         var curve = new EqualizationCurve(
@@ -381,19 +381,72 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
-    public void ReturnToAPairGoneMono_LandsOnItsSurvivingSet()
+    public void AHandoffTakenFromAMonoPair_LandsOnItsSurvivingSet()
     {
+        // Mono routes both sides to the single left set, so the handoff addresses it
+        // outright and a write into the unreachable right slot cannot happen.
         VirtualCrossoverChannel channel = BuildChannel();
-        var token = new VirtualDspEqReturnToken(channel, RightSide: true, ProjectGeneration: 1);
         channel.Pair.Mono = true;
+        channel.ActiveRight = true;
+        VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(request.Token.RightSide);
+        Assert.True(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, request.Token, curve, projectGeneration: 1));
+        Assert.Equal(curve.Bands, channel.Pair.SideFor(rightSide: false).PeqBands);
+    }
+
+    [Fact]
+    public void ReturnAfterThePairChangedRouting_Refuses()
+    {
+        // Taken from the right side of a stereo pair; the pair then became mono,
+        // which sends SideFor(true) to the LEFT settings. Delivering there would put
+        // the right side's tune on the shared set without a word.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: true);
+        channel.Pair.Mono = true;
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 1));
+        Assert.Empty(channel.Pair.SideFor(rightSide: false).PeqBands);
+    }
+
+    [Fact]
+    public void ReturnAfterTheSideGotANewMeasurement_Refuses()
+    {
+        // The session survives a trip back to Virtual DSP by the tab, so the user can
+        // give that very side a different measurement there. The bank was computed
+        // from a curve that no longer exists — and the wizard, still showing the old
+        // one, gives no sign of it.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
+        channel.SideState(rightSide: false).BeginSourceLoad();
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 1));
+        Assert.Empty(channel.Settings.PeqBands);
+    }
+
+    [Fact]
+    public void ReturnAfterAChainEdit_IsAllowed()
+    {
+        // The line the refusals stop at: crossover, gain, delay and the all-pass are
+        // the user's own knobs on their own channel. The bank stays theirs to apply,
+        // and throwing away real work over a change they made on purpose would be
+        // worse than the staleness it guards.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
+        channel.Settings.GainDb = -9;
+        channel.Settings.LowPassEdge =
+            channel.Settings.LowPassEdge with { FrequencyHz = 900 };
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1));
-
-        // Mono routes both sides to the single left set; a write into the
-        // unreachable right slot would silently vanish.
-        Assert.Equal(curve.Bands, channel.Pair.SideFor(rightSide: false).PeqBands);
+        Assert.Equal(curve.Bands, channel.Settings.PeqBands);
     }
 
     [Fact]
@@ -404,8 +457,8 @@ public sealed class VirtualDspEqHandoffTests
         // in the panel's list afterwards while describing a different session. Without
         // the generation this wrote a bank tuned against one car into another.
         VirtualCrossoverChannel channel = BuildChannel();
-        var token = new VirtualDspEqReturnToken(
-            channel, RightSide: false, ProjectGeneration: 4);
+        VirtualDspEqReturnToken token =
+            TokenFor(channel, rightSide: false) with { ProjectGeneration = 4 };
         // What an import does to the very object the token holds.
         channel.Pair = new VirtualCrossoverChannelPairSettings();
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
@@ -425,7 +478,7 @@ public sealed class VirtualDspEqHandoffTests
     {
         VirtualCrossoverChannel removed = BuildChannel();
         VirtualCrossoverChannel survivor = BuildChannel();
-        var token = new VirtualDspEqReturnToken(removed, RightSide: false, ProjectGeneration: 1);
+        VirtualDspEqReturnToken token = TokenFor(removed, rightSide: false);
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
@@ -436,6 +489,17 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     // ------------------------------------------------------------------ helpers
+
+    // A token addressing a channel exactly as it stands now — what Build would
+    // write for it — so a test can then change ONE thing and see the return judged.
+    private static VirtualDspEqReturnToken TokenFor(
+        VirtualCrossoverChannel channel, bool rightSide) =>
+        new(
+            channel,
+            rightSide && !channel.Pair.Mono,
+            ProjectGeneration: 1,
+            channel.SideState(rightSide).SourceRevision,
+            channel.Pair.Mono);
 
     private static EqWizardGatedPreviewRequest Preview(
         VirtualDspEqHandoffRequest request, EqualizationCurve? bank) =>

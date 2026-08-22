@@ -20,35 +20,72 @@ public sealed class SteadyStateWindowTests
         Assert.Equal(8_640, right);
     }
 
-    [Fact]
-    public void AtHighRates_TheCarveClampGovernsAndTheFadesStillFit()
+    [Theory]
+    [InlineData(96_000)]
+    [InlineData(176_400)]
+    [InlineData(192_000)]
+    public void AtHighRates_TheClampKeepsAPlateau_NotJustFades(int sampleRate)
     {
-        // 682 ms at 192 kHz would be 130944 samples; the carve holds at most
-        // GatedFftLength, and the fades must be cut to fit INSIDE the clamped
-        // window the same way ResolveGatePlacement cuts them — a right fade longer
-        // than the window would be an invalid Tukey.
+        // 682 ms outruns the FFT above 48 kHz, and what the clamp does with the
+        // shortfall is the whole question. Trimming the fade alone spends all of it
+        // on the plateau — at 192 kHz that left ZERO plateau, a window that faded in
+        // and immediately out. The loss is shared instead, so the window keeps its
+        // shape: a real unity plateau with a fade-out a fraction of it.
         (int window, int left, int right) =
-            FrequencyResponseOptions.SteadyStateWindowSamples(192_000);
+            FrequencyResponseOptions.SteadyStateWindowSamples(sampleRate);
+        int plateau = window - left - right;
 
         Assert.Equal(DataHelper.GatedFftLength, window);
-        Assert.Equal(384, left);
-        Assert.True(right <= window - left);
-        Assert.True(left + right <= window);
-        // Even clamped, the window stays a steady-state one: ~171 ms — dozens of
-        // times the junction gate it replaced, enough for a bass band's ringing.
-        Assert.True(window * 1_000.0 / 192_000 > 150);
+        Assert.True(
+            plateau > right,
+            $"at {sampleRate} Hz the plateau is {plateau} samples against a " +
+            $"{right}-sample fade-out — the window is mostly fade");
+        // The 500:180 ratio the constants ask for, kept within rounding.
+        Assert.InRange((double)plateau / right, 2.3, 3.3);
+        // Still a steady-state window: ~171 ms at the worst rate, dozens of times
+        // the junction gate it replaced.
+        Assert.True(window * 1_000.0 / sampleRate > 150);
+    }
+
+    [Fact]
+    public void TheTrimIsSharedByTheGatedAndPlainPaths()
+    {
+        // Both ways to a windowed spectrum realize ONE geometry: the plain
+        // oversampled window asks for it here, and the gated carve
+        // (ResolveGatePlacement) asks the same helper. They cannot drift.
+        (int window, int left, int right) =
+            FrequencyResponseOptions.SteadyStateWindowSamples(192_000);
+        (int trimWindow, int trimLeft, int trimRight) =
+            FrequencyResponseOptions.TrimGateToFft(384, 96_000, 34_560);
+
+        Assert.Equal((window, left, right), (trimWindow, trimLeft, trimRight));
+    }
+
+    [Fact]
+    public void AGateShorterThanTheFft_PassesThroughUntouched()
+    {
+        // Every phase gate is far shorter than the FFT, so the shared trim must be a
+        // no-op for them — the fix must not have moved the phase view's window.
+        (int window, int left, int right) =
+            FrequencyResponseOptions.TrimGateToFft(24, 192, 72);
+
+        Assert.Equal(288, window);
+        Assert.Equal(24, left);
+        Assert.Equal(72, right);
     }
 
     // What the window actually delivers on the hardest realistic band — a Q 8 bell at
     // 60 Hz, whose ringing needs ~290 ms to decay 60 dB. The tolerance is per rate
-    // BECAUSE the carve clamp is in samples: the window is 682 ms at 48 kHz and
-    // shortens to 341 and 171 ms as the rate doubles, so the deepest band is read
-    // progressively short. These figures are the measured truth, pinned so a change
-    // to the constants, the clamp or the carve cannot move them unnoticed.
+    // BECAUSE the carve clamp is in SAMPLES: the window is the full 682 ms at 48 kHz
+    // (exact, under a hundredth of a dB) and shortens to 341 and 171 ms as the rate
+    // doubles, so the deepest band is read progressively short — measured 0.60 dB at
+    // 96 kHz and 1.34 dB at 192 kHz. Pinned so a change to the constants, the clamp
+    // or the carve cannot move them unnoticed; the root fix is a rate-scaled gated
+    // FFT, which is DSP-core work of its own.
     [Theory]
-    [InlineData(48_000, 0.15)]
+    [InlineData(48_000, 0.05)]
     [InlineData(96_000, 0.70)]
-    [InlineData(192_000, 2.00)]
+    [InlineData(192_000, 1.40)]
     public void TheWindowResolvesADeepHighQBassBand(
         int sampleRate, double toleranceDb)
     {
@@ -83,7 +120,7 @@ public sealed class SteadyStateWindowTests
 
         double steadyError = Math.Abs(steady - ideal);
         double junctionError = Math.Abs(junction - ideal);
-        // Measured: 1.89 dB against 7.23 dB. The assertion is the GAP rather than a
+        // Measured: 1.34 dB against 7.23 dB. The assertion is the GAP rather than a
         // ratio — what matters is how many dB of the band's depth the reader would
         // miss, and the ratio flatters a window that is merely less bad.
         Assert.True(

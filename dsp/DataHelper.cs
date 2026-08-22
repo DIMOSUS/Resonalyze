@@ -111,23 +111,70 @@ namespace Resonalyze.Dsp
         public const double SteadyStateRightMs = 180.0;
 
         /// <summary>
-        /// The steady-state window as sample counts for the plain (non-gated)
-        /// spectrum path, trimmed exactly the way the gated carve trims itself
-        /// (total clamped to <see cref="DataHelper.GatedFftLength"/>, then the fades
-        /// cut to fit) — so the two paths realize one window definition.
+        /// The steady-state window as sample counts, for both the plain (non-gated)
+        /// spectrum path and the gated carve — one definition, so the two realize the
+        /// same window.
         /// </summary>
+        /// <remarks>
+        /// When the requested duration outruns <see cref="DataHelper.GatedFftLength"/>
+        /// (it does above 48 kHz), what is left is SHARED between the plateau and the
+        /// fade-out rather than taken from the plateau first. Taking it from the
+        /// plateau is what a naive clamp does, and at 192 kHz it removed the plateau
+        /// entirely — a window that fades in and immediately fades out, weighting the
+        /// same measurement quite differently than at 48 kHz. The left fade keeps its
+        /// absolute length: at ~2 ms its job is to avoid a hard edge on the arrival,
+        /// which does not scale with how much tail there is room for.
+        /// </remarks>
         public static (int Window, int LeftTukey, int RightTukey)
             SteadyStateWindowSamples(int sampleRate)
         {
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
-            int left = (int)Math.Round(SteadyStateLeftMs / 1_000.0 * sampleRate);
-            int plateau = (int)Math.Round(SteadyStatePlateauMs / 1_000.0 * sampleRate);
-            int right = (int)Math.Round(SteadyStateRightMs / 1_000.0 * sampleRate);
+            return TrimGateToFft(
+                (int)Math.Round(SteadyStateLeftMs / 1_000.0 * sampleRate),
+                (int)Math.Round(SteadyStatePlateauMs / 1_000.0 * sampleRate),
+                (int)Math.Round(SteadyStateRightMs / 1_000.0 * sampleRate));
+        }
+
+        /// <summary>
+        /// Fits a requested Tukey geometry into the gated analysis FFT: the total is
+        /// capped at <see cref="DataHelper.GatedFftLength"/> and, when it had to be,
+        /// the loss is SHARED between the plateau and the fade-out in proportion.
+        /// Returns the realized (window, left fade, right fade); the plateau is what
+        /// is left between them.
+        /// </summary>
+        /// <remarks>
+        /// The one place this rule lives, because both paths to a windowed spectrum
+        /// need it and they must not drift: the gated carve
+        /// (<c>ResolveGatePlacement</c>) and the plain oversampled window
+        /// (<see cref="SteadyStateWindowSamples"/>). Trimming the fade alone — the
+        /// obvious reading of "keep the fades coherent" — spends the whole shortfall
+        /// on the plateau, and at 192 kHz that left no plateau at all: a window that
+        /// faded in and immediately out, weighting a measurement quite differently
+        /// than the same window does at 48 kHz. Only a gate longer than the FFT is
+        /// affected; every phase gate is far shorter and comes back untouched.
+        /// </remarks>
+        public static (int Window, int LeftTukey, int RightTukey) TrimGateToFft(
+            int left, int plateau, int right)
+        {
+            left = Math.Max(0, left);
+            plateau = Math.Max(0, plateau);
+            right = Math.Max(0, right);
             int window = Math.Clamp(
                 left + plateau + right, 1, DataHelper.GatedFftLength);
-            left = Math.Min(left, window);
-            right = Math.Min(right, window - left);
-            return (window, left, right);
+
+            // The left fade keeps its absolute length: at ~2 ms its job is to avoid a
+            // hard edge on the arrival, which does not scale with how much tail there
+            // is room for. (Clamped so a pathological request cannot consume the
+            // whole window and leave the fades nowhere to live.)
+            left = Math.Min(left, window - 1);
+            int remaining = window - left;
+            int wanted = plateau + right;
+            if (wanted > remaining && wanted > 0)
+            {
+                right = (int)Math.Round((double)right / wanted * remaining);
+            }
+
+            return (window, left, Math.Clamp(right, 0, remaining));
         }
 
         // Auto keeps the gate offset snapped to the estimated IR start

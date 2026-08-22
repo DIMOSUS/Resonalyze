@@ -61,20 +61,38 @@ public partial class Form1
     private async void HandleHistoryEntryActivated(Guid entryId) =>
         await ActivateHistoryEntryAsync(entryId);
 
-    // The activation itself, as an awaitable step reporting whether the entry
-    // actually LANDED: the Virtual DSP "Open in analyzers" jump runs it and then
-    // lands on a specific tab (which has to sequence AFTER the restore, since the
-    // snapshot selects its own saved mode) — and falls back to the channel's file
-    // when this returns false. Every early exit here is such a case: a running
-    // sweep, an entry whose backing file is gone (GetSnapshotAsync answers null),
-    // a newer activation overtaking this one, or a load that threw.
-    private async Task<bool> ActivateHistoryEntryAsync(Guid entryId)
+    /// <summary>How an attempt to activate a history entry ended.</summary>
+    private enum HistoryActivation
+    {
+        /// <summary>The entry's measurement is now the current one.</summary>
+        Landed,
+
+        /// <summary>
+        /// Nothing landed and nothing else is coming: the entry could not be read (its
+        /// backing file is gone), a sweep is running, or the load threw. A caller with
+        /// another way to the same measurement may take it.
+        /// </summary>
+        Unavailable,
+
+        /// <summary>
+        /// A NEWER activation is already replacing this one. Nothing landed here, but
+        /// the caller must not substitute anything either — its own fallback would
+        /// race the newer request and could overwrite it.
+        /// </summary>
+        Superseded
+    }
+
+    // The activation itself, as an awaitable step reporting how it ended: the Virtual
+    // DSP "Open in analyzers" jump runs it and then lands on a specific tab (which has
+    // to sequence AFTER the restore, since the snapshot selects its own saved mode) —
+    // and falls back to the channel's file only on Unavailable.
+    private async Task<HistoryActivation> ActivateHistoryEntryAsync(Guid entryId)
     {
         // Restoring a snapshot while a sweep is running would call Init on an
         // active measurement and fail; ignore the activation instead.
         if (expSweepMeasurement.InProgress)
         {
-            return false;
+            return HistoryActivation.Unavailable;
         }
 
         // Two rapid activations race: a slow file-backed entry can finish
@@ -87,9 +105,13 @@ public partial class Form1
         {
             MeasurementHistorySnapshot? snapshot =
                 await measurementHistoryService.GetSnapshotAsync(entryId);
-            if (snapshot == null || revision != historyRestoreRevision)
+            if (revision != historyRestoreRevision)
             {
-                return false;
+                return HistoryActivation.Superseded;
+            }
+            if (snapshot == null)
+            {
+                return HistoryActivation.Unavailable;
             }
 
             // Before leaving the current entry, write the live working state back
@@ -109,7 +131,7 @@ public partial class Form1
             {
                 if (revision != historyRestoreRevision)
                 {
-                    return false;
+                    return HistoryActivation.Superseded;
                 }
 
                 await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
@@ -117,7 +139,7 @@ public partial class Form1
                 {
                     // The measurement DID land, but a newer activation is already
                     // replacing it; this caller must not act on it either way.
-                    return false;
+                    return HistoryActivation.Superseded;
                 }
 
                 sessionTracker.MarkRestored(entryId);
@@ -133,7 +155,7 @@ public partial class Form1
                     dialog.SelectedEntryId ?? entryId,
                     entryId);
             });
-            return true;
+            return HistoryActivation.Landed;
         }
         catch (Exception exception)
         {
@@ -143,7 +165,7 @@ public partial class Form1
                 "History",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
-            return false;
+            return HistoryActivation.Unavailable;
         }
     }
 

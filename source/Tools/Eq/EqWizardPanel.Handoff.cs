@@ -47,6 +47,12 @@ public partial class EqWizardPanel
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Orphan any source load still in flight, exactly as picking a source from
+        // the menu does. A slow file or history read started before the user left for
+        // Virtual DSP would otherwise land afterwards, still holding the current
+        // generation, and replace the channel that was just handed over — taking the
+        // session with it (ApplySource ends one).
+        sourceLoadGeneration++;
         // The DSP panel's smoothing first, so the source lands rendered exactly as
         // that plot showed it; the selector then lives its own life.
         SetSourceSmoothing(request.SmoothingInverseOctaves);

@@ -1030,7 +1030,17 @@ public partial class EqWizardPanel
     {
         get
         {
-            if (loadedSource is { Kind: EqWizardSourceKind.ImpulseResponse, SampleRateHz: int rate })
+            // Every measurement-backed source states its own rate exactly, and the
+            // filters are realized at it downstream — the gated preview filters the
+            // IR at the measurement's rate, and Virtual DSP runs the returned bank at
+            // the project's. Letting the combo answer instead would design and export
+            // biquads for one rate while two other places realize them at another.
+            if (loadedSource is
+                {
+                    Kind: EqWizardSourceKind.ImpulseResponse
+                        or EqWizardSourceKind.VirtualDspChannel,
+                    SampleRateHz: int rate
+                })
             {
                 return rate;
             }
@@ -1138,10 +1148,14 @@ public partial class EqWizardPanel
             suppressSampleRateEvents = false;
         }
 
-        // An impulse response is authoritative, so its rate is shown but locked; an
+        // A measurement is authoritative, so its rate is shown but locked — an
+        // impulse response and a Virtual DSP channel alike (see EqSampleRate). An
         // imported curve only suggests one, so it stays editable for a differing DSP.
-        comboBoxSampleRate.Enabled =
-            loadedSource is not { Kind: EqWizardSourceKind.ImpulseResponse };
+        comboBoxSampleRate.Enabled = loadedSource is not
+        {
+            Kind: EqWizardSourceKind.ImpulseResponse
+                or EqWizardSourceKind.VirtualDspChannel
+        };
     }
 
     private void OnSampleRateChanged()

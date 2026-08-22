@@ -84,11 +84,11 @@ public sealed class VirtualCrossoverAutoDelayReportTests
         Assert.Contains("Left   -2.0 -> -0.6 dB (1.4 dB better)", report);
         Assert.Contains("Right  -2.4 -> -0.8 dB (1.6 dB better)", report);
         // One warning line per kind, naming the channels; the reason for each
-        // stays in the notes rather than being printed twice.
+        // is printed once, down in the notes, instead of twice.
         Assert.Contains(
             "Warning: LOW delay confidence — B L (reasons in Notes)", report);
-        Assert.DoesNotContain(
-            "Warning: LOW delay confidence — B L (vs A L", report);
+        Assert.Equal(
+            1, report.Split("vs A L: margin 0.2 dB, wide seed").Length - 1);
         Assert.Contains("0.00 -> 1.25", report);
         Assert.Contains("-3.0 -> -4.5", report);
         Assert.Contains("-2.0 (kept)", report);
@@ -126,8 +126,8 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             stereo: true,
             new AutoDelayRunRequest(0.26, RightHandDrive: false, AdjustGains: false, 0));
 
-        // Row-scoped: the legend at the foot of the report spells the two
-        // shapes out with example numbers of its own.
+        // Row-scoped throughout: the cells are what this pins, not the legend
+        // at the foot of the report that describes them.
         Assert.Contains("2.43 (kept)", Row(report, "B L"));
         Assert.DoesNotContain("2.43 -> 2.43", report);
         Assert.Contains("10.07 -> 10.37", Row(report, "D L"));

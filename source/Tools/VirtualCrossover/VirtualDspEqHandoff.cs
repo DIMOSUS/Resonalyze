@@ -47,10 +47,16 @@ internal static class VirtualDspEqHandoff
     /// <summary>
     /// Prepares one channel side for the wizard. With <paramref name="withChain"/> the
     /// curve is the side's measurement through its DSP chain WITHOUT the PEQ — gain,
-    /// delay, polarity, crossover and all-pass stay, so "Source + EQ" in the wizard IS
-    /// the processed curve the sum predicts — windowed by the gate the processed view
-    /// draws with. Without it the curve is the raw measurement under the same gate
+    /// delay, polarity, crossover and all-pass stay — windowed by the gate the processed
+    /// view draws with. Without it the curve is the raw measurement under the same gate
     /// anchored on its own peak: exactly the panel's Raw curve.
+    /// <para>
+    /// The request also carries what the wizard needs to redraw the CORRECTED curve the
+    /// same way the panel would (<see cref="EqWizardCurveSource.PreviewImpulseResponse"/>):
+    /// the whole chain including the edited bank, through one ApplyChain, then this gate.
+    /// Adding the bank's ideal magnitude to the bare curve instead would part from the
+    /// panel by several dB wherever a filter rings longer than the window.
+    /// </para>
     /// </summary>
     /// <param name="gateTemplate">
     /// The magnitude gate's <see cref="PhaseAnalysisSettings"/> template; its offset is
@@ -93,12 +99,19 @@ internal static class VirtualDspEqHandoff
         Complex[] response;
         int anchorIndex;
         double gateOffsetMs;
+        // The chain the preview substitutes the edited bank into — and, with the bank
+        // left out, the bare curve the wizard opens on. A raw handoff carries the
+        // identity: it is the measurement before any of the chain, so an edited bank is
+        // all there is to apply.
+        DspChannelChain previewChain = withChain
+            ? settings.ToChain() with { Peq = null }
+            : DspChannelChain.Identity;
         if (withChain)
         {
             // The chain minus the very thing under edit. Delay and polarity are
             // magnitude-transparent but keep the response in the processed view's
             // time, where the pinned offset and the render anchor point.
-            DspChannelChain chain = settings.ToChain() with { Peq = null };
+            DspChannelChain chain = previewChain;
             response = state.ProcessingSource.Apply(chain, sampleRate);
             anchorIndex = renderAnchorIndex ?? ProcessedChannels.StartAnchorIndex(
                 response,
@@ -124,6 +137,15 @@ internal static class VirtualDspEqHandoff
 
         string side = channel.Pair.Mono ? "mono" : rightSide ? "R" : "L";
         string variant = withChain ? "DSP" : "raw";
+        // A bypassed block contributes its RAW signal to the plot and the sum, so with
+        // bypass on the panel is not drawing this chain at all. The chain is still what
+        // the PEQ belongs to — a bank tuned against a crossover-less curve would be
+        // wrong for the setup the moment bypass came off — so the handoff keeps
+        // building it and says so instead of quietly showing a different curve.
+        string bypassNote = withChain && channel.Pair.Bypass
+            ? "\r\nThe block is BYPASSED on the plot right now, so the panel is drawing " +
+              "its raw response — this curve is the chain the PEQ will live in."
+            : string.Empty;
         var source = new EqWizardCurveSource
         {
             Kind = EqWizardSourceKind.VirtualDspChannel,
@@ -135,12 +157,18 @@ internal static class VirtualDspEqHandoff
                     : $" — {settings.DisplayName}") +
                 (withChain
                     ? "\r\nDSP chain applied (PEQ bypassed), windowed by the Virtual DSP gate."
-                    : "\r\nRaw measurement, windowed by the Virtual DSP gate at its own peak."),
+                    : "\r\nRaw measurement, windowed by the Virtual DSP gate at its own peak.") +
+                bypassNote,
             Measurement = new ImpulseMeasurementView(response, anchorIndex, sampleRate),
             Coherence = EqWizardSourceResolver.ExtractTransferCoherence(
                 state.TransferCoherence, sampleRate),
             GateSettings = gateTemplate with { GateOffsetMs = gateOffsetMs },
             PinnedCalibrationId = calibrationId,
+            // The ORIGINAL measurement and the chain around the bank, so the corrected
+            // preview is one ApplyChain of the whole chain — the panel's own arithmetic
+            // — rather than the bypassed response filtered a second time.
+            PreviewImpulseResponse = state.ProcessingSource.CroppedImpulseResponse,
+            PreviewChain = previewChain,
             SampleRateHz = sampleRate,
             CurveKind = AnalysisCurveKind.Primary
         };

@@ -1,3 +1,4 @@
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -73,6 +74,31 @@ internal sealed record EqWizardCurveSource
     /// kinds.
     /// </summary>
     public string? PinnedCalibrationId { get; init; }
+
+    /// <summary>
+    /// The channel's ORIGINAL measurement, before any of its chain — what the corrected
+    /// preview is built from.
+    /// </summary>
+    /// <remarks>
+    /// A gate does not commute with a filter, so "the source curve plus the filter's
+    /// ideal magnitude" is NOT what the panel draws once the bank rings longer than the
+    /// window: a 6 ms gate cannot resolve a Q 5 band at 100 Hz, and the two readings part
+    /// by several dB there. The preview therefore runs the WHOLE chain — the edited bank
+    /// included — through one <see cref="VirtualCrossoverAnalysis.ApplyChain"/> and gates
+    /// the result, exactly as the panel does. One pass, from the original measurement:
+    /// re-filtering the already-bypassed response a second time would pad and wrap twice
+    /// and no longer match.
+    /// </remarks>
+    public Complex[]? PreviewImpulseResponse { get; init; }
+
+    /// <summary>
+    /// The channel's chain with the PEQ left out — the edited bank is substituted into it
+    /// for each preview. Identity for a raw handoff, which is measured without the chain.
+    /// </summary>
+    public DspChannelChain? PreviewChain { get; init; }
+
+    /// <summary>Whether this source's curves are built through a gate, not the wizard's own window.</summary>
+    public bool IsGated => GateSettings != null && PreviewImpulseResponse != null;
 
     // --- imported curve sources ---------------------------------------------------
 

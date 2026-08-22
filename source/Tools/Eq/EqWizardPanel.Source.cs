@@ -43,6 +43,7 @@ public partial class EqWizardPanel
         EqualizationCurve.LogFrequencyGrid(20, 20_000, 512).ToArray();
 
     private readonly EqWizardSourceResolver sourceResolver = new();
+    private readonly EqWizardPreviewOrchestrator previewOrchestrator = new();
     private EqWizardCurveSource? loadedSource;
     private EqWizardCurve? cachedSourceCurve;
     private bool sourceCurveDirty = true;
@@ -395,7 +396,28 @@ public partial class EqWizardPanel
         return cachedSourceCurve;
     }
 
-    private void InvalidateSourceCurve() => sourceCurveDirty = true;
+    private void InvalidateSourceCurve()
+    {
+        sourceCurveDirty = true;
+        // The corrected preview is built from the same measurement, gate and
+        // calibration, so whatever invalidated the bare curve invalidated it too.
+        InvalidateGatedPreview();
+    }
+
+    // One render request for the loaded gated source: the panel's live gate,
+    // calibration and smoothing, plus the bank to substitute (null for the bare
+    // curve). Captured here, on the UI thread, so the render itself touches no control.
+    private EqWizardGatedPreviewRequest BuildGatedPreviewRequest(
+        EqWizardCurveSource source, EqualizationCurve? bank) =>
+        new(
+            source.PreviewImpulseResponse!,
+            source.PreviewChain!,
+            bank,
+            source.Measurement!.PeakIndex,
+            source.Measurement.SampleRate,
+            source.GateSettings!,
+            calibrationResolver?.Invoke(calibrationChoice.MicrophoneCalibrationId),
+            SourceSmoothingInverseOctaves);
 
     private EqWizardCurve? ComputeSourceCurve()
     {
@@ -419,14 +441,11 @@ public partial class EqWizardPanel
 
         // A Virtual DSP channel reads through the gate it arrived with — the same
         // DataHelper call, template and offset the DSP panel's magnitude view uses —
-        // so the wizard shows the very curve the user just left on that plot.
-        if (source.GateSettings is { } gate)
+        // so the wizard shows the very curve the user just left on that plot. The bare
+        // curve is the corrected one's own path with no bank, so the two cannot drift.
+        if (source.IsGated)
         {
-            return DataHelper.GetGatedPrimarySpectrum(
-                source.Measurement!,
-                gate,
-                calibrationResolver?.Invoke(calibrationId),
-                SourceSmoothingInverseOctaves).Points;
+            return EqWizardGatedPreview.Render(BuildGatedPreviewRequest(source, bank: null));
         }
 
         var options = new FrequencyResponseOptions
@@ -570,10 +589,28 @@ public partial class EqWizardPanel
             points);
     }
 
-    private EqWizardCurve BuildSourcePlusEqCurve(
+    private EqWizardCurve? BuildSourcePlusEqCurve(
         IReadOnlyList<DataPoint> sourcePoints,
         EqualizationCurve eq)
     {
+        // A gated source is filtered and THEN windowed — a window does not commute with
+        // a filter, and at the Virtual DSP gate lengths the difference reaches several
+        // dB in the bass (see EqWizardGatedPreview). That render is far too heavy for a
+        // fader frame, so it runs asynchronously and the last landed one is drawn while
+        // the next is in flight.
+        if (loadedSource is { IsGated: true } gated)
+        {
+            RequestGatedPreview(gated, eq);
+            return landedGatedPreview == null
+                ? null
+                : new EqWizardCurve(
+                    "Source + EQ",
+                    SourcePlusEqColor,
+                    2,
+                    LineStyle.Solid,
+                    landedGatedPreview);
+        }
+
         var points = new DataPoint[sourcePoints.Count];
         for (int i = 0; i < sourcePoints.Count; i++)
         {
@@ -585,6 +622,103 @@ public partial class EqWizardPanel
         }
 
         return new EqWizardCurve("Source + EQ", SourcePlusEqColor, 2, LineStyle.Solid, points);
+    }
+
+    // ------------------------------------------------- gated corrected preview
+
+    // The last render that landed, in plot coordinates, and the bank it belongs to.
+    // Kept on screen while a newer render is in flight: blanking the curve on every
+    // keystroke would strobe it.
+    private IReadOnlyList<DataPoint>? landedGatedPreview;
+    private PeqBankState? landedGatedPreviewBank;
+    private bool gatedPreviewInFlight;
+
+    /// <summary>
+    /// Becoming visible is what starts a gated preview: it is deliberately not started
+    /// while the panel is hidden (see <see cref="RequestGatedPreview"/>), so a handoff
+    /// installed on the way in has nothing drawn for its corrected curve until here.
+    /// </summary>
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible && IsHandleCreated && loadedSource is { IsGated: true })
+        {
+            DrawSelectedCurves();
+        }
+    }
+
+    private void InvalidateGatedPreview()
+    {
+        previewOrchestrator.Invalidate();
+        landedGatedPreview = null;
+        landedGatedPreviewBank = null;
+    }
+
+    // Starts a render unless the landed one already answers for this bank. The bank is
+    // the identity: two redraws for the same filters (a target nudge, a selection
+    // change) must not re-run a pair of transforms.
+    private void RequestGatedPreview(EqWizardCurveSource source, EqualizationCurve eq)
+    {
+        // Nothing is started before the panel exists on screen. A handoff installs its
+        // source while the wizard is still the hidden mode (the shell hands over, THEN
+        // switches tabs), and making the window pumps messages — a render landing inside
+        // that pump would draw into a half-created control. Becoming visible redraws,
+        // and the render starts from there.
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        var bank = new PeqBankState(eq.Bands, eq.PreampDb);
+        if (gatedPreviewInFlight || bank.Equals(landedGatedPreviewBank))
+        {
+            return;
+        }
+
+        EqWizardGatedPreviewRequest request = BuildGatedPreviewRequest(source, eq);
+        gatedPreviewInFlight = true;
+        _ = RenderGatedPreviewAsync(request, bank);
+    }
+
+    private async Task RenderGatedPreviewAsync(
+        EqWizardGatedPreviewRequest request, PeqBankState bank)
+    {
+        try
+        {
+            IReadOnlyList<SignalPoint>? points =
+                await previewOrchestrator.RenderLatestAsync(request);
+            // A render started before the panel was ever shown can finish before its
+            // handle exists — the wizard is built while another mode is on screen, and
+            // a handoff installs its source on the way in. Touching the plot then
+            // forces creation out of order; the curve is simply picked up by the first
+            // real draw instead.
+            if (IsDisposed || !IsHandleCreated || points == null)
+            {
+                return;
+            }
+
+            landedGatedPreview = points
+                .Select(point => new DataPoint(point.X, point.Y))
+                .ToArray();
+            landedGatedPreviewBank = bank;
+        }
+        catch (Exception exception)
+        {
+            // A preview that throws must not take the panel with it: the curve simply
+            // stays as it was, and the bank is still exportable.
+            System.Diagnostics.Debug.WriteLine($"EQ Wizard preview failed: {exception}");
+        }
+        finally
+        {
+            gatedPreviewInFlight = false;
+        }
+
+        if (!IsDisposed && IsHandleCreated)
+        {
+            // The bank may have moved on while this rendered; drawing now both paints
+            // what landed and starts the follow-up render for the newer bank.
+            DrawSelectedCurves();
+        }
     }
 
     private void UpdateSourceHint()

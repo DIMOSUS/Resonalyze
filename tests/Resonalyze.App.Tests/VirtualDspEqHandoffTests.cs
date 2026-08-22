@@ -153,6 +153,116 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void TheCorrectedPreviewIsThePanelsOwnBuildOfTheSameBank()
+    {
+        // The invariant the whole handoff exists for, at the point it is hardest to
+        // hold: with a bank loaded. The wizard filters and THEN gates — one ApplyChain
+        // of the whole chain from the original measurement — which is exactly what the
+        // panel does for a channel carrying that PEQ.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, renderAnchorIndex: 480);
+        var bank = new EqualizationCurve(
+            new[] { new PeqBand(100, 5, -6), new PeqBand(3_000, 2, 3) }, preampDb: -2);
+
+        IReadOnlyList<SignalPoint> wizard = EqWizardGatedPreview.Render(
+            new EqWizardGatedPreviewRequest(
+                request.Source.PreviewImpulseResponse!,
+                request.Source.PreviewChain!,
+                bank,
+                request.Source.Measurement!.PeakIndex,
+                SampleRate,
+                request.Source.GateSettings!,
+                Calibration: null,
+                SmoothingInverseOctaves: 0));
+
+        AnalysisCurve panel = DataHelper.GetGatedPrimarySpectrum(
+            new ImpulseMeasurementView(
+                VirtualCrossoverAnalysis.ApplyChain(
+                    channel.TransferImpulseResponse!,
+                    channel.Settings.ToChain() with { Peq = bank },
+                    SampleRate),
+                480,
+                SampleRate),
+            GateTemplate with { GateOffsetMs = 10.0 },
+            calibration: null,
+            smoothingInverseOctaves: 0);
+
+        Assert.Equal(panel.Points.Count, wizard.Count);
+        for (int i = 0; i < panel.Points.Count; i++)
+        {
+            Assert.Equal(panel.Points[i].Y, wizard[i].Y);
+        }
+    }
+
+    [Fact]
+    public void TheCorrectedPreviewDivergesFromTheIdealMagnitude_WhichIsWhyItIsComputed()
+    {
+        // The reason the preview cannot simply add the filter's ideal magnitude to the
+        // bare curve: a window does not commute with a filter. A Q 5 band at 100 Hz
+        // under a 6 ms gate reads several dB apart between the two, so if this ever
+        // stops being true the expensive path has lost its justification.
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Settings.CrossoverKind = CrossoverKind.Off;
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, renderAnchorIndex: 480);
+        var bank = new EqualizationCurve(new[] { new PeqBand(100, 5, -6) });
+
+        IReadOnlyList<SignalPoint> bare = EqWizardGatedPreview.Render(
+            Preview(request, bank: null));
+        IReadOnlyList<SignalPoint> honest = EqWizardGatedPreview.Render(
+            Preview(request, bank));
+
+        double worstAgainstIdeal = 0;
+        for (int i = 0; i < bare.Count; i++)
+        {
+            double hz = bare[i].X;
+            if (hz < 80 || hz > 125)
+            {
+                continue;
+            }
+
+            double ideal = bare[i].Y +
+                DigitalEqualizationResponse.MagnitudeDbAt(bank, hz, SampleRate);
+            worstAgainstIdeal = Math.Max(worstAgainstIdeal, Math.Abs(ideal - honest[i].Y));
+        }
+
+        Assert.True(
+            worstAgainstIdeal > 1.0,
+            $"expected the gate to swallow much of a Q 5 band, saw {worstAgainstIdeal:0.00} dB");
+    }
+
+    [Fact]
+    public void TheBareCurveIsTheCorrectedPathWithNoBank()
+    {
+        // Both curves come from one renderer, so they cannot drift: the source curve is
+        // literally the corrected one with nothing substituted in.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, renderAnchorIndex: 480);
+
+        IReadOnlyList<SignalPoint> bare = EqWizardGatedPreview.Render(
+            Preview(request, bank: null));
+        AnalysisCurve panel = DataHelper.GetGatedPrimarySpectrum(
+            new ImpulseMeasurementView(
+                VirtualCrossoverAnalysis.ApplyChain(
+                    channel.TransferImpulseResponse!,
+                    channel.Settings.ToChain() with { Peq = null },
+                    SampleRate),
+                480,
+                SampleRate),
+            GateTemplate with { GateOffsetMs = 10.0 },
+            calibration: null,
+            smoothingInverseOctaves: 0);
+
+        Assert.Equal(panel.Points.Count, bare.Count);
+        for (int i = 0; i < panel.Points.Count; i++)
+        {
+            Assert.Equal(panel.Points[i].Y, bare[i].Y);
+        }
+    }
+
+    [Fact]
     public void TheCrossoverSetsTheAutoTuneWindow_CornerToCorner()
     {
         VirtualCrossoverChannel channel = BuildChannel();
@@ -302,6 +412,18 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     // ------------------------------------------------------------------ helpers
+
+    private static EqWizardGatedPreviewRequest Preview(
+        VirtualDspEqHandoffRequest request, EqualizationCurve? bank) =>
+        new(
+            request.Source.PreviewImpulseResponse!,
+            request.Source.PreviewChain!,
+            bank,
+            request.Source.Measurement!.PeakIndex,
+            SampleRate,
+            request.Source.GateSettings!,
+            Calibration: null,
+            SmoothingInverseOctaves: 0);
 
     private static VirtualDspEqHandoffRequest Build(
         VirtualCrossoverChannel channel,

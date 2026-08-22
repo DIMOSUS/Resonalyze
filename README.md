@@ -1165,11 +1165,20 @@ shows the very curve the user just left: the measurement through the channel's
 DSP chain **with the PEQ bypassed** — the one stage under edit — windowed by
 the same gate the Virtual DSP magnitude view draws with, under the same
 microphone calibration, the smoothing selector starting on that panel's value.
-That identity is the point:
-**Source + EQ** in the wizard IS the processed curve the sum prediction uses,
-so what looks flat here is what sums there. **Edit raw in EQ Wizard** hands
-over the raw measurement instead — the panel's Raw curve — for tuning the
-driver itself irrespective of the chain.
+**Edit raw in EQ Wizard** hands over the raw measurement instead — the panel's
+Raw curve — for tuning the driver itself irrespective of the chain.
+
+That identity extends to the corrected curve, which is what makes the handoff
+worth the trip: **Source + EQ** is not the bare curve with the filters' ideal
+magnitude added on top, the way an equalizer normally previews itself. A window
+does not commute with a filter — under a short gate a narrow band's own ringing
+falls outside the window, and the two readings part by several dB in the bass
+(about 4 dB for a Q 5 band at 100 Hz under a 6 ms gate, a few hundredths above
+1 kHz). So the wizard runs the whole chain — the bank being edited included —
+through one pass and gates the result, exactly as the panel does for a channel
+carrying that PEQ. The **Tuning results** figures are measured against that same
+honest curve. It costs a pair of transforms per edit, so it is computed off the
+UI thread and the last finished curve stays on screen while the next one runs.
 
 The channel's bands and preamp seed the filter bank as one undo step (the bank
 is the wizard's single global one, so Ctrl+Z is the way back to what it held),

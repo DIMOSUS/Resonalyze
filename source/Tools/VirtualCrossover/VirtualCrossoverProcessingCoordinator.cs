@@ -415,6 +415,16 @@ internal sealed class VirtualCrossoverSourceSnapshot
         VirtualCrossoverAnalysis.ApplyChain(impulseResponse, chain, sampleRate);
 
     /// <summary>
+    /// The cropped measurement itself, for a caller that must run
+    /// <see cref="VirtualCrossoverAnalysis.ApplyChain"/> over the SAME input this
+    /// snapshot would — the EQ Wizard handoff, whose corrected preview is only the
+    /// panel's own arithmetic if it starts from the panel's own array. Write-once by
+    /// construction (see the class summary): callers read it and never mutate it, which
+    /// is what lets it be handed out rather than copied per preview.
+    /// </summary>
+    public Complex[] CroppedImpulseResponse => impulseResponse;
+
+    /// <summary>
     /// The source measurement's length: with a processed response's length
     /// and its chain, enough to recover the ApplyChain valid range without
     /// re-running the chain (see

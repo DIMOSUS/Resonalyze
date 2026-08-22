@@ -1172,7 +1172,11 @@ panel is showing (a mono pair hands over its single set). The wizard then
 shows the very curve the user just left: the measurement through the channel's
 DSP chain **with the PEQ bypassed** — the one stage under edit — under the same
 steady-state window and microphone calibration the Virtual DSP magnitude view
-uses, the smoothing selector starting on that panel's value.
+uses, the smoothing selector starting on that panel's value. Smoothing is the
+one thing that then goes its own way: it is a reading width, not part of the
+tune — the filters do what they do at any smoothing — so turning it here
+changes what you look at and what Auto Tune fits against, without making the
+resulting bank belong to a different channel.
 **Edit raw in EQ Wizard** hands over the raw measurement instead — the panel's
 Raw curve — for tuning the driver itself irrespective of the chain.
 

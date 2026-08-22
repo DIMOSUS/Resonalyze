@@ -64,8 +64,17 @@ namespace Resonalyze;
 /// where the user pinned it. Moving the gate in the panel — reachable by a plain tab
 /// switch — re-windows the channel while the wizard keeps drawing the old result, and
 /// this PR has already produced enough windowing bugs to treat that as the same class
-/// as a replaced measurement. (An auto-placed window can still drift from a change to
-/// a DIFFERENT channel, since the anchor is shared; that is not caught here.)
+/// as a replaced measurement. The pin applies to a CHAIN handoff only; a raw curve is
+/// anchored on its own peak and never read the pin.
+/// <para>
+/// What is deliberately NOT guarded is where an AUTO-placed window ended up: that
+/// offset is the earliest arrival across all channels, so another channel's edit can
+/// move it. Measured, it does not matter — the window opens ahead of the response and
+/// runs far past it, so sliding its start changes the reading by 0.000 dB at 48 kHz
+/// even for a 50 ms move, and 0.078 dB at 192 kHz, where the window is at its
+/// shortest. Two orders below anything else this guard refuses over, and it would
+/// fire on a co-channel mute. A guard that costs a finished tune has to earn it.
+/// </para>
 /// </param>
 /// <param name="WithChain">
 /// Whether the curve was built through the chain at all. A raw handoff is measured
@@ -349,9 +358,15 @@ internal static class VirtualDspEqHandoff
         }
 
         // The window the curve was read through must still be where it was, and the
-        // level it was fitted against must still be the panel's answer too.
+        // level it was fitted against must still be the panel's answer too. The PIN
+        // counts only for a chain handoff: a raw curve is anchored on its own peak
+        // and ignores the processed view's pin by construction (see Build, and
+        // VirtualCrossoverPanel.BuildRawMagnitudeCurve — a raw response lives in its
+        // own time), so refusing a raw return because that pin moved would throw work
+        // away over something its curve never read.
         if (!Equals(token.GateTemplate, gateTemplate) ||
-            !Nullable.Equals(token.PinnedGateOffsetMs, pinnedGateOffsetMs) ||
+            (token.WithChain &&
+                !Nullable.Equals(token.PinnedGateOffsetMs, pinnedGateOffsetMs)) ||
             !token.TargetLevelDb.Equals(targetLevelDb))
         {
             return false;

@@ -630,6 +630,39 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void ARawSessionIsImmuneToTheProcessedGatePin()
+    {
+        // A raw handoff anchors on the measurement's own peak and never reads the
+        // processed view's pin, so moving that pin cannot have changed its curve —
+        // refusing the return would cost the user a finished tune for nothing.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqHandoffRequest request = Build(channel, withChain: false);
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.True(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, request.Token, curve,
+            projectGeneration: 1, calibrationId: null,
+            GateTemplate, pinnedGateOffsetMs: 12.5, TargetLevel));
+        Assert.Equal(curve.Bands, channel.Settings.PeqBands);
+    }
+
+    [Fact]
+    public void AChainSessionIsNotImmuneToThatPin()
+    {
+        // The other half, so the exemption above cannot silently widen: a chain
+        // handoff DOES read the pin, and a moved pin re-windows its curve.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, request.Token, curve,
+            projectGeneration: 1, calibrationId: null,
+            GateTemplate, pinnedGateOffsetMs: 12.5, TargetLevel));
+        Assert.Empty(channel.Settings.PeqBands);
+    }
+
+    [Fact]
     public void ARawSessionIsImmuneToCrossoverEdits()
     {
         // A raw handoff's curve is measured WITHOUT the chain, so the crossover cannot

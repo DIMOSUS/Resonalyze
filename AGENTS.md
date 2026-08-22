@@ -146,6 +146,15 @@ When a change alters a panel the README screenshots, say so in the PR descriptio
 so the owner can re-capture; the images live in `assets/images/` and are not
 generated.
 
+## Pull requests
+
+Unless the owner asks for something else, a finished pull request is merged
+**squashed, with its branch deleted**:
+`gh pr merge <n> --squash --delete-branch`. `main` therefore carries one commit
+per PR, titled like the PR and holding its description as the body — so write
+that description as the commit message the repository is going to keep, and
+correct it there if the branch outgrew it.
+
 ## Code Style
 
 Enforced by `.editorconfig`; notable deviations from common C# defaults:

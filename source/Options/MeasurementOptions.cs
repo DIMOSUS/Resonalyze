@@ -1255,6 +1255,14 @@ namespace Resonalyze.Options
                 return;
             }
 
+            // The user picked this rate, so nothing was taken away from them: the
+            // marker left by an earlier automatic fallback describes an action that is
+            // now over, and UpdateAsioStatusLabels would otherwise keep reporting
+            // "96000 Hz is not offered — changed to 48000 Hz" about a rate the user
+            // chose. The probe verdict is left alone; it is still the last thing the
+            // driver actually said.
+            sampleRateFellBackFrom = null;
+
             // The achieved band and its cycle-quantized duration depend on the
             // sample rate, so re-preview on any change (not just for ASIO). The
             // rate itself belongs to the audio backend group and is not applied
@@ -1897,7 +1905,16 @@ namespace Resonalyze.Options
         private void ValidateSelectedWaveSampleRate(int sampleRate)
         {
             IReadOnlyList<int> supportedRates = GetSupportedSampleRates();
-            if (supportedRates.Count > 0 && !supportedRates.Contains(sampleRate))
+            // Empty is an answer here, never silence: a Wave pair reports no rate in
+            // common only when there is none. Skipping validation on it let the rate
+            // sitting in the combo through to a device that cannot open it.
+            if (supportedRates.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "Wave devices report no sample rate in common for the current " +
+                    "configuration. Change the devices, the channel counts or the bit depth.");
+            }
+            if (!supportedRates.Contains(sampleRate))
             {
                 throw new InvalidOperationException(
                     $"Wave devices do not support {sampleRate} Hz for the current configuration.");
@@ -2092,7 +2109,7 @@ namespace Resonalyze.Options
                 IsAsioSampleRateProbeFailure());
             sampleRateProbeFailed = resolution.ProbeFailed;
             sampleRateFellBackFrom = resolution.FellBackFrom;
-            if (resolution.Rates.Length == 0)
+            if (resolution.Rates is null)
             {
                 // Nothing is rebuilt on the absence of an answer: the list and the
                 // user's selection stand, and the status line says the driver did not
@@ -2113,6 +2130,9 @@ namespace Resonalyze.Options
 
             int[] availableRates = resolution.Rates;
             int selectedSampleRate = resolution.Selected;
+            // An empty list is a real outcome, not a missing one: no rate works for this
+            // configuration, so the combo offers nothing and Apply refuses. Filling in the
+            // configured rate here is what used to hand the user a rate no device reported.
 
             bool wasInitializing = initializing;
             initializing = true;

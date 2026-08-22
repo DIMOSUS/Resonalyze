@@ -4,7 +4,11 @@ namespace Resonalyze.Options;
 /// What a sample-rate probe amounted to, and what the rate list should therefore be.
 /// </summary>
 /// <param name="Rates">
-/// The rates to offer, or empty when the existing list should be left alone.
+/// The rates to offer. THREE outcomes, and they are not the same thing:
+/// <c>null</c> — nothing to rebuild, the list already on screen stands;
+/// empty — the probe answered and the answer is that NO rate works for this
+/// configuration, so nothing may be offered and Apply has to refuse;
+/// non-empty — offer exactly these.
 /// </param>
 /// <param name="Selected">The rate to select; the preferred one unless it fell back.</param>
 /// <param name="ProbeFailed">
@@ -17,7 +21,7 @@ namespace Resonalyze.Options;
 /// nothing was taken away from them.
 /// </param>
 internal readonly record struct SampleRateResolution(
-    int[] Rates,
+    int[]? Rates,
     int Selected,
     bool ProbeFailed,
     int? FellBackFrom);
@@ -73,23 +77,36 @@ internal static class SampleRateOptions
     {
         ArgumentNullException.ThrowIfNull(supportedRates);
 
-        if (probeFailed && hasExistingList)
+        if (probeFailed)
         {
-            return new SampleRateResolution([], preferredSampleRate, true, null);
+            // Silence. With a list on screen that list is the last real answer anyone
+            // got, and it stands. With nothing on screen there is nothing to stand, so
+            // the configured rate is offered alone — still reported as a failed probe,
+            // because no driver ever said it was supported.
+            if (hasExistingList)
+            {
+                return new SampleRateResolution(null, preferredSampleRate, true, null);
+            }
+
+            int synthesized = preferredSampleRate > 0 ? preferredSampleRate : FallbackSampleRate;
+            return new SampleRateResolution([synthesized], synthesized, true, null);
         }
 
-        int[] rates = supportedRates.Count > 0
-            ? [.. supportedRates]
-            : [preferredSampleRate > 0 ? preferredSampleRate : FallbackSampleRate];
+        if (supportedRates.Count == 0)
+        {
+            // An answer, and the answer is none: no rate works for this configuration.
+            // Offering the configured rate here would manufacture support that nobody
+            // reported, and Apply would go on to accept a rate the devices cannot open.
+            // Empty is the honest list, and refusing it belongs to Apply.
+            return new SampleRateResolution([], preferredSampleRate, false, null);
+        }
 
-        // A probe that failed with nothing on screen to keep still failed: the list
-        // below is the configured rate standing alone, not something a driver offered,
-        // and the status line has to say so rather than pronounce the rate supported.
+        int[] rates = [.. supportedRates];
         bool fellBack = !rates.Contains(preferredSampleRate);
         return new SampleRateResolution(
             rates,
             fellBack ? rates[0] : preferredSampleRate,
-            probeFailed,
+            false,
             fellBack ? preferredSampleRate : null);
     }
 }

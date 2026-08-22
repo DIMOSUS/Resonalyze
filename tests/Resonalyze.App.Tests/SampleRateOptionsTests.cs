@@ -2,39 +2,66 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-// The difference between a driver that says "not that rate" and a driver that says
-// nothing. Some ASIO drivers refuse a second open moments after the first — closing
-// and reopening the settings window is exactly that — and answer the rate query with
-// an empty list. Read as an answer, that silently replaced a configured 96 kHz with
-// 44.1 and the next Apply persisted it.
+// The difference between a driver that says "not that rate", a driver that says
+// nothing, and a configuration for which no rate exists. Some ASIO drivers refuse a
+// second open moments after the first — closing and reopening the settings window is
+// exactly that — and answer the rate query with an empty list. Read as an answer, that
+// silently replaced a configured 96 kHz with 44.1 and the next Apply persisted it.
+// Read as silence everywhere, it manufactures support nobody reported.
 public sealed class SampleRateOptionsTests
 {
     [Fact]
-    public void AFailedProbeChangesNothing()
+    public void AFailedProbeLeavesTheListOnScreenAlone()
     {
         SampleRateResolution resolution = SampleRateOptions.Resolve(
             [], 96_000, hasExistingList: true, probeFailed: true);
 
         Assert.True(resolution.ProbeFailed);
-        Assert.Empty(resolution.Rates);
+        // Null, not empty: nothing to rebuild, as opposed to nothing to offer.
+        Assert.Null(resolution.Rates);
         Assert.Equal(96_000, resolution.Selected);
         Assert.Null(resolution.FellBackFrom);
     }
 
-    // The regression this round is about: an empty list is a REAL answer everywhere
-    // except ASIO. WASAPI Shared endpoints whose mix rates differ produce it, and so
-    // does an Exclusive or Wave pair with no rate in common. Keeping the previous
-    // device's list there would offer — and on the next Apply persist — a rate that
-    // belongs to another configuration entirely.
     [Fact]
-    public void AnEmptyAnswerIsStillAnAnswerWhenTheProbeDidNotFail()
+    public void AFailedProbeWithNothingToKeepOffersTheConfiguredRateAndStillSaysItFailed()
     {
         SampleRateResolution resolution = SampleRateOptions.Resolve(
-            [], 48_000, hasExistingList: true, probeFailed: false);
+            [], 96_000, hasExistingList: false, probeFailed: true);
 
+        Assert.NotNull(resolution.Rates);
+        Assert.Equal([96_000], resolution.Rates);
+        Assert.Equal(96_000, resolution.Selected);
+        // The rate stands alone because nothing answered, not because anything offered
+        // it — so the status line must not call it supported.
+        Assert.True(resolution.ProbeFailed);
+        Assert.Null(resolution.FellBackFrom);
+
+        // With no configured rate either, the constant is all that is left.
+        SampleRateResolution nothing = SampleRateOptions.Resolve(
+            [], 0, hasExistingList: false, probeFailed: true);
+        Assert.NotNull(nothing.Rates);
+        Assert.Equal([SampleRateOptions.FallbackSampleRate], nothing.Rates);
+        Assert.Equal(SampleRateOptions.FallbackSampleRate, nothing.Selected);
+    }
+
+    // The regression from this round. An empty list is a REAL answer everywhere except
+    // ASIO: WASAPI Shared endpoints whose mix rates differ produce it, and so does an
+    // Exclusive or Wave pair with no rate in common. Offering the configured rate there
+    // manufactures support nobody reported, and Apply would go on to accept it.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AGenuineEmptyAnswerOffersNothingAtAll(bool hasExistingList)
+    {
+        SampleRateResolution resolution = SampleRateOptions.Resolve(
+            [], 48_000, hasExistingList, probeFailed: false);
+
+        // Empty, not null: there IS an answer, and it is that nothing works here.
+        Assert.NotNull(resolution.Rates);
+        Assert.Empty(resolution.Rates);
         Assert.False(resolution.ProbeFailed);
-        Assert.Equal([48_000], resolution.Rates);
-        Assert.Equal(48_000, resolution.Selected);
+        // Nothing was taken away from the user; there was never anything to take.
         Assert.Null(resolution.FellBackFrom);
     }
 
@@ -47,6 +74,7 @@ public sealed class SampleRateOptionsTests
         Assert.False(resolution.ProbeFailed);
         Assert.Null(resolution.FellBackFrom);
         Assert.Equal(96_000, resolution.Selected);
+        Assert.NotNull(resolution.Rates);
         Assert.Equal([44_100, 48_000, 96_000], resolution.Rates);
     }
 
@@ -62,41 +90,6 @@ public sealed class SampleRateOptionsTests
         Assert.False(resolution.ProbeFailed);
         Assert.Equal(96_000, resolution.FellBackFrom);
         Assert.Equal(44_100, resolution.Selected);
-    }
-
-    [Fact]
-    public void TheFirstPopulationHasNoListToKeep()
-    {
-        // Startup, before anything is in the combo: an empty probe cannot be resolved by
-        // keeping what is there, because nothing is. The configured rate stands as the
-        // single option — still not the 44.1 constant, which is only for having nothing
-        // at all to go on.
-        SampleRateResolution kept = SampleRateOptions.Resolve(
-            [], 96_000, hasExistingList: false, probeFailed: false);
-        Assert.False(kept.ProbeFailed);
-        Assert.Equal([96_000], kept.Rates);
-        Assert.Equal(96_000, kept.Selected);
-        Assert.Null(kept.FellBackFrom);
-
-        SampleRateResolution nothing = SampleRateOptions.Resolve(
-            [], 0, hasExistingList: false, probeFailed: false);
-        Assert.Equal([SampleRateOptions.FallbackSampleRate], nothing.Rates);
-    }
-
-    // A failed probe with nothing on screen to keep still failed. The list it produces
-    // is the configured rate standing alone — not something a driver offered — so the
-    // status line must say the driver did not report rather than call the rate
-    // supported on the strength of a probe that never answered.
-    [Fact]
-    public void AFailedProbeWithNothingToKeepIsStillReportedAsFailed()
-    {
-        SampleRateResolution resolution = SampleRateOptions.Resolve(
-            [], 96_000, hasExistingList: false, probeFailed: true);
-
-        Assert.True(resolution.ProbeFailed);
-        Assert.Equal([96_000], resolution.Rates);
-        Assert.Equal(96_000, resolution.Selected);
-        Assert.Null(resolution.FellBackFrom);
     }
 
     // Which probes can fall silent at all. This is the scoping the review asked for:

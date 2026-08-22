@@ -4000,7 +4000,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // shared earliest FRONT for channels and sums (one window is what keeps
     // the drawn Sum the exact vector sum of the drawn channels and the
     // sum-loss under its 0 dB ceiling; see VirtualCrossoverMetrics.BuildCurves)
-    // and the raw curve's own peak. Runs on PLINQ worker threads: reads only
+    // and the raw curve's own front. Runs on PLINQ worker threads: reads only
     // the immutable snapshot RequestRedraw refreshed.
     private GatedMagnitude BuildMagnitudeCurve(
         Complex[] impulseResponse,
@@ -4034,18 +4034,27 @@ public partial class VirtualCrossoverPanel : UserControl
     // A RAW channel curve lives in its own time: its arrival predates the
     // processed gate by the channel's delay, so even a pinned processed-view
     // offset would clip it into the left fade. Same gate durations and window
-    // mode, always anchored on the raw response's own peak.
+    // mode, anchored on the raw response's own START — the same rule as the
+    // processed curves. Its own PEAK was the anchor once, and with the short
+    // junction gate that was harmless; the steady-state window made it a
+    // defect: a woofer's peak trails its onset by more than the 2 ms fade-in
+    // (5.4 ms on the archived Passat woofer), so a peak-anchored window opened
+    // after the response had begun and read the record minus its direct
+    // arrival — octave bands off by 10+ dB against the same IR read from the
+    // front.
     private AnalysisCurve BuildRawMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
         int sampleRate)
     {
+        int anchorIndex = ProcessedChannels.StartAnchorIndex(
+            impulseResponse, peakIndex, sampleRate);
         return BuildGatedMagnitudeCurve(
             magnitudeGate,
             impulseResponse,
-            peakIndex,
+            anchorIndex,
             sampleRate,
-            peakIndex * 1_000.0 / sampleRate).Display;
+            anchorIndex * 1_000.0 / sampleRate).Display;
     }
 
     // Both widths of one gated build: the smoothed curve the plot draws and the
@@ -5334,7 +5343,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         // The band read below is gate-independent (it windows each raw response
-        // on its own peak), but the proposal it writes is checked on the plot
+        // on its own front), but the proposal it writes is checked on the plot
         // and in the sum-loss read-out, both of which the gate builds — so a
         // misplaced window still has to be dealt with before the wizard runs.
         if (RefuseOnMisplacedGate("Auto crossover"))

@@ -98,21 +98,29 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
-    public void Raw_HandsTheMeasurementItself_AnchoredOnItsOwnPeak()
+    public void Raw_HandsTheMeasurementItself_AnchoredOnItsOwnStart()
     {
         VirtualCrossoverChannel channel = BuildChannel();
 
         // A pin belongs to the processed view's time; the panel's Raw curve ignores
-        // it and so must the raw handoff.
+        // it and so must the raw handoff. Like the panel's Raw curve, the window
+        // anchors on the raw response's own START (the peak only answers when the
+        // estimator refuses the record) — a woofer's peak trails its onset by more
+        // than the steady-state window's 2 ms fade-in, so a peak anchor would hand
+        // the wizard the record minus its direct arrival.
         VirtualDspEqHandoffRequest request = Build(
             channel, withChain: false, pinnedGateOffsetMs: 12.5, renderAnchorIndex: 480);
 
         Assert.Same(
             channel.TransferImpulseResponse,
             request.Source.Measurement!.ImpulseResponse);
-        Assert.Equal(channel.TransferPeakIndex, request.Source.Measurement.PeakIndex);
+        int expectedAnchor = ProcessedChannels.StartAnchorIndex(
+            channel.TransferImpulseResponse!,
+            channel.TransferPeakIndex,
+            SampleRate);
+        Assert.Equal(expectedAnchor, request.Source.Measurement.PeakIndex);
         Assert.Equal(
-            channel.TransferPeakIndex * 1_000.0 / SampleRate,
+            expectedAnchor * 1_000.0 / SampleRate,
             request.Source.GateSettings!.GateOffsetMs,
             6);
     }
@@ -687,7 +695,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ARawSessionIsImmuneToTheProcessedGatePin()
     {
-        // A raw handoff anchors on the measurement's own peak and never reads the
+        // A raw handoff anchors on the measurement's own start and never reads the
         // processed view's pin, so moving that pin cannot have changed its curve —
         // refusing the return would cost the user a finished tune for nothing.
         VirtualCrossoverChannel channel = BuildChannel();

@@ -2265,9 +2265,12 @@ internal sealed class PlotModelFactory
             sum[i] = value + sign * shifted;
         }
 
-        // Anchor the analysis window at the earlier of the two arrivals so the later
-        // impulse still falls inside the window plateau; the summed envelope peak
-        // could sit between them or vanish entirely under cancellation.
+        // The window anchors at the sum's own estimated start (the plain path's
+        // rule), which for two arrivals is the earlier front — so the later impulse
+        // still falls inside the window plateau. The peak passed here is only the
+        // estimator's fallback, and the summed envelope peak would be a poor anchor:
+        // it could sit between the arrivals or vanish entirely under cancellation,
+        // so the fallback is the earlier of the two records' own peaks instead.
         int mainPeak = Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, length - 1);
         int comparePeak = Math.Clamp(
             compare.TransferPeakIndex + (int)Math.Round(delaySamples),
@@ -2320,8 +2323,8 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        // Individual magnitudes of the two transfer responses, each windowed around its own
-        // peak but log-resampled onto the same fixed frequency grid as the complex sum, so
+        // Individual magnitudes of the two transfer responses, each windowed at its own
+        // start but log-resampled onto the same fixed frequency grid as the complex sum, so
         // all three curves align index-by-index.
         AnalysisCurve mainMagnitude = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(

@@ -1436,7 +1436,12 @@ the ear hears with the cabin — and a junction-length gate cannot even contain 
 bass EQ band's own ringing, so under it a Q 5 cut at 100 Hz would draw at a
 fraction of its real depth. One window definition serves every magnitude curve
 here and in the [EQ Wizard](#eq-wizard), which is what keeps the two tools
-showing the same curve for the same channel.
+showing the same curve for the same channel. Every magnitude window — here, in
+the wizard and in Frequency Response mode — opens on the response's detected
+**start**, the same band-limited first-arrival front the phase gate's Auto
+offset snaps to, never on the IR peak: a woofer's peak trails its own onset by
+several milliseconds of group delay, so a peak-anchored window would open after
+the response has begun and read the record minus its direct arrival.
 
 A **Target** checkbox draws the EQ target over the prediction: the SAME target
 the EQ Wizard equalizes towards, shaped from either place through the same

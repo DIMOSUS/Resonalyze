@@ -42,7 +42,13 @@ internal sealed class MeasurementPlotContext
     /// <see cref="TransferIrStartCache"/>, shared with the options dialogs.
     /// </summary>
     public double? ResolveAutoGateOffsetMs() =>
-        TransferIrStartCache.ResolveStartMs(expSweepMeasurement);
+        expSweepMeasurement.Transfer is { ImpulseResponse.Length: > 0 } transfer &&
+        expSweepMeasurement.SampleRate > 0
+            ? TransferIrStartCache.ResolveStartMs(
+                transfer.ImpulseResponse,
+                expSweepMeasurement.SampleRate,
+                transfer.PeakIndex)
+            : null;
 
     /// <summary>
     /// The offset K that turns the loopback-referenced magnitude (dBr) into dB SPL:

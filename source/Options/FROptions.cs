@@ -215,8 +215,9 @@ namespace Resonalyze.Options
                 (int)numericLeftWindow.Value,
                 (int)numericRightWindow.Value,
                 offset: 0,
-                // FR magnitude is now windowed on the transfer IR, so preview that window.
-                IrPreviewSource.Primary);
+                // FR magnitude is windowed on the transfer IR at its estimated
+                // START, so preview the window where the analysis opens it.
+                IrPreviewSource.PrimaryAtStart);
         }
 
         private void InitializeToolTips()

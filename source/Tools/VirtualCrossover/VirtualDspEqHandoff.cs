@@ -65,7 +65,7 @@ namespace Resonalyze;
 /// switch — re-windows the channel while the wizard keeps drawing the old result, and
 /// this PR has already produced enough windowing bugs to treat that as the same class
 /// as a replaced measurement. The pin applies to a CHAIN handoff only; a raw curve is
-/// anchored on its own peak and never read the pin.
+/// anchored on its own start and never read the pin.
 /// <para>
 /// What is deliberately NOT guarded is where an AUTO-placed window ended up: that
 /// offset is the earliest arrival across all channels, so another channel's edit can
@@ -140,7 +140,7 @@ internal static class VirtualDspEqHandoff
     /// curve is the side's measurement through its DSP chain WITHOUT the PEQ — gain,
     /// delay, polarity, crossover and all-pass stay — windowed by the gate the processed
     /// view draws with. Without it the curve is the raw measurement under the same gate
-    /// anchored on its own peak: exactly the panel's Raw curve.
+    /// anchored on its own start: exactly the panel's Raw curve.
     /// <para>
     /// The request also carries what the wizard needs to redraw the CORRECTED curve the
     /// same way the panel would (<see cref="EqWizardCurveSource.PreviewImpulseResponse"/>):
@@ -220,8 +220,12 @@ internal static class VirtualDspEqHandoff
         }
         else
         {
+            // The raw response in its own time: anchored on its own START, the
+            // same figure BuildRawMagnitudeCurve reads for the panel's Raw
+            // curve, so the wizard opens on the curve the user just left.
             response = state.TransferImpulseResponse;
-            anchorIndex = state.TransferPeakIndex;
+            anchorIndex = ProcessedChannels.StartAnchorIndex(
+                response, state.TransferPeakIndex, sampleRate);
             gateOffsetMs = anchorIndex * 1_000.0 / sampleRate;
         }
 
@@ -251,7 +255,7 @@ internal static class VirtualDspEqHandoff
                     : $" — {settings.DisplayName}") +
                 (withChain
                     ? "\r\nDSP chain applied (PEQ bypassed), windowed by the Virtual DSP gate."
-                    : "\r\nRaw measurement, windowed by the Virtual DSP gate at its own peak.") +
+                    : "\r\nRaw measurement, windowed by the Virtual DSP gate at its own arrival.") +
                 bypassNote,
             Measurement = new ImpulseMeasurementView(response, anchorIndex, sampleRate),
             Coherence = EqWizardSourceResolver.ExtractTransferCoherence(
@@ -370,7 +374,7 @@ internal static class VirtualDspEqHandoff
 
         // The window the curve was read through must still be where it was, and the
         // level it was fitted against must still be the panel's answer too. The PIN
-        // counts only for a chain handoff: a raw curve is anchored on its own peak
+        // counts only for a chain handoff: a raw curve is anchored on its own start
         // and ignores the processed view's pin by construction (see Build, and
         // VirtualCrossoverPanel.BuildRawMagnitudeCurve — a raw response lives in its
         // own time), so refusing a raw return because that pin moved would throw work

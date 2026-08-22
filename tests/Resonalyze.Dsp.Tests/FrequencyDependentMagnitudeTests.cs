@@ -84,10 +84,13 @@ public sealed class FrequencyDependentMagnitudeTests
     {
         // The gate-driven magnitude (the Virtual DSP view) and the Frequency
         // Response mode's FDW curve must be ONE analysis when their gates
-        // coincide — the FR window maps onto a peak-anchored gate. Bit-equal,
-        // not approximate: both paths must run through the same bank and the
-        // same resample, or the two views drift apart.
+        // coincide — the FR window maps onto a gate anchored at the response's
+        // own START (TransferIrStartCache, the anchor every magnitude window
+        // shares). Bit-equal, not approximate: both paths must run through the
+        // same bank and the same resample, or the two views drift apart.
         SyntheticMeasurement measurement = ReflectedImpulse();
+        int anchor = TransferIrStartCache.ResolveStartIndex(
+            measurement.ImpulseResponse!, SampleRate, measurement.PeakIndex);
         FrequencyResponseOptions options =
             Options(PhaseWindowMode.FrequencyDependent);
         double toMilliseconds = 1_000.0 / SampleRate;
@@ -96,7 +99,7 @@ public sealed class FrequencyDependentMagnitudeTests
             FdwCycles: 6,
             PhaseDetrendMode.Off,
             ManualDetrendMilliseconds: 0.0,
-            GateOffsetMs: 480 * toMilliseconds,
+            GateOffsetMs: anchor * toMilliseconds,
             LeftMs: 256 * toMilliseconds,
             PlateauMs: (4_096 - 512) * toMilliseconds,
             RightMs: 256 * toMilliseconds,

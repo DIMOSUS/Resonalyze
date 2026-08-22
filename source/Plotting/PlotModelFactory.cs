@@ -2265,21 +2265,50 @@ internal sealed class PlotModelFactory
             sum[i] = value + sign * shifted;
         }
 
-        // Anchor the analysis window at the earlier of the two arrivals so the later
-        // impulse still falls inside the window plateau; the summed envelope peak
-        // could sit between them or vanish entirely under cancellation.
-        int mainPeak = Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, length - 1);
-        int comparePeak = Math.Clamp(
-            compare.TransferPeakIndex + (int)Math.Round(delaySamples),
+        // The window anchors at the earlier of the two records' OWN estimated
+        // starts (the compare's shifted by the applied delay), so the later
+        // impulse still falls inside the window plateau — the same rule the
+        // Virtual DSP tool applies to its shared window
+        // (ProcessedChannels.SharedStartAnchorIndex). The anchor is passed
+        // EXPLICITLY: estimated on the summed record itself, the start would be
+        // the front of the sum's dominant band, which a later, louder driver can
+        // own — a window opening there cuts the earlier driver out of the sum
+        // while the individual curves keep it. Each record's estimate is read on
+        // its original array (memoized), falling back to that record's peak, and
+        // the summed envelope peak enters nowhere: it could sit between the
+        // arrivals or vanish entirely under cancellation.
+        int mainStart = Math.Clamp(
+            TransferIrStartCache.ResolveStartIndex(
+                mainIr,
+                expSweepMeasurement.SampleRate,
+                expSweepMeasurement.TransferPeakIndex),
             0,
             length - 1);
-        int peakIndex = Math.Min(mainPeak, comparePeak);
+        int compareStart = Math.Clamp(
+            TransferIrStartCache.ResolveStartIndex(
+                compareIr,
+                compare.SampleRate,
+                compare.TransferPeakIndex) + (int)Math.Round(delaySamples),
+            0,
+            length - 1);
+        int anchorIndex = Math.Min(mainStart, compareStart);
+
+        // The view's PeakIndex stays a PEAK — the earlier record's, the right
+        // fallback if the explicit anchor ever went away — rather than smuggling
+        // the anchor through a field that means something else.
+        int peakIndex = Math.Min(
+            Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, length - 1),
+            Math.Clamp(
+                compare.TransferPeakIndex + (int)Math.Round(delaySamples),
+                0,
+                length - 1));
 
         FrequencyResponseOptions curveOptions = options ?? frequencyResponseOptions;
         return DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(sum, peakIndex, expSweepMeasurement.SampleRate),
             curveOptions,
-            GetCalibration(curveOptions));
+            GetCalibration(curveOptions),
+            anchorIndex);
     }
 
     private static Complex SampleAt(Complex[] source, int index) =>
@@ -2320,8 +2349,8 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        // Individual magnitudes of the two transfer responses, each windowed around its own
-        // peak but log-resampled onto the same fixed frequency grid as the complex sum, so
+        // Individual magnitudes of the two transfer responses, each windowed at its own
+        // start but log-resampled onto the same fixed frequency grid as the complex sum, so
         // all three curves align index-by-index.
         AnalysisCurve mainMagnitude = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(

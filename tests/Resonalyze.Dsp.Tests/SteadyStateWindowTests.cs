@@ -103,6 +103,173 @@ public sealed class SteadyStateWindowTests
     }
 
     [Fact]
+    public void ThePlainWindowOpensOnTheResponseStart_NotItsPeak()
+    {
+        // The Passat woofer defect, synthetic: a low-frequency driver's envelope
+        // peaks MILLISECONDS after its onset (group delay), while the plain
+        // window's fade-in is only 2 ms — anchored on the peak it opened after
+        // the response had begun and read the record minus its direct arrival.
+        // The plain path must anchor on the estimated START instead, i.e. read
+        // the same curve as the gated carve placed at that start.
+        const int sampleRate = 48_000;
+        const int onset = 960; // 20 ms
+        (Complex[] impulse, int peak) = RisingBurst(sampleRate, onset);
+
+        var measurement = new WindowMeasurement(impulse, peak, sampleRate);
+        int anchor = TransferIrStartCache.ResolveStartIndex(
+            impulse, sampleRate, peak);
+        (int window, int left, int right) =
+            FrequencyResponseOptions.SteadyStateWindowSamples(sampleRate);
+        double toMs = 1_000.0 / sampleRate;
+
+        // The fixture parts the two anchors by more than the fade-in — without
+        // that, peak and start anchoring would read the same and prove nothing.
+        Assert.True(
+            peak - anchor > left,
+            $"fixture: peak {peak} is only {peak - anchor} samples past the " +
+            $"estimated start {anchor}, within the {left}-sample fade-in");
+
+        var options = new FrequencyResponseOptions
+        {
+            Window = window,
+            LeftTukeyWindow = left,
+            RightTukeyWindow = right,
+            SmoothingInverseOctaves = 0,
+            UseCalibration = false
+        };
+        AnalysisCurve plain = DataHelper.GetPrimarySpectrum(
+            measurement, options, calibration: null);
+        AnalysisCurve atStart = Carved(measurement, anchor * toMs,
+            left * toMs, (window - left - right) * toMs, right * toMs);
+        AnalysisCurve atPeak = Carved(measurement, peak * toMs,
+            left * toMs, (window - left - right) * toMs, right * toMs);
+
+        // Judged where the fixture has content; elsewhere both read noise floor.
+        for (int i = 0; i < plain.Points.Count; i++)
+        {
+            if (plain.Points[i].X is < 30 or > 120)
+            {
+                continue;
+            }
+
+            Assert.True(
+                Math.Abs(plain.Points[i].Y - atStart.Points[i].Y) < 0.05,
+                $"plain read {plain.Points[i].Y:0.000} dB at " +
+                $"{plain.Points[i].X:0.#} Hz against the start-anchored carve's " +
+                $"{atStart.Points[i].Y:0.000} dB");
+        }
+
+        // And the anchor matters: at the band centre the peak-anchored window
+        // reads a different level — the reading the bug reports showed.
+        double at60Start = AtHz(atStart, 60);
+        double at60Peak = AtHz(atPeak, 60);
+        Assert.True(
+            Math.Abs(at60Start - at60Peak) > 0.5,
+            $"fixture: start- and peak-anchored windows read within " +
+            $"{Math.Abs(at60Start - at60Peak):0.000} dB of each other at 60 Hz");
+    }
+
+    [Fact]
+    public void AnExplicitAnchorOverridesTheEstimator()
+    {
+        // The contract a COMPOSITE caller stands on (the Compare complex sum):
+        // the anchor it passes is where the window opens, estimator or not —
+        // run on a mixed record, the estimator would read the dominant band's
+        // front, which a later, louder arrival can own.
+        const int sampleRate = 48_000;
+        const int onset = 960;
+        (Complex[] impulse, int peak) = RisingBurst(sampleRate, onset);
+        var measurement = new WindowMeasurement(impulse, peak, sampleRate);
+        int estimated = TransferIrStartCache.ResolveStartIndex(
+            impulse, sampleRate, peak);
+        Assert.NotEqual(peak, estimated); // the override must actually differ
+
+        (int window, int left, int right) =
+            FrequencyResponseOptions.SteadyStateWindowSamples(sampleRate);
+        double toMs = 1_000.0 / sampleRate;
+        var options = new FrequencyResponseOptions
+        {
+            Window = window,
+            LeftTukeyWindow = left,
+            RightTukeyWindow = right,
+            SmoothingInverseOctaves = 0,
+            UseCalibration = false
+        };
+        AnalysisCurve overridden = DataHelper.GetPrimarySpectrum(
+            measurement, options, calibration: null, anchorIndex: peak);
+        AnalysisCurve atPeak = Carved(measurement, peak * toMs,
+            left * toMs, (window - left - right) * toMs, right * toMs);
+
+        Assert.True(
+            Math.Abs(AtHz(overridden, 60) - AtHz(atPeak, 60)) < 0.05,
+            $"the explicit anchor read {AtHz(overridden, 60):0.000} dB against " +
+            $"the same anchor's carve at {AtHz(atPeak, 60):0.000} dB");
+        Assert.NotEqual(
+            AtHz(atPeak, 60),
+            AtHz(DataHelper.GetPrimarySpectrum(
+                measurement, options, calibration: null), 60),
+            precision: 1);
+    }
+
+    // A 60 Hz burst whose envelope rises over ~3 ms and decays over ~80 ms:
+    // the envelope maximum lands ~10 ms after the onset — the LF-driver shape
+    // whose peak-anchored window discards the direct arrival.
+    private static (Complex[] Impulse, int Peak) RisingBurst(
+        int sampleRate, int onset)
+    {
+        var impulse = new Complex[65_536];
+        int peak = 0;
+        for (int i = 0; onset + i < impulse.Length; i++)
+        {
+            double t = i / (double)sampleRate;
+            impulse[onset + i] = Math.Sin(2 * Math.PI * 60 * t) *
+                (1 - Math.Exp(-t / 0.003)) * Math.Exp(-t / 0.080);
+            if (impulse[onset + i].Magnitude > impulse[peak].Magnitude)
+            {
+                peak = onset + i;
+            }
+        }
+
+        return (impulse, peak);
+    }
+
+    private static AnalysisCurve Carved(
+        IImpulseMeasurement measurement,
+        double gateOffsetMs,
+        double leftMs,
+        double plateauMs,
+        double rightMs) =>
+        DataHelper.GetGatedPrimarySpectrum(
+            measurement,
+            new PhaseAnalysisSettings(
+                PhaseWindowMode.Fixed,
+                PhaseAnalysisSettings.DefaultFdwCycles,
+                PhaseDetrendMode.Off,
+                ManualDetrendMilliseconds: 0.0,
+                gateOffsetMs,
+                leftMs,
+                plateauMs,
+                rightMs,
+                Unwrap: false,
+                SmoothingInverseOctaves: 0.0),
+            calibration: null,
+            smoothingInverseOctaves: 0);
+
+    private static double AtHz(AnalysisCurve curve, double hz)
+    {
+        SignalPoint best = curve.Points[0];
+        foreach (SignalPoint point in curve.Points)
+        {
+            if (Math.Abs(point.X - hz) < Math.Abs(best.X - hz))
+            {
+                best = point;
+            }
+        }
+
+        return best.Y;
+    }
+
+    [Fact]
     public void TheWindowBeatsTheJunctionGateItReplaced()
     {
         // The claim that justifies the whole change, at the rate where the steady-state

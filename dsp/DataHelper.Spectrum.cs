@@ -28,20 +28,32 @@ namespace Resonalyze.Dsp
         }
 
         /// <summary>
-        /// The primary (linear) response spectrum: windowed around the peak (fixed
-        /// Tukey or FDW), oversampled, log-resampled with optional calibration and
-        /// smoothing. Used
+        /// The primary (linear) response spectrum: windowed at the response's own
+        /// start (fixed Tukey or FDW), oversampled, log-resampled with optional
+        /// calibration and smoothing. Used
         /// by GetSpectrum for its primary curve and directly for derived responses
         /// (e.g. the complex sum of two transfer impulse responses), where the
         /// per-curve visibility gating of GetSpectrum must not apply.
+        /// <para>
+        /// <paramref name="anchorIndex"/> overrides where the window opens. A
+        /// COMPOSITE record (a sum of arrivals) must pass the earliest of its
+        /// parts' own starts: run on the mixed record, the start estimator reads
+        /// the front of the record's dominant band, which a later, louder
+        /// arrival can own — the same reason the Virtual DSP tool anchors its
+        /// shared window at the min of per-channel starts
+        /// (ProcessedChannels.SharedStartAnchorIndex) rather than estimating on
+        /// the sum. Single records leave it null.
+        /// </para>
         /// </summary>
         public static AnalysisCurve GetPrimarySpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
-            CalibrationFile? calibration)
+            CalibrationFile? calibration,
+            int? anchorIndex = null)
         {
             List<SignalPoint> data = LogarithmicResample(
-                GetOversampledPrimarySpectrum(measurement, frequencyResponseOptions),
+                GetOversampledPrimarySpectrum(
+                    measurement, frequencyResponseOptions, anchorIndex),
                 20,
                 20000,
                 1024,
@@ -55,7 +67,7 @@ namespace Resonalyze.Dsp
 
         /// <summary>
         /// The oversampled linear-frequency spectrum that feeds
-        /// <see cref="GetPrimarySpectrum"/>: Tukey-windowed around the peak (or
+        /// <see cref="GetPrimarySpectrum"/>: Tukey-windowed at the response start (or
         /// FDW-windowed, per <see cref="FrequencyResponseOptions.MagnitudeWindowMode"/>)
         /// and oversampled, BEFORE the logarithmic resample, calibration and smoothing.
         /// Overlays store this so they reproduce the mode's smoothing EXACTLY (the same
@@ -63,34 +75,53 @@ namespace Resonalyze.Dsp
         /// </summary>
         public static List<SignalPoint> GetOversampledPrimarySpectrum(
             IImpulseMeasurement measurement,
-            FrequencyResponseOptions frequencyResponseOptions)
+            FrequencyResponseOptions frequencyResponseOptions,
+            int? anchorIndex = null)
         {
+            int anchor = anchorIndex ?? MagnitudeAnchorIndex(measurement);
             if (frequencyResponseOptions.MagnitudeWindowMode ==
                 PhaseWindowMode.FrequencyDependent)
             {
-                return GetFdwPrimarySpectrum(measurement, frequencyResponseOptions);
+                return GetFdwPrimarySpectrum(
+                    measurement, frequencyResponseOptions, anchor);
             }
 
             double leftTukeyWindow = (double)frequencyResponseOptions.LeftTukeyWindow / frequencyResponseOptions.Window * 2.0;
             double rightTukeyWindow = (double)frequencyResponseOptions.RightTukeyWindow / frequencyResponseOptions.Window * 2.0;
             double[] window = Windowing.TukeyWindow(frequencyResponseOptions.Window, leftTukeyWindow, rightTukeyWindow);
-            int h1Start = measurement.PeakIndex - frequencyResponseOptions.LeftTukeyWindow;
+            int h1Start = anchor - frequencyResponseOptions.LeftTukeyWindow;
             return GetOversampledSpectrumData(measurement, h1Start, window);
         }
+
+        // Where the magnitude window opens: the response's estimated START, not
+        // its peak. A driver's group delay puts the peak milliseconds behind the
+        // front (the archived Passat woofer peaks 5.4 ms after its onset), so a
+        // window whose fade-in ends at the peak starts AFTER the response has
+        // begun and discards the direct arrival — with the left fade a couple of
+        // milliseconds, entire octave bands misread by 10+ dB. The estimate is
+        // memoized per IR array; the peak remains the fallback when the
+        // estimator refuses the record.
+        private static int MagnitudeAnchorIndex(IImpulseMeasurement measurement) =>
+            measurement.ImpulseResponse is { Length: > 0 } impulseResponse
+                ? TransferIrStartCache.ResolveStartIndex(
+                    impulseResponse, measurement.SampleRate, measurement.PeakIndex)
+                : measurement.PeakIndex;
 
         // REW-style frequency-dependent window for the magnitude curve, built on
         // the SAME bank the FDW phase analysis uses (BuildAnalysisSpectrum), so
         // the two views read one analysis and share its per-impulse cache. The
         // fixed window's geometry maps directly onto the gate: its fade-in ends
-        // at the peak, so the gate offset is the peak time, and the configured
-        // window is the outer gate that FDW never exceeds — below the transition
-        // frequency (where MagnitudeFdwCycles periods outgrow the window) the
-        // curve is the fixed window's, above it the effective window shrinks as
-        // cycles/frequency. Detrend/unwrap/smoothing fields of the settings
-        // record are phase-only and never reach the bank.
+        // at the response start (MagnitudeAnchorIndex — the same anchor as the
+        // fixed window's), so the gate offset is the start time, and the
+        // configured window is the outer gate that FDW never exceeds — below
+        // the transition frequency (where MagnitudeFdwCycles periods outgrow
+        // the window) the curve is the fixed window's, above it the effective
+        // window shrinks as cycles/frequency. Detrend/unwrap/smoothing fields
+        // of the settings record are phase-only and never reach the bank.
         private static List<SignalPoint> GetFdwPrimarySpectrum(
             IImpulseMeasurement measurement,
-            FrequencyResponseOptions options)
+            FrequencyResponseOptions options,
+            int anchorIndex)
         {
             double toMilliseconds = 1000.0 / measurement.SampleRate;
             int plateau = Math.Max(
@@ -100,7 +131,7 @@ namespace Resonalyze.Dsp
                 options.MagnitudeFdwCycles,
                 PhaseDetrendMode.Off,
                 ManualDetrendMilliseconds: 0.0,
-                GateOffsetMs: measurement.PeakIndex * toMilliseconds,
+                GateOffsetMs: anchorIndex * toMilliseconds,
                 LeftMs: options.LeftTukeyWindow * toMilliseconds,
                 PlateauMs: plateau * toMilliseconds,
                 RightMs: options.RightTukeyWindow * toMilliseconds,

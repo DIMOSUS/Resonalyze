@@ -194,10 +194,17 @@ public class ImpulsePreviewOptionsForm : Form
     protected void ApplyAutoGateOffset()
     {
         if (gate is { } g &&
-            Measurement is { } measurement &&
-            TransferIrStartCache.ResolveStartMs(measurement) is { } startMs)
+            Measurement is
+            {
+                Transfer.ImpulseResponse.Length: > 0,
+                SampleRate: > 0
+            } measurement)
         {
-            g.Offset.Value = g.Offset.ClampValue(startMs);
+            g.Offset.Value = g.Offset.ClampValue(
+                TransferIrStartCache.ResolveStartMs(
+                    measurement.Transfer.ImpulseResponse,
+                    measurement.SampleRate,
+                    measurement.Transfer.PeakIndex));
         }
     }
 

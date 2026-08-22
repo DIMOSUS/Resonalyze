@@ -12,6 +12,11 @@ internal enum IrPreviewSource
 {
     SweepDeconvolution,
     Primary,
+    // The transfer IR referenced at its estimated START — where the plain
+    // magnitude extraction actually opens its window (DataHelper's
+    // MagnitudeAnchorIndex). Primary above stays peak-referenced for the
+    // views whose own analysis anchors there (waterfall, burst decay).
+    PrimaryAtStart,
     TransferFromStart
 }
 
@@ -458,6 +463,19 @@ internal static class ImpulseWindowPreview
                         transferResult.ImpulseResponse,
                         0,
                         true,
+                        "Transfer IR Window")
+                    : SelectImpulseResponse(
+                        measurement,
+                        IrPreviewSource.SweepDeconvolution),
+            IrPreviewSource.PrimaryAtStart =>
+                measurement.Transfer is { ImpulseResponse.Length: > 0 } startTransferResult
+                    ? new IrSource(
+                        startTransferResult.ImpulseResponse,
+                        TransferIrStartCache.ResolveStartIndex(
+                            startTransferResult.ImpulseResponse,
+                            measurement.SampleRate,
+                            startTransferResult.PeakIndex),
+                        false,
                         "Transfer IR Window")
                     : SelectImpulseResponse(
                         measurement,

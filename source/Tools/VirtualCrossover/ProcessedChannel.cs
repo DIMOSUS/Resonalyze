@@ -96,13 +96,8 @@ internal static class ProcessedChannels
         int peakIndex,
         int sampleRate,
         ValidSampleRange validRange = default) =>
-        Math.Clamp(
-            (int)Math.Floor(
-                TransferIrStartCache.ResolveStartMs(
-                    impulseResponse, sampleRate, peakIndex, validRange)
-                / 1_000.0 * sampleRate),
-            0,
-            Math.Max(0, impulseResponse.Length - 1));
+        TransferIrStartCache.ResolveStartIndex(
+            impulseResponse, sampleRate, peakIndex, validRange);
 
     /// <summary>
     /// The shared window's anchor for a channel set: the earliest

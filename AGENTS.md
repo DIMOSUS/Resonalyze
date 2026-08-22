@@ -146,6 +146,23 @@ When a change alters a panel the README screenshots, say so in the PR descriptio
 so the owner can re-capture; the images live in `assets/images/` and are not
 generated.
 
+## Pull requests
+
+Unless the owner asks for something else, a finished pull request is merged
+**squashed, with its branch deleted**. The repository's squash default builds
+the body from the branch's commit messages (`squash_merge_commit_message` is
+`COMMIT_MESSAGES`), so hand the description over explicitly or `main` gets a
+list of commit subjects where the PR's own text belongs:
+
+```powershell
+gh pr merge <n> --squash --delete-branch `
+  --subject "<the PR title> (#<n>)" --body-file <the description>
+```
+
+`main` therefore carries one commit per PR, holding that description as its
+message — so write the description as the commit message the repository is
+going to keep, and correct it there if the branch outgrew it.
+
 ## Code Style
 
 Enforced by `.editorconfig`; notable deviations from common C# defaults:

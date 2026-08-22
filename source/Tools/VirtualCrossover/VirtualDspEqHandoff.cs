@@ -32,9 +32,10 @@ namespace Resonalyze;
 /// The chain the curve was built through, PEQ excluded — the thing the bank was
 /// fitted against. Compared whole on return, with only the polarity normalized away.
 /// <para>
-/// Measured, not assumed. Through the real filter-then-window path, swept across the
-/// ranges the UI itself allows (delay to 100 ms; all-pass 10 Hz..24 kHz, Q to 20),
-/// the worst SHAPE shift a single edit produces is: polarity exactly 0 at every rate
+/// Measured, not assumed. Through the real filter-then-window path, sampled across
+/// the ranges the UI allows (delay to 100 ms; all-pass 10..2000 Hz with Q to 20 —
+/// a sample, not a search for the true extremum), the worst SHAPE shift seen from a
+/// single edit is: polarity exactly 0 at every rate
 /// (|−x·w| = |x·w|); delay 0.000 dB at 48 kHz but 1.70 dB at 192 kHz, where the rate
 /// clamps the window to 171 ms; all-pass 0.27 dB at 48 kHz and 4.77 dB at 192 kHz
 /// (40 Hz, Q 20 — 318 ms of group delay against that window). Gain leaves the shape
@@ -42,6 +43,29 @@ namespace Resonalyze;
 /// bank's preamp was fitted against it, so a moved gain leaves the tune exactly that
 /// many dB off the target. Only polarity survives all of it.
 /// </para>
+/// </param>
+/// <param name="Peq">
+/// The bank the session STARTED from. The chain comparison must exclude the PEQ —
+/// it is the stage under edit — which leaves the channel's own PEQ unguarded: a
+/// Load from file or a Clear in the panel, both reachable while a session is open,
+/// would otherwise be silently overwritten by the older bank on return. A plain lost
+/// update.
+/// </param>
+/// <param name="TargetLevelDb">
+/// Where the target hung when the handoff was taken. The wizard may move it while
+/// tuning — it is the user's knob — and the moved value travels back with the bank,
+/// so the tune realizes the level it was fitted against. This records the level to
+/// return INTO: if the panel's own has been changed independently since, the two
+/// answers conflict and the return is refused rather than one of them silently
+/// winning.
+/// </param>
+/// <param name="GateTemplate">
+/// The magnitude window the curve was read through, and <paramref name="PinnedGateOffsetMs"/>
+/// where the user pinned it. Moving the gate in the panel — reachable by a plain tab
+/// switch — re-windows the channel while the wizard keeps drawing the old result, and
+/// this PR has already produced enough windowing bugs to treat that as the same class
+/// as a replaced measurement. (An auto-placed window can still drift from a change to
+/// a DIFFERENT channel, since the anchor is shared; that is not caught here.)
 /// </param>
 /// <param name="WithChain">
 /// Whether the curve was built through the chain at all. A raw handoff is measured
@@ -63,6 +87,10 @@ internal sealed record VirtualDspEqReturnToken(
     bool Mono,
     DspChannelChain PreviewChain,
     bool WithChain,
+    PeqBankState Peq,
+    double TargetLevelDb,
+    PhaseAnalysisSettings GateTemplate,
+    double? PinnedGateOffsetMs,
     string? CalibrationId);
 
 /// <summary>
@@ -247,6 +275,10 @@ internal static class VirtualDspEqHandoff
                 // curve was built through — including "none" for a raw handoff.
                 previewChain,
                 withChain,
+                new PeqBankState(settings.PeqBands, settings.PeqPreampDb),
+                targetLevelDb,
+                gateTemplate,
+                pinnedGateOffsetMs,
                 MicrophoneCalibrationIds.Normalize(calibrationId)));
     }
 
@@ -280,7 +312,10 @@ internal static class VirtualDspEqHandoff
         VirtualDspEqReturnToken token,
         EqualizationCurve curve,
         long projectGeneration,
-        string? calibrationId)
+        string? calibrationId,
+        PhaseAnalysisSettings gateTemplate,
+        double? pinnedGateOffsetMs,
+        double targetLevelDb)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(token);
@@ -309,6 +344,15 @@ internal static class VirtualDspEqHandoff
         // sends both sides to the left set, so a pair that changed since would deliver
         // the bank to settings the tune was never taken from.
         if (token.Mono != token.Channel.Pair.Mono)
+        {
+            return false;
+        }
+
+        // The window the curve was read through must still be where it was, and the
+        // level it was fitted against must still be the panel's answer too.
+        if (!Equals(token.GateTemplate, gateTemplate) ||
+            !Nullable.Equals(token.PinnedGateOffsetMs, pinnedGateOffsetMs) ||
+            !token.TargetLevelDb.Equals(targetLevelDb))
         {
             return false;
         }
@@ -345,6 +389,14 @@ internal static class VirtualDspEqHandoff
 
         // SideFor, not the active side: the user may have flipped L/R while editing.
         VirtualCrossoverChannelSettings settings = token.Channel.Pair.SideFor(token.RightSide);
+
+        // And the PEQ must still be the one the session opened on. The chain check
+        // above cannot see this — it excludes the very stage under edit — so without
+        // it a Load or Clear made in the panel meanwhile is a lost update.
+        if (!token.Peq.Equals(new PeqBankState(settings.PeqBands, settings.PeqPreampDb)))
+        {
+            return false;
+        }
         settings.PeqBands = curve.Bands.ToList();
         settings.PeqPreampDb = curve.PreampDb;
         settings.PeqSourceName = "EQ Wizard";

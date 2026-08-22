@@ -1904,12 +1904,31 @@ public partial class VirtualCrossoverPanel : UserControl
     /// leaves the wizard open so the tune is not lost.
     /// </summary>
     internal bool TryApplyPeqFromWizard(
-        VirtualDspEqReturnToken token, EqualizationCurve curve)
+        VirtualDspEqReturnToken token,
+        EqualizationCurve curve,
+        double targetLevelDb)
     {
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
         if (!VirtualDspEqHandoff.TryApplyReturn(
-                channels, token, curve, projectGeneration, project.CalibrationId))
+                channels,
+                token,
+                curve,
+                projectGeneration,
+                project.CalibrationId,
+                snapshot.Template,
+                snapshot.PinnedOffsetMs,
+                (double)numericTargetLevel.Value))
         {
             return false;
+        }
+
+        // The level travels back with the bank: it is where the tune was fitted to
+        // hang, and the guard above has already established that this panel's own
+        // answer is still the one the wizard started from — so writing it cannot
+        // overwrite a decision made here meanwhile.
+        if (!((double)numericTargetLevel.Value).Equals(targetLevelDb))
+        {
+            numericTargetLevel.Value = numericTargetLevel.ClampValue(targetLevelDb);
         }
 
         UpdatePeqReadouts(token.Channel);

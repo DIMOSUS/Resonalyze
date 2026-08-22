@@ -19,10 +19,17 @@ public partial class EqWizardPanel
     /// what happens next — landing the bank and switching the mode — because the
     /// wizard knows nothing of other panels.
     /// </summary>
+    /// <remarks>
+    /// The target LEVEL rides along with the bank. It is the user's knob here — the
+    /// wizard deliberately never moves it by itself — and the bank's preamp is fitted
+    /// against wherever they put it, so returning the filters without the level would
+    /// realize a tune aimed at a height the panel does not have.
+    /// </remarks>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    internal Action<VirtualDspEqReturnToken, EqualizationCurve>? ReturnPeqRequested
+    internal Action<VirtualDspEqReturnToken, EqualizationCurve, double>?
+        ReturnPeqRequested
     { get; set; }
 
     /// <summary>
@@ -122,7 +129,9 @@ public partial class EqWizardPanel
         // the host says so, and the wizard keeps the bank for an export instead.
         EndVirtualDspHandoff();
         ReturnPeqRequested?.Invoke(
-            token, new EqualizationCurve(bank.Bands, bank.PreampDb));
+            token,
+            new EqualizationCurve(bank.Bands, bank.PreampDb),
+            (double)NumericTargetOffset.Value);
     }
 
     // Leaves the session without applying: nothing lands on the channel, the wizard

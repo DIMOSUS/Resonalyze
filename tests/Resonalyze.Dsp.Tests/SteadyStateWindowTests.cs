@@ -131,8 +131,11 @@ public sealed class SteadyStateWindowTests
 
     // Which chain stages actually move the GATED magnitude — measured through the real
     // filter → window → FFT path, not argued from the ideal transfer function, and
-    // swept across the ranges the UI itself allows (delay to 100 ms; all-pass 10 Hz..
-    // 24 kHz with Q to 20). It is the evidence behind the
+    // sampled across the ranges the UI allows — delay at 2/10/25/50/100 ms, all-pass
+    // at 10/40/120/2000 Hz with Q 1/5/10/20. A sample, not a proof of the true
+    // maximum: enough to decide the policy (both stages clearly move the curve at the
+    // clamped rate) without claiming the extremum has been found. It is the evidence
+    // behind the
     // EQ Wizard handoff's return policy — a bank is refused when what it was fitted to
     // has moved — and this PR has already been wrong twice by reasoning from |H| alone
     // and then by measuring too narrow a case, so the policy is held to the sweep.

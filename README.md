@@ -1220,12 +1220,18 @@ pre-handoff bank. (A plain tab switch, by contrast, keeps the session open for
 coming back.) Loading any other source ends the session and hides both
 buttons.
 
+The **Target Level** travels back with the bank. It is your knob in the wizard,
+the bank's preamp is fitted against wherever you put it, and returning the
+filters without it would realize a tune aimed at a height the panel does not
+have.
+
 A return is refused — with the filters kept, ready for an export or a fresh
 edit — when what the bank was tuned against has changed since: the channel
 removed or replaced by another project, that side given a different
-measurement, the microphone calibration changed, the pair switched between
-stereo and mono (which moves where the settings live), or **any change to the
-chain** the curve was built through. Calibration is on that list for the same
+measurement, its PEQ loaded or cleared from the panel meanwhile, the gate
+moved, the microphone calibration or the panel's own target level changed, the
+pair switched between stereo and mono (which moves where the settings live), or
+**any change to the chain** the curve was built through. Calibration is on that list for the same
 reason the wizard locks its own calibration selector during a session — a bank
 fitted under one correction and summed under another is not the same bank, and
 the Virtual DSP panel's own selector is a tab switch away.

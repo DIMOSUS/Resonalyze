@@ -209,9 +209,10 @@ namespace Resonalyze
                     _ = OpenVirtualDspSourceInAnalyzersAsync(entryId, filePath);
             eqWizardPanel.BackToVirtualDspRequested = () =>
                 _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
-            eqWizardPanel.ReturnPeqRequested = (token, curve) =>
+            eqWizardPanel.ReturnPeqRequested = (token, curve, targetLevelDb) =>
             {
-                if (virtualCrossoverPanel.TryApplyPeqFromWizard(token, curve))
+                if (virtualCrossoverPanel.TryApplyPeqFromWizard(
+                        token, curve, targetLevelDb))
                 {
                     _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
                     return;
@@ -222,9 +223,10 @@ namespace Resonalyze
                     "This PEQ cannot be returned: what it was tuned against has " +
                     "changed since. The channel may have been removed or replaced " +
                     "by another project, given a different measurement, had its " +
-                    "DSP chain edited, switched between stereo and mono, or the " +
-                    "microphone calibration may have changed — a bank fitted " +
-                    "against one of those does not belong to the other." +
+                    "DSP chain edited, its PEQ replaced or cleared, its gate moved, " +
+                    "switched between stereo and mono, or the microphone calibration " +
+                    "or target level may have changed — a bank fitted against one of " +
+                    "those does not belong to the other." +
                     Environment.NewLine + Environment.NewLine +
                     "The filters stay here: export them, or start a fresh edit from " +
                     "the channel's PEQ menu to tune against what it shows now.",

@@ -1039,7 +1039,8 @@ three kinds: a **Captured** snapshot of a curve currently on the plot; an
 **Operation** between two operands, each a live plot curve or a captured slot
 (`A - B`, `B - A`, `A + B`, `(A + B) / 2`, `|A - B|`, or a frequency blend), plus
 the **complex (vector) sum** described below; or a parametric **Target** compared
-against a source.
+against a source. `A only` is the one-operand case: it draws curve A by itself, so
+the slot's own smoothing, offset and tilt apply to a single curve.
 
 Slots are stored automatically as human-readable JSON under the application data
 directory, as `overlays/<AnalysisMode>/overlay-01.json`. The numbered button
@@ -1056,7 +1057,17 @@ curve — updates live as the analysis settings change.
 Captured overlay settings cover a name, line color, thickness, style and opacity,
 optional `1/48` … `1/3` octave smoothing, and a **Clear** action for that slot
 alone; calculated overlays add the operands, the operation, optional
-amplitude-space math for dB views, and independent smoothing applied afterwards.
+amplitude-space math for dB views, an optional **tilt**, and independent smoothing
+applied afterwards.
+
+The **tilt** adds a straight line of so many dB per octave to the result, hinged at
+a **pivot frequency** where it changes nothing — the curve rotates about that
+frequency instead of moving. Its usual job is undoing the slope of the excitation
+itself: pink noise falls 3 dB per octave through a constant-bandwidth analyzer, so
+a `+3 dB/octave` tilt flattens it. Either sign is allowed, and because `A only`
+needs no second operand, the tilt can be applied to one measured curve on its own.
+It is available in the magnitude views (Frequency Response and Live Spectrum),
+where dB per octave means something.
 In **Phase Response** the difference operations are phase-aware: a wrapped
 operand makes the difference take the shortest angular distance so it never jumps
 by ±360°. Overlay JSON always stores the unsmoothed source points, so changing

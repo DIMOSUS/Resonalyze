@@ -1,4 +1,4 @@
-using System.Drawing;
+﻿using System.Drawing;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -654,6 +654,109 @@ public sealed class OverlayFileTests
             Assert.Equal(original.BlendFrequencyHz, loaded.BlendFrequencyHz);
             Assert.Equal(original.BlendWidthOctaves, loaded.BlendWidthOctaves);
             Assert.True(loaded.UseAmplitudeSpace);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SaveAndLoad_RoundTripsTiltAndCurveAOperation()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.LiveSpectrum,
+                Slot = 9,
+                Kind = OverlayKind.Operation,
+                Title = "Pink-compensated RTA",
+                SourceSlotA = 4,
+                // Curve A alone needs no second operand: the slot B still carries is
+                // never read, and must not be validated as if it were.
+                SourceSlotB = 4,
+                Operation = OverlayOperation.CurveA,
+                TiltEnabled = true,
+                TiltDbPerOctave = -4.5,
+                TiltPivotHz = 250,
+                ColorArgb = Color.Lime.ToArgb()
+            };
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.LiveSpectrum, 9, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(OverlayOperation.CurveA, loaded!.Operation);
+            Assert.True(loaded.TiltEnabled);
+            Assert.Equal(-4.5, loaded.TiltDbPerOctave);
+            Assert.Equal(250, loaded.TiltPivotHz);
+            // A file written before the tilt existed loads as off, at the defaults.
+            var legacy = new OverlayFile();
+            Assert.False(legacy.TiltEnabled);
+            Assert.Equal(OverlayFile.DefaultTiltDbPerOctave, legacy.TiltDbPerOctave);
+            Assert.Equal(OverlayFile.DefaultTiltPivotHz, legacy.TiltPivotHz);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_RejectsTiltOutsideMagnitudeModes()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var file = new OverlayFile
+            {
+                Mode = Mode.GroupDelay,
+                Slot = 5,
+                Kind = OverlayKind.Operation,
+                Title = "Tilted group delay",
+                SourceSlotA = 1,
+                SourceSlotB = 2,
+                Operation = OverlayOperation.AMinusB,
+                TiltEnabled = true,
+                ColorArgb = Color.White.ToArgb()
+            };
+
+            // dB per octave says nothing about milliseconds.
+            Assert.Throws<InvalidDataException>(() => file.Save(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(0, 6)]
+    [InlineData(1_000, 30)]
+    [InlineData(1_000, double.NaN)]
+    public void Save_RejectsInvalidTiltParameters(double pivotHz, double slopeDbPerOctave)
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var file = new OverlayFile
+            {
+                Mode = Mode.FrequencyResponse,
+                Slot = 6,
+                Kind = OverlayKind.Operation,
+                Title = "Bad tilt",
+                SourceSlotA = 1,
+                Operation = OverlayOperation.CurveA,
+                TiltEnabled = true,
+                TiltPivotHz = pivotHz,
+                TiltDbPerOctave = slopeDbPerOctave,
+                ColorArgb = Color.White.ToArgb()
+            };
+
+            Assert.Throws<InvalidDataException>(() => file.Save(root));
         }
         finally
         {

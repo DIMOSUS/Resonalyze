@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 using Resonalyze.Ui;
 
 namespace Resonalyze;
@@ -26,6 +26,9 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         double blendFrequencyHz,
         double blendWidthOctaves,
         bool useAmplitudeSpace,
+        bool tiltEnabled,
+        double tiltDbPerOctave,
+        double tiltPivotHz,
         double compareDelayMs,
         bool compareInvertPolarity,
         Color color,
@@ -60,6 +63,15 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             1,
             1_000_000);
         amplitudeSpaceCheckBox.Checked = useAmplitudeSpace && supportsAmplitudeSpace;
+        tiltCheckBox.Checked = tiltEnabled && SupportsTilt;
+        tiltSlopeInput.Value = (decimal)Math.Clamp(
+            tiltDbPerOctave,
+            (double)tiltSlopeInput.Minimum,
+            (double)tiltSlopeInput.Maximum);
+        tiltPivotInput.Value = (decimal)Math.Clamp(
+            tiltPivotHz,
+            (double)tiltPivotInput.Minimum,
+            (double)tiltPivotInput.Maximum);
         numericTimeOffset.Value = (decimal)Math.Clamp(
             compareDelayMs,
             (double)numericTimeOffset.Minimum,
@@ -75,8 +87,13 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         UpdateColorButton();
         UpdateOpacityLabel();
         UpdateBlendControls();
+        UpdateTiltControls();
         initialized = true;
     }
+
+    // A tilt is a dB-per-octave statement, so it rides on the same modes as the
+    // amplitude-space math: the magnitude views.
+    private bool SupportsTilt => supportsAmplitudeSpace;
 
     public string OverlayName => nameTextBox.Text.Trim();
     public int SourceSlotA => SlotOf(sourceAComboBox);
@@ -89,6 +106,9 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     public double BlendWidthOctaves =>
         ((BlendWidthOption)blendWidthInput.SelectedItem!).Octaves;
     public bool UseAmplitudeSpace => amplitudeSpaceCheckBox.Checked;
+    public bool TiltEnabled => SupportsTilt && tiltCheckBox.Checked;
+    public double TiltDbPerOctave => (double)tiltSlopeInput.Value;
+    public double TiltPivotHz => (double)tiltPivotInput.Value;
     public double CompareDelayMs => (double)numericTimeOffset.Value;
     public bool CompareInvertPolarity => checkBoxInvPhase.Checked;
     public Color SelectedColor => selectedColor;
@@ -193,6 +213,13 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         blendFrequencyInput.ValueChanged += (_, _) => NotifyPreview();
         blendWidthInput.SelectedIndexChanged += (_, _) => NotifyPreview();
         amplitudeSpaceCheckBox.CheckedChanged += (_, _) => NotifyPreview();
+        tiltCheckBox.CheckedChanged += (_, _) =>
+        {
+            UpdateTiltControls();
+            NotifyPreview();
+        };
+        tiltSlopeInput.ValueChanged += (_, _) => NotifyPreview();
+        tiltPivotInput.ValueChanged += (_, _) => NotifyPreview();
         numericTimeOffset.ValueChanged += (_, _) => NotifyPreview();
         checkBoxInvPhase.CheckedChanged += (_, _) => NotifyPreview();
         thicknessInput.ValueChanged += (_, _) => NotifyPreview();
@@ -227,6 +254,9 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             BlendFrequencyHz,
             BlendWidthOctaves,
             UseAmplitudeSpace,
+            TiltEnabled,
+            TiltDbPerOctave,
+            TiltPivotHz,
             CompareDelayMs,
             CompareInvertPolarity,
             SelectedColor,
@@ -243,6 +273,18 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         UiStyle.SetTextEnabledLook(smoothingLabel, supportsSmoothing);
         smoothingComboBox.Enabled = supportsSmoothing;
         UiStyle.SetTextEnabledLook(amplitudeSpaceCheckBox, supportsAmplitudeSpace, interactive: true);
+        UiStyle.SetTextEnabledLook(tiltCheckBox, SupportsTilt, interactive: true);
+    }
+
+    // The two tilt numbers only mean something once the tilt is switched on — and the
+    // tilt itself only in the magnitude views.
+    private void UpdateTiltControls()
+    {
+        bool enabled = SupportsTilt && tiltCheckBox.Checked;
+        UiStyle.SetTextEnabledLook(tiltPivotLabel, enabled);
+        tiltPivotInput.Enabled = enabled;
+        UiStyle.SetTextEnabledLook(tiltSlopeLabel, enabled);
+        tiltSlopeInput.Enabled = enabled;
     }
 
     private void InitializeToolTips()
@@ -260,7 +302,9 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             "Curve B — a live plot curve (tracks the analysis) or a captured overlay slot.");
         toolTip.SetToolTip(
             operationComboBox,
-            "Calculation applied between curve A and curve B. The complex sum instead " +
+            "Calculation applied between curve A and curve B — or \"A only\", which " +
+            "draws curve A alone, so this slot's smoothing, offset and tilt can be " +
+            "applied to a single curve. The complex sum instead " +
             "adds the Main and Compare transfer responses as complex spectra " +
             "(delay, polarity, and phase included) — the physically summed output of " +
             "two sources; it needs a Compare measurement with a transfer IR.");
@@ -281,6 +325,19 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             checkBoxInvPhase,
             "Invert the polarity of the Compare response before the complex sum — " +
             "the phase/polarity switch of that DSP channel.");
+        toolTip.SetToolTip(
+            tiltCheckBox,
+            "Add a straight slope to the result, in dB per octave. Typically undoes the " +
+            "slope of the excitation itself — pink noise falls 3 dB per octave through " +
+            "a constant-bandwidth analyzer.");
+        tiltPivotInput.ApplyToolTip(
+            toolTip,
+            "Frequency the tilt hinges on: the curve is unchanged here and rotates " +
+            "about it.");
+        tiltSlopeInput.ApplyToolTip(
+            toolTip,
+            "Decibels added per octave above the pivot (and subtracted per octave " +
+            "below it). Either sign.");
         toolTip.SetToolTip(colorButton, "Curve color.");
         thicknessInput.ApplyToolTip(toolTip, "Line thickness.");
         toolTip.SetToolTip(styleComboBox, "Line style (solid, dash, dot, dash-dot).");
@@ -296,10 +353,14 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
         OverlayOperandOption? a = OperandOf(sourceAComboBox);
         OverlayOperandOption? b = OperandOf(sourceBComboBox);
-        // Complex sum (and its loss variant) has no operands to validate — sources are fixed.
-        bool operandsValid =
-            Operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss ||
-            (a != null && b != null && !SameOperand(a, b));
+        // Complex sum (and its loss variant) has no operands to validate — sources are
+        // fixed; "A only" has just the one, which may freely equal whatever B still holds.
+        bool operandsValid = Operation switch
+        {
+            OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss => true,
+            OverlayOperation.CurveA => a != null,
+            _ => a != null && b != null && !SameOperand(a, b)
+        };
         bool valid = OverlayName.Length > 0 && operandsValid;
         if (valid)
         {
@@ -338,6 +399,8 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     private IEnumerable<DarkNumericUpDown> NumericInputs()
     {
         yield return blendFrequencyInput;
+        yield return tiltPivotInput;
+        yield return tiltSlopeInput;
         yield return numericTimeOffset;
         yield return thicknessInput;
     }
@@ -350,22 +413,25 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         }
     }
 
-    // Blend frequency / width only apply to the Blend operation, and the complex sum
-    // takes no operands at all (it reads the Main and Compare transfer IRs directly);
-    // the inapplicable controls are greyed out rather than hidden so nothing shifts.
+    // Blend frequency / width only apply to the Blend operation, "A only" uses just the
+    // first operand, and the complex sum takes no operands at all (it reads the Main and
+    // Compare transfer IRs directly); the inapplicable controls are greyed out rather
+    // than hidden so nothing shifts.
     private void UpdateBlendControls()
     {
         OverlayOperation? op = operationComboBox.SelectedItem as OverlayOperation?;
         bool isBlend = op == OverlayOperation.Blend;
         bool isComplexSum = op is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss;
+        // "A only" reads one curve, so operand B is greyed out as well.
+        bool usesB = !isComplexSum && op != OverlayOperation.CurveA;
         UiStyle.SetTextEnabledLook(blendFrequencyLabel, isBlend);
         blendFrequencyInput.Enabled = isBlend;
         UiStyle.SetTextEnabledLook(blendWidthLabel, isBlend);
         blendWidthInput.Enabled = isBlend;
         UiStyle.SetTextEnabledLook(curveALabel, !isComplexSum);
         sourceAComboBox.Enabled = !isComplexSum;
-        UiStyle.SetTextEnabledLook(curveBLabel, !isComplexSum);
-        sourceBComboBox.Enabled = !isComplexSum;
+        UiStyle.SetTextEnabledLook(curveBLabel, usesB);
+        sourceBComboBox.Enabled = usesB;
         // Complex sum is inherently amplitude-domain math; the checkbox is moot.
         UiStyle.SetTextEnabledLook(
             amplitudeSpaceCheckBox, supportsAmplitudeSpace && !isComplexSum, interactive: true);
@@ -464,6 +530,9 @@ internal sealed record OverlayOperationPreview(
     double BlendFrequencyHz,
     double BlendWidthOctaves,
     bool UseAmplitudeSpace,
+    bool TiltEnabled,
+    double TiltDbPerOctave,
+    double TiltPivotHz,
     double CompareDelayMs,
     bool CompareInvertPolarity,
     Color Color,
@@ -504,6 +573,7 @@ internal static class OverlayOperationLabels
     {
         return operation switch
         {
+            OverlayOperation.CurveA => "A only",
             OverlayOperation.AMinusB => "A - B",
             OverlayOperation.BMinusA => "B - A",
             OverlayOperation.Sum => "A + B",

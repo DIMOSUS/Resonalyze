@@ -684,6 +684,12 @@ public sealed class Overlay
     private double blendFrequencyHz = 1_000;
     private double blendWidthOctaves = 1;
     private bool useAmplitudeSpace;
+    // A straight slope (dB/octave) added to the result, hinged at the pivot frequency
+    // where it adds nothing — the compensation for an excitation whose own spectrum is
+    // sloped. Off by default; the slope may point either way.
+    private bool tiltEnabled;
+    private double tiltDbPerOctave = OverlayFile.DefaultTiltDbPerOctave;
+    private double tiltPivotHz = OverlayFile.DefaultTiltPivotHz;
     // ComplexSum only: delay (ms) and polarity flip applied to the Compare response.
     private double compareDelayMs;
     private bool compareInvertPolarity;
@@ -887,7 +893,11 @@ public sealed class Overlay
 
     private bool ReferencesLiveCurve =>
         kind == OverlayKind.Operation &&
-        (sourceCurveKeyA != null || sourceCurveKeyB != null);
+        (sourceCurveKeyA != null || (UsesOperandB && sourceCurveKeyB != null));
+
+    // "A only" reads one curve, so operand B — and whatever stale slot or curve key it
+    // still holds — takes no part in availability, resolution or validation.
+    private bool UsesOperandB => operation != OverlayOperation.CurveA;
 
     // Complex sum reads the Main and Compare transfer IRs from the measurement, not
     // from operands; like a live-curve operation it recomputes on every rebuild and
@@ -2113,6 +2123,9 @@ public sealed class Overlay
             // A brand-new calculated overlay defaults to amplitude space; editing an
             // existing one keeps whatever was saved.
             operationConfigured ? useAmplitudeSpace : true,
+            tiltEnabled,
+            tiltDbPerOctave,
+            tiltPivotHz,
             compareDelayMs,
             compareInvertPolarity,
             kind == OverlayKind.Operation ? panel.BackColor : defaultColor,
@@ -2154,6 +2167,9 @@ public sealed class Overlay
         blendFrequencyHz = dialog.BlendFrequencyHz;
         blendWidthOctaves = dialog.BlendWidthOctaves;
         useAmplitudeSpace = dialog.UseAmplitudeSpace;
+        tiltEnabled = dialog.TiltEnabled;
+        tiltDbPerOctave = dialog.TiltDbPerOctave;
+        tiltPivotHz = dialog.TiltPivotHz;
         compareDelayMs = dialog.CompareDelayMs;
         compareInvertPolarity = dialog.CompareInvertPolarity;
         SetPanelColor(dialog.SelectedColor);
@@ -2312,6 +2328,9 @@ public sealed class Overlay
             blendFrequencyHz = file.BlendFrequencyHz;
             blendWidthOctaves = file.BlendWidthOctaves;
             useAmplitudeSpace = file.UseAmplitudeSpace;
+            tiltEnabled = file.TiltEnabled;
+            tiltDbPerOctave = file.TiltDbPerOctave;
+            tiltPivotHz = file.TiltPivotHz;
             compareDelayMs = file.CompareDelayMs;
             compareInvertPolarity = file.CompareInvertPolarity;
             // Availability is resolved by RefreshSources after all slots load.
@@ -2425,6 +2444,9 @@ public sealed class Overlay
             file.BlendFrequencyHz = blendFrequencyHz;
             file.BlendWidthOctaves = blendWidthOctaves;
             file.UseAmplitudeSpace = useAmplitudeSpace;
+            file.TiltEnabled = tiltEnabled;
+            file.TiltDbPerOctave = tiltDbPerOctave;
+            file.TiltPivotHz = tiltPivotHz;
             file.CompareDelayMs = compareDelayMs;
             file.CompareInvertPolarity = compareInvertPolarity;
         }
@@ -2483,6 +2505,9 @@ public sealed class Overlay
         blendFrequencyHz,
         blendWidthOctaves,
         useAmplitudeSpace,
+        tiltEnabled,
+        tiltDbPerOctave,
+        tiltPivotHz,
         compareDelayMs,
         compareInvertPolarity,
         panel.BackColor,
@@ -2505,17 +2530,18 @@ public sealed class Overlay
         if (settings.Operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss)
         {
             return BuildComplexSumPoints(
-                settings.CompareDelayMs,
-                settings.CompareInvertPolarity,
-                settings.SmoothingInverseOctaves,
+                settings,
                 showLoss: settings.Operation == OverlayOperation.ComplexSumLoss);
         }
 
+        bool usesB = settings.Operation != OverlayOperation.CurveA;
         OverlayOperationSource? sourceA =
             ResolveOperand(settings.SourceCurveKeyA, settings.SourceSlotA);
-        OverlayOperationSource? sourceB =
-            ResolveOperand(settings.SourceCurveKeyB, settings.SourceSlotB);
-        if (sourceA == null || sourceB == null)
+        // "A only" never reads B, so an unresolvable B must not veto the curve.
+        OverlayOperationSource? sourceB = usesB
+            ? ResolveOperand(settings.SourceCurveKeyB, settings.SourceSlotB)
+            : null;
+        if (sourceA == null || (usesB && sourceB == null))
         {
             return null;
         }
@@ -2526,11 +2552,11 @@ public sealed class Overlay
         // (the default, plus minimum/excess phase) keep the raw subtraction so their slope
         // (and hence delay) survives. Unknown representations are treated as unwrapped.
         bool wrapPhaseDifference = SeriesMode == Mode.PhaseResponse &&
-            (sourceA.PhaseUnwrapped == false || sourceB.PhaseUnwrapped == false);
+            (sourceA.PhaseUnwrapped == false || sourceB?.PhaseUnwrapped == false);
 
         OverlayPoint[] points = OverlayMath.CalculateOperation(
             sourceA.Points,
-            sourceB.Points,
+            sourceB?.Points ?? Array.Empty<OverlayPoint>(),
             settings.Operation,
             settings.BlendFrequencyHz,
             settings.BlendWidthOctaves,
@@ -2545,18 +2571,39 @@ public sealed class Overlay
             return null;
         }
 
+        return ApplyOffsetAndTilt(points, settings);
+    }
+
+    // The slot's vertical offset and its tilt, applied together as the last step: both
+    // move the drawn curve without belonging to the math above, and the tilt is just the
+    // offset generalized to a slope — 0 dB at the pivot, TiltDbPerOctave per octave from
+    // it. Applied AFTER smoothing so the smoother still sees the measured shape.
+    private DataPoint[] ApplyOffsetAndTilt(
+        IReadOnlyList<OverlayPoint> points,
+        OverlayOperationPreview settings)
+    {
         double offset = (double)offsetControl.Value;
-        return points
-            .Select(point => new DataPoint(point.X, point.Y + offset))
-            .ToArray();
+        var result = new DataPoint[points.Count];
+        for (int i = 0; i < points.Count; i++)
+        {
+            OverlayPoint point = points[i];
+            double tilt = settings.TiltEnabled
+                ? OverlayMath.TiltDb(
+                    point.X,
+                    settings.TiltDbPerOctave,
+                    settings.TiltPivotHz)
+                : 0;
+            result[i] = new DataPoint(point.X, point.Y + offset + tilt);
+        }
+
+        return result;
     }
 
     private DataPoint[]? BuildComplexSumPoints(
-        double delayMs,
-        bool invertPolarity,
-        int smoothing,
+        OverlayOperationPreview settings,
         bool showLoss = false)
     {
+        int smoothing = settings.SmoothingInverseOctaves;
         // The loss curve is a RATIO of two responses, not a level: it is divided out
         // of unsmoothed operands and smoothed once, by the measurement pipeline, at
         // THIS slot's width (see DataHelper.SmoothRatioLevels). Handing that width
@@ -2565,8 +2612,8 @@ public sealed class Overlay
         // psychoacoustic mode's variable bandwidth, which the overlay smoother —
         // magnitude-only by construction — would flatten to a fixed 1/6 octave.
         OverlayPoint[]? sumPoints = collection.Form.BuildComplexSumOverlayPoints(
-            delayMs,
-            invertPolarity,
+            settings.CompareDelayMs,
+            settings.CompareInvertPolarity,
             showLoss,
             showLoss ? smoothing : null);
         if (sumPoints == null || sumPoints.Length < 2)
@@ -2577,10 +2624,7 @@ public sealed class Overlay
         OverlayPoint[] smoothed = showLoss
             ? sumPoints
             : OverlayMath.SmoothByOctaves(sumPoints, smoothing);
-        double offset = (double)offsetControl.Value;
-        return smoothed
-            .Select(point => new DataPoint(point.X, point.Y + offset))
-            .ToArray();
+        return ApplyOffsetAndTilt(smoothed, settings);
     }
 
     // Redraws this slot's series with the dialog's candidate settings — operands,
@@ -2639,8 +2683,10 @@ public sealed class Overlay
         out OverlayOperationSource? sourceB)
     {
         sourceA = ResolveOperand(sourceCurveKeyA, sourceSlotA);
-        sourceB = ResolveOperand(sourceCurveKeyB, sourceSlotB);
-        return sourceA != null && sourceB != null;
+        sourceB = UsesOperandB
+            ? ResolveOperand(sourceCurveKeyB, sourceSlotB)
+            : null;
+        return sourceA != null && (sourceB != null || !UsesOperandB);
     }
 
     // A live-curve operand (curveKey set) resolves from the current plot each time, so
@@ -2806,6 +2852,9 @@ public sealed class Overlay
         blendFrequencyHz = 1_000;
         blendWidthOctaves = 1;
         useAmplitudeSpace = false;
+        tiltEnabled = false;
+        tiltDbPerOctave = OverlayFile.DefaultTiltDbPerOctave;
+        tiltPivotHz = OverlayFile.DefaultTiltPivotHz;
         compareDelayMs = 0;
         compareInvertPolarity = false;
         targetConfigured = false;

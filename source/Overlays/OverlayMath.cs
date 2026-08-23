@@ -189,6 +189,30 @@ public static class OverlayMath
             lower?.ToArray() ?? Array.Empty<OverlayPoint>());
     }
 
+    /// <summary>
+    /// The decibels a straight slope of <paramref name="tiltDbPerOctave"/> dB per octave
+    /// adds at <paramref name="frequencyHz"/>. The line hinges at
+    /// <paramref name="pivotHz"/>, where it adds nothing, so the tilt rotates a curve
+    /// about that frequency instead of moving it. Typical use is undoing the slope of the
+    /// excitation itself: pink noise falls 3 dB per octave through a constant-bandwidth
+    /// analyzer, and either sign is allowed.
+    /// </summary>
+    public static double TiltDb(
+        double frequencyHz,
+        double tiltDbPerOctave,
+        double pivotHz)
+    {
+        if (tiltDbPerOctave == 0 ||
+            !double.IsFinite(tiltDbPerOctave) ||
+            !(frequencyHz > 0) ||
+            !(pivotHz > 0))
+        {
+            return 0;
+        }
+
+        return tiltDbPerOctave * Math.Log2(frequencyHz / pivotHz);
+    }
+
     public static OverlayPoint[] CalculateOperation(
         IReadOnlyList<OverlayPoint> a,
         IReadOnlyList<OverlayPoint> b,
@@ -200,6 +224,13 @@ public static class OverlayMath
     {
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(b);
+
+        // Curve A alone: there is no operand to interpolate onto A's grid, so B is not
+        // read at all — the caller may not even have resolved one.
+        if (operation == OverlayOperation.CurveA)
+        {
+            return a.ToArray();
+        }
 
         if (a.Count == 0 ||
             b.Count < 2)

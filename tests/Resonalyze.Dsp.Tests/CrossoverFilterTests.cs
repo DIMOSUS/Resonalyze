@@ -85,6 +85,7 @@ public sealed class CrossoverFilterTests
     [Theory]
     [InlineData(12)]
     [InlineData(24)]
+    [InlineData(36)]
     [InlineData(48)]
     public void LinkwitzRiley_IsMinus6DbAtCorner(int slope)
     {
@@ -114,23 +115,51 @@ public sealed class CrossoverFilterTests
         Assert.Equal(slope, at800 - at1600, 0.5);
     }
 
-    [Fact]
-    public void LinkwitzRiley24_PairSumsToAllpass()
+    [Theory]
+    [InlineData(12, true)]
+    [InlineData(24, false)]
+    [InlineData(36, true)]
+    [InlineData(48, false)]
+    public void LinkwitzRiley_PairSumsToAllpass(int slope, bool oneSideInverted)
     {
-        // The defining LR property: the low-pass and high-pass halves are exactly
-        // in phase, so their complex sum has unit magnitude at every frequency.
-        // The bilinear transform preserves the algebraic identity, so it holds for
-        // the digital cascade too.
-        CrossoverSpec lowPass = LowPass(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
-        CrossoverSpec highPass = HighPass(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        // The defining LR property: the low-pass and high-pass halves have the
+        // same magnitude and differ in phase by (n/2)·180° at every frequency, so
+        // their complex sum has unit magnitude — directly when n/2 is even (LR24,
+        // LR48), and with one side inverted when n/2 is odd (LR12, LR36), which is
+        // the polarity flip a DSP applies to one driver of such a pair. The
+        // bilinear transform preserves the algebraic identity, so it holds for the
+        // digital cascade too.
+        CrossoverSpec lowPass = LowPass(CrossoverFilterFamily.LinkwitzRiley, 1_000, slope);
+        CrossoverSpec highPass = HighPass(CrossoverFilterFamily.LinkwitzRiley, 1_000, slope);
+        double sign = oneSideInverted ? -1.0 : 1.0;
 
         foreach (double frequency in new[] { 100.0, 500.0, 1_000.0, 2_000.0, 10_000.0 })
         {
             Complex sum =
                 CrossoverFilter.Response(lowPass, frequency, SampleRate) +
-                CrossoverFilter.Response(highPass, frequency, SampleRate);
+                sign * CrossoverFilter.Response(highPass, frequency, SampleRate);
             Assert.Equal(0.0, MagnitudeDb(sum), 6);
         }
+    }
+
+    [Fact]
+    public void LinkwitzRiley36_RollsOffAtThirtySixDbPerOctave()
+    {
+        // LR36 is BW18 squared: the same biquad + first-order pair cascaded twice,
+        // so one stopband octave (800 Hz -> 1.6 kHz for a 200 Hz corner) attenuates
+        // by 36 dB — the slope the DSP's label promises.
+        CrossoverSpec spec = LowPass(CrossoverFilterFamily.LinkwitzRiley, 200, 36);
+
+        double at800 = MagnitudeDb(CrossoverFilter.Response(spec, 800, SampleRate));
+        double at1600 = MagnitudeDb(CrossoverFilter.Response(spec, 1_600, SampleRate));
+
+        Assert.Equal(36, at800 - at1600, 0.5);
+        Assert.Equal(
+            4,
+            CrossoverFilter.BuildSections(
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 200, 36),
+                highPass: false,
+                SampleRate).Count);
     }
 
     [Theory]

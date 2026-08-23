@@ -621,7 +621,7 @@ captured *before* the DSP, so the measured transfer response carries the
 protection as if it were the driver's own roll-off.
 
 The **HPF** row tells Resonalyze which filter is in the way: `Butterworth` (6 dB
-steps up to 48 dB/oct) or `Linkwitz-Riley` (12 / 24 / 48 dB/oct), plus its corner
+steps up to 48 dB/oct) or `Linkwitz-Riley` (12 / 24 / 36 / 48 dB/oct), plus its corner
 frequency. The measurement then divides that known magnitude **and phase** out of
 the loopback-referenced transfer impulse response — the equivalent of filtering
 the clean reference through the same high-pass before dividing, while the
@@ -1370,7 +1370,7 @@ Each channel runs through:
   physical driver offset (343 m/s)
 - **Invert** — the DSP polarity switch
 - **Crossover** — Off, low-pass, high-pass, or band-pass; each edge picks
-  **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/48 dB/oct),
+  **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/36/48 dB/oct),
   **Bessel** (6–48 dB/oct, near-constant group delay), or **Chebyshev**
   (6–48 dB/oct, with a selectable passband **ripple**) with its own corner
 - **All-pass** — 1st order (180° of phase swing) or 2nd order (360°, with a **Q**

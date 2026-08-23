@@ -414,7 +414,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "Filter slope (dB/oct): steeper isolates the band harder\r\n" +
             "but rotates phase more around the corner.\r\n" +
             "The available slopes follow the chosen family\r\n" +
-            "(Linkwitz-Riley only 12/24/48).";
+            "(Linkwitz-Riley only 12/24/36/48).";
         string rippleTip =
             "Chebyshev passband ripple (dB): trades passband flatness\r\n" +
             "for a steeper knee — more ripple, steeper cut.\r\n" +
@@ -599,7 +599,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         PopulateSlopes(familyComboBox, slopeComboBox);
     }
 
-    // Each family offers its own slope list (LR only exists in 12/24/48); the
+    // Each family offers its own slope list (LR only exists in 12/24/36/48); the
     // current slope is kept when the other family supports it too.
     private static void PopulateSlopes(DarkComboBox familyComboBox, DarkComboBox slopeComboBox)
     {

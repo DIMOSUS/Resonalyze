@@ -104,6 +104,32 @@ internal static class SampleRateOptions
         }
     }
 
+    /// <summary>
+    /// Which entry of a rate list to select, or -1 when there is nothing to select.
+    /// </summary>
+    /// <remarks>
+    /// The empty list is the case this exists for. It is a real outcome — no rate opens
+    /// for this configuration — and the combo that shows it has no entry to select, so
+    /// asking for entry 0 there throws where the panel cannot recover: the rebuild is
+    /// abandoned half-done and the settings window stops responding to selections. The
+    /// fallback to 0 on a non-empty list is defensive; <see cref="Resolve"/> only ever
+    /// names a rate the list contains.
+    /// </remarks>
+    public static int FindRateIndex(IReadOnlyList<int> rates, int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(rates);
+
+        for (int i = 0; i < rates.Count; i++)
+        {
+            if (rates[i] == sampleRate)
+            {
+                return i;
+            }
+        }
+
+        return rates.Count > 0 ? 0 : -1;
+    }
+
     /// <param name="probeFailed">
     /// Whether the probe produced no answer at all. An empty <paramref name="supportedRates"/>
     /// cannot stand in for this: it is a real answer everywhere except ASIO — WASAPI Shared

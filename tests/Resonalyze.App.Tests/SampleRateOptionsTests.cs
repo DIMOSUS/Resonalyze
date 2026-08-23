@@ -150,6 +150,26 @@ public sealed class SampleRateOptionsTests
         Assert.Contains("Wave devices", error.Message);
     }
 
+    // The crash this round: WASAPI Exclusive with Mono playback asks both endpoints for
+    // a one-channel format, which endpoints that only take their native stereo format
+    // refuse at every rate. The empty list that answers is correct — and selecting entry
+    // 0 of it threw out of the rebuild, so the settings window went on ignoring every
+    // selection until it was closed and reopened.
+    [Fact]
+    public void AnEmptyListHasNothingToSelect()
+    {
+        Assert.Equal(-1, SampleRateOptions.FindRateIndex([], 48_000));
+    }
+
+    [Fact]
+    public void TheSelectedRateIsFoundWhereItSits()
+    {
+        Assert.Equal(0, SampleRateOptions.FindRateIndex([44_100, 48_000, 96_000], 44_100));
+        Assert.Equal(2, SampleRateOptions.FindRateIndex([44_100, 48_000, 96_000], 96_000));
+        // Defensive: Resolve only ever names a rate the list holds.
+        Assert.Equal(0, SampleRateOptions.FindRateIndex([44_100, 48_000], 192_000));
+    }
+
     [Fact]
     public void AReportedRatePasses()
     {

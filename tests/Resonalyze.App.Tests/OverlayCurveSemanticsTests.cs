@@ -5,19 +5,22 @@ namespace Resonalyze.App.Tests;
 public sealed class OverlayCurveSemanticsTests
 {
     private static readonly OverlayCurveSemantics SplDecibels =
-        OverlayCurveSemantics.ForCapture(MagnitudeScale.SoundPressureLevel, "decibel");
+        OverlayCurveSemantics.ForCurve(MagnitudeScale.SoundPressureLevel, "decibel");
     private static readonly OverlayCurveSemantics RelativeDecibels =
-        OverlayCurveSemantics.ForCapture(MagnitudeScale.Relative, "decibel");
+        OverlayCurveSemantics.ForCurve(MagnitudeScale.Relative, "decibel");
     // A capture records whatever magnitude scale the plot was showing — coherence
     // included — so this is what a real captured coherence slot holds.
     private static readonly OverlayCurveSemantics CapturedCoherence =
-        OverlayCurveSemantics.ForCapture(
+        OverlayCurveSemantics.ForCurve(
             MagnitudeScale.SoundPressureLevel,
             PlotModelFactory.CoherenceAxisKey);
+    // A live curve is built the same way, from the scale showing right now.
     private static readonly OverlayCurveSemantics LiveCoherence =
-        OverlayCurveSemantics.ForLiveCurve(PlotModelFactory.CoherenceAxisKey);
-    private static readonly OverlayCurveSemantics LiveDecibels =
-        OverlayCurveSemantics.ForLiveCurve("decibel");
+        OverlayCurveSemantics.ForCurve(
+            MagnitudeScale.Relative,
+            PlotModelFactory.CoherenceAxisKey);
+    private static readonly OverlayCurveSemantics LiveRelativeDecibels =
+        OverlayCurveSemantics.ForCurve(MagnitudeScale.Relative, "decibel");
 
     private static OverlayOperationResult Result(
         OverlayOperation operation,
@@ -84,17 +87,41 @@ public sealed class OverlayCurveSemanticsTests
         // level, and treating that as "states no scale" would let it draw on BOTH axes.
         // Same for coherence against decibels.
         Assert.False(Result(operation, SplDecibels, RelativeDecibels).IsDefined);
-        Assert.False(Result(operation, CapturedCoherence, LiveDecibels).IsDefined);
+        Assert.False(Result(operation, CapturedCoherence, LiveRelativeDecibels).IsDefined);
         Assert.False(OverlayCurveSemantics.AreCompatible(SplDecibels, RelativeDecibels));
-        Assert.False(OverlayCurveSemantics.AreCompatible(CapturedCoherence, LiveDecibels));
+        Assert.False(OverlayCurveSemantics.AreCompatible(
+            CapturedCoherence,
+            LiveRelativeDecibels));
+    }
+
+    [Fact]
+    public void ALiveOperand_IsJudgedByTheScaleItIsDrawnOn()
+    {
+        // A live curve is redrawn on every rebuild, which does not make its numbers
+        // vague: on a relative plot they ARE relative, and taking a dB SPL capture away
+        // from them is the same ~80 dB of nothing as between two captures.
+        Assert.False(OverlayCurveSemantics.AreCompatible(
+            SplDecibels,
+            LiveRelativeDecibels));
+        Assert.False(Result(
+            OverlayOperation.AMinusB,
+            SplDecibels,
+            LiveRelativeDecibels).IsDefined);
+        // On the dB SPL plot the same live curve is dB SPL, and the pair is fine.
+        Assert.True(Result(
+            OverlayOperation.AMinusB,
+            SplDecibels,
+            OverlayCurveSemantics.ForCurve(
+                MagnitudeScale.SoundPressureLevel,
+                "decibel")).IsDefined);
     }
 
     [Fact]
     public void AnOperandThatStatesNothing_IsCompatibleWithAnything()
     {
-        // A live curve states no magnitude scale (it is drawn on whichever axis is
-        // showing), and an imported or legacy capture states no axis. Neither may veto.
-        Assert.True(OverlayCurveSemantics.AreCompatible(SplDecibels, LiveDecibels));
+        // A coherence trace states no magnitude scale, and an imported or legacy capture
+        // states no axis. Neither may veto what it says nothing about.
+        Assert.True(OverlayCurveSemantics.AreCompatible(CapturedCoherence, LiveCoherence));
         Assert.True(OverlayCurveSemantics.AreCompatible(
             SplDecibels,
             new OverlayCurveSemantics(MagnitudeScale.SoundPressureLevel, null)));
@@ -122,15 +149,20 @@ public sealed class OverlayCurveSemanticsTests
     [InlineData(OverlayOperation.Sum)]
     [InlineData(OverlayOperation.Average)]
     [InlineData(OverlayOperation.Blend)]
-    public void ALevelPreservingOperation_InheritsWhicheverOperandStatesAScale(
+    public void ALevelPreservingOperation_KeepsTheLevelItReproduces(
         OverlayOperation operation)
     {
-        Assert.Equal(
-            MagnitudeScale.SoundPressureLevel,
-            Result(operation, SplDecibels, LiveDecibels).Curve.Scale);
-        Assert.Equal(
-            MagnitudeScale.SoundPressureLevel,
-            Result(operation, LiveDecibels, SplDecibels).Curve.Scale);
+        // Compatible operands agree, so the result is pinned exactly as they are.
+        OverlayOperationResult result = Result(operation, SplDecibels, SplDecibels);
+
+        Assert.True(result.IsDefined);
+        Assert.Equal(MagnitudeScale.SoundPressureLevel, result.Curve.Scale);
+        Assert.False(result.Curve.DrawsOn(
+            Mode.FrequencyResponse,
+            MagnitudeScale.Relative));
+        // An operand with no scale of its own to state — a coherence trace — leaves the
+        // other to answer, on the axis they share.
+        Assert.Null(Result(operation, CapturedCoherence, LiveCoherence).Curve.Scale);
     }
 
     [Theory]

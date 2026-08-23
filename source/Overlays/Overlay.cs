@@ -410,11 +410,13 @@ public sealed class OverlayCollection
             .FirstOrDefault(series =>
                 series.Tag is CurveTag tag && tag.Key == key && series.Points.Count >= 2);
 
-    // A live curve is drawn on the axis showing right now, so it states no magnitude
-    // scale of its own — but it does carry the Y axis it is drawn against (coherence
-    // lives on its own), and an operation over it must land there too.
-    private static OverlayCurveSemantics LiveCurveSemantics(LineSeries series) =>
-        OverlayCurveSemantics.ForLiveCurve(series.YAxisKey);
+    // A live curve is drawn on the axis showing right now, so it states THAT scale —
+    // not "no scale": while the plot is relative its numbers are relative, and mixing a
+    // dB SPL capture into them is the same error as between two captures. It is re-read
+    // on every rebuild, so the statement follows the axis switch. It also carries the Y
+    // axis it is drawn against (coherence lives on its own), which the result inherits.
+    private OverlayCurveSemantics LiveCurveSemantics(LineSeries series) =>
+        OverlayCurveSemantics.ForCurve(CurrentMagnitudeScale, series.YAxisKey);
 
     // Live analysis curves on the current plot that an operation operand can reference
     // directly (every such curve carries a CurveTag). Both Main and Compare are offered.
@@ -841,7 +843,7 @@ public sealed class Overlay
     // places, on the main axis, and states nothing.
     internal OverlayCurveSemantics SlotSemantics => kind switch
     {
-        OverlayKind.Captured => OverlayCurveSemantics.ForCapture(
+        OverlayKind.Captured => OverlayCurveSemantics.ForCurve(
             capturedMagnitudeScale,
             capturedYAxisKey),
         OverlayKind.Operation => ResultFor(CurrentOperationSnapshot()).Curve,
@@ -2647,7 +2649,9 @@ public sealed class Overlay
             settings.Operation,
             settings.BlendFrequencyHz,
             settings.BlendWidthOctaves,
-            settings.UseAmplitudeSpace,
+            // Converting to linear amplitude and back is decibel arithmetic; on a 0…1
+            // coherence ratio it is meaningless whatever the dialog last stored.
+            settings.UseAmplitudeSpace && result.Curve.IsDecibels,
             wrapPhaseDifference);
         points = OverlayMath.SmoothByOctaves(
             points,

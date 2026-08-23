@@ -1064,8 +1064,9 @@ dB SPL captures is a handful of dB, which an offset lifts onto the SPL axis.
 
 Operands must be the same kind of number: dB SPL against relative decibels, or
 coherence against decibels, has no result any axis could carry, and the settings
-dialog refuses to save it. A tilt likewise applies only where decibels do — it is
-greyed out while the operands are a coherence trace.
+dialog refuses to save it. A live-curve operand counts as whatever the plot is
+showing right now. The tilt and amplitude-space math likewise apply only where
+decibels do — both grey out while the operands are a coherence trace.
 
 ![Ordinary overlay](assets/images/regular_overlay.jpg)
 ![Calculated overlay](assets/images/calc_overlay.jpg)

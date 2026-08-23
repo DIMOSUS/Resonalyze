@@ -86,14 +86,25 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         SelectBlendWidth(blendWidthOctaves);
         UpdateColorButton();
         UpdateOpacityLabel();
-        UpdateBlendControls();
+        UpdateOperationControls();
         UpdateTiltControls();
         initialized = true;
     }
 
-    // A tilt is a dB-per-octave statement, so it rides on the same modes as the
-    // amplitude-space math — the magnitude views — AND on a curve that is decibels: the
-    // operand list also offers coherence traces, whose 0…1 ratio no slope belongs to.
+    // Amplitude-space math and the tilt are both statements about decibels, so both need
+    // a magnitude mode AND a result that IS decibels — the operand list also offers
+    // coherence traces, whose 0…1 ratio neither belongs to. The complex sum is
+    // amplitude-domain by construction and "A only" does no arithmetic at all, so
+    // neither has anything to convert.
+    private bool SupportsAmplitudeSpaceMath =>
+        supportsAmplitudeSpace &&
+        ResultSemantics.IsDecibels &&
+        operationComboBox.SelectedItem is OverlayOperation selected &&
+        selected is not (
+            OverlayOperation.ComplexSum or
+            OverlayOperation.ComplexSumLoss or
+            OverlayOperation.CurveA);
+
     private bool SupportsTilt => supportsAmplitudeSpace && ResultSemantics.IsDecibels;
 
     // What the operation as configured right now would produce. Undefined operands (a
@@ -128,7 +139,8 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     public double BlendFrequencyHz => (double)blendFrequencyInput.Value;
     public double BlendWidthOctaves =>
         ((BlendWidthOption)blendWidthInput.SelectedItem!).Octaves;
-    public bool UseAmplitudeSpace => amplitudeSpaceCheckBox.Checked;
+    public bool UseAmplitudeSpace =>
+        SupportsAmplitudeSpaceMath && amplitudeSpaceCheckBox.Checked;
     public bool TiltEnabled => SupportsTilt && tiltCheckBox.Checked;
     public double TiltDbPerOctave => (double)tiltSlopeInput.Value;
     public double TiltPivotHz => (double)tiltPivotInput.Value;
@@ -232,23 +244,15 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     {
         operationComboBox.SelectedIndexChanged += (_, _) =>
         {
-            UpdateBlendControls();
+            UpdateOperationControls();
             UpdateTiltControls();
             NotifyPreview();
         };
         nameTextBox.TextChanged += (_, _) => NotifyPreview();
-        // The operands decide what the result IS, so the tilt's availability follows
-        // them: a slope belongs to decibels, not to a coherence ratio.
-        sourceAComboBox.SelectedIndexChanged += (_, _) =>
-        {
-            UpdateTiltControls();
-            NotifyPreview();
-        };
-        sourceBComboBox.SelectedIndexChanged += (_, _) =>
-        {
-            UpdateTiltControls();
-            NotifyPreview();
-        };
+        // The operands decide what the result IS, so what applies only to decibels —
+        // the tilt and amplitude-space math — follows them, not just the mode.
+        sourceAComboBox.SelectedIndexChanged += (_, _) => OperandChanged();
+        sourceBComboBox.SelectedIndexChanged += (_, _) => OperandChanged();
         blendFrequencyInput.ValueChanged += (_, _) => NotifyPreview();
         blendWidthInput.SelectedIndexChanged += (_, _) => NotifyPreview();
         amplitudeSpaceCheckBox.CheckedChanged += (_, _) => NotifyPreview();
@@ -271,6 +275,13 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             NotifyPreview();
         };
         saveButton.Click += SaveButtonClick;
+    }
+
+    private void OperandChanged()
+    {
+        UpdateOperationControls();
+        UpdateTiltControls();
+        NotifyPreview();
     }
 
     // Live preview while tuning: fires a full snapshot of the candidate settings on
@@ -456,11 +467,11 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         }
     }
 
-    // Blend frequency / width only apply to the Blend operation, "A only" uses just the
-    // first operand, and the complex sum takes no operands at all (it reads the Main and
-    // Compare transfer IRs directly); the inapplicable controls are greyed out rather
-    // than hidden so nothing shifts.
-    private void UpdateBlendControls()
+    // What each operation actually uses: blend frequency / width only apply to the
+    // Blend operation, "A only" uses just the first operand, and the complex sum takes
+    // no operands at all (it reads the Main and Compare transfer IRs directly). The
+    // inapplicable controls are greyed out rather than hidden so nothing shifts.
+    private void UpdateOperationControls()
     {
         OverlayOperation? op = operationComboBox.SelectedItem as OverlayOperation?;
         bool isBlend = op == OverlayOperation.Blend;
@@ -476,10 +487,12 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         UiStyle.SetTextEnabledLook(curveBLabel, usesB);
         sourceBComboBox.Enabled = usesB;
         // Complex sum is inherently amplitude-domain math, and "A only" performs no
-        // arithmetic at all — it hands curve A through. The checkbox is moot for both.
+        // arithmetic at all — it hands curve A through. The checkbox is moot for both,
+        // and for a result that is not decibels: converting a 0…1 coherence ratio to
+        // linear amplitude and back is arithmetic on the wrong kind of number.
         UiStyle.SetTextEnabledLook(
             amplitudeSpaceCheckBox,
-            supportsAmplitudeSpace && !isComplexSum && op != OverlayOperation.CurveA,
+            SupportsAmplitudeSpaceMath,
             interactive: true);
         // The Compare delay / polarity flip only shape the complex sum.
         UiStyle.SetTextEnabledLook(labelTimeOffset, isComplexSum);

@@ -25,24 +25,20 @@ internal readonly record struct OverlayCurveSemantics(
     public static OverlayCurveSemantics None => default;
 
     /// <summary>
-    /// What a captured slot states. The magnitude scale it was captured under is
-    /// dropped for a trace that lives on its own axis: coherence is a 0…1 ratio, and
-    /// which magnitude axis the plot happened to be showing says nothing about it.
+    /// What a curve on <paramref name="yAxisKey"/> states, given the magnitude scale it
+    /// stands in: the one a slot was captured under, or — for a live curve, re-read from
+    /// the plot on every rebuild — the one showing right now. A live curve is no less
+    /// definite for being redrawn: while the plot is relative its numbers ARE relative,
+    /// and subtracting a dB SPL capture from them is the same error either way.
+    /// The scale is dropped for a trace that lives on its own axis: coherence is a 0…1
+    /// ratio, and which magnitude axis the plot shows says nothing about it.
     /// </summary>
-    public static OverlayCurveSemantics ForCapture(
-        MagnitudeScale capturedScale,
+    public static OverlayCurveSemantics ForCurve(
+        MagnitudeScale scale,
         string? yAxisKey) =>
         new(
-            yAxisKey == PlotModelFactory.CoherenceAxisKey ? null : capturedScale,
+            yAxisKey == PlotModelFactory.CoherenceAxisKey ? null : scale,
             yAxisKey);
-
-    /// <summary>
-    /// What a live plot curve states. It is re-read from the plot on every rebuild, so
-    /// it is always on the axis showing and states no magnitude scale of its own — but
-    /// it does carry which Y axis it is drawn against.
-    /// </summary>
-    public static OverlayCurveSemantics ForLiveCurve(string? yAxisKey) =>
-        new(null, yAxisKey);
 
     /// <summary>Whether these numbers belong on a decibel axis at all.</summary>
     public bool IsDecibels => YAxisKey != PlotModelFactory.CoherenceAxisKey;
@@ -61,7 +57,7 @@ internal readonly record struct OverlayCurveSemantics(
 
     /// <summary>
     /// Whether two curves may be operated on at all. Each half may state nothing — a
-    /// live curve states no scale, an imported or legacy capture no axis — and states
+    /// coherence trace no scale, an imported or legacy capture no axis — and states
     /// nothing about compatibility either. Two STATED and different answers do: dB SPL
     /// against relative decibels, or coherence against decibels, is arithmetic between
     /// quantities that are not the same kind of number, and its result would be a curve

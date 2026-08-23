@@ -133,7 +133,6 @@ internal sealed class ColorPickerDialog : Form
             okButton
         ]);
 
-        OverlayDialogControls.ApplyRuntimeDpiScale(this);
         ResumeLayout(false);
         PerformLayout();
     }

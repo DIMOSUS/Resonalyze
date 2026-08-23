@@ -62,10 +62,14 @@ internal static class UiStyle
         bool fixedDialog = true,
         Padding? padding = null)
     {
-        // The layout below is written in 96-DPI pixels, so say so: without
-        // declared dimensions the first auto-scale adopts the CURRENT ones and
-        // the factor is 1 — the boxes stayed 96-DPI while the text grew with
-        // the display, which is what clipped these dialogs at 125%.
+        // A dialog built in code lays itself out in 96-DPI pixels, so say so:
+        // without declared dimensions the first auto-scale adopts the CURRENT
+        // ones and the factor is 1 — the boxes stayed 96-DPI while the text grew
+        // with the display, which is what clipped these dialogs at 125%.
+        // Declaring the designer's DPI is what gives the mode something to scale
+        // FROM, and it makes this the ONLY scaling pass such a dialog gets: a
+        // caller that also walked its own tree by DeviceDpi/96 would square the
+        // factor (1.56x at 125%). One such pass was deleted for this line.
         form.AutoScaleDimensions = new SizeF(96F, 96F);
         form.AutoScaleMode = AutoScaleMode.Dpi;
         form.BackColor = UiPalette.DialogBackground;

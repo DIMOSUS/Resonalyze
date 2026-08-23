@@ -554,6 +554,123 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void SaveToAndLoadFrom_CarryTheCalibrationCurveItself()
+    {
+        // The session states the correction it was tuned with as the CURVE, so a
+        // machine that never configured that file draws what the author saw. The id
+        // travels too, but only as a hint.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            CalibrationFile curve = CalibrationFile.Parse("16 0\n1000 -0.75\n20000 3.5\n");
+            var original = new VirtualCrossoverProjectFile
+            {
+                CalibrationId = "90deg",
+                Calibration = VirtualCrossoverCalibrationSettings.From(
+                    curve, "90°", "ECM8000_90deg.txt")
+            };
+            string path = Path.Combine(root, "session.json");
+
+            original.SaveTo(path);
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
+
+            Assert.Equal("90deg", loaded.CalibrationId);
+            Assert.NotNull(loaded.Calibration);
+            Assert.Equal("90°", loaded.Calibration.Name);
+            Assert.Equal("ECM8000_90deg.txt", loaded.Calibration.FileName);
+            Assert.True(CalibrationFile.SameCurve(curve, loaded.Calibration.ToCalibrationFile()));
+
+            // A curve from an estimate has no file: the name is what it has.
+            string json = File.ReadAllText(path);
+            Assert.Contains("\"calibration\"", json);
+            Assert.Contains("\"fileName\"", json);
+            original.Calibration.FileName = null;
+            original.SaveTo(path);
+            Assert.DoesNotContain("\"fileName\"", File.ReadAllText(path));
+            Assert.Null(VirtualCrossoverProjectFile.LoadFrom(path).Calibration!.FileName);
+
+            // Off, and a session written before the curve travelled, carry no block.
+            original.Calibration = null;
+            original.SaveTo(path);
+            Assert.DoesNotContain("\"calibration\"", File.ReadAllText(path));
+            Assert.Null(VirtualCrossoverProjectFile.LoadFrom(path).Calibration);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Validate_RejectsACalibrationCurveAFileCouldNotState()
+    {
+        var tooFew = new VirtualCrossoverProjectFile
+        {
+            Calibration = new VirtualCrossoverCalibrationSettings
+            {
+                Name = "x",
+                Points = { new[] { 1000.0, 0.0 } }
+            }
+        };
+        Assert.Throws<InvalidDataException>(() => tooFew.Validate());
+
+        // Two points at one frequency merge into one knot on reading: no curve, and
+        // the merged form would fail this check on the next save.
+        var oneFrequency = new VirtualCrossoverProjectFile
+        {
+            Calibration = new VirtualCrossoverCalibrationSettings
+            {
+                Name = "x",
+                Points = { new[] { 1000.0, 0.0 }, new[] { 1000.0, 1.0 } }
+            }
+        };
+        Assert.Throws<InvalidDataException>(() => oneFrequency.Validate());
+
+        var badFrequency = new VirtualCrossoverProjectFile
+        {
+            Calibration = new VirtualCrossoverCalibrationSettings
+            {
+                Name = "x",
+                Points = { new[] { 0.0, 0.0 }, new[] { 1000.0, 0.0 } }
+            }
+        };
+        Assert.Throws<InvalidDataException>(() => badFrequency.Validate());
+
+        var badShape = new VirtualCrossoverProjectFile
+        {
+            Calibration = new VirtualCrossoverCalibrationSettings
+            {
+                Name = "x",
+                Points = { new[] { 20.0 }, new[] { 1000.0, 0.0 } }
+            }
+        };
+        Assert.Throws<InvalidDataException>(() => badShape.Validate());
+
+        var badLevel = new VirtualCrossoverProjectFile
+        {
+            Calibration = new VirtualCrossoverCalibrationSettings
+            {
+                Name = "x",
+                Points = { new[] { 20.0, double.NaN }, new[] { 1000.0, 0.0 } }
+            }
+        };
+        Assert.Throws<InvalidDataException>(() => badLevel.Validate());
+
+        var fine = new VirtualCrossoverProjectFile
+        {
+            Calibration = new VirtualCrossoverCalibrationSettings
+            {
+                Name = "  x  ",
+                FileName = " ",
+                Points = { new[] { 20.0, 0.0 }, new[] { 1000.0, 0.0 } }
+            }
+        };
+        fine.Validate();
+        Assert.Equal("x", fine.Calibration.Name);
+        Assert.Null(fine.Calibration.FileName);
+    }
+
+    [Fact]
     public void Save_RejectsInvalidChannelValues()
     {
         var negativeDelay = new VirtualCrossoverProjectFile();

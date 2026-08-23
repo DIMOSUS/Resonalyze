@@ -330,6 +330,144 @@ public sealed class CalibrationFileTests
         Assert.Throws<ArgumentNullException>(() => CalibrationFile.Parse(null!));
     }
 
+    // ------------------------------------------------------ points and identity
+
+    [Fact]
+    public void Points_StateTheFileInOrder_AndFromPointsReadsThemBack()
+    {
+        // What a Virtual DSP session stores is the curve itself; it has to come
+        // back correcting exactly as the file did, duplicates merged and all.
+        var parsed = CalibrationFile.Parse("1000 6\n20 -1.25\n1000 0\n20000 3.5\n");
+
+        IReadOnlyList<CalibrationPoint> points = parsed.Points;
+
+        Assert.Equal(new[] { 20.0, 1000.0, 20000.0 }, points.Select(point => point.FrequencyHz));
+        Assert.Equal(-1.25, points[0].Decibels, precision: 9);
+        Assert.Equal(3.5, points[2].Decibels, precision: 9);
+
+        CalibrationFile rebuilt = CalibrationFile.FromPoints(points, "session");
+        Assert.True(rebuilt.HasData);
+        Assert.Null(rebuilt.LoadError);
+        foreach (double frequency in new[] { 10.0, 20.0, 150.0, 1000.0, 7000.0, 30000.0 })
+        {
+            Assert.Equal(
+                parsed.GetDecibelCorrection(frequency),
+                rebuilt.GetDecibelCorrection(frequency),
+                precision: 9);
+        }
+    }
+
+    [Fact]
+    public void FromPoints_DropsWhatAFileCouldNotState_AndReportsTooFew()
+    {
+        CalibrationFile calibration = CalibrationFile.FromPoints(
+            new[]
+            {
+                new CalibrationPoint(0, 1),
+                new CalibrationPoint(double.NaN, 1),
+                new CalibrationPoint(1000, double.PositiveInfinity),
+                new CalibrationPoint(1000, 2)
+            },
+            "session");
+
+        Assert.False(calibration.HasData);
+        Assert.Contains("session", calibration.LoadError);
+        Assert.Throws<ArgumentNullException>(() => CalibrationFile.FromPoints(null!));
+    }
+
+    [Fact]
+    public void Points_OfAnAngledEstimate_ReproduceTheEstimate()
+    {
+        // An estimate is a function, not a table. Its points are a sampling dense
+        // enough that a file written from them reads back as the same correction —
+        // which is what lets a session carry an angle entry, and what lets a machine
+        // recognize its own angle entry in an arriving session.
+        CalibrationFile zero = CalibrationFile.Parse("20 0\n2000 1\n20000 -2\n");
+        CalibrationFile angled = CalibrationFile.CreateAngled(
+            zero, frequency => -3.0 * Math.Pow(Math.Log10(frequency / 20.0) / 3.0, 2));
+
+        IReadOnlyList<CalibrationPoint> points = angled.Points;
+        CalibrationFile sampled = CalibrationFile.FromPoints(points);
+
+        Assert.Equal(1.0, points[0].FrequencyHz);
+        Assert.Equal(192_000.0, points[^1].FrequencyHz);
+        Assert.Contains(points, point => point.FrequencyHz == 2000.0);
+        Assert.InRange(points.Count, 400, 500);
+        foreach (double frequency in new[] { 20.0, 33.0, 500.0, 2000.0, 12345.0, 20000.0 })
+        {
+            Assert.Equal(
+                angled.GetDecibelCorrection(frequency),
+                sampled.GetDecibelCorrection(frequency),
+                precision: 2);
+        }
+
+        Assert.True(CalibrationFile.SameCurve(angled, sampled));
+    }
+
+    [Fact]
+    public void Points_OfAnAngledEstimate_KeepMovingOutsideTheBaseFile()
+    {
+        // Outside the base file the base holds its edge value while the angular
+        // difference keeps changing — and the audition FIR reads the correction up
+        // to Nyquist. A table cut at the file's edges would clamp the whole
+        // correction there; the carried curve has to reproduce the estimate over
+        // the whole range it is read at, not just over the file.
+        CalibrationFile narrowBase = CalibrationFile.Parse("100 0\n1000 1\n10000 -2\n");
+        static double Delta(double frequency) => -6.0 * Math.Log10(frequency / 100.0);
+        CalibrationFile angled = CalibrationFile.CreateAngled(narrowBase, Delta);
+        CalibrationFile sampled = CalibrationFile.FromPoints(angled.Points);
+
+        // The model's own values, for the record: held base + moving delta.
+        Assert.Equal(-2.0 + Delta(20_000.0), angled.GetDecibelCorrection(20_000.0), precision: 9);
+        Assert.Equal(0.0 + Delta(20.0), angled.GetDecibelCorrection(20.0), precision: 9);
+
+        foreach (double frequency in new[] { 5.0, 20.0, 50.0, 100.0, 5_000.0, 10_000.0, 20_000.0, 48_000.0, 96_000.0, 192_000.0 })
+        {
+            Assert.Equal(
+                angled.GetDecibelCorrection(frequency),
+                sampled.GetDecibelCorrection(frequency),
+                precision: 2);
+        }
+
+        Assert.True(CalibrationFile.SameCurve(angled, sampled));
+    }
+
+    [Fact]
+    public void SameCurve_ComparesContent_NotIdentityOrSpelling()
+    {
+        CalibrationFile a = CalibrationFile.Parse("20 0\n1000 1.5\n20000 -3\n");
+        CalibrationFile sameText = CalibrationFile.Parse("20,0\n1000,1.5\n20000,-3\n");
+        CalibrationFile differentLevel = CalibrationFile.Parse("20 0\n1000 1.6\n20000 -3\n");
+        CalibrationFile extraPoint = CalibrationFile.Parse("20 0\n500 0.75\n1000 1.5\n20000 -3\n");
+
+        Assert.True(CalibrationFile.SameCurve(a, a));
+        Assert.True(CalibrationFile.SameCurve(a, sameText));
+        Assert.True(CalibrationFile.SameCurve(a, CalibrationFile.FromPoints(a.Points)));
+        Assert.False(CalibrationFile.SameCurve(a, differentLevel));
+        // Collinear, yet not the same file: a curve is its points.
+        Assert.False(CalibrationFile.SameCurve(a, extraPoint));
+        Assert.True(CalibrationFile.SameCurve(null, null));
+        Assert.False(CalibrationFile.SameCurve(a, null));
+        Assert.False(CalibrationFile.SameCurve(null, a));
+    }
+
+    [Fact]
+    public void ToText_RoundTripsThroughParse()
+    {
+        CalibrationFile original = CalibrationFile.Parse(
+            "16 0.125\n1000 -0.3333333333333333\n20000 12.5\n");
+
+        string text = original.ToText();
+        CalibrationFile reread = CalibrationFile.Parse(text);
+
+        Assert.Equal(3, text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
+        Assert.True(CalibrationFile.SameCurve(original, reread));
+        Assert.Equal(
+            original.GetDecibelCorrection(1000),
+            reread.GetDecibelCorrection(1000),
+            precision: 12);
+    }
+
     private static string WriteCalibrationFile(string text)
     {
         string path = Path.Combine(

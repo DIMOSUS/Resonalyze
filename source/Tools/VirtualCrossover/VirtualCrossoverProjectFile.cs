@@ -396,6 +396,69 @@ public sealed class VirtualCrossoverChannelPairSettings
 }
 
 /// <summary>
+/// The microphone calibration a session was tuned with, carried INSIDE the
+/// session as the curve itself rather than as a reference to the machine's
+/// calibration list. A calibration describes the microphone the measurements
+/// were taken with, so it belongs with the measurements: a session that travels
+/// with its data must arrive with the correction its author saw, on a machine
+/// that has never heard of that file. A few dozen (Hz, dB) points cost nothing
+/// next to the impulse responses the session already points at.
+/// </summary>
+public sealed class VirtualCrossoverCalibrationSettings
+{
+    /// <summary>The name the author's calibration list showed for it.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The file the curve came from, by name only — the folder means nothing on
+    /// another machine. Null for a curve that was estimated rather than read.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FileName { get; set; }
+
+    /// <summary>Ascending <c>[frequency Hz, correction dB]</c> pairs.</summary>
+    public List<double[]> Points { get; set; } = new();
+
+    public static VirtualCrossoverCalibrationSettings From(
+        CalibrationFile calibration,
+        string name,
+        string? fileName)
+    {
+        ArgumentNullException.ThrowIfNull(calibration);
+        return new VirtualCrossoverCalibrationSettings
+        {
+            Name = name,
+            FileName = fileName,
+            Points = calibration.Points
+                .Select(point => new[] { point.FrequencyHz, point.Decibels })
+                .ToList()
+        };
+    }
+
+    public CalibrationFile ToCalibrationFile() =>
+        CalibrationFile.FromPoints(
+            Points.Select(point => new CalibrationPoint(point[0], point[1])),
+            Name);
+
+    public void Validate()
+    {
+        Name = Name?.Trim() ?? string.Empty;
+        FileName = string.IsNullOrWhiteSpace(FileName) ? null : FileName.Trim();
+        // Two DISTINCT frequencies: the reader merges duplicates into one knot,
+        // and a one-knot curve is no curve — it would load as "available", apply
+        // nothing, and fail this very check on the next save.
+        if (Points.Any(point =>
+                point is not { Length: 2 } ||
+                !double.IsFinite(point[0]) || point[0] <= 0 ||
+                !double.IsFinite(point[1])) ||
+            Points.Select(point => point[0]).Distinct().Count() < 2)
+        {
+            throw new InvalidDataException("The session's calibration curve is invalid.");
+        }
+    }
+}
+
+/// <summary>
 /// Persists the Virtual DSP tool state (channel pairs, their DSP chains and
 /// the plot view flags) so a tuning session survives an application restart.
 /// The pair count is user-resizable in the tool, from two up to
@@ -623,11 +686,21 @@ public sealed class VirtualCrossoverProjectFile
             : mode;
     }
 
-    // Microphone calibration applied to the magnitude curves, by id. The
+    // The microphone calibration applied to the magnitude curves. The
     // measurement is loopback-referenced, so calibration is optional and off by
-    // default (null). Which calibration an id names is a property of the machine,
-    // not of the session — see WarnAboutUnavailableCalibration.
+    // default. Two fields state it: Calibration is the CURVE the session is tuned
+    // with and is what another machine reads; CalibrationId is the entry of THIS
+    // machine's calibration list the selection maps to — a local name for the
+    // same curve, null when the session is tuned with a curve it carries itself
+    // and no configured entry matches. An id alone (no curve) is how sessions
+    // were written before the curve travelled, and it is read as a hint, never
+    // as an identity: the "90deg" id is minted on every machine that migrated a
+    // legacy 90° slot, so two machines' ids agreeing says nothing about their
+    // files. See VirtualCrossoverCalibrationSelection.
     public string? CalibrationId { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public VirtualCrossoverCalibrationSettings? Calibration { get; set; }
 
     // Schema v5 payload, kept only so an older file deserializes for migration:
     // the selection used to be one of three fixed modes.
@@ -1075,6 +1148,7 @@ public sealed class VirtualCrossoverProjectFile
         {
             throw new InvalidDataException("The phase analysis mode is invalid.");
         }
+        Calibration?.Validate();
         if (PhaseFdwCycles is not (4 or 6 or 8))
         {
             PhaseFdwCycles = PhaseAnalysisSettings.DefaultFdwCycles;

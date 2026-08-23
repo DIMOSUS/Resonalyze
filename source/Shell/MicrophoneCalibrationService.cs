@@ -51,19 +51,24 @@ internal sealed class MicrophoneCalibrationService
     public IReadOnlyList<MicrophoneCalibrationEntry> GetEntries()
     {
         MicrophoneCalibrationDefinition[] current = definitions;
+        string? zeroDegreePath = ResolveZeroDegreePath();
         var entries = new List<MicrophoneCalibrationEntry>(current.Length + 1)
         {
             new(
                 MicrophoneCalibrationIds.ZeroDegrees,
                 "0°",
-                HasUsableData(ResolveZeroDegreePath()))
+                HasUsableData(zeroDegreePath),
+                FileNameOf(zeroDegreePath))
         };
         foreach (MicrophoneCalibrationDefinition definition in current)
         {
             entries.Add(new MicrophoneCalibrationEntry(
                 definition.Id,
                 definition.Name,
-                IsAvailable(definition, current)));
+                IsAvailable(definition, current),
+                definition.Kind == MicrophoneCalibrationKind.File
+                    ? FileNameOf(definition.Path)
+                    : null));
         }
 
         return entries;
@@ -274,6 +279,26 @@ internal sealed class MicrophoneCalibrationService
 
     private static bool Exists(string? path) =>
         !string.IsNullOrWhiteSpace(path) && File.Exists(path);
+
+    private static string? FileNameOf(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            string name = Path.GetFileName(path);
+            return name.Length == 0 ? null : name;
+        }
+        catch (ArgumentException)
+        {
+            // A hand-edited settings file can hold a path no file system accepts;
+            // the entry then simply has no file name to report.
+            return null;
+        }
+    }
 
     private string? ResolveZeroDegreePath()
     {

@@ -70,10 +70,14 @@ internal sealed record EqWizardCurveSource
     /// The microphone calibration the Virtual DSP panel renders with, which this source
     /// is pinned to: the wizard applies it but disables its selector, because a PEQ
     /// fitted under one correction and summed under another would break the very
-    /// identity the handoff promises. Null (Off) is a real value. Meaningless for other
-    /// kinds.
+    /// identity the handoff promises. The curve itself rather than an id: the panel may
+    /// be drawing with a curve its session carries, which the wizard's own list cannot
+    /// resolve. Null (Off) is a real value. Meaningless for other kinds.
     /// </summary>
-    public string? PinnedCalibrationId { get; init; }
+    public CalibrationFile? PinnedCalibration { get; init; }
+
+    /// <summary>What the selector shows for <see cref="PinnedCalibration"/>.</summary>
+    public string? PinnedCalibrationName { get; init; }
 
     /// <summary>
     /// The channel's ORIGINAL measurement, before any of its chain — what the corrected
@@ -161,7 +165,7 @@ internal sealed record EqWizardCurveSource
     /// Without either, the correction is already fused into the numbers and applying
     /// another would double it. A Virtual DSP channel is deliberately absent: its
     /// correction is applied, but it is the DSP panel's choice
-    /// (<see cref="PinnedCalibrationId"/>) and its selector stays disabled here.
+    /// (<see cref="PinnedCalibration"/>) and its selector stays disabled here.
     /// </summary>
     public bool SupportsCalibration =>
         Kind == EqWizardSourceKind.ImpulseResponse || HasOwnCalibration;

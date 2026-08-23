@@ -252,6 +252,27 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
             service.GetEntries().Select(entry => entry.Id));
     }
 
+    [Fact]
+    public void GetEntries_NamesTheFileOfEachFileBackedEntry()
+    {
+        // A Virtual DSP session that carries a curve also says which file it was, so
+        // the entries report theirs — by name only, the folder means nothing elsewhere.
+        zeroDegreePath = WriteFile("ECM8000_0deg.txt", ValidCalibration);
+        definitions.Add(new MicrophoneCalibrationDefinition
+        {
+            Id = "ninety",
+            Name = "90°",
+            Kind = MicrophoneCalibrationKind.File,
+            Path = WriteFile("ECM8000_90deg.txt", ValidCalibration)
+        });
+        definitions.Add(NewAngle("angle", 45));
+        MicrophoneCalibrationService service = CreateService();
+
+        Assert.Equal(
+            ["ECM8000_0deg.txt", "ECM8000_90deg.txt", null],
+            service.GetEntries().Select(entry => entry.FileName));
+    }
+
     private static MicrophoneCalibrationDefinition NewAngle(string id, double angleDegrees) =>
         new()
         {

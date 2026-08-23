@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -58,6 +58,158 @@ namespace Resonalyze.Dsp
             return new CalibrationFile(ParseText(text, sourceName));
         }
 
+        /// <summary>
+        /// Builds a calibration from (Hz, dB) points already in memory — the
+        /// curve a Virtual DSP session carries inside itself. The points go
+        /// through the same sort-and-merge as a parsed file, so a curve written
+        /// out by <see cref="Points"/> and read back here corrects identically.
+        /// </summary>
+        public static CalibrationFile FromPoints(
+            IEnumerable<CalibrationPoint> points,
+            string? sourceName = null)
+        {
+            ArgumentNullException.ThrowIfNull(points);
+            var signalPoints = new List<SignalPoint>();
+            foreach (CalibrationPoint point in points)
+            {
+                if (point.FrequencyHz > 0 &&
+                    double.IsFinite(point.FrequencyHz) &&
+                    double.IsFinite(point.Decibels))
+                {
+                    signalPoints.Add(new SignalPoint(
+                        point.FrequencyHz,
+                        DataHelper.DecibelsToAmplitude(point.Decibels)));
+                }
+            }
+
+            return new CalibrationFile(Normalize(signalPoints, sourceName));
+        }
+
+        /// <summary>
+        /// The curve as ascending (Hz, dB) points, which is what a file states
+        /// and what a session stores. A file-backed calibration returns its own
+        /// points; an angular estimate — a function, not a table — is sampled on
+        /// a 1/24-octave grid plus the base points themselves, which reproduces
+        /// <see cref="GetDecibelCorrection"/> at every knot and to within the
+        /// estimate's own smoothness between them. The grid runs over the whole
+        /// range a calibration is ever read at (<see cref="SampleGridLowHz"/> to
+        /// <see cref="SampleGridHighHz"/>, widened to the base file when that
+        /// reaches further), not just over the base file: outside the file the
+        /// base holds its edge value while the angular difference keeps moving,
+        /// and a table cut at the file's edges would clamp the WHOLE correction
+        /// there — the audition FIR reads it up to Nyquist. Empty when nothing
+        /// loaded.
+        /// </summary>
+        public IReadOnlyList<CalibrationPoint> Points
+        {
+            get
+            {
+                if (baseCalibration == null)
+                {
+                    return calibration
+                        .Select(point => new CalibrationPoint(
+                            point.X,
+                            DataHelper.AmplitudeToDecibels(point.Y)))
+                        .ToArray();
+                }
+
+                IReadOnlyList<CalibrationPoint> basePoints = baseCalibration.Points;
+                if (basePoints.Count == 0)
+                {
+                    return Array.Empty<CalibrationPoint>();
+                }
+
+                var frequencies = new SortedSet<double>(
+                    basePoints.Select(point => point.FrequencyHz));
+                double first = Math.Min(basePoints[0].FrequencyHz, SampleGridLowHz);
+                double last = Math.Max(basePoints[^1].FrequencyHz, SampleGridHighHz);
+                for (double frequency = first; frequency < last; frequency *= SampleGridStep)
+                {
+                    frequencies.Add(frequency);
+                }
+
+                frequencies.Add(last);
+                return frequencies
+                    .Select(frequency => new CalibrationPoint(
+                        frequency,
+                        GetDecibelCorrection(frequency)))
+                    .ToArray();
+            }
+        }
+
+        // 1/24 octave: fine enough that the piecewise-linear reading of the
+        // sampled angular estimate stays within hundredths of a dB of the model.
+        private static readonly double SampleGridStep = Math.Pow(2.0, 1.0 / 24.0);
+
+        // Below 1 Hz nothing is ever plotted or rendered; 192 kHz is the Nyquist
+        // frequency of a 384 kHz stream, above every rate the audition can run at.
+        // Beyond the grid the table holds its edge value, as the model itself
+        // holds its last tabulated value above its references.
+        private const double SampleGridLowHz = 1.0;
+        private const double SampleGridHighHz = 192_000.0;
+
+        /// <summary>
+        /// Whether two calibrations correct identically: the same points, Hz and
+        /// dB alike, within rounding. Two nulls are the same (no correction), a
+        /// null and a curve are not. This — not an id — is what says whether a
+        /// curve that arrived inside a session is one the machine already has.
+        /// </summary>
+        public static bool SameCurve(CalibrationFile? left, CalibrationFile? right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return true;
+            }
+
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            IReadOnlyList<CalibrationPoint> a = left.Points;
+            IReadOnlyList<CalibrationPoint> b = right.Points;
+            if (a.Count != b.Count)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < a.Count; i++)
+            {
+                if (Math.Abs(a[i].FrequencyHz - b[i].FrequencyHz) >
+                        FrequencyTolerance * Math.Abs(a[i].FrequencyHz) ||
+                    Math.Abs(a[i].Decibels - b[i].Decibels) > DecibelTolerance)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // Far below anything a calibration file states (three decimals at most)
+        // and far above the dB -> amplitude -> dB round trip the points take.
+        private const double FrequencyTolerance = 1e-9;
+        private const double DecibelTolerance = 1e-6;
+
+        /// <summary>
+        /// The curve as the plain two-column text every calibration reader —
+        /// this one included — accepts, one <c>frequency level</c> pair per line.
+        /// <see cref="Parse"/> of the result yields the same points.
+        /// </summary>
+        public string ToText()
+        {
+            var text = new System.Text.StringBuilder();
+            foreach (CalibrationPoint point in Points)
+            {
+                text.Append(point.FrequencyHz.ToString("R", CultureInfo.InvariantCulture))
+                    .Append(' ')
+                    .Append(point.Decibels.ToString("R", CultureInfo.InvariantCulture))
+                    .AppendLine();
+            }
+
+            return text.ToString();
+        }
+
         private static ParseResult LoadFromFile(string file)
         {
             if (!System.IO.File.Exists(file))
@@ -91,6 +243,13 @@ namespace Resonalyze.Dsp
                 }
             }
 
+            return Normalize(points, sourceName);
+        }
+
+        // The one path from raw points to a usable table, shared by the text
+        // parser and the in-memory constructor so both read identically.
+        private static ParseResult Normalize(List<SignalPoint> points, string? sourceName)
+        {
             points.Sort((left, right) => left.X.CompareTo(right.X));
 
             // Duplicate frequencies would make an interpolation segment
@@ -274,4 +433,7 @@ namespace Resonalyze.Dsp
             return lowDb + (highDb - lowDb) * position;
         }
     }
+
+    /// <summary>One calibration point: the correction the file states at a frequency.</summary>
+    public readonly record struct CalibrationPoint(double FrequencyHz, double Decibels);
 }

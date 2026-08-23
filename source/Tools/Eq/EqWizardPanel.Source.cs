@@ -365,10 +365,12 @@ public partial class EqWizardPanel
         // A Virtual DSP channel is pinned to the correction its panel renders with:
         // a PEQ fitted under one calibration and summed under another would break the
         // handoff's identity. The selector is disabled (SupportsCalibration is false)
-        // and the standing IR preference stays untouched.
+        // and the standing IR preference stays untouched. The panel's Off is Off.
         if (source.Kind == EqWizardSourceKind.VirtualDspChannel)
         {
-            return EqWizardCalibrationChoice.Microphone(source.PinnedCalibrationId);
+            return source.PinnedCalibration == null
+                ? EqWizardCalibrationChoice.Off
+                : EqWizardCalibrationChoice.PinnedToSource;
         }
 
         return EqWizardCalibrationChoice.Off;
@@ -410,8 +412,16 @@ public partial class EqWizardPanel
             source.Measurement!.PeakIndex,
             source.Measurement.SampleRate,
             source.GateSettings!,
-            calibrationResolver?.Invoke(calibrationChoice.MicrophoneCalibrationId),
+            ResolveChosenCalibration(),
             SourceSmoothingInverseOctaves);
+
+    // The curve the current choice corrects with: the one the source arrived pinned
+    // to, or the configured entry the choice names (none for Off and for Own, whose
+    // correction is read off the curve itself, see ResolveCurveCalibrationCorrection).
+    private CalibrationFile? ResolveChosenCalibration() =>
+        calibrationChoice.Pinned
+            ? loadedSource?.PinnedCalibration
+            : calibrationResolver?.Invoke(calibrationChoice.MicrophoneCalibrationId);
 
     private EqWizardCurve? ComputeSourceCurve()
     {
@@ -458,7 +468,7 @@ public partial class EqWizardPanel
             Offset = 0,
             CalibrationId = calibrationId
         };
-        CalibrationFile? calibration = calibrationResolver?.Invoke(calibrationId);
+        CalibrationFile? calibration = ResolveChosenCalibration();
 
         IReadOnlyList<AnalysisCurve> curves = DataHelper.GetSpectrum(
             source.Measurement!, options, calibration, SpectrumCurves.Primary);
@@ -502,7 +512,7 @@ public partial class EqWizardPanel
         return calibrationChoice.IsOff
             ? Array.Empty<double>()
             : EqWizardImportedCurve.SampleCorrection(
-                calibrationResolver?.Invoke(calibrationChoice.CalibrationId),
+                ResolveChosenCalibration(),
                 source.Points);
     }
 
@@ -519,7 +529,7 @@ public partial class EqWizardPanel
         return calibrationChoice.IsOff
             ? Array.Empty<double>()
             : RawCurveRenderer.CaptureCalibrationCorrection(
-                calibrationResolver?.Invoke(calibrationChoice.CalibrationId));
+                ResolveChosenCalibration());
     }
 
     // A measured curve keeps its NaN gaps: they mark bands the measurement could not
@@ -966,6 +976,16 @@ public partial class EqWizardPanel
         {
             options.Add(new EqWizardCalibrationOption(
                 EqWizardCalibrationChoice.OwnCapture, "Own (as captured)"));
+        }
+
+        // A Virtual DSP channel's correction is listed under the name its panel
+        // shows for it — which may be a curve the session carries, absent from the
+        // wizard's own list — so the disabled selector still says what applies.
+        if (loadedSource is { Kind: EqWizardSourceKind.VirtualDspChannel, PinnedCalibration: not null } pinned)
+        {
+            options.Add(new EqWizardCalibrationOption(
+                EqWizardCalibrationChoice.PinnedToSource,
+                pinned.PinnedCalibrationName ?? "Virtual DSP"));
         }
 
         foreach (MicrophoneCalibrationEntry entry in calibrationEntries)

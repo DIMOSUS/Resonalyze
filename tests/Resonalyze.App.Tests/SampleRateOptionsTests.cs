@@ -131,10 +131,13 @@ public sealed class SampleRateOptionsTests
                 "The WASAPI Exclusive endpoints"));
 
         // The way out is not another rate — there is none — so the message has to point
-        // at what can actually change.
+        // at what can actually change. Not the bit depth: that control is disabled, and
+        // the message named it for as long as nobody tried to follow the advice.
         Assert.Contains("no sample rate in common", error.Message);
         Assert.Contains("The WASAPI Exclusive endpoints", error.Message);
-        Assert.Contains("bit depth", error.Message);
+        Assert.Contains("playback channel", error.Message);
+        Assert.Contains("microphone and loopback channels", error.Message);
+        Assert.DoesNotContain("bit depth", error.Message);
     }
 
     [Fact]
@@ -148,6 +151,26 @@ public sealed class SampleRateOptionsTests
 
         Assert.Contains("96000 Hz", error.Message);
         Assert.Contains("Wave devices", error.Message);
+    }
+
+    // The crash this round: WASAPI Exclusive with Mono playback asks both endpoints for
+    // a one-channel format, which endpoints that only take their native stereo format
+    // refuse at every rate. The empty list that answers is correct — and selecting entry
+    // 0 of it threw out of the rebuild, so the settings window went on ignoring every
+    // selection until it was closed and reopened.
+    [Fact]
+    public void AnEmptyListHasNothingToSelect()
+    {
+        Assert.Equal(-1, SampleRateOptions.FindRateIndex([], 48_000));
+    }
+
+    [Fact]
+    public void TheSelectedRateIsFoundWhereItSits()
+    {
+        Assert.Equal(0, SampleRateOptions.FindRateIndex([44_100, 48_000, 96_000], 44_100));
+        Assert.Equal(2, SampleRateOptions.FindRateIndex([44_100, 48_000, 96_000], 96_000));
+        // Defensive: Resolve only ever names a rate the list holds.
+        Assert.Equal(0, SampleRateOptions.FindRateIndex([44_100, 48_000], 192_000));
     }
 
     [Fact]

@@ -1049,6 +1049,21 @@ namespace Resonalyze.Options
         // state (which is stale until the next run).
         private void RefreshSweepBandPreview()
         {
+            if (comboBoxSampleRate.SelectedItem is not int)
+            {
+                // Nothing is selected because nothing is offered: no rate opens for this
+                // configuration. GetSelectedSampleRate answers 44.1 kHz to callers that
+                // need a number anyway, and a band and duration computed from it would
+                // describe a sweep this configuration cannot run.
+                labelActualRangeCaption.Text = "—";
+                labelActualRangeCaption.ForeColor = Color.Gold;
+                deviceToolTip.SetToolTip(
+                    labelActualRangeCaption,
+                    "No sample rate opens for the current configuration, so there is " +
+                    "nothing to compute the sweep against.");
+                return;
+            }
+
             double lowHz = (double)numericUpDownLowFrequency.Value;
             double highHz = (double)numericUpDownHighFrequency.Value;
             double perOctaveSeconds = (double)numericUpDownRequestedDuration.Value * 0.001;
@@ -1303,6 +1318,17 @@ namespace Resonalyze.Options
             // rate itself belongs to the audio backend group and is not applied
             // until the Apply button commits it — only the preview moves here.
             RefreshSweepBandPreview();
+            if (IsSelectedWasapiBackend())
+            {
+                // The endpoint status line reports on the SELECTED rate, and picking
+                // another one out of a list that already holds it does not rebuild the
+                // list — so RefreshSampleRateOptions, the other place that rewrites the
+                // line, never runs here. Without this the line goes on naming the rate
+                // the user just moved away from. Only for WASAPI: the other branches of
+                // UpdateWaveLoopbackControls move the loopback selection, which would
+                // re-enter through its own SelectedIndexChanged.
+                UpdateWaveLoopbackControls();
+            }
             if (comboBoxAudioBackend.SelectedIndex != (int)AudioBackend.Asio)
             {
                 return;
@@ -1809,15 +1835,37 @@ namespace Resonalyze.Options
                 {
                     int selectedRate = GetSelectedSampleRate();
                     int bits = (int)numericUpDownBits.Value;
+                    int captureChannels = Math.Max(
+                        GetSelectedWaveInputChannelOffset(),
+                        GetSelectedWaveLoopbackChannelOffset() ?? 0) + 1;
+                    int renderChannels = GetSelectedPlaybackChannelCount();
+                    if (comboBoxSampleRate.Items.Count == 0)
+                    {
+                        // Not "that rate is unsupported": no rate is, so the combo is
+                        // empty and GetSelectedSampleRate is answering with its own
+                        // fallback — naming it here would report on a rate nobody
+                        // offered. What was refused is the format, and Exclusive hands
+                        // it to the endpoint unchanged, so the way out is to ask for a
+                        // different one. Mono is the usual reason: it asks for a
+                        // one-channel format, and endpoints that only accept their
+                        // native stereo one then refuse at every rate.
+                        labelWaveLoopbackStatus.Text =
+                            $"⚠ No sample rate opens in Exclusive: {bits}-bit, " +
+                            $"{captureChannels}-ch capture, {renderChannels}-ch render. " +
+                            (renderChannels < 2
+                                ? "Mono asks for a one-channel format most endpoints " +
+                                    "refuse — try Stereo."
+                                : "Try another endpoint pair, or Shared.");
+                        labelWaveLoopbackStatus.ForeColor = Color.LightSalmon;
+                        return;
+                    }
                     bool supported = IsExclusiveFormatSupported(
                         capture.Id,
                         render.Id,
                         selectedRate,
                         bits,
-                        Math.Max(
-                            GetSelectedWaveInputChannelOffset(),
-                            GetSelectedWaveLoopbackChannelOffset() ?? 0) + 1,
-                        GetSelectedPlaybackChannelCount());
+                        captureChannels,
+                        renderChannels);
                     labelWaveLoopbackStatus.Text = supported
                         ? $"Exclusive: {selectedRate:N0} Hz / {bits}-bit opens directly " +
                             "on both endpoints."
@@ -2168,15 +2216,25 @@ namespace Resonalyze.Options
 
             bool wasInitializing = initializing;
             initializing = true;
-            comboBoxSampleRate.Items.Clear();
-            comboBoxSampleRate.Items.AddRange(
-                availableRates
-                    .Select(rate => (object)rate)
-                    .ToArray());
-            comboBoxSampleRate.SelectedIndex = FindSampleRateIndex(
-                availableRates,
-                selectedSampleRate);
-            initializing = wasInitializing;
+            try
+            {
+                comboBoxSampleRate.Items.Clear();
+                comboBoxSampleRate.Items.AddRange(
+                    availableRates
+                        .Select(rate => (object)rate)
+                        .ToArray());
+                // -1 on the empty list, which is a list nobody can select from rather
+                // than a missing one. Asking for entry 0 there throws, and the throw
+                // used to escape mid-rebuild with the guard still raised, leaving every
+                // combo in the window deaf to selection until it was reopened.
+                comboBoxSampleRate.SelectedIndex = SampleRateOptions.FindRateIndex(
+                    availableRates,
+                    selectedSampleRate);
+            }
+            finally
+            {
+                initializing = wasInitializing;
+            }
             // A device/backend change can move the selected sample rate under the
             // initializing guard (so comboBoxSampleRate_SelectedIndexChanged is
             // suppressed); refresh the achieved-range and Compute Duration preview
@@ -2196,6 +2254,15 @@ namespace Resonalyze.Options
             if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
             {
                 UpdateAsioStatusLabels();
+            }
+            else if (IsSelectedWasapiBackend())
+            {
+                // Same reason, for the endpoint status line: it reports on the rate list
+                // this method has just rebuilt. The playback channel and the microphone
+                // channel both rebuild it without going through UpdateAudioBackendControls,
+                // and those are exactly the two things the "no rate opens" line asks the
+                // user to change — so without this it would still say so afterwards.
+                UpdateWaveLoopbackControls();
             }
         }
 
@@ -2348,21 +2415,6 @@ namespace Resonalyze.Options
             return comboBoxAsioLoopbackChannel.SelectedItem is InputChannelOption option
                 ? option.Offset
                 : null;
-        }
-
-        private static int FindSampleRateIndex(
-            IReadOnlyList<int> sampleRates,
-            int sampleRate)
-        {
-            for (int i = 0; i < sampleRates.Count; i++)
-            {
-                if (sampleRates[i] == sampleRate)
-                {
-                    return i;
-                }
-            }
-
-            return 0;
         }
     }
 }

@@ -92,9 +92,14 @@ internal static class SampleRateOptions
 
         if (supportedRates.Count == 0)
         {
+            // Only levers the panel actually offers. The bit depth is not one of them:
+            // its control is disabled, so the format the devices refused can be changed
+            // by the devices themselves and by the two things that decide the channel
+            // counts — the playback channel, and the microphone/loopback routing.
             throw new InvalidOperationException(
                 $"{deviceDescription} report no sample rate in common for the current " +
-                "configuration. Change the devices, the channel counts or the bit depth.");
+                "configuration. Change the devices, the playback channel, or the " +
+                "microphone and loopback channels.");
         }
 
         if (!supportedRates.Contains(sampleRate))
@@ -102,6 +107,32 @@ internal static class SampleRateOptions
             throw new InvalidOperationException(
                 $"{deviceDescription} do not support {sampleRate} Hz for the current configuration.");
         }
+    }
+
+    /// <summary>
+    /// Which entry of a rate list to select, or -1 when there is nothing to select.
+    /// </summary>
+    /// <remarks>
+    /// The empty list is the case this exists for. It is a real outcome — no rate opens
+    /// for this configuration — and the combo that shows it has no entry to select, so
+    /// asking for entry 0 there throws where the panel cannot recover: the rebuild is
+    /// abandoned half-done and the settings window stops responding to selections. The
+    /// fallback to 0 on a non-empty list is defensive; <see cref="Resolve"/> only ever
+    /// names a rate the list contains.
+    /// </remarks>
+    public static int FindRateIndex(IReadOnlyList<int> rates, int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(rates);
+
+        for (int i = 0; i < rates.Count; i++)
+        {
+            if (rates[i] == sampleRate)
+            {
+                return i;
+            }
+        }
+
+        return rates.Count > 0 ? 0 : -1;
     }
 
     /// <param name="probeFailed">

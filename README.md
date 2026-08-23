@@ -1423,7 +1423,17 @@ The acoustic plot shows raw and processed curves per channel for the active side
 redraws the same curves from the other side's measurement),
 the complex **Sum**, the **opposite side's Sum** as a dashed translucent curve,
 and the **Sum loss** curve, with a **Phase view** toggle and a **Sum loss**
-read-out (avg / dip per junction plus a total). Its **Gate...** dialog exposes
+read-out (avg / dip per junction plus a total). The loss is a dB gap, not a
+level, so it is drawn against its own amber **Sum loss (dB)** axis on the right
+(0 dB near the top, 6 dB steps, deepening to hold a notch) that appears only
+while the curve is shown; it zooms and pans on its own, separately from the
+left dB scale.
+
+The panel fills whatever window it is given: both plots take the extra width
+(they share a right edge), and the extra height is **split between them in the
+designer's proportion**, so a maximized window enlarges the pair rather than one
+of them. The rows between the plots ride down with the acoustic plot; below the
+designed size nothing shrinks and the panel scrolls instead. Its **Gate...** dialog exposes
 **Fixed / FDW**, 4 / 6 / 8 cycles, and **Off / Auto / Manual** detrend alongside
 the IR preview, Tukey controls, and gate offset. Where the gate SITS belongs to
 the side you are viewing, since the two sides' drivers sit at different

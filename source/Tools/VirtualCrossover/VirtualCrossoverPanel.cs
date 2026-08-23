@@ -32,7 +32,7 @@ public partial class VirtualCrossoverPanel : UserControl
         "microphone position and sample rate.";
 
     private static readonly OxyColor SumColor = OxyColors.White;
-    private static readonly OxyColor LossColor = OxyColor.FromRgb(230, 184, 0);
+    private static readonly OxyColor LossColor = VirtualCrossoverAcousticPlot.LossAxisColor;
     private static readonly OxyColor[] ChannelColors =
     [
         OxyColor.FromRgb(86, 156, 255),   // A: blue
@@ -181,6 +181,9 @@ public partial class VirtualCrossoverPanel : UserControl
     public VirtualCrossoverPanel()
     {
         InitializeComponent();
+        // While the controls still stand where the designer put them: the layout
+        // pass stretches the plots by deltas on this (see the Layout partial).
+        CaptureLayoutBaseline();
         // The scrolling channel list (and the panel itself when the window is
         // narrow) use native scrollbars; theme them dark so they match the app
         // instead of showing the default light bar.
@@ -1042,7 +1045,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private VirtualCrossoverChannel CreateChannel(int index)
     {
         // The block keeps its own designer-defined size, which the control scales
-        // for the current DPI (AutoScaleMode.Font); overriding it here with raw
+        // for the current DPI (AutoScaleMode.Dpi); overriding it here with raw
         // pixels would clip its scaled content on high-DPI displays.
         var control = new VirtualCrossoverChannelControl
         {
@@ -3035,9 +3038,11 @@ public partial class VirtualCrossoverPanel : UserControl
             // inequality), built once in BuildCurves out of the UNSMOOTHED
             // magnitudes and smoothed as a ratio afterwards — the very list the
             // read-out averages, so the drawn curve and the measured loss cannot
-            // drift apart.
+            // drift apart. A gap, not a level: it goes on the plot's own
+            // right-hand loss axis, not on the dB scale of the curves it
+            // describes.
             curves.Add(new AcousticCurve(
-                "Sum loss", lossCurve, LossColor, 1.8, LineStyle.Dash));
+                "Sum loss", lossCurve, LossColor, 1.8, LineStyle.Dash, OnLossAxis: true));
         }
 
         return curves;

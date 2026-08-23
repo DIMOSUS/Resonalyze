@@ -522,13 +522,13 @@
             asioAudioBackendPanel.BackColor = Color.FromArgb(50, 55, 66);
             asioAudioBackendPanel.Location = new Point(8, 95);
             asioAudioBackendPanel.Name = "asioAudioBackendPanel";
-            asioAudioBackendPanel.Size = new Size(311, 213);
+            asioAudioBackendPanel.Size = new Size(311, 217);
             asioAudioBackendPanel.TabIndex = 26;
             // 
             // MeasurementOptions
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(334, 678);
             Controls.Add(audioBackendPanel);

@@ -15,13 +15,18 @@ internal enum AcousticView
     Impulse
 }
 
-/// <summary>One line on the acoustic plot: its label, points, color and stroke.</summary>
+/// <summary>
+/// One line on the acoustic plot: its label, points, color and stroke.
+/// <paramref name="OnLossAxis"/> binds the curve to the right-hand sum-loss
+/// axis instead of the shared left value axis.
+/// </summary>
 internal sealed record AcousticCurve(
     string Title,
     IReadOnlyList<SignalPoint> Points,
     OxyColor Color,
     double Thickness,
-    LineStyle Style);
+    LineStyle Style,
+    bool OnLossAxis = false);
 
 /// <summary>
 /// The impulse view's payload: the processed traces to draw and the gate window
@@ -49,21 +54,47 @@ internal sealed record AcousticRender(
 /// <summary>
 /// The Virtual DSP main (acoustic) plot: the raw/processed channel magnitudes or
 /// phases, their complex sum and the sum loss, or the gated impulse view. Owns
-/// the plot model, its three axes (the shared log-frequency axis, the magnitude/
-/// phase value axis and the impulse-only linear ms axis), the watermark and hint
-/// annotations, the curve series and the axis-range preservation across view
-/// switches. The panel hands it a ready <see cref="AcousticRender"/>; it never
-/// builds a LineSeries itself.
+/// the plot model, its four axes (the shared log-frequency axis, the magnitude/
+/// phase value axis, the right-hand sum-loss axis and the impulse-only linear ms
+/// axis), the watermark and hint annotations, the curve series and the
+/// axis-range preservation across view switches. The panel hands it a ready
+/// <see cref="AcousticRender"/>; it never builds a LineSeries itself.
 /// </summary>
 internal sealed class VirtualCrossoverAcousticPlot
 {
     private const string SeriesTag = "virtual-crossover:curve";
+    private const string LossAxisKey = "virtual-crossover:loss";
     private const string TrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00}";
+
+    // The sum-loss axis scale: a 6 dB step, the top just clear of the 0 dB
+    // ceiling so the line at 0 reads as a line rather than as the frame, and
+    // a nominal depth that holds an ordinary junction. A deeper notch extends
+    // the range in whole steps down to the floor, below which a cancellation
+    // is total and its exact depth means nothing.
+    private const double LossAxisStepDb = 6;
+    private const double LossAxisTopDb = 3;
+    private const double LossAxisNominalBottomDb = -24;
+    private const double LossAxisFloorDb = -60;
+
+    /// <summary>
+    /// The sum-loss axis colour: the loss curve's own amber, so the scale on the
+    /// right reads as belonging to that one line.
+    /// </summary>
+    public static readonly OxyColor LossAxisColor = OxyColor.FromRgb(230, 184, 0);
 
     private readonly PlotView view;
     private readonly PlotLabelsPanelController plotLabels;
     private readonly PlotWatermarkAnnotation hintAnnotation;
     private readonly LinearAxis valueAxis;
+    // The right-hand axis the sum loss is drawn against. The loss is a dB GAP
+    // (<= 0 by the triangle inequality), not a level: on the shared dB axis it
+    // sat a full scale below the curves it describes and flattened into the
+    // floor. In sight only while a loss curve is drawn, so the other views and
+    // a switched-off loss leave no empty scale behind.
+    private readonly LinearAxis lossAxis;
+    // The nominal range last armed onto the loss axis, so a redraw can tell
+    // "the range this plot chose" from "the view the user zoomed to".
+    private (double Lower, double Upper)? lossAxisNominal;
     // The two bottom axes: the shared log-frequency axis for the magnitude/phase
     // views and a linear ms axis for the impulse view. Only one is in the model
     // at a time (ConfigureBottomAxis swaps them), so the untagged curve series
@@ -108,6 +139,28 @@ internal sealed class VirtualCrossoverAcousticPlot
             MinorGridlineStyle = LineStyle.Dot
         };
         model.Axes.Add(valueAxis);
+        // After the value axis: the mouse and the on-graph buttons take the
+        // first visible zoomable axis of an orientation as "the" vertical
+        // scale (PlotAxisZoom.FindZoomableAxis), and that stays the dB axis on
+        // the left. The loss axis owns no gridlines (the left axis draws them);
+        // a faint line marks its 0 dB ceiling.
+        lossAxis = new LinearAxis
+        {
+            Key = LossAxisKey,
+            Position = AxisPosition.Right,
+            Title = "Sum loss (dB)",
+            MajorStep = LossAxisStepDb,
+            MajorGridlineStyle = LineStyle.None,
+            MinorGridlineStyle = LineStyle.None,
+            TextColor = LossAxisColor,
+            TitleColor = LossAxisColor,
+            TicklineColor = LossAxisColor,
+            ExtraGridlines = new[] { 0.0 },
+            ExtraGridlineColor = OxyColor.FromAColor(60, LossAxisColor),
+            ExtraGridlineStyle = LineStyle.Solid,
+            IsAxisVisible = false
+        };
+        model.Axes.Add(lossAxis);
 
         model.Annotations.Add(new PlotWatermarkAnnotation
         {
@@ -181,6 +234,14 @@ internal sealed class VirtualCrossoverAcousticPlot
         valueAxis.IsZoomEnabled = !phase;
         valueAxis.IsPanEnabled = !phase;
 
+        // The loss is magnitude-only (the panel mutes its toggle elsewhere);
+        // the next Draw decides the axis for the magnitude view, the others
+        // lose it right away rather than on their first redraw.
+        if (acousticView != AcousticView.Magnitude)
+        {
+            lossAxis.IsAxisVisible = false;
+        }
+
         ConfigureBottomAxis(acousticView);
         valueAxis.Reset();
         view.InvalidatePlot(false);
@@ -207,13 +268,24 @@ internal sealed class VirtualCrossoverAcousticPlot
 
         if (render.Impulse is { } impulse)
         {
+            lossAxis.IsAxisVisible = false;
             DrawImpulse(model, impulse);
         }
         else
         {
+            bool lossDrawn = false;
             foreach (AcousticCurve curve in render.Curves)
             {
-                AddCurve(model, curve.Title, curve.Points, curve.Color, curve.Thickness, curve.Style);
+                AddCurve(model, curve);
+                lossDrawn |= curve.OnLossAxis;
+            }
+
+            // The axis shows exactly while a curve is bound to it: a scale with
+            // nothing on it is a scale for nothing.
+            lossAxis.IsAxisVisible = lossDrawn;
+            if (lossDrawn)
+            {
+                UpdateLossAxisRange(render.Curves);
             }
         }
 
@@ -303,24 +375,77 @@ internal sealed class VirtualCrossoverAcousticPlot
         }
     }
 
-    private static void AddCurve(
-        PlotModel model,
-        string title,
-        IReadOnlyList<SignalPoint> points,
-        OxyColor color,
-        double thickness,
-        LineStyle lineStyle)
+    // Sizes the loss axis to the nominal depth extended, in whole steps, to the
+    // deepest drawn loss. The nominal range is the hard pan/zoom limit — the
+    // curve holds nothing beyond it. The RANGE, though, is re-armed only when
+    // the nominal itself moved: the axis zooms and pans, and every chain edit
+    // redraws this view, so re-arming each time would throw away the zoom the
+    // user just set — the rule the impulse view's time axis follows too.
+    private void UpdateLossAxisRange(IReadOnlyList<AcousticCurve> curves)
+    {
+        double deepest = 0;
+        foreach (AcousticCurve curve in curves)
+        {
+            if (!curve.OnLossAxis)
+            {
+                continue;
+            }
+
+            foreach (SignalPoint point in curve.Points)
+            {
+                if (double.IsFinite(point.Y))
+                {
+                    deepest = Math.Min(deepest, point.Y);
+                }
+            }
+        }
+
+        (double lower, double upper) = LossAxisRange(deepest);
+        lossAxis.AbsoluteMinimum = lower;
+        lossAxis.AbsoluteMaximum = upper;
+        if (lossAxisNominal is { } previous &&
+            Math.Abs(previous.Lower - lower) < 1e-9 &&
+            Math.Abs(previous.Upper - upper) < 1e-9)
+        {
+            return;
+        }
+
+        lossAxisNominal = (lower, upper);
+        lossAxis.Minimum = lower;
+        lossAxis.Maximum = upper;
+        lossAxis.Reset();
+    }
+
+    /// <summary>
+    /// The sum-loss axis range for a curve whose deepest point is
+    /// <paramref name="deepestDb"/>: the nominal depth, extended in whole steps
+    /// to hold the curve, down to the floor.
+    /// </summary>
+    internal static (double Lower, double Upper) LossAxisRange(double deepestDb)
+    {
+        double lower = Math.Min(
+            LossAxisNominalBottomDb,
+            Math.Floor(deepestDb / LossAxisStepDb) * LossAxisStepDb);
+        return (Math.Max(lower, LossAxisFloorDb), LossAxisTopDb);
+    }
+
+    private static void AddCurve(PlotModel model, AcousticCurve curve)
     {
         var series = new LineSeries
         {
-            Color = color,
-            StrokeThickness = thickness,
-            LineStyle = lineStyle,
-            Title = title,
+            Color = curve.Color,
+            StrokeThickness = curve.Thickness,
+            LineStyle = curve.Style,
+            Title = curve.Title,
             Tag = SeriesTag,
             TrackerFormatString = TrackerFormat
         };
-        foreach (SignalPoint point in points)
+        if (curve.OnLossAxis)
+        {
+            series.YAxisKey = LossAxisKey;
+        }
+
+        foreach (SignalPoint point in curve.Points)
         {
             series.Points.Add(new DataPoint(point.X, point.Y));
         }

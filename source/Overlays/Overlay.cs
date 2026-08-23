@@ -297,10 +297,7 @@ public sealed class OverlayCollection
                 continue;
             }
 
-            // In the magnitude mode an overlay shows only on the axis it was captured
-            // on: dBr/dBc overlays in Relative, dB SPL overlays in SPL.
-            if (overlayMode == Mode.FrequencyResponse &&
-                overlay.CapturedMagnitudeScale != scale)
+            if (!overlay.DrawsOnMagnitudeScale(scale))
             {
                 continue;
             }
@@ -475,11 +472,18 @@ public sealed class OverlayCollection
         }
 
         Mode overlayMode = OverlayModeFor(mode);
+        MagnitudeScale scale = CurrentMagnitudeScale;
         foreach (int slot in activeSlots)
         {
             Overlay? overlay = overlays.FirstOrDefault(
                 candidate => candidate.Index == slot && candidate.SeriesMode == overlayMode);
-            overlay?.Show();
+            // A slot may have been active on the other magnitude axis; restoring it
+            // obeys the same rule as every other draw, so an SPL capture does not
+            // reappear on the dBr axis after a round trip through another mode.
+            if (overlay?.DrawsOnMagnitudeScale(scale) == true)
+            {
+                overlay.Show();
+            }
         }
 
         notifyPlotChanged();
@@ -791,7 +795,13 @@ public sealed class Overlay
     public bool Checked => checkBox.Checked;
     public OverlayKind Kind => kind;
 
-    public MagnitudeScale CapturedMagnitudeScale => capturedMagnitudeScale;
+    /// <summary>
+    /// Whether this slot may draw on the magnitude axis currently shown (see
+    /// <see cref="OverlayMagnitudeScale"/>).
+    /// </summary>
+    internal bool DrawsOnMagnitudeScale(MagnitudeScale scale) =>
+        OverlayMagnitudeScale.Draws(SeriesMode, kind, capturedMagnitudeScale, scale);
+
     public bool HasCaptureData => sourcePoints is { Length: > 1 };
 
     // The overlay mode for the current view; Frequency Response and Live Spectrum
@@ -2273,11 +2283,11 @@ public sealed class Overlay
 
         if (checkBox.Checked)
         {
-            // Show only on a matching mode and — in the magnitude mode — a matching
-            // scale, so an SPL overlay is not drawn on the dBr axis or vice versa.
+            // Show only on a matching mode and a matching magnitude scale, by exactly
+            // the rule the redraw after every plot rebuild uses — the two disagreeing
+            // is what made a calculated slot appear on Save and refuse the checkbox.
             if (SeriesMode == CurrentOverlayMode &&
-                (SeriesMode != Mode.FrequencyResponse ||
-                 capturedMagnitudeScale == collection.CurrentMagnitudeScale))
+                DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale))
             {
                 Show();
             }

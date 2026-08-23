@@ -171,8 +171,9 @@ public static class CrossoverFilter
     /// first-order section when n is odd; a Linkwitz-Riley of order n is the
     /// Butterworth of order n/2 cascaded twice (so LR36 = BW18² carries two
     /// first-order sections next to its two Q = 1 biquads). When n/2 is odd (LR12,
-    /// LR36) the low-pass and high-pass halves are 180° apart at every frequency —
-    /// the pair sums to an all-pass only with one side inverted, as on the DSP.
+    /// LR36) the low-pass and high-pass halves are 180° apart at every frequency,
+    /// so flat summation requires one side to be inverted — the channel's own
+    /// polarity setting, which choosing the slope does not touch.
     /// </summary>
     public static IReadOnlyList<BiquadCoefficients> BuildSections(
         CrossoverEdge edge,

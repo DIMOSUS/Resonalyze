@@ -125,10 +125,10 @@ public sealed class CrossoverFilterTests
         // The defining LR property: the low-pass and high-pass halves have the
         // same magnitude and differ in phase by (n/2)·180° at every frequency, so
         // their complex sum has unit magnitude — directly when n/2 is even (LR24,
-        // LR48), and with one side inverted when n/2 is odd (LR12, LR36), which is
-        // the polarity flip a DSP applies to one driver of such a pair. The
-        // bilinear transform preserves the algebraic identity, so it holds for the
-        // digital cascade too.
+        // LR48), and only with one side inverted when n/2 is odd (LR12, LR36) —
+        // such a pair requires the user to flip one channel's polarity for flat
+        // summation; the slope itself does not. The bilinear transform preserves
+        // the algebraic identity, so it holds for the digital cascade too.
         CrossoverSpec lowPass = LowPass(CrossoverFilterFamily.LinkwitzRiley, 1_000, slope);
         CrossoverSpec highPass = HighPass(CrossoverFilterFamily.LinkwitzRiley, 1_000, slope);
         double sign = oneSideInverted ? -1.0 : 1.0;

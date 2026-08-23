@@ -1372,7 +1372,10 @@ Each channel runs through:
 - **Crossover** — Off, low-pass, high-pass, or band-pass; each edge picks
   **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/36/48 dB/oct),
   **Bessel** (6–48 dB/oct, near-constant group delay), or **Chebyshev**
-  (6–48 dB/oct, with a selectable passband **ripple**) with its own corner
+  (6–48 dB/oct, with a selectable passband **ripple**) with its own corner.
+  A Linkwitz-Riley pair sums flat only when its two halves are in phase:
+  LR24 and LR48 are, LR12 and LR36 sit 180° apart, so one of the two
+  channels needs **Invert** or the sum nulls at the corner
 - **All-pass** — 1st order (180° of phase swing) or 2nd order (360°, with a **Q**
   setting how abruptly it turns). Only phase moves, which makes it the tool for
   lining drivers up where a delay and a polarity flip are both too blunt — a

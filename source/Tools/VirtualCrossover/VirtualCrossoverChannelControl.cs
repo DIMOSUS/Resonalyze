@@ -406,7 +406,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
         const string familyTip =
             "Filter alignment for this edge:\r\n" +
             "Linkwitz-Riley — -6 dB at the corner, two edges sum flat\r\n" +
-            "(the car-audio default);\r\n" +
+            "(the car-audio default); LR12 and LR36 sum flat only with\r\n" +
+            "one side inverted — use Invert on one of the channels;\r\n" +
             "Butterworth — maximally flat passband, -3 dB at the corner;\r\n" +
             "Bessel — gentlest phase and transient, shallowest knee;\r\n" +
             "Chebyshev — steepest knee, at the cost of passband ripple.";

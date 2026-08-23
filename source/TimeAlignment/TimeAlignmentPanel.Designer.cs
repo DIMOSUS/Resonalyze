@@ -253,8 +253,8 @@ namespace Resonalyze
             // 
             // TimeAlignmentPanel
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             AutoScroll = true;
             BackColor = Color.FromArgb(40, 44, 54);
             BorderStyle = BorderStyle.FixedSingle;

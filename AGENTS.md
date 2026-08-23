@@ -172,6 +172,7 @@ Enforced by `.editorconfig`; notable deviations from common C# defaults:
 - CRLF line endings, 4-space indent, Allman braces, braces always.
 - New non-UI code uses file-scoped namespaces (see `Program.cs`, `ModeController.cs`).
 - Keep static WinForms controls in `.Designer.cs`. For genuinely dynamic controls, use a designer-defined `TableLayoutPanel` or `FlowLayoutPanel`; avoid absolute 96-DPI coordinates because controls created after `InitializeComponent` miss designer autoscaling.
+- Every WinForms container scales with `AutoScaleMode.Dpi` and `AutoScaleDimensions = (96, 96)` — do not go back to `AutoScaleMode.Font`. Font autoscaling is anisotropic: at 120 DPI it widens boxes by the average character width (7→8, ×1.14) while the glyphs themselves grow ×1.25, so labels, radios and buttons were clipped across the app at 125%. DPI scaling uses one uniform `DeviceDpi / 96` on both axes, which is the ratio the text grows by. Designer slack therefore scales with the text: leave a few pixels beside a label rather than sizing a box to its exact 96-DPI extent.
 
 ## User data paths
 

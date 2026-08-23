@@ -113,8 +113,8 @@
             // RecordedSweepChannelDialog
             //
             AcceptButton = buttonMeasure;
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(45, 50, 60);
             CancelButton = buttonCancel;
             ClientSize = new Size(462, 302);

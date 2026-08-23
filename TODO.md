@@ -206,6 +206,22 @@ close.
   `DpiChanged` handling: moving the window to a monitor with different DPI
   (PerMonitorV2) leaves the bar height, button widths and tab layout at the old
   scale. Refresh the cached metrics and re-run layout on DPI change.
+- [ ] ★ **The app is `HighDpiMode.SystemAware`; a mixed-DPI desktop wants
+  `PerMonitorV2`.** The generated `ApplicationConfiguration.Initialize` asks for
+  `SystemAware`, so the process takes the PRIMARY monitor's DPI once at startup
+  and never re-scales: dragging the window to a monitor at a different scale
+  leaves Windows stretching the bitmap and the text goes soft. Layout does not
+  break (nothing re-lays-out), so this is a sharpness problem, not a clipping
+  one — the clipping half was the `AutoScaleMode.Font` → `Dpi` switch, already
+  done. Switching means every control that CACHES a `DeviceDpi`-derived layout
+  must refresh on `DpiChanged` / `OnDpiChangedAfterParent`: `ChromeTitleBar` (the
+  item above is the blocker), the `Dark*` inner-layout controls
+  (`DarkNumericUpDown`, `DarkComboBox` already handle `OnHandleCreated` /
+  `OnDpiChangedAfterParent`, so they may be ready) and `VirtualCrossoverPanel`'s
+  layout baseline (it scales in `ScaleControl`, which a DPI move does call —
+  worth a live check rather than an assumption). Needs a two-monitor desktop at
+  different scales to verify; the owner has one (left 125%, right 100%, as of
+  2026-08-23).
 
 ## Audio capture layer
 

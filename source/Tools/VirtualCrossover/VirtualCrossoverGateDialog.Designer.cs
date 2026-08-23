@@ -366,8 +366,8 @@ namespace Resonalyze
             // 
             // VirtualCrossoverGateDialog
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(40, 44, 54);
             ClientSize = new Size(620, 512);
             Controls.Add(labelGateOffset);

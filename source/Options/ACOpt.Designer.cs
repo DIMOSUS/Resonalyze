@@ -55,8 +55,8 @@ namespace Resonalyze.Options
             //
             // ACOpt
             //
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(265, 66);
             Controls.Add(checkBoxShowAutocorrelation);

@@ -245,8 +245,8 @@ namespace Resonalyze
             // 
             // EqResultsPanel
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(20, 22, 30);
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(tableLayout);

@@ -62,7 +62,12 @@ internal static class UiStyle
         bool fixedDialog = true,
         Padding? padding = null)
     {
-        form.AutoScaleMode = AutoScaleMode.Font;
+        // The layout below is written in 96-DPI pixels, so say so: without
+        // declared dimensions the first auto-scale adopts the CURRENT ones and
+        // the factor is 1 — the boxes stayed 96-DPI while the text grew with
+        // the display, which is what clipped these dialogs at 125%.
+        form.AutoScaleDimensions = new SizeF(96F, 96F);
+        form.AutoScaleMode = AutoScaleMode.Dpi;
         form.BackColor = UiPalette.DialogBackground;
         form.ClientSize = clientSize;
         form.Font = new Font("Segoe UI", 9F);

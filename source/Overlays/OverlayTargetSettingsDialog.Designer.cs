@@ -600,8 +600,8 @@ namespace Resonalyze
             // 
             // OverlayTargetSettingsDialog
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(40, 42, 48);
             ClientSize = new Size(500, 781);
             Controls.Add(nameLabel);

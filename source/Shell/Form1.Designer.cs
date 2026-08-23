@@ -411,7 +411,7 @@ namespace Resonalyze
             // 
             // virtualDspMetricLabel
             // 
-            virtualDspMetricLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            virtualDspMetricLabel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             virtualDspMetricLabel.BackColor = Color.FromArgb(20, 22, 30);
             virtualDspMetricLabel.BorderStyle = BorderStyle.FixedSingle;
             virtualDspMetricLabel.Font = new Font("Consolas", 9F);
@@ -441,8 +441,8 @@ namespace Resonalyze
             // 
             // Form1
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1494, 832);
             Controls.Add(overlays);

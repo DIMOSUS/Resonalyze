@@ -238,7 +238,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     // The fold line: the top of the crossover row, the first row of the filter chain.
     // Read off the live control rather than hard-coded — the rows are scaled for the
-    // current DPI (AutoScaleMode.Font) and a pixel literal would cut the wrong one.
+    // current DPI (AutoScaleMode.Dpi) and a pixel literal would cut the wrong one.
     private int FoldLine => comboBoxCrossoverKind.Top;
 
     private void ApplyCollapsedState()

@@ -156,8 +156,8 @@ namespace Resonalyze
             //
             // PeqSlotControl
             //
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(44, 50, 60);
             Controls.Add(slotLayout);
             Font = new Font("Segoe UI", 9F);

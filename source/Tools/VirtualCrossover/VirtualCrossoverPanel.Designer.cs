@@ -389,6 +389,7 @@ namespace Resonalyze
             // 
             // buttonCaptureOverlay
             // 
+            buttonCaptureOverlay.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonCaptureOverlay.FlatStyle = FlatStyle.Popup;
             buttonCaptureOverlay.ForeColor = Color.White;
             buttonCaptureOverlay.Location = new Point(358, 702);
@@ -400,6 +401,7 @@ namespace Resonalyze
             // 
             // buttonExport
             // 
+            buttonExport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonExport.FlatStyle = FlatStyle.Popup;
             buttonExport.ForeColor = Color.White;
             buttonExport.Location = new Point(358, 732);
@@ -432,6 +434,7 @@ namespace Resonalyze
             // 
             // buttonSessionImport
             // 
+            buttonSessionImport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonSessionImport.FlatStyle = FlatStyle.Popup;
             buttonSessionImport.ForeColor = Color.White;
             buttonSessionImport.Location = new Point(358, 672);
@@ -443,6 +446,7 @@ namespace Resonalyze
             //
             // buttonAudition
             //
+            buttonAudition.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonAudition.FlatStyle = FlatStyle.Popup;
             buttonAudition.ForeColor = Color.White;
             buttonAudition.Location = new Point(358, 612);
@@ -454,6 +458,7 @@ namespace Resonalyze
             //
             // buttonSessionExport
             //
+            buttonSessionExport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonSessionExport.FlatStyle = FlatStyle.Popup;
             buttonSessionExport.ForeColor = Color.White;
             buttonSessionExport.Location = new Point(358, 642);
@@ -465,6 +470,7 @@ namespace Resonalyze
             // 
             // dspModePanel
             // 
+            dspModePanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             dspModePanel.BackColor = Color.FromArgb(40, 44, 54);
             dspModePanel.BorderStyle = BorderStyle.FixedSingle;
             dspModePanel.Controls.Add(labelDspMode);
@@ -473,7 +479,7 @@ namespace Resonalyze
             dspModePanel.Controls.Add(radioDspGroupDelay);
             dspModePanel.Location = new Point(490, 733);
             dspModePanel.Name = "dspModePanel";
-            dspModePanel.Size = new Size(285, 23);
+            dspModePanel.Size = new Size(302, 23);
             dspModePanel.TabIndex = 20;
             // 
             // labelDspMode
@@ -561,18 +567,19 @@ namespace Resonalyze
             // 
             // panel2
             // 
+            panel2.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             panel2.BorderStyle = BorderStyle.FixedSingle;
             panel2.Controls.Add(radioDspCorrelation);
             panel2.Controls.Add(comboBoxCorrelationPair);
-            panel2.Location = new Point(781, 733);
+            panel2.Location = new Point(798, 733);
             panel2.Name = "panel2";
             panel2.Size = new Size(170, 23);
             panel2.TabIndex = 25;
             // 
             // VirtualCrossoverPanel
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             AutoScroll = true;
             BackColor = Color.FromArgb(40, 44, 54);
             BorderStyle = BorderStyle.FixedSingle;

@@ -92,8 +92,31 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     }
 
     // A tilt is a dB-per-octave statement, so it rides on the same modes as the
-    // amplitude-space math: the magnitude views.
-    private bool SupportsTilt => supportsAmplitudeSpace;
+    // amplitude-space math — the magnitude views — AND on a curve that is decibels: the
+    // operand list also offers coherence traces, whose 0…1 ratio no slope belongs to.
+    private bool SupportsTilt => supportsAmplitudeSpace && ResultSemantics.IsDecibels;
+
+    // What the operation as configured right now would produce. Undefined operands (a
+    // pair that cannot be operated on) are reported by the Save validation, so here they
+    // simply state nothing.
+    private OverlayCurveSemantics ResultSemantics
+    {
+        get
+        {
+            OverlayOperandOption? a = OperandOf(sourceAComboBox);
+            OverlayOperandOption? b = OperandOf(sourceBComboBox);
+            OverlayOperation? operation =
+                operationComboBox.SelectedItem as OverlayOperation?;
+            return operation is { } value && a != null
+                ? OverlayCurveSemantics.ForOperation(
+                    value,
+                    a.Semantics,
+                    value == OverlayOperation.CurveA || b == null
+                        ? OverlayCurveSemantics.None
+                        : b.Semantics).Curve
+                : OverlayCurveSemantics.None;
+        }
+    }
 
     public string OverlayName => nameTextBox.Text.Trim();
     public int SourceSlotA => SlotOf(sourceAComboBox);
@@ -130,7 +153,11 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         // one-off snapshot.
         foreach (LiveCurveOption live in availableLiveCurves)
         {
-            var operand = new OverlayOperandOption(0, live.Key, $"Live: {live.Label}");
+            var operand = new OverlayOperandOption(
+                0,
+                live.Key,
+                $"Live: {live.Label}",
+                live.Semantics);
             sourceAComboBox.Items.Add(operand);
             sourceBComboBox.Items.Add(operand);
         }
@@ -140,7 +167,8 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             var operand = new OverlayOperandOption(
                 source.Slot,
                 null,
-                $"Slot {source.Slot}: {source.Title}");
+                $"Slot {source.Slot}: {source.Title}",
+                source.Semantics);
             sourceAComboBox.Items.Add(operand);
             sourceBComboBox.Items.Add(operand);
         }
@@ -205,11 +233,22 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         operationComboBox.SelectedIndexChanged += (_, _) =>
         {
             UpdateBlendControls();
+            UpdateTiltControls();
             NotifyPreview();
         };
         nameTextBox.TextChanged += (_, _) => NotifyPreview();
-        sourceAComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
-        sourceBComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
+        // The operands decide what the result IS, so the tilt's availability follows
+        // them: a slope belongs to decibels, not to a coherence ratio.
+        sourceAComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            UpdateTiltControls();
+            NotifyPreview();
+        };
+        sourceBComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            UpdateTiltControls();
+            NotifyPreview();
+        };
         blendFrequencyInput.ValueChanged += (_, _) => NotifyPreview();
         blendWidthInput.SelectedIndexChanged += (_, _) => NotifyPreview();
         amplitudeSpaceCheckBox.CheckedChanged += (_, _) => NotifyPreview();
@@ -273,13 +312,13 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         UiStyle.SetTextEnabledLook(smoothingLabel, supportsSmoothing);
         smoothingComboBox.Enabled = supportsSmoothing;
         UiStyle.SetTextEnabledLook(amplitudeSpaceCheckBox, supportsAmplitudeSpace, interactive: true);
-        UiStyle.SetTextEnabledLook(tiltCheckBox, SupportsTilt, interactive: true);
     }
 
     // The two tilt numbers only mean something once the tilt is switched on — and the
     // tilt itself only in the magnitude views.
     private void UpdateTiltControls()
     {
+        UiStyle.SetTextEnabledLook(tiltCheckBox, SupportsTilt, interactive: true);
         bool enabled = SupportsTilt && tiltCheckBox.Checked;
         UiStyle.SetTextEnabledLook(tiltPivotLabel, enabled);
         tiltPivotInput.Enabled = enabled;
@@ -355,11 +394,15 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         OverlayOperandOption? b = OperandOf(sourceBComboBox);
         // Complex sum (and its loss variant) has no operands to validate — sources are
         // fixed; "A only" has just the one, which may freely equal whatever B still holds.
+        // Two operands must also be the same kind of number: dB SPL against relative
+        // decibels, or coherence against decibels, has no result any axis could carry, so
+        // it is refused here rather than saved into a slot that could never draw.
         bool operandsValid = Operation switch
         {
             OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss => true,
             OverlayOperation.CurveA => a != null,
-            _ => a != null && b != null && !SameOperand(a, b)
+            _ => a != null && b != null && !SameOperand(a, b) &&
+                OverlayCurveSemantics.AreCompatible(a.Semantics, b.Semantics)
         };
         bool valid = OverlayName.Length > 0 && operandsValid;
         if (valid)
@@ -511,14 +554,20 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             : a.Slot == b.Slot;
 }
 
-internal sealed record OverlaySlotOption(int Slot, string Title)
+internal sealed record OverlaySlotOption(
+    int Slot,
+    string Title,
+    OverlayCurveSemantics Semantics = default)
 {
     public override string ToString() => $"{Slot}: {Title}";
 }
 
 // A live analysis curve (identified by its CurveTag Key) selectable as an operation
 // operand directly from the plot, without capturing it into a slot first.
-internal sealed record LiveCurveOption(string Key, string Label);
+internal sealed record LiveCurveOption(
+    string Key,
+    string Label,
+    OverlayCurveSemantics Semantics = default);
 
 // A full snapshot of the candidate settings in the calculated-overlay dialog, fired
 // on every control change for the live preview. Mirrors the dialog's output
@@ -545,7 +594,11 @@ internal sealed record OverlayOperationPreview(
     int SmoothingInverseOctaves);
 
 // A unified operation operand: a captured slot (CurveKey null) or a live curve.
-internal sealed record OverlayOperandOption(int Slot, string? CurveKey, string Label)
+internal sealed record OverlayOperandOption(
+    int Slot,
+    string? CurveKey,
+    string Label,
+    OverlayCurveSemantics Semantics = default)
 {
     public bool IsLiveCurve => CurveKey != null;
 

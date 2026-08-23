@@ -368,7 +368,8 @@ public sealed class OverlayCollection
                 overlay.HasCaptureData)
             .Select(overlay => new OverlaySlotOption(
                 overlay.Index,
-                overlay.Title))
+                overlay.Title,
+                overlay.SlotSemantics))
             .ToArray();
     }
 
@@ -413,7 +414,7 @@ public sealed class OverlayCollection
     // scale of its own — but it does carry the Y axis it is drawn against (coherence
     // lives on its own), and an operation over it must land there too.
     private static OverlayCurveSemantics LiveCurveSemantics(LineSeries series) =>
-        new(null, series.YAxisKey);
+        OverlayCurveSemantics.ForLiveCurve(series.YAxisKey);
 
     // Live analysis curves on the current plot that an operation operand can reference
     // directly (every such curve carries a CurveTag). Both Main and Compare are offered.
@@ -431,7 +432,10 @@ public sealed class OverlayCollection
             .Select(series =>
             {
                 var tag = (CurveTag)series.Tag!;
-                return new LiveCurveOption(tag.Key, tag.Label);
+                return new LiveCurveOption(
+                    tag.Key,
+                    tag.Label,
+                    LiveCurveSemantics(series));
             })
             .ToArray();
     }
@@ -837,15 +841,23 @@ public sealed class Overlay
     // places, on the main axis, and states nothing.
     internal OverlayCurveSemantics SlotSemantics => kind switch
     {
-        OverlayKind.Captured =>
-            new OverlayCurveSemantics(capturedMagnitudeScale, capturedYAxisKey),
-        OverlayKind.Operation => SemanticsFor(CurrentOperationSnapshot()),
+        OverlayKind.Captured => OverlayCurveSemantics.ForCapture(
+            capturedMagnitudeScale,
+            capturedYAxisKey),
+        OverlayKind.Operation => ResultFor(CurrentOperationSnapshot()).Curve,
         _ => OverlayCurveSemantics.None
     };
 
-    // The same, for candidate settings the dialog has not committed: a live preview may
-    // point at different operands than the slot holds.
-    private OverlayCurveSemantics SemanticsFor(OverlayOperationPreview settings) =>
+    // Whether this slot's operands can be operated on at all — dB SPL against relative
+    // decibels, or coherence against decibels, produces a number that is neither, and
+    // the slot stays unavailable rather than drawing it.
+    private bool OperationIsDefined =>
+        kind != OverlayKind.Operation ||
+        ResultFor(CurrentOperationSnapshot()).IsDefined;
+
+    // What the operation produces, for candidate settings the dialog has not committed
+    // as well: a live preview may point at different operands than the slot holds.
+    private OverlayOperationResult ResultFor(OverlayOperationPreview settings) =>
         OverlayCurveSemantics.ForOperation(
             settings.Operation,
             collection.OperandSemantics(settings.SourceCurveKeyA, settings.SourceSlotA),
@@ -1296,6 +1308,7 @@ public sealed class Overlay
         // yet; keep such an operation available as long as it is configured, like a
         // target. Slot-only operations still require their captures.
         bool available = operationConfigured &&
+            OperationIsDefined &&
             (ReferencesLiveCurve || IsComplexSumOperation || TryGetSources(out _, out _));
         ApplyCalculatedAvailability(
             available,
@@ -2600,6 +2613,14 @@ public sealed class Overlay
                 showLoss: settings.Operation == OverlayOperation.ComplexSumLoss);
         }
 
+        OverlayOperationResult result = ResultFor(settings);
+        if (!result.IsDefined)
+        {
+            // Operands that are not the same kind of number (dB SPL against relative
+            // decibels, coherence against decibels): there is no curve to draw.
+            return null;
+        }
+
         bool usesB = settings.Operation != OverlayOperation.CurveA;
         OverlayOperationSource? sourceA =
             ResolveOperand(settings.SourceCurveKeyA, settings.SourceSlotA);
@@ -2637,23 +2658,26 @@ public sealed class Overlay
             return null;
         }
 
-        return ApplyOffsetAndTilt(points, settings);
+        return ApplyOffsetAndTilt(points, settings, result.Curve);
     }
 
     // The slot's vertical offset and its tilt, applied together as the last step: both
     // move the drawn curve without belonging to the math above, and the tilt is just the
     // offset generalized to a slope — 0 dB at the pivot, TiltDbPerOctave per octave from
-    // it. Applied AFTER smoothing so the smoother still sees the measured shape.
+    // it. Applied AFTER smoothing so the smoother still sees the measured shape, and
+    // only to decibels: dB per octave says nothing about a 0…1 coherence ratio.
     private DataPoint[] ApplyOffsetAndTilt(
         IReadOnlyList<OverlayPoint> points,
-        OverlayOperationPreview settings)
+        OverlayOperationPreview settings,
+        OverlayCurveSemantics semantics)
     {
         double offset = (double)offsetControl.Value;
+        bool tilted = settings.TiltEnabled && semantics.IsDecibels;
         var result = new DataPoint[points.Count];
         for (int i = 0; i < points.Count; i++)
         {
             OverlayPoint point = points[i];
-            double tilt = settings.TiltEnabled
+            double tilt = tilted
                 ? OverlayMath.TiltDb(
                     point.X,
                     settings.TiltDbPerOctave,
@@ -2690,7 +2714,9 @@ public sealed class Overlay
         OverlayPoint[] smoothed = showLoss
             ? sumPoints
             : OverlayMath.SmoothByOctaves(sumPoints, smoothing);
-        return ApplyOffsetAndTilt(smoothed, settings);
+        // The complex sum is decibels by construction; it has no operands to inherit
+        // an axis from.
+        return ApplyOffsetAndTilt(smoothed, settings, OverlayCurveSemantics.None);
     }
 
     // Redraws this slot's series with the dialog's candidate settings — operands,
@@ -2717,7 +2743,7 @@ public sealed class Overlay
                 settings.StrokeThickness,
                 settings.LineStyle,
                 settings.Name.Length > 0 ? settings.Name : Title,
-                SemanticsFor(settings).YAxisKey);
+                ResultFor(settings).Curve.YAxisKey);
         }
 
         RefreshPlot(model);

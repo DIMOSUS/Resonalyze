@@ -670,6 +670,38 @@ source; **Test ASIO Inputs** captures a short diagnostic snapshot that verifies
 the microphone and loopback channels are truly separate and not mono-summed by
 the driver or the interface's control software.
 
+### WASAPI Shared and Exclusive
+
+Both WASAPI modes work with the Windows endpoints directly: you choose the output
+and input endpoint, the sample rate, the playback channel, and the microphone and
+loopback channels of the input endpoint (loopback required). The status line under
+the channel selection reports what the chosen pair will actually do.
+
+**Shared** runs alongside other applications and the endpoints' own mix format
+applies, so the line quotes that format and says when the two endpoints do not
+agree on a rate — Windows resamples the render side, while timing stays
+loopback-referenced.
+
+**Exclusive** hands the requested format to the endpoint unchanged, so the sample
+rate list offers only the rates BOTH endpoints accept for the exact format being
+asked for: the rate, the bit depth, and the channel counts that follow from the
+playback channel and the microphone/loopback routing. When a rate opens, the line
+confirms it:
+
+> Exclusive: 48 000 Hz / 24-bit opens directly on both endpoints.
+
+When none does, the list is deliberately **empty** — a rate no endpoint reported is
+not offered, and Apply refuses for the same reason — the achieved-range line reads
+`—`, and the status line names the format that was refused:
+
+> ⚠ No sample rate opens in Exclusive: 24-bit, 2-ch capture, 1-ch render. Mono asks
+> for a one-channel format most endpoints refuse — try Stereo.
+
+A `Mono` playback channel is the usual cause: it asks the output for a one-channel
+format, and an endpoint that accepts only its native stereo one then refuses at
+every rate. `Stereo`, `Left` and `Right` all open a two-channel format and usually
+fill the list; failing that, choose another endpoint pair or use **WASAPI Shared**.
+
 ## Input Level Meter
 
 The right-side control column includes a compact two-channel input meter for

@@ -1049,6 +1049,21 @@ namespace Resonalyze.Options
         // state (which is stale until the next run).
         private void RefreshSweepBandPreview()
         {
+            if (comboBoxSampleRate.SelectedItem is not int)
+            {
+                // Nothing is selected because nothing is offered: no rate opens for this
+                // configuration. GetSelectedSampleRate answers 44.1 kHz to callers that
+                // need a number anyway, and a band and duration computed from it would
+                // describe a sweep this configuration cannot run.
+                labelActualRangeCaption.Text = "—";
+                labelActualRangeCaption.ForeColor = Color.Gold;
+                deviceToolTip.SetToolTip(
+                    labelActualRangeCaption,
+                    "No sample rate opens for the current configuration, so there is " +
+                    "nothing to compute the sweep against.");
+                return;
+            }
+
             double lowHz = (double)numericUpDownLowFrequency.Value;
             double highHz = (double)numericUpDownHighFrequency.Value;
             double perOctaveSeconds = (double)numericUpDownRequestedDuration.Value * 0.001;
@@ -1303,6 +1318,17 @@ namespace Resonalyze.Options
             // rate itself belongs to the audio backend group and is not applied
             // until the Apply button commits it — only the preview moves here.
             RefreshSweepBandPreview();
+            if (IsSelectedWasapiBackend())
+            {
+                // The endpoint status line reports on the SELECTED rate, and picking
+                // another one out of a list that already holds it does not rebuild the
+                // list — so RefreshSampleRateOptions, the other place that rewrites the
+                // line, never runs here. Without this the line goes on naming the rate
+                // the user just moved away from. Only for WASAPI: the other branches of
+                // UpdateWaveLoopbackControls move the loopback selection, which would
+                // re-enter through its own SelectedIndexChanged.
+                UpdateWaveLoopbackControls();
+            }
             if (comboBoxAudioBackend.SelectedIndex != (int)AudioBackend.Asio)
             {
                 return;

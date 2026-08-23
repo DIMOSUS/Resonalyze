@@ -131,10 +131,13 @@ public sealed class SampleRateOptionsTests
                 "The WASAPI Exclusive endpoints"));
 
         // The way out is not another rate — there is none — so the message has to point
-        // at what can actually change.
+        // at what can actually change. Not the bit depth: that control is disabled, and
+        // the message named it for as long as nobody tried to follow the advice.
         Assert.Contains("no sample rate in common", error.Message);
         Assert.Contains("The WASAPI Exclusive endpoints", error.Message);
-        Assert.Contains("bit depth", error.Message);
+        Assert.Contains("playback channel", error.Message);
+        Assert.Contains("microphone and loopback channels", error.Message);
+        Assert.DoesNotContain("bit depth", error.Message);
     }
 
     [Fact]

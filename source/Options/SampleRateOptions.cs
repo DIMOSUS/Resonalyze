@@ -92,9 +92,14 @@ internal static class SampleRateOptions
 
         if (supportedRates.Count == 0)
         {
+            // Only levers the panel actually offers. The bit depth is not one of them:
+            // its control is disabled, so the format the devices refused can be changed
+            // by the devices themselves and by the two things that decide the channel
+            // counts — the playback channel, and the microphone/loopback routing.
             throw new InvalidOperationException(
                 $"{deviceDescription} report no sample rate in common for the current " +
-                "configuration. Change the devices, the channel counts or the bit depth.");
+                "configuration. Change the devices, the playback channel, or the " +
+                "microphone and loopback channels.");
         }
 
         if (!supportedRates.Contains(sampleRate))

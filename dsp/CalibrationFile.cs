@@ -89,10 +89,16 @@ namespace Resonalyze.Dsp
         /// The curve as ascending (Hz, dB) points, which is what a file states
         /// and what a session stores. A file-backed calibration returns its own
         /// points; an angular estimate — a function, not a table — is sampled on
-        /// a 1/24-octave grid spanning the base file plus the base points
-        /// themselves, which reproduces <see cref="GetDecibelCorrection"/> at
-        /// every knot and to within the estimate's own smoothness between them.
-        /// Empty when nothing loaded.
+        /// a 1/24-octave grid plus the base points themselves, which reproduces
+        /// <see cref="GetDecibelCorrection"/> at every knot and to within the
+        /// estimate's own smoothness between them. The grid runs over the whole
+        /// range a calibration is ever read at (<see cref="SampleGridLowHz"/> to
+        /// <see cref="SampleGridHighHz"/>, widened to the base file when that
+        /// reaches further), not just over the base file: outside the file the
+        /// base holds its edge value while the angular difference keeps moving,
+        /// and a table cut at the file's edges would clamp the WHOLE correction
+        /// there — the audition FIR reads it up to Nyquist. Empty when nothing
+        /// loaded.
         /// </summary>
         public IReadOnlyList<CalibrationPoint> Points
         {
@@ -115,13 +121,14 @@ namespace Resonalyze.Dsp
 
                 var frequencies = new SortedSet<double>(
                     basePoints.Select(point => point.FrequencyHz));
-                double first = basePoints[0].FrequencyHz;
-                double last = basePoints[^1].FrequencyHz;
+                double first = Math.Min(basePoints[0].FrequencyHz, SampleGridLowHz);
+                double last = Math.Max(basePoints[^1].FrequencyHz, SampleGridHighHz);
                 for (double frequency = first; frequency < last; frequency *= SampleGridStep)
                 {
                     frequencies.Add(frequency);
                 }
 
+                frequencies.Add(last);
                 return frequencies
                     .Select(frequency => new CalibrationPoint(
                         frequency,
@@ -133,6 +140,13 @@ namespace Resonalyze.Dsp
         // 1/24 octave: fine enough that the piecewise-linear reading of the
         // sampled angular estimate stays within hundredths of a dB of the model.
         private static readonly double SampleGridStep = Math.Pow(2.0, 1.0 / 24.0);
+
+        // Below 1 Hz nothing is ever plotted or rendered; 192 kHz is the Nyquist
+        // frequency of a 384 kHz stream, above every rate the audition can run at.
+        // Beyond the grid the table holds its edge value, as the model itself
+        // holds its last tabulated value above its references.
+        private const double SampleGridLowHz = 1.0;
+        private const double SampleGridHighHz = 192_000.0;
 
         /// <summary>
         /// Whether two calibrations correct identically: the same points, Hz and

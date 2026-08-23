@@ -389,11 +389,39 @@ public sealed class CalibrationFileTests
         IReadOnlyList<CalibrationPoint> points = angled.Points;
         CalibrationFile sampled = CalibrationFile.FromPoints(points);
 
-        Assert.Equal(20.0, points[0].FrequencyHz);
-        Assert.Equal(20000.0, points[^1].FrequencyHz);
+        Assert.Equal(1.0, points[0].FrequencyHz);
+        Assert.Equal(192_000.0, points[^1].FrequencyHz);
         Assert.Contains(points, point => point.FrequencyHz == 2000.0);
-        Assert.InRange(points.Count, 200, 400);
+        Assert.InRange(points.Count, 400, 500);
         foreach (double frequency in new[] { 20.0, 33.0, 500.0, 2000.0, 12345.0, 20000.0 })
+        {
+            Assert.Equal(
+                angled.GetDecibelCorrection(frequency),
+                sampled.GetDecibelCorrection(frequency),
+                precision: 2);
+        }
+
+        Assert.True(CalibrationFile.SameCurve(angled, sampled));
+    }
+
+    [Fact]
+    public void Points_OfAnAngledEstimate_KeepMovingOutsideTheBaseFile()
+    {
+        // Outside the base file the base holds its edge value while the angular
+        // difference keeps changing — and the audition FIR reads the correction up
+        // to Nyquist. A table cut at the file's edges would clamp the whole
+        // correction there; the carried curve has to reproduce the estimate over
+        // the whole range it is read at, not just over the file.
+        CalibrationFile narrowBase = CalibrationFile.Parse("100 0\n1000 1\n10000 -2\n");
+        static double Delta(double frequency) => -6.0 * Math.Log10(frequency / 100.0);
+        CalibrationFile angled = CalibrationFile.CreateAngled(narrowBase, Delta);
+        CalibrationFile sampled = CalibrationFile.FromPoints(angled.Points);
+
+        // The model's own values, for the record: held base + moving delta.
+        Assert.Equal(-2.0 + Delta(20_000.0), angled.GetDecibelCorrection(20_000.0), precision: 9);
+        Assert.Equal(0.0 + Delta(20.0), angled.GetDecibelCorrection(20.0), precision: 9);
+
+        foreach (double frequency in new[] { 5.0, 20.0, 50.0, 100.0, 5_000.0, 10_000.0, 20_000.0, 48_000.0, 96_000.0, 192_000.0 })
         {
             Assert.Equal(
                 angled.GetDecibelCorrection(frequency),

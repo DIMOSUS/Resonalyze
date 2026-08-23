@@ -289,7 +289,6 @@ public sealed class OverlayCollection
     public void Show(Mode mode)
     {
         Mode overlayMode = OverlayModeFor(mode);
-        MagnitudeScale scale = CurrentMagnitudeScale;
         foreach (Overlay overlay in overlays)
         {
             if (!overlay.Checked || overlay.SeriesMode != overlayMode)
@@ -297,11 +296,8 @@ public sealed class OverlayCollection
                 continue;
             }
 
-            if (!overlay.DrawsOnMagnitudeScale(scale))
-            {
-                continue;
-            }
-
+            // The magnitude-axis rule is Show()'s own; a slot that does not belong on
+            // the axis showing stays checked and draws nothing.
             overlay.Show();
         }
 
@@ -506,18 +502,14 @@ public sealed class OverlayCollection
         }
 
         Mode overlayMode = OverlayModeFor(mode);
-        MagnitudeScale scale = CurrentMagnitudeScale;
         foreach (int slot in activeSlots)
         {
             Overlay? overlay = overlays.FirstOrDefault(
                 candidate => candidate.Index == slot && candidate.SeriesMode == overlayMode);
-            // A slot may have been active on the other magnitude axis; restoring it
-            // obeys the same rule as every other draw, so an SPL capture does not
-            // reappear on the dBr axis after a round trip through another mode.
-            if (overlay?.DrawsOnMagnitudeScale(scale) == true)
-            {
-                overlay.Show();
-            }
+            // A slot may have been active on the other magnitude axis; Show() applies
+            // that rule itself, so an SPL capture does not reappear on the relative axis
+            // after a round trip through another mode.
+            overlay?.Show();
         }
 
         notifyPlotChanged();
@@ -934,6 +926,24 @@ public sealed class Overlay
             return;
         }
 
+        // Every draw of this slot lands here — the plot rebuild, the active-slot restore
+        // after a mode switch, both settings dialogs on Save — so the axis rule is asked
+        // once, here, rather than at each call site: two of them used to draw straight
+        // past it and put an ~80 dB SPL curve on the relative axis until the next
+        // rebuild swept it off. A slot belonging to the other magnitude axis stays
+        // CHECKED and undrawn, so flipping the axis back brings it straight back; the
+        // checkbox path refuses the tick itself (see CheckBoxChanged), which is a
+        // different answer to a different question.
+        if (!DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale))
+        {
+            if (RemoveSeries(model))
+            {
+                RefreshPlot(model);
+            }
+
+            return;
+        }
+
         RemoveSeries(model);
         bool drawn = kind switch
         {
@@ -997,7 +1007,13 @@ public sealed class Overlay
     // if this overlay is such a target. The caller invalidates the plot.
     internal bool RedrawCurrentMeasurementTarget()
     {
-        if (!Checked || !IsCurrentMeasurementTarget || previewActive)
+        // A target shape states no absolute level, so the axis rule never stops one
+        // today; it is asked anyway, because this draws the curve directly and the
+        // paths that skipped the question are what put SPL numbers on a relative axis.
+        if (!Checked ||
+            !IsCurrentMeasurementTarget ||
+            previewActive ||
+            !DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale))
         {
             return false;
         }
@@ -1204,6 +1220,12 @@ public sealed class Overlay
         }
 
         RemoveSeries(model);
+        if (!DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale))
+        {
+            RefreshPlot(model);
+            return;
+        }
+
         AddTargetSeries(
             model,
             settings.Spec,
@@ -2735,7 +2757,12 @@ public sealed class Overlay
         }
 
         RemoveSeries(model);
-        DataPoint[]? points = BuildOperationPointsFor(settings);
+        // A preview is a draw like any other: a candidate curve that would not belong on
+        // the axis showing is not put there just because a dialog is open.
+        OverlayCurveSemantics semantics = ResultFor(settings).Curve;
+        DataPoint[]? points = semantics.DrawsOn(SeriesMode, collection.CurrentMagnitudeScale)
+            ? BuildOperationPointsFor(settings)
+            : null;
         if (points != null)
         {
             AddCurveSeries(
@@ -2747,7 +2774,7 @@ public sealed class Overlay
                 settings.StrokeThickness,
                 settings.LineStyle,
                 settings.Name.Length > 0 ? settings.Name : Title,
-                ResultFor(settings).Curve.YAxisKey);
+                semantics.YAxisKey);
         }
 
         RefreshPlot(model);
@@ -2918,7 +2945,11 @@ public sealed class Overlay
         AddCurveSeries(
             model,
             "curve",
-            BuildCapturedPoints(settings.SmoothingInverseOctaves),
+            // Styling and smoothing do not change what the curve IS, so the same axis
+            // rule applies to the candidate as to the stored slot.
+            DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale)
+                ? BuildCapturedPoints(settings.SmoothingInverseOctaves)
+                : null,
             settings.Color,
             settings.OpacityPercent,
             settings.StrokeThickness,
@@ -3039,7 +3070,9 @@ public sealed class Overlay
         }
     }
 
-    private void RemoveSeries(PlotModel model)
+    // Returns whether anything was actually on the plot, so a caller that removes and
+    // then draws nothing can skip the repaint when there was nothing to erase.
+    private bool RemoveSeries(PlotModel model)
     {
         string prefix = $"overlay:{SeriesMode}:{Index}:";
         List<OxyPlot.Series.Series> existing = model.Series
@@ -3050,6 +3083,8 @@ public sealed class Overlay
         {
             model.Series.Remove(series);
         }
+
+        return existing.Count > 0;
     }
 
     private string GetTag(string part) => $"overlay:{SeriesMode}:{Index}:{part}";

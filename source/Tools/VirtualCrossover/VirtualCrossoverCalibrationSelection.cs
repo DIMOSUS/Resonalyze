@@ -118,8 +118,11 @@ internal static class VirtualCrossoverCalibrationSelection
 
             // The tool's own autosave: the entry is the user's, and a curve that
             // differs means they edited the file since — the entry follows the
-            // file, which is the point of an entry.
-            if (!imported && named is { Available: true })
+            // file, which is the point of an entry. An entry whose file is missing
+            // right now stays selected and marked, like every other view's
+            // selection does; Persist keeps the stored curve for it, so the record
+            // of what the session was tuned with survives the unplugged drive.
+            if (!imported && named != null)
             {
                 return new VirtualCrossoverCalibrationDecision(
                     named.Id, null, VirtualCrossoverCalibrationNotice.None);

@@ -614,6 +614,18 @@ public sealed class VirtualCrossoverProjectFileTests
         };
         Assert.Throws<InvalidDataException>(() => tooFew.Validate());
 
+        // Two points at one frequency merge into one knot on reading: no curve, and
+        // the merged form would fail this check on the next save.
+        var oneFrequency = new VirtualCrossoverProjectFile
+        {
+            Calibration = new VirtualCrossoverCalibrationSettings
+            {
+                Name = "x",
+                Points = { new[] { 1000.0, 0.0 }, new[] { 1000.0, 1.0 } }
+            }
+        };
+        Assert.Throws<InvalidDataException>(() => oneFrequency.Validate());
+
         var badFrequency = new VirtualCrossoverProjectFile
         {
             Calibration = new VirtualCrossoverCalibrationSettings

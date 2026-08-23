@@ -134,14 +134,24 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     }
 
     [Fact]
-    public void AnUnavailableNamedEntry_DoesNotCaptureACarriedCurve()
+    public void TheAutosave_KeepsItsUnavailableEntrySelected_AndAnImportDoesNot()
     {
-        VirtualCrossoverCalibrationDecision decision =
+        // The user's own entry with its file unplugged: it stays selected and marked,
+        // as every view's selection does (Persist keeps the stored curve for it), so
+        // it is still the same selection when the file returns — even if the file
+        // was edited meanwhile and the curve alone would no longer find it.
+        VirtualCrossoverCalibrationDecision autosave =
             Decide("cal-gone", Carried(RecipientsCurve, name: "Unplugged"), imported: false);
 
-        // RecipientsCurve IS configured here, as "90deg" — so that wins over the
-        // unavailable entry the autosave named.
-        Assert.Equal("90deg", decision.SelectedId);
+        Assert.Equal("cal-gone", autosave.SelectedId);
+        Assert.Null(autosave.Session);
+
+        // An import has no such claim on an unavailable entry of the same id: the
+        // curve decides, and RecipientsCurve IS configured here, as "90deg".
+        VirtualCrossoverCalibrationDecision import =
+            Decide("cal-gone", Carried(RecipientsCurve, name: "Unplugged"), imported: true);
+
+        Assert.Equal("90deg", import.SelectedId);
     }
 
     [Fact]

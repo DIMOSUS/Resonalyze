@@ -444,11 +444,14 @@ public sealed class VirtualCrossoverCalibrationSettings
     {
         Name = Name?.Trim() ?? string.Empty;
         FileName = string.IsNullOrWhiteSpace(FileName) ? null : FileName.Trim();
-        if (Points.Count < 2 ||
-            Points.Any(point =>
+        // Two DISTINCT frequencies: the reader merges duplicates into one knot,
+        // and a one-knot curve is no curve — it would load as "available", apply
+        // nothing, and fail this very check on the next save.
+        if (Points.Any(point =>
                 point is not { Length: 2 } ||
                 !double.IsFinite(point[0]) || point[0] <= 0 ||
-                !double.IsFinite(point[1])))
+                !double.IsFinite(point[1])) ||
+            Points.Select(point => point[0]).Distinct().Count() < 2)
         {
             throw new InvalidDataException("The session's calibration curve is invalid.");
         }

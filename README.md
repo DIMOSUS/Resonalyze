@@ -1051,14 +1051,16 @@ opens its dialog. A live-curve operand re-reads the plot on every rebuild, so a
 calculation over it — for example the difference between the source and a Compare
 curve — updates live as the analysis settings change.
 
-In Frequency Response, an overlay is drawn only on the axis its numbers are stated
-on: a dB SPL capture on the [dB SPL](#sound-pressure-level-db-spl) axis, a relative
-one on the relative axis. A calculated overlay inherits that from the operation —
-`A only`, `A + B`, `(A + B) / 2` and a blend reproduce their operands' level and are
-pinned with them, while a difference, the sum loss and a target shape state no
-absolute level at all and draw on either axis, placed by the slot's offset. That is
-what makes the common case work: the difference of two dB SPL captures is a handful
-of dB, which an offset lifts onto the SPL axis.
+An overlay carries what its numbers mean, and a calculated one inherits that from
+its operands — it reuses their points as they were stored, never recomputed for the
+plot on screen. So a calculation over coherence curves is drawn against the
+coherence axis, not the decibel axis. In Frequency Response the same applies to the
+[dB SPL](#sound-pressure-level-db-spl) / relative switch: a capture is drawn only on
+the axis it was measured on, and `A only`, `A + B`, `(A + B) / 2` and a blend
+reproduce their operands' level and are pinned with them. A difference, the sum loss
+and a target shape state no absolute level at all and draw on either axis, placed by
+the slot's offset — which is what makes the common case work: the difference of two
+dB SPL captures is a handful of dB, which an offset lifts onto the SPL axis.
 
 ![Ordinary overlay](assets/images/regular_overlay.jpg)
 ![Calculated overlay](assets/images/calc_overlay.jpg)

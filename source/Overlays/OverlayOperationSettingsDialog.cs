@@ -432,9 +432,12 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         sourceAComboBox.Enabled = !isComplexSum;
         UiStyle.SetTextEnabledLook(curveBLabel, usesB);
         sourceBComboBox.Enabled = usesB;
-        // Complex sum is inherently amplitude-domain math; the checkbox is moot.
+        // Complex sum is inherently amplitude-domain math, and "A only" performs no
+        // arithmetic at all — it hands curve A through. The checkbox is moot for both.
         UiStyle.SetTextEnabledLook(
-            amplitudeSpaceCheckBox, supportsAmplitudeSpace && !isComplexSum, interactive: true);
+            amplitudeSpaceCheckBox,
+            supportsAmplitudeSpace && !isComplexSum && op != OverlayOperation.CurveA,
+            interactive: true);
         // The Compare delay / polarity flip only shape the complex sum.
         UiStyle.SetTextEnabledLook(labelTimeOffset, isComplexSum);
         numericTimeOffset.Enabled = isComplexSum;

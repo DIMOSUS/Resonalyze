@@ -372,36 +372,48 @@ public sealed class OverlayCollection
             .ToArray();
     }
 
-    // The magnitude scale an operation operand states. A captured slot states the scale
-    // it was measured on; a live curve is drawn on the axis showing right now, so it
-    // states nothing and constrains nothing.
-    internal MagnitudeScale? OperandMagnitudeScale(string? curveKey, int slot)
+    // What an operation operand states about its numbers — the magnitude scale and the
+    // Y axis they belong to. Read from the same slot / series the points come from, so
+    // the two can never disagree; it exists apart from the source because the draw gate
+    // asks this of every checked slot on every rebuild and has no use for the points.
+    internal OverlayCurveSemantics OperandSemantics(string? curveKey, int slot)
     {
         if (curveKey != null)
         {
-            return null;
+            return FindLiveCurve(curveKey) is { } series
+                ? LiveCurveSemantics(series)
+                : OverlayCurveSemantics.None;
         }
 
-        Overlay? overlay = overlays.FirstOrDefault(
-            candidate =>
-                candidate.Index == slot &&
-                candidate.Kind == OverlayKind.Captured &&
-                candidate.SeriesMode == OverlayModeFor(Form.CurrentMode));
-        return overlay?.CapturedMagnitudeScale;
+        return FindCaptureSlot(slot)?.SlotSemantics ?? OverlayCurveSemantics.None;
     }
 
     internal bool TryGetCaptureSource(
         int slot,
         out OverlayOperationSource? source)
     {
-        Overlay? overlay = overlays.FirstOrDefault(
+        source = FindCaptureSlot(slot)?.CreateOperationSource();
+        return source != null;
+    }
+
+    private Overlay? FindCaptureSlot(int slot) =>
+        overlays.FirstOrDefault(
             candidate =>
                 candidate.Index == slot &&
                 candidate.Kind == OverlayKind.Captured &&
                 candidate.SeriesMode == OverlayModeFor(Form.CurrentMode));
-        source = overlay?.CreateOperationSource();
-        return source != null;
-    }
+
+    private LineSeries? FindLiveCurve(string key) =>
+        PlotView.Model?.Series
+            .OfType<LineSeries>()
+            .FirstOrDefault(series =>
+                series.Tag is CurveTag tag && tag.Key == key && series.Points.Count >= 2);
+
+    // A live curve is drawn on the axis showing right now, so it states no magnitude
+    // scale of its own — but it does carry the Y axis it is drawn against (coherence
+    // lives on its own), and an operation over it must land there too.
+    private static OverlayCurveSemantics LiveCurveSemantics(LineSeries series) =>
+        new(null, series.YAxisKey);
 
     // Live analysis curves on the current plot that an operation operand can reference
     // directly (every such curve carries a CurveTag). Both Main and Compare are offered.
@@ -429,10 +441,7 @@ public sealed class OverlayCollection
     internal bool TryGetLiveCurveSource(string key, out OverlayOperationSource? source)
     {
         source = null;
-        LineSeries? match = PlotView.Model?.Series
-            .OfType<LineSeries>()
-            .FirstOrDefault(series =>
-                series.Tag is CurveTag tag && tag.Key == key && series.Points.Count >= 2);
+        LineSeries? match = FindLiveCurve(key);
         if (match == null)
         {
             return false;
@@ -443,7 +452,8 @@ public sealed class OverlayCollection
             0,
             curveTag.Label,
             match.Points.Select(point => new OverlayPoint(point.X, point.Y)).ToArray(),
-            curveTag.PhaseUnwrapped);
+            curveTag.PhaseUnwrapped,
+            LiveCurveSemantics(match));
         return true;
     }
 
@@ -813,33 +823,35 @@ public sealed class Overlay
     public bool Checked => checkBox.Checked;
     public OverlayKind Kind => kind;
 
-    // The scale this slot was CAPTURED on. Only meaningful for a captured slot, which is
-    // why every draw path asks SlotMagnitudeScale instead of this.
-    internal MagnitudeScale CapturedMagnitudeScale => capturedMagnitudeScale;
-
     /// <summary>
     /// Whether this slot may draw on the magnitude axis currently shown (see
-    /// <see cref="OverlayMagnitudeScale"/>).
+    /// <see cref="OverlayCurveSemantics"/>).
     /// </summary>
     internal bool DrawsOnMagnitudeScale(MagnitudeScale scale) =>
-        OverlayMagnitudeScale.Draws(SeriesMode, SlotMagnitudeScale, scale);
+        SlotSemantics.DrawsOn(SeriesMode, scale);
 
-    // The absolute level this slot states, or null when it states none. A capture states
-    // the scale it was measured on. An operation states whatever its operands do, when
-    // the operation reproduces their level — its points are the stored ones, never
-    // recomputed for the axis on screen, so an SPL operand keeps SPL values. A target is
-    // a relative shape its offset places, and states nothing.
-    private MagnitudeScale? SlotMagnitudeScale => kind switch
+    // What this slot's drawn curve states about its numbers. A capture states the scale
+    // it was measured on and the axis it was drawn against. An operation states whatever
+    // its operands do, carried through the operation — its points are the stored ones,
+    // never recomputed for the axis on screen. A target is a relative shape its offset
+    // places, on the main axis, and states nothing.
+    internal OverlayCurveSemantics SlotSemantics => kind switch
     {
-        OverlayKind.Captured => capturedMagnitudeScale,
-        OverlayKind.Operation => OverlayMagnitudeScale.ForOperation(
-            operation,
-            collection.OperandMagnitudeScale(sourceCurveKeyA, sourceSlotA),
-            UsesOperandB
-                ? collection.OperandMagnitudeScale(sourceCurveKeyB, sourceSlotB)
-                : null),
-        _ => null
+        OverlayKind.Captured =>
+            new OverlayCurveSemantics(capturedMagnitudeScale, capturedYAxisKey),
+        OverlayKind.Operation => SemanticsFor(CurrentOperationSnapshot()),
+        _ => OverlayCurveSemantics.None
     };
+
+    // The same, for candidate settings the dialog has not committed: a live preview may
+    // point at different operands than the slot holds.
+    private OverlayCurveSemantics SemanticsFor(OverlayOperationPreview settings) =>
+        OverlayCurveSemantics.ForOperation(
+            settings.Operation,
+            collection.OperandSemantics(settings.SourceCurveKeyA, settings.SourceSlotA),
+            settings.Operation == OverlayOperation.CurveA
+                ? OverlayCurveSemantics.None
+                : collection.OperandSemantics(settings.SourceCurveKeyB, settings.SourceSlotB));
 
     public bool HasCaptureData => sourcePoints is { Length: > 1 };
 
@@ -912,7 +924,11 @@ public sealed class Overlay
         bool drawn = kind switch
         {
             OverlayKind.Target => AddTargetSeries(model),
-            OverlayKind.Operation => AddCurveSeries(model, "curve", BuildOperationPoints()),
+            OverlayKind.Operation => AddCurveSeries(
+                model,
+                "curve",
+                BuildOperationPoints(),
+                SlotSemantics.YAxisKey),
             _ => AddCurveSeries(model, "curve", drawPoints, capturedYAxisKey)
         };
 
@@ -1330,7 +1346,8 @@ public sealed class Overlay
             drawPoints
                 .Select(point => new OverlayPoint(point.X, point.Y))
                 .ToArray(),
-            phaseUnwrapped);
+            phaseUnwrapped,
+            SlotSemantics);
     }
 
     private ContextMenuStrip BuildCaptureMenu(
@@ -2699,7 +2716,8 @@ public sealed class Overlay
                 settings.OpacityPercent,
                 settings.StrokeThickness,
                 settings.LineStyle,
-                settings.Name.Length > 0 ? settings.Name : Title);
+                settings.Name.Length > 0 ? settings.Name : Title,
+                SemanticsFor(settings).YAxisKey);
         }
 
         RefreshPlot(model);
@@ -2762,9 +2780,11 @@ public sealed class Overlay
     // Whether this slot's curve carries dB MAGNITUDE semantics, as required by
     // psychoacoustic cubic averaging. Phase, group-delay and coherence traces
     // use the plain base width because their signed values are not amplitudes.
+    // The axis is read off the SLOT, so an operation over coherence curves is judged
+    // by the axis it inherits rather than by the empty key an operation slot holds.
     private bool MagnitudeSmoothingSemantics =>
         OverlayMath.SupportsAmplitudeSpace(SeriesMode) &&
-        capturedYAxisKey != PlotModelFactory.CoherenceAxisKey &&
+        SlotSemantics.YAxisKey != PlotModelFactory.CoherenceAxisKey &&
         // When the captured kind is known, only a magnitude-domain curve is eligible;
         // a phase kind (min/excess phase) never applies magnitude cubic averaging. A null
         // kind (imported text, legacy files) falls back to the mode/axis test above.
@@ -3046,4 +3066,8 @@ internal sealed record OverlayOperationSource(
     int Slot,
     string Title,
     IReadOnlyList<OverlayPoint> Points,
-    bool? PhaseUnwrapped = null);
+    bool? PhaseUnwrapped = null,
+    // What the points state about themselves — the magnitude scale and the Y axis they
+    // belong to. An operation reuses them verbatim, so the result inherits this rather
+    // than being assumed to be relative decibels on the main axis.
+    OverlayCurveSemantics Semantics = default);

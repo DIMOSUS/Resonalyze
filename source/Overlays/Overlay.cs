@@ -372,6 +372,24 @@ public sealed class OverlayCollection
             .ToArray();
     }
 
+    // The magnitude scale an operation operand states. A captured slot states the scale
+    // it was measured on; a live curve is drawn on the axis showing right now, so it
+    // states nothing and constrains nothing.
+    internal MagnitudeScale? OperandMagnitudeScale(string? curveKey, int slot)
+    {
+        if (curveKey != null)
+        {
+            return null;
+        }
+
+        Overlay? overlay = overlays.FirstOrDefault(
+            candidate =>
+                candidate.Index == slot &&
+                candidate.Kind == OverlayKind.Captured &&
+                candidate.SeriesMode == OverlayModeFor(Form.CurrentMode));
+        return overlay?.CapturedMagnitudeScale;
+    }
+
     internal bool TryGetCaptureSource(
         int slot,
         out OverlayOperationSource? source)
@@ -795,12 +813,33 @@ public sealed class Overlay
     public bool Checked => checkBox.Checked;
     public OverlayKind Kind => kind;
 
+    // The scale this slot was CAPTURED on. Only meaningful for a captured slot, which is
+    // why every draw path asks SlotMagnitudeScale instead of this.
+    internal MagnitudeScale CapturedMagnitudeScale => capturedMagnitudeScale;
+
     /// <summary>
     /// Whether this slot may draw on the magnitude axis currently shown (see
     /// <see cref="OverlayMagnitudeScale"/>).
     /// </summary>
     internal bool DrawsOnMagnitudeScale(MagnitudeScale scale) =>
-        OverlayMagnitudeScale.Draws(SeriesMode, kind, capturedMagnitudeScale, scale);
+        OverlayMagnitudeScale.Draws(SeriesMode, SlotMagnitudeScale, scale);
+
+    // The absolute level this slot states, or null when it states none. A capture states
+    // the scale it was measured on. An operation states whatever its operands do, when
+    // the operation reproduces their level — its points are the stored ones, never
+    // recomputed for the axis on screen, so an SPL operand keeps SPL values. A target is
+    // a relative shape its offset places, and states nothing.
+    private MagnitudeScale? SlotMagnitudeScale => kind switch
+    {
+        OverlayKind.Captured => capturedMagnitudeScale,
+        OverlayKind.Operation => OverlayMagnitudeScale.ForOperation(
+            operation,
+            collection.OperandMagnitudeScale(sourceCurveKeyA, sourceSlotA),
+            UsesOperandB
+                ? collection.OperandMagnitudeScale(sourceCurveKeyB, sourceSlotB)
+                : null),
+        _ => null
+    };
 
     public bool HasCaptureData => sourcePoints is { Length: > 1 };
 

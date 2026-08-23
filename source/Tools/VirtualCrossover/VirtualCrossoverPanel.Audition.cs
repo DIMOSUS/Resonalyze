@@ -90,9 +90,10 @@ public partial class VirtualCrossoverPanel
                 left.ChannelCount,
                 right.ChannelCount,
                 borrowedSide,
-                calibrationResolver,
-                calibrationEntries,
-                project.CalibrationId));
+                ResolveSelectedCalibration,
+                CalibrationEntriesWithSession(),
+                Options.MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(
+                    comboBoxCalibration)));
         dialog.ShowDialog(FindForm());
     }
 }

@@ -261,6 +261,20 @@ public partial class VirtualCrossoverPanel : UserControl
     private Func<string?, CalibrationFile?>? calibrationResolver;
     private IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries = [];
 
+    // Adds a curve to the host's calibration list and returns the new entry's id;
+    // supplied by the host form. Null until wired (the offer is then not made).
+    private Func<VirtualCrossoverSessionCalibration, string?>? calibrationAdder;
+
+    // The curve the bound project carries that no configured entry matches,
+    // offered in the selector as its own item (see
+    // VirtualCrossoverCalibrationSelection). Set when a project binds, dropped
+    // once a configured entry with the same curve appears.
+    private VirtualCrossoverSessionCalibration? sessionCalibration;
+
+    // What the last bind has to say about its calibration, shown once the import
+    // finishes (after the relink prompt, which is about the measurements).
+    private VirtualCrossoverCalibrationNotice pendingCalibrationNotice;
+
     /// <summary>
     /// Saves the given curve as a Captured Frequency Response overlay and returns
     /// the slot it landed in (null when all slots are taken). Wired by the host form.
@@ -374,7 +388,7 @@ public partial class VirtualCrossoverPanel : UserControl
         try
         {
             VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault();
-            await ApplyProjectAsync(loaded);
+            await ApplyProjectAsync(loaded, imported: false);
             NotifyIfProjectBackedUp(loaded.BackupNoticePath);
         }
         catch (Exception exception)
@@ -440,13 +454,15 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // Binds a project (the internal autosave or an imported session) to the UI:
-    // controls, view flags, and freshly re-resolved sources.
-    private async Task ApplyProjectAsync(VirtualCrossoverProjectFile newProject)
+    // controls, view flags, and freshly re-resolved sources. `imported` says which
+    // of the two it is: a session from a file may have been written on another
+    // machine, whose calibration ids mean nothing here.
+    private async Task ApplyProjectAsync(VirtualCrossoverProjectFile newProject, bool imported)
     {
         SetProjectLoading(true);
         try
         {
-            await BindProjectAsync(newProject);
+            await BindProjectAsync(newProject, imported);
         }
         finally
         {
@@ -460,8 +476,13 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    private async Task BindProjectAsync(VirtualCrossoverProjectFile newProject)
+    private async Task BindProjectAsync(VirtualCrossoverProjectFile newProject, bool imported)
     {
+        // Read before the project is swapped: a legacy session naming a calibration
+        // this machine lacks keeps the selection the panel had.
+        string? previousCalibrationId =
+            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
+        VirtualCrossoverSessionCalibration? previousSession = sessionCalibration;
         project = newProject;
         relinkDirectory = null;
         // A new project on the same blocks. The channel OBJECTS are reused when the
@@ -521,7 +542,7 @@ public partial class VirtualCrossoverPanel : UserControl
             suppressProjectEvents = false;
         }
 
-        RefreshCalibrationCombo();
+        BindCalibrationSelection(imported, previousCalibrationId, previousSession);
 
         await RestoreProjectSourcesAsync(
             channels,
@@ -634,28 +655,94 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </summary>
     internal void ConfigureCalibration(
         Func<string?, CalibrationFile?> resolver,
-        IReadOnlyList<MicrophoneCalibrationEntry> entries)
+        IReadOnlyList<MicrophoneCalibrationEntry> entries,
+        Func<VirtualCrossoverSessionCalibration, string?>? addToList = null)
     {
         calibrationResolver = resolver;
         calibrationEntries = entries;
-        RefreshCalibrationCombo();
+        calibrationAdder = addToList ?? calibrationAdder;
+        ReconcileCalibrationSelection();
     }
 
-    // Rebuilds the selector's items from the configured calibrations and the
-    // persisted selection, then resolves the calibration the curves use. A
-    // selection that is no longer configured keeps its entry, marked, so the
-    // stored preference is not overwritten by the rebuild — the curves are simply
-    // drawn uncalibrated until the file comes back (an imported session says so
-    // once, see WarnAboutUnavailableCalibration).
-    private void RefreshCalibrationCombo()
+    // The selector after the configured list changed: the selection stays where
+    // it was, marked if its entry is gone or unusable, and a session-carried curve
+    // hands over to a configured entry the moment one holds the same curve — the
+    // user just added it (or already had it, and the list arrived after the
+    // project). The project's stored form follows, so an autosave written after
+    // the list changed says the same thing the selector shows.
+    private void ReconcileCalibrationSelection()
+    {
+        string? selectedId = comboBoxCalibration.Items.Count > 0
+            ? MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration)
+            : project.CalibrationId;
+        if (sessionCalibration is { } session && calibrationResolver is { } resolve)
+        {
+            MicrophoneCalibrationEntry? same = calibrationEntries.FirstOrDefault(entry =>
+                entry.Available &&
+                CalibrationFile.SameCurve(resolve(entry.Id), session.Curve));
+            if (same != null)
+            {
+                if (VirtualCrossoverCalibrationSelection.IsSession(selectedId))
+                {
+                    selectedId = same.Id;
+                }
+
+                sessionCalibration = null;
+            }
+        }
+
+        ApplyCalibrationSelection(selectedId);
+        // A handover (or a re-read of an edited file) changed what the session
+        // says; the autosave must not wait for an unrelated edit to learn it. Only
+        // once the project is the loaded one: before that this is the placeholder,
+        // and saving it would overwrite the real autosave before it was read.
+        if (PersistCalibrationSelection() && initialized)
+        {
+            ScheduleSave();
+        }
+    }
+
+    // The selector for a project that was just bound: the curve the project
+    // carries decides, the id it names is a hint, and a legacy id that resolves
+    // to nothing keeps what the panel had (see VirtualCrossoverCalibrationSelection).
+    private void BindCalibrationSelection(
+        bool imported,
+        string? previousSelectedId,
+        VirtualCrossoverSessionCalibration? previousSession)
+    {
+        Func<string?, CalibrationFile?> resolve = calibrationResolver ?? (_ => null);
+        VirtualCrossoverCalibrationDecision decision =
+            VirtualCrossoverCalibrationSelection.Resolve(
+                project.CalibrationId,
+                project.Calibration,
+                imported,
+                calibrationEntries,
+                resolve,
+                previousSelectedId,
+                previousSession);
+        sessionCalibration = decision.Session;
+        pendingCalibrationNotice = decision.Notice;
+        ApplyCalibrationSelection(decision.SelectedId);
+        // The bound project's own statement is re-derived from the selection:
+        // a kept previous choice or an entry matched by curve is what the
+        // session now says, and the next autosave must agree with the selector.
+        PersistCalibrationSelection();
+    }
+
+    // Rebuilds the selector's items — the configured calibrations plus the
+    // session's own curve, when it offers one — selects the given item, then
+    // resolves the calibration the curves use and redraws. A selection that is
+    // no longer configured keeps its entry, marked, so the stored preference is
+    // not overwritten by the rebuild.
+    private void ApplyCalibrationSelection(string? selectedId)
     {
         suppressProjectEvents = true;
         try
         {
             MicrophoneCalibrationComboHelper.Configure(
                 comboBoxCalibration,
-                project.CalibrationId,
-                calibrationEntries);
+                selectedId,
+                CalibrationEntriesWithSession());
         }
         finally
         {
@@ -666,12 +753,52 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // Sets the calibration file from the selector's current selection. Off (or an
-    // absent resolver) yields no calibration, matching the loopback-referenced
-    // default.
+    private IReadOnlyList<MicrophoneCalibrationEntry> CalibrationEntriesWithSession() =>
+        VirtualCrossoverCalibrationSelection.EntriesWith(calibrationEntries, sessionCalibration);
+
+    // Resolves the selector's selection to a curve: the session's own curve, one of
+    // the configured entries, or nothing for Off (and for an absent resolver),
+    // matching the loopback-referenced default.
+    private CalibrationFile? ResolveSelectedCalibration(string? calibrationId) =>
+        VirtualCrossoverCalibrationSelection.IsSession(calibrationId)
+            ? sessionCalibration?.Curve
+            : calibrationResolver?.Invoke(calibrationId);
+
     private void ResolveCalibration() =>
-        Calibration = calibrationResolver?.Invoke(
+        Calibration = ResolveSelectedCalibration(
             MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration));
+
+    // Writes the selector's selection into the project in its persisted form: the
+    // curve the session is tuned with, plus the id of the configured entry it came
+    // from (none for the session's own curve). Resolved through the SAME path the
+    // curves use, so what the file carries is what the plot shows. True when the
+    // stored form changed.
+    private bool PersistCalibrationSelection()
+    {
+        (string? id, VirtualCrossoverCalibrationSettings? calibration) =
+            VirtualCrossoverCalibrationSelection.Persist(
+                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration),
+                sessionCalibration,
+                calibrationEntries,
+                calibrationResolver ?? (_ => null),
+                project.CalibrationId,
+                project.Calibration);
+        bool changed =
+            !string.Equals(id, project.CalibrationId, StringComparison.OrdinalIgnoreCase) ||
+            !SameStoredCurve(calibration, project.Calibration);
+        project.CalibrationId = id;
+        project.Calibration = calibration;
+        return changed;
+    }
+
+    private static bool SameStoredCurve(
+        VirtualCrossoverCalibrationSettings? left,
+        VirtualCrossoverCalibrationSettings? right) =>
+        ReferenceEquals(left, right) ||
+        (left != null && right != null &&
+            string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+            string.Equals(left.FileName, right.FileName, StringComparison.Ordinal) &&
+            CalibrationFile.SameCurve(left.ToCalibrationFile(), right.ToCalibrationFile()));
 
     private void OnCalibrationChanged()
     {
@@ -680,12 +807,23 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        project.CalibrationId =
-            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
+        PersistCalibrationSelection();
         ResolveCalibration();
         ScheduleSave();
         RedrawAll();
     }
+
+    // The calibration the EQ Wizard pins for a handoff: the curve itself, not an
+    // id, because the session's own curve has no id the wizard's list could
+    // resolve — and the identity the handoff promises is with the curve the plot
+    // draws, whatever it is called.
+    private string? SelectedCalibrationName() =>
+        MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration) is { } id
+            ? CalibrationEntriesWithSession()
+                .FirstOrDefault(entry =>
+                    string.Equals(entry.Id, id, StringComparison.OrdinalIgnoreCase))
+                ?.Name
+            : null;
 
     // ----------------------------------------------------------------- wiring
 
@@ -1905,7 +2043,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 (double)numericTargetLevel.Minimum,
                 (double)numericTargetLevel.Maximum,
                 snapshot.SmoothingInverseOctaves,
-                project.CalibrationId,
+                Calibration,
+                SelectedCalibrationName(),
                 projectGeneration);
         }
         catch (InvalidOperationException)
@@ -1935,7 +2074,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 token,
                 curve,
                 projectGeneration,
-                project.CalibrationId,
+                Calibration,
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 (double)numericTargetLevel.Value))
@@ -2252,8 +2391,10 @@ public partial class VirtualCrossoverPanel : UserControl
             "so it still moves those numbers in the Phase and Impulse\r\n" +
             "views, where no calibrated trace is drawn.\r\n" +
             "The measurement is loopback-referenced, so this is\r\n" +
-            "optional; 0° / 90° appear when their files are configured\r\n" +
-            "in Record Settings.");
+            "optional. The entries are the calibrations configured in\r\n" +
+            "Record Settings; a loaded session that carries its own\r\n" +
+            "curve adds it here as '(from session)'. The selection is\r\n" +
+            "saved into the session as the curve itself, so it travels.");
         toolTip.SetToolTip(
             buttonAutoDelay,
             "Open the Auto delay dialog: align the channels in two\r\n" +
@@ -5532,10 +5673,10 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        await ApplyProjectAsync(imported);
+        await ApplyProjectAsync(imported, imported: true);
         ScheduleSave();
         await RelinkMissingSourcesAsync();
-        WarnAboutUnavailableCalibration();
+        ShowCalibrationNotice();
     }
 
     // Offers to relink the sources an imported session could not find. The stored
@@ -5657,40 +5798,116 @@ public partial class VirtualCrossoverPanel : UserControl
             : $"{missing.Count} measurements were not found: {sides}.";
     }
 
-    // The calibration a session asks for is a per-computer setting: the session
-    // stores WHICH calibration its curves were drawn with, but that calibration
-    // belongs to the machine's own microphone. The selector keeps the selection and
-    // marks it, yet the curves are then drawn with no calibration at all — a quiet
-    // difference from what the session's author saw, and worth one sentence at
-    // import time. Copying the other machine's file is NOT the fix: it describes
-    // their microphone, not this one.
-    private void WarnAboutUnavailableCalibration()
+    // One sentence, once, about the calibration an imported session arrived with.
+    // A calibration describes the microphone the MEASUREMENTS were taken with, so
+    // a session travelling with its data brings the right correction along and
+    // the selector starts on it; the user is told, and offered to keep it in their
+    // own list. A session written before the curve travelled can only name an
+    // entry, and an id is local to the machine that minted it — so a match by id
+    // alone is reported as exactly that, and a miss keeps the selection the panel
+    // already had rather than replacing a working choice with nothing.
+    private void ShowCalibrationNotice()
     {
-        if (MicrophoneCalibrationIds.IsOff(project.CalibrationId) || IsDisposed)
+        VirtualCrossoverCalibrationNotice notice = pendingCalibrationNotice;
+        pendingCalibrationNotice = VirtualCrossoverCalibrationNotice.None;
+        if (IsDisposed)
         {
             return;
         }
 
-        MicrophoneCalibrationEntry? entry = calibrationEntries.FirstOrDefault(item =>
-            string.Equals(item.Id, project.CalibrationId, StringComparison.OrdinalIgnoreCase));
-        if (entry is { Available: true })
+        switch (notice)
         {
+            case VirtualCrossoverCalibrationNotice.CarriedBySession
+                when sessionCalibration is { } session:
+                OfferSessionCalibration(session);
+                break;
+
+            case VirtualCrossoverCalibrationNotice.MatchedBySlotName:
+                MessageBox.Show(
+                    FindForm(),
+                    "This session names its microphone calibration by a slot only " +
+                    $"('{SelectedCalibrationName()}'), without the curve itself — it " +
+                    "was written by an older version. This computer's entry of the " +
+                    "same name is selected, but nothing says the two files agree: " +
+                    "check that it is the calibration of the microphone these " +
+                    "measurements were taken with.",
+                    "Virtual DSP",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                break;
+
+            case VirtualCrossoverCalibrationNotice.KeptPrevious:
+                string kept = SelectedCalibrationName() is { } name
+                    ? $"The '{name}' calibration this panel already had is kept"
+                    : "The curves are drawn without any calibration, as before";
+                MessageBox.Show(
+                    FindForm(),
+                    "This session was tuned with a microphone calibration that is not " +
+                    "configured on this computer, and it was written by an older " +
+                    $"version that did not store the curve itself. {kept}; the " +
+                    "curves may not match the ones its author saw.",
+                    "Virtual DSP",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                break;
+        }
+    }
+
+    // The session's own curve is selected and its curves match the author's; the
+    // one thing left to decide is whether it should live in this machine's list
+    // too — which is right when these are the author's measurements (the
+    // calibration is of the microphone that took them), and wrong for a
+    // measurement taken here with a different microphone.
+    private void OfferSessionCalibration(VirtualCrossoverSessionCalibration session)
+    {
+        if (calibrationAdder == null)
+        {
+            MessageBox.Show(
+                FindForm(),
+                $"This session carries the microphone calibration {session.Description} " +
+                "it was tuned with, and it is selected, so the curves match the ones " +
+                "its author saw.",
+                "Virtual DSP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
             return;
         }
 
-        string profile = entry is null
-            ? "a"
-            : $"the '{entry.Name}'";
-        MessageBox.Show(
+        DialogResult answer = MessageBox.Show(
             FindForm(),
-            $"This session was tuned with {profile} microphone calibration, which " +
-            "is not configured on this computer, so its curves are drawn without any " +
-            "calibration and will not match the ones its author saw.\r\n\r\nConfigure " +
-            "the calibration of THIS microphone in the measurement settings — the " +
-            "other computer's file describes its own microphone, not yours.",
+            $"This session carries the microphone calibration {session.Description} " +
+            "it was tuned with, and it is selected, so the curves match the ones its " +
+            "author saw.\r\n\r\nAdd it to your calibrations (Record Settings → More " +
+            "calibrations) so the other views can use it too? Say yes if these " +
+            "measurements were taken with that microphone; a measurement you take " +
+            "with your own microphone needs its own calibration.",
             "Virtual DSP",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+        if (answer != DialogResult.Yes)
+        {
+            return;
+        }
+
+        string? addedId = calibrationAdder(session);
+        if (addedId == null)
+        {
+            return;
+        }
+
+        // The host refreshed the consumers on adding, which hands the selection
+        // over to the new entry (ReconcileCalibrationSelection); this is only for a
+        // host that did not.
+        if (!string.Equals(
+                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration),
+                addedId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            sessionCalibration = null;
+            ApplyCalibrationSelection(addedId);
+            PersistCalibrationSelection();
+            ScheduleSave();
+        }
     }
 
     private void ShowError(string message, string details)

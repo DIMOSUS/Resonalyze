@@ -18,6 +18,25 @@ public sealed class EqWizardCalibrationTests
         Assert.Null(EqWizardCalibrationChoice.OwnCapture.MicrophoneCalibrationId);
         Assert.False(EqWizardCalibrationChoice.OwnCapture.IsOff);
         Assert.True(EqWizardCalibrationChoice.Microphone("   ").IsOff);
+        // Pinned applies the curve the Virtual DSP source arrived with — which may be
+        // one its session carries, absent from the list — so it names no entry and is
+        // not Off either.
+        Assert.Null(EqWizardCalibrationChoice.PinnedToSource.MicrophoneCalibrationId);
+        Assert.False(EqWizardCalibrationChoice.PinnedToSource.IsOff);
+        Assert.True(EqWizardCalibrationChoice.PinnedToSource.Pinned);
+        Assert.NotEqual(EqWizardCalibrationChoice.PinnedToSource, EqWizardCalibrationChoice.OwnCapture);
+        Assert.NotEqual(EqWizardCalibrationChoice.PinnedToSource, EqWizardCalibrationChoice.Off);
+    }
+
+    [Fact]
+    public void UpdatedIrPreference_KeepsPreferenceWhenAVirtualDspChannelIsPinned()
+    {
+        string? next = EqWizardCalibration.UpdatedIrPreference(
+            current: "cal1",
+            loadedKind: EqWizardSourceKind.VirtualDspChannel,
+            chosen: EqWizardCalibrationChoice.PinnedToSource);
+
+        Assert.Equal("cal1", next);
     }
 
     [Fact]

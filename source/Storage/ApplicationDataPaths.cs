@@ -44,6 +44,12 @@ internal sealed class ApplicationDataPaths
     public string HistoryFile => Path.Combine(RootDirectory, "measurement-history.json");
     public string OverlaysDirectory => Path.Combine(RootDirectory, "overlays");
     public string ToolsDirectory => Path.Combine(RootDirectory, "tools");
+
+    /// <summary>
+    /// Calibration files the application wrote itself — a curve a Virtual DSP
+    /// session carried in, kept as a file so it is a file entry like any other.
+    /// </summary>
+    public string CalibrationsDirectory => Path.Combine(RootDirectory, "calibrations");
     public string CrashLogFile => Path.Combine(RootDirectory, "crash.log");
     public string MeasurementErrorLogFile =>
         Path.Combine(RootDirectory, "measurement-error.log");

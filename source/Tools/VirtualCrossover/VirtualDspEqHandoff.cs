@@ -81,12 +81,14 @@ namespace Resonalyze;
 /// before any of it, so chain edits cannot invalidate its bank — and its recorded
 /// chain is the identity, which would otherwise compare unequal to a real one.
 /// </param>
-/// <param name="CalibrationId">
-/// The microphone correction the curve was tuned under. The wizard's own selector is
-/// DISABLED during a handoff precisely because a bank fitted under one correction and
-/// summed under another is not the same bank — and the Virtual DSP panel's selector,
-/// reachable by a plain tab switch, would otherwise walk around that lock from the
-/// other side.
+/// <param name="Calibration">
+/// The microphone correction the curve was tuned under — the curve itself, compared
+/// by content on return: the panel may be drawing with a curve its session carries,
+/// which has no id, and a re-read of the same file is the same correction. The
+/// wizard's own selector is DISABLED during a handoff precisely because a bank fitted
+/// under one correction and summed under another is not the same bank — and the
+/// Virtual DSP panel's selector, reachable by a plain tab switch, would otherwise walk
+/// around that lock from the other side.
 /// </param>
 internal sealed record VirtualDspEqReturnToken(
     VirtualCrossoverChannel Channel,
@@ -100,7 +102,7 @@ internal sealed record VirtualDspEqReturnToken(
     double TargetLevelDb,
     PhaseAnalysisSettings GateTemplate,
     double? PinnedGateOffsetMs,
-    string? CalibrationId);
+    CalibrationFile? Calibration);
 
 /// <summary>
 /// Everything one Virtual DSP channel side sends into the EQ Wizard: the curve to
@@ -175,7 +177,8 @@ internal static class VirtualDspEqHandoff
         double targetLevelMinDb,
         double targetLevelMaxDb,
         int smoothingInverseOctaves,
-        string? calibrationId,
+        CalibrationFile? calibration,
+        string? calibrationName,
         long projectGeneration)
     {
         ArgumentNullException.ThrowIfNull(channel);
@@ -261,7 +264,8 @@ internal static class VirtualDspEqHandoff
             Coherence = EqWizardSourceResolver.ExtractTransferCoherence(
                 state.TransferCoherence, sampleRate),
             GateSettings = gateTemplate with { GateOffsetMs = gateOffsetMs },
-            PinnedCalibrationId = calibrationId,
+            PinnedCalibration = calibration,
+            PinnedCalibrationName = calibration == null ? null : calibrationName,
             // The ORIGINAL measurement and the chain around the bank, so the corrected
             // preview is one ApplyChain of the whole chain — the panel's own arithmetic
             // — rather than the bypassed response filtered a second time.
@@ -303,7 +307,7 @@ internal static class VirtualDspEqHandoff
                 targetLevelDb,
                 gateTemplate,
                 pinnedGateOffsetMs,
-                MicrophoneCalibrationIds.Normalize(calibrationId)));
+                calibration));
     }
 
     /// <summary>
@@ -311,7 +315,7 @@ internal static class VirtualDspEqHandoff
     /// when the channel is gone (removed) or the project it belonged to has been
     /// replaced since; the caller keeps the wizard open so the tune is not lost.
     /// </summary>
-    /// <param name="calibrationId">
+    /// <param name="calibration">
     /// The panel's CURRENT microphone calibration, compared against the one the bank
     /// was fitted under.
     /// </param>
@@ -336,7 +340,7 @@ internal static class VirtualDspEqHandoff
         VirtualDspEqReturnToken token,
         EqualizationCurve curve,
         long projectGeneration,
-        string? calibrationId,
+        CalibrationFile? calibration,
         PhaseAnalysisSettings gateTemplate,
         double? pinnedGateOffsetMs,
         double targetLevelDb)
@@ -356,10 +360,7 @@ internal static class VirtualDspEqHandoff
         // reason; the Virtual DSP panel's selector is reachable by a plain tab switch,
         // which a session deliberately survives, so the same rule has to hold here or
         // the lock is decorative.
-        if (!string.Equals(
-                token.CalibrationId,
-                MicrophoneCalibrationIds.Normalize(calibrationId),
-                StringComparison.OrdinalIgnoreCase))
+        if (!CalibrationFile.SameCurve(token.Calibration, calibration))
         {
             return false;
         }

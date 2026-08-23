@@ -30,7 +30,11 @@ internal sealed class MicrophoneCalibrationDefinition
     /// <summary>
     /// The id the pre-list 90° slot migrates to. Fixed rather than generated so
     /// a Virtual DSP project written before the migration resolves to the same
-    /// entry the settings file created.
+    /// entry the settings file created. That makes it a SLOT id, minted on every
+    /// machine that had the slot: two machines' "90deg" entries are different
+    /// files. A session from another machine is therefore never trusted on this
+    /// id alone — it carries its calibration curve, and the curve decides (see
+    /// <c>VirtualCrossoverCalibrationSelection</c>).
     /// </summary>
     public const string LegacyNinetyDegreesId = "90deg";
 
@@ -118,6 +122,14 @@ internal sealed class MicrophoneCalibrationDefinition
         $"{angleDegrees:0.#}°";
 
     /// <summary>
+    /// Whether an id was minted by <see cref="CreateId"/>, and so names an entry
+    /// of exactly one machine — as opposed to the fixed slot ids (the 0° slot,
+    /// the migrated 90° slot), which every machine hands out.
+    /// </summary>
+    public static bool IsGeneratedId(string? id) =>
+        id?.StartsWith(GeneratedIdPrefix, StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>
     /// An id for a new entry that no other entry — present or DELETED — can
     /// ever have carried. A counted id would be handed out again after a
     /// deletion, and every place that outlives the list (a saved Virtual DSP
@@ -155,7 +167,12 @@ internal sealed class MicrophoneCalibrationDefinition
 /// no base curve. The entry stays selectable regardless — dropping it would move
 /// the selection to Off and the next save would erase the user's choice.
 /// </param>
+/// <param name="FileName">
+/// The name (no folder) of the file a file-backed entry reads, so a session that
+/// carries the curve can also say which file it was; null for an estimate.
+/// </param>
 internal sealed record MicrophoneCalibrationEntry(
     string Id,
     string Name,
-    bool Available);
+    bool Available,
+    string? FileName = null);

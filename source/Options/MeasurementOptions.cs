@@ -716,6 +716,22 @@ namespace Resonalyze.Options
             RaiseCalibrationChanged();
         }
 
+        /// <summary>
+        /// Replaces the working copy of the additional-calibration list with one
+        /// the shell changed behind this panel (a curve kept from a Virtual DSP
+        /// session), so the next Apply writes that list back rather than the one
+        /// this panel opened on.
+        /// </summary>
+        internal void AdoptAdditionalCalibrations(
+            IReadOnlyList<MicrophoneCalibrationDefinition> definitions)
+        {
+            ArgumentNullException.ThrowIfNull(definitions);
+            additionalMicrophoneCalibrations = definitions
+                .Select(definition => definition.Clone())
+                .ToList();
+            UpdateCalibrationButtons();
+        }
+
         private void buttonCalibrationExtra_Click(object? sender, EventArgs e)
         {
             using var dialog = new MicrophoneCalibrationsDialog(

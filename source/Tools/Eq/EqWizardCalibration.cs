@@ -42,25 +42,35 @@ internal static class EqWizardCalibration
 /// How the microphone correction is applied to a source curve. This is the wizard's own
 /// choice rather than a plain calibration id: an imported curve can additionally re-use
 /// the correction frozen into it at capture time, which has no meaning for a live
-/// measurement.
+/// measurement, and a Virtual DSP channel is pinned to the curve its panel renders with,
+/// which need not be in the wizard's list at all.
 /// </summary>
 internal readonly record struct EqWizardCalibrationChoice
 {
-    private EqWizardCalibrationChoice(bool own, string? calibrationId)
+    private EqWizardCalibrationChoice(bool own, bool pinned, string? calibrationId)
     {
         Own = own;
+        Pinned = pinned;
         CalibrationId = calibrationId;
     }
 
     public static EqWizardCalibrationChoice Off => default;
 
     /// <summary>The correction the curve was captured with, stored alongside it.</summary>
-    public static EqWizardCalibrationChoice OwnCapture => new(true, null);
+    public static EqWizardCalibrationChoice OwnCapture => new(true, false, null);
+
+    /// <summary>
+    /// The correction the source arrived with (<see cref="EqWizardCurveSource.PinnedCalibration"/>),
+    /// applied as it is and not selectable away from.
+    /// </summary>
+    public static EqWizardCalibrationChoice PinnedToSource => new(false, true, null);
 
     public static EqWizardCalibrationChoice Microphone(string? calibrationId) =>
-        new(false, MicrophoneCalibrationIds.Normalize(calibrationId));
+        new(false, false, MicrophoneCalibrationIds.Normalize(calibrationId));
 
     public bool Own { get; }
+
+    public bool Pinned { get; }
 
     /// <summary>
     /// The configured calibration to apply, or null for Off and for Own — whose
@@ -69,11 +79,11 @@ internal readonly record struct EqWizardCalibrationChoice
     public string? CalibrationId { get; }
 
     /// <summary>
-    /// The measurement-layer selection this choice maps to: Own corrects with no
-    /// configured profile (its own correction is applied separately, on the
-    /// imported curve).
+    /// The measurement-layer selection this choice maps to: Own and Pinned correct
+    /// with no configured profile (their correction comes with the source and is
+    /// applied separately).
     /// </summary>
-    public string? MicrophoneCalibrationId => Own ? null : CalibrationId;
+    public string? MicrophoneCalibrationId => Own || Pinned ? null : CalibrationId;
 
-    public bool IsOff => !Own && MicrophoneCalibrationIds.IsOff(CalibrationId);
+    public bool IsOff => !Own && !Pinned && MicrophoneCalibrationIds.IsOff(CalibrationId);
 }

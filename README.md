@@ -1209,9 +1209,10 @@ curve is rendered in that plot's own dB frame, so one target means one height
 too — the curve hangs exactly where it hung a click ago.
 The **Calibration** selector comes up pinned to the Virtual DSP panel's choice
 and disabled: a PEQ fitted under one correction and summed under another would
-break the identity above, so the correction is changed where it lives. The
-wizard's standing calibration preference for impulse responses survives
-untouched.
+break the identity above, so the correction is changed where it lives. What is
+pinned is the curve the panel draws with — including one a loaded session carries
+that is in no list of yours — under the name the panel shows for it. The wizard's
+standing calibration preference for impulse responses survives untouched.
 
 **Return PEQ to Virtual DSP** — visible only during such a session — sends the
 finished bank (bands and preamp) back to the channel side it came from, named
@@ -1507,10 +1508,23 @@ finishes the centering.
 Editing a chain recomputes the prediction on a background task, so dragging a
 value stays responsive with several channels loaded. The **Mic cal** selector
 applies one of your configured microphone corrections to the magnitude curves; it
-defaults to Off because the measurements are loopback-referenced. The session
-stores WHICH calibration it was tuned with; opening it on a machine that has no
-such entry says so once and draws the curves uncalibrated, because the other
-machine's file describes its microphone, not yours.
+defaults to Off because the measurements are loopback-referenced.
+
+The session stores the calibration it was tuned with as the **curve itself**, not
+as a reference to your calibration list: a calibration describes the microphone
+the measurements were taken with, so it belongs with the measurements and travels
+with them. A session loaded on a machine that has no such file opens with that
+curve selected — listed in **Mic cal** as *name (from session)* — so the curves
+match the ones its author saw, and a dialog offers to **add it to your
+calibrations** (it lands in Record Settings → More calibrations, as a file entry
+like any other, and every view can then use it). Say yes when the measurements
+are the author's; a measurement you take with your own microphone needs its own
+calibration, and the selector is a click away. A machine that already has the
+same curve, under whatever name, simply selects that entry. Sessions written by
+older versions carry only the name of a calibration slot: one that matches an
+entry of the same name here is selected with a note that the two files are not
+known to agree, and one that matches nothing keeps whatever the selector already
+had rather than replacing a working choice with none.
 
 - **Auto crossover...** estimates each channel's usable band and driver type
   (subwoofer, woofer, midbass, midrange, tweeter), asks which filter families to
@@ -1644,8 +1658,11 @@ The views that read a magnitude — **Frequency Response**, **Live Spectrum**, t
 own selector; Phase and Group Delay read timing rather than level and apply no
 correction at all. A selection whose file went missing, or whose entry was
 deleted, stays selected and is marked rather than being silently rewritten to
-Off. For a source checkout, a legacy `source/calibration.txt` beside the
-executable is still honored as the 0° calibration.
+Off. A Virtual DSP session carries its calibration curve inside it and can add
+that curve to this list when loaded elsewhere (see [Virtual DSP](#virtual-dsp));
+such files are kept in the application data folder under `calibrations`. For a
+source checkout, a legacy `source/calibration.txt` beside the executable is
+still honored as the 0° calibration.
 
 ## Sound Pressure Level (dB SPL)
 

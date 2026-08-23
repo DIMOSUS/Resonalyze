@@ -170,12 +170,66 @@ public partial class Form1
     {
         microphoneCalibration.InvalidateCache();
         IReadOnlyList<MicrophoneCalibrationEntry> entries = microphoneCalibration.GetEntries();
-        virtualCrossoverPanel?.ConfigureCalibration(microphoneCalibration.Get, entries);
+        virtualCrossoverPanel?.ConfigureCalibration(
+            microphoneCalibration.Get, entries, AddSessionCalibration);
         eqWizardPanel?.ConfigureCalibration(microphoneCalibration.Get, entries);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshCalibrationEntries(entries));
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
             panel => panel.RefreshCalibrationEntries(entries));
+    }
+
+    // Adds a calibration curve a Virtual DSP session carried in to the configured
+    // list, as a file entry like any other: the curve is written to the application
+    // data folder under its original file name and an entry is created for it, so
+    // every view can pick it. Returns the new entry's id, or null when nothing was
+    // added.
+    private string? AddSessionCalibration(VirtualCrossoverSessionCalibration session)
+    {
+        List<MicrophoneCalibrationDefinition> definitions =
+            measurementSettings.Measurement.AdditionalMicrophoneCalibrations;
+        string path;
+        try
+        {
+            string directory = ApplicationDataPaths.Current.CalibrationsDirectory;
+            Directory.CreateDirectory(directory);
+            path = SessionCalibrationFiles.UniquePath(
+                directory,
+                session.FileName ?? session.Name,
+                File.Exists);
+            File.WriteAllText(path, session.Curve.ToText());
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            MessageBox.Show(
+                this,
+                "The calibration could not be written to the application data folder." +
+                $"{Environment.NewLine}{Environment.NewLine}{exception.Message}",
+                "Virtual DSP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return null;
+        }
+
+        var definition = new MicrophoneCalibrationDefinition
+        {
+            Id = MicrophoneCalibrationDefinition.CreateId(definitions),
+            Name = SessionCalibrationFiles.UniqueName(
+                session.Name,
+                definitions.Select(existing => existing.Name)),
+            Kind = MicrophoneCalibrationKind.File,
+            Path = path
+        };
+        definitions.Add(definition);
+        // An open Record Settings panel works on its own copy of the list and
+        // writes it back on Apply, so it has to learn about the entry or it would
+        // overwrite it.
+        dockedMeasurementSettingsHost.InvokeIfOpen<Options.MeasurementOptions>(
+            panel => panel.AdoptAdditionalCalibrations(definitions));
+        ScheduleMeasurementSettingsSave();
+        RefreshCalibrationConsumers();
+        return definition.Id;
     }
 
     private void WireFormEvents()

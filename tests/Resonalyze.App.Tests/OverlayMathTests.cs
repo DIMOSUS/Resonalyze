@@ -1,4 +1,4 @@
-namespace Resonalyze.App.Tests;
+﻿namespace Resonalyze.App.Tests;
 
 public sealed class OverlayMathTests
 {
@@ -39,6 +39,62 @@ public sealed class OverlayMathTests
         {
             Assert.Equal(expectedValues[i], result[i].Y, precision: 9);
         }
+    }
+
+    [Fact]
+    public void CalculateOperation_CurveAPassesTheFirstOperandThrough()
+    {
+        // "A only" has no second operand — not an empty one, none — so it must neither
+        // read B nor drop the points that fall outside it.
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(20, -3),
+            new OverlayPoint(1_000, 0),
+            new OverlayPoint(20_000, -6)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            Array.Empty<OverlayPoint>(),
+            OverlayOperation.CurveA);
+
+        Assert.Equal(a, result);
+    }
+
+    [Theory]
+    // At the pivot the tilt adds nothing; an octave up adds the slope, an octave down
+    // subtracts it, and the line keeps going by octaves either way.
+    [InlineData(1_000, 0)]
+    [InlineData(2_000, 6)]
+    [InlineData(500, -6)]
+    [InlineData(4_000, 12)]
+    public void TiltDb_HingesOnThePivotAndRunsPerOctave(double frequencyHz, double expected)
+    {
+        Assert.Equal(expected, OverlayMath.TiltDb(frequencyHz, 6, 1_000), precision: 9);
+    }
+
+    [Fact]
+    public void TiltDb_ReversesWithTheSlopeSign()
+    {
+        // A negative slope is the same line mirrored — the compensation for an
+        // excitation that RISES with frequency.
+        Assert.Equal(
+            -OverlayMath.TiltDb(4_000, 3, 250),
+            OverlayMath.TiltDb(4_000, -3, 250),
+            precision: 9);
+    }
+
+    [Theory]
+    [InlineData(0, 3, 1_000)]        // no frequency to place on the line
+    [InlineData(1_000, 3, 0)]        // no pivot to hinge on
+    [InlineData(1_000, 0, 1_000)]    // flat tilt
+    [InlineData(1_000, double.NaN, 1_000)]
+    public void TiltDb_IsNeutralWithoutAUsableSlope(
+        double frequencyHz,
+        double tiltDbPerOctave,
+        double pivotHz)
+    {
+        Assert.Equal(0, OverlayMath.TiltDb(frequencyHz, tiltDbPerOctave, pivotHz));
     }
 
     [Fact]

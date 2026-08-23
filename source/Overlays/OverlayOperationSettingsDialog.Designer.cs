@@ -1,4 +1,4 @@
-namespace Resonalyze
+﻿namespace Resonalyze
 {
     partial class OverlayOperationSettingsDialog
     {
@@ -36,6 +36,11 @@ namespace Resonalyze
             blendFrequencyInput = new DarkNumericUpDown();
             blendWidthLabel = new Label();
             blendWidthInput = new DarkComboBox();
+            tiltCheckBox = new CheckBox();
+            tiltPivotLabel = new Label();
+            tiltPivotInput = new DarkNumericUpDown();
+            tiltSlopeLabel = new Label();
+            tiltSlopeInput = new DarkNumericUpDown();
             smoothingLabel = new Label();
             smoothingComboBox = new DarkComboBox();
             amplitudeSpaceCheckBox = new CheckBox();
@@ -51,6 +56,8 @@ namespace Resonalyze
             panel1 = new Panel();
             (thicknessInput).BeginInit();
             (blendFrequencyInput).BeginInit();
+            (tiltPivotInput).BeginInit();
+            (tiltSlopeInput).BeginInit();
             ((System.ComponentModel.ISupportInitialize)opacityTrackBar).BeginInit();
             (numericTimeOffset).BeginInit();
             panel1.SuspendLayout();
@@ -257,11 +264,75 @@ namespace Resonalyze
             blendWidthInput.Size = new Size(190, 24);
             blendWidthInput.TabIndex = 8;
             // 
+            // tiltCheckBox
+            // 
+            tiltCheckBox.AutoSize = true;
+            tiltCheckBox.ForeColor = Color.FromArgb(235, 237, 240);
+            tiltCheckBox.Location = new Point(23, 383);
+            tiltCheckBox.Name = "tiltCheckBox";
+            tiltCheckBox.Size = new Size(46, 19);
+            tiltCheckBox.TabIndex = 18;
+            tiltCheckBox.Text = "Tilt";
+            // 
+            // tiltPivotLabel
+            // 
+            tiltPivotLabel.AutoSize = true;
+            tiltPivotLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            tiltPivotLabel.Location = new Point(85, 360);
+            tiltPivotLabel.Name = "tiltPivotLabel";
+            tiltPivotLabel.Size = new Size(85, 15);
+            tiltPivotLabel.TabIndex = 19;
+            tiltPivotLabel.Text = "Pivot frequency";
+            // 
+            // tiltPivotInput
+            // 
+            tiltPivotInput.BackColor = Color.FromArgb(55, 58, 65);
+            tiltPivotInput.DecimalPlaces = 1;
+            tiltPivotInput.ForeColor = Color.White;
+            tiltPivotInput.Increment = new decimal(new int[] { 10, 0, 0, 0 });
+            tiltPivotInput.Location = new Point(85, 380);
+            tiltPivotInput.Maximum = new decimal(new int[] { 1000000, 0, 0, 0 });
+            tiltPivotInput.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            tiltPivotInput.MinimumSize = new Size(36, 19);
+            tiltPivotInput.Name = "tiltPivotInput";
+            tiltPivotInput.Size = new Size(150, 24);
+            tiltPivotInput.TabIndex = 19;
+            tiltPivotInput.TextAlign = HorizontalAlignment.Right;
+            tiltPivotInput.ThousandsSeparator = true;
+            tiltPivotInput.Value = new decimal(new int[] { 1000, 0, 0, 0 });
+            // 
+            // tiltSlopeLabel
+            // 
+            tiltSlopeLabel.AutoSize = true;
+            tiltSlopeLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            tiltSlopeLabel.Location = new Point(250, 360);
+            tiltSlopeLabel.Name = "tiltSlopeLabel";
+            tiltSlopeLabel.Size = new Size(94, 15);
+            tiltSlopeLabel.TabIndex = 20;
+            tiltSlopeLabel.Text = "Slope (dB/octave)";
+            // 
+            // tiltSlopeInput
+            // 
+            tiltSlopeInput.BackColor = Color.FromArgb(55, 58, 65);
+            tiltSlopeInput.DecimalPlaces = 2;
+            tiltSlopeInput.ForeColor = Color.White;
+            tiltSlopeInput.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
+            tiltSlopeInput.Location = new Point(250, 380);
+            tiltSlopeInput.Maximum = new decimal(new int[] { 24, 0, 0, 0 });
+            tiltSlopeInput.Minimum = new decimal(new int[] { 24, 0, 0, int.MinValue });
+            tiltSlopeInput.MinimumSize = new Size(36, 19);
+            tiltSlopeInput.Name = "tiltSlopeInput";
+            tiltSlopeInput.Size = new Size(173, 24);
+            tiltSlopeInput.TabIndex = 20;
+            tiltSlopeInput.TextAlign = HorizontalAlignment.Right;
+            tiltSlopeInput.ThousandsSeparator = false;
+            tiltSlopeInput.Value = new decimal(new int[] { 6, 0, 0, 0 });
+            // 
             // smoothingLabel
             // 
             smoothingLabel.AutoSize = true;
             smoothingLabel.ForeColor = Color.FromArgb(185, 190, 200);
-            smoothingLabel.Location = new Point(23, 360);
+            smoothingLabel.Location = new Point(23, 420);
             smoothingLabel.Name = "smoothingLabel";
             smoothingLabel.Size = new Size(66, 15);
             smoothingLabel.TabIndex = 9;
@@ -271,7 +342,7 @@ namespace Resonalyze
             // 
             smoothingComboBox.BackColor = Color.FromArgb(55, 58, 65);
             smoothingComboBox.ForeColor = Color.White;
-            smoothingComboBox.Location = new Point(23, 380);
+            smoothingComboBox.Location = new Point(23, 440);
             smoothingComboBox.Margin = new Padding(0);
             smoothingComboBox.MinimumSize = new Size(36, 19);
             smoothingComboBox.Name = "smoothingComboBox";
@@ -294,7 +365,7 @@ namespace Resonalyze
             // 
             opacityLabel.AutoSize = true;
             opacityLabel.ForeColor = Color.FromArgb(185, 190, 200);
-            opacityLabel.Location = new Point(20, 420);
+            opacityLabel.Location = new Point(20, 480);
             opacityLabel.Name = "opacityLabel";
             opacityLabel.Size = new Size(48, 15);
             opacityLabel.TabIndex = 11;
@@ -302,7 +373,7 @@ namespace Resonalyze
             // 
             // opacityTrackBar
             // 
-            opacityTrackBar.Location = new Point(14, 440);
+            opacityTrackBar.Location = new Point(14, 500);
             opacityTrackBar.Maximum = 100;
             opacityTrackBar.Minimum = 10;
             opacityTrackBar.Name = "opacityTrackBar";
@@ -315,7 +386,7 @@ namespace Resonalyze
             // 
             opacityValueLabel.AutoSize = true;
             opacityValueLabel.ForeColor = Color.FromArgb(235, 237, 240);
-            opacityValueLabel.Location = new Point(370, 447);
+            opacityValueLabel.Location = new Point(370, 507);
             opacityValueLabel.Name = "opacityValueLabel";
             opacityValueLabel.Size = new Size(35, 15);
             opacityValueLabel.TabIndex = 12;
@@ -328,7 +399,7 @@ namespace Resonalyze
             cancelButton.FlatAppearance.BorderSize = 0;
             cancelButton.FlatStyle = FlatStyle.Flat;
             cancelButton.ForeColor = Color.White;
-            cancelButton.Location = new Point(232, 491);
+            cancelButton.Location = new Point(232, 551);
             cancelButton.Name = "cancelButton";
             cancelButton.Size = new Size(94, 30);
             cancelButton.TabIndex = 12;
@@ -342,7 +413,7 @@ namespace Resonalyze
             saveButton.FlatAppearance.BorderSize = 0;
             saveButton.FlatStyle = FlatStyle.Flat;
             saveButton.ForeColor = Color.White;
-            saveButton.Location = new Point(332, 491);
+            saveButton.Location = new Point(332, 551);
             saveButton.Name = "saveButton";
             saveButton.Size = new Size(94, 30);
             saveButton.TabIndex = 13;
@@ -404,7 +475,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(40, 42, 48);
-            ClientSize = new Size(440, 534);
+            ClientSize = new Size(440, 594);
             Controls.Add(panel1);
             Controls.Add(nameLabel);
             Controls.Add(nameTextBox);
@@ -422,6 +493,11 @@ namespace Resonalyze
             Controls.Add(blendFrequencyInput);
             Controls.Add(blendWidthLabel);
             Controls.Add(blendWidthInput);
+            Controls.Add(tiltCheckBox);
+            Controls.Add(tiltPivotLabel);
+            Controls.Add(tiltPivotInput);
+            Controls.Add(tiltSlopeLabel);
+            Controls.Add(tiltSlopeInput);
             Controls.Add(smoothingLabel);
             Controls.Add(smoothingComboBox);
             Controls.Add(amplitudeSpaceCheckBox);
@@ -443,6 +519,8 @@ namespace Resonalyze
             Text = "Calculated overlay settings";
             (thicknessInput).EndInit();
             (blendFrequencyInput).EndInit();
+            (tiltPivotInput).EndInit();
+            (tiltSlopeInput).EndInit();
             ((System.ComponentModel.ISupportInitialize)opacityTrackBar).EndInit();
             (numericTimeOffset).EndInit();
             panel1.ResumeLayout(false);
@@ -471,6 +549,11 @@ namespace Resonalyze
         private DarkNumericUpDown blendFrequencyInput;
         private Label blendWidthLabel;
         private DarkComboBox blendWidthInput;
+        private CheckBox tiltCheckBox;
+        private Label tiltPivotLabel;
+        private DarkNumericUpDown tiltPivotInput;
+        private Label tiltSlopeLabel;
+        private DarkNumericUpDown tiltSlopeInput;
         private Label smoothingLabel;
         private DarkComboBox smoothingComboBox;
         private CheckBox amplitudeSpaceCheckBox;

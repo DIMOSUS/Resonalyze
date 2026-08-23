@@ -1039,7 +1039,8 @@ three kinds: a **Captured** snapshot of a curve currently on the plot; an
 **Operation** between two operands, each a live plot curve or a captured slot
 (`A - B`, `B - A`, `A + B`, `(A + B) / 2`, `|A - B|`, or a frequency blend), plus
 the **complex (vector) sum** described below; or a parametric **Target** compared
-against a source.
+against a source. `A only` is the one-operand case: it draws curve A by itself, so
+the slot's own smoothing, offset and tilt apply to a single curve.
 
 Slots are stored automatically as human-readable JSON under the application data
 directory, as `overlays/<AnalysisMode>/overlay-01.json`. The numbered button
@@ -1050,13 +1051,40 @@ opens its dialog. A live-curve operand re-reads the plot on every rebuild, so a
 calculation over it — for example the difference between the source and a Compare
 curve — updates live as the analysis settings change.
 
+An overlay carries what its numbers mean, and a calculated one inherits that from
+its operands — it reuses their points as they were stored, never recomputed for the
+plot on screen. So a calculation over coherence curves is drawn against the
+coherence axis, not the decibel axis. In Frequency Response the same applies to the
+[dB SPL](#sound-pressure-level-db-spl) / relative switch: a capture is drawn only on
+the axis it was measured on, and `A only`, `A + B`, `(A + B) / 2` and a blend
+reproduce their operands' level and are pinned with them. A difference, the sum loss
+and a target shape state no absolute level at all and draw on either axis, placed by
+the slot's offset — which is what makes the common case work: the difference of two
+dB SPL captures is a handful of dB, which an offset lifts onto the SPL axis.
+
+Operands must be the same kind of number: dB SPL against relative decibels, or
+coherence against decibels, has no result any axis could carry, and the settings
+dialog refuses to save it. A live-curve operand counts as whatever the plot is
+showing right now. The tilt and amplitude-space math likewise apply only where
+decibels do — both grey out while the operands are a coherence trace.
+
 ![Ordinary overlay](assets/images/regular_overlay.jpg)
 ![Calculated overlay](assets/images/calc_overlay.jpg)
 
 Captured overlay settings cover a name, line color, thickness, style and opacity,
 optional `1/48` … `1/3` octave smoothing, and a **Clear** action for that slot
 alone; calculated overlays add the operands, the operation, optional
-amplitude-space math for dB views, and independent smoothing applied afterwards.
+amplitude-space math for dB views, an optional **tilt**, and independent smoothing
+applied afterwards.
+
+The **tilt** adds a straight line of so many dB per octave to the result, hinged at
+a **pivot frequency** where it changes nothing — the curve rotates about that
+frequency instead of moving. Its usual job is undoing the slope of the excitation
+itself: pink noise falls 3 dB per octave through a constant-bandwidth analyzer, so
+a `+3 dB/octave` tilt flattens it. Either sign is allowed, and because `A only`
+needs no second operand, the tilt can be applied to one measured curve on its own.
+It is available in the magnitude views (Frequency Response and Live Spectrum),
+where dB per octave means something.
 In **Phase Response** the difference operations are phase-aware: a wrapped
 operand makes the difference take the shortest angular distance so it never jumps
 by ±360°. Overlay JSON always stores the unsmoothed source points, so changing

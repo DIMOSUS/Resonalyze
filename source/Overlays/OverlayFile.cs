@@ -14,6 +14,15 @@ public sealed class OverlayFile
     public const int CurrentVersion = 5;
     public const int MaximumSlotCount = 12;
 
+    /// <summary>Frequency a new tilt hinges on, in Hz: the anchor of the dB axis.</summary>
+    public const double DefaultTiltPivotHz = 1_000;
+
+    /// <summary>Slope a new tilt starts at, in dB per octave.</summary>
+    public const double DefaultTiltDbPerOctave = 6;
+
+    /// <summary>Largest tilt slope accepted, in dB per octave (either sign).</summary>
+    public const double MaximumTiltDbPerOctave = 24;
+
     // Every mode switch re-reads all 12 slot files; the cache turns the
     // unchanged case into a stat call. In-app Save/Delete/Quarantine invalidate
     // their entry, external edits are caught by the write-stamp check. Loaded
@@ -175,6 +184,15 @@ public sealed class OverlayFile
     public double BlendFrequencyHz { get; set; } = 1_000;
     public double BlendWidthOctaves { get; set; } = 1;
     public bool UseAmplitudeSpace { get; set; }
+
+    // Tilt: a straight line of TiltDbPerOctave dB per octave added to the result, hinged
+    // at TiltPivotHz where it adds nothing. It compensates an excitation whose own
+    // spectrum is sloped — pink noise falls 3 dB per octave on a constant-bandwidth
+    // analyzer — and the slope may go either way. Additive with safe defaults (disabled),
+    // so no file version bump is needed.
+    public bool TiltEnabled { get; set; }
+    public double TiltDbPerOctave { get; set; } = DefaultTiltDbPerOctave;
+    public double TiltPivotHz { get; set; } = DefaultTiltPivotHz;
 
     // ComplexSum / ComplexSumLoss only: extra delay (ms) and a polarity flip applied to
     // the Compare transfer response before the sum, mirroring a DSP channel setup.
@@ -508,11 +526,14 @@ public sealed class OverlayFile
         else
         {
             // An operand is a live curve when its CurveKey is set; otherwise a captured
-            // slot whose index must be in range. The two operands must not be identical.
+            // slot whose index must be in range. The two operands must not be identical
+            // — unless the operation reads curve A alone, which has no second operand to
+            // collide with and leaves B at whatever it was.
             bool aIsCurve = !string.IsNullOrEmpty(SourceCurveKeyA);
             bool bIsCurve = !string.IsNullOrEmpty(SourceCurveKeyB);
+            bool usesB = Operation != OverlayOperation.CurveA;
             if ((!aIsCurve && SourceSlotA is < 1 or > MaximumSlotCount) ||
-                (!bIsCurve && SourceSlotB is < 1 or > MaximumSlotCount))
+                (usesB && !bIsCurve && SourceSlotB is < 1 or > MaximumSlotCount))
             {
                 throw new InvalidDataException(
                     "Calculated overlay source slots are invalid.");
@@ -520,7 +541,7 @@ public sealed class OverlayFile
             bool sameOperand = aIsCurve || bIsCurve
                 ? aIsCurve && bIsCurve && SourceCurveKeyA == SourceCurveKeyB
                 : SourceSlotA == SourceSlotB;
-            if (sameOperand)
+            if (usesB && sameOperand)
             {
                 throw new InvalidDataException(
                     "Calculated overlay operands must differ.");
@@ -550,6 +571,25 @@ public sealed class OverlayFile
             throw new InvalidDataException(
                 "Amplitude-space overlay math is not supported in this mode.");
         }
+        if (TiltEnabled)
+        {
+            // dB per octave is a magnitude statement; on a phase or group-delay curve
+            // there is nothing for it to mean.
+            if (!OverlayMath.SupportsAmplitudeSpace(Mode))
+            {
+                throw new InvalidDataException(
+                    "The overlay tilt is not supported in this mode.");
+            }
+            if (!double.IsFinite(TiltDbPerOctave) ||
+                Math.Abs(TiltDbPerOctave) > MaximumTiltDbPerOctave)
+            {
+                throw new InvalidDataException("The overlay tilt slope is invalid.");
+            }
+            if (!double.IsFinite(TiltPivotHz) || TiltPivotHz <= 0)
+            {
+                throw new InvalidDataException("The overlay tilt pivot frequency is invalid.");
+            }
+        }
     }
 }
 
@@ -572,6 +612,14 @@ public enum OverlayLineStyle
 
 public enum OverlayOperation
 {
+    /// <summary>
+    /// Curve A passed through unchanged — no second operand. On its own it is a
+    /// copy, but it is what lets this slot's own smoothing, offset and tilt be
+    /// applied to a single curve (a live one included) without inventing a
+    /// neutral B to operate against.
+    /// </summary>
+    CurveA,
+
     AMinusB,
     BMinusA,
     Sum,

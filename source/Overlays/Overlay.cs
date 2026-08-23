@@ -289,7 +289,6 @@ public sealed class OverlayCollection
     public void Show(Mode mode)
     {
         Mode overlayMode = OverlayModeFor(mode);
-        MagnitudeScale scale = CurrentMagnitudeScale;
         foreach (Overlay overlay in overlays)
         {
             if (!overlay.Checked || overlay.SeriesMode != overlayMode)
@@ -297,14 +296,8 @@ public sealed class OverlayCollection
                 continue;
             }
 
-            // In the magnitude mode an overlay shows only on the axis it was captured
-            // on: dBr/dBc overlays in Relative, dB SPL overlays in SPL.
-            if (overlayMode == Mode.FrequencyResponse &&
-                overlay.CapturedMagnitudeScale != scale)
-            {
-                continue;
-            }
-
+            // The magnitude-axis rule is Show()'s own; a slot that does not belong on
+            // the axis showing stays checked and draws nothing.
             overlay.Show();
         }
 
@@ -371,22 +364,55 @@ public sealed class OverlayCollection
                 overlay.HasCaptureData)
             .Select(overlay => new OverlaySlotOption(
                 overlay.Index,
-                overlay.Title))
+                overlay.Title,
+                overlay.SlotSemantics))
             .ToArray();
+    }
+
+    // What an operation operand states about its numbers — the magnitude scale and the
+    // Y axis they belong to. Read from the same slot / series the points come from, so
+    // the two can never disagree; it exists apart from the source because the draw gate
+    // asks this of every checked slot on every rebuild and has no use for the points.
+    internal OverlayCurveSemantics OperandSemantics(string? curveKey, int slot)
+    {
+        if (curveKey != null)
+        {
+            return FindLiveCurve(curveKey) is { } series
+                ? LiveCurveSemantics(series)
+                : OverlayCurveSemantics.None;
+        }
+
+        return FindCaptureSlot(slot)?.SlotSemantics ?? OverlayCurveSemantics.None;
     }
 
     internal bool TryGetCaptureSource(
         int slot,
         out OverlayOperationSource? source)
     {
-        Overlay? overlay = overlays.FirstOrDefault(
+        source = FindCaptureSlot(slot)?.CreateOperationSource();
+        return source != null;
+    }
+
+    private Overlay? FindCaptureSlot(int slot) =>
+        overlays.FirstOrDefault(
             candidate =>
                 candidate.Index == slot &&
                 candidate.Kind == OverlayKind.Captured &&
                 candidate.SeriesMode == OverlayModeFor(Form.CurrentMode));
-        source = overlay?.CreateOperationSource();
-        return source != null;
-    }
+
+    private LineSeries? FindLiveCurve(string key) =>
+        PlotView.Model?.Series
+            .OfType<LineSeries>()
+            .FirstOrDefault(series =>
+                series.Tag is CurveTag tag && tag.Key == key && series.Points.Count >= 2);
+
+    // A live curve is drawn on the axis showing right now, so it states THAT scale —
+    // not "no scale": while the plot is relative its numbers are relative, and mixing a
+    // dB SPL capture into them is the same error as between two captures. It is re-read
+    // on every rebuild, so the statement follows the axis switch. It also carries the Y
+    // axis it is drawn against (coherence lives on its own), which the result inherits.
+    private OverlayCurveSemantics LiveCurveSemantics(LineSeries series) =>
+        OverlayCurveSemantics.ForCurve(CurrentMagnitudeScale, series.YAxisKey);
 
     // Live analysis curves on the current plot that an operation operand can reference
     // directly (every such curve carries a CurveTag). Both Main and Compare are offered.
@@ -404,7 +430,10 @@ public sealed class OverlayCollection
             .Select(series =>
             {
                 var tag = (CurveTag)series.Tag!;
-                return new LiveCurveOption(tag.Key, tag.Label);
+                return new LiveCurveOption(
+                    tag.Key,
+                    tag.Label,
+                    LiveCurveSemantics(series));
             })
             .ToArray();
     }
@@ -414,10 +443,7 @@ public sealed class OverlayCollection
     internal bool TryGetLiveCurveSource(string key, out OverlayOperationSource? source)
     {
         source = null;
-        LineSeries? match = PlotView.Model?.Series
-            .OfType<LineSeries>()
-            .FirstOrDefault(series =>
-                series.Tag is CurveTag tag && tag.Key == key && series.Points.Count >= 2);
+        LineSeries? match = FindLiveCurve(key);
         if (match == null)
         {
             return false;
@@ -428,7 +454,8 @@ public sealed class OverlayCollection
             0,
             curveTag.Label,
             match.Points.Select(point => new OverlayPoint(point.X, point.Y)).ToArray(),
-            curveTag.PhaseUnwrapped);
+            curveTag.PhaseUnwrapped,
+            LiveCurveSemantics(match));
         return true;
     }
 
@@ -479,6 +506,9 @@ public sealed class OverlayCollection
         {
             Overlay? overlay = overlays.FirstOrDefault(
                 candidate => candidate.Index == slot && candidate.SeriesMode == overlayMode);
+            // A slot may have been active on the other magnitude axis; Show() applies
+            // that rule itself, so an SPL capture does not reappear on the relative axis
+            // after a round trip through another mode.
             overlay?.Show();
         }
 
@@ -684,6 +714,12 @@ public sealed class Overlay
     private double blendFrequencyHz = 1_000;
     private double blendWidthOctaves = 1;
     private bool useAmplitudeSpace;
+    // A straight slope (dB/octave) added to the result, hinged at the pivot frequency
+    // where it adds nothing — the compensation for an excitation whose own spectrum is
+    // sloped. Off by default; the slope may point either way.
+    private bool tiltEnabled;
+    private double tiltDbPerOctave = OverlayFile.DefaultTiltDbPerOctave;
+    private double tiltPivotHz = OverlayFile.DefaultTiltPivotHz;
     // ComplexSum only: delay (ms) and polarity flip applied to the Compare response.
     private double compareDelayMs;
     private bool compareInvertPolarity;
@@ -785,7 +821,44 @@ public sealed class Overlay
     public bool Checked => checkBox.Checked;
     public OverlayKind Kind => kind;
 
-    public MagnitudeScale CapturedMagnitudeScale => capturedMagnitudeScale;
+    /// <summary>
+    /// Whether this slot may draw on the magnitude axis currently shown (see
+    /// <see cref="OverlayCurveSemantics"/>).
+    /// </summary>
+    internal bool DrawsOnMagnitudeScale(MagnitudeScale scale) =>
+        SlotSemantics.DrawsOn(SeriesMode, scale);
+
+    // What this slot's drawn curve states about its numbers. A capture states the scale
+    // it was measured on and the axis it was drawn against. An operation states whatever
+    // its operands do, carried through the operation — its points are the stored ones,
+    // never recomputed for the axis on screen. A target is a relative shape its offset
+    // places, on the main axis, and states nothing.
+    internal OverlayCurveSemantics SlotSemantics => kind switch
+    {
+        OverlayKind.Captured => OverlayCurveSemantics.ForCurve(
+            capturedMagnitudeScale,
+            capturedYAxisKey),
+        OverlayKind.Operation => ResultFor(CurrentOperationSnapshot()).Curve,
+        _ => OverlayCurveSemantics.None
+    };
+
+    // Whether this slot's operands can be operated on at all — dB SPL against relative
+    // decibels, or coherence against decibels, produces a number that is neither, and
+    // the slot stays unavailable rather than drawing it.
+    private bool OperationIsDefined =>
+        kind != OverlayKind.Operation ||
+        ResultFor(CurrentOperationSnapshot()).IsDefined;
+
+    // What the operation produces, for candidate settings the dialog has not committed
+    // as well: a live preview may point at different operands than the slot holds.
+    private OverlayOperationResult ResultFor(OverlayOperationPreview settings) =>
+        OverlayCurveSemantics.ForOperation(
+            settings.Operation,
+            collection.OperandSemantics(settings.SourceCurveKeyA, settings.SourceSlotA),
+            settings.Operation == OverlayOperation.CurveA
+                ? OverlayCurveSemantics.None
+                : collection.OperandSemantics(settings.SourceCurveKeyB, settings.SourceSlotB));
+
     public bool HasCaptureData => sourcePoints is { Length: > 1 };
 
     // The overlay mode for the current view; Frequency Response and Live Spectrum
@@ -853,11 +926,33 @@ public sealed class Overlay
             return;
         }
 
+        // Every draw of this slot lands here — the plot rebuild, the active-slot restore
+        // after a mode switch, both settings dialogs on Save — so the axis rule is asked
+        // once, here, rather than at each call site: two of them used to draw straight
+        // past it and put an ~80 dB SPL curve on the relative axis until the next
+        // rebuild swept it off. A slot belonging to the other magnitude axis stays
+        // CHECKED and undrawn, so flipping the axis back brings it straight back; the
+        // checkbox path refuses the tick itself (see CheckBoxChanged), which is a
+        // different answer to a different question.
+        if (!DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale))
+        {
+            if (RemoveSeries(model))
+            {
+                RefreshPlot(model);
+            }
+
+            return;
+        }
+
         RemoveSeries(model);
         bool drawn = kind switch
         {
             OverlayKind.Target => AddTargetSeries(model),
-            OverlayKind.Operation => AddCurveSeries(model, "curve", BuildOperationPoints()),
+            OverlayKind.Operation => AddCurveSeries(
+                model,
+                "curve",
+                BuildOperationPoints(),
+                SlotSemantics.YAxisKey),
             _ => AddCurveSeries(model, "curve", drawPoints, capturedYAxisKey)
         };
 
@@ -887,7 +982,11 @@ public sealed class Overlay
 
     private bool ReferencesLiveCurve =>
         kind == OverlayKind.Operation &&
-        (sourceCurveKeyA != null || sourceCurveKeyB != null);
+        (sourceCurveKeyA != null || (UsesOperandB && sourceCurveKeyB != null));
+
+    // "A only" reads one curve, so operand B — and whatever stale slot or curve key it
+    // still holds — takes no part in availability, resolution or validation.
+    private bool UsesOperandB => operation != OverlayOperation.CurveA;
 
     // Complex sum reads the Main and Compare transfer IRs from the measurement, not
     // from operands; like a live-curve operation it recomputes on every rebuild and
@@ -908,7 +1007,13 @@ public sealed class Overlay
     // if this overlay is such a target. The caller invalidates the plot.
     internal bool RedrawCurrentMeasurementTarget()
     {
-        if (!Checked || !IsCurrentMeasurementTarget || previewActive)
+        // A target shape states no absolute level, so the axis rule never stops one
+        // today; it is asked anyway, because this draws the curve directly and the
+        // paths that skipped the question are what put SPL numbers on a relative axis.
+        if (!Checked ||
+            !IsCurrentMeasurementTarget ||
+            previewActive ||
+            !DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale))
         {
             return false;
         }
@@ -1115,6 +1220,12 @@ public sealed class Overlay
         }
 
         RemoveSeries(model);
+        if (!DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale))
+        {
+            RefreshPlot(model);
+            return;
+        }
+
         AddTargetSeries(
             model,
             settings.Spec,
@@ -1221,6 +1332,7 @@ public sealed class Overlay
         // yet; keep such an operation available as long as it is configured, like a
         // target. Slot-only operations still require their captures.
         bool available = operationConfigured &&
+            OperationIsDefined &&
             (ReferencesLiveCurve || IsComplexSumOperation || TryGetSources(out _, out _));
         ApplyCalculatedAvailability(
             available,
@@ -1271,7 +1383,8 @@ public sealed class Overlay
             drawPoints
                 .Select(point => new OverlayPoint(point.X, point.Y))
                 .ToArray(),
-            phaseUnwrapped);
+            phaseUnwrapped,
+            SlotSemantics);
     }
 
     private ContextMenuStrip BuildCaptureMenu(
@@ -2113,6 +2226,9 @@ public sealed class Overlay
             // A brand-new calculated overlay defaults to amplitude space; editing an
             // existing one keeps whatever was saved.
             operationConfigured ? useAmplitudeSpace : true,
+            tiltEnabled,
+            tiltDbPerOctave,
+            tiltPivotHz,
             compareDelayMs,
             compareInvertPolarity,
             kind == OverlayKind.Operation ? panel.BackColor : defaultColor,
@@ -2154,6 +2270,9 @@ public sealed class Overlay
         blendFrequencyHz = dialog.BlendFrequencyHz;
         blendWidthOctaves = dialog.BlendWidthOctaves;
         useAmplitudeSpace = dialog.UseAmplitudeSpace;
+        tiltEnabled = dialog.TiltEnabled;
+        tiltDbPerOctave = dialog.TiltDbPerOctave;
+        tiltPivotHz = dialog.TiltPivotHz;
         compareDelayMs = dialog.CompareDelayMs;
         compareInvertPolarity = dialog.CompareInvertPolarity;
         SetPanelColor(dialog.SelectedColor);
@@ -2257,11 +2376,11 @@ public sealed class Overlay
 
         if (checkBox.Checked)
         {
-            // Show only on a matching mode and — in the magnitude mode — a matching
-            // scale, so an SPL overlay is not drawn on the dBr axis or vice versa.
+            // Show only on a matching mode and a matching magnitude scale, by exactly
+            // the rule the redraw after every plot rebuild uses — the two disagreeing
+            // is what made a calculated slot appear on Save and refuse the checkbox.
             if (SeriesMode == CurrentOverlayMode &&
-                (SeriesMode != Mode.FrequencyResponse ||
-                 capturedMagnitudeScale == collection.CurrentMagnitudeScale))
+                DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale))
             {
                 Show();
             }
@@ -2312,6 +2431,9 @@ public sealed class Overlay
             blendFrequencyHz = file.BlendFrequencyHz;
             blendWidthOctaves = file.BlendWidthOctaves;
             useAmplitudeSpace = file.UseAmplitudeSpace;
+            tiltEnabled = file.TiltEnabled;
+            tiltDbPerOctave = file.TiltDbPerOctave;
+            tiltPivotHz = file.TiltPivotHz;
             compareDelayMs = file.CompareDelayMs;
             compareInvertPolarity = file.CompareInvertPolarity;
             // Availability is resolved by RefreshSources after all slots load.
@@ -2425,6 +2547,9 @@ public sealed class Overlay
             file.BlendFrequencyHz = blendFrequencyHz;
             file.BlendWidthOctaves = blendWidthOctaves;
             file.UseAmplitudeSpace = useAmplitudeSpace;
+            file.TiltEnabled = tiltEnabled;
+            file.TiltDbPerOctave = tiltDbPerOctave;
+            file.TiltPivotHz = tiltPivotHz;
             file.CompareDelayMs = compareDelayMs;
             file.CompareInvertPolarity = compareInvertPolarity;
         }
@@ -2483,6 +2608,9 @@ public sealed class Overlay
         blendFrequencyHz,
         blendWidthOctaves,
         useAmplitudeSpace,
+        tiltEnabled,
+        tiltDbPerOctave,
+        tiltPivotHz,
         compareDelayMs,
         compareInvertPolarity,
         panel.BackColor,
@@ -2505,17 +2633,26 @@ public sealed class Overlay
         if (settings.Operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss)
         {
             return BuildComplexSumPoints(
-                settings.CompareDelayMs,
-                settings.CompareInvertPolarity,
-                settings.SmoothingInverseOctaves,
+                settings,
                 showLoss: settings.Operation == OverlayOperation.ComplexSumLoss);
         }
 
+        OverlayOperationResult result = ResultFor(settings);
+        if (!result.IsDefined)
+        {
+            // Operands that are not the same kind of number (dB SPL against relative
+            // decibels, coherence against decibels): there is no curve to draw.
+            return null;
+        }
+
+        bool usesB = settings.Operation != OverlayOperation.CurveA;
         OverlayOperationSource? sourceA =
             ResolveOperand(settings.SourceCurveKeyA, settings.SourceSlotA);
-        OverlayOperationSource? sourceB =
-            ResolveOperand(settings.SourceCurveKeyB, settings.SourceSlotB);
-        if (sourceA == null || sourceB == null)
+        // "A only" never reads B, so an unresolvable B must not veto the curve.
+        OverlayOperationSource? sourceB = usesB
+            ? ResolveOperand(settings.SourceCurveKeyB, settings.SourceSlotB)
+            : null;
+        if (sourceA == null || (usesB && sourceB == null))
         {
             return null;
         }
@@ -2526,15 +2663,17 @@ public sealed class Overlay
         // (the default, plus minimum/excess phase) keep the raw subtraction so their slope
         // (and hence delay) survives. Unknown representations are treated as unwrapped.
         bool wrapPhaseDifference = SeriesMode == Mode.PhaseResponse &&
-            (sourceA.PhaseUnwrapped == false || sourceB.PhaseUnwrapped == false);
+            (sourceA.PhaseUnwrapped == false || sourceB?.PhaseUnwrapped == false);
 
         OverlayPoint[] points = OverlayMath.CalculateOperation(
             sourceA.Points,
-            sourceB.Points,
+            sourceB?.Points ?? Array.Empty<OverlayPoint>(),
             settings.Operation,
             settings.BlendFrequencyHz,
             settings.BlendWidthOctaves,
-            settings.UseAmplitudeSpace,
+            // Converting to linear amplitude and back is decibel arithmetic; on a 0…1
+            // coherence ratio it is meaningless whatever the dialog last stored.
+            settings.UseAmplitudeSpace && result.Curve.IsDecibels,
             wrapPhaseDifference);
         points = OverlayMath.SmoothByOctaves(
             points,
@@ -2545,18 +2684,42 @@ public sealed class Overlay
             return null;
         }
 
+        return ApplyOffsetAndTilt(points, settings, result.Curve);
+    }
+
+    // The slot's vertical offset and its tilt, applied together as the last step: both
+    // move the drawn curve without belonging to the math above, and the tilt is just the
+    // offset generalized to a slope — 0 dB at the pivot, TiltDbPerOctave per octave from
+    // it. Applied AFTER smoothing so the smoother still sees the measured shape, and
+    // only to decibels: dB per octave says nothing about a 0…1 coherence ratio.
+    private DataPoint[] ApplyOffsetAndTilt(
+        IReadOnlyList<OverlayPoint> points,
+        OverlayOperationPreview settings,
+        OverlayCurveSemantics semantics)
+    {
         double offset = (double)offsetControl.Value;
-        return points
-            .Select(point => new DataPoint(point.X, point.Y + offset))
-            .ToArray();
+        bool tilted = settings.TiltEnabled && semantics.IsDecibels;
+        var result = new DataPoint[points.Count];
+        for (int i = 0; i < points.Count; i++)
+        {
+            OverlayPoint point = points[i];
+            double tilt = tilted
+                ? OverlayMath.TiltDb(
+                    point.X,
+                    settings.TiltDbPerOctave,
+                    settings.TiltPivotHz)
+                : 0;
+            result[i] = new DataPoint(point.X, point.Y + offset + tilt);
+        }
+
+        return result;
     }
 
     private DataPoint[]? BuildComplexSumPoints(
-        double delayMs,
-        bool invertPolarity,
-        int smoothing,
+        OverlayOperationPreview settings,
         bool showLoss = false)
     {
+        int smoothing = settings.SmoothingInverseOctaves;
         // The loss curve is a RATIO of two responses, not a level: it is divided out
         // of unsmoothed operands and smoothed once, by the measurement pipeline, at
         // THIS slot's width (see DataHelper.SmoothRatioLevels). Handing that width
@@ -2565,8 +2728,8 @@ public sealed class Overlay
         // psychoacoustic mode's variable bandwidth, which the overlay smoother —
         // magnitude-only by construction — would flatten to a fixed 1/6 octave.
         OverlayPoint[]? sumPoints = collection.Form.BuildComplexSumOverlayPoints(
-            delayMs,
-            invertPolarity,
+            settings.CompareDelayMs,
+            settings.CompareInvertPolarity,
             showLoss,
             showLoss ? smoothing : null);
         if (sumPoints == null || sumPoints.Length < 2)
@@ -2577,10 +2740,9 @@ public sealed class Overlay
         OverlayPoint[] smoothed = showLoss
             ? sumPoints
             : OverlayMath.SmoothByOctaves(sumPoints, smoothing);
-        double offset = (double)offsetControl.Value;
-        return smoothed
-            .Select(point => new DataPoint(point.X, point.Y + offset))
-            .ToArray();
+        // The complex sum is decibels by construction; it has no operands to inherit
+        // an axis from.
+        return ApplyOffsetAndTilt(smoothed, settings, OverlayCurveSemantics.None);
     }
 
     // Redraws this slot's series with the dialog's candidate settings — operands,
@@ -2595,7 +2757,12 @@ public sealed class Overlay
         }
 
         RemoveSeries(model);
-        DataPoint[]? points = BuildOperationPointsFor(settings);
+        // A preview is a draw like any other: a candidate curve that would not belong on
+        // the axis showing is not put there just because a dialog is open.
+        OverlayCurveSemantics semantics = ResultFor(settings).Curve;
+        DataPoint[]? points = semantics.DrawsOn(SeriesMode, collection.CurrentMagnitudeScale)
+            ? BuildOperationPointsFor(settings)
+            : null;
         if (points != null)
         {
             AddCurveSeries(
@@ -2606,7 +2773,8 @@ public sealed class Overlay
                 settings.OpacityPercent,
                 settings.StrokeThickness,
                 settings.LineStyle,
-                settings.Name.Length > 0 ? settings.Name : Title);
+                settings.Name.Length > 0 ? settings.Name : Title,
+                semantics.YAxisKey);
         }
 
         RefreshPlot(model);
@@ -2639,8 +2807,10 @@ public sealed class Overlay
         out OverlayOperationSource? sourceB)
     {
         sourceA = ResolveOperand(sourceCurveKeyA, sourceSlotA);
-        sourceB = ResolveOperand(sourceCurveKeyB, sourceSlotB);
-        return sourceA != null && sourceB != null;
+        sourceB = UsesOperandB
+            ? ResolveOperand(sourceCurveKeyB, sourceSlotB)
+            : null;
+        return sourceA != null && (sourceB != null || !UsesOperandB);
     }
 
     // A live-curve operand (curveKey set) resolves from the current plot each time, so
@@ -2667,9 +2837,11 @@ public sealed class Overlay
     // Whether this slot's curve carries dB MAGNITUDE semantics, as required by
     // psychoacoustic cubic averaging. Phase, group-delay and coherence traces
     // use the plain base width because their signed values are not amplitudes.
+    // The axis is read off the SLOT, so an operation over coherence curves is judged
+    // by the axis it inherits rather than by the empty key an operation slot holds.
     private bool MagnitudeSmoothingSemantics =>
         OverlayMath.SupportsAmplitudeSpace(SeriesMode) &&
-        capturedYAxisKey != PlotModelFactory.CoherenceAxisKey &&
+        SlotSemantics.YAxisKey != PlotModelFactory.CoherenceAxisKey &&
         // When the captured kind is known, only a magnitude-domain curve is eligible;
         // a phase kind (min/excess phase) never applies magnitude cubic averaging. A null
         // kind (imported text, legacy files) falls back to the mode/axis test above.
@@ -2773,7 +2945,11 @@ public sealed class Overlay
         AddCurveSeries(
             model,
             "curve",
-            BuildCapturedPoints(settings.SmoothingInverseOctaves),
+            // Styling and smoothing do not change what the curve IS, so the same axis
+            // rule applies to the candidate as to the stored slot.
+            DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale)
+                ? BuildCapturedPoints(settings.SmoothingInverseOctaves)
+                : null,
             settings.Color,
             settings.OpacityPercent,
             settings.StrokeThickness,
@@ -2806,6 +2982,9 @@ public sealed class Overlay
         blendFrequencyHz = 1_000;
         blendWidthOctaves = 1;
         useAmplitudeSpace = false;
+        tiltEnabled = false;
+        tiltDbPerOctave = OverlayFile.DefaultTiltDbPerOctave;
+        tiltPivotHz = OverlayFile.DefaultTiltPivotHz;
         compareDelayMs = 0;
         compareInvertPolarity = false;
         targetConfigured = false;
@@ -2891,7 +3070,9 @@ public sealed class Overlay
         }
     }
 
-    private void RemoveSeries(PlotModel model)
+    // Returns whether anything was actually on the plot, so a caller that removes and
+    // then draws nothing can skip the repaint when there was nothing to erase.
+    private bool RemoveSeries(PlotModel model)
     {
         string prefix = $"overlay:{SeriesMode}:{Index}:";
         List<OxyPlot.Series.Series> existing = model.Series
@@ -2902,6 +3083,8 @@ public sealed class Overlay
         {
             model.Series.Remove(series);
         }
+
+        return existing.Count > 0;
     }
 
     private string GetTag(string part) => $"overlay:{SeriesMode}:{Index}:{part}";
@@ -2948,4 +3131,8 @@ internal sealed record OverlayOperationSource(
     int Slot,
     string Title,
     IReadOnlyList<OverlayPoint> Points,
-    bool? PhaseUnwrapped = null);
+    bool? PhaseUnwrapped = null,
+    // What the points state about themselves — the magnitude scale and the Y axis they
+    // belong to. An operation reuses them verbatim, so the result inherits this rather
+    // than being assumed to be relative decibels on the main axis.
+    OverlayCurveSemantics Semantics = default);

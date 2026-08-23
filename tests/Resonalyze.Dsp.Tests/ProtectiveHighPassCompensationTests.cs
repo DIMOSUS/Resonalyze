@@ -11,6 +11,7 @@ public sealed class ProtectiveHighPassCompensationTests
     [Theory]
     [InlineData(CrossoverFilterFamily.Butterworth, 24)]
     [InlineData(CrossoverFilterFamily.LinkwitzRiley, 24)]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 36)]
     [InlineData(CrossoverFilterFamily.LinkwitzRiley, 48)]
     public void RemoveFromImpulseResponse_RecoversMagnitudeAndPhaseInTheTrustedBand(
         CrossoverFilterFamily family,

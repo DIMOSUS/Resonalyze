@@ -260,7 +260,7 @@ namespace Resonalyze
             bassGainInput.ForeColor = Color.White;
             bassGainInput.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             bassGainInput.Location = new Point(150, 254);
-            bassGainInput.Maximum = new decimal(new int[] { 18, 0, 0, 0 });
+            bassGainInput.Maximum = new decimal(new int[] { 30, 0, 0, 0 });
             bassGainInput.Minimum = new decimal(new int[] { 12, 0, 0, int.MinValue });
             bassGainInput.MinimumSize = new Size(36, 19);
             bassGainInput.Name = "bassGainInput";

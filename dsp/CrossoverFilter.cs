@@ -57,13 +57,15 @@ public static class CrossoverFilter
     /// <summary>
     /// The slopes each family offers, matching common DSP hardware. Linkwitz-Riley
     /// filters only exist in even orders built from a squared Butterworth, and DSPs
-    /// ship the 12/24/48 variants. Bessel is realized from a fixed -3 dB prototype
-    /// table that has no 5th/7th-order entry, so it omits the odd 30/42 dB/oct orders.
-    /// Butterworth and Chebyshev are computed for any order and offer the full set.
+    /// ship the 12/24/36/48 variants (LR36 = BW18 squared, the 6th-order slope a
+    /// Helix/Audison-class unit offers). Bessel is realized from a fixed -3 dB
+    /// prototype table that has no 5th/7th-order entry, so it omits the odd 30/42
+    /// dB/oct orders. Butterworth and Chebyshev are computed for any order and offer
+    /// the full set.
     /// </summary>
     public static IReadOnlyList<int> SupportedSlopes(CrossoverFilterFamily family) => family switch
     {
-        CrossoverFilterFamily.LinkwitzRiley => [12, 24, 48],
+        CrossoverFilterFamily.LinkwitzRiley => [12, 24, 36, 48],
         CrossoverFilterFamily.Bessel => [6, 12, 18, 24, 36, 48],
         _ => [6, 12, 18, 24, 30, 36, 42, 48]
     };
@@ -167,7 +169,11 @@ public static class CrossoverFilter
     /// coefficient convention a miniDSP-style device runs. A Butterworth of order n
     /// is its canonical second-order sections (Q from the pole angles) plus one
     /// first-order section when n is odd; a Linkwitz-Riley of order n is the
-    /// Butterworth of order n/2 cascaded twice.
+    /// Butterworth of order n/2 cascaded twice (so LR36 = BW18² carries two
+    /// first-order sections next to its two Q = 1 biquads). When n/2 is odd (LR12,
+    /// LR36) the low-pass and high-pass halves are 180° apart at every frequency,
+    /// so flat summation requires one side to be inverted — the channel's own
+    /// polarity setting, which choosing the slope does not touch.
     /// </summary>
     public static IReadOnlyList<BiquadCoefficients> BuildSections(
         CrossoverEdge edge,

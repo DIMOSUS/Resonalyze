@@ -346,13 +346,14 @@ items below are what a car DSP tune actually needs, roughly in priority order.
   per-format metadata, not a device profile.
 
 Deliberately out of scope for car DSP tuning (do not add here): FIR/convolution
-export (car DSPs are biquad), a view of the SOURCE's phase — minimum, excess or
-group delay, which is what the analysis tabs and the Virtual DSP tool are for —
-real-time PC audio preview (you listen in the car after loading the profile),
-arbitrary target-curve import (the Car / CarMild / XCurve presets cover it), and
-HP/LP filter types (crossover tool). The wizard's own phase view is a different
-thing and is IN scope: it draws the bank being edited, which a magnitude plot
-cannot show at all once the bank holds an all-pass band.
+export (car DSPs are biquad), the DECOMPOSED phase views — minimum phase, excess
+phase and group delay, which are the analysis tabs' subject — real-time PC audio
+preview (you listen in the car after loading the profile), arbitrary target-curve
+import (the Car / CarMild / XCurve presets cover it), and HP/LP filter types
+(crossover tool). The wizard's Phase mode is not one of these and is IN scope: it
+draws the measured phase of the channel being tuned against the neighbours it was
+handed, which is the only way to see what an all-pass band did — a magnitude plot
+shows it as flat by construction.
 
 ## Time Alignment / unwrap
 

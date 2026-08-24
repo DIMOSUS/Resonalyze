@@ -251,15 +251,15 @@ public partial class EqWizardPanel : UserControl
         // construction, so the range is fixed rather than fitted, and the title and
         // step change with the unit. The dB branch restores them, so toggling back
         // never leaves a degree step on a decibel axis.
-        (double lower, double upper) = EqPhaseView
+        (double lower, double upper) = PhaseMode
             ? (-180.0, 180.0)
             : EqWizardPlotFit.EqGainAxisRange(
                 (double)numericGainMin.Value,
                 (double)numericGainMax.Value,
                 curveMinDb,
                 curveMaxDb);
-        eqAxis.Title = EqPhaseView ? "EQ (°)" : "EQ (dB)";
-        eqAxis.MajorStep = EqPhaseView ? 90 : 6;
+        eqAxis.Title = PhaseMode ? "Phase (°)" : "EQ (dB)";
+        eqAxis.MajorStep = PhaseMode ? 90 : 6;
         // The nominal range is always the hard pan/zoom limit — the curve holds
         // nothing beyond it. The RANGE, though, is re-armed only when the nominal
         // itself moved (a budget edit, a curve outgrowing a snap step): the axis
@@ -286,10 +286,16 @@ public partial class EqWizardPanel : UserControl
     private void InitializeToolTips()
     {
         SetTip(checkBoxEqPhase,
-            "Show the EQ curve's phase (degrees, wrapped to ±180°) on the right " +
-            "axis instead of its magnitude — where an all-pass band's work becomes " +
-            "visible. The source, the target, the error fill and every statistic " +
-            "stay in dB.");
+            "Switch the plot to phase (degrees, wrapped to ±180°) — where an " +
+            "all-pass band's work becomes visible, since it is flat on a magnitude " +
+            "plot by definition.\r\n" +
+            "With a channel handed over from Virtual DSP the plot shows the MEASURED " +
+            "phase of this channel, with and without its bank, against the " +
+            "neighbouring drivers as they stood: an all-pass is dialled in until the " +
+            "two lie together through the crossover region.\r\n" +
+            "Otherwise it shows the bank's own phase. The source, the target and the " +
+            "statistics are magnitudes and leave the plot; they are unchanged when " +
+            "you switch back.");
         SetTip(buttonSource,
             "Choose the curve to equalize: an impulse response (file or history), " +
             "a captured overlay slot, or a measured curve from a text file.");
@@ -635,22 +641,35 @@ public partial class EqWizardPanel : UserControl
         lastStats = BuildStats(render, eq);
         ResultsChanged?.Invoke(lastStats);
 
-        // Shade the gap between Source + EQ and the target first (red above, blue
-        // below), so the curves draw on top of the two-colour deviation band.
-        if (showEqCurves)
+        // A mode, not an extra curve: in phase the source, the target and the error
+        // fill say nothing (they are magnitudes), and the measured phase of this
+        // channel and its neighbours takes the plot instead. The statistics above are
+        // still computed — the bank's magnitude fit does not stop being true because
+        // the plot is showing phase — so switching back finds them current.
+        SetMagnitudeAxisVisible(!PhaseMode);
+        if (PhaseMode)
         {
-            AddDeviationFill(model, render.SourcePlusEq!, render.Target);
+            DrawMeasuredPhaseCurves(model, eq);
         }
-
-        if (render.Source != null)
+        else
         {
-            AddWizardSeries(model, render.Source);
-        }
+            // Shade the gap between Source + EQ and the target first (red above, blue
+            // below), so the curves draw on top of the two-colour deviation band.
+            if (showEqCurves)
+            {
+                AddDeviationFill(model, render.SourcePlusEq!, render.Target);
+            }
 
-        AddWizardSeries(model, render.Target);
-        if (showEqCurves)
-        {
-            AddWizardSeries(model, render.SourcePlusEq!);
+            if (render.Source != null)
+            {
+                AddWizardSeries(model, render.Source);
+            }
+
+            AddWizardSeries(model, render.Target);
+            if (showEqCurves)
+            {
+                AddWizardSeries(model, render.SourcePlusEq!);
+            }
         }
 
         AddEqCurve(model, eq, render.Target);
@@ -1033,12 +1052,6 @@ public partial class EqWizardPanel : UserControl
         model.Series.Add(series);
     }
 
-    // Whether the right-hand EQ axis shows the filter response's phase instead of
-    // its magnitude. A view toggle only: the source, target, error fill and every
-    // statistic stay in dB — phase is what the all-pass bands exist to move, and
-    // this is where their work becomes visible.
-    private bool EqPhaseView => checkBoxEqPhase.Checked;
-
     // Draws the EQ filter response itself (all bands, without the preamp) as a white
     // line on the dedicated right-hand axis: the raw EQ gain in dB sampled on the
     // baseline frequencies, or — in the phase view — the wrapped phase of the same
@@ -1050,7 +1063,7 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        if (EqPhaseView)
+        if (PhaseMode)
         {
             AddWizardSeries(
                 model,
@@ -1155,7 +1168,7 @@ public partial class EqWizardPanel : UserControl
         }
 
         PeqBand band = ReadBand(selectedSlot);
-        if (EqPhaseView)
+        if (PhaseMode)
         {
             AddWizardSeries(
                 model,

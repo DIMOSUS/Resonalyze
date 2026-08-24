@@ -663,6 +663,10 @@ public partial class EqWizardPanel
         previewOrchestrator.Invalidate();
         landedGatedPreview = null;
         landedGatedPreviewBank = null;
+        // The phase view reads the same measurement through the same chain, so
+        // whatever invalidated the magnitude preview invalidated it too — including
+        // the neighbours, which are gated with it.
+        InvalidatePhaseCurves();
     }
 
     // Starts a render unless the landed one already answers for this bank. The bank is

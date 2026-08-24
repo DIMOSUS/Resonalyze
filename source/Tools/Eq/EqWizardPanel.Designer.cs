@@ -382,7 +382,7 @@
             checkBoxEqPhase.Name = "checkBoxEqPhase";
             checkBoxEqPhase.Size = new Size(75, 19);
             checkBoxEqPhase.TabIndex = 66;
-            checkBoxEqPhase.Text = "EQ phase";
+            checkBoxEqPhase.Text = "Phase";
             checkBoxEqPhase.UseVisualStyleBackColor = true;
             // 
             // checkBoxCutsOnly

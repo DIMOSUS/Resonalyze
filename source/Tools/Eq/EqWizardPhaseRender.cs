@@ -105,6 +105,25 @@ internal sealed record EqWizardPhaseRequest(
 /// </remarks>
 internal static class EqWizardPhaseRender
 {
+    /// <summary>
+    /// How the channel under edit is drawn: it is the one curve that MOVES, so it
+    /// carries the same colour the magnitude view gives Source + EQ and is the
+    /// heaviest stroke on the plot. The neighbours keep the colours the Virtual DSP
+    /// panel gave them, so the same driver reads the same in both views.
+    /// </summary>
+    public const string EditedChannelTitle = "This channel";
+    public const double EditedChannelThickness = 2.2;
+    public static readonly OxyColor EditedChannelColor = OxyColor.FromRgb(0, 209, 255);
+
+    /// <summary>
+    /// The same channel without the bank: where it started. Drawn in the channel's own
+    /// colour and dashed rather than in a neutral grey — it is the SAME driver, and a
+    /// second grey curve would compete with the bank's own phase, which is white.
+    /// </summary>
+    public const string BareChannelTitle = "Without EQ";
+    public const double NeighbourThickness = 1.6;
+    public static readonly OxyColor BareChannelColor = EditedChannelColor;
+
     /// <summary>The edited channel's own phase, through its chain and the bank.</summary>
     public static GatedPhaseCurve RenderEditedChannel(
         EqWizardPhaseRequest request,
@@ -153,5 +172,47 @@ internal static class EqWizardPhaseRender
                 neighbour.Color,
                 thickness))
             .ToList();
+    }
+}
+
+/// <summary>
+/// Runs phase renders off the UI thread and accepts only the newest result — the same
+/// newest-wins contract the gated magnitude preview uses, and for the same reason: a
+/// fader drag asks for one per frame and each costs a convolution and a transform.
+/// </summary>
+internal sealed class EqWizardPhaseOrchestrator
+{
+    private readonly Func<EqWizardPhaseRequest, GatedPhaseCurve> render;
+    private long revision;
+
+    public EqWizardPhaseOrchestrator()
+        : this(request => EqWizardPhaseRender.RenderEditedChannel(
+            request,
+            EqWizardPhaseRender.EditedChannelTitle,
+            EqWizardPhaseRender.EditedChannelColor,
+            EqWizardPhaseRender.EditedChannelThickness))
+    {
+    }
+
+    internal EqWizardPhaseOrchestrator(
+        Func<EqWizardPhaseRequest, GatedPhaseCurve> render)
+    {
+        this.render = render ?? throw new ArgumentNullException(nameof(render));
+    }
+
+    /// <summary>Orphans any render in flight, so a stale one cannot land.</summary>
+    public void Invalidate() => Interlocked.Increment(ref revision);
+
+    /// <summary>
+    /// The render, or null when a newer one started while this was running. Callers
+    /// keep the last landed curve on screen meanwhile: blanking it would flicker the
+    /// view on every keystroke.
+    /// </summary>
+    public async Task<GatedPhaseCurve?> RenderLatestAsync(EqWizardPhaseRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        long requestRevision = Interlocked.Increment(ref revision);
+        GatedPhaseCurve curve = await Task.Run(() => render(request));
+        return Interlocked.Read(ref revision) == requestRevision ? curve : null;
     }
 }

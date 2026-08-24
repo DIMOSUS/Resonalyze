@@ -34,11 +34,12 @@ public sealed class CodeBuiltDialogScalingTests
     // scaling pass breaks it by the DPI factor, which is the point.
     [Theory]
     [InlineData(452, 448)]
-    public void ColorPickerDialog_ScalesItsDesignedSizeExactlyOnce(int width, int height)
-    {
-        using var dialog = new ColorPickerDialog(Color.Red);
-        AssertScaledOnce(dialog, new Size(width, height));
-    }
+    public void ColorPickerDialog_ScalesItsDesignedSizeExactlyOnce(int width, int height) =>
+        StaTest.Run(() =>
+        {
+            using var dialog = new ColorPickerDialog(Color.Red);
+            AssertScaledOnce(dialog, new Size(width, height));
+        });
 
     [Theory]
     [InlineData(true, 500, 235)]
@@ -46,13 +47,15 @@ public sealed class CodeBuiltDialogScalingTests
     public void ApplicationUpdateDialog_ScalesItsDesignedSizeExactlyOnce(
         bool supportsAutomaticUpdate,
         int width,
-        int height)
-    {
-        using var dialog = new ApplicationUpdateDialog(
-            "0.0.0", "0.1.0", supportsAutomaticUpdate);
-        AssertScaledOnce(dialog, new Size(width, height));
-    }
+        int height) =>
+        StaTest.Run(() =>
+        {
+            using var dialog = new ApplicationUpdateDialog(
+                "0.0.0", "0.1.0", supportsAutomaticUpdate);
+            AssertScaledOnce(dialog, new Size(width, height));
+        });
 
+    // Shown, so the dialog is built and realised on the caller's STA thread.
     // On a 100% display this says the dialog is its designed size; on a scaled
     // one it says the layout grew by the display's factor and no more. The
     // second pass this guards against squared it — 1.56x at 125%, which walks

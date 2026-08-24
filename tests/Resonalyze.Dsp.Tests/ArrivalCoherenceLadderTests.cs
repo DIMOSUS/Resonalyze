@@ -54,7 +54,6 @@ public sealed class ArrivalCoherenceLadderTests
                 Math.Abs(point.LagMs - 0.15) < 0.05,
                 $"band {point.FrequencyHz:0} Hz read {point.LagMs:0.000} ms " +
                 "instead of the +0.15 ms correction");
-            Assert.False(point.OptimumInverted);
             Assert.True(
                 point.PeakR > 0.8,
                 $"band {point.FrequencyHz:0} Hz peak r {point.PeakR:0.00}");
@@ -79,7 +78,6 @@ public sealed class ArrivalCoherenceLadderTests
             Assert.True(
                 Math.Abs(point.LagMs) < 0.05,
                 $"band {point.FrequencyHz:0} Hz optimum at {point.LagMs:0.000} ms");
-            Assert.True(point.OptimumInverted);
             Assert.True(
                 point.PeakR - point.CurrentR < 0.05,
                 $"band {point.FrequencyHz:0} Hz leaves " +

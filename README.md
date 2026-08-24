@@ -1540,10 +1540,15 @@ flat Δt near zero inside the dashed **±T/2** corridor; a junction that
 misses by whole periods draws a flat line *offset* from zero; a sloped or
 stepped Δt is dispersion — different bands arriving by different paths, which
 no single delay reconciles, so the tune is a compromise and this plot shows
-where it sits. Marker color reads the optimum's carrier polarity (circle:
-in polarity, square: inverted) and only inside the central lobe — past a
-quarter period the optimum sits between opposite-signed lobes and the marker
-stays neutral. Bands where one driver's level has fallen 25 dB below the
+where it sits. The ladder deliberately says nothing about POLARITY: a
+2/3-octave probe makes a coherence packet 4.3× wider than the spacing between
+comb lobes — at every frequency, since both scale with 1/f — so the
+opposite-signed lobes sit inside the packet's own plateau, and which one its
+maximum lands on is decided by noise. Measured across the archived cabins the
+envelope falls only 0–6% between a band's optimum and its neighbours, on
+sharply tuned junctions as much as on rough ones; polarity is what the
+correlation view answers instead, over the pair's whole band, where the lobes
+genuinely separate. Bands where one driver's level has fallen 25 dB below the
 other's are dropped rather than drawn: GCC-PHAT deliberately ignores level,
 and would otherwise read confident "coherence" off a crossover remnant the
 sum cannot hear. On junctions below 120 Hz a note warns that the long band

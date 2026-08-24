@@ -1406,8 +1406,23 @@ public static class VirtualCrossoverAnalysis
         double LagMs,
         double PeakR,
         double CurrentR,
-        bool OptimumInverted,
         double HalfPeriodMs);
+
+    // A ladder band states no POLARITY, and cannot: polarity is a carrier
+    // read, and telling one lobe from the opposite-signed lobe half a period
+    // away needs an envelope that falls between them. It does not here, at any
+    // frequency. A probe band of B octaves around f is f·(2^(B/2) − 2^(−B/2))
+    // wide, so its coherence packet runs about 1/that, while the lobe spacing
+    // is 1/(2f) — the RATIO of the two is 2/(2^(B/2) − 2^(−B/2)), free of f. At
+    // the ladder's 2/3 octave that is 4.3: every neighbouring lobe sits deep
+    // inside the packet's plateau. Measured over the archived cabins the
+    // envelope falls 0–6% between a band's optimum and its neighbours — on
+    // every junction, including the sharply tuned ones — so a polarity read
+    // there reports noise, which is exactly what a sub/woofer junction showed
+    // when one band announced an inversion its neighbours contradicted.
+    // The correlation view answers polarity instead: its whitened comb spans
+    // the pair's WHOLE band (two octaves at that junction, ratio 1.3), where
+    // the lobes genuinely separate.
 
     /// <summary>
     /// The ladder's frequency grid: one probe every sixth of an octave across
@@ -1600,7 +1615,6 @@ public static class VirtualCrossoverAnalysis
             lagMs,
             Math.Min(1.0, bestValue),
             Math.Min(1.0, envelope[zeroIndex]),
-            curve[best].Y < 0,
             500.0 / frequency);
     }
 

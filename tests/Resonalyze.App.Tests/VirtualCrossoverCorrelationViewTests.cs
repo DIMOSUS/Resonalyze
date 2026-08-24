@@ -133,6 +133,38 @@ public sealed class VirtualCrossoverCorrelationViewTests
     }
 
     [Fact]
+    public void DrawCoherence_DrawsOneKindOfOptimumMarkerAndClaimsNoPolarity()
+    {
+        // The ladder states no polarity: its 2/3-octave probe makes a packet
+        // 4.3x wider than the lobe spacing at every frequency, so the
+        // opposite-signed lobes sit inside the plateau and the carrier's sign
+        // at the maximum is noise (measured 0-6% of envelope contrast across
+        // every archived junction). One marker series, and nothing in the
+        // legend promising a polarity.
+        var view = new JunctionCoherenceView("C-D", "D", 65, 33, 130,
+        [
+            new VirtualCrossoverAnalysis.ArrivalCoherencePoint(
+                103.2, 1.27, 0.981, 0.979, 4.85),
+            new VirtualCrossoverAnalysis.ArrivalCoherencePoint(
+                115.8, -0.40, 0.981, 0.500, 4.32)
+        ]);
+
+        using var plotView = new OxyPlot.WindowsForms.PlotView();
+        var plot = new VirtualCrossoverDspChainPlot(plotView, DspPlotMode.Coherence);
+        plot.DrawCoherence(view);
+        var model = (PlotModel)plotView.Model;
+
+        OxyPlot.Series.ScatterSeries markers = Assert.Single(
+            model.Series.OfType<OxyPlot.Series.ScatterSeries>());
+        Assert.Equal("optimum", markers.Title);
+        Assert.Equal([103.2, 115.8], markers.Points.Select(point => point.X));
+        Assert.DoesNotContain(
+            model.Series.Where(series => series.RenderInLegend),
+            series => series.Title?.Contains("polarity") == true ||
+                series.Title?.Contains("inverted") == true);
+    }
+
+    [Fact]
     public void DrawCoherence_RefitsTheFrequencyAxisWhenTheBandChanges()
     {
         // Editing the pair's crossover keeps the pair title, and both ladders
@@ -143,9 +175,9 @@ public sealed class VirtualCrossoverCorrelationViewTests
             new("C-D", "D", Math.Sqrt(lowHz * highHz), lowHz, highHz,
             [
                 new VirtualCrossoverAnalysis.ArrivalCoherencePoint(
-                    lowHz, 0.0, 0.9, 0.9, false, 500.0 / lowHz),
+                    lowHz, 0.0, 0.9, 0.9, 500.0 / lowHz),
                 new VirtualCrossoverAnalysis.ArrivalCoherencePoint(
-                    highHz, 0.0, 0.9, 0.9, false, 500.0 / highHz)
+                    highHz, 0.0, 0.9, 0.9, 500.0 / highHz)
             ]);
 
         using var plotView = new OxyPlot.WindowsForms.PlotView();
@@ -187,7 +219,6 @@ public sealed class VirtualCrossoverCorrelationViewTests
                 Math.Abs(point.LagMs) < 0.05,
                 $"band {point.FrequencyHz:0} Hz optimum at {point.LagMs:0.000} ms " +
                 "on an aligned pair");
-            Assert.False(point.OptimumInverted);
             Assert.True(
                 point.PeakR - point.CurrentR < 0.05,
                 $"band {point.FrequencyHz:0} Hz leaves coherence on the table " +

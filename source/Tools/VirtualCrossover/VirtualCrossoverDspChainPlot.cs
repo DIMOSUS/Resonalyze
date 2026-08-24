@@ -538,41 +538,20 @@ internal sealed class VirtualCrossoverDspChainPlot
         var lagLine = NewCoherenceLine(
             "Δt to optimum", OxyColor.FromAColor(200, OxyColors.White),
             CoherenceLagAxisKey, LineStyle.Solid, 1.2);
-        // Polarity is a carrier read and only means something inside the
-        // central lobe: within a quarter period of zero the optimum IS the
-        // lobe the tune sits on, past that the envelope peak lands between
-        // opposite-signed lobes and the sign merely reports the grid. The
-        // undecidable points stay neutral instead of flashing a polarity.
-        var inPolarity = new ScatterSeries
+        // One kind of marker, on purpose. Polarity would be a carrier read,
+        // and the ladder's 2/3-octave probe cannot make one: its coherence
+        // packet is 4.3x wider than the lobe spacing at EVERY frequency (see
+        // the remarks by ArrivalCoherencePoint), so the opposite-signed lobes
+        // sit inside the packet's plateau and whichever the maximum lands on
+        // is decided by noise. The correlation view reads polarity instead,
+        // over the pair's whole band, where the lobes separate.
+        var optimum = new ScatterSeries
         {
-            Title = "optimum in polarity",
+            Title = "optimum",
             Tag = SeriesTag,
             MarkerType = MarkerType.Circle,
             MarkerSize = 3.5,
             MarkerFill = OxyColor.FromRgb(79, 195, 247),
-            XAxisKey = PlotModelFactory.FrequencyAxisKey,
-            YAxisKey = CoherenceLagAxisKey,
-            TrackerFormatString = CoherenceTrackerFormat
-        };
-        var invertedPolarity = new ScatterSeries
-        {
-            Title = "optimum inverted",
-            Tag = SeriesTag,
-            MarkerType = MarkerType.Square,
-            MarkerSize = 3.5,
-            MarkerFill = OxyColor.FromRgb(255, 169, 79),
-            XAxisKey = PlotModelFactory.FrequencyAxisKey,
-            YAxisKey = CoherenceLagAxisKey,
-            TrackerFormatString = CoherenceTrackerFormat
-        };
-        var ambiguous = new ScatterSeries
-        {
-            Tag = SeriesTag,
-            MarkerType = MarkerType.Circle,
-            MarkerSize = 2.5,
-            MarkerFill = OxyColors.Transparent,
-            MarkerStroke = OxyColor.FromAColor(200, OxyColors.Gray),
-            MarkerStrokeThickness = 1,
             XAxisKey = PlotModelFactory.FrequencyAxisKey,
             YAxisKey = CoherenceLagAxisKey,
             TrackerFormatString = CoherenceTrackerFormat
@@ -588,11 +567,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             currentR.Points.Add(
                 new DataPoint(point.FrequencyHz, point.CurrentR));
             lagLine.Points.Add(new DataPoint(point.FrequencyHz, point.LagMs));
-            ScatterSeries markers =
-                Math.Abs(point.LagMs) < point.HalfPeriodMs / 2.0
-                    ? point.OptimumInverted ? invertedPolarity : inPolarity
-                    : ambiguous;
-            markers.Points.Add(
+            optimum.Points.Add(
                 new ScatterPoint(point.FrequencyHz, point.LagMs));
         }
 
@@ -601,9 +576,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.Series.Add(corridorLower);
         model.Series.Add(currentR);
         model.Series.Add(lagLine);
-        model.Series.Add(inPolarity);
-        model.Series.Add(invertedPolarity);
-        model.Series.Add(ambiguous);
+        model.Series.Add(optimum);
 
         model.Annotations.Add(new LineAnnotation
         {

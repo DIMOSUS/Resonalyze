@@ -4313,31 +4313,32 @@ public partial class VirtualCrossoverPanel : UserControl
             .AsOrdered()
             .SelectMany(job =>
             {
-                (List<SignalPoint> points, List<SignalPoint> wrapSegments) =
-                    SplitWrapSegments(DataHelper.GetGatedPhaseData(
-                        job.Spectrum,
-                        job.ExtractionStart,
-                        referenceSamples,
-                        sampleRate,
-                        unwrap: false));
+                GatedPhaseCurve curve = GatedPhaseCurves.Read(
+                    job.Spectrum,
+                    job.ExtractionStart,
+                    referenceSamples,
+                    sampleRate,
+                    job.Title,
+                    job.Color,
+                    job.Thickness);
                 var curves = new List<AcousticCurve>(2);
                 // The ±360° wrap verticals: the channel's color faded and
                 // thinned well below the curve, dashed, drawn first (i.e.
                 // under the solid curve) — visible as wraps without competing
                 // with the phase traces. The empty title keeps them out of
                 // the plot-labels panel.
-                if (wrapSegments.Count > 0)
+                if (curve.WrapSegments.Count > 0)
                 {
                     curves.Add(new AcousticCurve(
                         string.Empty,
-                        wrapSegments,
+                        curve.WrapSegments,
                         OxyColor.FromAColor(110, job.Color),
                         job.Thickness * 0.4,
                         LineStyle.Dash));
                 }
                 curves.Add(new AcousticCurve(
-                    job.Title,
-                    points,
+                    curve.Title,
+                    curve.Points,
                     job.Color,
                     job.Thickness,
                     LineStyle.Solid));
@@ -4789,45 +4790,6 @@ public partial class VirtualCrossoverPanel : UserControl
             gatePreview?.RightMs ?? project.PhaseGateRightMs,
             Unwrap: false,
             SmoothingInverseOctaves: 0.0);
-
-    // Wrapped phase jumps from +180° to −180° between adjacent bins. The
-    // main curve breaks at the wrap (NaN) so the jump does not read as a
-    // real phase transition drawn at full stroke; the jump itself goes
-    // into WrapSegments — NaN-separated two-point verticals the caller
-    // draws as a thinner dashed twin, keeping the wrap visible.
-    private static (List<SignalPoint> Points, List<SignalPoint> WrapSegments)
-        SplitWrapSegments(List<SignalPoint> phase)
-    {
-        var points = new List<SignalPoint>(phase.Count);
-        var wrapSegments = new List<SignalPoint>();
-        SignalPoint? previous = null;
-        foreach (SignalPoint point in phase)
-        {
-            if (point.X is < 20 or > 20_000)
-            {
-                continue;
-            }
-
-            var current = new SignalPoint(point.X, point.Y / Math.PI * 180.0);
-            if (previous is { } before && !double.IsNaN(before.Y) &&
-                !double.IsNaN(current.Y) &&
-                Math.Abs(current.Y - before.Y) > 180.0)
-            {
-                points.Add(new SignalPoint(point.X, double.NaN));
-                // Strictly vertical, halfway between the two bins (geometric
-                // mean = the visual midpoint on the log-frequency axis).
-                double wrapHz = Math.Sqrt(before.X * current.X);
-                wrapSegments.Add(new SignalPoint(wrapHz, before.Y));
-                wrapSegments.Add(new SignalPoint(wrapHz, current.Y));
-                wrapSegments.Add(new SignalPoint(wrapHz, double.NaN));
-            }
-
-            points.Add(current);
-            previous = current;
-        }
-
-        return (points, wrapSegments);
-    }
 
     // Opens the manual phase-gate dialog: the gate offset and Tukey shoulders
     // with a live preview of every processed channel IR, so reflections can be

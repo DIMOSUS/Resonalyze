@@ -59,6 +59,7 @@
             numericGainMax = new DarkNumericUpDown();
             labelGainMax = new Label();
             checkBoxBypass = new CheckBox();
+            checkBoxEqPhase = new CheckBox();
             checkBoxCutsOnly = new CheckBox();
             panelAutoTune = new Panel();
             buttonOverlaySettings = new Button();
@@ -359,9 +360,9 @@
             labelGainMax.Size = new Size(57, 15);
             labelGainMax.TabIndex = 59;
             labelGainMax.Text = "Max Gain";
-            // 
+            //
             // checkBoxBypass
-            // 
+            //
             checkBoxBypass.AutoSize = true;
             checkBoxBypass.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxBypass.ForeColor = Color.FromArgb(210, 214, 222);
@@ -371,6 +372,18 @@
             checkBoxBypass.TabIndex = 53;
             checkBoxBypass.Text = "Bypass";
             checkBoxBypass.UseVisualStyleBackColor = true;
+            //
+            // checkBoxEqPhase
+            //
+            checkBoxEqPhase.AutoSize = true;
+            checkBoxEqPhase.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxEqPhase.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxEqPhase.Location = new Point(108, 220);
+            checkBoxEqPhase.Name = "checkBoxEqPhase";
+            checkBoxEqPhase.Size = new Size(75, 19);
+            checkBoxEqPhase.TabIndex = 66;
+            checkBoxEqPhase.Text = "EQ phase";
+            checkBoxEqPhase.UseVisualStyleBackColor = true;
             // 
             // checkBoxCutsOnly
             // 
@@ -613,6 +626,7 @@
             Controls.Add(buttonOverlaySettings);
             Controls.Add(panelAutoTune);
             Controls.Add(checkBoxBypass);
+            Controls.Add(checkBoxEqPhase);
             Controls.Add(labelGain);
             Controls.Add(NumericGain);
             Controls.Add(labelTargetOffset);
@@ -661,6 +675,7 @@
         private DarkNumericUpDown numericGainMax;
         private Label labelGainMax;
         private CheckBox checkBoxBypass;
+        private CheckBox checkBoxEqPhase;
         private CheckBox checkBoxCutsOnly;
         private Panel panelAutoTune;
         private Button buttonOverlaySettings;

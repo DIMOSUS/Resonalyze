@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Numerics;
 using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.Axes;
@@ -33,6 +34,11 @@ public partial class EqWizardPanel : UserControl
     private const int PeqRowCount = 2;
     private const string WizardSeriesTag = "eq-wizard:curve";
     private const string WizardTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00} dB";
+    private const string PhaseTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.0} °";
+    // Dense enough that a sharp all-pass (a Q of 20 turns most of its 360° inside
+    // a twentieth of an octave) still gets several points per wrap, so the ±180°
+    // seam detection below cannot mistake a fast turn for a wrap.
+    private const int PhaseGridPointCount = 1500;
     // The EQ filter-response curve lives on its own right-hand axis so its gain reads
     // around 0 dB regardless of the source's level (an absolute dB SPL source puts the
     // shared left axis tens of dB away from 0, where the filter shape would be clipped).
@@ -109,6 +115,7 @@ public partial class EqWizardPanel : UserControl
         // the same coalescing path as a band field.
         NumericGain.ValueChanged += BankValueChanged;
         checkBoxBypass.CheckedChanged += (_, _) => DrawSelectedCurves();
+        checkBoxEqPhase.CheckedChanged += (_, _) => DrawSelectedCurves();
         checkBoxCutsOnly.CheckedChanged += (_, _) =>
         {
             // Only the next fit reads it, but orphan any in-flight one so a
@@ -240,11 +247,19 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        (double lower, double upper) = EqWizardPlotFit.EqGainAxisRange(
-            (double)numericGainMin.Value,
-            (double)numericGainMax.Value,
-            curveMinDb,
-            curveMaxDb);
+        // The phase view owns the whole axis: wrapped phase lives in ±180° by
+        // construction, so the range is fixed rather than fitted, and the title and
+        // step change with the unit. The dB branch restores them, so toggling back
+        // never leaves a degree step on a decibel axis.
+        (double lower, double upper) = EqPhaseView
+            ? (-180.0, 180.0)
+            : EqWizardPlotFit.EqGainAxisRange(
+                (double)numericGainMin.Value,
+                (double)numericGainMax.Value,
+                curveMinDb,
+                curveMaxDb);
+        eqAxis.Title = EqPhaseView ? "EQ (°)" : "EQ (dB)";
+        eqAxis.MajorStep = EqPhaseView ? 90 : 6;
         // The nominal range is always the hard pan/zoom limit — the curve holds
         // nothing beyond it. The RANGE, though, is re-armed only when the nominal
         // itself moved (a budget edit, a curve outgrowing a snap step): the axis
@@ -270,6 +285,11 @@ public partial class EqWizardPanel : UserControl
 
     private void InitializeToolTips()
     {
+        SetTip(checkBoxEqPhase,
+            "Show the EQ curve's phase (degrees, wrapped to ±180°) on the right " +
+            "axis instead of its magnitude — where an all-pass band's work becomes " +
+            "visible. The source, the target, the error fill and every statistic " +
+            "stay in dB.");
         SetTip(buttonSource,
             "Choose the curve to equalize: an impulse response (file or history), " +
             "a captured overlay slot, or a measured curve from a text file.");
@@ -952,7 +972,8 @@ public partial class EqWizardPanel : UserControl
     private static void AddWizardSeries(
         PlotModel model,
         EqWizardCurve curve,
-        string? yAxisKey = null)
+        string? yAxisKey = null,
+        string trackerFormat = WizardTrackerFormat)
     {
         var series = new LineSeries
         {
@@ -961,7 +982,7 @@ public partial class EqWizardPanel : UserControl
             LineStyle = curve.LineStyle,
             Title = curve.Title,
             Tag = WizardSeriesTag,
-            TrackerFormatString = WizardTrackerFormat
+            TrackerFormatString = trackerFormat
         };
         // Curves with no key bind to the default (left) axis; only the EQ curve names
         // the right gain axis.
@@ -974,14 +995,36 @@ public partial class EqWizardPanel : UserControl
         model.Series.Add(series);
     }
 
+    // Whether the right-hand EQ axis shows the filter response's phase instead of
+    // its magnitude. A view toggle only: the source, target, error fill and every
+    // statistic stay in dB — phase is what the all-pass bands exist to move, and
+    // this is where their work becomes visible.
+    private bool EqPhaseView => checkBoxEqPhase.Checked;
+
     // Draws the EQ filter response itself (all bands, without the preamp) as a white
-    // line, sampled on the baseline frequencies. Values are the raw EQ gain in dB, drawn
-    // on the dedicated right-hand gain axis so the correction shape reads around 0 dB
-    // whatever the source's absolute level.
+    // line on the dedicated right-hand axis: the raw EQ gain in dB sampled on the
+    // baseline frequencies, or — in the phase view — the wrapped phase of the same
+    // digital realization, in degrees.
     private void AddEqCurve(PlotModel model, EqualizationCurve eq, EqWizardCurve? baseline)
     {
         if (baseline is not { Points.Count: >= 2 })
         {
+            return;
+        }
+
+        if (EqPhaseView)
+        {
+            AddWizardSeries(
+                model,
+                new EqWizardCurve(
+                    "EQ phase",
+                    OxyColors.White,
+                    1.5,
+                    LineStyle.Solid,
+                    PhasePoints(eq.Bands, baseline)),
+                EqGainAxisKey,
+                PhaseTrackerFormat);
+            UpdateEqAxisRange();
             return;
         }
 
@@ -1015,9 +1058,51 @@ public partial class EqWizardPanel : UserControl
         UpdateEqAxisRange(curveMin, curveMax);
     }
 
-    // Draws the highlighted band's individual contribution relative to the target
+    // The wrapped phase (degrees) of the bank's digital realization on a dense log
+    // grid spanning the baseline, with a break inserted at every ±180° seam so the
+    // wrap does not draw as a vertical line. Wrapped rather than unwrapped on
+    // purpose: it is how every phase plot in the app (and REW) reads, and it keeps
+    // the axis a fixed ±180° whatever the bank stacks up.
+    private IReadOnlyList<DataPoint> PhasePoints(
+        IReadOnlyList<PeqBand> bands,
+        EqWizardCurve baseline)
+    {
+        BiquadCoefficients[] sections = bands
+            .Where(band => !band.IsTransparent)
+            .Select(band => PeqBiquad.Compute(band, EqSampleRate))
+            .ToArray();
+        IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(
+            Math.Max(1, baseline.Points[0].X),
+            Math.Max(2, baseline.Points[^1].X),
+            PhaseGridPointCount);
+
+        var points = new List<DataPoint>(grid.Count + 16);
+        double previous = double.NaN;
+        foreach (double frequency in grid)
+        {
+            Complex response = Complex.One;
+            foreach (BiquadCoefficients section in sections)
+            {
+                response *= BiquadResponse.Evaluate(section, frequency, EqSampleRate);
+            }
+
+            double degrees = response.Phase * (180.0 / Math.PI);
+            if (!double.IsNaN(previous) && Math.Abs(degrees - previous) > 180.0)
+            {
+                points.Add(new DataPoint(frequency, double.NaN));
+            }
+
+            previous = degrees;
+            points.Add(new DataPoint(frequency, degrees));
+        }
+
+        return points;
+    }
+
+    // Draws the highlighted band's individual contribution: relative to the target
     // curve (target with only that one band applied), so its shape, width and gain
-    // stand out against where the response should land.
+    // stand out against where the response should land — or, in the phase view, the
+    // band's own phase on the right axis, since a phase has no target to sit on.
     private void AddSelectedBandCurve(PlotModel model, EqWizardCurve? baseline)
     {
         if (selectedSlot == null || baseline is not { Points.Count: >= 2 })
@@ -1032,6 +1117,21 @@ public partial class EqWizardPanel : UserControl
         }
 
         PeqBand band = ReadBand(selectedSlot);
+        if (EqPhaseView)
+        {
+            AddWizardSeries(
+                model,
+                new EqWizardCurve(
+                    $"Band {slotNumber} phase",
+                    BandCurveColor,
+                    2,
+                    LineStyle.Dash,
+                    PhasePoints(new[] { band }, baseline)),
+                EqGainAxisKey,
+                PhaseTrackerFormat);
+            return;
+        }
+
         var points = baseline.Points
             .Select(point => new DataPoint(
                 point.X,

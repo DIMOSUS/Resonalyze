@@ -1232,7 +1232,11 @@ and, on a low corner, what it costs (it grows with Q and falls with frequency;
 AP1 has a single real pole and takes no Q). The magnitude curves draw an
 all-pass as the flat line it is — except **Source + EQ** on a Virtual DSP
 handoff, which runs the real chain and so can shift slightly where the analysis
-window catches a phase-shifted arrival.
+window catches a phase-shifted arrival. To see the work itself, the **EQ
+phase** toggle switches the right-hand axis from the EQ curve's magnitude to
+its phase (degrees, wrapped to ±180°); the selected band's dashed curve follows
+the toggle, while the source, the target, the error fill and every statistic
+stay in dB.
 The Target Level is the user's knob alone — loading a source never moves it, so
 a deliberately placed target survives every source switch (an absolute dB SPL
 curve simply needs the level dialed to its datum once). The one exception

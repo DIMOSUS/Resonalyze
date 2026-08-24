@@ -255,7 +255,7 @@ public sealed class RewImpulseResponseTextFileTests
         }
     }
     [Fact]
-    public void Parse_RefusesAnArrivalThatPrecedesTheReference()
+    public void Parse_KeepsAnArrivalThatPrecedesTheReference()
     {
         // A timing offset applied in REW is invisible in this format: the header of a
         // measurement taken with one is word for word the header of one taken without,
@@ -264,20 +264,51 @@ public sealed class RewImpulseResponseTextFileTests
         // with a 4 ms offset carries "96000 // Peak index" against a start time of
         // -1.0013229166666666 s, which puts t = 0 at sample 96127 — 127 samples after
         // the peak — and REW's own API reports that measurement's delay as -1.32 ms.
-        // Sound does not reach the microphone before it reaches the loopback.
+        //
+        // This USED to be refused at parse time. It is not any more: it is the very
+        // file the importer's offset question exists to rescue, and refusing it here
+        // would mean the question could never be asked. The reader states the arrival
+        // and leaves the judgement to whoever knows the offset.
         double[] samples = ImpulseAt(64, 34.0);
 
-        Assert.False(RewImpulseResponseTextFile.TryParse(
-            Export(samples, -20.25 / SampleRate, peakIndex: 20),
-            out _,
-            out string? problem));
-        Assert.Contains("precede the reference", problem);
+        RewImpulseResponseTextFile offsetFile = RewImpulseResponseTextFile.Parse(
+            Export(samples, -20.25 / SampleRate, peakIndex: 20));
+        Assert.Equal(-0.25, offsetFile.ImpliedArrivalSamples, 6);
 
-        // The honest limit: an offset smaller than the arrival keeps the peak after
-        // t = 0 and is indistinguishable from a shorter path. This one still imports,
-        // and the notice says the arrival it implies so a user can catch it.
+        // An offset SMALLER than the arrival leaves the arrival positive and is
+        // indistinguishable from a shorter path — the case no check can reach.
         RewImpulseResponseTextFile file = RewImpulseResponseTextFile.Parse(
             Export(samples, -20.25 / SampleRate, peakIndex: 40));
         Assert.Equal(19.75, file.ImpliedArrivalSamples, 6);
+    }
+
+    [Fact]
+    public void StatedOffsetMovesTheReferenceAndTheArrival()
+    {
+        // Undoing a stated offset is a move of t = 0 and nothing else: the samples are
+        // untouched. REW's sign is that a positive offset delays the measurement, so
+        // taking it out moves the reference EARLIER in the buffer and the arrival later
+        // by the same amount. Confirmed against six real captures: at 96 kHz a 4 ms
+        // offset is 384 whole samples, and adding it back to the reported IR start
+        // reproduces the un-offset arrival to the last digit.
+        double[] samples = ImpulseAt(64, 34.0);
+        RewImpulseResponseTextFile file = RewImpulseResponseTextFile.Parse(
+            Export(samples, -20.25 / SampleRate, peakIndex: 20));
+
+        double offsetSeconds = 8.0 / SampleRate;
+        Assert.Equal(12.25, file.ReferenceIndexWithOffset(offsetSeconds), 6);
+        Assert.Equal(7.75, file.ArrivalSamplesWithOffset(offsetSeconds), 6);
+
+        // Zero is the identity, and the no-argument overload is that same case.
+        Assert.Equal(file.TimeZeroIndex, file.ReferenceIndexWithOffset(0), 12);
+        Assert.Equal(
+            file.ToLoopbackReferencedImpulseResponse(),
+            file.ToLoopbackReferencedImpulseResponse(0));
+
+        // The shift really is applied to the samples: the pulse sits 8 samples later
+        // once the offset is taken out than it does without it.
+        double[] uncorrected = file.ToLoopbackReferencedImpulseResponse();
+        double[] corrected = file.ToLoopbackReferencedImpulseResponse(offsetSeconds);
+        Assert.Equal(Peak(uncorrected) + 8, Peak(corrected));
     }
 }

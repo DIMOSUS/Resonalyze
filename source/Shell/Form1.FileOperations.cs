@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using Resonalyze.Dsp;
+using Resonalyze.Ui.Dialogs;
 
 namespace Resonalyze;
 
@@ -319,6 +320,7 @@ public partial class Form1
     private async Task ImportRewImpulseResponseAsync(string path)
     {
         RewImpulseResponseTextFile file;
+        RewImportTimingPlan plan;
         // Claimed BEFORE the read: parsing a few hundred thousand samples and
         // running the fractional shift takes long enough for the record button to
         // start a sweep in between, and this import would then arrive on top of it.
@@ -357,8 +359,18 @@ public partial class Form1
                     "Measure it in REW with a loopback as the timing reference to import it.");
             }
 
+            // The one fact the format cannot carry, asked for rather than guessed at.
+            // The question is put while the claim is still held: nothing has been
+            // published yet, so there is nothing on screen waiting to be redrawn, and
+            // the claim is exactly what stops a sweep starting while the dialog is up.
+            if (!TryPlanRewImportTiming(file, out plan))
+            {
+                return;
+            }
+
             double[] samples = file.Samples;
-            double[] referenced = await Task.Run(file.ToLoopbackReferencedImpulseResponse);
+            double[] referenced = await Task.Run(
+                () => file.ToLoopbackReferencedImpulseResponse(plan.OffsetSeconds));
             // The band REW swept. A header without it is not worth refusing the file over,
             // but the fallback is a guess and says so in the notes below.
             double lowHz = file.LowFrequencyHz ?? DefaultImportedLowFrequencyHz;
@@ -386,7 +398,7 @@ public partial class Form1
                 acceptedAverageRunCount: file.SweepCount ?? 1,
                 achievedLowFrequencyHz: lowHz,
                 achievedHighFrequencyHz: highHz,
-                timingReference: TimingReference.SynchronizedLoopback);
+                timingReference: plan.Reference);
         }
 
         // Like a recorded sweep and unlike a loaded file: nothing on disk holds this
@@ -396,13 +408,51 @@ public partial class Form1
         sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
-        NotifyRewImportDecisions(file);
+        NotifyRewImportDecisions(file, plan);
+    }
+
+    // Puts the timing-offset question and turns the answer into a plan, or explains why
+    // the answer cannot be true of this file. False means the user cancelled — which is
+    // not an error and gets no notice.
+    private bool TryPlanRewImportTiming(
+        RewImpulseResponseTextFile file,
+        out RewImportTimingPlan plan)
+    {
+        using var dialog = new RewTimingOffsetDialog(
+            file.ImpliedArrivalSamples / file.SampleRate * 1000.0);
+        RewTimingOffsetChoice choice = dialog.ShowDialog(this);
+        if (choice == RewTimingOffsetChoice.Cancel)
+        {
+            plan = null!;
+            return false;
+        }
+
+        double? statedOffsetSeconds =
+            choice == RewTimingOffsetChoice.Stated ? dialog.OffsetSeconds : null;
+        if (!RewImportTiming.TryResolve(
+                statedOffsetSeconds,
+                file.TimeZeroIndex,
+                file.PeakIndex,
+                file.Samples.Length,
+                file.SampleRate,
+                out RewImportTimingPlan? resolved,
+                out string? problem) ||
+            resolved == null)
+        {
+            throw new InvalidOperationException(
+                $"This REW impulse-response export cannot be imported — {problem}.");
+        }
+
+        plan = resolved;
+        return true;
     }
 
     // What REW's export could not say, and what was assumed in its place. Always worth
     // showing: an imported measurement looks exactly like a measured one on screen, and
     // these are the ways in which it is not.
-    private void NotifyRewImportDecisions(RewImpulseResponseTextFile file)
+    private void NotifyRewImportDecisions(
+        RewImpulseResponseTextFile file,
+        RewImportTimingPlan plan)
     {
         if (closingInProgress)
         {
@@ -418,8 +468,7 @@ public partial class Form1
                 "impulse response — so this measurement is uncalibrated here, whatever REW showed.",
             FormattableString.Invariant(
                 $"The export states no bit depth and no playback channel: {ImportedBitDepth}-bit and Mono were assumed. Neither changes the samples — they describe the sweep this result is filed under."),
-            FormattableString.Invariant(
-                $"REW's text export does not record a timing offset, so one smaller than the arrival cannot be told from a shorter path. The arrival this header implies is {file.ImpliedArrivalSamples / file.SampleRate * 1000.0:0.000} ms; if that is not what REW showed for this measurement, it was measured with an offset and does not belong on this session's time base.")
+            DescribeImportedTiming(file, plan)
         };
         if (file.LowFrequencyHz == null || file.HighFrequencyHz == null)
         {
@@ -440,6 +489,28 @@ public partial class Form1
             "REW impulse response imported",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
+    }
+
+    // What the import was told about time, and what that makes the arrival worth. Said
+    // in the notice because an imported measurement looks like a measured one on screen
+    // and this is the difference between a delay and a number that resembles one.
+    private static string DescribeImportedTiming(
+        RewImpulseResponseTextFile file,
+        RewImportTimingPlan plan)
+    {
+        double arrivalMs = plan.ArrivalSamples / file.SampleRate * 1000.0;
+        if (plan.Reference == TimingReference.RecordedSweep)
+        {
+            return FormattableString.Invariant(
+                $"The timing offset was left unstated, so this is filed as a recorded sweep: its shape is real and its position is not. Delays within it still mean what they say — a reflection 8 ms after the direct sound is 8 ms — but its arrival cannot be compared with another measurement's. Re-import it with the offset REW was running to place it on this session's time base.");
+        }
+
+        string statedAs = plan.OffsetSeconds == 0
+            ? "You stated no timing offset"
+            : FormattableString.Invariant(
+                $"You stated a {plan.OffsetSeconds * 1000.0:0.####} ms timing offset, which was taken back out");
+        return FormattableString.Invariant(
+            $"{statedAs}, so this measurement is on the session's time base with an arrival of {arrivalMs:0.###} ms. The export itself cannot confirm that: REW folds the offset into the start time and records it nowhere else, so the arrival is true on your word rather than on the file's.");
     }
 
     // REW's export states no bit depth: it is a text file of fractions of full scale,

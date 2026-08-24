@@ -63,11 +63,13 @@ public sealed class RewImpulseResponseTextFile
     public int PeakIndex { get; private init; }
 
     /// <summary>
-    /// The arrival this header implies, in samples: the buffer's peak minus the
-    /// reference. For a loopback-referenced sweep it is the tract's delay, and it is
-    /// positive by physics — the microphone cannot hear the sweep before the reference
-    /// does. A file where it is not is on some other time base; see the refusal in
-    /// <see cref="TryParse"/>.
+    /// The arrival this header implies BEFORE any timing offset is taken out, in
+    /// samples: the buffer's peak minus the reference. For a loopback-referenced sweep
+    /// measured with no offset it is the tract's delay, and it is positive by physics —
+    /// the microphone cannot hear the sweep before the reference does. A NEGATIVE value
+    /// here is the shadow of a timing offset larger than the arrival, which is a
+    /// question for the importer rather than a reason to refuse the file; an offset
+    /// SMALLER than the arrival leaves this positive and says nothing at all.
     /// </summary>
     public double ImpliedArrivalSamples => PeakIndex - TimeZeroIndex;
 
@@ -117,7 +119,32 @@ public sealed class RewImpulseResponseTextFile
     /// belong.
     /// </summary>
     public double[] ToLoopbackReferencedImpulseResponse() =>
-        FractionalSampleShift.AdvanceCircular(Samples, TimeZeroIndex);
+        ToLoopbackReferencedImpulseResponse(0);
+
+    /// <summary>
+    /// The same re-referencing with a stated REW timing offset taken back out, in
+    /// seconds and with REW's own sign (positive delays the measurement).
+    /// </summary>
+    /// <remarks>
+    /// REW folds the offset into the export's start time and records it nowhere else,
+    /// so undoing it is a move of t = 0 and nothing more: the samples are untouched.
+    /// Measured on six captures — a 4 ms offset at 96 kHz is 384 whole samples, and
+    /// adding the offset back to the reported IR start reproduces the un-offset
+    /// arrival to the last digit — so the correction is <b>subtracted from the
+    /// reference index</b>, which moves the arrival LATER by the offset.
+    /// </remarks>
+    public double[] ToLoopbackReferencedImpulseResponse(double timingOffsetSeconds) =>
+        FractionalSampleShift.AdvanceCircular(
+            Samples,
+            ReferenceIndexWithOffset(timingOffsetSeconds));
+
+    /// <summary>Where t = 0 sits once a stated timing offset is taken back out.</summary>
+    public double ReferenceIndexWithOffset(double timingOffsetSeconds) =>
+        TimeZeroIndex - (timingOffsetSeconds * SampleRate);
+
+    /// <summary>The arrival once a stated timing offset is taken back out, in samples.</summary>
+    public double ArrivalSamplesWithOffset(double timingOffsetSeconds) =>
+        PeakIndex - ReferenceIndexWithOffset(timingOffsetSeconds);
 
     /// <summary>
     /// Reads an export, or explains in <paramref name="problem"/> why this one cannot be
@@ -296,22 +323,12 @@ public sealed class RewImpulseResponseTextFile
             return false;
         }
 
-        // REW's text export does not record a timing offset — the header of a
-        // measurement taken with one is word for word the header of one taken without,
-        // and the offset is simply baked into the start time. What it cannot hide is
-        // the consequence: a large enough offset pushes t = 0 past the buffer's peak,
-        // and an arrival before the reference is not something a loopback measurement
-        // can produce. Measured: a 4 ms offset on a 2.7 ms arrival puts t = 0 127
-        // samples after the peak, which REW's own API reports as a delay of -1.32 ms.
-        if (values.ContainsKey("Peak index") && peakIndexValue <= timeZero)
-        {
-            problem = $"the header puts the reference at sample {timeZero:0.###} and the " +
-                $"buffer's peak at {peakIndexValue}, so the arrival would precede the " +
-                "reference — which a loopback-referenced sweep cannot do. The usual cause " +
-                "is a timing offset applied in REW, which this export does not record";
-            return false;
-        }
-
+        // An arrival that precedes the reference is NOT refused here any more. It is
+        // the signature of a timing offset applied in REW, and an offset is exactly
+        // what the importer now asks the user for: refusing the file at parse time
+        // would refuse the one case the question exists to answer. The reader states
+        // the arrival the header implies and leaves the judgement to whoever knows
+        // the offset — see ImpliedArrivalSamples and RewImportTiming.
         (int? sweepLength, int? sweepCount) = ReadExcitation(excitation);
 
         file = new RewImpulseResponseTextFile([.. samples])

@@ -7,8 +7,9 @@ namespace Resonalyze.Dsp.Tests;
 /// The junction coherence view's band ladder
 /// (<see cref="VirtualCrossoverAnalysis.ArrivalCoherenceLadder"/>): per band,
 /// the envelope optimum of the direct cuts' band-limited GCC-PHAT — its lag
-/// convention (a correction to the UPPER channel), the carrier polarity flag,
-/// and the level gate that drops bands one channel no longer participates in.
+/// convention (a correction to the UPPER channel), the coherence it reaches
+/// against what the applied alignment collects, and the level gate that drops
+/// bands one channel no longer participates in.
 /// </summary>
 public sealed class ArrivalCoherenceLadderTests
 {
@@ -63,12 +64,13 @@ public sealed class ArrivalCoherenceLadderTests
     }
 
     [Fact]
-    public void Ladder_FlagsAnInvertedOptimumAndCollectsItAtLagZero()
+    public void Ladder_ReadsAnInvertedPairAsCenteredAtLagZero()
     {
-        // Time-aligned but inverted: the optimum stays at lag 0 (the envelope
-        // is polarity-blind), the carrier there is negative, and the band
-        // collects its full coherence at the applied alignment — CurrentR
-        // equals PeakR.
+        // Time-aligned but INVERTED: the envelope is polarity-blind, so the
+        // optimum stays at lag 0 and the band already collects its full
+        // coherence there — CurrentR equals PeakR. The ladder reports no
+        // polarity of its own (its probe band cannot separate opposite-signed
+        // lobes); that an inversion does not move the optimum is exactly why.
         List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> ladder =
             Ladder(Impulse(), Impulse(0, -1.0));
 

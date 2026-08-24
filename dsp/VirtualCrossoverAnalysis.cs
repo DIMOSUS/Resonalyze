@@ -1395,11 +1395,9 @@ public static class VirtualCrossoverAnalysis
     /// band's attainable coherence — and <see cref="CurrentR"/> is the
     /// envelope at lag 0, the coherence the applied alignment actually
     /// collects; the two coincide when the band is centered.
-    /// <see cref="OptimumInverted"/> is the carrier's sign at the optimum —
-    /// meaningful within the central lobe (|<see cref="LagMs"/>| under a
-    /// quarter period): near ±<see cref="HalfPeriodMs"/> the optimum sits
-    /// between lobes of opposite sign and the flag merely reports which one
-    /// the envelope grid landed on.
+    /// <see cref="HalfPeriodMs"/> is the lag that separates neighbouring comb
+    /// lobes — the corridor a correction may stay inside before it belongs to
+    /// a different cycle. No polarity is reported: see the remarks below.
     /// </summary>
     public sealed record ArrivalCoherencePoint(
         double FrequencyHz,
@@ -1464,7 +1462,9 @@ public static class VirtualCrossoverAnalysis
     /// Per band the cuts' band-limited GCC-PHAT is computed over twice the
     /// displayed lag range (the envelope's transform edges stay out of the
     /// read), and the analytic envelope's maximum gives the band's optimum:
-    /// its lag, its height, the height at lag 0, and the carrier polarity.
+    /// its lag, its height, and the height at lag 0. Not its polarity — the
+    /// probe band is too narrow to separate opposite-signed lobes at all (see
+    /// the remarks by <see cref="ArrivalCoherencePoint"/>).
     /// <para>
     /// The channels enter PROCESSED (delays, polarity, filters applied), in
     /// the correlation view's own frame: lag 0 is the applied alignment and

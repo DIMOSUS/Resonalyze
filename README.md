@@ -1233,11 +1233,39 @@ and, on a low corner, what it costs (it grows with Q and falls with frequency;
 AP1 has a single real pole and takes no Q). The magnitude curves draw an
 all-pass as the flat line it is — except **Source + EQ** on a Virtual DSP
 handoff, which runs the real chain and so can shift slightly where the analysis
-window catches a phase-shifted arrival. To see the work itself, the **EQ
-phase** toggle switches the right-hand axis from the EQ curve's magnitude to
-its phase (degrees, wrapped to ±180°); the selected band's dashed curve follows
-the toggle, while the source, the target, the error fill and every statistic
-stay in dB.
+window catches a phase-shifted arrival. To see the work itself, switch the plot
+to **Phase**.
+
+**Phase** is a plot mode, not a second curve: the source, the target, the error
+fill and the dB axis leave, and what takes their place is the **measured** phase
+(degrees, wrapped to ±180°, with the wraps drawn as thin dashed verticals rather
+than as jumps in the trace). On a measurement it draws the response through its
+chain and the bank under edit, the same response **without** the bank as a dashed
+twin, and the bank's own phase in white; on an imported curve — an overlay slot
+or a text file, which is a magnitude and nothing else — only the bank's phase is
+there to draw. The statistics keep being computed while you are in phase, so
+switching back finds them current.
+
+On a [Virtual DSP handoff](#editing-a-virtual-dsp-channels-peq) the plot also
+draws the **neighbouring drivers**, frozen as that panel had them and in their
+colours from it. That is the picture an all-pass is dialled in against: turn its
+corner and Q until this channel's phase lies on its neighbour's through the
+crossover region, and the junction sums instead of cancelling. The neighbours do
+not move while the bank is edited — they are measurements of drivers nobody is
+editing — and they are re-read from their responses whenever the window changes,
+so they never become a curve gated one way drawn beside a curve gated another.
+
+**Phase gate…** is the window those curves are read through — the same dialog,
+and the same settings, the Virtual DSP phase view uses, down to the impulse
+preview of every channel it draws. A handoff arrives with its gate already
+placed: the panel resolved it over every driver on screen, so the wizard adopts
+it rather than deriving its own and drawing this channel somewhere the panel
+never had it. A measurement opened straight into the wizard has no neighbours to
+be comparable with, so its window simply opens on its own front and its τ
+references the same instant, which leaves the driver's own phase with the
+propagation delay flattened out. The **magnitude** curves are never affected:
+they keep the fixed steady-state window that decides tonal balance, and the two
+windows live side by side.
 The Target Level is the user's knob alone — loading a source never moves it, so
 a deliberately placed target survives every source switch (an absolute dB SPL
 curve simply needs the level dialed to its datum once). The one exception

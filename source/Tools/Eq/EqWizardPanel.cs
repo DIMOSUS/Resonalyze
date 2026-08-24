@@ -116,6 +116,7 @@ public partial class EqWizardPanel : UserControl
         NumericGain.ValueChanged += BankValueChanged;
         checkBoxBypass.CheckedChanged += (_, _) => DrawSelectedCurves();
         checkBoxEqPhase.CheckedChanged += (_, _) => DrawSelectedCurves();
+        buttonPhaseGate.Click += (_, _) => OpenPhaseGateDialog();
         checkBoxCutsOnly.CheckedChanged += (_, _) =>
         {
             // Only the next fit reads it, but orphan any in-flight one so a
@@ -296,6 +297,14 @@ public partial class EqWizardPanel : UserControl
             "Otherwise it shows the bank's own phase. The source, the target and the " +
             "statistics are magnitudes and leave the plot; they are unchanged when " +
             "you switch back.");
+        SetTip(buttonPhaseGate,
+            "The window the PHASE curves are read through, and where it opens — the " +
+            "same dialog and the same settings the Virtual DSP phase view uses.\r\n" +
+            "A channel handed over from that panel arrives with its gate already " +
+            "placed, over every driver on screen; changing it here reads this " +
+            "channel and its neighbours through the new window alike.\r\n" +
+            "The magnitude curves are NOT affected: they keep the steady-state " +
+            "window that decides tonal balance.");
         SetTip(buttonSource,
             "Choose the curve to equalize: an impulse response (file or history), " +
             "a captured overlay slot, or a measured curve from a text file.");

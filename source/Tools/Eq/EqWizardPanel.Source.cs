@@ -315,6 +315,10 @@ public partial class EqWizardPanel
         // handoff itself re-establishes its session right after this call.
         EndVirtualDspHandoff();
         loadedSource = source;
+        // Before anything draws: the phase view reads its window from here, and a
+        // window left over from the previous source would open on an arrival this one
+        // does not have.
+        SeedPhaseContext(source);
 
         // Settle every selector that feeds the curve and fit the axis before drawing,
         // all with redraws suppressed, so the single draw at the end paints the

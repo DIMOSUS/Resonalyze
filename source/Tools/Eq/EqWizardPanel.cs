@@ -100,6 +100,10 @@ public partial class EqWizardPanel : UserControl
         // While the controls still stand where the designer put them: the layout
         // pass stretches the plot by deltas on this (see the Layout partial).
         CaptureLayoutBaseline();
+        // Below its designed size the panel scrolls on native scrollbars; theme
+        // them dark so they match the app instead of showing the default light
+        // bar, the way the Virtual DSP panel already does.
+        Ui.DarkScrollBars.Apply(this);
         InitializePlotWizard();
         InitializePeqSlotTable();
         InitializeBandsComboBox();

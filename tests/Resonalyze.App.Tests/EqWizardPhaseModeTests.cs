@@ -237,6 +237,33 @@ public sealed class EqWizardPhaseModeTests
     }
 
     [Fact]
+    public void TheGateDialogsAutoSnapsToTheEarliestFront_NotToThePinItReplaces()
+    {
+        // The dialog draws its own impulse preview at whatever it snaps the offset to
+        // when Auto is pressed. Under a pin every offset in force is one absolute
+        // time, so reading the snap out of THOSE would show the window at the pin
+        // while the plot behind the dialog — which resolves Auto properly — drew it
+        // on the drivers. The user would be choosing against one picture and getting
+        // another.
+        var pinned = new EqWizardPhaseContext(
+            Gate(20.0),
+            GateOffsetMs: 20.0,
+            DetrendMs: 20.0,
+            PinnedOffset: true,
+            new PlacementChannel(Arriving(240), 240, default),
+            SampleRate,
+            OxyColors.SkyBlue,
+            [new EqWizardPhaseNeighbour(
+                "B", OxyColors.Orange,
+                new PlacementChannel(Arriving(480), 480, default), 20.0)]);
+
+        double fit = AutoGateFitOffset(pinned);
+
+        // The earliest driver's own front (5 ms), not the 20 ms pin.
+        Assert.Equal(5.0, fit, 1);
+    }
+
+    [Fact]
     public void AnEstimatedDetrendFollowsTheWindowsJustResolved()
     {
         // τ under Auto is estimated THROUGH a window, so it has to be the window this
@@ -319,6 +346,13 @@ public sealed class EqWizardPhaseModeTests
                 opened, offsetMs, autoOffset, leftMs, plateauMs, rightMs,
                 PhaseWindowMode.FrequencyDependent, 6, detrendMode, detrendMs
             ]);
+
+    private static double AutoGateFitOffset(EqWizardPhaseContext context) =>
+        (double)typeof(EqWizardPanel)
+            .GetMethod(
+                "AutoGateFitOffsetMs",
+                BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [context])!;
 
     private static bool PinnedFlag(EqWizardPanel panel) =>
         (bool)typeof(EqWizardPanel)

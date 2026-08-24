@@ -230,13 +230,7 @@ public partial class EqWizardPanel
             context.Gate.WindowMode,
             context.Gate.FdwCycles,
             context.Gate.DetrendMode,
-            // What Auto snaps the offset to: the earliest window of the set, the same
-            // figure the panel fits to — not this channel's own, which would drag the
-            // shared window onto whichever driver happens to be under edit.
-            fitToMs: context.Neighbours
-                .Select(neighbour => neighbour.GateOffsetMs)
-                .Append(context.GateOffsetMs)
-                .Min(),
+            fitToMs: AutoGateFitOffsetMs(context),
             autoOffset: !phaseGatePinned);
         DialogResult result = dialog.ShowDialog(FindForm());
         dialog.PreviewChanged = null;
@@ -259,6 +253,21 @@ public partial class EqWizardPanel
 
         DrawSelectedCurves();
     }
+
+    /// <summary>
+    /// What the gate dialog's Auto button snaps its offset to: the earliest front of
+    /// the set, the same figure the Virtual DSP panel fits to.
+    /// </summary>
+    /// <remarks>
+    /// Read from the RESPONSES, not from the offsets in force. Under a pin those are
+    /// all one absolute time, so taking the smallest of them would tell the dialog
+    /// that Auto means the pin — and its own impulse preview would draw the window
+    /// there while the plot behind it, which resolves Auto properly, drew the windows
+    /// on the drivers. The saved result was right either way; what the user saw while
+    /// choosing was not.
+    /// </remarks>
+    private static double AutoGateFitOffsetMs(EqWizardPhaseContext context) =>
+        PhaseGatePlacement.EarliestStartMs(context.PlacementSet, context.SampleRate);
 
     // One candidate gate over the context the dialog opened on. Pinned is one absolute
     // window for every curve; unpinned puts each on its own driver's arrival — the

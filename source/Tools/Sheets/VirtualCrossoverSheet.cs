@@ -63,10 +63,6 @@ internal static class VirtualCrossoverSheet
                 builder.AppendLine(
                     $"  Polarity   {(channel.InvertPolarity ? "Inverted" : "Normal")}");
                 builder.AppendLine($"  Crossover  {DescribeCrossover(channel)}");
-                if (channel.AllPassType != AllPassType.Off)
-                {
-                    builder.AppendLine($"  All-pass   {DescribeAllPass(channel)}");
-                }
                 if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
                 {
                     builder.AppendLine(
@@ -78,11 +74,17 @@ internal static class VirtualCrossoverSheet
                             channel.PeqBands[band], qConvention);
                         // The keyword comes from the profile writer rather than being
                         // spelled here: a shelf printed as PK is an instruction to
-                        // dial in the wrong filter.
+                        // dial in the wrong filter. An all-pass line carries no gain
+                        // (the filter has none) and drops the Q on a first order,
+                        // which has no Q to dial in.
+                        string tail = peq.Type.IsAllPass()
+                            ? peq.Type == PeqBandType.AllPassFirstOrder
+                                ? string.Empty
+                                : $" Q {Number(peq.Q, "0.0#")}"
+                            : $" Gain {Signed(peq.GainDb)} dB Q {Number(peq.Q, "0.0#")}";
                         builder.AppendLine(
                             $"    Filter {band + 1}: ON {PeqTextFile.TypeToken(peq.Type)} " +
-                            $"Fc {Number(peq.FrequencyHz, "0.###")} Hz " +
-                            $"Gain {Signed(peq.GainDb)} dB Q {Number(peq.Q, "0.0#")}");
+                            $"Fc {Number(peq.FrequencyHz, "0.###")} Hz{tail}");
                     }
                 }
             }
@@ -118,25 +120,6 @@ internal static class VirtualCrossoverSheet
 
         yield return (pair.Left, LeftSuffix);
         yield return (pair.Right, RightSuffix);
-    }
-
-    /// <summary>
-    /// The all-pass stage as a tuning-sheet line. Q is printed only for a second-order
-    /// section — a first-order one has no Q to dial in.
-    /// </summary>
-    public static string DescribeAllPass(VirtualCrossoverChannelSettings channel)
-    {
-        ArgumentNullException.ThrowIfNull(channel);
-
-        return channel.AllPassType switch
-        {
-            AllPassType.FirstOrder =>
-                $"1st order @ {Number(channel.AllPassFrequencyHz, "0.###")} Hz",
-            AllPassType.SecondOrder =>
-                $"2nd order @ {Number(channel.AllPassFrequencyHz, "0.###")} Hz " +
-                $"Q {Number(channel.AllPassQ, "0.0#")}",
-            _ => "Off"
-        };
     }
 
     public static string DescribeCrossover(VirtualCrossoverChannelSettings channel)

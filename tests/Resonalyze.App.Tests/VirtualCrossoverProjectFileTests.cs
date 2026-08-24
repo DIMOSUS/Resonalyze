@@ -7,46 +7,211 @@ namespace Resonalyze.App.Tests;
 public sealed class VirtualCrossoverProjectFileTests
 {
     [Fact]
-    public void LoadOrDefault_ProjectWithoutAnAllPass_LoadsWithTheStageOff()
+    public void LoadOrDefault_V7Project_MovesTheChannelAllPassIntoThePeqBank()
     {
-        // Adding the all-pass needed no version bump of its own (the schema is at 4, and
-        // Migrate covers 3 -> 4): new properties with defaults are a compatible change,
-        // and a file that predates them simply carries none. What matters is where their
-        // absence lands — "no all-pass", not a live filter silently rotating a channel's
-        // phase. Stripping them from a current payload is exactly that case; the older
-        // schema versions reach it through Migrate, which those tests cover.
+        // v7 ran one all-pass per side as its own stage; v8 carries it as a band of the
+        // PEQ bank. The migration is what stops a saved tune from silently losing its
+        // phase rotation, so it is pinned per order: a second-order stage keeps its Q, a
+        // first-order one has none to keep (the band stores the 1.0 the section ignores),
+        // and a side that ran no all-pass must not gain a band out of nowhere.
         string root = CreateTemporaryDirectory();
         try
         {
-            var saved = new VirtualCrossoverProjectFile();
-            saved.Pairs[0].Left.AllPassType = AllPassType.SecondOrder;
-            saved.Pairs[0].Left.AllPassFrequencyHz = 120;
-            saved.Pairs[0].Left.AllPassQ = 2.5;
-            saved.Save(root);
+            new VirtualCrossoverProjectFile().Save(root);
 
-            // Strip the all-pass properties back out — exactly how a file written before
-            // the stage existed looks.
+            // Rewrite the payload as v7 wrote it: the all-pass flat on each channel.
             string path = VirtualCrossoverProjectFile.GetPath(root);
             JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
-            foreach (JsonNode? pair in file["pairs"]!.AsArray())
-            {
-                foreach (string side in new[] { "left", "right" })
-                {
-                    JsonObject channel = pair![side]!.AsObject();
-                    channel.Remove("allPassType");
-                    channel.Remove("allPassFrequencyHz");
-                    channel.Remove("allPassQ");
-                }
-            }
-
+            file["version"] = 7;
+            JsonObject left = file["pairs"]![0]!["left"]!.AsObject();
+            left["allPassType"] = "SecondOrder";
+            left["allPassFrequencyHz"] = 120;
+            left["allPassQ"] = 2.5;
+            JsonObject right = file["pairs"]![0]!["right"]!.AsObject();
+            right["allPassType"] = "FirstOrder";
+            right["allPassFrequencyHz"] = 300;
+            right["allPassQ"] = 4.0; // a first order has no Q; the migration drops it
             File.WriteAllText(path, file.ToJsonString());
 
             VirtualCrossoverProjectFile loaded =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
 
-            Assert.Equal(AllPassType.Off, loaded.Pairs[0].Left.AllPassType);
-            // The filled-in defaults must themselves be valid, or the very next save
-            // would throw on a project the user never touched.
+            PeqBand migrated = Assert.Single(loaded.Pairs[0].Left.PeqBands);
+            Assert.Equal(PeqBandType.AllPassSecondOrder, migrated.Type);
+            Assert.Equal(120, migrated.FrequencyHz);
+            Assert.Equal(2.5, migrated.Q);
+            Assert.Equal(0, migrated.GainDb);
+
+            PeqBand first = Assert.Single(loaded.Pairs[0].Right.PeqBands);
+            Assert.Equal(PeqBandType.AllPassFirstOrder, first.Type);
+            Assert.Equal(300, first.FrequencyHz);
+            Assert.Equal(1.0, first.Q);
+
+            // A side that carried no all-pass stays empty — the stage was off on every
+            // channel of a default project but the first pair.
+            Assert.Empty(loaded.Pairs[1].Left.PeqBands);
+
+            // The migrated project must itself be valid, or the very next save would
+            // throw on a tune the user only opened.
+            loaded.Validate();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_V7ProjectWithAFullBank_KeepsTheAllPassAndSaysWhatItCost()
+    {
+        // A v7 side could hold all 32 bands AND an all-pass stage beside them; v8 has
+        // no room for both. Something is lost either way, so the migration loses the
+        // one that can be put back — a bell is a magnitude correction Auto Tune can
+        // propose again, an all-pass sits on a junction aligned by ear — and says so
+        // instead of reporting a clean conversion over a changed tune.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            for (int i = 0; i < EqualizationCurve.MaxBandCount; i++)
+            {
+                saved.Pairs[0].Left.PeqBands.Add(new PeqBand(100 + i, 2.0, -1.0));
+            }
+
+            saved.Save(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 7;
+            JsonObject left = file["pairs"]![0]!["left"]!.AsObject();
+            left["allPassType"] = "SecondOrder";
+            left["allPassFrequencyHz"] = 120;
+            left["allPassQ"] = 2.5;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            List<PeqBand> bands = loaded.Pairs[0].Left.PeqBands;
+            Assert.Equal(EqualizationCurve.MaxBandCount, bands.Count);
+            // The all-pass is there, and the band it displaced is the LAST bell — the
+            // ones before it are untouched.
+            Assert.Equal(
+                new PeqBand(120, 2.5, 0, PeqBandType.AllPassSecondOrder), bands[^1]);
+            Assert.Equal(
+                Enumerable.Range(0, EqualizationCurve.MaxBandCount - 1)
+                    .Select(i => new PeqBand(100 + i, 2.0, -1.0)),
+                bands.Take(EqualizationCurve.MaxBandCount - 1));
+
+            // And the load says what it cost, so the next save is not the first the
+            // user hears of it.
+            Assert.NotNull(loaded.MigrationNoticeText);
+            Assert.Contains("all-pass", loaded.MigrationNoticeText!);
+            loaded.Validate();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_V7ProjectThatLosesNothing_SaysNothing()
+    {
+        // The notice is for a migration that COST something. A file with room for its
+        // all-pass converts silently, or every opened session would cry wolf.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile().Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 7;
+            JsonObject left = file["pairs"]![0]!["left"]!.AsObject();
+            left["allPassType"] = "SecondOrder";
+            left["allPassFrequencyHz"] = 120;
+            left["allPassQ"] = 2.5;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Single(loaded.Pairs[0].Left.PeqBands);
+            Assert.Null(loaded.MigrationNoticeText);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_V7ProjectWithAnUnreadableAllPassType_KeepsTheRestOfTheFile()
+    {
+        // The tolerance the migration promises has to cover the TYPE as well as the
+        // numbers. Typed as the enum it never could: the converter throws on a name
+        // it does not know, and that throw lands during deserialization — before
+        // Migrate runs — taking the whole session to .backup over one bad word.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Pairs[0].Left.DelayMs = 4.25;
+            saved.Save(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 7;
+            JsonObject left = file["pairs"]![0]!["left"]!.AsObject();
+            left["allPassType"] = "SomeGarbage";
+            left["allPassFrequencyHz"] = 120;
+            left["allPassQ"] = 2.5;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            // The all-pass is gone, and NOTHING else is: the rest of the tune loaded.
+            Assert.Empty(loaded.Pairs[0].Left.PeqBands);
+            Assert.Equal(4.25, loaded.Pairs[0].Left.DelayMs);
+            Assert.Null(loaded.BackupNoticePath);
+            loaded.Validate();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_V7ProjectWithANonsenseAllPass_DropsItRatherThanFailing()
+    {
+        // Migrate runs before Validate, so a hand-edited or truncated stage must degrade
+        // to "no all-pass" instead of taking the whole session down: the user would lose
+        // every other channel over one bad number.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile().Save(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 7;
+            JsonObject left = file["pairs"]![0]!["left"]!.AsObject();
+            left["allPassType"] = "SecondOrder";
+            left["allPassFrequencyHz"] = 0;
+            left["allPassQ"] = 2.5;
+            JsonObject right = file["pairs"]![0]!["right"]!.AsObject();
+            right["allPassType"] = "SecondOrder";
+            right["allPassFrequencyHz"] = 300;
+            right["allPassQ"] = 0; // divides by zero in the section's alpha
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Empty(loaded.Pairs[0].Left.PeqBands);
+            Assert.Empty(loaded.Pairs[0].Right.PeqBands);
             loaded.Validate();
         }
         finally
@@ -231,23 +396,25 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
-    public void AllPass_RoundTripsThroughTheProjectFile()
+    public void AllPassBand_RoundTripsThroughTheProjectFile()
     {
+        // The band type is the only thing separating a phase rotator from a bell with no
+        // gain, and it travels as a string on the wire: a round trip that lost it would
+        // reopen the tune with the all-pass silently turned into a transparent filter.
         string root = CreateTemporaryDirectory();
         try
         {
             var saved = new VirtualCrossoverProjectFile();
-            saved.Pairs[1].Right.AllPassType = AllPassType.FirstOrder;
-            saved.Pairs[1].Right.AllPassFrequencyHz = 90;
-            saved.Pairs[1].Right.AllPassQ = 3.5;
+            saved.Pairs[1].Right.PeqBands.Add(
+                new PeqBand(90, 3.5, 0, PeqBandType.AllPassSecondOrder));
+            saved.Pairs[1].Right.PeqBands.Add(
+                new PeqBand(300, 1.0, 0, PeqBandType.AllPassFirstOrder));
             saved.Save(root);
 
             VirtualCrossoverProjectFile loaded =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
 
-            Assert.Equal(AllPassType.FirstOrder, loaded.Pairs[1].Right.AllPassType);
-            Assert.Equal(90, loaded.Pairs[1].Right.AllPassFrequencyHz);
-            Assert.Equal(3.5, loaded.Pairs[1].Right.AllPassQ);
+            Assert.Equal(saved.Pairs[1].Right.PeqBands, loaded.Pairs[1].Right.PeqBands);
         }
         finally
         {
@@ -256,39 +423,18 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
-    public void Save_RejectsInvalidAllPassValues()
+    public void ToChain_AppliesAnAllPassBandEvenWithTheCrossoverOff()
     {
-        var badType = new VirtualCrossoverProjectFile();
-        badType.Pairs[0].Left.AllPassType = (AllPassType)42;
-        Assert.Throws<InvalidDataException>(() => badType.Validate());
-
-        var badFrequency = new VirtualCrossoverProjectFile();
-        badFrequency.Pairs[0].Left.AllPassFrequencyHz = 0;
-        Assert.Throws<InvalidDataException>(() => badFrequency.Validate());
-
-        // Q <= 0 divides by zero in the section's alpha and NaN-poisons the chain.
-        var badQ = new VirtualCrossoverProjectFile();
-        badQ.Pairs[0].Right.AllPassQ = 0;
-        Assert.Throws<InvalidDataException>(() => badQ.Validate());
-
-        var hugeQ = new VirtualCrossoverProjectFile();
-        hugeQ.Pairs[0].Right.AllPassQ =
-            VirtualCrossoverChannelSettings.MaximumAllPassQ + 1;
-        Assert.Throws<InvalidDataException>(() => hugeQ.Validate());
-    }
-
-    [Fact]
-    public void ToChain_AppliesTheAllPassEvenWithTheCrossoverOff()
-    {
-        // Hardware runs the all-pass as its own stage, so it must not be gated by the
-        // crossover kind. At its corner a second-order section is -180° with the
-        // magnitude untouched.
+        // The all-pass rides in the PEQ bank, and the bank is not gated by the crossover
+        // kind. At its corner a second-order section is -180° with the magnitude
+        // untouched — which is also what makes it invisible to a magnitude-only check.
         var settings = new VirtualCrossoverChannelSettings
         {
             CrossoverKind = CrossoverKind.Off,
-            AllPassType = AllPassType.SecondOrder,
-            AllPassFrequencyHz = 1_000,
-            AllPassQ = 1.0
+            PeqBands =
+            {
+                new PeqBand(1_000, 1.0, 0, PeqBandType.AllPassSecondOrder)
+            }
         };
 
         Complex response = settings.ToChain().Response(1_000, 48_000);

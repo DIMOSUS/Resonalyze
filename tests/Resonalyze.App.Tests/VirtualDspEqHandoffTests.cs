@@ -37,7 +37,8 @@ public sealed class VirtualDspEqHandoffTests
         VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
 
         // Bit-exact against the same ApplyChain with only the PEQ removed: gain,
-        // delay, polarity, crossover and all-pass all still shape the curve.
+        // delay, polarity and the crossover all still shape the curve. The all-pass
+        // does not — it is a band of the bank, and the bank is what is under edit.
         Complex[] expected = VirtualCrossoverAnalysis.ApplyChain(
             channel.TransferImpulseResponse!,
             channel.Settings.ToChain() with { Peq = null },
@@ -49,6 +50,62 @@ public sealed class VirtualDspEqHandoffTests
             channel.Settings.ToChain(),
             SampleRate);
         Assert.NotEqual(withPeq, request.Source.Measurement.ImpulseResponse);
+    }
+
+    [Fact]
+    public void WithChain_CarriesTheNeighboursThePhaseViewDrawsAgainst()
+    {
+        // What makes an all-pass tunable at all: the drivers it has to line up with.
+        // They travel as processed responses, so the wizard can re-read them at a gate
+        // of its own, and with the window and τ the whole set was placed under.
+        VirtualCrossoverChannel channel = BuildChannel();
+        var neighbourResponse = new Complex[1_024];
+        neighbourResponse[500] = 1.0;
+        var context = new EqWizardPhaseContext(
+            GateTemplate with { GateOffsetMs = 9.0 },
+            GateOffsetMs: 9.5,
+            DetrendMs: 10.0,
+            PinnedOffset: false,
+            new PlacementChannel(new Complex[1_024], 0, default),
+            SampleRate,
+            OxyPlot.OxyColors.SkyBlue,
+            [new EqWizardPhaseNeighbour(
+                "B", OxyPlot.OxyColors.Orange, new PlacementChannel(neighbourResponse, 0, default), 9.75)]);
+
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, phaseContext: context);
+
+        Assert.Same(context, request.Source.PhaseContext);
+        Assert.Same(
+            neighbourResponse,
+            request.Source.PhaseContext!.Neighbours.Single().ImpulseResponse);
+    }
+
+    [Fact]
+    public void RawHandoff_DrawsNoNeighbours()
+    {
+        // A raw curve has no crossover, no delay and no polarity in front of it, while
+        // the neighbours have all of theirs — a Linkwitz-Riley corner alone turns 360°
+        // through the overlap, and the delay moves the very arrival the phase is
+        // referenced to. Drawing them together would invite lining up a system nobody
+        // is building, and an all-pass tuned against that picture is wrong exactly
+        // where it is supposed to help.
+        VirtualCrossoverChannel channel = BuildChannel();
+        var context = new EqWizardPhaseContext(
+            GateTemplate,
+            GateOffsetMs: 9.5,
+            DetrendMs: 10.0,
+            PinnedOffset: false,
+            new PlacementChannel(new Complex[1_024], 0, default),
+            SampleRate,
+            OxyPlot.OxyColors.SkyBlue,
+            [new EqWizardPhaseNeighbour(
+                "B", OxyPlot.OxyColors.Orange, new PlacementChannel(new Complex[1_024], 0, default), 9.75)]);
+
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: false, phaseContext: context);
+
+        Assert.Null(request.Source.PhaseContext);
     }
 
     [Fact]
@@ -586,12 +643,15 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
-    public void ReturnAfterADelayOrAllPassEdit_Refuses()
+    public void ReturnAfterADelayOrAnAllPassBandEdit_Refuses()
     {
         // Swept across the ranges the UI allows, these are NOT free: at 192 kHz, where
         // the rate clamps the window to 171 ms, a delay edit moves the gated shape by
         // up to 1.70 dB and an all-pass by 4.77 dB (40 Hz, Q 20 — 318 ms of group
-        // delay against that window). See SteadyStateWindowTests.
+        // delay against that window). See SteadyStateWindowTests. The delay refuses
+        // through the chain comparison; the all-pass now rides in the bank, so it
+        // refuses through the PEQ guard instead — a phase-only band is exactly the
+        // edit a magnitude-only comparison would wave through.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken delayToken = TokenFor(channel, rightSide: false);
         channel.Settings.DelayMs += 4.2;
@@ -600,12 +660,15 @@ public sealed class VirtualDspEqHandoffTests
             new[] { channel }, delayToken, curve,
             projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
 
+        channel.Settings.PeqBands =
+            [new PeqBand(40, 2, 0, PeqBandType.AllPassSecondOrder)];
         VirtualDspEqReturnToken apToken = TokenFor(channel, rightSide: false);
-        channel.Settings.AllPassQ = 20;
+        channel.Settings.PeqBands =
+            [new PeqBand(40, 20, 0, PeqBandType.AllPassSecondOrder)];
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, apToken, curve,
             projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
-        Assert.Empty(channel.Settings.PeqBands);
+        Assert.Equal(20, Assert.Single(channel.Settings.PeqBands).Q);
     }
 
     [Fact]
@@ -839,7 +902,8 @@ public sealed class VirtualDspEqHandoffTests
         int? renderAnchorIndex = 480,
         double targetLevelDb = -41,
         CalibrationFile? calibration = null,
-        long projectGeneration = 1) =>
+        long projectGeneration = 1,
+        EqWizardPhaseContext? phaseContext = null) =>
         VirtualDspEqHandoff.Build(
             channel,
             channel.ActiveRight,
@@ -847,6 +911,7 @@ public sealed class VirtualDspEqHandoffTests
             GateTemplate,
             pinnedGateOffsetMs,
             renderAnchorIndex,
+            phaseContext,
             targetLevelDb,
             targetLevelMinDb: -120,
             targetLevelMaxDb: 60,
@@ -877,8 +942,6 @@ public sealed class VirtualDspEqHandoffTests
         channel.Settings.CrossoverKind = CrossoverKind.BandPass;
         channel.Settings.HighPassEdge = channel.Settings.HighPassEdge with { FrequencyHz = 80 };
         channel.Settings.LowPassEdge = channel.Settings.LowPassEdge with { FrequencyHz = 500 };
-        channel.Settings.AllPassType = AllPassType.SecondOrder;
-        channel.Settings.AllPassFrequencyHz = 300;
         return channel;
     }
 }

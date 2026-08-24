@@ -26,6 +26,10 @@ public sealed class GraphicEqFormat : IEqProfileFormat
     public bool CanImport => false;
     public bool CanExport => true;
 
+    // A sampled magnitude curve cannot state phase at all: an all-pass contributes
+    // exactly 0 dB everywhere and would be silently, completely lost.
+    public bool SupportsAllPass(PeqBandType type) => false;
+
     public string Export(EqualizationCurve curve)
     {
         ArgumentNullException.ThrowIfNull(curve);

@@ -22,6 +22,11 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
     public bool CanExport => true;
     public bool SupportsShelvingFilters => false;
 
+    // EasyEffects has an "Allpass" band type, but — as with its shelves — it is an
+    // LSP filter parameterised by mode and slope rather than our Q, so writing our
+    // number into one would turn the phase somewhere else.
+    public bool SupportsAllPass(PeqBandType type) => false;
+
     public string Export(EqualizationCurve curve)
     {
         ArgumentNullException.ThrowIfNull(curve);

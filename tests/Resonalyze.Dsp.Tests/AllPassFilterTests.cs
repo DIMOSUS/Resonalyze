@@ -245,7 +245,7 @@ public sealed class AllPassFilterTests
     [Fact]
     public void GroupDelay_AgreesWithThePreparedChain()
     {
-        // The block's readout and the chain plot must never print different numbers for
+        // The slot's readout and the chain plot must never print different numbers for
         // the same filter. They agree only because both read the one shared helper.
         const int sampleRate = 48_000;
         foreach (double corner in new[] { 100.0, 1_000.0, 21_600.0, 23_900.0 })
@@ -254,7 +254,11 @@ public sealed class AllPassFilterTests
             {
                 var spec = new AllPassSpec(AllPassType.SecondOrder, corner, q);
                 PreparedDspResponse prepared = PreparedDspResponse.Create(
-                    new DspChannelChain(AllPass: spec), sampleRate);
+                    new DspChannelChain(Peq: new EqualizationCurve(new[]
+                    {
+                        new PeqBand(corner, q, 0, PeqBandType.AllPassSecondOrder)
+                    })),
+                    sampleRate);
 
                 double readout = AllPassFilter.GroupDelaySeconds(spec, corner, sampleRate);
                 double plot = prepared.GroupDelayMs(corner) / 1_000.0;
@@ -346,12 +350,15 @@ public sealed class AllPassFilterTests
     }
 
     [Fact]
-    public void Chain_AppliesTheAllPassWithTheCrossoverOff()
+    public void Chain_AppliesTheAllPassBandWithTheCrossoverOff()
     {
-        // Real processors run the all-pass as its own stage, so it must not be gated by
-        // the crossover. Magnitude stays flat, phase moves.
+        // The all-pass lives in the PEQ bank, and the PEQ is not gated by the
+        // crossover. Magnitude stays flat, phase moves.
         var chain = new DspChannelChain(
-            AllPass: new AllPassSpec(AllPassType.SecondOrder, 1_000, 1.0),
+            Peq: new EqualizationCurve(new[]
+            {
+                new PeqBand(1_000, 1.0, 0, PeqBandType.AllPassSecondOrder)
+            }),
             Crossover: CrossoverSpec.Off);
 
         Complex response = chain.Response(1_000, 48_000);
@@ -372,7 +379,10 @@ public sealed class AllPassFilterTests
             Crossover: new CrossoverSpec(
                 CrossoverKind.HighPass,
                 HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)),
-            AllPass: new AllPassSpec(AllPassType.SecondOrder, 120, 1.5));
+            Peq: new EqualizationCurve(new[]
+            {
+                new PeqBand(120, 1.5, 0, PeqBandType.AllPassSecondOrder)
+            }));
         PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
 
         foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 100))

@@ -17,10 +17,13 @@ namespace Resonalyze.Dsp;
 /// file never throws.
 /// </summary>
 /// <remarks>
-/// Three of Equalizer APO's types map onto a <see cref="PeqBand"/>: <c>PK</c>, and
-/// the shelves <c>LSC</c>/<c>HSC</c> written with a Q — which is the same
-/// centre-frequency, half-gain-at-Fc shelf the library realizes. Plain <c>LS</c>
-/// and <c>HS</c> carry no Q and are read at the default shelf Q.
+/// Four of Equalizer APO's types map onto a <see cref="PeqBand"/>: <c>PK</c>; the
+/// shelves <c>LSC</c>/<c>HSC</c> written with a Q — which is the same
+/// centre-frequency, half-gain-at-Fc shelf the library realizes (plain <c>LS</c>
+/// and <c>HS</c> carry no Q and are read at the default shelf Q); and <c>AP</c>,
+/// APO's second-order all-pass, written with Fc and Q and no gain. APO has no
+/// first-order all-pass, so <see cref="PeqBandType.AllPassFirstOrder"/> bands
+/// cannot be written — see <see cref="FormatFilters"/>.
 ///
 /// The <c>LS 6dB</c> / <c>LS 12dB</c> family (and its high-shelf twin) is NOT read:
 /// those state a CORNER frequency instead of the middle of the transition, so
@@ -45,12 +48,23 @@ public static class PeqTextFile
         $"Preamp: {EqTextNumbers.Format(preampDb, "0.0")} dB";
 
     // The block of "Filter N: ON <type> Fc ... Gain ... dB Q ..." lines (no preamp).
+    // An all-pass has no gain, so its line carries none — "Filter N: ON AP Fc ... Hz
+    // Q ..." is the spelling Equalizer APO itself uses. A first-order all-pass has
+    // no APO spelling at all (AP is second-order only); the caller's capability
+    // check drops such bands before they reach here, and one that slips through is
+    // skipped — its slot number too, so the gap is visible — rather than written as
+    // a filter the reader would realize differently.
     internal static string FormatFilters(EqualizationCurve curve)
     {
         var builder = new StringBuilder();
         for (int i = 0; i < curve.Bands.Count; i++)
         {
             PeqBand band = curve.Bands[i];
+            if (band.Type == PeqBandType.AllPassFirstOrder)
+            {
+                continue;
+            }
+
             builder
                 .Append("Filter ")
                 .Append((i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture))
@@ -58,9 +72,17 @@ public static class PeqTextFile
                 .Append(TypeToken(band.Type))
                 .Append(" Fc ")
                 .Append(EqTextNumbers.Format(band.FrequencyHz, "0.###"))
-                .Append(" Hz Gain ")
-                .Append(EqTextNumbers.Format(band.GainDb, "0.0"))
-                .Append(" dB Q ")
+                .Append(" Hz");
+            if (band.Type != PeqBandType.AllPassSecondOrder)
+            {
+                builder
+                    .Append(" Gain ")
+                    .Append(EqTextNumbers.Format(band.GainDb, "0.0"))
+                    .Append(" dB");
+            }
+
+            builder
+                .Append(" Q ")
                 .Append(EqTextNumbers.Format(band.Q, "0.0"))
                 .AppendLine();
         }
@@ -71,13 +93,18 @@ public static class PeqTextFile
     /// <summary>
     /// The Equalizer APO keyword for a band shape. The shelves are written as
     /// LSC/HSC — the variant that carries a Q — rather than as plain LS/HS, whose
-    /// slope the reader would have to assume. Shared with the Virtual DSP text
-    /// sheet, which prints the same filter lines for a human to type in.
+    /// slope the reader would have to assume; a second-order all-pass is APO's
+    /// <c>AP</c>. A first-order all-pass has no APO keyword — the writer above
+    /// skips such bands — so this returns the PC-Tool's <c>AP1</c> for the one
+    /// caller that still names the shape to a human, the Virtual DSP text sheet.
+    /// Shared with that sheet, which prints the same filter lines to type in.
     /// </summary>
     public static string TypeToken(PeqBandType type) => type switch
     {
         PeqBandType.LowShelf => "LSC",
         PeqBandType.HighShelf => "HSC",
+        PeqBandType.AllPassFirstOrder => "AP1",
+        PeqBandType.AllPassSecondOrder => "AP",
         _ => "PK"
     };
 
@@ -146,8 +173,9 @@ public static class PeqTextFile
     }
 
     // Reads a "Filter N: ON <type> Fc F Hz Gain G dB Q Q" line. Disabled (OFF) and
-    // unsupported types are ignored, as are lines missing Fc or Gain. Q may be
-    // absent only on a plain LS/HS, which states no slope of its own.
+    // unsupported types are ignored, as are lines missing Fc — or Gain, except on an
+    // all-pass, whose line legitimately has none. Q may be absent only on a plain
+    // LS/HS, which states no slope of its own.
     private static bool TryParseFilter(string[] tokens, out PeqBand band)
     {
         band = default;
@@ -157,16 +185,23 @@ public static class PeqTextFile
             return false;
         }
 
-        if (!EqTextNumbers.TryParse(TokenAfter(tokens, "Fc"), out double frequencyHz) ||
-            !EqTextNumbers.TryParse(TokenAfter(tokens, "Gain"), out double gainDb))
+        if (!EqTextNumbers.TryParse(TokenAfter(tokens, "Fc"), out double frequencyHz))
         {
             return false;
         }
 
-        // A bell without a Q is malformed; a shelf without one is the LS/HS spelling.
+        double gainDb = 0;
+        if (type != PeqBandType.AllPassSecondOrder &&
+            !EqTextNumbers.TryParse(TokenAfter(tokens, "Gain"), out gainDb))
+        {
+            return false;
+        }
+
+        // A bell without a Q is malformed, and so is an all-pass — its Q is the
+        // phase turn itself; a shelf without one is the LS/HS spelling.
         if (!EqTextNumbers.TryParse(TokenAfter(tokens, "Q"), out double q))
         {
-            if (type == PeqBandType.Peaking)
+            if (!type.IsShelving())
             {
                 return false;
             }
@@ -208,6 +243,13 @@ public static class PeqTextFile
                 token.Equals("HSC", StringComparison.OrdinalIgnoreCase);
             if (token.Equals("PK", StringComparison.OrdinalIgnoreCase))
             {
+                return true;
+            }
+
+            // Equalizer APO's all-pass: second order, Fc and Q, no gain.
+            if (token.Equals("AP", StringComparison.OrdinalIgnoreCase))
+            {
+                type = PeqBandType.AllPassSecondOrder;
                 return true;
             }
 

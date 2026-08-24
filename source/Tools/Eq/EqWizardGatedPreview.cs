@@ -51,8 +51,9 @@ internal static class EqWizardGatedPreview
         ArgumentNullException.ThrowIfNull(request);
 
         // Substituted, not layered: the request carries the channel's chain WITHOUT its
-        // PEQ, so one pass realizes gain, delay, polarity, crossover, all-pass and the
-        // edited bank together — the panel's own single ApplyChain for that channel.
+        // PEQ, so one pass realizes gain, delay, polarity, the crossover and the edited
+        // bank together — the panel's own single ApplyChain for that channel. The bank
+        // is where an all-pass lives, so it rides in with the rest of the filters.
         DspChannelChain chain = request.Chain with { Peq = request.Bank };
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
             request.ImpulseResponse, chain, request.SampleRate);

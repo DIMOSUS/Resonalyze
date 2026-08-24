@@ -39,7 +39,14 @@ public sealed class GenericCsvFormat : IEqProfileFormat
                 .Append(',')
                 .Append(EqTextNumbers.Format(band.FrequencyHz, "0.###"))
                 .Append(',')
-                .Append(EqTextNumbers.Format(band.GainDb, "0.0"))
+                // An all-pass has no gain, and the slot it came from may still be
+                // holding the figure the band had before it became one (so switching
+                // back restores it). Writing that into the file would state a gain
+                // the filter does not have, to a reader that has no reason to doubt
+                // it — the column carries a 0.0 instead, which is what the reader
+                // below expects and what the Audiotec bank writes.
+                .Append(EqTextNumbers.Format(
+                    band.Type.IsAllPass() ? 0 : band.GainDb, "0.0"))
                 .Append(',')
                 .Append(EqTextNumbers.Format(band.Q, "0.0"))
                 .Append(',')
@@ -138,12 +145,16 @@ public sealed class GenericCsvFormat : IEqProfileFormat
     {
         PeqBandType.LowShelf => "LS",
         PeqBandType.HighShelf => "HS",
+        PeqBandType.AllPassFirstOrder => "AP1",
+        PeqBandType.AllPassSecondOrder => "AP2",
         _ => "PK"
     };
 
     // The type is looked up by keyword rather than by column index, so it survives
     // the leading-index column being present or absent — the same tolerance the
-    // numeric fields already get. An unreadable or missing type is a bell.
+    // numeric fields already get. An unreadable or missing type is a bell. The
+    // all-pass rows still write a 0.0 in the gain column — the numeric reader
+    // needs its three numbers whatever the type.
     private static PeqBandType ReadType(string[] fields)
     {
         foreach (string field in fields)
@@ -157,6 +168,16 @@ public sealed class GenericCsvFormat : IEqProfileFormat
             if (token.Equals("HS", StringComparison.OrdinalIgnoreCase))
             {
                 return PeqBandType.HighShelf;
+            }
+
+            if (token.Equals("AP1", StringComparison.OrdinalIgnoreCase))
+            {
+                return PeqBandType.AllPassFirstOrder;
+            }
+
+            if (token.Equals("AP2", StringComparison.OrdinalIgnoreCase))
+            {
+                return PeqBandType.AllPassSecondOrder;
             }
         }
 

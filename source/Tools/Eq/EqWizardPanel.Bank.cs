@@ -25,6 +25,14 @@ public partial class EqWizardPanel
     private const double AddedHighShelfFrequencyHz = 5000;
     private const double AddedShelfQ = 0.7;
 
+    // A new all-pass starts where the Virtual DSP channel card's stage did: an
+    // all-pass is placed on a crossover region, so mid-band with a gentle turn is
+    // the neutral start the user then drags onto the junction. Q is also what a
+    // first-order band carries as its sentinel — the order has no Q, but every
+    // validator on the way to a project file requires a positive one.
+    private const double AddedAllPassFrequencyHz = 2000;
+    private const double AddedAllPassQ = 1.0;
+
     // How long the bank must sit still before a burst of field or fader edits is
     // recorded as one undo step. The timer restarts on every change, so a whole
     // fader drag — however long — collapses into a single step.
@@ -108,7 +116,8 @@ public partial class EqWizardPanel
         addSlotTile.DragOver += SlotDragOver;
         addSlotTile.DragDrop += SlotDragDrop;
         SetTip(addSlotTile,
-            "Add a filter: PK a peaking bell, HS a high shelf, LS a low shelf. Drag " +
+            "Add a filter: PK a peaking bell, HS a high shelf, LS a low shelf, " +
+            "AP1/AP2 a first- or second-order all-pass (moves phase only). Drag " +
             "a filter by its number to reorder it, or out of the bank to remove it; " +
             "right-click the number to change its type. Ctrl+Z undoes any of it.");
 
@@ -196,13 +205,15 @@ public partial class EqWizardPanel
         CommitBankChange();
     }
 
-    // The three shapes as the right-click menu offers them. The add tile names them
-    // with its own short tokens (PK/HS/LS); a menu has room for the full words.
+    // The shapes as the right-click menu offers them. The add tile names them with
+    // its own short tokens (PK/HS/LS/AP1/AP2); a menu has room for the full words.
     private static readonly (PeqBandType Type, string Label)[] BandTypeChoices =
     {
         (PeqBandType.Peaking, "Peaking (bell)"),
         (PeqBandType.HighShelf, "High shelf"),
-        (PeqBandType.LowShelf, "Low shelf")
+        (PeqBandType.LowShelf, "Low shelf"),
+        (PeqBandType.AllPassFirstOrder, "All-pass, 1st order (phase only)"),
+        (PeqBandType.AllPassSecondOrder, "All-pass, 2nd order (phase only)")
     };
 
     // Changing an existing filter's shape keeps its frequency, Q and gain: the
@@ -253,6 +264,8 @@ public partial class EqWizardPanel
             new PeqBand(AddedLowShelfFrequencyHz, AddedShelfQ, 0, type),
         PeqBandType.HighShelf =>
             new PeqBand(AddedHighShelfFrequencyHz, AddedShelfQ, 0, type),
+        PeqBandType.AllPassFirstOrder or PeqBandType.AllPassSecondOrder =>
+            new PeqBand(AddedAllPassFrequencyHz, AddedAllPassQ, 0, type),
         _ => new PeqBand(AddedBandFrequencyHz, AddedBandQ, 0, type)
     };
 
@@ -285,6 +298,7 @@ public partial class EqWizardPanel
             Margin = new Padding(1)
         };
         slot.SetGainRange(numericGainMin.Value, numericGainMax.Value);
+        slot.SampleRateHz = EqSampleRate;
         // Values first, handlers second: a fresh strip is not an edit of the
         // bank and must not arm the undo timer or redraw the plot three times.
         WriteBand(slot, band);
@@ -294,10 +308,11 @@ public partial class EqWizardPanel
         SetTip(slot.FrequencyInput, FrequencyTip);
         SetTip(slot.QInput, QTip);
         SetTip(slot.GainInput, GainTip);
+        SetTip(slot.GroupDelayReadout, AllPassGroupDelayTip);
         SetTip(slot.SlotLabel,
             "Filter number and type, and the drag handle: drag it to reorder the " +
             "filter or out of the bank to remove it, right-click to switch between " +
-            "a bell and a shelf.");
+            "a bell, a shelf and an all-pass.");
         slot.Activated += (sender, _) => SelectSlot((PeqSlotControl)sender!);
         slot.TypeMenuRequested += (sender, args) =>
             ShowBandTypeMenu((PeqSlotControl)sender!, args.ScreenPoint);
@@ -776,6 +791,38 @@ public partial class EqWizardPanel
         CommitBankChange();
         SetBank(PeqBankState.Empty);
         CommitBankChange();
+    }
+
+    /// <summary>
+    /// A tuned bank with the all-pass bands of the bank it replaces carried over.
+    /// The tuner fits magnitude and emits bells only, so a run would otherwise take
+    /// the user's phase work with it — and an all-pass, being flat, is invisible in
+    /// the error curve that decided the fit.
+    /// </summary>
+    /// <remarks>
+    /// The kept bands go last, which is also where the slot budget bites: when the
+    /// merged bank would overflow, the FITTED bands give way. An all-pass sits on a
+    /// junction the user aligned by hand and the tuner cannot propose one, so the
+    /// bands it can regenerate on the next run are the cheaper ones to lose.
+    /// Deliberately UI-free — the keep-or-clobber decision is the panel's to ask
+    /// and arrives here already made.
+    /// </remarks>
+    internal static EqualizationCurve WithAllPassBands(
+        EqualizationCurve tuned,
+        IReadOnlyList<PeqBand> allPass)
+    {
+        ArgumentNullException.ThrowIfNull(tuned);
+        ArgumentNullException.ThrowIfNull(allPass);
+        if (allPass.Count == 0)
+        {
+            return tuned;
+        }
+
+        return new EqualizationCurve(
+            tuned.Bands
+                .Take(Math.Max(0, MaxPeqSlotCount - allPass.Count))
+                .Concat(allPass),
+            tuned.PreampDb);
     }
 
     // Replaces the bank with a computed or imported one (Auto Tune, Import) as a

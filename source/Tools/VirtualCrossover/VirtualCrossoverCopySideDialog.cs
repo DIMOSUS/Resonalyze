@@ -10,10 +10,13 @@ namespace Resonalyze;
 /// The default selection is the crossover and the PEQ — the magnitude shape,
 /// which describes the driver. Everything that aligns one side against its own
 /// level and geometry is offered too but starts off: gain, delay, polarity and
-/// the all-pass. The all-pass belongs with them rather than with the filters,
-/// because it exists exactly where a delay and a polarity flip are too blunt —
-/// it is tuned against that side's own junction, and a left tweeter's arrival is
-/// not a right tweeter's.
+/// the all-pass. The all-pass lives inside the PEQ bank as bands now, but it
+/// still belongs with the alignment scopes rather than with the filters, because
+/// it exists exactly where a delay and a polarity flip are too blunt — it is
+/// tuned against that side's own junction, and a left tweeter's arrival is not a
+/// right tweeter's. So the two checkboxes split one band list by type: PEQ moves
+/// the gain-bearing bands, All-pass the phase-only ones, and whichever kind is
+/// not copied survives on the target side.
 /// </para>
 /// </summary>
 internal sealed class VirtualCrossoverCopySideDialog : Form

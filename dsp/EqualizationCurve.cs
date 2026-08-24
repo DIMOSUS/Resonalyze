@@ -3,9 +3,9 @@ namespace Resonalyze.Dsp;
 /// <summary>
 /// One EQ band, described the way a PEQ slot exposes it: a centre frequency, a
 /// quality factor, a gain and the shape those three describe (bell by default,
-/// or a shelf — see <see cref="PeqBandType"/>). The magnitude response is the
-/// analog prototype, which is sample-rate independent and therefore suitable for
-/// plotting an EQ curve across the audible range.
+/// a shelf, or a phase-only all-pass — see <see cref="PeqBandType"/>). The
+/// magnitude response is the analog prototype, which is sample-rate independent
+/// and therefore suitable for plotting an EQ curve across the audible range.
 /// </summary>
 /// <remarks>
 /// <see cref="Type"/> is the last parameter and defaults to
@@ -19,11 +19,14 @@ public readonly record struct PeqBand(
     PeqBandType Type = PeqBandType.Peaking)
 {
     /// <summary>
-    /// True for a band that contributes nothing: zero gain or degenerate frequency/Q
-    /// (e.g. a half-filled PEQ slot). Such bands are skipped when the curve is
-    /// evaluated or realized as biquads.
+    /// True for a band that contributes nothing: degenerate frequency/Q (e.g. a
+    /// half-filled PEQ slot), or zero gain on a band whose whole effect IS its gain.
+    /// Such bands are skipped when the curve is evaluated or realized as biquads.
+    /// An all-pass moves phase without carrying any gain, so its zero gain is not
+    /// transparency — only a degenerate frequency or Q silences one.
     /// </summary>
-    public bool IsTransparent => GainDb == 0 || Q <= 0 || FrequencyHz <= 0;
+    public bool IsTransparent =>
+        Q <= 0 || FrequencyHz <= 0 || (GainDb == 0 && !Type.IsAllPass());
 
     /// <summary>
     /// Magnitude contribution of this band at <paramref name="frequencyHz"/>, in dB.
@@ -33,6 +36,12 @@ public readonly record struct PeqBand(
     public double MagnitudeDbAt(double frequencyHz)
     {
         if (IsTransparent || frequencyHz <= 0)
+        {
+            return 0;
+        }
+        // An all-pass has unity magnitude at every frequency, whatever gain the slot
+        // may still carry from a type switch — never let it fall through to the bell.
+        if (Type.IsAllPass())
         {
             return 0;
         }

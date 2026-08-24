@@ -32,8 +32,41 @@ internal static class EqExportWarnings
         return $"{target.Name} cannot carry a shelving filter the way this EQ defines " +
             $"one, so the {filters} would be left out." +
             Environment.NewLine + Environment.NewLine +
-            "The exported profile will hold the peaking filters and the preamp only, " +
-            "and will not match the curve on screen. Export anyway?";
+            "The exported profile will be missing those filters and will not match " +
+            "the curve on screen. Export anyway?";
+    }
+
+    /// <summary>
+    /// The warning for all-pass bands a format cannot state, or null when it
+    /// carries them — or when the bank has none. Support splits by order (Equalizer
+    /// APO's AP is second-order only), so the wording names what is actually lost.
+    /// </summary>
+    public static string? AllPassBandsDropped(
+        EqWizardExportTarget target, EqualizationCurve curve)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(curve);
+
+        int dropped = EqWizardImportExportCoordinator.CountAllPassBandsDroppedBy(
+            target, curve);
+        if (dropped == 0)
+        {
+            return null;
+        }
+
+        // When only the first order is unsupported, say so — "cannot carry an
+        // all-pass" would read as a lie next to the AP2 rows that do export.
+        bool onlyFirstOrder =
+            target.SupportsAllPass(PeqBandType.AllPassSecondOrder) &&
+            !target.SupportsAllPass(PeqBandType.AllPassFirstOrder);
+        string kind = onlyFirstOrder ? "first-order all-pass" : "all-pass";
+        string filters = dropped == 1
+            ? $"the {kind} filter"
+            : $"the {dropped} {kind} filters";
+        return $"{target.Name} has no {kind} filter, so {filters} would be left out." +
+            Environment.NewLine + Environment.NewLine +
+            "The exported profile will not turn phase the way the tune on screen " +
+            "does. Export anyway?";
     }
 
     /// <summary>

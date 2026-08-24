@@ -5,11 +5,11 @@ namespace Resonalyze.Dsp;
 
 /// <summary>
 /// CamillaDSP config (YAML). Exports each PEQ band as a Biquad — Peaking, Lowshelf
-/// or Highshelf, all of which take the same freq/gain/q triple — plus a Gain filter
-/// for the preamp, wired into a two-channel pipeline. Imports those three biquad
-/// types and the first Gain filter; anything else is skipped. The filters are
-/// cascaded, and a cascade of biquads commutes, so filter order does not affect the
-/// result.
+/// and Highshelf take the freq/gain/q triple, Allpass takes freq/q and AllpassFO
+/// freq alone — plus a Gain filter for the preamp, wired into a two-channel
+/// pipeline. Imports those five biquad types and the first Gain filter; anything
+/// else is skipped. The filters are cascaded, and a cascade of biquads commutes,
+/// so filter order does not affect the result.
 /// </summary>
 public sealed class CamillaDspYamlFormat : IEqProfileFormat
 {
@@ -43,16 +43,26 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
             // The key names the slot, not the shape: a filter that changed type
             // between two exports keeps its place in the pipeline list.
             string key = $"band_{i:000}";
+            // An all-pass takes no gain — CamillaDSP's Allpass has no such
+            // parameter — and its first-order variant (AllpassFO) takes no Q either.
+            var parameters = new Dictionary<string, object?>
+            {
+                ["type"] = FilterTypeName(band.Type),
+                ["freq"] = EqTextNumbers.Format(band.FrequencyHz, "0.###")
+            };
+            if (band.Type != PeqBandType.AllPassFirstOrder)
+            {
+                parameters["q"] = EqTextNumbers.Format(band.Q, "0.0");
+            }
+            if (!band.Type.IsAllPass())
+            {
+                parameters["gain"] = EqTextNumbers.Format(band.GainDb, "0.0");
+            }
+
             filters[key] = new Dictionary<string, object?>
             {
                 ["type"] = "Biquad",
-                ["parameters"] = new Dictionary<string, object?>
-                {
-                    ["type"] = FilterTypeName(band.Type),
-                    ["freq"] = EqTextNumbers.Format(band.FrequencyHz, "0.###"),
-                    ["q"] = EqTextNumbers.Format(band.Q, "0.0"),
-                    ["gain"] = EqTextNumbers.Format(band.GainDb, "0.0")
-                }
+                ["parameters"] = parameters
             };
             names.Add(key);
         }
@@ -136,16 +146,32 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
                 continue;
             }
 
-            if (bands.Count < EqualizationCurve.MaxBandCount &&
-                EqTextNumbers.TryParse(GetString(parameters, "freq"), out double frequencyHz) &&
-                EqTextNumbers.TryParse(GetString(parameters, "gain"), out double bandGain) &&
-                EqTextNumbers.TryParse(GetString(parameters, "q"), out double q) &&
-                double.IsFinite(frequencyHz) && frequencyHz > 0 &&
-                double.IsFinite(q) && q > 0 &&
-                double.IsFinite(bandGain))
+            if (bands.Count >= EqualizationCurve.MaxBandCount ||
+                !EqTextNumbers.TryParse(GetString(parameters, "freq"), out double frequencyHz) ||
+                !double.IsFinite(frequencyHz) || frequencyHz <= 0)
             {
-                bands.Add(new PeqBand(frequencyHz, q, bandGain, bandType));
+                continue;
             }
+
+            // An Allpass block carries no gain, and an AllpassFO no Q either; the
+            // gain-bearing shapes still require all three numbers.
+            double bandGain = 0;
+            if (!bandType.IsAllPass() &&
+                (!EqTextNumbers.TryParse(GetString(parameters, "gain"), out bandGain) ||
+                    !double.IsFinite(bandGain)))
+            {
+                continue;
+            }
+
+            double q = 1.0;
+            if (bandType != PeqBandType.AllPassFirstOrder &&
+                (!EqTextNumbers.TryParse(GetString(parameters, "q"), out q) ||
+                    !double.IsFinite(q) || q <= 0))
+            {
+                continue;
+            }
+
+            bands.Add(new PeqBand(frequencyHz, q, bandGain, bandType));
         }
 
         curve = new EqualizationCurve(bands, preampDb);
@@ -154,15 +180,19 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
 
     // CamillaDSP names the shelves Lowshelf/Highshelf and takes the same freq/gain/q
     // triple for them as for Peaking (it also accepts a "slope" instead of "q";
-    // exports state q, which is what the library holds).
+    // exports state q, which is what the library holds). Its all-pass types match
+    // ours one to one: Allpass is the second-order section (freq + q), AllpassFO
+    // the single-pole first order (freq only).
     private static string FilterTypeName(PeqBandType type) => type switch
     {
         PeqBandType.LowShelf => "Lowshelf",
         PeqBandType.HighShelf => "Highshelf",
+        PeqBandType.AllPassFirstOrder => "AllpassFO",
+        PeqBandType.AllPassSecondOrder => "Allpass",
         _ => "Peaking"
     };
 
-    // A biquad with no stated sub-type is a Peaking one; anything outside the three
+    // A biquad with no stated sub-type is a Peaking one; anything outside the five
     // the library can hold (LowpassFO, Notch, the FO shelves, ...) is skipped.
     private static bool TryReadFilterType(string? name, out PeqBandType type)
     {
@@ -181,6 +211,18 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
         if (name.Equals("Highshelf", StringComparison.OrdinalIgnoreCase))
         {
             type = PeqBandType.HighShelf;
+            return true;
+        }
+
+        if (name.Equals("Allpass", StringComparison.OrdinalIgnoreCase))
+        {
+            type = PeqBandType.AllPassSecondOrder;
+            return true;
+        }
+
+        if (name.Equals("AllpassFO", StringComparison.OrdinalIgnoreCase))
+        {
+            type = PeqBandType.AllPassFirstOrder;
             return true;
         }
 

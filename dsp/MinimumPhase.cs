@@ -11,8 +11,11 @@ namespace Resonalyze.Dsp;
 /// A measured transfer function factors into a minimum-phase part — uniquely
 /// determined by the magnitude through the Hilbert (Bode) relation, and therefore
 /// correctable with a minimum-phase equalizer — and an excess (all-pass) part
-/// caused by pure delay, reflections and other non-minimum-phase behaviour that an
-/// equalizer cannot fix. This class produces the minimum-phase component so callers
+/// caused by pure delay, reflections and other non-minimum-phase behaviour that no
+/// minimum-phase equalizer can fix. (An all-pass FILTER is itself non-minimum-phase,
+/// which is why the PEQ bank carries one: it moves phase where no amount of bells
+/// and shelves will. It still cannot undo a reflection.) This class produces the
+/// minimum-phase component so callers
 /// can derive the excess phase as <c>measured − minimum</c>.
 ///
 /// The computation is the standard cepstral construction (cf. MATLAB <c>rceps</c>):

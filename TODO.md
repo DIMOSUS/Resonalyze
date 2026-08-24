@@ -28,7 +28,7 @@ close.
   invalidation inside an optimizer (a stale score silently degrades
   convergence).
 - [ ] **The DSP chain is assembled twice.** `DspChannelChain.Response` evaluates
-  gain · polarity · delay · crossover · all-pass · PEQ analytically per
+  gain · polarity · delay · crossover · PEQ analytically per
   frequency, while `PreparedDspResponse.Create` builds the same chain as a
   cached biquad cascade. The two evaluation strategies are both wanted (one for
   a single plot point, one for FFT-bin processing), but the assembly order and
@@ -306,15 +306,15 @@ items below are what a car DSP tune actually needs, roughly in priority order.
   "driver band" it works inside is just the user's From/To window. Derive each
   driver's usable band from the measured roll-off or the crossover so the mask
   also blocks boosts outside it.
-- [ ] ★ **Only peaking bands — no shelves.** `PeqBand` is `(Fc, Q, gain)` with no
-  filter type, so `EqAutoTuner`, the preview (`DigitalEqualizationResponse`) and
-  the parsers are peaking-only. Car targets are shelved (bass boost + downward
-  tilt), which a stack of peaking bands approximates poorly (wasted slots,
-  ringing). It is also a lossy-import bug: `PeqTextFile`/REW parsing silently
-  drops every non-`PK` filter, so a REW/Equalizer APO car tune imported here loses
-  its shelves. Add low/high shelf to `PeqBand` + `DigitalEqualizationResponse` and
-  make the parsers/formatters round-trip them. (HP/LP/notch/all-pass are NOT
-  needed here — the Virtual DSP tool owns crossovers and time alignment.)
+- [ ] ★ **Auto Tune still fits peaking bands only.** The bank, the preview and
+  the parsers carry shelves and all-pass bands now; the tuner does not. Car
+  targets are shelved (bass boost + downward tilt), which a stack of peaking
+  bands approximates poorly — wasted slots and ringing. Teach the greedy fit to
+  propose a low/high shelf where the residual is a slope rather than a bump.
+  (All-pass stays out of the FIT — it is flat, so the magnitude error can never
+  ask for one; a bank holding all-pass bands is instead offered to be kept, and
+  their count comes off the fit's budget.) HP/LP/notch are NOT needed here: the
+  Virtual DSP tool owns crossovers and time alignment.
 - [ ] **Spatial averaging of several measurements.** A single mic point
   over-corrects for that seat's position-specific nulls; car tuning averages a
   handful of positions around the headrest. The mode loads ONE IR — add
@@ -346,10 +346,14 @@ items below are what a car DSP tune actually needs, roughly in priority order.
   per-format metadata, not a device profile.
 
 Deliberately out of scope for car DSP tuning (do not add here): FIR/convolution
-export (car DSPs are biquad), a phase / min-phase / all-pass view (the Virtual
-DSP crossover + delay tool owns phase and time), real-time PC audio preview (you
-listen in the car after loading the profile), arbitrary target-curve import (the
-Car / CarMild / XCurve presets cover it), and HP/LP filter types (crossover tool).
+export (car DSPs are biquad), the DECOMPOSED phase views — minimum phase, excess
+phase and group delay, which are the analysis tabs' subject — real-time PC audio
+preview (you listen in the car after loading the profile), arbitrary target-curve
+import (the Car / CarMild / XCurve presets cover it), and HP/LP filter types
+(crossover tool). The wizard's Phase mode is not one of these and is IN scope: it
+draws the measured phase of the channel being tuned against the neighbours it was
+handed, which is the only way to see what an all-pass band did — a magnitude plot
+shows it as flat by construction.
 
 ## Time Alignment / unwrap
 

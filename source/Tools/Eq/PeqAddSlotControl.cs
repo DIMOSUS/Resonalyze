@@ -22,10 +22,10 @@ internal sealed class PeqAddBandEventArgs : EventArgs
 /// most of it greyed out.
 /// </summary>
 /// <remarks>
-/// Three zones rather than one tile opening a menu: adding a filter is the most
-/// repeated action in the panel, and a menu costs a second click and a jump away
-/// from the strip. The zones keep the shapes visible — the tile says what the bank
-/// can hold — and each one lands directly on the shape it names.
+/// One zone per shape rather than one tile opening a menu: adding a filter is the
+/// most repeated action in the panel, and a menu costs a second click and a jump
+/// away from the strip. The zones keep the shapes visible — the tile says what the
+/// bank can hold — and each one lands directly on the shape it names.
 /// </remarks>
 internal sealed class PeqAddSlotControl : Control
 {
@@ -35,12 +35,15 @@ internal sealed class PeqAddSlotControl : Control
     private static readonly Color GlyphHoverColor = UiPalette.TextPrimarySoft;
 
     // Top to bottom: the bell first as the one used most, then the shelves in the
-    // order they sit on a frequency axis drawn upwards — high above low.
+    // order they sit on a frequency axis drawn upwards — high above low — and the
+    // two phase-only all-pass orders last, first order above second.
     private static readonly (PeqBandType Type, string Label)[] Zones =
     {
         (PeqBandType.Peaking, "PK"),
         (PeqBandType.HighShelf, "HS"),
-        (PeqBandType.LowShelf, "LS")
+        (PeqBandType.LowShelf, "LS"),
+        (PeqBandType.AllPassFirstOrder, "AP1"),
+        (PeqBandType.AllPassSecondOrder, "AP2")
     };
 
     private int hoveredZone = -1;

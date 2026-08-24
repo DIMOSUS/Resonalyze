@@ -31,6 +31,21 @@ public interface IEqProfileFormat
     bool SupportsShelvingFilters => true;
 
     /// <summary>
+    /// Whether the format can carry an all-pass band of the given order as an
+    /// all-pass. False means the layout has no phase-only filter of that order, so
+    /// such bands must be dropped from an export rather than written as something
+    /// the target would realize differently — the caller is expected to say so, as
+    /// it does for a dropped shelf.
+    /// </summary>
+    /// <remarks>
+    /// Asked per order because support genuinely splits there: Equalizer APO's
+    /// <c>AP</c> is second-order only, while CamillaDSP and the Audiotec bank have
+    /// both orders and the coefficient formats carry any band by construction.
+    /// Defaults to true for both; only ever asked for the two all-pass members.
+    /// </remarks>
+    bool SupportsAllPass(PeqBandType type) => true;
+
+    /// <summary>
     /// Whether the layout has a place for the whole-profile gain
     /// (<see cref="EqualizationCurve.PreampDb"/>). False means the target keeps that
     /// gain in a control the file never reaches — a car DSP's channel gain — so an

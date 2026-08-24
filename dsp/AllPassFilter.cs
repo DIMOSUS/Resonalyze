@@ -2,12 +2,15 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>The all-pass stage of a channel.</summary>
+/// <summary>The order of an all-pass section.</summary>
 public enum AllPassType
 {
     /// <summary>
-    /// No all-pass. Deliberately the zero value, so a project written before the
-    /// stage existed deserializes to "no all-pass" instead of a live filter.
+    /// No all-pass. Deliberately the zero value: a virtual crossover project up to
+    /// schema v7 ran the all-pass as a channel stage and wrote this enum flat on the
+    /// channel, so a file that never dialled one in must deserialize to "no all-pass"
+    /// rather than a live filter. Nothing builds a spec with it any more — the
+    /// all-pass is a band of the PEQ bank now, and a band either exists or does not.
     /// </summary>
     Off,
 
@@ -20,7 +23,7 @@ public enum AllPassType
 
 /// <summary>
 /// One all-pass filter: unity magnitude at every frequency, phase rotated around
-/// <see cref="FrequencyHz"/>. It is the only stage that moves phase without touching
+/// <see cref="FrequencyHz"/>. It is the only filter that moves phase without touching
 /// the tonal balance — unlike a delay (a constant group delay everywhere) or a
 /// polarity flip (180° everywhere), it rotates phase *locally*, which is what makes
 /// it the tool for lining up drivers through a crossover region.
@@ -36,7 +39,7 @@ public sealed record AllPassSpec(
 public static class AllPassFilter
 {
     /// <summary>
-    /// Complex response of the all-pass at the given frequency. An Off stage is unity;
+    /// Complex response of the all-pass at the given frequency. An Off spec is unity;
     /// otherwise the magnitude is 1 at every frequency and only the phase moves.
     /// </summary>
     public static Complex Response(
@@ -50,7 +53,7 @@ public static class AllPassFilter
 
     /// <summary>
     /// The digital biquad realizing this all-pass, in the same coefficient convention
-    /// a miniDSP-style device runs. An Off stage builds nothing.
+    /// a miniDSP-style device runs. An Off spec builds nothing.
     /// </summary>
     public static IReadOnlyList<BiquadCoefficients> BuildSections(
         AllPassSpec spec,
@@ -96,7 +99,7 @@ public static class AllPassFilter
     /// Group delay (seconds) the all-pass adds at <paramref name="frequencyHz"/>, read
     /// from the exact digital biquad rather than the analog ideal (τ = 4Q/ω₀), which the
     /// bilinear transform's frequency warping pulls away from as the corner climbs
-    /// toward Nyquist. Zero for an Off stage.
+    /// toward Nyquist. Zero for an Off spec.
     /// </summary>
     public static double GroupDelaySeconds(
         AllPassSpec spec,
@@ -114,7 +117,7 @@ public static class AllPassFilter
     }
 
     /// <summary>
-    /// Group delay (seconds) at the stage's own corner — where a second-order section's
+    /// Group delay (seconds) at the filter's own corner — where a second-order section's
     /// delay peaks, and the figure worth showing a user: it is why an all-pass works,
     /// and on a low corner, where it runs to many milliseconds, its main risk.
     /// <para>

@@ -212,23 +212,25 @@ public sealed class VirtualCrossoverChannelSettings
     public CrossoverEdge HighPassEdge { get; set; } =
         new(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
 
-    /// <summary>
-    /// The largest all-pass Q a project accepts. Unlike the Chebyshev ripple cap this is
-    /// NOT a mathematical limit — an extreme Q is merely a very sharp phase turn and stays
-    /// perfectly stable — it is just the sane range the UI offers, kept here so the field
-    /// and the validator cannot drift apart. The real lower bound (Q > 0, or alpha divides
-    /// by zero) is enforced by the DSP itself.
-    /// </summary>
-    public const double MaximumAllPassQ = 20.0;
-
-    /// <summary>
-    /// The all-pass stage: a phase rotation with no effect on magnitude. Independent of
-    /// <see cref="CrossoverKind"/> — hardware runs it as its own stage, so it applies
-    /// even with the crossover off.
-    /// </summary>
-    public AllPassType AllPassType { get; set; } = AllPassType.Off;
-    public double AllPassFrequencyHz { get; set; } = 2_000;
-    public double AllPassQ { get; set; } = 1.0;
+    // Schema v7 payload, kept only so an older file deserializes for migration:
+    // the per-channel all-pass stage became a band of the PEQ bank in v8 (see the
+    // v7→v8 step in Migrate, which appends it to PeqBands and clears these).
+    // Nullable purely to tell "absent" from a real value; nothing but Migrate
+    // reads them.
+    // A STRING rather than the enum, so a hand-edited or truncated value cannot take
+    // the file down: the enum converter throws on a name it does not know, and that
+    // throw happens during deserialization — before Migrate, which is where this
+    // field's tolerance is supposed to live. Parsed there instead, where an
+    // unreadable type simply means "no all-pass".
+    [JsonPropertyName("allPassType")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LegacyAllPassType { get; set; }
+    [JsonPropertyName("allPassFrequencyHz")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? LegacyAllPassFrequencyHz { get; set; }
+    [JsonPropertyName("allPassQ")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? LegacyAllPassQ { get; set; }
 
     public double PeqPreampDb { get; set; }
     public List<PeqBand> PeqBands { get; set; } = new();
@@ -251,8 +253,7 @@ public sealed class VirtualCrossoverChannelSettings
         EqualizationCurve? peq = PeqBands.Count > 0 || PeqPreampDb != 0
             ? new EqualizationCurve(PeqBands, PeqPreampDb)
             : null;
-        var allPass = new AllPassSpec(AllPassType, AllPassFrequencyHz, AllPassQ);
-        return new DspChannelChain(GainDb, DelayMs, InvertPolarity, crossover, peq, allPass);
+        return new DspChannelChain(GainDb, DelayMs, InvertPolarity, crossover, peq);
     }
 
     public void Validate()
@@ -272,7 +273,6 @@ public sealed class VirtualCrossoverChannelSettings
         }
         ValidateEdge(LowPassEdge);
         ValidateEdge(HighPassEdge);
-        ValidateAllPass();
         if (!double.IsFinite(PeqPreampDb) || Math.Abs(PeqPreampDb) > 60)
         {
             throw new InvalidDataException("The PEQ preamp is invalid.");
@@ -290,26 +290,6 @@ public sealed class VirtualCrossoverChannelSettings
             {
                 throw new InvalidDataException("A PEQ band is invalid.");
             }
-        }
-    }
-
-    // Validated even when the type is Off, for the same reason as the crossover edges:
-    // the values stay visible (greyed) in the UI and must round-trip as sane ones.
-    private void ValidateAllPass()
-    {
-        if (!Enum.IsDefined(AllPassType))
-        {
-            throw new InvalidDataException("The all-pass type is invalid.");
-        }
-        if (!double.IsFinite(AllPassFrequencyHz) || AllPassFrequencyHz is < 10 or > 24_000)
-        {
-            throw new InvalidDataException("The all-pass frequency is invalid.");
-        }
-        // Q drives only the second-order section, but it is bounded regardless so an
-        // imported project cannot smuggle in a value the UI could never show.
-        if (!double.IsFinite(AllPassQ) || AllPassQ <= 0 || AllPassQ > MaximumAllPassQ)
-        {
-            throw new InvalidDataException("The all-pass Q is invalid.");
         }
     }
 
@@ -475,7 +455,7 @@ public sealed class VirtualCrossoverProjectFile
     // step in Migrate below. Files from a NEWER version (a downgraded app)
     // are never migrated: LoadOrDefault backs them up and starts fresh,
     // LoadFrom rejects them with an explicit error.
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 8;
     public const int MaximumChannelCount = 8;
     private const string FileName = "virtual-crossover.json";
 
@@ -1024,6 +1004,72 @@ public sealed class VirtualCrossoverProjectFile
 
             file.Version = 7;
         }
+        if (file.Version == 7)
+        {
+            // v7 kept one all-pass per channel side as its own stage; v8 carries it
+            // as a band of the PEQ bank, where the hardware's own EQ slot table
+            // holds it (AP1/AP2). The band realizes bit for bit the same biquad the
+            // stage ran (pinned by AllPassBandTests), so a migrated project sounds
+            // exactly as it did. Defensive on the legacy numbers — Migrate runs
+            // before Validate, so a hand-edited stage must degrade to "no all-pass"
+            // rather than abort the whole session; and a bank already holding the
+            // full 32 bands has no slot to take the stage, so it is dropped there
+            // too rather than invalidating the file.
+            foreach (VirtualCrossoverChannelPairSettings pair in file.Pairs)
+            {
+                foreach (VirtualCrossoverChannelSettings side in
+                    new[] { pair.Left, pair.Right })
+                {
+                    AllPassType? stage =
+                        Enum.TryParse(side.LegacyAllPassType, out AllPassType parsed) &&
+                        Enum.IsDefined(parsed)
+                            ? parsed
+                            : null;
+                    bool firstOrder = stage == AllPassType.FirstOrder;
+                    double frequencyHz = side.LegacyAllPassFrequencyHz ?? 0;
+                    double q = firstOrder ? 1.0 : side.LegacyAllPassQ ?? 1.0;
+                    if (stage is AllPassType.FirstOrder or AllPassType.SecondOrder &&
+                        double.IsFinite(frequencyHz) && frequencyHz > 0 &&
+                        double.IsFinite(q) && q > 0)
+                    {
+                        // A v7 side could hold a FULL bank and an all-pass stage
+                        // beside it, which v8 has no room for. Something is lost
+                        // either way, so lose the one that can be put back: a bell
+                        // is a magnitude correction Auto Tune can propose again,
+                        // while an all-pass sits on a junction that was aligned by
+                        // ear. The user is told rather than left to find out — see
+                        // MigrationNoticeText.
+                        if (side.PeqBands.Count >= EqualizationCurve.MaxBandCount)
+                        {
+                            int last = side.PeqBands.FindLastIndex(
+                                band => !band.Type.IsAllPass());
+                            if (last >= 0)
+                            {
+                                side.PeqBands.RemoveAt(last);
+                                file.migratedFullBanks++;
+                            }
+                        }
+
+                        if (side.PeqBands.Count < EqualizationCurve.MaxBandCount)
+                        {
+                            side.PeqBands.Add(new PeqBand(
+                                frequencyHz,
+                                q,
+                                0,
+                                firstOrder
+                                    ? PeqBandType.AllPassFirstOrder
+                                    : PeqBandType.AllPassSecondOrder));
+                        }
+                    }
+
+                    side.LegacyAllPassType = null;
+                    side.LegacyAllPassFrequencyHz = null;
+                    side.LegacyAllPassQ = null;
+                }
+            }
+
+            file.Version = 8;
+        }
 
         // The scene offset's wire SIGN and the layout flag state one fact
         // (see the properties): re-align them here for files that carry only
@@ -1050,6 +1096,31 @@ public sealed class VirtualCrossoverProjectFile
     /// </summary>
     [JsonIgnore]
     public string? BackupNoticePath { get; private set; }
+
+    // How many channel sides had a full 32-band bank when their v7 all-pass stage
+    // was migrated into it, and so gave up their last gain-bearing band to make
+    // room. Not persisted: it describes THIS load, and the host tells the user
+    // once (see MigrationNoticeText).
+    private int migratedFullBanks;
+
+    /// <summary>
+    /// What this load had to change beyond restating it, or null when nothing was
+    /// lost. A migration that silently drops a filter is how a tune quietly stops
+    /// being the tune that was saved.
+    /// </summary>
+    [JsonIgnore]
+    public string? MigrationNoticeText =>
+        migratedFullBanks == 0
+            ? null
+            : $"{migratedFullBanks} channel side" +
+                (migratedFullBanks == 1 ? " had" : "s had") +
+                " a full 32-filter bank and an all-pass stage beside it. The " +
+                "all-pass is a band of the bank in this version, and there was no " +
+                "free slot for it, so the last gain-bearing filter of " +
+                (migratedFullBanks == 1 ? "that side" : "each of those sides") +
+                " gave up its place — an equalizer band can be fitted again, an " +
+                "all-pass sits on a junction that was aligned by ear. Check those " +
+                "channels before saving over the session.";
 
     /// <summary>
     /// Loads the saved project, falling back to a fresh default when the file

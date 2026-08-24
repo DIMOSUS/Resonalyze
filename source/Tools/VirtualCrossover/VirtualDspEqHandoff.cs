@@ -33,12 +33,16 @@ namespace Resonalyze;
 /// fitted against. Compared whole on return, with only the polarity normalized away.
 /// <para>
 /// Measured, not assumed. Through the real filter-then-window path, sampled across
-/// the ranges the UI allows (delay to 100 ms; all-pass 10..2000 Hz with Q to 20 —
-/// a sample, not a search for the true extremum), the worst SHAPE shift seen from a
-/// single edit is: polarity exactly 0 at every rate
+/// the ranges the UI allows (delay to 100 ms; and, when the all-pass was still a
+/// chain stage, 10..2000 Hz with Q to 20 — a sample, not a search for the true
+/// extremum), the worst SHAPE shift seen from a single edit is: polarity exactly 0
+/// at every rate
 /// (|−x·w| = |x·w|); delay 0.000 dB at 48 kHz but 1.70 dB at 192 kHz, where the rate
-/// clamps the window to 171 ms; all-pass 0.27 dB at 48 kHz and 4.77 dB at 192 kHz
-/// (40 Hz, Q 20 — 318 ms of group delay against that window). Gain leaves the shape
+/// clamps the window to 171 ms; an all-pass 0.27 dB at 48 kHz and 4.77 dB at 192 kHz
+/// (40 Hz, Q 20 — 318 ms of group delay against that window). The all-pass lives in
+/// the PEQ bank now — the stage under edit, excluded here and guarded by
+/// <see cref="Peq"/> instead; the figures stay as the measurement of how strongly a
+/// phase-only filter can move a windowed magnitude. Gain leaves the shape
 /// alone at every setting, but the handoff carries an ABSOLUTE target level and the
 /// bank's preamp was fitted against it, so a moved gain leaves the tune exactly that
 /// many dB off the target. Only polarity survives all of it.
@@ -140,7 +144,8 @@ internal static class VirtualDspEqHandoff
     /// <summary>
     /// Prepares one channel side for the wizard. With <paramref name="withChain"/> the
     /// curve is the side's measurement through its DSP chain WITHOUT the PEQ — gain,
-    /// delay, polarity, crossover and all-pass stay — windowed by the gate the processed
+    /// delay, polarity and crossover stay; the bank goes over in full, all-pass bands
+    /// included, as the thing the wizard edits — windowed by the gate the processed
     /// view draws with. Without it the curve is the raw measurement under the same gate
     /// anchored on its own start: exactly the panel's Raw curve.
     /// <para>
@@ -166,6 +171,12 @@ internal static class VirtualDspEqHandoff
     /// does. Null when no render exists to follow — the curve then opens on its own
     /// front, the same rule the plot applies to a lone channel.
     /// </param>
+    /// <param name="phaseContext">
+    /// The neighbouring drivers and the phase window the wizard draws them under, from
+    /// the panel's own last render. Null when no current render exists to freeze, and
+    /// left off a raw handoff — that curve has none of the chain the neighbours are
+    /// drawn through, so the comparison would describe a system nobody is building.
+    /// </param>
     public static VirtualDspEqHandoffRequest Build(
         VirtualCrossoverChannel channel,
         bool rightSide,
@@ -173,6 +184,7 @@ internal static class VirtualDspEqHandoff
         PhaseAnalysisSettings gateTemplate,
         double? pinnedGateOffsetMs,
         int? renderAnchorIndex,
+        EqWizardPhaseContext? phaseContext,
         double targetLevelDb,
         double targetLevelMinDb,
         double targetLevelMaxDb,
@@ -271,6 +283,15 @@ internal static class VirtualDspEqHandoff
             // — rather than the bypassed response filtered a second time.
             PreviewImpulseResponse = state.ProcessingSource.CroppedImpulseResponse,
             PreviewChain = previewChain,
+            // Only a chain handoff draws neighbours. A raw curve has no crossover, no
+            // delay and no polarity in front of it, while the neighbours have all of
+            // theirs — a Linkwitz-Riley corner alone turns 360° through the overlap,
+            // and the delay moves the arrival the phase is referenced to. Lining the
+            // raw curve up against them would line up a system that does not exist,
+            // and an all-pass tuned to that picture is wrong exactly where it matters.
+            // The raw handoff still draws its OWN phase; it simply has nothing
+            // truthful to compare against.
+            PhaseContext = withChain ? phaseContext : null,
             SampleRateHz = sampleRate,
             CurveKind = AnalysisCurveKind.Primary
         };
@@ -330,9 +351,11 @@ internal static class VirtualDspEqHandoff
     /// that no longer exists — changes the user cannot see from the wizard, which
     /// still shows what it opened on. The line runs through the MAGNITUDE the bank was
     /// fitted to, or the LEVEL it was fitted against. A replaced measurement, a
-    /// changed calibration and any change to the chain (gain, delay, crossover,
-    /// all-pass) move one of those — measured across the UI's own ranges, see
-    /// <see cref="VirtualDspEqReturnToken.PreviewChain"/> — so all of them refuse.
+    /// changed calibration and any change to the chain (gain, delay, crossover)
+    /// move one of those — measured across the UI's own ranges, see
+    /// <see cref="VirtualDspEqReturnToken.PreviewChain"/> — so all of them refuse;
+    /// an all-pass edit refuses too, through the PEQ guard, since the bands are
+    /// where the all-pass lives now.
     /// A polarity flip is the single exception, because it changes neither.
     /// </remarks>
     public static bool TryApplyReturn(

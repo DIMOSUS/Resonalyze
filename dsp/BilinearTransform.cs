@@ -2,7 +2,7 @@ namespace Resonalyze.Dsp;
 
 /// <summary>
 /// Helpers shared by every filter this library designs through the bilinear
-/// transform (the crossover cascades and the all-pass stage alike).
+/// transform (the crossover cascades and the all-pass sections alike).
 /// </summary>
 internal static class BilinearTransform
 {

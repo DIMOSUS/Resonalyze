@@ -61,8 +61,8 @@ fabricating a number when the measurement cannot support one.
 
 <p align="center">
   <strong>Virtual DSP</strong> — combine measured drivers through gain, delay,
-  polarity, crossover filters, an all-pass stage, and PEQ before touching the
-  hardware DSP.
+  polarity, crossover filters, and PEQ (bells, shelves and all-pass alike)
+  before touching the hardware DSP.
 </p>
 
 <p align="center">
@@ -108,7 +108,7 @@ is not just a plot but the DSP settings themselves:
 
 - **Built for multi-way active systems** — measure each driver separately, then
   design the whole system virtually: crossover corners, slopes and families,
-  per-driver delay and polarity, all-pass stages, and PEQ, tuned against the
+  per-driver delay and polarity, and PEQ down to all-pass bands, tuned against the
   phase-aware predicted sum. **Auto crossover** and **Auto delay** search these
   settings automatically, across both stereo sides in one run.
 - **Honest automation** — an automatic tuner that guesses is worse than none.
@@ -195,9 +195,10 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   delay/polarity controls, plus a **sum-loss** curve
 - **Virtual DSP** — up to eight L/R driver pairs (plus mono channels) through
   virtual chains: gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel /
-  Chebyshev crossovers, all-pass and PEQ, with the complex sum, sum loss, phase
-  tracking, junction read-outs, Δ L−R timing, **Auto crossover**, a stereo-aware
-  **Auto delay**, a headphone audition, sessions and tuning-sheet export
+  Chebyshev crossovers and PEQ (all-pass bands included), with the complex sum,
+  sum loss, phase tracking, junction read-outs, Δ L−R timing, **Auto crossover**,
+  a stereo-aware **Auto delay**, a headphone audition, sessions and tuning-sheet
+  export
 - **Live Spectrum** — a real-time loopback transfer function with coherence, or a
   reference-free RTA in relative dB or dB SPL, with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white, or Silent for the ambient
@@ -1191,7 +1192,7 @@ and Autocorrelation views, with a **Show all** / **Hide all** pair.
 ## EQ Wizard
 
 The **EQ Wizard** (under the **Tools** tab) designs a parametric equalizer — up
-to 32 peaking (PK) bands plus a preamp — that moves a measured response toward a
+to 32 bands plus a preamp — that moves a measured response toward a
 target. It owns its own target curve, edited through the same dialog the Target
 overlays use but stored with the wizard's own settings, so tuning here never
 disturbs your overlay slots.
@@ -1218,6 +1219,72 @@ its own right-hand dB axis), and a shaded **error fill**. Click a band card to
 overlay that band's contribution as a dashed curve. Each card carries its
 **frequency**, **Q**, and **gain**, and the panel adds a **Target Level**, a
 **Gain** (preamp), a **Bands** count, source **Smoothing**, and **Bypass**.
+
+A band is one of five shapes, picked on the **"+" tile** — each zone adds its
+shape directly — or switched later by right-clicking the band's number: a
+**peaking bell (PK)**; a **high or low shelf (HS / LS)**, whose frequency is
+the middle of the transition and whose Q is the knee (0.7 the steepest that
+stays monotonic); and a **first- or second-order all-pass (AP1 / AP2)**, which
+moves phase only — unity magnitude everywhere, 180° or 360° of rotation around
+its corner, the tool for lining drivers up through a crossover region. An
+all-pass card has no gain field or fader; in their place it reads out the
+**group delay the filter piles up at its own corner** — why an all-pass works
+and, on a low corner, what it costs (it grows with Q and falls with frequency;
+AP1 has a single real pole and takes no Q). The magnitude curves draw an
+all-pass as the flat line it is — except **Source + EQ** on a Virtual DSP
+handoff, which runs the real chain and so can shift slightly where the analysis
+window catches a phase-shifted arrival. To see the work itself, switch the plot
+to **Phase**.
+
+**Phase** is a plot mode, not a second curve: the source, the target, the error
+fill and the dB axis leave, and what takes their place is the **measured** phase
+(degrees, wrapped to ±180°; the trace breaks at every wrap so the jump never
+reads as a real transition, and the curve under edit — only that one — marks its
+wraps with thin dashed verticals, because with every curve marking its own the
+plot becomes a picket fence no trace can be followed through). On a measurement it draws the response through its
+chain and the bank under edit, the same response **without** the bank as a dashed
+twin, and the bank's own phase in white; on an imported curve — an overlay slot
+or a text file, which is a magnitude and nothing else — only the bank's phase is
+there to draw. The statistics keep being computed while you are in phase, so
+switching back finds them current.
+
+On a [Virtual DSP handoff](#editing-a-virtual-dsp-channels-peq) the plot also
+draws the **neighbouring drivers**, frozen as that panel had them and in their
+colours from it — and the channel under edit keeps its own colour from there
+too, so one driver reads the same in both views. That is the picture an all-pass is dialled in against: turn its
+corner and Q until this channel's phase lies on its neighbour's through the
+crossover region, and the junction sums instead of cancelling. The neighbours do
+not move while the bank is edited — they are measurements of drivers nobody is
+editing — and they are re-read from their responses whenever the window changes,
+so they never become a curve gated one way drawn beside a curve gated another.
+The **raw** handoff draws its own phase but no neighbours, and says so on the
+plot: that curve has no crossover, delay or polarity in front of it while they
+have all of theirs, so lining it up against them would line up a system nobody
+is building.
+
+![EQ Wizard phase mode](assets/images/eq_wizard_phase.png)
+
+Above: a midbass handed over from Virtual DSP, zoomed onto its 350 Hz junction
+with the midrange. The channel under edit is the solid curve, its dashed twin is
+the same channel before the bank, and the neighbouring drivers keep the colours
+they had on the panel. Slot 4 is a second-order all-pass on the corner, reading
+out the 1.27 ms of group delay it piles up there.
+
+**Phase gate…** is the window those curves are read through — the same dialog,
+and the same settings, the Virtual DSP phase view uses, down to the impulse
+preview of every channel it draws. A handoff arrives with its gate already
+placed and every setting as it stands there — window mode, FDW cycles, the three
+durations, the **detrend mode** and the τ it resolved, and whether the offset was
+pinned: the panel worked that out over every driver on screen, so the wizard
+adopts it rather than deriving its own and drawing this channel somewhere the
+panel never had it. Changing the detrend to **Auto** here re-estimates τ from the
+earliest-arriving response of the set, once, when the gate changes — a reference
+that moved with the bank would slide every curve under its own correction. A measurement opened straight into the wizard has no neighbours to
+be comparable with, so its window simply opens on its own front and its τ
+references the same instant, which leaves the driver's own phase with the
+propagation delay flattened out. The **magnitude** curves are never affected:
+they keep the fixed steady-state window that decides tonal balance, and the two
+windows live side by side.
 The Target Level is the user's knob alone — loading a source never moves it, so
 a deliberately placed target survives every source switch (an absolute dB SPL
 curve simply needs the level dialed to its datum once). The one exception
@@ -1307,7 +1374,9 @@ was fitted against. The rest of the chain does, measured rather than assumed —
 the crossover bends the curve outright, a gain slides it against the absolute
 target the bank's preamp was fitted to, and a delay or an all-pass moves what
 the analysis window catches (at 192 kHz, where the window is at its shortest,
-by as much as 1.7 and 4.8 dB at the extremes the controls allow).
+by as much as 1.7 and 4.8 dB at the extremes the controls allow — the all-pass
+being a band of the bank now, that one is caught by the bank check rather than
+the chain check, but it is refused all the same).
 
 ### Auto Tune
 
@@ -1318,6 +1387,17 @@ band's frequency, gain, and the Q that reduces the error the most. It **chooses
 the band count itself**, up to the **Max Filters** limit (4–32), while a
 cumulative-boost cap and minimum band spacing keep it from stacking maxed-out
 bands where the response simply cannot be corrected.
+
+The fit is a magnitude fit, so the bells it places are all it can propose — and a
+run replaces the bank it found. If that bank holds **all-pass** bands, Auto Tune
+asks before starting: keep them and tune the remaining slots around them (the
+error curve never asked for them to go — they are flat), or let the fit replace
+the bank whole. Keeping takes their count off the **Max Filters** budget, which
+is a budget for the bank and not for the fit alone: keep three of eight and the
+fit places five. And "around them" is literal on a gated channel — the curve the
+fit corrects is the one with those bands already applied, because through a
+window an all-pass is not flat, and correcting a curve the bank never produces
+would leave the tune off by that difference.
 
 **Cuts only** (on by default) is the safe choice for a car tune: a boost cannot
 fill a reflective cabin's interference null — it just burns amplifier headroom on
@@ -1335,17 +1415,24 @@ PEQ profiles move both ways for Equalizer APO, REW filter settings, Generic CSV,
 EasyEffects (JSON), CamillaDSP (YAML) and the Audiotec-Fischer "Full EQ (30
 bands)" bank the HELIX / MATCH / BRAX DSP PC-Tool imports per channel (the same
 tab-separated block REW exports for that equaliser: PK plus the LS_Q / HS_Q
-shelves plus REW's `Modal` rows, always 30 slots — a bank has no place for the
+shelves, the AP1 / AP2 all-pass slots and REW's `Modal` rows, always 30 slots — a
+bank has no place for the
 preamp, so it is not written and the wizard tells you which channel gain to enter
 in the PC-Tool instead), and export-only for miniDSP biquads (RBJ coefficients at
-44.1 / 48 / 96 kHz) and GraphicEQ (Wavelet / JamesDSP). Import is deliberately
-lenient: comments, blank lines, disabled (`OFF`) filters, non-peaking types, and
-malformed entries are skipped rather than rejected. The one exception is a
+44.1 / 48 / 96 kHz) and GraphicEQ (Wavelet / JamesDSP). All-pass bands travel
+wherever the target can state one — Equalizer APO and REW as the second-order
+`AP` (APO has no first-order type), CamillaDSP as `Allpass` / `AllpassFO`, the
+Audiotec bank as its own AP1 / AP2 slots, miniDSP as raw coefficients — and a
+format that cannot (EasyEffects' mode/slope parameterisation, GraphicEQ's sampled
+magnitude curve) warns and leaves them out rather than writing a 0 dB bell.
+Import is deliberately
+lenient: comments, blank lines, disabled (`OFF`) filters, unsupported filter
+types, and malformed entries are skipped rather than rejected. The one exception is a
 fixed-layout device bank: the Audiotec-Fischer file is the channel's 30-slot
 table, so a truncated or renumbered one is refused outright rather than imported
 as an empty bank over the EQ you have — and so is one whose enabled slot claims a
 filter that cannot be read, since in a fixed table that band would simply go
-missing from the tune (`None`, the all-pass slots and `Enabled False` rows remain
+missing from the tune (`None` and `Enabled False` rows remain
 ordinary empty slots).
 **Export as tuning sheet** produces a phone-friendly PDF for reading next to the
 car: the banner, a title, the date and fit range, an EQ preview graph with the
@@ -1437,12 +1524,15 @@ Each channel runs through:
   A Linkwitz-Riley pair sums flat only when its two halves are in phase:
   LR24 and LR48 are, LR12 and LR36 sit 180° apart, so one of the two
   channels needs **Invert** or the sum nulls at the corner
-- **All-pass** — 1st order (180° of phase swing) or 2nd order (360°, with a **Q**
-  setting how abruptly it turns). Only phase moves, which makes it the tool for
-  lining drivers up where a delay and a polarity flip are both too blunt — a
-  sub-to-midbass hand-off at 60–100 Hz is the classic case — with a live read-out
-  of the group delay it adds (≈ 4Q/ω₀)
-- **PEQ** — one button, five doors: **Load from file…** (any format the EQ
+- **PEQ** — the channel's whole filter bank, bells and shelves and **all-pass
+  bands (AP1 / AP2)** alike. An all-pass moves phase only, which makes it the
+  tool for lining drivers up where a delay and a polarity flip are both too
+  blunt — a sub-to-midbass hand-off at 60–100 Hz is the classic case. It lives
+  in the bank rather than as a stage of its own, the way a hardware DSP's slot
+  table holds it, so a channel can carry several and each is edited, exported
+  and copied like any other filter (the [EQ Wizard](#eq-wizard) is where they
+  are dialled in, with a read-out of the group delay each adds at its corner).
+  One button, five doors: **Load from file…** (any format the EQ
   Wizard imports), **Save to file…** (any format it exports, plus a tuning-sheet
   PDF), **Edit in EQ Wizard** and **Edit raw in EQ Wizard** (the
   [handoff](#editing-a-virtual-dsp-channels-peq) that opens the wizard on this
@@ -1467,7 +1557,12 @@ because the magnitude shape describes the driver. Everything that aligns a side
 against its own level and geometry starts unticked — gain, delay, polarity and
 the all-pass, which belongs with them precisely because it is the tool for a
 junction a delay and a polarity flip cannot fix, and that junction is the
-side's own. Sources are never copied: every side keeps its own measurement.
+side's own. All-pass filters ride in the PEQ bank, so those last two ticks
+split one band list by shape: **PEQ** carries the bells and shelves,
+**All-pass** the phase-only bands, and whichever kind is left unticked stays as
+the target side already had it — copying a voicing across therefore leaves the
+other side's own alignment standing. Sources are never copied: every side keeps
+its own measurement.
 **Mute**, **Bypass** and the two curve toggles are absent from the list because
 they are shared by the two sides already — there is nothing to copy.
 
@@ -1715,7 +1810,7 @@ had rather than replacing a working choice with none.
   sides, not a binaural head simulation.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
   text): for every side of every pair (a mono pair prints once) the gain, delay in
-  ms and mm, polarity, crossover filters, the all-pass stage, and PEQ bands. It
+  ms and mm, polarity, crossover filters, and PEQ bands down to the all-pass. It
   asks first which [Q convention](#dsp-q-convention) the PEQ columns should be
   stated in — the processor being tuned here is not necessarily the one the EQ
   Wizard's **DSP Q** selector was set for, so that selector only pre-selects the

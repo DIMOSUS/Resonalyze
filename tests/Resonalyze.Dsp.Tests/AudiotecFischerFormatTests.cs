@@ -132,21 +132,68 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_SkipsTheSlotsThatHoldNoBand()
     {
-        // The two all-pass slots move phase only, which no PeqBand can state; a
-        // disabled row is an OFF filter (whatever it says after that); a None row is
-        // an empty slot. All three are slots the bank legitimately spends on nothing.
+        // A disabled row is an OFF filter (whatever it says after that); a None row
+        // is an empty slot. Both are slots the bank legitimately spends on nothing.
         EqualizationCurve curve = Format.Import(Bank(
             "True\tAuto\tPK\t100\t-2\t2.00\t50\t",
             "False\tAuto\tPK\t200\t-2\t2.00\t100\t",
             "False\tAuto\tPK\tnot-a-number\t-2\t2.00",
-            "True\tAuto\tAP1\t300",
-            "True\tAuto\tAP2\t400\t\t1.50",
             "True\tAuto\tNone\t",
             "True\tAuto\tPK\t800\t-1\t1.00\t800\t"));
 
         Assert.Equal(2, curve.Bands.Count);
         Assert.Equal(100, curve.Bands[0].FrequencyHz);
         Assert.Equal(800, curve.Bands[1].FrequencyHz);
+    }
+
+    [Fact]
+    public void Import_ReadsTheAllPassSlots()
+    {
+        // AP1/AP2 are the PC-Tool's phase-only slots and map one to one onto the
+        // library's all-pass band types. An AP row's gain cell is ignored whatever
+        // it holds (blank in a hand-edited file, 0.0 in ours), a first order needs
+        // no Q (the sentinel keeps validators happy), and a second order's Q is
+        // read from its own cell.
+        EqualizationCurve curve = Format.Import(Bank(
+            "True\tAuto\tAP1\t300",
+            "True\tAuto\tAP2\t400\t\t1.50",
+            "True\tAuto\tAP2\t500\t0.0\t2.00"));
+
+        Assert.Equal(3, curve.Bands.Count);
+        Assert.Equal(new PeqBand(300, 1.0, 0, PeqBandType.AllPassFirstOrder), curve.Bands[0]);
+        Assert.Equal(new PeqBand(400, 1.5, 0, PeqBandType.AllPassSecondOrder), curve.Bands[1]);
+        Assert.Equal(new PeqBand(500, 2.0, 0, PeqBandType.AllPassSecondOrder), curve.Bands[2]);
+    }
+
+    [Fact]
+    public void Import_RefusesASecondOrderAllPassWithoutAQ()
+    {
+        // An AP2's Q is the phase turn itself; a row that lost it is a filter the
+        // import would misread, so the fixed table is refused like any unreadable
+        // band.
+        Assert.False(Format.TryImport(
+            Bank("True\tAuto\tAP2\t400\t0.0"), out EqualizationCurve refused));
+        Assert.Empty(refused.Bands);
+    }
+
+    [Fact]
+    public void Export_RoundTripsTheAllPassSlots()
+    {
+        // A stale gain left in the slot by a type switch must not reach the file:
+        // the gain cell is written as 0.0 by construction.
+        var curve = new EqualizationCurve(new[]
+        {
+            new PeqBand(300, 1.0, 0, PeqBandType.AllPassFirstOrder),
+            new PeqBand(400, 1.5, 6, PeqBandType.AllPassSecondOrder)
+        });
+
+        string text = Format.Export(curve);
+        Assert.Contains("AP1\t300.0\t0.0\t1.00", text);
+        Assert.Contains("AP2\t400.0\t0.0\t1.50", text);
+
+        Assert.True(Format.TryImport(text, out EqualizationCurve reread));
+        Assert.Equal(new PeqBand(300, 1.0, 0, PeqBandType.AllPassFirstOrder), reread.Bands[0]);
+        Assert.Equal(new PeqBand(400, 1.5, 0, PeqBandType.AllPassSecondOrder), reread.Bands[1]);
     }
 
     [Fact]

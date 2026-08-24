@@ -119,7 +119,10 @@ internal sealed class PdfSheet : IDisposable
     /// transition rather than a centre, their Q is a knee rather than a bandwidth
     /// (so the DSP's Q convention does not restate it), and they need a row saying
     /// which direction they shelve. Mixing them into the bell table would put four
-    /// meanings under three row labels. Both tables keep the filter's number in the
+    /// meanings under three row labels. The all-pass bands get a third table for
+    /// the same reason turned up louder: they have no gain at all, their Q is the
+    /// sharpness of a phase turn, and printing one as a 0 dB bell is an instruction
+    /// to dial in the wrong filter. Every table keeps the filter's number in the
     /// bank, so the sheet, the panel and an exported profile agree on what
     /// "filter 5" is.
     /// </remarks>
@@ -127,18 +130,23 @@ internal sealed class PdfSheet : IDisposable
     {
         ArgumentNullException.ThrowIfNull(bands);
 
-        (IReadOnlyList<NumberedBand> peaking, IReadOnlyList<NumberedBand> shelving) =
-            SplitByShape(bands);
-        AddBandTable(peaking, caption, shelving: false);
-        AddBandTable(shelving, ShelfCaption(caption), shelving: true);
+        (IReadOnlyList<NumberedBand> peaking,
+            IReadOnlyList<NumberedBand> shelving,
+            IReadOnlyList<NumberedBand> allPass) = SplitByShape(bands);
+        AddBandTable(peaking, caption, TableShape.Bell);
+        AddBandTable(shelving, ShapeCaption(caption, "shelving filters"), TableShape.Shelf);
+        AddBandTable(allPass, ShapeCaption(caption, "all-pass filters"), TableShape.AllPass);
     }
 
     /// <summary>
-    /// Splits a bank into the bells and the shelves, each entry keeping its number
-    /// in the bank rather than in its own table — the number is what the panel
-    /// shows and what an exported profile calls the filter.
+    /// Splits a bank into the bells, the shelves and the all-pass bands, each entry
+    /// keeping its number in the bank rather than in its own table — the number is
+    /// what the panel shows and what an exported profile calls the filter.
     /// </summary>
-    internal static (IReadOnlyList<NumberedBand> Peaking, IReadOnlyList<NumberedBand> Shelving)
+    internal static (
+        IReadOnlyList<NumberedBand> Peaking,
+        IReadOnlyList<NumberedBand> Shelving,
+        IReadOnlyList<NumberedBand> AllPass)
         SplitByShape(IReadOnlyList<PeqBand> bands)
     {
         ArgumentNullException.ThrowIfNull(bands);
@@ -147,14 +155,26 @@ internal sealed class PdfSheet : IDisposable
             .Select((band, index) => new NumberedBand(index + 1, band))
             .ToList();
         return (
-            numbered.Where(entry => !entry.Band.Type.IsShelving()).ToList(),
-            numbered.Where(entry => entry.Band.Type.IsShelving()).ToList());
+            numbered
+                .Where(entry =>
+                    !entry.Band.Type.IsShelving() && !entry.Band.Type.IsAllPass())
+                .ToList(),
+            numbered.Where(entry => entry.Band.Type.IsShelving()).ToList(),
+            numbered.Where(entry => entry.Band.Type.IsAllPass()).ToList());
+    }
+
+    /// <summary>Which of the three filter tables a block belongs to.</summary>
+    private enum TableShape
+    {
+        Bell,
+        Shelf,
+        AllPass
     }
 
     private void AddBandTable(
         IReadOnlyList<NumberedBand> bands,
         string? caption,
-        bool shelving)
+        TableShape shape)
     {
         for (int start = 0; start < bands.Count; start += FiltersPerTableBlock)
         {
@@ -167,7 +187,7 @@ internal sealed class PdfSheet : IDisposable
                 gap.Format.SpaceAfter = 0;
             }
 
-            AddFilterTableBlock(bands, start, BlockCaption(caption, start), shelving);
+            AddFilterTableBlock(bands, start, BlockCaption(caption, start), shape);
         }
     }
 
@@ -176,12 +196,13 @@ internal sealed class PdfSheet : IDisposable
             ? caption
             : $"{caption} (cont.)";
 
-    // The shelf table always names itself, even where the bell table above it needs
-    // no caption: an unlabelled second table of filters reads as a continuation.
-    private static string ShelfCaption(string? caption) =>
+    // The shelf and all-pass tables always name themselves, even where the bell
+    // table above them needs no caption: an unlabelled further table of filters
+    // reads as a continuation.
+    private static string ShapeCaption(string? caption, string shapeName) =>
         string.IsNullOrWhiteSpace(caption)
-            ? "Shelving filters"
-            : $"{caption} — shelving filters";
+            ? char.ToUpperInvariant(shapeName[0]) + shapeName[1..]
+            : $"{caption} — {shapeName}";
 
     /// <summary>A band together with its position in the bank it came from.</summary>
     internal readonly record struct NumberedBand(int Number, PeqBand Band);
@@ -190,7 +211,7 @@ internal sealed class PdfSheet : IDisposable
         IReadOnlyList<NumberedBand> bands,
         int start,
         string? caption,
-        bool shelving)
+        TableShape shape)
     {
         var table = Section.AddTable();
         table.Borders.Width = 0.5;
@@ -228,8 +249,17 @@ internal sealed class PdfSheet : IDisposable
         // block cannot be split from its own column headings.
         Row header = table.AddRow();
         header.HeadingFormat = true;
-        header.KeepWith = shelving ? 4 : 3;
-        WriteLabel(header.Cells[0], shelving ? "Shelf" : "PK", bold: true);
+        // Every shape prints three value rows except the bell, which needs no Type row.
+        header.KeepWith = shape == TableShape.Bell ? 3 : 4;
+        WriteLabel(
+            header.Cells[0],
+            shape switch
+            {
+                TableShape.Shelf => "Shelf",
+                TableShape.AllPass => "All-pass",
+                _ => "PK"
+            },
+            bold: true);
         for (int i = 0; i < count; i++)
         {
             Paragraph number = header.Cells[i + 1].AddParagraph(
@@ -238,7 +268,7 @@ internal sealed class PdfSheet : IDisposable
             number.Format.Font.Size = 10;
         }
 
-        if (shelving)
+        if (shape == TableShape.Shelf)
         {
             // Which way the shelf runs is the first thing to dial in, and the one thing
             // a bell table never has to say.
@@ -246,21 +276,37 @@ internal sealed class PdfSheet : IDisposable
                 value: band => band.Type == PeqBandType.LowShelf ? "LS" : "HS");
         }
 
-        // Gain first: it is the value most often changed by ear once the sheet is in hand.
+        if (shape == TableShape.AllPass)
+        {
+            // The order is the filter: AP1 and AP2 are different slot types in the
+            // DSP, and there is no gain row — an all-pass has none.
+            AddFilterValueRow(table, "Type", bands, start, count, bold: true,
+                value: band =>
+                    band.Type == PeqBandType.AllPassFirstOrder ? "AP1" : "AP2");
+        }
+        else
+        {
+            // Gain first: it is the value most often changed by ear once the sheet
+            // is in hand.
+            AddFilterValueRow(table, "Gain, dB", bands, start, count, bold: true,
+                value: band => SheetFormat.Signed(band.GainDb));
+        }
+
         // Q is restated in the target DSP's convention and says so on its own row, because
         // frequency and gain mean the same thing everywhere but Q does not — and a bank
         // running to several blocks must not rely on a note printed once in the subtitle.
-        // A shelf's Q is not a bandwidth and no convention restates it, so its row is
-        // labelled plainly rather than with a convention it does not follow.
-        AddFilterValueRow(table, "Gain, dB", bands, start, count, bold: true,
-            value: band => SheetFormat.Signed(band.GainDb));
+        // A shelf's Q is a knee and an all-pass's the sharpness of its phase turn — not
+        // bandwidths, no convention restates them — so those rows are labelled plainly;
+        // a first-order all-pass has no Q at all and prints a dash.
         AddFilterValueRow(table, "F, Hz", bands, start, count, bold: false,
             value: band => SheetFormat.Number(band.FrequencyHz, "0"));
         AddFilterValueRow(
             table,
-            shelving ? "Q" : $"Q · {PeqQConventions.DescribeShort(qConvention)}",
+            shape == TableShape.Bell ? $"Q · {PeqQConventions.DescribeShort(qConvention)}" : "Q",
             bands, start, count, bold: false,
-            value: band => SheetFormat.Number(band.Q, "0.0#"));
+            value: band => band.Type == PeqBandType.AllPassFirstOrder
+                ? "—"
+                : SheetFormat.Number(band.Q, "0.0#"));
     }
 
     private void AddFilterValueRow(

@@ -799,11 +799,31 @@ public partial class EqWizardPanel : UserControl
             keepAllPass = answer == DialogResult.Yes;
         }
 
+        // Keeping them can leave the fit no slots at all, and a run that placed one
+        // band anyway would hand back more filters than Max Filters allows — which is
+        // the promise that number makes. Say so instead: raising the limit and
+        // replacing the bank are both the user's to choose, and neither is a decision
+        // to make on their behalf.
+        int reserved = keepAllPass ? allPass.Count : 0;
+        if (reserved > 0 && reserved >= SelectedBandLimit)
+        {
+            MessageBox.Show(
+                FindForm(),
+                $"Keeping {DescribeAllPassCount(reserved)} leaves no room under Max " +
+                $"Filters ({SelectedBandLimit}), so there is nothing for the fit to " +
+                "place." + Environment.NewLine + Environment.NewLine +
+                "Raise Max Filters, or run again and let the fit replace the bank.",
+                "EQ Wizard",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
         var request = new EqWizardAutoTuneRequest(
             FitSource(render.Source, keepAllPass ? allPass : [])
                 .Select(point => new SignalPoint(point.X, point.Y)),
             render.Target.Points.Select(point => new SignalPoint(point.X, point.Y)),
-            CreateAutoTuneOptions(keepAllPass ? allPass.Count : 0),
+            CreateAutoTuneOptions(reserved),
             // Only a loopback-transfer impulse response carries coherence; an imported
             // curve has none, so boosts fall back to null-detection alone.
             loadedSource?.Coherence);
@@ -874,6 +894,10 @@ public partial class EqWizardPanel : UserControl
             .ToArray();
     }
 
+    /// <summary>How many filters the user has allowed the bank, from the Max Filters box.</summary>
+    private int SelectedBandLimit =>
+        comboBoxBandsLimit.SelectedItem is int limit ? limit : MaxPeqSlotCount;
+
     private static string DescribeAllPassCount(int count) =>
         count == 1 ? "an all-pass filter" : $"{count} all-pass filters";
 
@@ -885,10 +909,10 @@ public partial class EqWizardPanel : UserControl
         // Max Filters is a budget for the BANK, not for the fit alone: a user who set
         // it to eight because their processor has eight slots must not get eleven
         // filters back because three of them were kept. So the reserved bands come off
-        // the number the user chose, and the clamp keeps at least one band for the fit.
-        int bandLimit = (comboBoxBandsLimit.SelectedItem is int limit
-            ? limit
-            : MaxPeqSlotCount) - reservedBands;
+        // the number the user chose. A reserve that swallows the whole budget is
+        // refused before the fit is asked for (see AutoTune) — the clamp below only
+        // keeps this from handing the tuner a range it cannot honour.
+        int bandLimit = SelectedBandLimit - reservedBands;
 
         (double minHz, double maxHz) = GetFrequencyWindow();
 

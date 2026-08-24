@@ -237,6 +237,42 @@ public sealed class EqWizardPhaseModeTests
     }
 
     [Fact]
+    public void AnEstimatedDetrendFollowsTheWindowsJustResolved()
+    {
+        // τ under Auto is estimated THROUGH a window, so it has to be the window this
+        // very call resolved. Reading the neighbours' offsets off the context the
+        // dialog opened on — the ones being replaced — could estimate it through a
+        // window that no longer exists, which is a phase reference for a picture
+        // nobody is looking at.
+        using var panel = new EqWizardPanel();
+        var shared = new EqWizardPhaseContext(
+            Gate(5.0),
+            // As a shared gate leaves them: both curves on one window.
+            GateOffsetMs: 5.0,
+            DetrendMs: 5.0,
+            PinnedOffset: false,
+            new PlacementChannel(Arriving(240), 240, default),
+            SampleRate,
+            OxyColors.SkyBlue,
+            [new EqWizardPhaseNeighbour(
+                "B", OxyColors.Orange,
+                new PlacementChannel(Arriving(480), 480, default), 5.0)]);
+        ApplySource(panel, Source(shared));
+
+        // Pin the gate far from either arrival: every window moves to 20 ms, and an
+        // estimate taken at the OLD 5 ms would not be an estimate of this picture.
+        ApplyPhaseGate(
+            panel, shared, offsetMs: 20.0, autoOffset: false, PhaseDetrendMode.Auto,
+            detrendMs: 5.0, leftMs: 0.5, plateauMs: 4.0, rightMs: 1.5);
+
+        EqWizardPhaseContext resolved = ContextOf(panel)!;
+        Assert.Equal(20.0, resolved.GateOffsetMs);
+        Assert.Equal(20.0, resolved.Neighbours.Single().GateOffsetMs);
+        // Estimated, not the figure the dialog carried in.
+        Assert.NotEqual(5.0, resolved.DetrendMs);
+    }
+
+    [Fact]
     public void UnpinningAGateThatArrivedPinnedPutsEachWindowBackOnItsDriver()
     {
         // A pinned handoff carries ONE absolute window on every curve. Pressing Auto

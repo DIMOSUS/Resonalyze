@@ -260,60 +260,9 @@ public partial class EqWizardPanel
         DrawSelectedCurves();
     }
 
-    /// <summary>
-    /// The one τ the whole set is read against, for a candidate detrend setting: none
-    /// at all, the user's own figure, or an estimate from the earliest-arriving
-    /// response — the same three answers the Virtual DSP panel gives.
-    /// </summary>
-    /// <remarks>
-    /// Auto is resolved HERE, when the gate changes, and not per render. The wizard's
-    /// set is frozen, so there is nothing for a per-render estimate to track — while a
-    /// τ that moved with the bank would slide every curve under its own correction,
-    /// which is the one thing this view must never do.
-    /// </remarks>
-    private double ResolveDetrendMs(
-        EqWizardPhaseContext opened,
-        PhaseAnalysisSettings gate,
-        double gateOffsetMs,
-        PhaseDetrendMode detrendMode,
-        double manualDetrendMs)
-    {
-        if (detrendMode == PhaseDetrendMode.Off)
-        {
-            return 0.0;
-        }
-
-        if (detrendMode == PhaseDetrendMode.Manual ||
-            loadedSource is not { } source ||
-            PhaseSourceFor(source) is not { } phaseSource)
-        {
-            return manualDetrendMs;
-        }
-
-        // The earliest arrival of the set defines the shared reference, exactly as it
-        // does in the panel: whichever curve's window opens first.
-        (Complex[] response, double offsetMs) = opened.Neighbours
-            .Select(neighbour => (neighbour.ImpulseResponse, neighbour.GateOffsetMs))
-            .Append((
-                VirtualCrossoverAnalysis.ApplyChain(
-                    phaseSource.Response,
-                    phaseSource.Chain with { Peq = BuildEqualizationCurve() },
-                    source.Measurement!.SampleRate),
-                gateOffsetMs))
-            .MinBy(entry => entry.Item2);
-
-        return DataHelper.ResolveCommonPhaseDetrendMilliseconds(
-            new ImpulseMeasurementView(response, 0, source.Measurement!.SampleRate),
-            gate with
-            {
-                GateOffsetMs = offsetMs,
-                DetrendMode = PhaseDetrendMode.Auto
-            });
-    }
-
     // One candidate gate over the context the dialog opened on. Pinned is one absolute
-    // window for every curve; unpinned keeps the placements as they arrived, each on
-    // its own driver's arrival — the distinction the Auto flag carries.
+    // window for every curve; unpinned puts each on its own driver's arrival — the
+    // distinction the Auto flag carries.
     private void ApplyPhaseGate(
         EqWizardPhaseContext opened,
         double offsetMs,
@@ -344,12 +293,11 @@ public partial class EqWizardPanel
         // stay on a shared window the panel would have released — and the two views
         // would read the junction differently.
         IReadOnlyList<PlacementChannel> set = opened.PlacementSet;
+        double sharedOffsetMs = PhaseGatePlacement.ResolveSharedOffsetMs(
+            set, opened.SampleRate, phaseGatePinned ? offsetMs : null);
         List<double> offsets = PhaseGatePlacement.ResolvePerCurveOffsets(
             set,
-            phaseGatePinned
-                ? offsetMs
-                : PhaseGatePlacement.ResolveSharedOffsetMs(
-                    set, opened.SampleRate, null),
+            sharedOffsetMs,
             opened.SampleRate,
             phaseGatePinned ? offsetMs : null,
             leftMs,
@@ -359,7 +307,17 @@ public partial class EqWizardPanel
         phaseContext = new EqWizardPhaseContext(
             gate,
             offsets[0],
-            ResolveDetrendMs(opened, gate, offsets[0], detrendMode, detrendMs),
+            // The τ comes out of the SAME helper the panel calls, over the same set and
+            // the window just resolved. A second implementation here read the
+            // neighbours' offsets from the context the dialog opened on — the ones this
+            // very call was replacing — so an estimated τ could be taken through a
+            // window that no longer existed.
+            PhaseGatePlacement.ResolveCommonDetrendMs(
+                set,
+                opened.SampleRate,
+                gate with { GateOffsetMs = sharedOffsetMs },
+                detrendMode,
+                detrendMs),
             phaseGatePinned,
             opened.Channel,
             opened.SampleRate,

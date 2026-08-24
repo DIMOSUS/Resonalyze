@@ -88,11 +88,14 @@ public sealed class EqWizardAutoTuneAllPassTests
     }
 
     [Fact]
-    public void AutoTuneOptions_WithNoRoomLeft_StillAskForAValidFit()
+    public void AutoTuneOptions_WithNoRoomLeft_StillHandTheTunerARangeItCanHonour()
     {
-        // A bank that is all all-pass leaves the fit nothing, and MaxBands is a
-        // clamped range: a zero or negative budget must degrade to the smallest
-        // legal fit rather than throw on the way to the tuner.
+        // A reserve that swallows the whole budget is refused before the fit is asked
+        // for — AutoTune says so and does not run, because one band placed anyway
+        // would hand back more filters than Max Filters allows. What this pins is only
+        // that the options builder cannot produce an impossible range on the way
+        // there: MaxBands is a clamped value, and a zero or negative budget must
+        // degrade rather than throw.
         using var panel = new EqWizardPanel();
 
         Assert.Equal(

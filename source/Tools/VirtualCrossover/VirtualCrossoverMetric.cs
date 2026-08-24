@@ -240,13 +240,24 @@ internal static class VirtualCrossoverMetric
     private const double AmbiguousLobeMargin = 0.10;
 
     // A fix is shown only when it is worth applying, measured where it acts:
-    // as PHASE at the crossover. Ten degrees costs the sum 0.13 dB — below the
-    // ear and below the measurement's own repeatability — so anything under it
-    // renders as "·" instead of a number inviting a correction. A settled tune
+    // as PHASE at the crossover. Ten degrees costs the sum 0.03 dB
+    // (20·log10(cos(φ/2)) for two equal contributions) — below the ear and
+    // below the measurement's own repeatability — so anything under it renders
+    // as "·" instead of a number inviting a correction. A settled tune
     // otherwise fills the column with values like "-0.01" that read as data
     // and mean nothing. The threshold is per junction on purpose: 0.05 ms is
     // nothing at 65 Hz and most of a period at 4 kHz.
     private const double SignificantFixDegrees = 10.0;
+
+    // Two decimals read best and match the other columns, but the threshold
+    // above is a PHASE: at 5.6 kHz ten degrees is already 0.005 ms, and higher
+    // still less, so a fix worth acting on can round to "0.00" — losing its
+    // sign with it. Below that boundary the value takes a third decimal
+    // instead of being rounded into nothing.
+    private static string FixText(double milliseconds) =>
+        Math.Abs(milliseconds) < 0.005
+            ? milliseconds.ToString("+0.000;-0.000;0.000")
+            : milliseconds.ToString("+0.00;-0.00;0.00");
 
     /// <summary>
     /// Compact per-junction phase column for the host read-out panel: the phase
@@ -295,7 +306,7 @@ internal static class VirtualCrossoverMetric
             double significantMs =
                 SignificantFixDegrees / 360.0 * 1_000.0 / entry.CrossoverHz;
             string fix = Math.Abs(result.BestExtraDelayMs) >= significantMs
-                ? $"{result.BestExtraDelayMs,6:+0.00;-0.00;0.00}"
+                ? $"{FixText(result.BestExtraDelayMs),6}"
                 : "     ·";
             // Polarity slot: "i" recommends flipping the lower channel; "~"
             // keeps the current polarity but flags that flipping nearly ties
@@ -358,7 +369,7 @@ internal static class VirtualCrossoverMetric
                     $"{phaseNote}; " +
                     $"phase score {result.CurrentScore:0.00} now, " +
                     $"best {result.BestScore:0.00} at " +
-                    $"{result.BestExtraDelayMs:+0.00;-0.00;0.00} ms " +
+                    $"{FixText(result.BestExtraDelayMs)} ms " +
                     $"on {entry.LowerChannel}{flip};\r\n   {rival}; " +
                     $"fit Δτ {result.FitDelayMs:+0.00;-0.00;0.00} ms, " +
                     $"rms {result.FitRmsDeg:0}° " +
@@ -373,7 +384,7 @@ internal static class VirtualCrossoverMetric
             "to add to the LOWER channel\r\nthat best aligns the band. A " +
             "negative fix advances the lower channel — apply\r\nit as a +delay " +
             "on the UPPER one when the lower is already at 0. A fix worth less " +
-            "than\r\n10° of phase at fc (0.13 dB in the sum) shows as \"·\": " +
+            "than\r\n10° of phase at fc (0.03 dB in the sum) shows as \"·\": " +
             "there is nothing to apply.\r\nPolarity mark: " +
             "\"i\" (or \"invert\") = flipping the lower channel scores " +
             "clearly better; \"~\" = the\r\ncurrent polarity is kept but a flip " +

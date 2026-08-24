@@ -178,6 +178,14 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                 });
             }
 
+            // The external contract, checked AFTER the work as well as before
+            // it: a caller's own token cancelling mid-computation must still
+            // raise, and the silent path cannot tell the two cancellations
+            // apart — both land in the linked source, and the delegate reports
+            // either of them by returning null. Only the revision-driven one
+            // is silent, so the external token is re-examined on its own here.
+            cancellationToken.ThrowIfCancellationRequested();
+
             lock (sync)
             {
                 if (disposed || snapshot.Revision != revision ||
@@ -218,9 +226,13 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             return null;
         }
         catch (AggregateException aggregate) when (
-            !cancellationToken.IsCancellationRequested &&
             aggregate.InnerExceptions.All(inner => inner is OperationCanceledException))
         {
+            // The external contract again: a delegate that threw because the
+            // CALLER's token cancelled must surface as a cancellation, not as
+            // an aggregate — the pre-silence code raised one from the parallel
+            // loop itself, and callers were entitled to it.
+            cancellationToken.ThrowIfCancellationRequested();
             // Backstops the OTHER convention: a processing delegate is still
             // free to report cancellation by throwing, and without a token on
             // the ParallelOptions those throws reach here aggregated rather
@@ -266,6 +278,9 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             try
             {
                 T? result = await Task.Run(() => operation(linked.Token));
+                // As in ProcessAsync: a null can mean either cancellation, and
+                // the caller's own token still owes an exception.
+                cancellationToken.ThrowIfCancellationRequested();
                 return result != null && IsCurrent(candidateRevision) ? result : null;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

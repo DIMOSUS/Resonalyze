@@ -306,22 +306,32 @@ public sealed class VirtualCrossoverMetricTests
     }
 
     [Fact]
-    public void FormatPhaseCompact_RendersARoundedZeroFixUnsigned()
+    public void FormatPhaseCompact_KeepsASmallButSignificantFixReadable()
     {
         RunWithInvariantCulture(() =>
         {
-            // Since the .NET Core 3.0 signed-zero change, a negative value that
-            // rounds to zero renders through a TWO-section format as "-+0.00";
-            // the three-section form must show a plain unsigned zero.
-            // Read at a 16 kHz junction, where 0.004 ms is still 23° of phase
-            // and therefore shown rather than muted.
+            // The mute threshold is a PHASE, so above roughly 5.6 kHz a fix
+            // worth acting on is smaller than 0.005 ms: at 16 kHz these
+            // 0.004 ms are 23° at the crossover. Two decimals would render
+            // that as "0.00" — a significant correction shown as nothing, its
+            // sign lost with it — so such a value takes a third decimal.
             VirtualCrossoverMetric.PhaseEntry entry =
                 PhaseJunction(bestExtraDelayMs: -0.004) with { CrossoverHz = 16_000 };
 
             string text = VirtualCrossoverMetric.FormatPhaseCompact([entry]);
 
-            Assert.Contains("A/B     -3°   0.00", text);
+            // Six characters wide, so a three-decimal value fills the column
+            // exactly and the separating space comes from the phase field.
+            Assert.Contains("A/B     -3° -0.004", text);
+            Assert.DoesNotContain("0.00 ", text);
+            // Since the .NET Core 3.0 signed-zero change, a negative value
+            // that rounds to zero renders through a TWO-section format as
+            // "-+0.00"; every fix format here stays three-section.
             Assert.DoesNotContain("-+", text);
+            // The tooltip quotes the same value and must not round it away
+            // either.
+            Assert.Contains(
+                "-0.004 ms", VirtualCrossoverMetric.FormatPhaseDetail([entry]));
         });
     }
 

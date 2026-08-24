@@ -573,6 +573,67 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_ExternalCancellationDuringTheWorkIsPropagated()
+    {
+        // The discriminating case: cancelling BEFORE the call is caught by the
+        // entry guard, so a token cancelled mid-computation is what actually
+        // tests the contract. The silent path cannot tell an external
+        // cancellation from a revision one — the delegate returns null for
+        // both — so without an explicit re-check this call would quietly
+        // answer null and the caller would never learn its own token fired.
+        using var pool = new PoolHeadroom(parking: 3);
+        using var entered = new CountdownEvent(1);
+        using var release = new ManualResetEventSlim();
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, cancellationToken) =>
+            {
+                entered.Signal();
+                Assert.True(release.Wait(RendezvousTimeout));
+                return cancellationToken.IsCancellationRequested
+                    ? null
+                    : source.Apply(chain, sampleRate);
+            });
+        long liveRevision = coordinator.Invalidate();
+        using var midFlight = new CancellationTokenSource();
+
+        Task<VirtualCrossoverRenderResult?> render = coordinator.ProcessAsync(
+            CreateSnapshot(liveRevision, 0, false, 3), midFlight.Token);
+        Assert.True(entered.Wait(RendezvousTimeout));
+        midFlight.Cancel();
+        release.Set();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => render);
+    }
+
+    [Fact]
+    public async Task RunAuxiliaryAsync_ExternalCancellationDuringTheWorkIsPropagated()
+    {
+        // Same contract on the auxiliary path, where an operation following
+        // the new convention also reports cancellation by returning null.
+        using var pool = new PoolHeadroom(parking: 3);
+        using var entered = new CountdownEvent(1);
+        using var release = new ManualResetEventSlim();
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        long revision = coordinator.Invalidate();
+        using var midFlight = new CancellationTokenSource();
+
+        Task<object?> work = coordinator.RunAuxiliaryAsync<object>(
+            revision,
+            token =>
+            {
+                entered.Signal();
+                Assert.True(release.Wait(RendezvousTimeout));
+                return token.IsCancellationRequested ? null : new object();
+            },
+            midFlight.Token);
+        Assert.True(entered.Wait(RendezvousTimeout));
+        midFlight.Cancel();
+        release.Set();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => work);
+    }
+
+    [Fact]
     public async Task ProcessAsync_ExternalCancellationIsPropagated()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();

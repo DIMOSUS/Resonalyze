@@ -1563,7 +1563,7 @@ delay on the lower channel that would maximize the overlap-band phase score,
 with `i` recommending a flip, `~` warning that a flip nearly ties, and `!`
 warning that the overlap band is too narrow to rule out a whole-period hop — so
 the fix is not to be trusted, and the junction's coherence ladder is the better
-read. A fix worth less than 10° of phase at the crossover (0.13 dB in the sum)
+read. A fix worth less than 10° of phase at the crossover (0.03 dB in the sum)
 shows as `·`: a settled tune has nothing to apply there, and a number would
 invite a correction that changes nothing. Last comes **score**, where the
 junction stands as it is — the band's phase-alignment score (−1…+1) that the

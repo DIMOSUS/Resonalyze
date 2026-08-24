@@ -8,6 +8,11 @@ public sealed class EqualizerApoFormat : IEqProfileFormat
     public bool CanImport => true;
     public bool CanExport => true;
 
+    // APO's AP filter is second-order only; there is no first-order all-pass to
+    // write one as.
+    public bool SupportsAllPass(PeqBandType type) =>
+        type == PeqBandType.AllPassSecondOrder;
+
     public string Export(EqualizationCurve curve) => PeqTextFile.Format(curve);
 
     public bool TryImport(string text, out EqualizationCurve curve) =>

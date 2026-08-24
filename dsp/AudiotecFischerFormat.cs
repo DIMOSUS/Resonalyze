@@ -35,9 +35,11 @@ namespace Resonalyze.Dsp;
 /// no slot for a preamp, so <see cref="CarriesPreamp"/> is false — an export leaves
 /// the preamp out and an import reads 0, and the caller is expected to say so, as
 /// it does for a dropped shelf. <c>AP1</c> / <c>AP2</c> rows — the PC-Tool's first-
-/// and second-order all-pass slots — move phase only, which a magnitude profile has
-/// no band shape for; they are skipped on import and never written. A row whose
-/// <c>Enabled</c> reads <c>False</c> is skipped like an OFF filter elsewhere.
+/// and second-order all-pass slots — map one to one onto the library's two all-pass
+/// band types: read with their frequency (and, for AP2, Q; a gain cell is ignored),
+/// written with a 0.0 gain cell so every non-empty row keeps the uniform
+/// Type/Frequency/Gain/Q prefix. A row whose <c>Enabled</c> reads <c>False</c> is
+/// skipped like an OFF filter elsewhere.
 ///
 /// The row shapes follow REW's export byte for byte — a bell row ends in the empty
 /// TargetT60 cell, a shelf row ends at its Q, an unused row at its <c>None</c> —
@@ -70,11 +72,11 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
     private const string ModalType = "Modal";
     private const string LowShelfType = "LS_Q";
     private const string HighShelfType = "HS_Q";
+    // The PC-Tool's first- and second-order all-pass slots, the very names the
+    // library's two all-pass band types carry in the UI.
+    private const string FirstOrderAllPassType = "AP1";
+    private const string SecondOrderAllPassType = "AP2";
     private const string EmptyType = "None";
-    // The slots that legitimately hold no magnitude band: the two all-pass types move
-    // phase only, which no PeqBand can state. Anything else claiming to be an active
-    // filter must be readable, or the bank is not this file.
-    private static readonly string[] PhaseOnlyTypes = ["AP1", "AP2"];
 
     public string Name => "Audiotec Fischer 30-band bank";
     public string Extension => "txt";
@@ -113,11 +115,15 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
                 .Append('\t')
                 .Append(EqTextNumbers.Format(band.FrequencyHz, "0.0##"))
                 .Append('\t')
-                .Append(EqTextNumbers.Format(band.GainDb, "0.0#"))
+                // An all-pass has no gain; the cell is written as 0.0 so every
+                // non-empty row keeps the uniform Type/Frequency/Gain/Q prefix.
+                .Append(EqTextNumbers.Format(band.Type.IsAllPass() ? 0 : band.GainDb, "0.0#"))
                 .Append('\t')
                 .Append(EqTextNumbers.Format(band.Q, "0.00##"));
-            if (band.Type.IsShelving())
+            if (band.Type.IsShelving() || band.Type.IsAllPass())
             {
+                // The Bandwidth cell is REW's companion figure for a bell; a shelf
+                // has none and an all-pass's would state a bandwidth it does not have.
                 builder.AppendLine();
                 continue;
             }
@@ -198,6 +204,8 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
     {
         PeqBandType.LowShelf => LowShelfType,
         PeqBandType.HighShelf => HighShelfType,
+        PeqBandType.AllPassFirstOrder => FirstOrderAllPassType,
+        PeqBandType.AllPassSecondOrder => SecondOrderAllPassType,
         _ => BellType
     };
 
@@ -217,7 +225,7 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
         /// <summary>Not a row of this table at all.</summary>
         NotASlot,
 
-        /// <summary>A slot that legitimately holds no band: None, all-pass, or OFF.</summary>
+        /// <summary>A slot that legitimately holds no band: None, or OFF.</summary>
         Empty,
 
         /// <summary>A slot holding a band this profile can state.</summary>
@@ -251,8 +259,7 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
             return SlotKind.Empty;
         }
 
-        if (fields[3].Equals(EmptyType, StringComparison.OrdinalIgnoreCase) ||
-            PhaseOnlyTypes.Contains(fields[3], StringComparer.OrdinalIgnoreCase))
+        if (fields[3].Equals(EmptyType, StringComparison.OrdinalIgnoreCase))
         {
             return SlotKind.Empty;
         }
@@ -271,6 +278,14 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
         {
             type = PeqBandType.HighShelf;
         }
+        else if (fields[3].Equals(FirstOrderAllPassType, StringComparison.OrdinalIgnoreCase))
+        {
+            type = PeqBandType.AllPassFirstOrder;
+        }
+        else if (fields[3].Equals(SecondOrderAllPassType, StringComparison.OrdinalIgnoreCase))
+        {
+            type = PeqBandType.AllPassSecondOrder;
+        }
         else
         {
             // An enabled slot of a type this reader does not know. It may well be a
@@ -279,16 +294,32 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
             return SlotKind.Unreadable;
         }
 
-        if (fields.Length < 6 ||
-            !EqTextNumbers.TryParse(fields[4], out double frequencyHz) ||
-            !EqTextNumbers.TryParse(fields[5], out double gainDb))
+        if (fields.Length < 5 ||
+            !EqTextNumbers.TryParse(fields[4], out double frequencyHz))
+        {
+            return SlotKind.Unreadable;
+        }
+
+        // An all-pass row's gain cell is ignored whatever it holds — the filter has
+        // no gain; the gain-bearing shapes require one.
+        double gainDb = 0;
+        if (!type.IsAllPass() &&
+            (fields.Length < 6 || !EqTextNumbers.TryParse(fields[5], out gainDb)))
         {
             return SlotKind.Unreadable;
         }
 
         // The Q cell may be blank on a hand-edited row: a bell can still be read
-        // from REW's bandwidth column, a shelf comes in at the default knee.
-        if (!EqTextNumbers.TryParse(FieldAt(fields, 6), out double q) || q <= 0)
+        // from REW's bandwidth column, a shelf comes in at the default knee, and a
+        // first-order all-pass has no Q to read (the sentinel keeps validators
+        // happy). A second-order all-pass without a Q is unreadable — its Q is the
+        // phase turn itself.
+        double q;
+        if (type == PeqBandType.AllPassFirstOrder)
+        {
+            q = 1.0;
+        }
+        else if (!EqTextNumbers.TryParse(FieldAt(fields, 6), out q) || q <= 0)
         {
             if (type == PeqBandType.Peaking)
             {
@@ -300,9 +331,13 @@ public sealed class AudiotecFischerFormat : IEqProfileFormat
 
                 q = frequencyHz / bandwidthHz;
             }
-            else
+            else if (type.IsShelving())
             {
                 q = PeqTextFile.DefaultShelfQ;
+            }
+            else
+            {
+                return SlotKind.Unreadable;
             }
         }
 

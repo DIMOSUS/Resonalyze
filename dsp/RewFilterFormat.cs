@@ -15,6 +15,10 @@ public sealed class RewFilterFormat : IEqProfileFormat
     public bool CanImport => true;
     public bool CanExport => true;
 
+    // The filter lines are APO's, and APO's AP is second-order only.
+    public bool SupportsAllPass(PeqBandType type) =>
+        type == PeqBandType.AllPassSecondOrder;
+
     public string Export(EqualizationCurve curve)
     {
         ArgumentNullException.ThrowIfNull(curve);

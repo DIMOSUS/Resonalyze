@@ -871,6 +871,7 @@ public partial class EqWizardPanel : UserControl
         EqWizardExportTarget target =
             importExportCoordinator.ResolveExportTarget(dialog.FilterIndex);
         if (!ConfirmShelvingBandsDropped(target, curve) ||
+            !ConfirmExportLoss(EqExportWarnings.AllPassBandsDropped(target, curve)) ||
             !ConfirmPreampDropped(target, curve))
         {
             return;

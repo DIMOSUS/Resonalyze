@@ -122,13 +122,15 @@ internal sealed class EqWizardImportExportCoordinator
                 IEqProfileFormat effectiveFormat = format is GraphicEqFormat
                     ? new GraphicEqFormat(request.SampleRate)
                     : format;
-                // Dropping the shelves here as well as in the UI is deliberate: the
-                // warning is the user's decision, this is the guarantee. A format
-                // that cannot state our shelf must never receive one written as
-                // something its reader would realize differently.
+                // Dropping the shelves (and unsupported all-pass orders) here as
+                // well as in the UI is deliberate: the warning is the user's
+                // decision, this is the guarantee. A format that cannot state our
+                // filter must never receive one written as something its reader
+                // would realize differently.
                 EqualizationCurve curve = request.Target.SupportsShelvingFilters
                     ? request.Curve
                     : WithoutShelvingBands(request.Curve);
+                curve = WithoutUnsupportedAllPassBands(request.Target, curve);
                 writeAllText(request.Path, effectiveFormat.Export(curve));
             }
             return EqWizardFileResult.Succeeded();
@@ -186,6 +188,35 @@ internal sealed class EqWizardImportExportCoordinator
 
         return new EqualizationCurve(
             curve.Bands.Where(band => !band.Type.IsShelving()),
+            curve.PreampDb);
+    }
+
+    /// <summary>
+    /// How many all-pass bands an export to <paramref name="target"/> would have to
+    /// leave out. Asked per band, because support splits by order: Equalizer APO's
+    /// AP is second-order only, while other formats carry both or neither.
+    /// </summary>
+    internal static int CountAllPassBandsDroppedBy(
+        EqWizardExportTarget target,
+        EqualizationCurve curve)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(curve);
+
+        return curve.Bands.Count(band =>
+            band.Type.IsAllPass() && !target.SupportsAllPass(band.Type));
+    }
+
+    internal static EqualizationCurve WithoutUnsupportedAllPassBands(
+        EqWizardExportTarget target,
+        EqualizationCurve curve)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(curve);
+
+        return new EqualizationCurve(
+            curve.Bands.Where(band =>
+                !band.Type.IsAllPass() || target.SupportsAllPass(band.Type)),
             curve.PreampDb);
     }
 
@@ -256,6 +287,9 @@ internal sealed class EqWizardExportTarget : IEqWizardFileTarget
 
     // The tuning sheet prints shelves in a table of their own, so it carries them.
     internal bool SupportsShelvingFilters => Format?.SupportsShelvingFilters ?? true;
+
+    // ... prints the all-pass bands in their own table too ...
+    internal bool SupportsAllPass(PeqBandType type) => Format?.SupportsAllPass(type) ?? true;
 
     // ... and prints the preamp with them, so it carries that too.
     internal bool CarriesPreamp => Format?.CarriesPreamp ?? true;

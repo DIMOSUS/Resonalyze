@@ -1354,17 +1354,24 @@ PEQ profiles move both ways for Equalizer APO, REW filter settings, Generic CSV,
 EasyEffects (JSON), CamillaDSP (YAML) and the Audiotec-Fischer "Full EQ (30
 bands)" bank the HELIX / MATCH / BRAX DSP PC-Tool imports per channel (the same
 tab-separated block REW exports for that equaliser: PK plus the LS_Q / HS_Q
-shelves plus REW's `Modal` rows, always 30 slots — a bank has no place for the
+shelves, the AP1 / AP2 all-pass slots and REW's `Modal` rows, always 30 slots — a
+bank has no place for the
 preamp, so it is not written and the wizard tells you which channel gain to enter
 in the PC-Tool instead), and export-only for miniDSP biquads (RBJ coefficients at
-44.1 / 48 / 96 kHz) and GraphicEQ (Wavelet / JamesDSP). Import is deliberately
+44.1 / 48 / 96 kHz) and GraphicEQ (Wavelet / JamesDSP). All-pass bands travel
+wherever the target can state one — Equalizer APO and REW as the second-order
+`AP` (APO has no first-order type), CamillaDSP as `Allpass` / `AllpassFO`, the
+Audiotec bank as its own AP1 / AP2 slots, miniDSP as raw coefficients — and a
+format that cannot (EasyEffects' mode/slope parameterisation, GraphicEQ's sampled
+magnitude curve) warns and leaves them out rather than writing a 0 dB bell.
+Import is deliberately
 lenient: comments, blank lines, disabled (`OFF`) filters, unsupported filter
 types, and malformed entries are skipped rather than rejected. The one exception is a
 fixed-layout device bank: the Audiotec-Fischer file is the channel's 30-slot
 table, so a truncated or renumbered one is refused outright rather than imported
 as an empty bank over the EQ you have — and so is one whose enabled slot claims a
 filter that cannot be read, since in a fixed table that band would simply go
-missing from the tune (`None`, the all-pass slots and `Enabled False` rows remain
+missing from the tune (`None` and `Enabled False` rows remain
 ordinary empty slots).
 **Export as tuning sheet** produces a phone-friendly PDF for reading next to the
 car: the banner, a title, the date and fit range, an EQ preview graph with the

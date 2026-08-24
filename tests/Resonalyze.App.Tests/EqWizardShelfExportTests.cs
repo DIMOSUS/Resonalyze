@@ -88,7 +88,8 @@ public sealed class EqWizardShelfExportTests
     public void TheSheetSplitsTheTablesButKeepsTheBankNumbering()
     {
         (IReadOnlyList<PdfSheet.NumberedBand> peaking,
-            IReadOnlyList<PdfSheet.NumberedBand> shelving) =
+            IReadOnlyList<PdfSheet.NumberedBand> shelving,
+            IReadOnlyList<PdfSheet.NumberedBand> allPass) =
             PdfSheet.SplitByShape(Mixed().Bands);
 
         // Filter 2 is a shelf and filter 3 a bell; each keeps the number the panel
@@ -96,6 +97,7 @@ public sealed class EqWizardShelfExportTests
         // inside its own table.
         Assert.Equal(new[] { 1, 3 }, peaking.Select(entry => entry.Number));
         Assert.Equal(new[] { 2, 4 }, shelving.Select(entry => entry.Number));
+        Assert.Empty(allPass);
         Assert.Equal(PeqBandType.LowShelf, shelving[0].Band.Type);
         Assert.Equal(PeqBandType.HighShelf, shelving[1].Band.Type);
     }
@@ -121,11 +123,13 @@ public sealed class EqWizardShelfExportTests
             EqWizardImportExportCoordinator.CountShelvingBandsDroppedBy(
                 TargetFor(new EasyEffectsFormat()), curve));
         Assert.Single(EqWizardImportExportCoordinator.WithoutShelvingBands(curve).Bands);
-        // ...and printed in the bell table, not labelled as a shelf.
+        // ...and printed in the bell table, not labelled as a shelf or an all-pass.
         (IReadOnlyList<PdfSheet.NumberedBand> peaking,
-            IReadOnlyList<PdfSheet.NumberedBand> shelving) = PdfSheet.SplitByShape(curve.Bands);
+            IReadOnlyList<PdfSheet.NumberedBand> shelving,
+            IReadOnlyList<PdfSheet.NumberedBand> allPass) = PdfSheet.SplitByShape(curve.Bands);
         Assert.Single(peaking);
         Assert.Empty(shelving);
+        Assert.Empty(allPass);
     }
 
     [Fact]

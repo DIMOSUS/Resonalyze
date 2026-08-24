@@ -2125,6 +2125,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         EqWizardExportTarget target = peqExport.ResolveExportTarget(dialog.FilterIndex);
         if (!ConfirmPeqExportLoss(EqExportWarnings.ShelvingBandsDropped(target, curve)) ||
+            !ConfirmPeqExportLoss(EqExportWarnings.AllPassBandsDropped(target, curve)) ||
             !ConfirmPeqExportLoss(EqExportWarnings.PreampDropped(target, curve)))
         {
             return;

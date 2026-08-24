@@ -138,12 +138,16 @@ public sealed class GenericCsvFormat : IEqProfileFormat
     {
         PeqBandType.LowShelf => "LS",
         PeqBandType.HighShelf => "HS",
+        PeqBandType.AllPassFirstOrder => "AP1",
+        PeqBandType.AllPassSecondOrder => "AP2",
         _ => "PK"
     };
 
     // The type is looked up by keyword rather than by column index, so it survives
     // the leading-index column being present or absent — the same tolerance the
-    // numeric fields already get. An unreadable or missing type is a bell.
+    // numeric fields already get. An unreadable or missing type is a bell. The
+    // all-pass rows still write a 0.0 in the gain column — the numeric reader
+    // needs its three numbers whatever the type.
     private static PeqBandType ReadType(string[] fields)
     {
         foreach (string field in fields)
@@ -157,6 +161,16 @@ public sealed class GenericCsvFormat : IEqProfileFormat
             if (token.Equals("HS", StringComparison.OrdinalIgnoreCase))
             {
                 return PeqBandType.HighShelf;
+            }
+
+            if (token.Equals("AP1", StringComparison.OrdinalIgnoreCase))
+            {
+                return PeqBandType.AllPassFirstOrder;
+            }
+
+            if (token.Equals("AP2", StringComparison.OrdinalIgnoreCase))
+            {
+                return PeqBandType.AllPassSecondOrder;
             }
         }
 

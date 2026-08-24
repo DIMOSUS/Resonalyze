@@ -78,11 +78,17 @@ internal static class VirtualCrossoverSheet
                             channel.PeqBands[band], qConvention);
                         // The keyword comes from the profile writer rather than being
                         // spelled here: a shelf printed as PK is an instruction to
-                        // dial in the wrong filter.
+                        // dial in the wrong filter. An all-pass line carries no gain
+                        // (the filter has none) and drops the Q on a first order,
+                        // which has no Q to dial in.
+                        string tail = peq.Type.IsAllPass()
+                            ? peq.Type == PeqBandType.AllPassFirstOrder
+                                ? string.Empty
+                                : $" Q {Number(peq.Q, "0.0#")}"
+                            : $" Gain {Signed(peq.GainDb)} dB Q {Number(peq.Q, "0.0#")}";
                         builder.AppendLine(
                             $"    Filter {band + 1}: ON {PeqTextFile.TypeToken(peq.Type)} " +
-                            $"Fc {Number(peq.FrequencyHz, "0.###")} Hz " +
-                            $"Gain {Signed(peq.GainDb)} dB Q {Number(peq.Q, "0.0#")}");
+                            $"Fc {Number(peq.FrequencyHz, "0.###")} Hz{tail}");
                     }
                 }
             }

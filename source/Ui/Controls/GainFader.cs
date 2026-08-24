@@ -129,7 +129,13 @@ internal sealed class GainFader : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         Graphics graphics = e.Graphics;
-        graphics.Clear(Parent?.BackColor ?? BackColor);
+        // OUR OWN BackColor, which the strip keeps at its band tint
+        // (PeqSlotControl.ApplyStripColor). Not the parent's: this used to read it
+        // back when the strip's layout was the direct parent, and the fader host
+        // put between them since is Color.Transparent — clearing with an alpha-0
+        // colour writes black, which is what turned every strip's fader area into
+        // a black box.
+        graphics.Clear(BackColor);
         if (Width <= 4 || Height <= 4)
         {
             return;

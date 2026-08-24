@@ -102,6 +102,9 @@ public partial class EqWizardPanel
         if (source.PhaseContext is { } handed)
         {
             phaseContext = handed;
+            // The pin travels with the gate: an absolute window the user placed by hand
+            // in the panel must not read as Auto in the dialog here.
+            phaseGatePinned = handed.PinnedOffset;
             UpdatePhaseGateAvailability();
             return;
         }
@@ -124,6 +127,7 @@ public partial class EqWizardPanel
                 SmoothingInverseOctaves: 0.0),
             startMs,
             startMs,
+            PinnedOffset: false,
             EqWizardPhaseRender.EditedChannelColor,
             []);
         UpdatePhaseGateAvailability();
@@ -223,7 +227,13 @@ public partial class EqWizardPanel
             context.Gate.WindowMode,
             context.Gate.FdwCycles,
             context.Gate.DetrendMode,
-            fitToMs: context.GateOffsetMs,
+            // What Auto snaps the offset to: the earliest window of the set, the same
+            // figure the panel fits to — not this channel's own, which would drag the
+            // shared window onto whichever driver happens to be under edit.
+            fitToMs: context.Neighbours
+                .Select(neighbour => neighbour.GateOffsetMs)
+                .Append(context.GateOffsetMs)
+                .Min(),
             autoOffset: !phaseGatePinned);
         DialogResult result = dialog.ShowDialog(FindForm());
         dialog.PreviewChanged = null;
@@ -247,6 +257,57 @@ public partial class EqWizardPanel
         DrawSelectedCurves();
     }
 
+    /// <summary>
+    /// The one τ the whole set is read against, for a candidate detrend setting: none
+    /// at all, the user's own figure, or an estimate from the earliest-arriving
+    /// response — the same three answers the Virtual DSP panel gives.
+    /// </summary>
+    /// <remarks>
+    /// Auto is resolved HERE, when the gate changes, and not per render. The wizard's
+    /// set is frozen, so there is nothing for a per-render estimate to track — while a
+    /// τ that moved with the bank would slide every curve under its own correction,
+    /// which is the one thing this view must never do.
+    /// </remarks>
+    private double ResolveDetrendMs(
+        EqWizardPhaseContext opened,
+        PhaseAnalysisSettings gate,
+        double gateOffsetMs,
+        PhaseDetrendMode detrendMode,
+        double manualDetrendMs)
+    {
+        if (detrendMode == PhaseDetrendMode.Off)
+        {
+            return 0.0;
+        }
+
+        if (detrendMode == PhaseDetrendMode.Manual ||
+            loadedSource is not { } source ||
+            PhaseSourceFor(source) is not { } phaseSource)
+        {
+            return manualDetrendMs;
+        }
+
+        // The earliest arrival of the set defines the shared reference, exactly as it
+        // does in the panel: whichever curve's window opens first.
+        (Complex[] response, double offsetMs) = opened.Neighbours
+            .Select(neighbour => (neighbour.ImpulseResponse, neighbour.GateOffsetMs))
+            .Append((
+                VirtualCrossoverAnalysis.ApplyChain(
+                    phaseSource.Response,
+                    phaseSource.Chain with { Peq = BuildEqualizationCurve() },
+                    source.Measurement!.SampleRate),
+                gateOffsetMs))
+            .MinBy(entry => entry.Item2);
+
+        return DataHelper.ResolveCommonPhaseDetrendMilliseconds(
+            new ImpulseMeasurementView(response, 0, source.Measurement!.SampleRate),
+            gate with
+            {
+                GateOffsetMs = offsetMs,
+                DetrendMode = PhaseDetrendMode.Auto
+            });
+    }
+
     // One candidate gate over the context the dialog opened on. Pinned is one absolute
     // window for every curve; unpinned keeps the placements as they arrived, each on
     // its own driver's arrival — the distinction the Auto flag carries.
@@ -263,18 +324,21 @@ public partial class EqWizardPanel
         double detrendMs)
     {
         phaseGatePinned = !autoOffset;
+        PhaseAnalysisSettings gate = opened.Gate with
+        {
+            LeftMs = leftMs,
+            PlateauMs = plateauMs,
+            RightMs = rightMs,
+            WindowMode = windowMode,
+            FdwCycles = fdwCycles,
+            DetrendMode = detrendMode
+        };
+        double resolvedOffsetMs = phaseGatePinned ? offsetMs : opened.GateOffsetMs;
         phaseContext = new EqWizardPhaseContext(
-            opened.Gate with
-            {
-                LeftMs = leftMs,
-                PlateauMs = plateauMs,
-                RightMs = rightMs,
-                WindowMode = windowMode,
-                FdwCycles = fdwCycles,
-                DetrendMode = detrendMode
-            },
-            phaseGatePinned ? offsetMs : opened.GateOffsetMs,
-            detrendMs,
+            gate,
+            resolvedOffsetMs,
+            ResolveDetrendMs(opened, gate, resolvedOffsetMs, detrendMode, detrendMs),
+            phaseGatePinned,
             opened.ChannelColor,
             phaseGatePinned
                 ? opened.Neighbours

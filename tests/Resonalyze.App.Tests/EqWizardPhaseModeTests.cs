@@ -27,6 +27,7 @@ public sealed class EqWizardPhaseModeTests
             Gate(9.0),
             GateOffsetMs: 9.5,
             DetrendMs: 10.25,
+            PinnedOffset: false,
             OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
                 "B", OxyColors.Orange, Wavelet(), 9.75)]);
@@ -38,6 +39,62 @@ public sealed class EqWizardPhaseModeTests
         Assert.Equal(9.5, seeded.GateOffsetMs);
         Assert.Equal(10.25, seeded.DetrendMs);
         Assert.Equal("B", seeded.Neighbours.Single().Name);
+    }
+
+    [Theory]
+    [InlineData(PhaseDetrendMode.Off, false)]
+    [InlineData(PhaseDetrendMode.Manual, true)]
+    [InlineData(PhaseDetrendMode.Auto, false)]
+    public void TheGatesDetrendModeAndPinSurviveTheHandoff(
+        PhaseDetrendMode detrendMode,
+        bool pinned)
+    {
+        // Every setting the gate dialog offers has to arrive as the user left it. The
+        // detrend MODE is the one that reads as cosmetic and is not: it decides what
+        // the phase is referenced to, and a wizard that always said "Manual" would
+        // offer the user a choice they never made — and estimate nothing when they
+        // had asked for an estimate.
+        using var panel = new EqWizardPanel();
+        var context = new EqWizardPhaseContext(
+            Gate(9.0) with { DetrendMode = detrendMode },
+            GateOffsetMs: 9.5,
+            DetrendMs: 10.25,
+            pinned,
+            OxyColors.SkyBlue,
+            [new EqWizardPhaseNeighbour("B", OxyColors.Orange, Wavelet(), 9.75)]);
+
+        ApplySource(panel, Source(context));
+
+        Assert.Equal(detrendMode, ContextOf(panel)!.Gate.DetrendMode);
+        Assert.Equal(pinned, ContextOf(panel)!.PinnedOffset);
+        Assert.Equal(pinned, PinnedFlag(panel));
+    }
+
+    [Fact]
+    public void ChangingTheDetrendModeResolvesANewReference()
+    {
+        // Off is no reference at all; Manual is the user's own figure; Auto is
+        // estimated from the earliest-arriving response of the set. Resolved once, when
+        // the gate changes — a τ that moved with the bank would slide every curve under
+        // its own correction.
+        using var panel = new EqWizardPanel();
+        var context = new EqWizardPhaseContext(
+            Gate(9.0), GateOffsetMs: 9.5, DetrendMs: 10.25, PinnedOffset: false,
+            OxyColors.SkyBlue,
+            [new EqWizardPhaseNeighbour("B", OxyColors.Orange, Wavelet(), 9.75)]);
+        ApplySource(panel, Source(context));
+
+        ApplyPhaseGate(panel, context, 4.0, autoOffset: true, PhaseDetrendMode.Off);
+        Assert.Equal(0.0, ContextOf(panel)!.DetrendMs);
+
+        ApplyPhaseGate(panel, context, 4.0, autoOffset: true, PhaseDetrendMode.Manual);
+        Assert.Equal(11.5, ContextOf(panel)!.DetrendMs);
+
+        ApplyPhaseGate(panel, context, 4.0, autoOffset: true, PhaseDetrendMode.Auto);
+        double estimated = ContextOf(panel)!.DetrendMs;
+        // Estimated, not echoed back: it is neither the dialog's figure nor zero.
+        Assert.NotEqual(11.5, estimated);
+        Assert.NotEqual(0.0, estimated);
     }
 
     [Fact]
@@ -90,7 +147,7 @@ public sealed class EqWizardPhaseModeTests
         // neighbours that are no longer on screen.
         using var panel = new EqWizardPanel();
         ApplySource(panel, Source(new EqWizardPhaseContext(
-            Gate(9.0), 9.5, 10.25, OxyColors.SkyBlue,
+            Gate(9.0), 9.5, 10.25, false, OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour("B", OxyColors.Orange, Wavelet(), 9.75)])));
 
         ApplySource(panel, Source(phaseContext: null));
@@ -109,7 +166,8 @@ public sealed class EqWizardPhaseModeTests
         // own arrival — which is what the offsets in a handoff's context ARE.
         using var panel = new EqWizardPanel();
         var context = new EqWizardPhaseContext(
-            Gate(9.0), GateOffsetMs: 9.5, DetrendMs: 10.25, OxyColors.SkyBlue,
+            Gate(9.0), GateOffsetMs: 9.5, DetrendMs: 10.25, PinnedOffset: false,
+            OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour("B", OxyColors.Orange, Wavelet(), 9.75)]);
         ApplySource(panel, Source(context));
 
@@ -133,13 +191,19 @@ public sealed class EqWizardPhaseModeTests
         EqWizardPanel panel,
         EqWizardPhaseContext opened,
         double offsetMs,
-        bool autoOffset) =>
+        bool autoOffset,
+        PhaseDetrendMode detrendMode = PhaseDetrendMode.Manual) =>
         typeof(EqWizardPanel)
             .GetMethod("ApplyPhaseGate", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(panel, [
                 opened, offsetMs, autoOffset, 0.5, 2.5, 1.5,
-                PhaseWindowMode.FrequencyDependent, 6, PhaseDetrendMode.Manual, 11.5
+                PhaseWindowMode.FrequencyDependent, 6, detrendMode, 11.5
             ]);
+
+    private static bool PinnedFlag(EqWizardPanel panel) =>
+        (bool)typeof(EqWizardPanel)
+            .GetField("phaseGatePinned", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(panel)!;
 
     private static EqWizardCurveSource Source(EqWizardPhaseContext? phaseContext)
     {

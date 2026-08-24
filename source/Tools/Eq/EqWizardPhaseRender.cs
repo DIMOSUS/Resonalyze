@@ -48,6 +48,16 @@ internal sealed record EqWizardPhaseNeighbour(
 /// The phase gate — the dialog's window, NOT the steady-state one the magnitude
 /// curves use. Its offset is per curve, so the render overwrites it.
 /// </param>
+/// <param name="Gate">
+/// The window as the user has it — mode, FDW cycles, durations AND detrend mode. The
+/// curves are rendered against <paramref name="DetrendMs"/> as a Manual τ whatever the
+/// mode says, because one τ for the whole set is what keeps their relative phase
+/// honest; the mode rides along so an editor can offer the user back what they chose.
+/// </param>
+/// <param name="PinnedOffset">
+/// Whether the user pinned one absolute window for every curve, as opposed to letting
+/// each open on its own driver's arrival.
+/// </param>
 /// <param name="ChannelColor">
 /// The colour the channel under edit is drawn in. It comes from the panel that handed
 /// it over, so one driver reads the same in both views; a source with no panel behind
@@ -57,6 +67,7 @@ internal sealed record EqWizardPhaseContext(
     PhaseAnalysisSettings Gate,
     double GateOffsetMs,
     double DetrendMs,
+    bool PinnedOffset,
     OxyColor ChannelColor,
     IReadOnlyList<EqWizardPhaseNeighbour> Neighbours);
 

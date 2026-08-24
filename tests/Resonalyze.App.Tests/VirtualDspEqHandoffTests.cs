@@ -65,6 +65,7 @@ public sealed class VirtualDspEqHandoffTests
             GateTemplate with { GateOffsetMs = 9.0 },
             GateOffsetMs: 9.5,
             DetrendMs: 10.0,
+            PinnedOffset: false,
             OxyPlot.OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
                 "B", OxyPlot.OxyColors.Orange, neighbourResponse, 9.75)]);
@@ -92,6 +93,7 @@ public sealed class VirtualDspEqHandoffTests
             GateTemplate,
             GateOffsetMs: 9.5,
             DetrendMs: 10.0,
+            PinnedOffset: false,
             OxyPlot.OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
                 "B", OxyPlot.OxyColors.Orange, new Complex[1_024], 9.75)]);

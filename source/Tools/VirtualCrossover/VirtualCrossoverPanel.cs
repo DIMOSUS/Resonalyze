@@ -2104,10 +2104,20 @@ public partial class VirtualCrossoverPanel : UserControl
         List<double> offsets = ResolvePhaseGateOffsets(drawn, referenceOffsetMs, sampleRate);
 
         return new EqWizardPhaseContext(
+            // The gate as the USER has it, detrend mode included. The curves are always
+            // rendered as Manual against the τ resolved beside it — one τ for the whole
+            // set is what keeps their relative phase honest — but the mode is the
+            // user's choice and has to arrive intact, or the wizard's gate dialog
+            // offers them a setting they never made.
             CreateVirtualPhaseSettings(
-                referenceOffsetMs, PhaseDetrendMode.Manual, detrendMs),
+                referenceOffsetMs,
+                gatePreview?.DetrendMode ?? project.PhaseDetrendMode,
+                detrendMs),
             offsets[index],
             detrendMs,
+            // Pinned here means pinned there: an absolute window the user placed by
+            // hand must not turn back into Auto on the way over.
+            PinnedGateOffsetMs is not null,
             // This channel's plot colour travels with it: the wizard draws the same
             // driver, and reading it as a different colour there is how a tuner loses
             // track of which curve is which between two views of one system.

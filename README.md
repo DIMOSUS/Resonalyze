@@ -1265,9 +1265,13 @@ is building.
 **Phase gate…** is the window those curves are read through — the same dialog,
 and the same settings, the Virtual DSP phase view uses, down to the impulse
 preview of every channel it draws. A handoff arrives with its gate already
-placed: the panel resolved it over every driver on screen, so the wizard adopts
-it rather than deriving its own and drawing this channel somewhere the panel
-never had it. A measurement opened straight into the wizard has no neighbours to
+placed and every setting as it stands there — window mode, FDW cycles, the three
+durations, the **detrend mode** and the τ it resolved, and whether the offset was
+pinned: the panel worked that out over every driver on screen, so the wizard
+adopts it rather than deriving its own and drawing this channel somewhere the
+panel never had it. Changing the detrend to **Auto** here re-estimates τ from the
+earliest-arriving response of the set, once, when the gate changes — a reference
+that moved with the bank would slide every curve under its own correction. A measurement opened straight into the wizard has no neighbours to
 be comparable with, so its window simply opens on its own front and its τ
 references the same instant, which leaves the driver's own phase with the
 propagation delay flattened out. The **magnitude** curves are never affected:

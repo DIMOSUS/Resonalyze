@@ -192,12 +192,13 @@ public sealed class EqWizardPhaseModeTests
         EqWizardPhaseContext opened,
         double offsetMs,
         bool autoOffset,
-        PhaseDetrendMode detrendMode = PhaseDetrendMode.Manual) =>
+        PhaseDetrendMode detrendMode = PhaseDetrendMode.Manual,
+        double detrendMs = 11.5) =>
         typeof(EqWizardPanel)
             .GetMethod("ApplyPhaseGate", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(panel, [
                 opened, offsetMs, autoOffset, 0.5, 2.5, 1.5,
-                PhaseWindowMode.FrequencyDependent, 6, detrendMode, 11.5
+                PhaseWindowMode.FrequencyDependent, 6, detrendMode, detrendMs
             ]);
 
     private static bool PinnedFlag(EqWizardPanel panel) =>

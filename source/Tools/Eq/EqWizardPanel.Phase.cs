@@ -426,13 +426,16 @@ public partial class EqWizardPanel
         {
             GatedPhaseCurve? curve =
                 await phaseOrchestrator.RenderLatestAsync(request, color);
-            if (IsDisposed || !IsHandleCreated || curve == null)
+            // A null curve means a newer render started while this one ran, so there is
+            // nothing to land — but the redraw below still has to happen. It is the one
+            // that starts the follow-up, and this is the ONLY case that needs starting:
+            // returning here left the view with no curve and nothing on its way, which
+            // is exactly what turning the gate's τ produced.
+            if (curve != null && !IsDisposed && IsHandleCreated)
             {
-                return;
+                landedPhaseCurve = curve;
+                landedPhaseBank = bank;
             }
-
-            landedPhaseCurve = curve;
-            landedPhaseBank = bank;
         }
         catch (Exception exception)
         {
@@ -447,8 +450,9 @@ public partial class EqWizardPanel
 
         if (!IsDisposed && IsHandleCreated)
         {
-            // The bank may have moved on while this rendered; drawing now both paints
-            // what landed and starts the follow-up render for the newer bank.
+            // Whatever happened above: paint what landed, and — since a request that
+            // arrived while this was in flight was dropped by the in-flight guard —
+            // start the render the current gate and bank are waiting for.
             DrawSelectedCurves();
         }
     }

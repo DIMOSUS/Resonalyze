@@ -382,8 +382,10 @@ public sealed class SteadyStateWindowTests
             CrossoverKind.BandPass,
             new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
             new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)),
-        Peq: null,
-        AllPass: new AllPassSpec(AllPassType.SecondOrder, 300, 1.0));
+        Peq: new EqualizationCurve(new[]
+        {
+            new PeqBand(300, 1.0, 0, PeqBandType.AllPassSecondOrder)
+        }));
 
     // The worst the edit can do anywhere in the range the UI offers — the figure the
     // policy needs, rather than one convenient setting's.
@@ -403,8 +405,9 @@ public sealed class SteadyStateWindowTests
             return worst;
         }
 
-        // 20 is VirtualCrossoverChannelSettings.MaximumAllPassQ — the UI's own
-        // ceiling, in the app project this one cannot reference.
+        // 20 is the PEQ strip's own Q ceiling (PeqSlotControl.MaximumQ, in the app
+        // project this one cannot reference). The all-pass is a band of the bank
+        // now, so the edit under measurement replaces the bank's phase-only band.
         foreach (double q in new[] { 1.0, 5.0, 10.0, 20.0 })
         {
             foreach (double hz in new[] { 10.0, 40.0, 120.0, 2_000.0 })
@@ -416,7 +419,10 @@ public sealed class SteadyStateWindowTests
                         baseChain,
                         baseChain with
                         {
-                            AllPass = new AllPassSpec(AllPassType.SecondOrder, hz, q)
+                            Peq = new EqualizationCurve(new[]
+                            {
+                                new PeqBand(hz, q, 0, PeqBandType.AllPassSecondOrder)
+                            })
                         }));
             }
         }

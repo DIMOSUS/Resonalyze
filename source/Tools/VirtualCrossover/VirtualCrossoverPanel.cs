@@ -1009,17 +1009,29 @@ public partial class VirtualCrossoverPanel : UserControl
             to.LowPassEdge = from.LowPassEdge;
         }
 
-        if (scope.AllPass)
+        // The all-pass filters live inside the PEQ bank as bands, but they answer a
+        // different question than the EQ (they align this side rather than voice the
+        // pair), so the two scopes split ONE list by band type: Peq moves the
+        // gain-bearing bands, AllPass the phase-only ones, and whichever kind is not
+        // being copied survives on the target side. When the merged bank would
+        // exceed the slot budget, the copied gain-bearing bands give way — the
+        // all-pass sits on a junction this side was aligned on, and is the harder
+        // thing to have to dial in again.
+        if (scope.Peq || scope.AllPass)
         {
-            to.AllPassType = from.AllPassType;
-            to.AllPassFrequencyHz = from.AllPassFrequencyHz;
-            to.AllPassQ = from.AllPassQ;
+            IEnumerable<PeqBand> tonal = (scope.Peq ? from : to)
+                .PeqBands.Where(band => !band.Type.IsAllPass());
+            List<PeqBand> allPass = (scope.AllPass ? from : to)
+                .PeqBands.Where(band => band.Type.IsAllPass()).ToList();
+            to.PeqBands = tonal
+                .Take(EqualizationCurve.MaxBandCount - allPass.Count)
+                .Concat(allPass)
+                .ToList();
         }
 
         if (scope.Peq)
         {
             to.PeqPreampDb = from.PeqPreampDb;
-            to.PeqBands = from.PeqBands.ToList();
             to.PeqSourceName = from.PeqSourceName;
         }
     }
@@ -1104,22 +1116,16 @@ public partial class VirtualCrossoverPanel : UserControl
                 }
             }
 
-            return VirtualCrossoverChannelControl.DefaultSampleRateHz;
+            return DefaultSampleRateHz;
         }
     }
 
-    // Every block's all-pass readout evaluates the digital filter, so every block needs
-    // the project's rate — including the ones with no source, which have none to report
-    // but are tuned against the same project. Broadcast rather than pushed per channel:
-    // resolving a source on ONE channel changes the rate every other block must use.
-    private void PushProjectSampleRateToChannels()
-    {
-        double sampleRateHz = ProjectSampleRateHz;
-        foreach (VirtualCrossoverChannel channel in channels)
-        {
-            ControlFor(channel).SampleRateHz = sampleRateHz;
-        }
-    }
+    /// <summary>
+    /// The rate the panel assumes until the project resolves its first source and
+    /// can report a real one — for the PEQ export and anything else that needs a
+    /// rate before a measurement exists.
+    /// </summary>
+    private const double DefaultSampleRateHz = 48_000;
 
     // Channel names run A, B, C… by index; shared with the tuning sheets.
     private static string ChannelNameFor(int index) =>
@@ -1423,10 +1429,6 @@ public partial class VirtualCrossoverPanel : UserControl
             control.LowPassSlopeComboBox.SelectedItem = settings.LowPassEdge.SlopeDbPerOctave;
             control.LowPassRippleInput.Value = control.LowPassRippleInput
                 .ClampValue(settings.LowPassEdge.RippleDb);
-            control.AllPassTypeComboBox.SelectedItem = settings.AllPassType;
-            control.AllPassFrequencyInput.Value = control.AllPassFrequencyInput
-                .ClampValue(settings.AllPassFrequencyHz);
-            control.AllPassQInput.Value = control.AllPassQInput.ClampValue(settings.AllPassQ);
             // The four block-wide switches come off the PAIR, so the block keeps
             // showing the same answer whichever side is on screen.
             control.ShowRawCheckBox.Checked = channel.Pair.ShowRawCurve;
@@ -1451,10 +1453,6 @@ public partial class VirtualCrossoverPanel : UserControl
         settings.CrossoverKind = control.SelectedCrossoverKind;
         settings.HighPassEdge = control.HighPassEdge;
         settings.LowPassEdge = control.LowPassEdge;
-        AllPassSpec allPass = control.AllPassStage;
-        settings.AllPassType = allPass.Type;
-        settings.AllPassFrequencyHz = allPass.FrequencyHz;
-        settings.AllPassQ = allPass.Q;
         channel.Pair.ShowRawCurve = control.ShowRawCheckBox.Checked;
         channel.Pair.ShowProcessedCurve = control.ShowProcessedCheckBox.Checked;
         channel.Pair.Enabled = !control.Muted;
@@ -2486,10 +2484,6 @@ public partial class VirtualCrossoverPanel : UserControl
     private void RedrawAll()
     {
         using var _ = AppProfiler.Zone("VirtualDSP.RedrawAll");
-        // Ahead of the suppress guard, and here rather than at each of the several places
-        // a source resolves: every one of them ends in a redraw, so this is the single
-        // point that cannot be forgotten. The setter no-ops when the rate is unchanged.
-        PushProjectSampleRateToChannels();
         if (suppressProjectEvents)
         {
             return;

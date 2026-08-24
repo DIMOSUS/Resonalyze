@@ -19,7 +19,7 @@ public static class PeqBiquad
     {
         if (band.Type.IsAllPass())
         {
-            // Reuses the all-pass stage's realization — including its Nyquist clamp,
+            // Reuses AllPassFilter's own realization — including its Nyquist clamp,
             // which the bell path does not apply. The type is never Off here, so the
             // section list holds exactly one entry.
             return band.IsTransparent

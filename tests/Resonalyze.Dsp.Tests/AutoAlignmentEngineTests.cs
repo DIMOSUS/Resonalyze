@@ -1031,7 +1031,8 @@ public sealed class AutoAlignmentEngineTests
             HighPassEdge: new CrossoverEdge(
                 CrossoverFilterFamily.Butterworth, 1_700, 48))),
         "AllPass 330" => new DspChannelChain(
-            AllPass: new AllPassSpec(AllPassType.SecondOrder, 330, 3.5)),
+            Peq: new EqualizationCurve(
+                [new PeqBand(330, 3.5, 0, PeqBandType.AllPassSecondOrder)])),
         "PEQ 120 Q8" => new DspChannelChain(
             Peq: new EqualizationCurve([new PeqBand(120, 8.0, 6.0)])),
         _ => throw new ArgumentOutOfRangeException(nameof(name))

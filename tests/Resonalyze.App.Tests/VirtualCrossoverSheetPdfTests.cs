@@ -129,35 +129,32 @@ public sealed class VirtualCrossoverSheetPdfTests
     }
 
     [Fact]
-    public void Build_PairSection_PrintsAllPassAndNamesEachSidesPeqInFull()
+    public void Build_PairSection_NamesEachSidesPeqInFullDownToTheAllPass()
     {
         var project = new VirtualCrossoverProjectFile();
         project.Pairs[1].Left.SourceFilePath = "l.json";
         project.Pairs[1].Left.DisplayName = "L mid";
-        project.Pairs[1].Left.AllPassType = AllPassType.SecondOrder;
-        project.Pairs[1].Left.AllPassFrequencyHz = 250;
-        project.Pairs[1].Left.AllPassQ = 0.7;
         project.Pairs[1].Left.PeqPreampDb = -5;
         project.Pairs[1].Left.PeqSourceName = "L_MID_eq.txt";
         project.Pairs[1].Left.PeqBands.Add(new PeqBand(1000, 2.0, -3.0));
         project.Pairs[1].Left.PeqBands.Add(new PeqBand(250, 4.0, -2.0));
+        // An all-pass is a dialled-in filter like any other: it counts in the summary
+        // and prints in its own card table below, never as a bell with no gain.
+        project.Pairs[1].Left.PeqBands.Add(
+            new PeqBand(250, 0.7, 0, PeqBandType.AllPassSecondOrder));
         project.Pairs[1].Right.SourceFilePath = "r.json";
         project.Pairs[1].Right.DisplayName = "R mid";
 
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
         Table pairTable = PairTables(sheet.Document).Single();
 
-        // The all-pass is a dialled-in stage; the text sheet always printed it and the
-        // PDF must not quietly drop it.
-        Assert.Contains("250", RowValue(pairTable, "All-pass", left: true));
-        Assert.Equal("—", RowValue(pairTable, "All-pass", left: false));
-
         // The summary names the profile, its filter count and its preamp, so a channel
         // can be checked against the DSP without counting cards.
         string peq = RowValue(pairTable, "PEQ", left: true);
         Assert.Contains("L_MID_eq.txt", peq);
-        Assert.Contains("2 filters", peq);
+        Assert.Contains("3 filters", peq);
         Assert.Contains("-5", peq);
+        Assert.Contains("Channel B Left — PEQ — all-pass filters", AllText(sheet.Document));
 
         // The cards below are captioned with the channel AND the spelled-out side.
         string document = AllText(sheet.Document);

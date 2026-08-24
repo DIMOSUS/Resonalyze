@@ -586,12 +586,15 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
-    public void ReturnAfterADelayOrAllPassEdit_Refuses()
+    public void ReturnAfterADelayOrAnAllPassBandEdit_Refuses()
     {
         // Swept across the ranges the UI allows, these are NOT free: at 192 kHz, where
         // the rate clamps the window to 171 ms, a delay edit moves the gated shape by
         // up to 1.70 dB and an all-pass by 4.77 dB (40 Hz, Q 20 — 318 ms of group
-        // delay against that window). See SteadyStateWindowTests.
+        // delay against that window). See SteadyStateWindowTests. The delay refuses
+        // through the chain comparison; the all-pass now rides in the bank, so it
+        // refuses through the PEQ guard instead — a phase-only band is exactly the
+        // edit a magnitude-only comparison would wave through.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken delayToken = TokenFor(channel, rightSide: false);
         channel.Settings.DelayMs += 4.2;
@@ -600,12 +603,15 @@ public sealed class VirtualDspEqHandoffTests
             new[] { channel }, delayToken, curve,
             projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
 
+        channel.Settings.PeqBands =
+            [new PeqBand(40, 2, 0, PeqBandType.AllPassSecondOrder)];
         VirtualDspEqReturnToken apToken = TokenFor(channel, rightSide: false);
-        channel.Settings.AllPassQ = 20;
+        channel.Settings.PeqBands =
+            [new PeqBand(40, 20, 0, PeqBandType.AllPassSecondOrder)];
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, apToken, curve,
             projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
-        Assert.Empty(channel.Settings.PeqBands);
+        Assert.Equal(20, Assert.Single(channel.Settings.PeqBands).Q);
     }
 
     [Fact]
@@ -877,8 +883,6 @@ public sealed class VirtualDspEqHandoffTests
         channel.Settings.CrossoverKind = CrossoverKind.BandPass;
         channel.Settings.HighPassEdge = channel.Settings.HighPassEdge with { FrequencyHz = 80 };
         channel.Settings.LowPassEdge = channel.Settings.LowPassEdge with { FrequencyHz = 500 };
-        channel.Settings.AllPassType = AllPassType.SecondOrder;
-        channel.Settings.AllPassFrequencyHz = 300;
         return channel;
     }
 }

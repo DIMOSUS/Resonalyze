@@ -73,8 +73,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             Crossover: new CrossoverSpec(
                 CrossoverKind.HighPass,
                 HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)),
-            Peq: new EqualizationCurve([new PeqBand(1_000, 1.0, -2.0)], -1.0),
-            AllPass: new AllPassSpec(AllPassType.SecondOrder, 90, 2.5));
+            Peq: new EqualizationCurve([new PeqBand(1_000, 1.0, -2.0)], -1.0));
 
         var snapshot = new VirtualCrossoverChannelSnapshot(
             1, new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0)), 48_000, chain);
@@ -137,28 +136,37 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     }
 
     [Fact]
-    public void ChainCacheKey_SeesTheAllPass()
+    public void ChainCacheKey_SeesAnAllPassBandsShapeCornerAndQ()
     {
-        // The key is written by hand, so a stage it forgets never fails to compile — it
+        // The key is written by hand, so anything it forgets never fails to compile — it
         // just makes the coordinator serve a stale render: the user turns the all-pass
-        // and the plot does not move.
-        var baseline = new DspChannelChain(
-            AllPass: new AllPassSpec(AllPassType.SecondOrder, 90, 2.5));
+        // and the plot does not move. The all-pass rides in the band list, where its
+        // SHAPE is the part a key could plausibly miss: an all-pass and a bell at the
+        // same corner, Q and (zero) gain differ in nothing but the type.
+        DspChannelChain Chain(PeqBand band) =>
+            new(Peq: new EqualizationCurve([band], 0));
+
+        var baseline = Chain(new PeqBand(90, 2.5, 0, PeqBandType.AllPassSecondOrder));
         var key = new DspChannelChainCacheKey(baseline);
 
         Assert.Equal(key, new DspChannelChainCacheKey(baseline));
         Assert.NotEqual(
             key,
             new DspChannelChainCacheKey(
-                baseline with { AllPass = new AllPassSpec(AllPassType.FirstOrder, 90, 2.5) }));
+                Chain(new PeqBand(90, 2.5, 0, PeqBandType.AllPassFirstOrder))));
         Assert.NotEqual(
             key,
             new DspChannelChainCacheKey(
-                baseline with { AllPass = new AllPassSpec(AllPassType.SecondOrder, 120, 2.5) }));
+                Chain(new PeqBand(120, 2.5, 0, PeqBandType.AllPassSecondOrder))));
         Assert.NotEqual(
             key,
             new DspChannelChainCacheKey(
-                baseline with { AllPass = new AllPassSpec(AllPassType.SecondOrder, 90, 1.0) }));
+                Chain(new PeqBand(90, 1.0, 0, PeqBandType.AllPassSecondOrder))));
+        // The one a magnitude-only key would miss: same numbers, different filter.
+        Assert.NotEqual(
+            key,
+            new DspChannelChainCacheKey(
+                Chain(new PeqBand(90, 2.5, 0, PeqBandType.Peaking))));
     }
 
     [Fact]

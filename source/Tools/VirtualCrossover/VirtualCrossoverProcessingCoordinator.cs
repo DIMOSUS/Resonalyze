@@ -314,7 +314,6 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
     private readonly double delayMs;
     private readonly bool invertPolarity;
     private readonly CrossoverSpec? crossover;
-    private readonly AllPassSpec? allPass;
     private readonly double peqPreampDb;
     private readonly PeqBand[] peqBands;
 
@@ -330,7 +329,6 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
         delayMs = chain.DelayMs;
         invertPolarity = chain.InvertPolarity;
         crossover = chain.Crossover;
-        allPass = chain.AllPass;
         peqPreampDb = chain.Peq?.PreampDb ?? 0;
         peqBands = chain.Peq?.Bands.ToArray() ?? Array.Empty<PeqBand>();
     }
@@ -341,7 +339,6 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
         delayMs == other.delayMs &&
         invertPolarity == other.invertPolarity &&
         EqualityComparer<CrossoverSpec?>.Default.Equals(crossover, other.crossover) &&
-        EqualityComparer<AllPassSpec?>.Default.Equals(allPass, other.allPass) &&
         peqPreampDb == other.peqPreampDb &&
         peqBands.SequenceEqual(other.peqBands);
 
@@ -355,7 +352,6 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
         hash.Add(delayMs);
         hash.Add(invertPolarity);
         hash.Add(crossover);
-        hash.Add(allPass);
         hash.Add(peqPreampDb);
         foreach (PeqBand band in peqBands)
         {
@@ -492,7 +488,8 @@ internal sealed class VirtualCrossoverChannelSnapshot
         // immutable, so `with` carries it across untouched. Copying member by member (as
         // this once did) silently drops any stage the copy forgets, and an optional
         // record parameter means the compiler never complains: that is exactly how the
-        // all-pass came to be a no-op on the whole processed-channel path.
+        // all-pass, back when it was a chain stage of its own, came to be a no-op on
+        // the whole processed-channel path.
         Chain = chain.Peq == null
             ? chain
             : chain with { Peq = new EqualizationCurve(chain.Peq.Bands, chain.Peq.PreampDb) };

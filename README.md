@@ -61,8 +61,8 @@ fabricating a number when the measurement cannot support one.
 
 <p align="center">
   <strong>Virtual DSP</strong> — combine measured drivers through gain, delay,
-  polarity, crossover filters, an all-pass stage, and PEQ before touching the
-  hardware DSP.
+  polarity, crossover filters, and PEQ (bells, shelves and all-pass alike)
+  before touching the hardware DSP.
 </p>
 
 <p align="center">
@@ -108,7 +108,7 @@ is not just a plot but the DSP settings themselves:
 
 - **Built for multi-way active systems** — measure each driver separately, then
   design the whole system virtually: crossover corners, slopes and families,
-  per-driver delay and polarity, all-pass stages, and PEQ, tuned against the
+  per-driver delay and polarity, and PEQ down to all-pass bands, tuned against the
   phase-aware predicted sum. **Auto crossover** and **Auto delay** search these
   settings automatically, across both stereo sides in one run.
 - **Honest automation** — an automatic tuner that guesses is worse than none.
@@ -195,9 +195,10 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   delay/polarity controls, plus a **sum-loss** curve
 - **Virtual DSP** — up to eight L/R driver pairs (plus mono channels) through
   virtual chains: gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel /
-  Chebyshev crossovers, all-pass and PEQ, with the complex sum, sum loss, phase
-  tracking, junction read-outs, Δ L−R timing, **Auto crossover**, a stereo-aware
-  **Auto delay**, a headphone audition, sessions and tuning-sheet export
+  Chebyshev crossovers and PEQ (all-pass bands included), with the complex sum,
+  sum loss, phase tracking, junction read-outs, Δ L−R timing, **Auto crossover**,
+  a stereo-aware **Auto delay**, a headphone audition, sessions and tuning-sheet
+  export
 - **Live Spectrum** — a real-time loopback transfer function with coherence, or a
   reference-free RTA in relative dB or dB SPL, with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white, or Silent for the ambient
@@ -1326,7 +1327,9 @@ was fitted against. The rest of the chain does, measured rather than assumed —
 the crossover bends the curve outright, a gain slides it against the absolute
 target the bank's preamp was fitted to, and a delay or an all-pass moves what
 the analysis window catches (at 192 kHz, where the window is at its shortest,
-by as much as 1.7 and 4.8 dB at the extremes the controls allow).
+by as much as 1.7 and 4.8 dB at the extremes the controls allow — the all-pass
+being a band of the bank now, that one is caught by the bank check rather than
+the chain check, but it is refused all the same).
 
 ### Auto Tune
 
@@ -1463,12 +1466,15 @@ Each channel runs through:
   A Linkwitz-Riley pair sums flat only when its two halves are in phase:
   LR24 and LR48 are, LR12 and LR36 sit 180° apart, so one of the two
   channels needs **Invert** or the sum nulls at the corner
-- **All-pass** — 1st order (180° of phase swing) or 2nd order (360°, with a **Q**
-  setting how abruptly it turns). Only phase moves, which makes it the tool for
-  lining drivers up where a delay and a polarity flip are both too blunt — a
-  sub-to-midbass hand-off at 60–100 Hz is the classic case — with a live read-out
-  of the group delay it adds (≈ 4Q/ω₀)
-- **PEQ** — one button, five doors: **Load from file…** (any format the EQ
+- **PEQ** — the channel's whole filter bank, bells and shelves and **all-pass
+  bands (AP1 / AP2)** alike. An all-pass moves phase only, which makes it the
+  tool for lining drivers up where a delay and a polarity flip are both too
+  blunt — a sub-to-midbass hand-off at 60–100 Hz is the classic case. It lives
+  in the bank rather than as a stage of its own, the way a hardware DSP's slot
+  table holds it, so a channel can carry several and each is edited, exported
+  and copied like any other filter (the [EQ Wizard](#eq-wizard) is where they
+  are dialled in, with a read-out of the group delay each adds at its corner).
+  One button, five doors: **Load from file…** (any format the EQ
   Wizard imports), **Save to file…** (any format it exports, plus a tuning-sheet
   PDF), **Edit in EQ Wizard** and **Edit raw in EQ Wizard** (the
   [handoff](#editing-a-virtual-dsp-channels-peq) that opens the wizard on this
@@ -1493,7 +1499,12 @@ because the magnitude shape describes the driver. Everything that aligns a side
 against its own level and geometry starts unticked — gain, delay, polarity and
 the all-pass, which belongs with them precisely because it is the tool for a
 junction a delay and a polarity flip cannot fix, and that junction is the
-side's own. Sources are never copied: every side keeps its own measurement.
+side's own. All-pass filters ride in the PEQ bank, so those last two ticks
+split one band list by shape: **PEQ** carries the bells and shelves,
+**All-pass** the phase-only bands, and whichever kind is left unticked stays as
+the target side already had it — copying a voicing across therefore leaves the
+other side's own alignment standing. Sources are never copied: every side keeps
+its own measurement.
 **Mute**, **Bypass** and the two curve toggles are absent from the list because
 they are shared by the two sides already — there is nothing to copy.
 
@@ -1702,7 +1713,7 @@ had rather than replacing a working choice with none.
   sides, not a binaural head simulation.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
   text): for every side of every pair (a mono pair prints once) the gain, delay in
-  ms and mm, polarity, crossover filters, the all-pass stage, and PEQ bands. It
+  ms and mm, polarity, crossover filters, and PEQ bands down to the all-pass. It
   asks first which [Q convention](#dsp-q-convention) the PEQ columns should be
   stated in — the processor being tuned here is not necessarily the one the EQ
   Wizard's **DSP Q** selector was set for, so that selector only pre-selects the

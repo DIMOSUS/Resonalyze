@@ -162,10 +162,6 @@ internal static class VirtualCrossoverSheetPdf
         AddPairRow(table, LowPassLabel,
             VirtualCrossoverSheet.DescribeLowPass(left),
             VirtualCrossoverSheet.DescribeLowPass(right));
-        if (HasAllPass(left) || HasAllPass(right))
-        {
-            AddPairRow(table, "All-pass", AllPassText(left), AllPassText(right));
-        }
         if (HasPeq(left) || HasPeq(right))
         {
             AddPairRow(table, "PEQ", PeqSummary(left), PeqSummary(right));
@@ -208,14 +204,6 @@ internal static class VirtualCrossoverSheetPdf
 
     private static string CombinedGainText(VirtualCrossoverChannelSettings channel) =>
         $"{Signed(channel.GainDb + channel.PeqPreampDb)} dB";
-
-    private static bool HasAllPass(VirtualCrossoverChannelSettings channel) =>
-        channel.AllPassType != AllPassType.Off;
-
-    private static string AllPassText(VirtualCrossoverChannelSettings channel) =>
-        HasAllPass(channel)
-            ? VirtualCrossoverSheet.DescribeAllPass(channel)
-            : "—";
 
     private static bool HasPeq(VirtualCrossoverChannelSettings channel) =>
         channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0;
@@ -316,10 +304,6 @@ internal static class VirtualCrossoverSheetPdf
         AddRow(table, "Polarity", PolarityText(channel), PolarityColor(channel));
         AddRow(table, HighPassLabel, VirtualCrossoverSheet.DescribeHighPass(channel));
         AddRow(table, LowPassLabel, VirtualCrossoverSheet.DescribeLowPass(channel));
-        if (HasAllPass(channel))
-        {
-            AddRow(table, "All-pass", AllPassText(channel));
-        }
         if (HasPeq(channel))
         {
             AddRow(table, "PEQ", PeqSummary(channel));

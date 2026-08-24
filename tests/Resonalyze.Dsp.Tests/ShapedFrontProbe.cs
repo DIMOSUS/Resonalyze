@@ -156,7 +156,8 @@ public sealed class ShapedFrontProbe
     {
         (AlignmentSnapshot snapshot, double measuredMs) = Shaped(
             new DspChannelChain(
-                AllPass: new AllPassSpec(AllPassType.SecondOrder, 150, 2.0)),
+                Peq: new EqualizationCurve(
+                    [new PeqBand(150, 2.0, 0, PeqBandType.AllPassSecondOrder)])),
             HighPass(80, 48, CrossoverFilterFamily.LinkwitzRiley),
             40, 160);
 
@@ -234,9 +235,11 @@ public sealed class ShapedFrontProbe
         "BW48 LP 80" => LowPass(80, 48),
         "BP 40-200" => BandPass(40, 200, 24),
         "all-pass 150 Q2" => new DspChannelChain(
-            AllPass: new AllPassSpec(AllPassType.SecondOrder, 150, 2.0)),
+            Peq: new EqualizationCurve(
+                [new PeqBand(150, 2.0, 0, PeqBandType.AllPassSecondOrder)])),
         "all-pass 220 Q6" => new DspChannelChain(
-            AllPass: new AllPassSpec(AllPassType.SecondOrder, 220, 6.0)),
+            Peq: new EqualizationCurve(
+                [new PeqBand(220, 6.0, 0, PeqBandType.AllPassSecondOrder)])),
         _ => throw new ArgumentOutOfRangeException(nameof(name))
     };
 

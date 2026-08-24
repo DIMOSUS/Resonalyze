@@ -60,11 +60,6 @@ namespace Resonalyze
             buttonMute = new Button();
             numericHighPassRipple = new DarkNumericUpDown();
             numericLowPassRipple = new DarkNumericUpDown();
-            labelAllpass = new Label();
-            comboAllPassType = new DarkComboBox();
-            numericAllPassFreq = new DarkNumericUpDown();
-            numericAllPassQ = new DarkNumericUpDown();
-            labelAllpassBand = new Label();
             labelTotalGain = new Label();
             (numericGain).BeginInit();
             (numericDelay).BeginInit();
@@ -72,8 +67,6 @@ namespace Resonalyze
             (numericLowPassHz).BeginInit();
             (numericHighPassRipple).BeginInit();
             (numericLowPassRipple).BeginInit();
-            (numericAllPassFreq).BeginInit();
-            (numericAllPassQ).BeginInit();
             SuspendLayout();
             // 
             // labelChannel
@@ -336,7 +329,7 @@ namespace Resonalyze
             labelPeq.AutoSize = true;
             labelPeq.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelPeq.ForeColor = Color.FromArgb(210, 214, 222);
-            labelPeq.Location = new Point(8, 183);
+            labelPeq.Location = new Point(8, 157);
             labelPeq.Name = "labelPeq";
             labelPeq.Size = new Size(29, 15);
             labelPeq.TabIndex = 18;
@@ -346,7 +339,7 @@ namespace Resonalyze
             // 
             buttonPeqMenu.FlatStyle = FlatStyle.Popup;
             buttonPeqMenu.ForeColor = Color.White;
-            buttonPeqMenu.Location = new Point(70, 181);
+            buttonPeqMenu.Location = new Point(70, 155);
             buttonPeqMenu.Name = "buttonPeqMenu";
             buttonPeqMenu.Size = new Size(80, 19);
             buttonPeqMenu.TabIndex = 19;
@@ -358,7 +351,7 @@ namespace Resonalyze
             // 
             labelPeqInfo.AutoSize = true;
             labelPeqInfo.ForeColor = Color.FromArgb(170, 176, 190);
-            labelPeqInfo.Location = new Point(152, 183);
+            labelPeqInfo.Location = new Point(152, 157);
             labelPeqInfo.Name = "labelPeqInfo";
             labelPeqInfo.Size = new Size(48, 15);
             labelPeqInfo.TabIndex = 21;
@@ -369,7 +362,7 @@ namespace Resonalyze
             labelCurves.AutoSize = true;
             labelCurves.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelCurves.ForeColor = Color.FromArgb(210, 214, 222);
-            labelCurves.Location = new Point(8, 209);
+            labelCurves.Location = new Point(8, 183);
             labelCurves.Name = "labelCurves";
             labelCurves.Size = new Size(42, 15);
             labelCurves.TabIndex = 22;
@@ -380,7 +373,7 @@ namespace Resonalyze
             checkBoxShowRaw.AutoSize = true;
             checkBoxShowRaw.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShowRaw.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxShowRaw.Location = new Point(70, 207);
+            checkBoxShowRaw.Location = new Point(70, 181);
             checkBoxShowRaw.Name = "checkBoxShowRaw";
             checkBoxShowRaw.Size = new Size(48, 19);
             checkBoxShowRaw.TabIndex = 23;
@@ -394,7 +387,7 @@ namespace Resonalyze
             checkBoxShowProcessed.CheckState = CheckState.Checked;
             checkBoxShowProcessed.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShowProcessed.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxShowProcessed.Location = new Point(132, 207);
+            checkBoxShowProcessed.Location = new Point(132, 181);
             checkBoxShowProcessed.Name = "checkBoxShowProcessed";
             checkBoxShowProcessed.Size = new Size(79, 19);
             checkBoxShowProcessed.TabIndex = 24;
@@ -406,7 +399,7 @@ namespace Resonalyze
             checkBoxBypass.AutoSize = true;
             checkBoxBypass.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxBypass.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxBypass.Location = new Point(220, 207);
+            checkBoxBypass.Location = new Point(220, 181);
             checkBoxBypass.Name = "checkBoxBypass";
             checkBoxBypass.Size = new Size(62, 19);
             checkBoxBypass.TabIndex = 25;
@@ -460,72 +453,7 @@ namespace Resonalyze
             numericLowPassRipple.TextAlign = HorizontalAlignment.Right;
             numericLowPassRipple.ThousandsSeparator = false;
             numericLowPassRipple.Value = new decimal(new int[] { 5, 0, 0, 65536 });
-            // 
-            // labelAllpass
-            // 
-            labelAllpass.AutoSize = true;
-            labelAllpass.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelAllpass.ForeColor = Color.FromArgb(210, 214, 222);
-            labelAllpass.Location = new Point(8, 157);
-            labelAllpass.Name = "labelAllpass";
-            labelAllpass.Size = new Size(49, 15);
-            labelAllpass.TabIndex = 30;
-            labelAllpass.Text = "All-pass";
-            // 
-            // comboAllPassType
-            // 
-            comboAllPassType.BackColor = Color.FromArgb(55, 60, 72);
-            comboAllPassType.ForeColor = Color.White;
-            comboAllPassType.Location = new Point(70, 155);
-            comboAllPassType.MinimumSize = new Size(36, 19);
-            comboAllPassType.Name = "comboAllPassType";
-            comboAllPassType.Size = new Size(60, 19);
-            comboAllPassType.TabIndex = 32;
-            // 
-            // numericAllPassFreq
-            // 
-            numericAllPassFreq.BackColor = Color.FromArgb(55, 60, 72);
-            numericAllPassFreq.DecimalPlaces = 0;
-            numericAllPassFreq.ForeColor = Color.White;
-            numericAllPassFreq.Increment = new decimal(new int[] { 10, 0, 0, 0 });
-            numericAllPassFreq.Location = new Point(134, 155);
-            numericAllPassFreq.Maximum = new decimal(new int[] { 24000, 0, 0, 0 });
-            numericAllPassFreq.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
-            numericAllPassFreq.MinimumSize = new Size(36, 19);
-            numericAllPassFreq.Name = "numericAllPassFreq";
-            numericAllPassFreq.Size = new Size(60, 19);
-            numericAllPassFreq.TabIndex = 34;
-            numericAllPassFreq.TextAlign = HorizontalAlignment.Right;
-            numericAllPassFreq.ThousandsSeparator = false;
-            numericAllPassFreq.Value = new decimal(new int[] { 2000, 0, 0, 0 });
-            // 
-            // numericAllPassQ
-            // 
-            numericAllPassQ.BackColor = Color.FromArgb(55, 60, 72);
-            numericAllPassQ.DecimalPlaces = 1;
-            numericAllPassQ.ForeColor = Color.White;
-            numericAllPassQ.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
-            numericAllPassQ.Location = new Point(198, 155);
-            numericAllPassQ.Maximum = new decimal(new int[] { 20, 0, 0, 0 });
-            numericAllPassQ.Minimum = new decimal(new int[] { 1, 0, 0, 65536 });
-            numericAllPassQ.MinimumSize = new Size(36, 19);
-            numericAllPassQ.Name = "numericAllPassQ";
-            numericAllPassQ.Size = new Size(50, 19);
-            numericAllPassQ.TabIndex = 35;
-            numericAllPassQ.TextAlign = HorizontalAlignment.Right;
-            numericAllPassQ.ThousandsSeparator = false;
-            numericAllPassQ.Value = new decimal(new int[] { 10, 0, 0, 65536 });
-            // 
-            // labelAllpassBand
-            // 
-            labelAllpassBand.AutoSize = true;
-            labelAllpassBand.ForeColor = Color.FromArgb(170, 176, 190);
-            labelAllpassBand.Location = new Point(254, 157);
-            labelAllpassBand.Name = "labelAllpassBand";
-            labelAllpassBand.Size = new Size(58, 15);
-            labelAllpassBand.TabIndex = 36;
-            labelAllpassBand.Text = "= 0.00 ms";
-            // 
+            //
             // labelTotalGain
             // 
             labelTotalGain.AutoSize = true;
@@ -543,11 +471,6 @@ namespace Resonalyze
             BackColor = Color.FromArgb(46, 51, 62);
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(labelTotalGain);
-            Controls.Add(labelAllpassBand);
-            Controls.Add(numericAllPassQ);
-            Controls.Add(numericAllPassFreq);
-            Controls.Add(comboAllPassType);
-            Controls.Add(labelAllpass);
             Controls.Add(numericLowPassRipple);
             Controls.Add(numericHighPassRipple);
             Controls.Add(buttonMute);
@@ -581,18 +504,16 @@ namespace Resonalyze
             Controls.Add(checkBoxBypass);
             Font = new Font("Segoe UI", 9F);
             ForeColor = Color.White;
-            MaximumSize = new Size(324, 232);
-            MinimumSize = new Size(324, 232);
+            MaximumSize = new Size(324, 206);
+            MinimumSize = new Size(324, 206);
             Name = "VirtualCrossoverChannelControl";
-            Size = new Size(322, 230);
+            Size = new Size(322, 204);
             (numericGain).EndInit();
             (numericDelay).EndInit();
             (numericHighPassHz).EndInit();
             (numericLowPassHz).EndInit();
             (numericHighPassRipple).EndInit();
             (numericLowPassRipple).EndInit();
-            (numericAllPassFreq).EndInit();
-            (numericAllPassQ).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -630,11 +551,6 @@ namespace Resonalyze
         private Button buttonMute;
         private DarkNumericUpDown numericHighPassRipple;
         private DarkNumericUpDown numericLowPassRipple;
-        private Label labelAllpass;
-        private DarkComboBox comboAllPassType;
-        private DarkNumericUpDown numericAllPassFreq;
-        private DarkNumericUpDown numericAllPassQ;
-        private Label labelAllpassBand;
         private Label labelTotalGain;
     }
 }

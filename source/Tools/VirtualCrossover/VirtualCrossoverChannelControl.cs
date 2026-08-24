@@ -13,19 +13,10 @@ namespace Resonalyze;
 /// </summary>
 public partial class VirtualCrossoverChannelControl : UserControl
 {
-
-    /// <summary>
-    /// The rate the readouts assume until the project resolves its first source and can
-    /// report a real one. Shared with the host, which falls back to it for the same
-    /// reason, so the assumption is stated once.
-    /// </summary>
-    public const double DefaultSampleRateHz = 48_000;
-
     private string channelName = "A";
     private bool suppressChangeEvents;
     private bool muted;
     private bool collapsed;
-    private double sampleRateHz = DefaultSampleRateHz;
     private double peqPreampDb;
     private int expandedHeight;
 
@@ -41,42 +32,11 @@ public partial class VirtualCrossoverChannelControl : UserControl
         // pole math is undefined); the designer value is only a default.
         numericHighPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
         numericLowPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
-        // The all-pass Q ceiling is a sane range rather than a maths limit, so it lives
-        // with the project model the validator shares — not in the DSP.
-        numericAllPassQ.Maximum = (decimal)VirtualCrossoverChannelSettings.MaximumAllPassQ;
         PopulateCrossoverCombos();
-        PopulateAllPassCombo();
         WireEvents();
         UpdateCrossoverAvailability();
-        UpdateAllPassAvailability();
-        UpdateAllPassGroupDelay();
         UpdateDelayDistance();
         UpdateTotalGain();
-    }
-
-    /// <summary>
-    /// The project's sample rate, pushed by the host so the all-pass group-delay readout
-    /// reflects the digital filter the chain actually runs rather than the analog ideal.
-    /// The host feeds every block the PROJECT's rate, including blocks with no source of
-    /// their own — a block cannot report a rate it has no measurement for, but it still
-    /// sits in a project that has one. A non-positive value is ignored, leaving
-    /// <see cref="DefaultSampleRateHz"/> standing.
-    /// </summary>
-    [Browsable(false)]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public double SampleRateHz
-    {
-        get => sampleRateHz;
-        set
-        {
-            if (!(value > 0) || sampleRateHz == value)
-            {
-                return;
-            }
-
-            sampleRateHz = value;
-            UpdateAllPassGroupDelay();
-        }
     }
 
     /// <summary>
@@ -146,9 +106,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal DarkComboBox LowPassSlopeComboBox => comboBoxLowPassSlope;
     internal DarkNumericUpDown HighPassRippleInput => numericHighPassRipple;
     internal DarkNumericUpDown LowPassRippleInput => numericLowPassRipple;
-    internal DarkComboBox AllPassTypeComboBox => comboAllPassType;
-    internal DarkNumericUpDown AllPassFrequencyInput => numericAllPassFreq;
-    internal DarkNumericUpDown AllPassQInput => numericAllPassQ;
     internal Button MuteButton => buttonMute;
     internal Button CollapseButton => buttonCollapse;
     internal Label PeqInfoLabel => labelPeqInfo;
@@ -168,14 +125,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     public CrossoverEdge LowPassEdge => ReadEdge(
         numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope, numericLowPassRipple);
-
-    public AllPassType SelectedAllPassType =>
-        comboAllPassType.SelectedItem is AllPassType type ? type : AllPassType.Off;
-
-    public AllPassSpec AllPassStage => new(
-        SelectedAllPassType,
-        (double)numericAllPassFreq.Value,
-        (double)numericAllPassQ.Value);
 
     /// <summary>
     /// Ties the channel block to its plot curves: the header and the Processed
@@ -375,7 +324,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         toolTip.SetToolTip(
             checkBoxBypass,
             "Bypass the DSP chain: feed the raw measured signal with\r\n" +
-            "no gain, delay, polarity, crossover, all-pass or PEQ —\r\n" +
+            "no gain, delay, polarity, crossover or PEQ —\r\n" +
             "the driver's natural band-pass, for an A/B against the\r\n" +
             "processed result.\r\n" +
             "Shared by both sides, like Mute.");
@@ -442,39 +391,13 @@ public partial class VirtualCrossoverChannelControl : UserControl
         numericLowPassRipple.ApplyToolTip(toolTip, rippleTip);
 
         toolTip.SetToolTip(
-            comboAllPassType,
-            "All-pass: rotates phase without touching the magnitude —\r\n" +
-            "the tool for lining drivers up through a crossover region.\r\n" +
-            "Unlike a delay (constant everywhere) or a polarity flip\r\n" +
-            "(180° everywhere), it turns the phase locally.\r\n" +
-            "1st — 180° of swing, -90° at the corner, no Q.\r\n" +
-            "2nd — 360° of swing, -180° at the corner, Q sets the width.\r\n" +
-            "Its own stage: it runs even with the crossover off.");
-        numericAllPassFreq.ApplyToolTip(
-            toolTip,
-            "All-pass corner (Hz): where the phase rotation is centred.\r\n" +
-            "Usually parked on the crossover point being aligned —\r\n" +
-            "the sub-to-midbass hand-off at 60-100 Hz is the classic\r\n" +
-            "case. Pair it with the Invert null test to find the spot.");
-        numericAllPassQ.ApplyToolTip(
-            toolTip,
-            "All-pass Q — how abruptly the phase turns (2nd order only).\r\n" +
-            "A higher Q turns it harder over a narrower band and piles\r\n" +
-            "up more group delay at the corner. It does NOT change the\r\n" +
-            "total 360° swing, only how fast it happens.");
-        toolTip.SetToolTip(
-            labelAllpassBand,
-            "Group delay this all-pass adds at its own corner\r\n" +
-            "(≈ 4Q/ω₀), read from the digital filter, not the analog ideal.\r\n" +
-            "This is why the stage works — and its risk: on a low corner\r\n" +
-            "it reaches many milliseconds and cannot be undone by EQ.\r\n" +
-            "Rough audibility: ~10 ms in the bass, ~2 ms up top.");
-        toolTip.SetToolTip(
             buttonPeqMenu,
             "This channel's parametric EQ: load it from a file\r\n" +
             "(an EQ Wizard export or a compatible PEQ list), edit or\r\n" +
             "create it in the EQ Wizard, or clear it. The bands add\r\n" +
-            "on top of the crossover in the processed response.");
+            "on top of the crossover in the processed response.\r\n" +
+            "All-pass filters (AP1/AP2) live here too, as bands of the\r\n" +
+            "bank — added or tuned in the EQ Wizard's phase view.");
 
         toolTip.SetToolTip(
             checkBoxShowRaw,
@@ -508,8 +431,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
 
         UpdateCrossoverAvailability();
-        UpdateAllPassAvailability();
-        UpdateAllPassGroupDelay();
         UpdateDelayDistance();
         UpdateTotalGain();
     }
@@ -540,31 +461,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
         InitializeFamilyCombo(comboBoxHighPassFamily, comboBoxHighPassSlope);
         InitializeFamilyCombo(comboBoxLowPassFamily, comboBoxLowPassSlope);
-    }
-
-    // The order names stay terse ("1st"/"2nd") because the block is dense and the combo
-    // is narrow; the tooltip carries what each one actually does.
-    private void PopulateAllPassCombo()
-    {
-        comboAllPassType.Items.AddRange(
-        [
-            AllPassType.Off,
-            AllPassType.FirstOrder,
-            AllPassType.SecondOrder
-        ]);
-        comboAllPassType.Format += (_, args) =>
-        {
-            if (args.ListItem is AllPassType type)
-            {
-                args.Value = type switch
-                {
-                    AllPassType.FirstOrder => "1st",
-                    AllPassType.SecondOrder => "2nd",
-                    _ => "Off"
-                };
-            }
-        };
-        comboAllPassType.SelectedIndex = 0;
     }
 
     private void InitializeFamilyCombo(DarkComboBox familyComboBox, DarkComboBox slopeComboBox)
@@ -656,22 +552,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
             numericHighPassHz, comboBoxHighPassFamily, comboBoxHighPassSlope, numericHighPassRipple);
         WireEdgeEvents(
             numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope, numericLowPassRipple);
-        comboAllPassType.SelectedIndexChanged += (_, _) =>
-        {
-            UpdateAllPassAvailability();
-            UpdateAllPassGroupDelay();
-            RaiseSettingsChanged();
-        };
-        numericAllPassFreq.ValueChanged += (_, _) =>
-        {
-            UpdateAllPassGroupDelay();
-            RaiseSettingsChanged();
-        };
-        numericAllPassQ.ValueChanged += (_, _) =>
-        {
-            UpdateAllPassGroupDelay();
-            RaiseSettingsChanged();
-        };
         checkBoxShowRaw.CheckedChanged += (_, _) => RaiseSettingsChanged();
         checkBoxShowProcessed.CheckedChanged += (_, _) => RaiseSettingsChanged();
         checkBoxBypass.CheckedChanged += (_, _) => RaiseSettingsChanged();
@@ -735,39 +615,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
     {
         bool chebyshev = familyComboBox.SelectedItem is CrossoverFilterFamily.Chebyshev;
         rippleInput.Enabled = edgeActive && chebyshev;
-    }
-
-    // The all-pass is its own stage, so nothing here depends on the crossover kind: the
-    // frequency is live whenever the stage is on, and Q only for a second-order section —
-    // a first-order one has a single real pole and no Q at all.
-    private void UpdateAllPassAvailability()
-    {
-        AllPassType type = SelectedAllPassType;
-        UiStyle.SetTextEnabledLook(labelAllpass, type != AllPassType.Off);
-        numericAllPassFreq.Enabled = type != AllPassType.Off;
-        numericAllPassQ.Enabled = type == AllPassType.SecondOrder;
-    }
-
-    // The delay the all-pass piles up at its own corner (tau ~ 4Q/w0) — the reason the
-    // stage works, and on a low corner its main risk. Read from the digital biquad at the
-    // project's rate so the readout cannot disagree with the plots.
-    private void UpdateAllPassGroupDelay()
-    {
-        AllPassSpec stage = AllPassStage;
-        if (stage.Type == AllPassType.Off)
-        {
-            labelAllpassBand.Text = string.Empty;
-            return;
-        }
-
-        double milliseconds =
-            AllPassFilter.CornerGroupDelaySeconds(stage, sampleRateHz) * 1_000.0;
-        // Two decimals at the values that matter (a 60-100 Hz alignment lands near
-        // 5-15 ms), but drop them past 100 ms: a low corner with a high Q reaches
-        // four digits (10 Hz at Q 20 is over a second) and would overflow the label.
-        labelAllpassBand.Text = milliseconds >= 100
-            ? $"= {milliseconds:0} ms"
-            : $"= {milliseconds:0.00} ms";
     }
 
     // The one level to dial in: many DSPs have no separate preamp for their equalizer,

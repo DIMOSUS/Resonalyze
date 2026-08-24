@@ -127,25 +127,24 @@ public sealed class AllPassBandTests
     }
 
     [Fact]
-    public void Chain_AllPassBandMatchesTheChannelStage()
+    public void Chain_AllPassBandMatchesTheFilterItReplaced()
     {
-        // The analytic chain with the band in its PEQ must equal the same chain with
-        // the equivalent per-channel stage — phase included. This is the equivalence
-        // the project-file migration will rely on.
+        // The analytic chain with the band in its PEQ must equal the raw all-pass
+        // response — phase included. This is the equivalence the project-file
+        // migration relied on when the per-channel stage became a band.
         const double sampleRate = 48_000;
+        var spec = new AllPassSpec(AllPassType.SecondOrder, 120, 1.5);
         var viaBand = new DspChannelChain(
             Peq: new EqualizationCurve(
                 new[] { new PeqBand(120, 1.5, 0, PeqBandType.AllPassSecondOrder) }));
-        var viaStage = new DspChannelChain(
-            AllPass: new AllPassSpec(AllPassType.SecondOrder, 120, 1.5));
 
         foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 100))
         {
             Complex band = viaBand.Response(f, sampleRate);
-            Complex stage = viaStage.Response(f, sampleRate);
+            Complex filter = AllPassFilter.Response(spec, f, sampleRate);
             Assert.True(
-                (band - stage).Magnitude < 1e-9,
-                $"@ {f:0} Hz: band {band} vs stage {stage}");
+                (band - filter).Magnitude < 1e-9,
+                $"@ {f:0} Hz: band {band} vs filter {filter}");
         }
     }
 

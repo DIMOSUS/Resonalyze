@@ -1558,10 +1558,16 @@ material actually sums in, deliberately not the direct-sound phase, because the
 room adds several milliseconds of apparent group delay down low. Per junction it
 shows **φfc**, the lower channel's phase minus the upper at the crossover (≈0°
 means phase-aligned; ±180° does not by itself call for a flip, since an inverted
-channel and a half-period delay are identical at fc); **fix ms**, the extra delay
-on the lower channel that would maximize the overlap-band phase score, with `i`
-recommending a flip and `~` warning that a flip nearly ties; and **lobe**, how
-decisively that delay beats the nearest same-polarity rival. A **Δ L−R** block
+channel and a half-period delay are identical at fc); and **fix ms**, the extra
+delay on the lower channel that would maximize the overlap-band phase score,
+with `i` recommending a flip, `~` warning that a flip nearly ties, and `!`
+warning that the overlap band is too narrow to rule out a whole-period hop — so
+the fix is not to be trusted, and the junction's coherence ladder is the better
+read. A fix worth less than 10° of phase at the crossover (0.13 dB in the sum)
+shows as `·`: a settled tune has nothing to apply there, and a number would
+invite a correction that changes nothing. The tooltip carries every fitted
+figure behind those two columns, including the lobe margin the `!` is drawn
+from. A **Δ L−R** block
 below reports each pair's inter-side state — the two sides' band-limited envelope
 arrivals with their difference (positive means the right side leads, the scene
 offset's convention), plus a **Level Δ L−R** row for the by-ear gain trim that

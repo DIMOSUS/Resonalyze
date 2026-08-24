@@ -230,15 +230,32 @@ internal static class VirtualCrossoverMetric
     // Below this lobe margin the compact line gets a "!" — the overlap band is
     // too narrow to rule out a whole-period hop, so the recommendation is
     // ambiguous. The field probe read ~0.19 on a healthy octave-wide junction
-    // and ~0.04 on a deliberately narrowed one.
+    // and ~0.04 on a deliberately narrowed one. The margin ITSELF is a tooltip
+    // figure rather than a column: it is a difference of two phase scores, so
+    // it carries no scale a reader can judge (is 0.21 good?), and the one
+    // thing it decides — trust the fix or not — is what this flag already
+    // says. Where the band IS wide enough to discriminate, the coherence
+    // ladder shows the same ambiguity per frequency, against its ±T/2
+    // corridor.
     private const double AmbiguousLobeMargin = 0.10;
+
+    // A fix is shown only when it is worth applying, measured where it acts:
+    // as PHASE at the crossover. Ten degrees costs the sum 0.13 dB — below the
+    // ear and below the measurement's own repeatability — so anything under it
+    // renders as "·" instead of a number inviting a correction. A settled tune
+    // otherwise fills the column with values like "-0.01" that read as data
+    // and mean nothing. The threshold is per junction on purpose: 0.05 ms is
+    // nothing at 65 Hz and most of a period at 4 kHz.
+    private const double SignificantFixDegrees = 10.0;
 
     /// <summary>
     /// Compact per-junction phase column for the host read-out panel: the phase
-    /// at the crossover, the score-maximizing extra delay on the lower channel
-    /// (with an "i" when flipping that channel's polarity scores clearly better,
-    /// "~" when a flip nearly ties), and the same-polarity lobe margin ("!" when
-    /// it is too small to rule out a whole-period hop).
+    /// at the crossover and the score-maximizing extra delay on the lower
+    /// channel (with an "i" when flipping that channel's polarity scores
+    /// clearly better, "~" when a flip nearly ties, and "!" when the
+    /// same-polarity lobe margin is too small to rule out a whole-period hop).
+    /// A fix too small to matter renders as "·"; the lobe margin itself, and
+    /// every other fitted figure, lives in <see cref="FormatPhaseDetail"/>.
     /// </summary>
     public static string FormatPhaseCompact(IReadOnlyList<PhaseEntry> entries)
     {
@@ -248,7 +265,7 @@ internal static class VirtualCrossoverMetric
         }
 
         var builder = new System.Text.StringBuilder(
-            "Junction phase\r\n       φfc  fix ms   lobe\r\n");
+            "Junction phase\r\n       φfc  fix ms\r\n");
         foreach (PhaseEntry entry in entries)
         {
             JunctionPhaseResult result = entry.Result;
@@ -262,7 +279,16 @@ internal static class VirtualCrossoverMetric
                 result.PhaseConsistency >= JunctionPhaseAlignment.MinimumPhaseConsistency
                     ? $"{result.PhaseAtCrossoverDeg,4:+0;-0;0}°"
                     : "    —";
-            string fix = $"{result.BestExtraDelayMs,6:+0.00;-0.00;0.00}";
+            // A delay is worth showing when it moves the phase at fc by more
+            // than SignificantFixDegrees; below that the column shows "·"
+            // rather than a number nobody should act on. The POLARITY mark
+            // still renders beside it — an inversion is not a matter of
+            // magnitude, and it stays actionable when the delay does not.
+            double significantMs =
+                SignificantFixDegrees / 360.0 * 1_000.0 / entry.CrossoverHz;
+            string fix = Math.Abs(result.BestExtraDelayMs) >= significantMs
+                ? $"{result.BestExtraDelayMs,6:+0.00;-0.00;0.00}"
+                : "     ·";
             // Polarity slot: "i" recommends flipping the lower channel; "~"
             // keeps the current polarity but flags that flipping nearly ties
             // (an inversion and a half-period delay sum alike here — common at
@@ -274,15 +300,12 @@ internal static class VirtualCrossoverMetric
                 : result.BestScore - result.OppositePolarityScore
                     < JunctionPhaseAlignment.PolarityFlipAdvantage ? "~"
                 : " ";
-            string lobe = result.LobeMargin.HasValue
-                ? $"{result.LobeMargin.Value,5:0.00}"
-                : "    —";
             string warning =
                 result.LobeMargin is { } margin && margin < AmbiguousLobeMargin
                     ? " !"
                     : string.Empty;
             builder.AppendLine(
-                $"{entry.Junction.PadRight(6)}{phase} {fix}{polarity} {lobe}{warning}");
+                $"{entry.Junction.PadRight(6)}{phase} {fix}{polarity}{warning}");
         }
 
         return builder.ToString().TrimEnd();
@@ -332,16 +355,19 @@ internal static class VirtualCrossoverMetric
             "alignment score,\r\nnot the magnitude coherence γ². fix: the delay " +
             "to add to the LOWER channel\r\nthat best aligns the band. A " +
             "negative fix advances the lower channel — apply\r\nit as a +delay " +
-            "on the UPPER one when the lower is already at 0. Polarity mark:" +
-            "\r\n\"i\" (or \"invert\") = flipping the lower channel scores " +
+            "on the UPPER one when the lower is already at 0. A fix worth less " +
+            "than\r\n10° of phase at fc (0.13 dB in the sum) shows as \"·\": " +
+            "there is nothing to apply.\r\nPolarity mark: " +
+            "\"i\" (or \"invert\") = flipping the lower channel scores " +
             "clearly better; \"~\" = the\r\ncurrent polarity is kept but a flip " +
             "nearly ties (an inversion and a half-period\r\ndelay sum alike, " +
             "common at a sub), so summation cannot settle the polarity —\r\nφ " +
             "near ±180° never settles it either. φ is a narrow circular mean " +
             "around fc;\r\nR (0..1) is how much its bins agree — a low R dashes " +
-            "it. lobe: how decisively\r\nthe best delay beats the nearest same-" +
-            "polarity whole-period rival; small margin\r\n(!) = the band is too " +
-            "narrow to rule that period hop out, so don't trust the fix.";
+            "it. The lobe margin above\r\nis how decisively the best delay beats " +
+            "the nearest same-polarity whole-period\r\nrival; a small one (!) " +
+            "means the band is too narrow to rule that period hop out,\r\nso " +
+            "don't trust the fix — read the junction's coherence ladder instead.";
     }
 
     /// <summary>

@@ -127,6 +127,7 @@ public partial class EqWizardPanel
                 SmoothingInverseOctaves: 0.0),
             startMs,
             startMs,
+            startMs,
             PinnedOffset: false,
             EqWizardPhaseRender.EditedChannelColor,
             []);
@@ -333,18 +334,27 @@ public partial class EqWizardPanel
             FdwCycles = fdwCycles,
             DetrendMode = detrendMode
         };
-        double resolvedOffsetMs = phaseGatePinned ? offsetMs : opened.GateOffsetMs;
+        // Unpinning puts every window back on its own driver's arrival — the figure
+        // each response carries for exactly this. Reusing the offsets in force would
+        // leave them all on the absolute time the pin froze them at while the dialog
+        // said Auto.
+        double resolvedOffsetMs =
+            phaseGatePinned ? offsetMs : opened.AutoGateOffsetMs;
         phaseContext = new EqWizardPhaseContext(
             gate,
             resolvedOffsetMs,
+            opened.AutoGateOffsetMs,
             ResolveDetrendMs(opened, gate, resolvedOffsetMs, detrendMode, detrendMs),
             phaseGatePinned,
             opened.ChannelColor,
-            phaseGatePinned
-                ? opened.Neighbours
-                    .Select(neighbour => neighbour with { GateOffsetMs = offsetMs })
-                    .ToList()
-                : opened.Neighbours);
+            opened.Neighbours
+                .Select(neighbour => neighbour with
+                {
+                    GateOffsetMs = phaseGatePinned
+                        ? offsetMs
+                        : neighbour.AutoGateOffsetMs
+                })
+                .ToList());
         InvalidatePhaseCurves();
     }
 

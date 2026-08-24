@@ -64,11 +64,12 @@ public sealed class VirtualDspEqHandoffTests
         var context = new EqWizardPhaseContext(
             GateTemplate with { GateOffsetMs = 9.0 },
             GateOffsetMs: 9.5,
+            AutoGateOffsetMs: 9.5,
             DetrendMs: 10.0,
             PinnedOffset: false,
             OxyPlot.OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
-                "B", OxyPlot.OxyColors.Orange, neighbourResponse, 9.75)]);
+                "B", OxyPlot.OxyColors.Orange, neighbourResponse, 9.75, 9.75)]);
 
         VirtualDspEqHandoffRequest request = Build(
             channel, withChain: true, phaseContext: context);
@@ -92,11 +93,12 @@ public sealed class VirtualDspEqHandoffTests
         var context = new EqWizardPhaseContext(
             GateTemplate,
             GateOffsetMs: 9.5,
+            AutoGateOffsetMs: 9.5,
             DetrendMs: 10.0,
             PinnedOffset: false,
             OxyPlot.OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
-                "B", OxyPlot.OxyColors.Orange, new Complex[1_024], 9.75)]);
+                "B", OxyPlot.OxyColors.Orange, new Complex[1_024], 9.75, 9.75)]);
 
         VirtualDspEqHandoffRequest request = Build(
             channel, withChain: false, phaseContext: context);

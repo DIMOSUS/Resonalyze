@@ -26,11 +26,12 @@ public sealed class EqWizardPhaseModeTests
         var context = new EqWizardPhaseContext(
             Gate(9.0),
             GateOffsetMs: 9.5,
+            AutoGateOffsetMs: 9.5,
             DetrendMs: 10.25,
             PinnedOffset: false,
             OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
-                "B", OxyColors.Orange, Wavelet(), 9.75)]);
+                "B", OxyColors.Orange, Wavelet(), 9.75, 9.75)]);
 
         ApplySource(panel, Source(context));
 
@@ -58,10 +59,12 @@ public sealed class EqWizardPhaseModeTests
         var context = new EqWizardPhaseContext(
             Gate(9.0) with { DetrendMode = detrendMode },
             GateOffsetMs: 9.5,
+            AutoGateOffsetMs: 9.5,
             DetrendMs: 10.25,
             pinned,
             OxyColors.SkyBlue,
-            [new EqWizardPhaseNeighbour("B", OxyColors.Orange, Wavelet(), 9.75)]);
+            [new EqWizardPhaseNeighbour(
+                "B", OxyColors.Orange, Wavelet(), 9.75, 9.75)]);
 
         ApplySource(panel, Source(context));
 
@@ -79,9 +82,11 @@ public sealed class EqWizardPhaseModeTests
         // its own correction.
         using var panel = new EqWizardPanel();
         var context = new EqWizardPhaseContext(
-            Gate(9.0), GateOffsetMs: 9.5, DetrendMs: 10.25, PinnedOffset: false,
+            Gate(9.0), GateOffsetMs: 9.5, AutoGateOffsetMs: 9.5, DetrendMs: 10.25,
+            PinnedOffset: false,
             OxyColors.SkyBlue,
-            [new EqWizardPhaseNeighbour("B", OxyColors.Orange, Wavelet(), 9.75)]);
+            [new EqWizardPhaseNeighbour(
+                "B", OxyColors.Orange, Wavelet(), 9.75, 9.75)]);
         ApplySource(panel, Source(context));
 
         ApplyPhaseGate(panel, context, 4.0, autoOffset: true, PhaseDetrendMode.Off);
@@ -147,8 +152,9 @@ public sealed class EqWizardPhaseModeTests
         // neighbours that are no longer on screen.
         using var panel = new EqWizardPanel();
         ApplySource(panel, Source(new EqWizardPhaseContext(
-            Gate(9.0), 9.5, 10.25, false, OxyColors.SkyBlue,
-            [new EqWizardPhaseNeighbour("B", OxyColors.Orange, Wavelet(), 9.75)])));
+            Gate(9.0), 9.5, 9.5, 10.25, false, OxyColors.SkyBlue,
+            [new EqWizardPhaseNeighbour(
+                "B", OxyColors.Orange, Wavelet(), 9.75, 9.75)])));
 
         ApplySource(panel, Source(phaseContext: null));
 
@@ -166,9 +172,11 @@ public sealed class EqWizardPhaseModeTests
         // own arrival — which is what the offsets in a handoff's context ARE.
         using var panel = new EqWizardPanel();
         var context = new EqWizardPhaseContext(
-            Gate(9.0), GateOffsetMs: 9.5, DetrendMs: 10.25, PinnedOffset: false,
+            Gate(9.0), GateOffsetMs: 9.5, AutoGateOffsetMs: 9.5, DetrendMs: 10.25,
+            PinnedOffset: false,
             OxyColors.SkyBlue,
-            [new EqWizardPhaseNeighbour("B", OxyColors.Orange, Wavelet(), 9.75)]);
+            [new EqWizardPhaseNeighbour(
+                "B", OxyColors.Orange, Wavelet(), 9.75, 9.75)]);
         ApplySource(panel, Source(context));
 
         ApplyPhaseGate(panel, context, offsetMs: 4.0, autoOffset: false);
@@ -183,6 +191,35 @@ public sealed class EqWizardPhaseModeTests
         ApplyPhaseGate(panel, context, offsetMs: 4.0, autoOffset: true);
 
         EqWizardPhaseContext auto = ContextOf(panel)!;
+        Assert.Equal(9.5, auto.GateOffsetMs);
+        Assert.Equal(9.75, auto.Neighbours.Single().GateOffsetMs);
+    }
+
+    [Fact]
+    public void UnpinningAGateThatArrivedPinnedPutsEachWindowBackOnItsDriver()
+    {
+        // A pinned handoff carries ONE absolute window on every curve. Pressing Auto
+        // here has to put them back on their own arrivals; reusing the offsets in
+        // force would leave every window frozen at the pinned time while the dialog
+        // said Auto — a phase comparison read through the wrong windows, with nothing
+        // on screen to say so.
+        using var panel = new EqWizardPanel();
+        var pinned = new EqWizardPhaseContext(
+            Gate(4.0),
+            GateOffsetMs: 4.0,
+            AutoGateOffsetMs: 9.5,
+            DetrendMs: 10.25,
+            PinnedOffset: true,
+            OxyColors.SkyBlue,
+            [new EqWizardPhaseNeighbour(
+                "B", OxyColors.Orange, Wavelet(), 4.0, AutoGateOffsetMs: 9.75)]);
+        ApplySource(panel, Source(pinned));
+        Assert.True(PinnedFlag(panel));
+
+        ApplyPhaseGate(panel, pinned, offsetMs: 4.0, autoOffset: true);
+
+        EqWizardPhaseContext auto = ContextOf(panel)!;
+        Assert.False(PinnedFlag(panel));
         Assert.Equal(9.5, auto.GateOffsetMs);
         Assert.Equal(9.75, auto.Neighbours.Single().GateOffsetMs);
     }

@@ -393,6 +393,7 @@ public partial class VirtualCrossoverPanel : UserControl
             VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault();
             await ApplyProjectAsync(loaded, imported: false);
             NotifyIfProjectBackedUp(loaded.BackupNoticePath);
+            NotifyIfMigrationCostAFilter(loaded.MigrationNoticeText);
         }
         catch (Exception exception)
         {
@@ -413,6 +414,24 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // Tell the user, once, when their unreadable session file was moved aside so
     // they know a .backup exists to recover from.
+    // A migration that had to drop a filter says so. Loading is not the moment to
+    // ask a question — there is nothing to choose between — but it IS the moment to
+    // say what changed, before the next save makes it the file.
+    private void NotifyIfMigrationCostAFilter(string? notice)
+    {
+        if (notice == null || IsDisposed)
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            notice,
+            "Virtual DSP",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+    }
+
     private void NotifyIfProjectBackedUp(string? backupPath)
     {
         if (backupPath == null || IsDisposed)
@@ -1028,20 +1047,35 @@ public partial class VirtualCrossoverPanel : UserControl
         // different question than the EQ (they align this side rather than voice the
         // pair), so the two scopes split ONE list by band type: Peq moves the
         // gain-bearing bands, AllPass the phase-only ones, and whichever kind is not
-        // being copied survives on the target side. When the merged bank would
-        // exceed the slot budget, the copied gain-bearing bands give way — the
-        // all-pass sits on a junction this side was aligned on, and is the harder
-        // thing to have to dial in again.
+        // being copied survives on the target side.
         if (scope.Peq || scope.AllPass)
         {
-            IEnumerable<PeqBand> tonal = (scope.Peq ? from : to)
-                .PeqBands.Where(band => !band.Type.IsAllPass());
+            List<PeqBand> tonal = (scope.Peq ? from : to)
+                .PeqBands.Where(band => !band.Type.IsAllPass()).ToList();
             List<PeqBand> allPass = (scope.AllPass ? from : to)
                 .PeqBands.Where(band => band.Type.IsAllPass()).ToList();
-            to.PeqBands = tonal
-                .Take(EqualizationCurve.MaxBandCount - allPass.Count)
-                .Concat(allPass)
-                .ToList();
+            // Over the slot budget something has to give, and it is always the kind
+            // being COPIED. An unticked scope promised the target's own bands would
+            // be left alone, and deleting them to make room for filters from the
+            // other side breaks that promise silently — on a bank the user cannot
+            // see all of at once. With both kinds copied the all-pass stays: it sits
+            // on a junction this side was aligned on, and is the harder thing to
+            // have to dial in again.
+            int overflow =
+                tonal.Count + allPass.Count - EqualizationCurve.MaxBandCount;
+            if (overflow > 0)
+            {
+                if (scope.Peq)
+                {
+                    tonal = tonal.Take(Math.Max(0, tonal.Count - overflow)).ToList();
+                }
+                else
+                {
+                    allPass = allPass.Take(Math.Max(0, allPass.Count - overflow)).ToList();
+                }
+            }
+
+            to.PeqBands = tonal.Concat(allPass).ToList();
         }
 
         if (scope.Peq)
@@ -2120,6 +2154,17 @@ public partial class VirtualCrossoverPanel : UserControl
             ?? ResolveGateOffsetMs(drawn, sampleRate);
         double detrendMs = ResolveCommonDetrendMs(drawn, referenceOffsetMs, sampleRate);
         List<double> offsets = ResolvePhaseGateOffsets(drawn, referenceOffsetMs, sampleRate);
+        // Where each window would open with the gate UNPINNED. With a pin in force
+        // the offsets above are all one absolute time, and the wizard's own Auto
+        // button would have nothing to put the windows back onto.
+        List<double> autoOffsets = PhaseGatePlacement.ResolvePerCurveOffsets(
+            drawn,
+            PhaseGatePlacement.ResolveSharedOffsetMs(drawn, sampleRate, null),
+            sampleRate,
+            pinnedOffsetMs: null,
+            gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
+            gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
+            gatePreview?.RightMs ?? project.PhaseGateRightMs);
 
         return new EqWizardPhaseContext(
             // The gate as the USER has it, detrend mode included. The curves are always
@@ -2132,6 +2177,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 gatePreview?.DetrendMode ?? project.PhaseDetrendMode,
                 detrendMs),
             offsets[index],
+            autoOffsets[index],
             detrendMs,
             // Pinned here means pinned there: an absolute window the user placed by
             // hand must not turn back into Auto on the way over.
@@ -2147,7 +2193,8 @@ public partial class VirtualCrossoverPanel : UserControl
                     entry.item.Channel.Name,
                     entry.item.Color,
                     entry.item.ImpulseResponse,
-                    offsets[entry.position]))
+                    offsets[entry.position],
+                    autoOffsets[entry.position]))
                 .ToList());
     }
 
@@ -5722,6 +5769,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         await ApplyProjectAsync(imported, imported: true);
+        NotifyIfMigrationCostAFilter(imported.MigrationNoticeText);
         ScheduleSave();
         await RelinkMissingSourcesAsync();
         ShowCalibrationNotice();

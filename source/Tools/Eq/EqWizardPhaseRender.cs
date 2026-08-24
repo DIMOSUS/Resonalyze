@@ -19,11 +19,17 @@ namespace Resonalyze;
 /// Where this channel's window opens, resolved over the whole set by
 /// <see cref="PhaseGatePlacement"/> — not re-derived per channel here.
 /// </param>
+/// <param name="AutoGateOffsetMs">
+/// Where it would open with the gate UNPINNED: this driver's own arrival. It rides
+/// along because a pinned gate makes every window the same absolute time, and there
+/// would otherwise be nothing to return to when the user unpins it here.
+/// </param>
 internal sealed record EqWizardPhaseNeighbour(
     string Name,
     OxyColor Color,
     Complex[] ImpulseResponse,
-    double GateOffsetMs);
+    double GateOffsetMs,
+    double AutoGateOffsetMs);
 
 /// <summary>
 /// What a Virtual DSP handoff hands the wizard's phase view: the neighbouring drivers
@@ -63,9 +69,15 @@ internal sealed record EqWizardPhaseNeighbour(
 /// it over, so one driver reads the same in both views; a source with no panel behind
 /// it falls back to the wizard's own.
 /// </param>
+/// <param name="AutoGateOffsetMs">
+/// The edited channel's own arrival, for the same reason its neighbours carry theirs:
+/// unpinning the gate here has to put every window back on its driver rather than
+/// leave them all on the absolute time the pin froze them at.
+/// </param>
 internal sealed record EqWizardPhaseContext(
     PhaseAnalysisSettings Gate,
     double GateOffsetMs,
+    double AutoGateOffsetMs,
     double DetrendMs,
     bool PinnedOffset,
     OxyColor ChannelColor,

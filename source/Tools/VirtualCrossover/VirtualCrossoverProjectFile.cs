@@ -1021,16 +1021,36 @@ public sealed class VirtualCrossoverProjectFile
                     if (side.LegacyAllPassType is AllPassType.FirstOrder
                             or AllPassType.SecondOrder &&
                         double.IsFinite(frequencyHz) && frequencyHz > 0 &&
-                        double.IsFinite(q) && q > 0 &&
-                        side.PeqBands.Count < EqualizationCurve.MaxBandCount)
+                        double.IsFinite(q) && q > 0)
                     {
-                        side.PeqBands.Add(new PeqBand(
-                            frequencyHz,
-                            q,
-                            0,
-                            firstOrder
-                                ? PeqBandType.AllPassFirstOrder
-                                : PeqBandType.AllPassSecondOrder));
+                        // A v7 side could hold a FULL bank and an all-pass stage
+                        // beside it, which v8 has no room for. Something is lost
+                        // either way, so lose the one that can be put back: a bell
+                        // is a magnitude correction Auto Tune can propose again,
+                        // while an all-pass sits on a junction that was aligned by
+                        // ear. The user is told rather than left to find out — see
+                        // MigrationNoticeText.
+                        if (side.PeqBands.Count >= EqualizationCurve.MaxBandCount)
+                        {
+                            int last = side.PeqBands.FindLastIndex(
+                                band => !band.Type.IsAllPass());
+                            if (last >= 0)
+                            {
+                                side.PeqBands.RemoveAt(last);
+                                file.migratedFullBanks++;
+                            }
+                        }
+
+                        if (side.PeqBands.Count < EqualizationCurve.MaxBandCount)
+                        {
+                            side.PeqBands.Add(new PeqBand(
+                                frequencyHz,
+                                q,
+                                0,
+                                firstOrder
+                                    ? PeqBandType.AllPassFirstOrder
+                                    : PeqBandType.AllPassSecondOrder));
+                        }
                     }
 
                     side.LegacyAllPassType = null;
@@ -1067,6 +1087,31 @@ public sealed class VirtualCrossoverProjectFile
     /// </summary>
     [JsonIgnore]
     public string? BackupNoticePath { get; private set; }
+
+    // How many channel sides had a full 32-band bank when their v7 all-pass stage
+    // was migrated into it, and so gave up their last gain-bearing band to make
+    // room. Not persisted: it describes THIS load, and the host tells the user
+    // once (see MigrationNoticeText).
+    private int migratedFullBanks;
+
+    /// <summary>
+    /// What this load had to change beyond restating it, or null when nothing was
+    /// lost. A migration that silently drops a filter is how a tune quietly stops
+    /// being the tune that was saved.
+    /// </summary>
+    [JsonIgnore]
+    public string? MigrationNoticeText =>
+        migratedFullBanks == 0
+            ? null
+            : $"{migratedFullBanks} channel side" +
+                (migratedFullBanks == 1 ? " had" : "s had") +
+                " a full 32-filter bank and an all-pass stage beside it. The " +
+                "all-pass is a band of the bank in this version, and there was no " +
+                "free slot for it, so the last gain-bearing filter of " +
+                (migratedFullBanks == 1 ? "that side" : "each of those sides") +
+                " gave up its place — an equalizer band can be fitted again, an " +
+                "all-pass sits on a junction that was aligned by ear. Check those " +
+                "channels before saving over the session.";
 
     /// <summary>
     /// Loads the saved project, falling back to a fresh default when the file

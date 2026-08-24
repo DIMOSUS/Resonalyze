@@ -62,6 +62,90 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void LoadOrDefault_V7ProjectWithAFullBank_KeepsTheAllPassAndSaysWhatItCost()
+    {
+        // A v7 side could hold all 32 bands AND an all-pass stage beside them; v8 has
+        // no room for both. Something is lost either way, so the migration loses the
+        // one that can be put back — a bell is a magnitude correction Auto Tune can
+        // propose again, an all-pass sits on a junction aligned by ear — and says so
+        // instead of reporting a clean conversion over a changed tune.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            for (int i = 0; i < EqualizationCurve.MaxBandCount; i++)
+            {
+                saved.Pairs[0].Left.PeqBands.Add(new PeqBand(100 + i, 2.0, -1.0));
+            }
+
+            saved.Save(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 7;
+            JsonObject left = file["pairs"]![0]!["left"]!.AsObject();
+            left["allPassType"] = "SecondOrder";
+            left["allPassFrequencyHz"] = 120;
+            left["allPassQ"] = 2.5;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            List<PeqBand> bands = loaded.Pairs[0].Left.PeqBands;
+            Assert.Equal(EqualizationCurve.MaxBandCount, bands.Count);
+            // The all-pass is there, and the band it displaced is the LAST bell — the
+            // ones before it are untouched.
+            Assert.Equal(
+                new PeqBand(120, 2.5, 0, PeqBandType.AllPassSecondOrder), bands[^1]);
+            Assert.Equal(
+                Enumerable.Range(0, EqualizationCurve.MaxBandCount - 1)
+                    .Select(i => new PeqBand(100 + i, 2.0, -1.0)),
+                bands.Take(EqualizationCurve.MaxBandCount - 1));
+
+            // And the load says what it cost, so the next save is not the first the
+            // user hears of it.
+            Assert.NotNull(loaded.MigrationNoticeText);
+            Assert.Contains("all-pass", loaded.MigrationNoticeText!);
+            loaded.Validate();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_V7ProjectThatLosesNothing_SaysNothing()
+    {
+        // The notice is for a migration that COST something. A file with room for its
+        // all-pass converts silently, or every opened session would cry wolf.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile().Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 7;
+            JsonObject left = file["pairs"]![0]!["left"]!.AsObject();
+            left["allPassType"] = "SecondOrder";
+            left["allPassFrequencyHz"] = 120;
+            left["allPassQ"] = 2.5;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Single(loaded.Pairs[0].Left.PeqBands);
+            Assert.Null(loaded.MigrationNoticeText);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadOrDefault_V7ProjectWithANonsenseAllPass_DropsItRatherThanFailing()
     {
         // Migrate runs before Validate, so a hand-edited or truncated stage must degrade

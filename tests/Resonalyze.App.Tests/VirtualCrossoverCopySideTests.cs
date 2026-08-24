@@ -84,6 +84,42 @@ public sealed class VirtualCrossoverCopySideTests
     }
 
     [Fact]
+    public void AnUntickedScopesBandsSurviveEvenWhenTheMergeOverflows()
+    {
+        // The promise an unticked scope makes is that the target's own bands are left
+        // alone. Over the slot budget it is the COPIED kind that has to give way —
+        // deleting bands the user never touched, to make room for filters from the
+        // other side, is silent loss on a bank they cannot see all of at once.
+        var from = new VirtualCrossoverChannelSettings
+        {
+            PeqBands =
+            {
+                new PeqBand(90, 2.5, 0, PeqBandType.AllPassSecondOrder),
+                new PeqBand(300, 1.0, 0, PeqBandType.AllPassFirstOrder)
+            }
+        };
+
+        var to = new VirtualCrossoverChannelSettings();
+        for (int i = 0; i < EqualizationCurve.MaxBandCount - 1; i++)
+        {
+            to.PeqBands.Add(new PeqBand(100 + i, 2.0, -1.0));
+        }
+
+        List<PeqBand> voicing = to.PeqBands.ToList();
+
+        Copy(from, to, new VirtualCrossoverCopyScope(
+            Gain: false, Delay: false, InvertPolarity: false, Crossover: false,
+            AllPass: true, Peq: false));
+
+        // Every one of the target's own filters is still there, in order.
+        Assert.Equal(voicing, to.PeqBands.Take(voicing.Count));
+        // One free slot, so one all-pass came over and the second did not.
+        Assert.Equal(EqualizationCurve.MaxBandCount, to.PeqBands.Count);
+        Assert.Equal(
+            new PeqBand(90, 2.5, 0, PeqBandType.AllPassSecondOrder), to.PeqBands[^1]);
+    }
+
+    [Fact]
     public void AMergedBankOverTheSlotBudget_DropsCopiedBandsRatherThanTheAllPass()
     {
         // A full bank on one side and an all-pass on the other cannot both fit. The

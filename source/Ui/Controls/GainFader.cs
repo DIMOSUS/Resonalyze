@@ -188,9 +188,9 @@ internal sealed class GainFader : Control
         }
 
         float labelRight = tickLeft - ScaleF(2);
-        Color maxColor = enabled ? UiPalette.SuccessGreenSoft : UiPalette.TextMuted;
-        Color zeroColor = enabled ? UiPalette.TextSecondary : UiPalette.TextMuted;
-        Color minColor = enabled ? UiPalette.ErrorSoft : UiPalette.TextMuted;
+        Color maxColor = enabled ? UiPalette.SuccessGreenSoft : UiPalette.TextDisabled;
+        Color zeroColor = enabled ? UiPalette.TextSecondary : UiPalette.TextDisabled;
+        Color minColor = enabled ? UiPalette.ErrorSoft : UiPalette.TextDisabled;
         DrawScaleLabel(graphics, FormatDb(maximum), track.Top, labelRight, maxColor);
         DrawScaleLabel(graphics, "0", zeroY, labelRight, zeroColor);
         DrawScaleLabel(graphics, FormatDb(minimum), track.Bottom, labelRight, minColor);
@@ -253,7 +253,7 @@ internal sealed class GainFader : Control
         // The bright grip line down the middle of the cap marks the exact value.
         Color gripColor = enabled
             ? Color.FromArgb(220, UiPalette.TextPrimarySoft)
-            : Color.FromArgb(120, UiPalette.TextMuted);
+            : Color.FromArgb(120, UiPalette.TextDisabled);
         using var gripPen = new Pen(gripColor, Math.Max(1f, ScaleF(1.4f)));
         graphics.DrawLine(gripPen, cap.Left + ScaleF(2), thumbY, cap.Right - ScaleF(2), thumbY);
     }

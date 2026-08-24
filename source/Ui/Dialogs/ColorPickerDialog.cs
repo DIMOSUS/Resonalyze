@@ -57,7 +57,7 @@ internal sealed class ColorPickerDialog : Form
         var subtitle = UiStyle.CreateLabel(
             "Choose a preset or create a custom color.",
             new Point(20, 42),
-            UiPalette.TextMutedSoft,
+            UiPalette.TextSecondary,
             Font);
 
         var presets = new FlowLayoutPanel

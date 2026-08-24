@@ -1,4 +1,4 @@
-namespace Resonalyze;
+﻿namespace Resonalyze;
 
 internal sealed partial class OverlaySettingsDialog : Form
 {
@@ -32,6 +32,9 @@ internal sealed partial class OverlaySettingsDialog : Form
         selectedColor = color;
 
         InitializeComponent();
+        // The accent fill is a palette value, not a literal the designer keeps a
+        // copy of: the two drifted apart once already.
+        Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill);
         PopulateControls();
         WireEvents();
         InitializeToolTips();

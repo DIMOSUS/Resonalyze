@@ -426,13 +426,14 @@ public partial class EqWizardPanel : UserControl
         // Mirror the axis style used by the Frequency Response and Live Spectrum
         // plots: a logarithmic 20 Hz - 20 kHz frequency axis and a dB axis.
         PlotModel model = new PlotModel();
+        PlotModelStyle.ApplyChrome(model);
         PlotModelStyle.AddFrequencyAxis(model);
         // The starting bounds ARE the impulse-response ones, not a copy of their
         // numbers: an IR is what the wizard opens on, and a second set of
         // literals here is a set that can drift away from the one a loaded
         // source re-arms the axis with.
         EqWizardAxisRange initialRange = EqWizardPlotFit.ImpulseResponseRange;
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Position = AxisPosition.Left,
             AbsoluteMinimum = initialRange.AbsoluteMinimum,
@@ -452,7 +453,7 @@ public partial class EqWizardPanel : UserControl
         // within it the axis zooms and pans like any other (hover it and scroll, or
         // drag), for reading a correction's fine structure without the whole budget's
         // height. A subtle 0-line marks unity gain.
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = EqGainAxisKey,
             Position = AxisPosition.Right,

@@ -1,4 +1,4 @@
-using OxyPlot;
+﻿using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
 
@@ -42,6 +42,9 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         selectedColor = color;
 
         InitializeComponent();
+        // The accent fill is a palette value, not a literal the designer keeps a
+        // copy of: the two drifted apart once already.
+        Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill);
         PopulateControls(availableSources);
         WireEvents();
         InitializeToolTips();
@@ -79,7 +82,14 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     // do anything. The name, colour, thickness and line style still apply.
     private void ApplyIsolatedTargetMode()
     {
-        nameTextBox.Enabled = false;
+        // The name is muted by hand rather than disabled: Windows paints a DISABLED
+        // TextBox in its own grey whatever ForeColor says (2.5:1 here), and this
+        // field still shows the name the overlay will carry. Read-only and off the
+        // tab order does the disabling.
+        nameTextBox.ReadOnly = true;
+        nameTextBox.TabStop = false;
+        nameTextBox.BackColor = Ui.UiPalette.ButtonDisabledBackground;
+        nameTextBox.ForeColor = Ui.UiPalette.TextDisabled;
         toleranceInput.Enabled = false;
         deviationModeComboBox.Enabled = false;
         smoothingComboBox.Enabled = false;

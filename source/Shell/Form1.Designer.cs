@@ -83,8 +83,6 @@ namespace Resonalyze
             // plotView1
             // 
             plotView1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            plotView1.BackColor = Color.FromArgb(50, 55, 100);
-            plotView1.ForeColor = Color.White;
             plotView1.Location = new Point(12, 52);
             plotView1.Name = "plotView1";
             plotView1.PanCursor = Cursors.Hand;

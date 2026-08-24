@@ -30,7 +30,7 @@ internal static class UiStyle
                 enabledForeColors.Add(control, control.ForeColor);
             }
 
-            control.ForeColor = UiPalette.TextMuted;
+            control.ForeColor = UiPalette.TextDisabled;
         }
 
         if (!interactive)
@@ -117,7 +117,7 @@ internal static class UiStyle
         var button = new Button
         {
             BackColor = accent
-                ? UiPalette.AccentBlue
+                ? UiPalette.AccentFill
                 : UiPalette.DialogSurfaceMuted,
             DialogResult = result,
             FlatStyle = FlatStyle.Flat,

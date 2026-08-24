@@ -1400,7 +1400,7 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         bool magnitude = radioViewMagnitude.Checked;
         checkBoxShowTarget.ForeColor =
-            magnitude ? targetToggleColor : Ui.UiPalette.TextMuted;
+            magnitude ? targetToggleColor : Ui.UiPalette.TextDisabled;
         checkBoxShowTarget.AutoCheck = magnitude;
         checkBoxShowTarget.TabStop = magnitude;
     }

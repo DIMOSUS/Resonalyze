@@ -120,10 +120,11 @@ internal sealed class VirtualCrossoverDspChainPlot
         this.view = view;
 
         var model = new PlotModel();
+        PlotModelStyle.ApplyChrome(model);
         PlotModelStyle.AddFrequencyAxis(model);
         // One value axis, reconfigured per plot mode (magnitude / phase / group
         // delay). A single axis keeps each mode readable on its own scale.
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = ValueAxisKey,
             Position = AxisPosition.Left,
@@ -157,13 +158,14 @@ internal sealed class VirtualCrossoverDspChainPlot
         {
             IsLegendVisible = true
         };
+        PlotModelStyle.ApplyChrome(model);
         model.Legends.Add(new OxyPlot.Legends.Legend
         {
             LegendPosition = OxyPlot.Legends.LegendPosition.TopRight,
             LegendTextColor = OxyColor.FromRgb(210, 214, 222),
             LegendBackground = OxyColor.FromAColor(120, OxyColor.FromRgb(40, 44, 54))
         });
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = LagAxisKey,
             Position = AxisPosition.Bottom,
@@ -171,7 +173,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             MajorGridlineStyle = LineStyle.Solid,
             MinorGridlineStyle = LineStyle.Dot
         });
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = CoefficientAxisKey,
             Position = AxisPosition.Left,
@@ -182,7 +184,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             MajorGridlineStyle = LineStyle.Solid,
             MinorGridlineStyle = LineStyle.Dot
         });
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = ScoreAxisKey,
             Position = AxisPosition.Right,
@@ -397,6 +399,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         {
             IsLegendVisible = true
         };
+        PlotModelStyle.ApplyChrome(model);
         model.Legends.Add(new OxyPlot.Legends.Legend
         {
             LegendPosition = OxyPlot.Legends.LegendPosition.TopRight,
@@ -404,7 +407,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             LegendBackground = OxyColor.FromAColor(120, OxyColor.FromRgb(40, 44, 54))
         });
         PlotModelStyle.AddFrequencyAxis(model);
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = CoherenceLagAxisKey,
             Position = AxisPosition.Left,
@@ -412,7 +415,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             MajorGridlineStyle = LineStyle.Solid,
             MinorGridlineStyle = LineStyle.Dot
         });
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = CoherenceCoefficientAxisKey,
             Position = AxisPosition.Right,

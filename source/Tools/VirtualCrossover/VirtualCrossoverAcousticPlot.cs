@@ -115,6 +115,7 @@ internal sealed class VirtualCrossoverAcousticPlot
         this.view = view;
 
         var model = new PlotModel();
+        PlotModelStyle.ApplyChrome(model);
         PlotModelStyle.AddFrequencyAxis(model);
         frequencyAxis = (LogarithmicAxis)model.Axes[^1];
         // The impulse view runs on an absolute-time axis. It zooms and pans like
@@ -138,7 +139,7 @@ internal sealed class VirtualCrossoverAcousticPlot
             MajorGridlineStyle = LineStyle.Solid,
             MinorGridlineStyle = LineStyle.Dot
         };
-        model.Axes.Add(valueAxis);
+        PlotModelStyle.AddAxis(model, valueAxis);
         // After the value axis: the mouse and the on-graph buttons take the
         // first visible zoomable axis of an orientation as "the" vertical
         // scale (PlotAxisZoom.FindZoomableAxis), and that stays the dB axis on
@@ -160,7 +161,7 @@ internal sealed class VirtualCrossoverAcousticPlot
             ExtraGridlineStyle = LineStyle.Solid,
             IsAxisVisible = false
         };
-        model.Axes.Add(lossAxis);
+        PlotModelStyle.AddAxis(model, lossAxis);
 
         model.Annotations.Add(new PlotWatermarkAnnotation
         {
@@ -310,7 +311,7 @@ internal sealed class VirtualCrossoverAcousticPlot
         if (!model.Axes.Contains(wanted))
         {
             model.Axes.Remove(retired);
-            model.Axes.Add(wanted);
+            PlotModelStyle.AddAxis(model, wanted);
         }
     }
 

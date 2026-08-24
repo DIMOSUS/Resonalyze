@@ -202,6 +202,68 @@ close.
 
 ## UI chrome
 
+- [ ] **A disabled panel leaves its check boxes as the brightest thing on it.**
+  `VirtualCrossoverPanel.SetProjectLoading` disables the whole panel while a
+  session loads, and WinForms then paints the standard `CheckBox`/`RadioButton`
+  glyphs itself: measured over the real panel, the label text drops
+  227,227,227 → 140,149,168 and every fill stays within 2 of where it was, but
+  the check box KEEPS its white box (255,255,255 → 240,240,240). Everything
+  fades except a dozen white squares, and the channel cards — five check boxes
+  each — carry most of them. Not a loading bug and not new: the white box is
+  the theme's normal look, it is simply the only thing left bright once the
+  text goes. `FlatStyle.Flat` fixes it (the box then follows `BackColor`:
+  147,154,172 live, 55,60,72 disabled) and five controls in the app already use
+  it — `GDOpt.checkAutoFit`, `PROpt.checkAutoFit`, `Form1.checkBox1`, the
+  Q-convention dialog's radios — but the other 52 check boxes and 22 radios
+  would change appearance everywhere, not just while loading. Owner looked at a
+  rendered comparison on 2026-08-24 and chose to leave it; take it as its own
+  change with its own visual pass, not as a rider on something else.
+- [ ] **A light theme is wanted eventually, and 626 colour assignments do not go
+  through `UiPalette`** — 487 `Color.FromArgb` literals across the 34
+  `.Designer.cs` files plus 139 `SystemColors.ControlLight` label foregrounds.
+  The contrast work (#116) named the roles the app paints with — `AccentFill`,
+  `TextDisabled`, the `Graph*` chrome — and put the graph surface and the accent
+  buttons' fill under the palette, so the SEAMS now exist:
+  `PlotModelStyle.ApplyChrome` is the one place a plot's colours are decided,
+  and `UiPaletteContrastTests` re-measures whatever values a second theme
+  brings. What is left for the theme itself is the designer sweep, and it is
+  smaller than the count suggests: only **37 distinct values** appear in those
+  files and four of them cover 313 of the 487, so a dark→light map plus a
+  runtime pass over the control tree covers most of it. The judgment part is
+  not the chrome but the CURVES: `OxyColors.White` sums, white THD traces,
+  light-grey source curves and the user's own overlay slot colours (persisted
+  as `ColorArgb` in overlay files, so they cannot be rewritten) all need a
+  second palette or a luminance-adaptive fallback before a light plot is
+  readable. Do not start this as a colour swap; start it as a curve-palette
+  design. Half the palette also still carries PHYSICAL names (`AccentBlueSoft`,
+  `TextSecondaryAlt`, `SuccessGreenSoft`): rename them to their roles as they
+  are touched rather than in one sweep — `AccentBlueSoft` is the accent MARK
+  (links, focus borders, selection markers), which is the one that matters.
+- [ ] **The app paints plots on FOUR different surfaces, three of them designer
+  literals.** `UiPalette.GraphSurface` (50,55,100) covers the main plot and the
+  EQ wizard; Virtual DSP's two views sit on (40,44,80)
+  (`VirtualCrossoverPanel.Designer.cs`), the option/Time Alignment/history
+  previews on (32,36,46), and the target preview on (55,58,65). Whether that is
+  intentional or drift, nobody decided it recently — and it is not cosmetic:
+  a FIXED chrome colour reads at a different strength on each (the first grid
+  measured 1.33:1 on the main plots and 1.59:1 on Virtual DSP, which is how it
+  looked). The grid and the plot border are white-with-alpha now, so they no
+  longer care; anything else added to a plot has to make the same choice, and a
+  light theme has to reach all four surfaces. Decide the count first: one
+  surface token, or a named few.
+- [ ] **The satellite plots still carry their own chrome literals.** The Time
+  Alignment previews, `AngleCalibrationDialog`, `ImpulseWindowPreview`,
+  `OverlayTargetSettingsDialog` and `MeasurementHistoryWindow` set their own
+  white text and grid colours rather than going through
+  `PlotModelStyle.ApplyChrome`. They are readable as they are, so this is
+  tidiness, not a defect — but they are the reason a plot colour still has more
+  than one home.
+- [ ] **`WarningRed` on a dark surface measures 4.3:1 as text.** It is a FILL
+  today (meter bars, the fader groove), where no text threshold applies, so
+  nothing is wrong now — but it reads as the palette's "red" and the next
+  status line that reaches for it would land under the floor. `ErrorSoft`
+  (already lifted to 4.6:1) is the text-carrying red; keep them apart, or give
+  `WarningRed` a text-safe sibling if it is ever needed for one.
 - [ ] **`ChromeTitleBar` caches the DPI scale once at `Initialize`.** No
   `DpiChanged` handling: moving the window to a monitor with different DPI
   (PerMonitorV2) leaves the bar height, button widths and tab layout at the old

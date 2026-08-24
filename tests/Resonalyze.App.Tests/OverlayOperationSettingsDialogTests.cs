@@ -88,7 +88,7 @@ public sealed class OverlayOperationSettingsDialogTests
     private static bool IsOffered(OverlayOperationSettingsDialog dialog, string name)
     {
         CheckBox checkBox = Control<CheckBox>(dialog, name);
-        return checkBox.AutoCheck && checkBox.ForeColor != UiPalette.TextMuted;
+        return checkBox.AutoCheck && checkBox.ForeColor != UiPalette.TextDisabled;
     }
 
     private static T Control<T>(OverlayOperationSettingsDialog dialog, string name) =>

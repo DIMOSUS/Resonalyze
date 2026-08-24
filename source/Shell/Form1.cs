@@ -95,6 +95,12 @@ namespace Resonalyze
             expSweepMeasurement = new ExpSweepMeasurement(audioSessionFactory);
             noiseMeasurement = new NoiseMeasurement(audioSessionFactory);
             ConfigureToolTips();
+            // The surface the plots are drawn on, from the palette rather than a
+            // designer literal that has to be kept equal to it by hand. A PlotView
+            // paints no background of its own — WinForms does, from BackColor — and
+            // it never reads ForeColor either: the axis colours come from the model
+            // (PlotModelStyle.ApplyChrome), not from the control.
+            plotView1.BackColor = UiPalette.GraphSurface;
             PlotInteraction.Enable(plotView1);
             plotView1.Paint += (_, _) => AppProfiler.FrameMark("main-plot");
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();

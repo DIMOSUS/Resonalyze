@@ -7,12 +7,108 @@ namespace Resonalyze;
 
 internal static class PlotModelStyle
 {
-    public static PlotModel CreateTitledModel(string title) =>
-        new()
+    // OxyPlot's own defaults are a LIGHT theme: black tick lines, a black-alpha
+    // grid, a black plot-area border, and axis text that follows PlotModel.TextColor
+    // — itself black. Nothing in the app ever said otherwise, so every plot built
+    // here drew its numbers in black on the dark plot surface, at 1.9:1 (#116): a
+    // reader who does not already know what the axis says cannot read it.
+    private static readonly OxyColor DefaultTicklineColor = OxyColors.Black;
+    private static readonly OxyColor DefaultMajorGridlineColor = OxyColor.FromArgb(0x40, 0, 0, 0);
+    private static readonly OxyColor DefaultMinorGridlineColor = OxyColor.FromArgb(0x20, 0, 0, 0);
+
+    public static PlotModel CreateTitledModel(string title)
+    {
+        var model = new PlotModel
         {
             Title = title,
             TitleFontSize = 14
         };
+        ApplyChrome(model);
+        return model;
+    }
+
+    /// <summary>
+    /// Gives a model the app's own axis furniture in place of OxyPlot's light-theme
+    /// defaults, and the one place a second theme would swap them.
+    /// </summary>
+    /// <remarks>
+    /// Only OxyPlot's DEFAULTS are replaced: an axis the caller coloured itself —
+    /// the EQ wizard's gain axis, Virtual DSP's sum-loss axis, both of which say
+    /// which curve they belong to by their colour — keeps what it was given, so
+    /// this can be applied to any model without overriding a deliberate choice.
+    /// LABEL colour needs no per-axis pass and no ordering care: an axis's text
+    /// colour is Automatic, so it follows the model's however late the axis joins.
+    /// Tick lines and gridlines are per-axis, and OxyPlot has deprecated both hooks
+    /// that would let a model style axes as they arrive (the collection's change
+    /// event and PlotModel.Updating), so an axis built by hand asks for
+    /// <see cref="StyleAxis"/> itself. The axis helpers below already do.
+    /// </remarks>
+    public static void ApplyChrome(PlotModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        model.TextColor = ToOxyColor(Ui.UiPalette.GraphAxisText);
+        model.PlotAreaBorderColor = ToOxyColor(Ui.UiPalette.GraphAreaBorder);
+
+        foreach (Axis axis in model.Axes)
+        {
+            StyleAxis(axis);
+        }
+    }
+
+    /// <summary>
+    /// Adds an axis to a model with the app's chrome on it. Use this rather than
+    /// <c>model.Axes.Add</c> for any axis on a dark plot — an axis added raw keeps
+    /// OxyPlot's black tick lines and black-alpha grid.
+    /// </summary>
+    public static void AddAxis(PlotModel model, Axis axis)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        StyleAxis(axis);
+        model.Axes.Add(axis);
+    }
+
+    /// <inheritdoc cref="AddAxis"/>
+    public static void InsertAxis(PlotModel model, int index, Axis axis)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        StyleAxis(axis);
+        model.Axes.Insert(index, axis);
+    }
+
+    /// <summary>
+    /// Replaces OxyPlot's default tick and gridline colours on one axis. A colour
+    /// the caller chose is left alone, so this is safe to call on any axis.
+    /// </summary>
+    public static void StyleAxis(Axis axis)
+    {
+        ArgumentNullException.ThrowIfNull(axis);
+
+        if (axis.TicklineColor == DefaultTicklineColor)
+        {
+            axis.TicklineColor = ToOxyColor(Ui.UiPalette.GraphTickline);
+        }
+
+        if (axis.AxislineColor == DefaultTicklineColor)
+        {
+            axis.AxislineColor = ToOxyColor(Ui.UiPalette.GraphTickline);
+        }
+
+        if (axis.MajorGridlineColor == DefaultMajorGridlineColor)
+        {
+            axis.MajorGridlineColor = ToOxyColor(Ui.UiPalette.GraphGridlineMajor);
+        }
+
+        if (axis.MinorGridlineColor == DefaultMinorGridlineColor)
+        {
+            axis.MinorGridlineColor = ToOxyColor(Ui.UiPalette.GraphGridlineMinor);
+        }
+    }
+
+    private static OxyColor ToOxyColor(Color color) =>
+        OxyColor.FromArgb(color.A, color.R, color.G, color.B);
 
     // The audio band is the DEFAULT view and the hard fence for panning, but not a
     // fixed scale: zoom is what lets a 40 Hz mode or a crossover region be read at
@@ -20,7 +116,7 @@ internal static class PlotModelStyle
     // curves are computed over, so a pan cannot wander off the data.
     public static void AddFrequencyAxis(PlotModel model)
     {
-        model.Axes.Add(new LogarithmicAxis
+        AddAxis(model, new LogarithmicAxis
         {
             Key = PlotModelFactory.FrequencyAxisKey,
             Position = AxisPosition.Bottom,
@@ -63,7 +159,7 @@ internal static class PlotModelStyle
         double absoluteMinimum = RelativeDecibelAbsoluteMinimum,
         double absoluteMaximum = RelativeDecibelAbsoluteMaximum)
     {
-        model.Axes.Insert(0, new LinearAxis
+        InsertAxis(model, 0, new LinearAxis
         {
             Key = PlotModelFactory.DecibelAxisKey,
             Position = AxisPosition.Left,
@@ -152,7 +248,7 @@ internal static class PlotModelStyle
     {
         PlotModel model = CreateTitledModel(title);
 
-        model.Axes.Add(new LinearAxis
+        AddAxis(model, new LinearAxis
         {
             Position = AxisPosition.Left,
             Minimum = -1.0,
@@ -161,7 +257,7 @@ internal static class PlotModelStyle
             IsPanEnabled = false,
             IsZoomEnabled = false,
         });
-        model.Axes.Add(new LogarithmicClipAxis
+        AddAxis(model, new LogarithmicClipAxis
         {
             Position = AxisPosition.Bottom,
             Minimum = 20,
@@ -171,7 +267,7 @@ internal static class PlotModelStyle
             IsZoomEnabled = false,
         });
 
-        model.Axes.Add(new LinearColorAxis
+        AddAxis(model, new LinearColorAxis
         {
             Position = AxisPosition.Left,
             Minimum = options.DbRange,

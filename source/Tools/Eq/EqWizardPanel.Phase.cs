@@ -124,6 +124,7 @@ public partial class EqWizardPanel
                 SmoothingInverseOctaves: 0.0),
             startMs,
             startMs,
+            EqWizardPhaseRender.EditedChannelColor,
             []);
         UpdatePhaseGateAvailability();
     }
@@ -131,6 +132,37 @@ public partial class EqWizardPanel
     private void UpdatePhaseGateAvailability()
     {
         buttonPhaseGate.Enabled = HasMeasuredPhase;
+    }
+
+    /// <summary>
+    /// What the phase plot says about itself when it is showing less than the source
+    /// suggests it might. Empty when there is nothing to explain.
+    /// </summary>
+    /// <remarks>
+    /// The absence of the neighbours is the part worth spelling out: a channel arrives
+    /// from Virtual DSP and the drivers beside it do not, which reads as a bug rather
+    /// than as the deliberate refusal it is.
+    /// </remarks>
+    private string PhaseModeHint()
+    {
+        if (loadedSource is not { } source)
+        {
+            return string.Empty;
+        }
+
+        if (PhaseContextFor(source) == null)
+        {
+            return "This source is a magnitude curve — it carries no phase.\n" +
+                "Only the EQ's own phase is drawn.";
+        }
+
+        return source.Kind == EqWizardSourceKind.VirtualDspChannel &&
+            source.PhaseContext == null
+            ? "Raw handoff: the neighbouring drivers are not drawn.\n" +
+                "This curve has no crossover, delay or polarity in front of it and\n" +
+                "they do, so lining it up against them would line up a system that\n" +
+                "does not exist. Use Edit in EQ Wizard for junction work."
+            : string.Empty;
     }
 
     /// <summary>
@@ -164,7 +196,22 @@ public partial class EqWizardPanel
         traces.AddRange(context.Neighbours.Select(neighbour =>
             new IrPreviewTrace(neighbour.ImpulseResponse, neighbour.Name, neighbour.Color)));
 
+        bool committedPin = phaseGatePinned;
         using var dialog = new VirtualCrossoverGateDialog();
+        // The plot tracks the dialog while it is open, exactly as the Virtual DSP plots
+        // do: a gate is placed by looking at what it does to the curves, and a window
+        // whose effect only appears after Save is one dialled in blind.
+        dialog.PreviewChanged = (offsetMs, autoOffset, leftMs, plateauMs, rightMs,
+            windowMode, fdwCycles, detrendMode, detrendMs) =>
+        {
+            ApplyPhaseGate(
+                context, offsetMs, autoOffset, leftMs, plateauMs, rightMs,
+                windowMode, fdwCycles, detrendMode, detrendMs);
+            if (PhaseMode)
+            {
+                DrawSelectedCurves();
+            }
+        };
         dialog.Init(
             traces,
             sampleRate,
@@ -178,36 +225,63 @@ public partial class EqWizardPanel
             context.Gate.DetrendMode,
             fitToMs: context.GateOffsetMs,
             autoOffset: !phaseGatePinned);
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        DialogResult result = dialog.ShowDialog(FindForm());
+        dialog.PreviewChanged = null;
+        if (result == DialogResult.OK)
         {
-            return;
+            // The last preview already built exactly what Save commits.
+            ApplyPhaseGate(
+                context, dialog.GateOffsetMs, dialog.AutoOffset, dialog.LeftMs,
+                dialog.PlateauMs, dialog.RightMs, dialog.WindowMode, dialog.FdwCycles,
+                dialog.DetrendMode, dialog.DetrendMs);
+        }
+        else
+        {
+            // Cancel drops the candidates: the stored gate is what the plot goes back
+            // to, which is the only reason previewing live is safe.
+            phaseGatePinned = committedPin;
+            phaseContext = context;
+            InvalidatePhaseCurves();
         }
 
-        phaseGatePinned = !dialog.AutoOffset;
-        phaseContext = new EqWizardPhaseContext(
-            context.Gate with
-            {
-                LeftMs = dialog.LeftMs,
-                PlateauMs = dialog.PlateauMs,
-                RightMs = dialog.RightMs,
-                WindowMode = dialog.WindowMode,
-                FdwCycles = dialog.FdwCycles,
-                DetrendMode = dialog.DetrendMode
-            },
-            // Pinned is one absolute window for every curve; unpinned keeps the
-            // placements as they came, each on its own driver's arrival.
-            phaseGatePinned ? dialog.GateOffsetMs : context.GateOffsetMs,
-            dialog.DetrendMs,
-            phaseGatePinned
-                ? context.Neighbours
-                    .Select(neighbour => neighbour with
-                    {
-                        GateOffsetMs = dialog.GateOffsetMs
-                    })
-                    .ToList()
-                : context.Neighbours);
-        InvalidatePhaseCurves();
         DrawSelectedCurves();
+    }
+
+    // One candidate gate over the context the dialog opened on. Pinned is one absolute
+    // window for every curve; unpinned keeps the placements as they arrived, each on
+    // its own driver's arrival — the distinction the Auto flag carries.
+    private void ApplyPhaseGate(
+        EqWizardPhaseContext opened,
+        double offsetMs,
+        bool autoOffset,
+        double leftMs,
+        double plateauMs,
+        double rightMs,
+        PhaseWindowMode windowMode,
+        int fdwCycles,
+        PhaseDetrendMode detrendMode,
+        double detrendMs)
+    {
+        phaseGatePinned = !autoOffset;
+        phaseContext = new EqWizardPhaseContext(
+            opened.Gate with
+            {
+                LeftMs = leftMs,
+                PlateauMs = plateauMs,
+                RightMs = rightMs,
+                WindowMode = windowMode,
+                FdwCycles = fdwCycles,
+                DetrendMode = detrendMode
+            },
+            phaseGatePinned ? offsetMs : opened.GateOffsetMs,
+            detrendMs,
+            opened.ChannelColor,
+            phaseGatePinned
+                ? opened.Neighbours
+                    .Select(neighbour => neighbour with { GateOffsetMs = offsetMs })
+                    .ToList()
+                : opened.Neighbours);
+        InvalidatePhaseCurves();
     }
 
     // The dB axis has nothing on it in phase mode, and an empty axis with gridlines
@@ -275,14 +349,19 @@ public partial class EqWizardPanel
         }
 
         phaseRenderInFlight = true;
-        _ = RenderPhaseCurveAsync(BuildPhaseRequest(source, context, eq), bank);
+        _ = RenderPhaseCurveAsync(
+            BuildPhaseRequest(source, context, eq), bank, context.ChannelColor);
     }
 
-    private async Task RenderPhaseCurveAsync(EqWizardPhaseRequest request, PeqBankState bank)
+    private async Task RenderPhaseCurveAsync(
+        EqWizardPhaseRequest request,
+        PeqBankState bank,
+        OxyColor color)
     {
         try
         {
-            GatedPhaseCurve? curve = await phaseOrchestrator.RenderLatestAsync(request);
+            GatedPhaseCurve? curve =
+                await phaseOrchestrator.RenderLatestAsync(request, color);
             if (IsDisposed || !IsHandleCreated || curve == null)
             {
                 return;
@@ -329,7 +408,7 @@ public partial class EqWizardPanel
         cachedBarePhaseCurve ??= EqWizardPhaseRender.RenderEditedChannel(
             request,
             EqWizardPhaseRender.BareChannelTitle,
-            EqWizardPhaseRender.BareChannelColor,
+            context.ChannelColor,
             EqWizardPhaseRender.NeighbourThickness);
     }
 

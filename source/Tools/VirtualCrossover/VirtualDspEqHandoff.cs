@@ -173,8 +173,9 @@ internal static class VirtualDspEqHandoff
     /// </param>
     /// <param name="phaseContext">
     /// The neighbouring drivers and the phase window the wizard draws them under, from
-    /// the panel's own last render. Null for a raw handoff, which lives in its own time
-    /// rather than the processed view's, and whenever no current render exists to freeze.
+    /// the panel's own last render. Null when no current render exists to freeze, and
+    /// left off a raw handoff — that curve has none of the chain the neighbours are
+    /// drawn through, so the comparison would describe a system nobody is building.
     /// </param>
     public static VirtualDspEqHandoffRequest Build(
         VirtualCrossoverChannel channel,
@@ -282,9 +283,14 @@ internal static class VirtualDspEqHandoff
             // — rather than the bypassed response filtered a second time.
             PreviewImpulseResponse = state.ProcessingSource.CroppedImpulseResponse,
             PreviewChain = previewChain,
-            // Only a chain handoff can carry it: the raw curve is the measurement
-            // before the chain, in its own time, so the processed view's windows and
-            // its neighbours would describe a different signal than the one on screen.
+            // Only a chain handoff draws neighbours. A raw curve has no crossover, no
+            // delay and no polarity in front of it, while the neighbours have all of
+            // theirs — a Linkwitz-Riley corner alone turns 360° through the overlap,
+            // and the delay moves the arrival the phase is referenced to. Lining the
+            // raw curve up against them would line up a system that does not exist,
+            // and an all-pass tuned to that picture is wrong exactly where it matters.
+            // The raw handoff still draws its OWN phase; it simply has nothing
+            // truthful to compare against.
             PhaseContext = withChain ? phaseContext : null,
             SampleRateHz = sampleRate,
             CurveKind = AnalysisCurveKind.Primary

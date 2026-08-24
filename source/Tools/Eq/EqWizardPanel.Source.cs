@@ -742,7 +742,9 @@ public partial class EqWizardPanel
 
     private void UpdateSourceHint()
     {
-        hintAnnotation.Text = loadedSource == null ? NoSourceHint : string.Empty;
+        hintAnnotation.Text = loadedSource == null
+            ? NoSourceHint
+            : PhaseMode ? PhaseModeHint() : string.Empty;
     }
 
     // ------------------------------------------------------------------- plot axis

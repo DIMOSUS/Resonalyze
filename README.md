@@ -1248,12 +1248,17 @@ switching back finds them current.
 
 On a [Virtual DSP handoff](#editing-a-virtual-dsp-channels-peq) the plot also
 draws the **neighbouring drivers**, frozen as that panel had them and in their
-colours from it. That is the picture an all-pass is dialled in against: turn its
+colours from it — and the channel under edit keeps its own colour from there
+too, so one driver reads the same in both views. That is the picture an all-pass is dialled in against: turn its
 corner and Q until this channel's phase lies on its neighbour's through the
 crossover region, and the junction sums instead of cancelling. The neighbours do
 not move while the bank is edited — they are measurements of drivers nobody is
 editing — and they are re-read from their responses whenever the window changes,
 so they never become a curve gated one way drawn beside a curve gated another.
+The **raw** handoff draws its own phase but no neighbours, and says so on the
+plot: that curve has no crossover, delay or polarity in front of it while they
+have all of theirs, so lining it up against them would line up a system nobody
+is building.
 
 **Phase gate…** is the window those curves are read through — the same dialog,
 and the same settings, the Virtual DSP phase view uses, down to the impulse

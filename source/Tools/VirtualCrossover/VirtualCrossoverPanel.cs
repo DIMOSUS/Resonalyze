@@ -2040,7 +2040,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 renderAnchor,
-                CapturePhaseContext(channel, withChain),
+                CapturePhaseContext(channel),
                 (double)numericTargetLevel.Value,
                 (double)numericTargetLevel.Minimum,
                 (double)numericTargetLevel.Maximum,
@@ -2078,12 +2078,9 @@ public partial class VirtualCrossoverPanel : UserControl
     /// with the previous chain would put the curves somewhere the plot never had them.
     /// </para>
     /// </remarks>
-    private EqWizardPhaseContext? CapturePhaseContext(
-        VirtualCrossoverChannel channel,
-        bool withChain)
+    private EqWizardPhaseContext? CapturePhaseContext(VirtualCrossoverChannel channel)
     {
-        if (!withChain ||
-            lastProcessedRender is not { } render ||
+        if (lastProcessedRender is not { } render ||
             !processingCoordinator.IsCurrent(render.Revision))
         {
             return null;
@@ -2111,6 +2108,10 @@ public partial class VirtualCrossoverPanel : UserControl
                 referenceOffsetMs, PhaseDetrendMode.Manual, detrendMs),
             offsets[index],
             detrendMs,
+            // This channel's plot colour travels with it: the wizard draws the same
+            // driver, and reading it as a different colour there is how a tuner loses
+            // track of which curve is which between two views of one system.
+            drawn[index].Color,
             drawn
                 .Select((item, position) => (item, position))
                 .Where(entry => entry.position != index)

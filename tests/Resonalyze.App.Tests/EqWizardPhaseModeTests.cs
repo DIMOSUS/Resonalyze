@@ -27,6 +27,7 @@ public sealed class EqWizardPhaseModeTests
             Gate(9.0),
             GateOffsetMs: 9.5,
             DetrendMs: 10.25,
+            OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
                 "B", OxyColors.Orange, Wavelet(), 9.75)]);
 
@@ -89,7 +90,7 @@ public sealed class EqWizardPhaseModeTests
         // neighbours that are no longer on screen.
         using var panel = new EqWizardPanel();
         ApplySource(panel, Source(new EqWizardPhaseContext(
-            Gate(9.0), 9.5, 10.25,
+            Gate(9.0), 9.5, 10.25, OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour("B", OxyColors.Orange, Wavelet(), 9.75)])));
 
         ApplySource(panel, Source(phaseContext: null));
@@ -99,6 +100,46 @@ public sealed class EqWizardPhaseModeTests
         double arrivalMs = ArrivalSample * 1_000.0 / SampleRate;
         Assert.InRange(seeded.GateOffsetMs, arrivalMs - 0.5, arrivalMs);
     }
+
+    [Fact]
+    public void PinningTheGateGivesEveryCurveTheSameWindow()
+    {
+        // The pin is the user saying "read everything through THIS window". Leaving it
+        // on Auto keeps the placements as they arrived — each driver's window on its
+        // own arrival — which is what the offsets in a handoff's context ARE.
+        using var panel = new EqWizardPanel();
+        var context = new EqWizardPhaseContext(
+            Gate(9.0), GateOffsetMs: 9.5, DetrendMs: 10.25, OxyColors.SkyBlue,
+            [new EqWizardPhaseNeighbour("B", OxyColors.Orange, Wavelet(), 9.75)]);
+        ApplySource(panel, Source(context));
+
+        ApplyPhaseGate(panel, context, offsetMs: 4.0, autoOffset: false);
+
+        EqWizardPhaseContext pinned = ContextOf(panel)!;
+        Assert.Equal(4.0, pinned.GateOffsetMs);
+        Assert.Equal(4.0, pinned.Neighbours.Single().GateOffsetMs);
+        // The window itself travelled from the dialog, and the τ with it.
+        Assert.Equal(2.5, pinned.Gate.PlateauMs);
+        Assert.Equal(11.5, pinned.DetrendMs);
+
+        ApplyPhaseGate(panel, context, offsetMs: 4.0, autoOffset: true);
+
+        EqWizardPhaseContext auto = ContextOf(panel)!;
+        Assert.Equal(9.5, auto.GateOffsetMs);
+        Assert.Equal(9.75, auto.Neighbours.Single().GateOffsetMs);
+    }
+
+    private static void ApplyPhaseGate(
+        EqWizardPanel panel,
+        EqWizardPhaseContext opened,
+        double offsetMs,
+        bool autoOffset) =>
+        typeof(EqWizardPanel)
+            .GetMethod("ApplyPhaseGate", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(panel, [
+                opened, offsetMs, autoOffset, 0.5, 2.5, 1.5,
+                PhaseWindowMode.FrequencyDependent, 6, PhaseDetrendMode.Manual, 11.5
+            ]);
 
     private static EqWizardCurveSource Source(EqWizardPhaseContext? phaseContext)
     {

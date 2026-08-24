@@ -48,10 +48,16 @@ internal sealed record EqWizardPhaseNeighbour(
 /// The phase gate — the dialog's window, NOT the steady-state one the magnitude
 /// curves use. Its offset is per curve, so the render overwrites it.
 /// </param>
+/// <param name="ChannelColor">
+/// The colour the channel under edit is drawn in. It comes from the panel that handed
+/// it over, so one driver reads the same in both views; a source with no panel behind
+/// it falls back to the wizard's own.
+/// </param>
 internal sealed record EqWizardPhaseContext(
     PhaseAnalysisSettings Gate,
     double GateOffsetMs,
     double DetrendMs,
+    OxyColor ChannelColor,
     IReadOnlyList<EqWizardPhaseNeighbour> Neighbours);
 
 /// <summary>
@@ -182,20 +188,20 @@ internal static class EqWizardPhaseRender
 /// </summary>
 internal sealed class EqWizardPhaseOrchestrator
 {
-    private readonly Func<EqWizardPhaseRequest, GatedPhaseCurve> render;
+    private readonly Func<EqWizardPhaseRequest, OxyColor, GatedPhaseCurve> render;
     private long revision;
 
     public EqWizardPhaseOrchestrator()
-        : this(request => EqWizardPhaseRender.RenderEditedChannel(
+        : this((request, color) => EqWizardPhaseRender.RenderEditedChannel(
             request,
             EqWizardPhaseRender.EditedChannelTitle,
-            EqWizardPhaseRender.EditedChannelColor,
+            color,
             EqWizardPhaseRender.EditedChannelThickness))
     {
     }
 
     internal EqWizardPhaseOrchestrator(
-        Func<EqWizardPhaseRequest, GatedPhaseCurve> render)
+        Func<EqWizardPhaseRequest, OxyColor, GatedPhaseCurve> render)
     {
         this.render = render ?? throw new ArgumentNullException(nameof(render));
     }
@@ -208,11 +214,13 @@ internal sealed class EqWizardPhaseOrchestrator
     /// keep the last landed curve on screen meanwhile: blanking it would flicker the
     /// view on every keystroke.
     /// </summary>
-    public async Task<GatedPhaseCurve?> RenderLatestAsync(EqWizardPhaseRequest request)
+    public async Task<GatedPhaseCurve?> RenderLatestAsync(
+        EqWizardPhaseRequest request,
+        OxyColor color)
     {
         ArgumentNullException.ThrowIfNull(request);
         long requestRevision = Interlocked.Increment(ref revision);
-        GatedPhaseCurve curve = await Task.Run(() => render(request));
+        GatedPhaseCurve curve = await Task.Run(() => render(request, color));
         return Interlocked.Read(ref revision) == requestRevision ? curve : null;
     }
 }

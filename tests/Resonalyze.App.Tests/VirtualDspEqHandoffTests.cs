@@ -65,6 +65,7 @@ public sealed class VirtualDspEqHandoffTests
             GateTemplate with { GateOffsetMs = 9.0 },
             GateOffsetMs: 9.5,
             DetrendMs: 10.0,
+            OxyPlot.OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
                 "B", OxyPlot.OxyColors.Orange, neighbourResponse, 9.75)]);
 
@@ -80,15 +81,18 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void RawHandoff_DrawsNoNeighbours()
     {
-        // A raw curve is the measurement BEFORE the chain, in its own time. The
-        // processed view's windows and its neighbours describe a different signal, so
-        // showing them beside it would invite lining a driver up against a curve that
-        // is not the one being edited.
+        // A raw curve has no crossover, no delay and no polarity in front of it, while
+        // the neighbours have all of theirs — a Linkwitz-Riley corner alone turns 360°
+        // through the overlap, and the delay moves the very arrival the phase is
+        // referenced to. Drawing them together would invite lining up a system nobody
+        // is building, and an all-pass tuned against that picture is wrong exactly
+        // where it is supposed to help.
         VirtualCrossoverChannel channel = BuildChannel();
         var context = new EqWizardPhaseContext(
             GateTemplate,
             GateOffsetMs: 9.5,
             DetrendMs: 10.0,
+            OxyPlot.OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
                 "B", OxyPlot.OxyColors.Orange, new Complex[1_024], 9.75)]);
 

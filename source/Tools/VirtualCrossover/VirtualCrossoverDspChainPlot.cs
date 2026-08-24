@@ -101,12 +101,18 @@ internal sealed class VirtualCrossoverDspChainPlot
     // preserves the user's zoom/pan.
     private (string Pair, double WindowMs)? correlationAxisState;
 
-    // Same idea for the coherence axes. The lag range depends on the data (a
-    // misaligned junction pushes optima past the comb corridor), so it is
-    // bucketed to half-millisecond steps: a delay edit that keeps the ladder
-    // in the same bucket preserves the user's zoom, one that leaves it
-    // re-fits the axes instead of clipping the points that moved.
-    private (string Pair, double LagLimitMs)? coherenceAxisState;
+    // Same idea for the coherence axes, over everything they are placed from.
+    // The lag range depends on the data (a misaligned junction pushes optima
+    // past the comb corridor), so it is bucketed to half-millisecond steps: a
+    // delay edit that keeps the ladder in the same bucket preserves the user's
+    // zoom, one that leaves it re-fits the axes instead of clipping the points
+    // that moved. The BAND is here because the frequency axis is fitted from
+    // it: editing the pair's crossover keeps the pair title, and the new
+    // ladder's lag limit usually lands in the same bucket (both are typically
+    // at the 1 ms floor), so a state of title-and-lag alone would leave the
+    // frequency axis on the PREVIOUS band and clip most of the rebuilt ladder.
+    private (string Pair, double LagLimitMs, double BandLowHz, double BandHighHz)?
+        coherenceAxisState;
 
     public VirtualCrossoverDspChainPlot(PlotView view, DspPlotMode initialMode)
     {
@@ -480,9 +486,11 @@ internal sealed class VirtualCrossoverDspChainPlot
                 .DefaultIfEmpty(1.0)
                 .Max());
         double lagLimit = Math.Ceiling(needed * 2.0) / 2.0;
-        if (coherenceAxisState != (data.PairTitle, lagLimit))
+        if (coherenceAxisState !=
+            (data.PairTitle, lagLimit, data.BandLowHz, data.BandHighHz))
         {
-            coherenceAxisState = (data.PairTitle, lagLimit);
+            coherenceAxisState =
+                (data.PairTitle, lagLimit, data.BandLowHz, data.BandHighHz);
             foreach (Axis axis in model.Axes)
             {
                 if (axis.Key == CoherenceLagAxisKey)

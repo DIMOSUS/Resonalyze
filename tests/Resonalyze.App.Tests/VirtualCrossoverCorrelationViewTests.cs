@@ -133,6 +133,33 @@ public sealed class VirtualCrossoverCorrelationViewTests
     }
 
     [Fact]
+    public void DrawCoherence_RefitsTheFrequencyAxisWhenTheBandChanges()
+    {
+        // Editing the pair's crossover keeps the pair title, and both ladders
+        // below sit at the lag axis's 1 ms floor — so an invalidation state of
+        // title-and-lag alone would leave the frequency axis fitted to the
+        // FIRST band and clip most of the rebuilt ladder.
+        static JunctionCoherenceView View(double lowHz, double highHz) =>
+            new("C-D", "D", Math.Sqrt(lowHz * highHz), lowHz, highHz,
+            [
+                new VirtualCrossoverAnalysis.ArrivalCoherencePoint(
+                    lowHz, 0.0, 0.9, 0.9, false, 500.0 / lowHz),
+                new VirtualCrossoverAnalysis.ArrivalCoherencePoint(
+                    highHz, 0.0, 0.9, 0.9, false, 500.0 / highHz)
+            ]);
+
+        using var plotView = new OxyPlot.WindowsForms.PlotView();
+        var plot = new VirtualCrossoverDspChainPlot(plotView, DspPlotMode.Coherence);
+        plot.DrawCoherence(View(750, 3_000));
+        plot.DrawCoherence(View(1_500, 6_000));
+
+        OxyPlot.Axes.Axis frequency = ((PlotModel)plotView.Model).Axes
+            .Single(axis => axis.Key == PlotModelFactory.FrequencyAxisKey);
+        Assert.InRange(frequency.Minimum, 1_300, 1_400);
+        Assert.InRange(frequency.Maximum, 6_600, 6_800);
+    }
+
+    [Fact]
     public void BuildCoherenceView_ReadsTheProcessedPairInTheCorrelationFrame()
     {
         // An aligned delta pair through the same crop the correlation view

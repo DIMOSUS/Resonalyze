@@ -97,6 +97,9 @@ public partial class EqWizardPanel : UserControl
     public EqWizardPanel()
     {
         InitializeComponent();
+        // While the controls still stand where the designer put them: the layout
+        // pass stretches the plot by deltas on this (see the Layout partial).
+        CaptureLayoutBaseline();
         InitializePlotWizard();
         InitializePeqSlotTable();
         InitializeBandsComboBox();

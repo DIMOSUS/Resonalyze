@@ -178,8 +178,12 @@ internal static class PhaseGatePlacement
         // Estimate once from the existing common anchor (the earliest processed FRONT,
         // the same channel the shared window opens on), then apply that exact value to
         // every driver and the sum.
+        // The rate comes off the SNAPSHOT, never back through the live channel: a
+        // session imported over a loaded one rebinds channels while renders are still
+        // in flight, and a consumer that read the rate there got a zero against a real
+        // response.
         ProcessedChannel anchor = channels.MinBy(item => ProcessedChannels.StartAnchorIndex(
-            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate,
+            item.ImpulseResponse, item.PeakIndex, item.SampleRate,
             item.ValidRange))!;
         return DataHelper.ResolveCommonPhaseDetrendMilliseconds(
             new ImpulseMeasurementView(anchor.ImpulseResponse, 0, sampleRate),

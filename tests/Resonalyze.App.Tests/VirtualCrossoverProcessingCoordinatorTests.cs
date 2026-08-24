@@ -412,6 +412,59 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_CancellationReportedByNullDropsTheRenderSilently()
+    {
+        // The production delegate reports a superseded render by RETURNING
+        // NULL rather than throwing (see ProcessChannel): every delay edit
+        // supersedes one, and an exception thrown out of the parallel body
+        // stops a Just My Code debugger even though this method catches it.
+        // The render must be dropped just as thoroughly, and no exception may
+        // escape or be raised on the way.
+        using var pool = new PoolHeadroom(parking: 3);
+        using var entered = new CountdownEvent(1);
+        using var release = new ManualResetEventSlim();
+        int thrown = 0;
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, cancellationToken) =>
+            {
+                entered.Signal();
+                Assert.True(release.Wait(RendezvousTimeout));
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return null;
+                }
+
+                Interlocked.Increment(ref thrown);
+                return source.Apply(chain, sampleRate);
+            });
+        long revision = coordinator.Invalidate();
+
+        Task<VirtualCrossoverRenderResult?> render = coordinator.ProcessAsync(
+            CreateSnapshot(revision, 0, false, 3));
+        Assert.True(entered.Wait(RendezvousTimeout));
+        coordinator.Invalidate();
+        release.Set();
+
+        Assert.Null(await render);
+        Assert.Equal(0, thrown);
+
+        // ...and nothing partial was committed: the next render for the same
+        // channel recomputes rather than serving a cached half-result.
+        release.Reset();
+        entered.Reset(1);
+        long next = coordinator.CurrentRevision;
+        Task<VirtualCrossoverRenderResult?> second = coordinator.ProcessAsync(
+            CreateSnapshot(next, 0, false, 3));
+        Assert.True(entered.Wait(RendezvousTimeout));
+        release.Set();
+
+        VirtualCrossoverRenderResult? result = await second;
+        Assert.NotNull(result);
+        Assert.Equal(1, thrown);
+        Assert.InRange(result.Channels[0].ImpulseResponse[3].Real, 0.999, 1.001);
+    }
+
+    [Fact]
     public async Task InvalidateDuringCompletedComputation_DropsResultAtCommitGuard()
     {
         VirtualCrossoverProcessingCoordinator? coordinator = null;
@@ -525,6 +578,67 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
 
         Assert.NotNull(render);
         Assert.InRange(render.Channels[0].ImpulseResponse[2].Real, 0.999, 1.001);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ExternalCancellationDuringTheWorkIsPropagated()
+    {
+        // The discriminating case: cancelling BEFORE the call is caught by the
+        // entry guard, so a token cancelled mid-computation is what actually
+        // tests the contract. The silent path cannot tell an external
+        // cancellation from a revision one — the delegate returns null for
+        // both — so without an explicit re-check this call would quietly
+        // answer null and the caller would never learn its own token fired.
+        using var pool = new PoolHeadroom(parking: 3);
+        using var entered = new CountdownEvent(1);
+        using var release = new ManualResetEventSlim();
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, cancellationToken) =>
+            {
+                entered.Signal();
+                Assert.True(release.Wait(RendezvousTimeout));
+                return cancellationToken.IsCancellationRequested
+                    ? null
+                    : source.Apply(chain, sampleRate);
+            });
+        long liveRevision = coordinator.Invalidate();
+        using var midFlight = new CancellationTokenSource();
+
+        Task<VirtualCrossoverRenderResult?> render = coordinator.ProcessAsync(
+            CreateSnapshot(liveRevision, 0, false, 3), midFlight.Token);
+        Assert.True(entered.Wait(RendezvousTimeout));
+        midFlight.Cancel();
+        release.Set();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => render);
+    }
+
+    [Fact]
+    public async Task RunAuxiliaryAsync_ExternalCancellationDuringTheWorkIsPropagated()
+    {
+        // Same contract on the auxiliary path, where an operation following
+        // the new convention also reports cancellation by returning null.
+        using var pool = new PoolHeadroom(parking: 3);
+        using var entered = new CountdownEvent(1);
+        using var release = new ManualResetEventSlim();
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        long revision = coordinator.Invalidate();
+        using var midFlight = new CancellationTokenSource();
+
+        Task<object?> work = coordinator.RunAuxiliaryAsync<object>(
+            revision,
+            token =>
+            {
+                entered.Signal();
+                Assert.True(release.Wait(RendezvousTimeout));
+                return token.IsCancellationRequested ? null : new object();
+            },
+            midFlight.Token);
+        Assert.True(entered.Wait(RendezvousTimeout));
+        midFlight.Cancel();
+        release.Set();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => work);
     }
 
     [Fact]

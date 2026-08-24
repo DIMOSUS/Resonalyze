@@ -170,6 +170,7 @@ public sealed class VirtualCrossoverPhaseGatePlacementTests
             new VirtualCrossoverChannel("x") { SampleRate = SampleRate },
             ir,
             peakIndex,
+            SampleRate,
             OxyColors.White);
 
     private static PhaseAnalysisSettings Template(double gateOffsetMs) => new(

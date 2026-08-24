@@ -67,6 +67,7 @@ namespace Resonalyze
             radioDspPhase = new RadioButton();
             radioDspGroupDelay = new RadioButton();
             radioDspCorrelation = new RadioButton();
+            radioDspCoherence = new RadioButton();
             comboBoxCorrelationPair = new DarkComboBox();
             panel1 = new Panel();
             panel2 = new Panel();
@@ -542,13 +543,25 @@ namespace Resonalyze
             radioDspCorrelation.TabIndex = 3;
             radioDspCorrelation.Text = "Correlation";
             radioDspCorrelation.UseVisualStyleBackColor = true;
+            //
+            // radioDspCoherence
+            //
+            radioDspCoherence.AutoSize = true;
+            radioDspCoherence.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            radioDspCoherence.ForeColor = Color.FromArgb(210, 214, 222);
+            radioDspCoherence.Location = new Point(88, 1);
+            radioDspCoherence.Name = "radioDspCoherence";
+            radioDspCoherence.Size = new Size(82, 19);
+            radioDspCoherence.TabIndex = 4;
+            radioDspCoherence.Text = "Coherence";
+            radioDspCoherence.UseVisualStyleBackColor = true;
             // 
             // comboBoxCorrelationPair
             // 
             comboBoxCorrelationPair.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxCorrelationPair.Enabled = false;
             comboBoxCorrelationPair.ForeColor = Color.White;
-            comboBoxCorrelationPair.Location = new Point(93, 1);
+            comboBoxCorrelationPair.Location = new Point(178, 1);
             comboBoxCorrelationPair.MinimumSize = new Size(36, 19);
             comboBoxCorrelationPair.Name = "comboBoxCorrelationPair";
             comboBoxCorrelationPair.Size = new Size(74, 19);
@@ -570,10 +583,11 @@ namespace Resonalyze
             panel2.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             panel2.BorderStyle = BorderStyle.FixedSingle;
             panel2.Controls.Add(radioDspCorrelation);
+            panel2.Controls.Add(radioDspCoherence);
             panel2.Controls.Add(comboBoxCorrelationPair);
             panel2.Location = new Point(798, 733);
             panel2.Name = "panel2";
-            panel2.Size = new Size(170, 23);
+            panel2.Size = new Size(255, 23);
             panel2.TabIndex = 25;
             // 
             // VirtualCrossoverPanel
@@ -668,6 +682,7 @@ namespace Resonalyze
         private RadioButton radioDspPhase;
         private RadioButton radioDspGroupDelay;
         private RadioButton radioDspCorrelation;
+        private RadioButton radioDspCoherence;
         private DarkComboBox comboBoxCorrelationPair;
         private Panel panel1;
         private Panel panel2;

@@ -94,6 +94,34 @@ public sealed class JunctionCorrelationCurveTests
     }
 
     [Fact]
+    public void JunctionLossSweepBothPolarities_MatchesTwoSingleSweepsExactly()
+    {
+        // The both-polarity sweep exists so the correlation view builds the
+        // (expensive, polarity-independent) alignment bins once — it must be
+        // a pure factoring: every point equal, bit for bit, to what the two
+        // single-polarity calls return.
+        Complex[] fixedIr = ImpulseAtMs(2.0);
+        Complex[] variableIr = ImpulseAtMs(0.5);
+
+        (List<VirtualCrossoverAnalysis.JunctionSweepPoint> normal,
+            List<VirtualCrossoverAnalysis.JunctionSweepPoint> inverted) =
+            VirtualCrossoverAnalysis.JunctionLossSweepBothPolarities(
+                variableIr, fixedIr, SampleRate,
+                bandLowHz: 800, bandHighHz: 1_250,
+                startDelayMs: 0.0, endDelayMs: 3.0, stepMs: 0.05);
+
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> Single(bool invert) =>
+            VirtualCrossoverAnalysis.JunctionLossSweep(
+                variableIr, fixedIr, SampleRate,
+                bandLowHz: 800, bandHighHz: 1_250,
+                startDelayMs: 0.0, endDelayMs: 3.0, stepMs: 0.05,
+                invertVariable: invert);
+
+        Assert.Equal(Single(invert: false), normal);
+        Assert.Equal(Single(invert: true), inverted);
+    }
+
+    [Fact]
     public void JunctionLossSweep_IsMinimalAtTheTrueOffsetAndCyclicAround()
     {
         // Two identical 1 kHz-band impulses 1.5 ms apart: the loss bottoms out

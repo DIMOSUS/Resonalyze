@@ -530,7 +530,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 project.EffectiveDspPlotMode == DspPlotMode.GroupDelay;
             radioDspCorrelation.Checked =
                 project.EffectiveDspPlotMode == DspPlotMode.Correlation;
-            comboBoxCorrelationPair.Enabled = radioDspCorrelation.Checked &&
+            radioDspCoherence.Checked =
+                project.EffectiveDspPlotMode == DspPlotMode.Coherence;
+            comboBoxCorrelationPair.Enabled = JunctionPlotModeSelected() &&
                 comboBoxCorrelationPair.Items.Count > 0;
 
             for (int i = 0; i < channels.Count; i++)
@@ -873,6 +875,19 @@ public partial class VirtualCrossoverPanel : UserControl
         radioDspCorrelation.CheckedChanged += (_, _) =>
         {
             if (radioDspCorrelation.Checked)
+            {
+                radioDspMagnitude.Checked = false;
+                radioDspPhase.Checked = false;
+                radioDspGroupDelay.Checked = false;
+                OnDspPlotModeChanged();
+            }
+        };
+        // Coherence shares the correlation radio's container, so WinForms
+        // already excludes the two junction modes against each other; only
+        // the chain trio needs clearing by hand.
+        radioDspCoherence.CheckedChanged += (_, _) =>
+        {
+            if (radioDspCoherence.Checked)
             {
                 radioDspMagnitude.Checked = false;
                 radioDspPhase.Checked = false;
@@ -2097,7 +2112,10 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        int sampleRate = drawn[0].Channel.SampleRate;
+        // Off the snapshot, not the live channel: a session imported over a loaded one
+        // rebinds channels while renders are in flight, and the rate read there comes
+        // back zero against a real response.
+        int sampleRate = drawn[0].SampleRate;
         double referenceOffsetMs = gatePreview?.OffsetMs
             ?? ResolveGateOffsetMs(drawn, sampleRate);
         double detrendMs = ResolveCommonDetrendMs(drawn, referenceOffsetMs, sampleRate);
@@ -2326,21 +2344,32 @@ public partial class VirtualCrossoverPanel : UserControl
         radioDspPhase.Checked ? DspPlotMode.Phase
         : radioDspGroupDelay.Checked ? DspPlotMode.GroupDelay
         : radioDspCorrelation.Checked ? DspPlotMode.Correlation
+        : radioDspCoherence.Checked ? DspPlotMode.Coherence
         : DspPlotMode.Magnitude;
 
+    // The two junction modes share everything around the plot itself — the
+    // pair selector, the async rebuild loop, the processed-pair inputs — so
+    // every gate that used to ask "is this the correlation view" asks this.
+    private bool JunctionPlotModeSelected() =>
+        radioDspCorrelation.Checked || radioDspCoherence.Checked;
+
+    private static bool IsJunctionMode(DspPlotMode mode) =>
+        mode is DspPlotMode.Correlation or DspPlotMode.Coherence;
+
     // One of the chain-view radios (magnitude / phase / group delay) became
-    // checked: retract the cross-container Correlation radio before acting —
-    // its own container cannot do it (see the wiring comment).
+    // checked: retract the cross-container junction radios before acting —
+    // their own container cannot do it (see the wiring comment).
     private void OnChainDspModeChecked()
     {
         radioDspCorrelation.Checked = false;
+        radioDspCoherence.Checked = false;
         OnDspPlotModeChanged();
     }
 
     private void OnDspPlotModeChanged()
     {
         comboBoxCorrelationPair.Enabled =
-            radioDspCorrelation.Checked && comboBoxCorrelationPair.Items.Count > 0;
+            JunctionPlotModeSelected() && comboBoxCorrelationPair.Items.Count > 0;
         if (suppressProjectEvents)
         {
             return;
@@ -2729,6 +2758,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 channel,
                 result.ImpulseResponse,
                 result.PeakIndex,
+                result.SampleRate,
                 color,
                 result.ValidRange));
         }
@@ -3071,9 +3101,9 @@ public partial class VirtualCrossoverPanel : UserControl
                         ProcessedChannels.StartAnchorIndex(
                             item.ImpulseResponse,
                             item.PeakIndex,
-                            item.Channel.SampleRate,
+                            item.SampleRate,
                             item.ValidRange),
-                        item.Channel.SampleRate).Display;
+                        item.SampleRate).Display;
                 curves.Add(new AcousticCurve(
                     item.Channel.Name, curve.Points, item.Color, 1.8, LineStyle.Solid));
             }
@@ -4309,7 +4339,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // exact as long as no window cuts into its own channel — the condition
         // ResolvePhaseGateOffsets enforces before it hands out per-curve
         // placements.
-        int sampleRate = processed[0].Channel.SampleRate;
+        int sampleRate = processed[0].SampleRate;
         double referenceOffsetMs = gatePreview?.OffsetMs
             ?? ResolveGateOffsetMs(processed, sampleRate);
         double detrendMs = ResolveCommonDetrendMs(
@@ -4440,7 +4470,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        int sampleRate = shown[0].Channel.SampleRate;
+        int sampleRate = shown[0].SampleRate;
         double gateOffsetMs = gatePreview?.OffsetMs
             ?? ResolveGateOffsetMs(shown, sampleRate);
 
@@ -4586,7 +4616,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         MagnitudeGateSnapshot snapshot = magnitudeGate;
-        int sampleRate = processed[0].Channel.SampleRate;
+        int sampleRate = processed[0].SampleRate;
         double offsetMs = snapshot.ResolveGateOffsetMs(
             oppositeSide: false,
             ProcessedChannels.SharedStartAnchorIndex(processed),
@@ -4883,7 +4913,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        int sampleRate = processed[0].Channel.SampleRate;
+        int sampleRate = processed[0].SampleRate;
         int reference = ProcessedChannels.SharedStartAnchorIndex(processed);
         double fitOffsetMs = PhaseGatePlacement.EarliestStartMs(processed, sampleRate);
 
@@ -4966,7 +4996,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void RedrawDspPlot()
     {
-        if (CurrentDspPlotMode() == DspPlotMode.Correlation)
+        if (IsJunctionMode(CurrentDspPlotMode()))
         {
             UpdateCorrelationPairChoices();
             RequestCorrelationRedraw();
@@ -5049,7 +5079,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         comboBoxCorrelationPair.Enabled =
-            radioDspCorrelation.Checked && labels.Count > 0;
+            JunctionPlotModeSelected() && labels.Count > 0;
     }
 
     // Runs on the UI thread. Starts the rebuild loop, or — when one is
@@ -5073,48 +5103,78 @@ public partial class VirtualCrossoverPanel : UserControl
             await RedrawCorrelationPlotAsync();
         }
         while (correlationRebuildPending && !dspPlotView.IsDisposed &&
-            CurrentDspPlotMode() == DspPlotMode.Correlation);
+            IsJunctionMode(CurrentDspPlotMode()));
 
         correlationRebuildTask = null;
     }
 
+    // One iteration of the junction rebuild loop, for BOTH junction modes:
+    // same pair, same processed inputs, one data build off the UI thread —
+    // only WHAT is computed and which model is drawn differ by mode. The
+    // result is dropped when the user left for the other junction mode
+    // mid-compute (the pending flag restarts the loop with the new mode).
     private async Task RedrawCorrelationPlotAsync()
     {
+        DspPlotMode mode = CurrentDspPlotMode();
         List<AdjacentPair> pairs = CurrentCorrelationPairs();
         if (pairs.Count == 0)
         {
-            dspChainPlot.DrawCorrelation(null);
+            if (mode == DspPlotMode.Coherence)
+            {
+                dspChainPlot.DrawCoherence(null);
+            }
+            else
+            {
+                dspChainPlot.DrawCorrelation(null);
+            }
+
             return;
         }
 
         AdjacentPair pair = pairs[Math.Clamp(
             project.CorrelationPairIndex, 0, pairs.Count - 1)];
-        JunctionCorrelationView? data = null;
+        JunctionCorrelationView? correlation = null;
+        JunctionCoherenceView? coherence = null;
         try
         {
             List<ProcessedChannel> scope = lastProcessedRender is { } render
                 ? render.Channels.ToList()
                 : [pair.Lower, pair.Upper];
-            data = await Task.Run(() => BuildCorrelationView(pair, scope));
+            if (mode == DspPlotMode.Coherence)
+            {
+                coherence = await Task.Run(() => BuildCoherenceView(pair, scope));
+            }
+            else
+            {
+                correlation = await Task.Run(() => BuildCorrelationView(pair, scope));
+            }
         }
         catch (Exception exception)
         {
             // Best-effort like every redraw: keep the last frame.
             System.Diagnostics.Debug.WriteLine(
-                $"Correlation view rebuild failed: {exception}");
+                $"Junction view rebuild failed: {exception}");
         }
 
-        if (dspPlotView.IsDisposed ||
-            CurrentDspPlotMode() != DspPlotMode.Correlation)
+        if (dspPlotView.IsDisposed || CurrentDspPlotMode() != mode)
         {
             return;
         }
 
         // A request that arrived mid-compute means this result is already
         // stale: skip the draw, the loop is about to recompute anyway.
-        if (data != null && !correlationRebuildPending)
+        if (correlationRebuildPending)
         {
-            dspChainPlot.DrawCorrelation(data);
+            return;
+        }
+
+        if (coherence != null)
+        {
+            dspChainPlot.DrawCoherence(coherence);
+        }
+        else if (correlation != null)
+        {
+            dspChainPlot.DrawCorrelation(correlation);
         }
     }
 
@@ -5138,34 +5198,10 @@ public partial class VirtualCrossoverPanel : UserControl
         AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildCorrelationView");
-        int sampleRate = pair.Lower.Channel.SampleRate;
-        List<ProcessedChannel> all = scope.Contains(pair.Lower)
-            ? scope.ToList()
-            : [pair.Lower, pair.Upper];
-        Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
-            all.Select(item => item.ImpulseResponse).ToList(),
-            AlignmentReprocessor.SearchCropLength(sampleRate),
-            AlignmentReprocessor.SearchCropPrePeakSamples(sampleRate),
-            out int cropStart);
-        Complex[] lower = cropped[all.IndexOf(pair.Lower)];
-        Complex[] upper = cropped[all.IndexOf(pair.Upper)];
-        // The channels' valid ranges, shifted into the crop's frame: the
-        // front detections behind the sweep and the direct cuts take them, so
-        // the drawn surface reads the same fronts the search reads — on a
-        // clean capture the heuristic fallback agrees anyway, but a delayed
-        // or glitch-headed record is exactly where the two paths must not
-        // part.
-        ValidSampleRange Shifted(ProcessedChannel item, Complex[] croppedIr) =>
-            item.ValidRange.IsKnown
-                ? new ValidSampleRange(
-                    Math.Max(0, item.ValidRange.StartSample - cropStart),
-                    Math.Clamp(
-                        item.ValidRange.EndSample - cropStart,
-                        0,
-                        croppedIr.Length))
-                : item.ValidRange;
-        ValidSampleRange lowerRange = Shifted(pair.Lower, lower);
-        ValidSampleRange upperRange = Shifted(pair.Upper, upper);
+        int sampleRate = pair.Lower.SampleRate;
+        (Complex[] lower, Complex[] upper,
+            ValidSampleRange lowerRange, ValidSampleRange upperRange) =
+            CropJunctionPair(pair, scope, sampleRate);
         // No gate anchor is passed: the sweep windows each channel at its own
         // band-limited front, exactly as every junction measurement of an
         // Auto delay run does (see BuildAlignmentBins), so the drawn score
@@ -5181,30 +5217,6 @@ public partial class VirtualCrossoverPanel : UserControl
         // in view even at an 80 Hz junction.
         double windowMs = Math.Max(3.0, 1.5 * 1000.0 / pair.CrossoverHz);
         double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
-        List<SignalPoint> whitened =
-            VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
-                lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
-                windowMs, centerLagMs: 0, phaseTransform: true);
-
-        // The whitened curve again, on the DIRECT sound alone (see
-        // VirtualCrossoverAnalysis.CutDirectSound — the same cut the
-        // engine's direct-coherence witness reads, so this curve shows the
-        // very figure the search weighed). The full-record curves above read
-        // the whole capture — reflections included, which on a thin-overlap
-        // junction outvote the drivers — while this one answers the question
-        // the view is usually opened with: where do the DRIVERS align.
-        List<SignalPoint> whitenedDirect =
-            VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
-                VirtualCrossoverAnalysis.CutDirectSound(
-                    lower, sampleRate,
-                    pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz,
-                    lowerRange),
-                VirtualCrossoverAnalysis.CutDirectSound(
-                    upper, sampleRate,
-                    pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz,
-                    upperRange),
-                sampleRate, pair.CrossoverHz, passOctaves,
-                windowMs, centerLagMs: 0, phaseTransform: true);
 
         // The score comb repeats per crossover period, so the step must
         // resolve THAT scale — a fixed points-per-window count aliased at
@@ -5215,30 +5227,67 @@ public partial class VirtualCrossoverPanel : UserControl
         double stepMs = Math.Max(
             Math.Min(windowMs / 60.0, 100.0 / pair.CrossoverHz),
             Math.Max(0.005, windowMs / 300.0));
-        List<SignalPoint> ScoreSweep(bool invert) =>
-            VirtualCrossoverAnalysis.JunctionLossSweep(
-                upper, lower, sampleRate,
-                pair.BandLowHz, pair.BandHighHz,
-                -windowMs, windowMs, stepMs, invert,
-                // The search's own settings, or the drawn surface is not the
-                // searched one: per-channel windows (null anchor) and the
-                // search-side level match, whose absence re-shapes the lobes
-                // whenever the two channels sit at different gains.
-                gateAnchorSample: null,
-                levelMatch: true,
-                variableValidRange: upperRange,
-                fixedValidRange: lowerRange)
-            .Select(point => new SignalPoint(
-                point.DelayMs,
-                point.LossDb +
-                    VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
-                    (point.DipDb - point.LossDb)))
-            .ToList();
 
-        double arrivalLagMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                lower, sampleRate, pair.BandLowHz, pair.BandHighHz, lowerRange)
-            - VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                upper, sampleRate, pair.BandLowHz, pair.BandHighHz, upperRange);
+        // The view's four reads are independent computations over the same
+        // immutable pair, so they run side by side; each block's meaning is
+        // stated at its own site below.
+        List<SignalPoint> whitened = null!;
+        List<SignalPoint> whitenedDirect = null!;
+        List<SignalPoint> scoreNormal = null!;
+        List<SignalPoint> scoreInverted = null!;
+        double lowerArrivalMs = 0;
+        double upperArrivalMs = 0;
+        Parallel.Invoke(
+            // The whitened full-record comb: deliberately UNTRIMMED — the
+            // whole capture, reflections included, is this curve's subject
+            // (the honest read at bass junctions, where "direct sound" is not
+            // a measurable notion).
+            () => whitened = VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
+                windowMs, centerLagMs: 0, phaseTransform: true),
+            // The whitened curve again, on the DIRECT sound alone — the same
+            // cut the engine's direct-coherence witness reads, so this curve
+            // shows the very figure the search weighed; where the full-record
+            // twin follows whatever the cabin's reflections correlate best,
+            // this one answers where the DRIVERS align. The pair cut is
+            // trimmed to the windows' span (relative lags preserved — see
+            // CutDirectSoundPair), sized for the ±windowMs read.
+            () =>
+            {
+                (Complex[] directLower, Complex[] directUpper) =
+                    VirtualCrossoverAnalysis.CutDirectSoundPair(
+                        lower, upper, sampleRate,
+                        pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz,
+                        searchRangeMs: windowMs, lowerRange, upperRange);
+                whitenedDirect = VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                    directLower, directUpper, sampleRate,
+                    pair.CrossoverHz, passOctaves,
+                    windowMs, centerLagMs: 0, phaseTransform: true);
+            },
+            // Both polarities of the summation score from ONE set of bins,
+            // with the search's own settings — per-channel windows (null
+            // anchor) and the search-side level match, whose absence
+            // re-shapes the lobes whenever the two channels sit at different
+            // gains — or the drawn surface is not the searched one.
+            () =>
+            {
+                (List<VirtualCrossoverAnalysis.JunctionSweepPoint> normal,
+                    List<VirtualCrossoverAnalysis.JunctionSweepPoint> inverted) =
+                    VirtualCrossoverAnalysis.JunctionLossSweepBothPolarities(
+                        upper, lower, sampleRate,
+                        pair.BandLowHz, pair.BandHighHz,
+                        -windowMs, windowMs, stepMs,
+                        gateAnchorSample: null,
+                        levelMatch: true,
+                        variableValidRange: upperRange,
+                        fixedValidRange: lowerRange);
+                scoreNormal = Penalized(normal);
+                scoreInverted = Penalized(inverted);
+            },
+            () => lowerArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                lower, sampleRate, pair.BandLowHz, pair.BandHighHz, lowerRange),
+            () => upperArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                upper, sampleRate, pair.BandLowHz, pair.BandHighHz, upperRange));
 
         return new JunctionCorrelationView(
             $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
@@ -5248,9 +5297,81 @@ public partial class VirtualCrossoverPanel : UserControl
             pair.BandHighHz,
             whitened,
             whitenedDirect,
-            ScoreSweep(invert: false),
-            ScoreSweep(invert: true),
-            arrivalLagMs);
+            scoreNormal,
+            scoreInverted,
+            lowerArrivalMs - upperArrivalMs);
+    }
+
+    private static List<SignalPoint> Penalized(
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> sweep) =>
+        sweep
+            .Select(point => new SignalPoint(
+                point.DelayMs,
+                point.LossDb +
+                    VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                    (point.DipDb - point.LossDb)))
+            .ToList();
+
+    // The off-thread compute of one junction's coherence view: the same
+    // cropped PROCESSED pair as the correlation view, handed to the dsp
+    // ladder (see VirtualCrossoverAnalysis.ArrivalCoherenceLadder for what a
+    // band reading means and why the edges are gated). Internal for the same
+    // harness reason as BuildCorrelationView.
+    internal static JunctionCoherenceView BuildCoherenceView(
+        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
+    {
+        using var _ = AppProfiler.Zone("VirtualDSP.BuildCoherenceView");
+        int sampleRate = pair.Lower.SampleRate;
+        (Complex[] lower, Complex[] upper,
+            ValidSampleRange lowerRange, ValidSampleRange upperRange) =
+            CropJunctionPair(pair, scope, sampleRate);
+        return new JunctionCoherenceView(
+            $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
+            pair.Upper.Channel.Name,
+            pair.CrossoverHz,
+            pair.BandLowHz,
+            pair.BandHighHz,
+            VirtualCrossoverAnalysis.ArrivalCoherenceLadder(
+                lower, upper, sampleRate,
+                pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz,
+                lowerRange, upperRange));
+    }
+
+    // The junction views' shared preparation: one shared direct-sound crop
+    // across the whole processed side (a shared offset is what keeps the
+    // channels' relative timing intact; it decides nothing the analyses
+    // read, their anchors being derived from the pair's own content), and
+    // the channels' valid ranges shifted into the crop's frame — the front
+    // detections behind the direct cuts and the score sweep take them, so
+    // the drawn surfaces read the same fronts the search reads. On a clean
+    // capture the heuristic fallback agrees anyway, but a delayed or
+    // glitch-headed record is exactly where the two paths must not part.
+    private static (Complex[] Lower, Complex[] Upper,
+        ValidSampleRange LowerRange, ValidSampleRange UpperRange)
+        CropJunctionPair(
+            AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope, int sampleRate)
+    {
+        List<ProcessedChannel> all = scope.Contains(pair.Lower)
+            ? scope.ToList()
+            : [pair.Lower, pair.Upper];
+        Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
+            all.Select(item => item.ImpulseResponse).ToList(),
+            AlignmentReprocessor.SearchCropLength(sampleRate),
+            AlignmentReprocessor.SearchCropPrePeakSamples(sampleRate),
+            out int cropStart);
+        Complex[] lower = cropped[all.IndexOf(pair.Lower)];
+        Complex[] upper = cropped[all.IndexOf(pair.Upper)];
+        ValidSampleRange Shifted(ProcessedChannel item, Complex[] croppedIr) =>
+            item.ValidRange.IsKnown
+                ? new ValidSampleRange(
+                    Math.Max(0, item.ValidRange.StartSample - cropStart),
+                    Math.Clamp(
+                        item.ValidRange.EndSample - cropStart,
+                        0,
+                        croppedIr.Length))
+                : item.ValidRange;
+        return (lower, upper,
+            Shifted(pair.Lower, lower), Shifted(pair.Upper, upper));
     }
 
     // ------------------------------------------------------- capture / export
@@ -5277,7 +5398,7 @@ public partial class VirtualCrossoverPanel : UserControl
         AnalysisCurve sumCurve = BuildMagnitudeCurve(
             sum,
             processed.Min(item => item.PeakIndex),
-            processed[0].Channel.SampleRate).Display;
+            processed[0].SampleRate).Display;
 
         string title = "vDSP Sum " + string.Join(
             "+",

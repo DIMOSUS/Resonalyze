@@ -27,7 +27,7 @@ public sealed class VirtualCrossoverMetricsTests
     private static ProcessedChannel Processed(string name, Complex[] ir, int peak, int rate)
     {
         var channel = new VirtualCrossoverChannel(name) { SampleRate = rate };
-        return new ProcessedChannel(channel, ir, peak, OxyColors.White);
+        return new ProcessedChannel(channel, ir, peak, rate, OxyColors.White);
     }
 
     // A channel with a resolved source on its LEFT side (the default active side).
@@ -38,6 +38,38 @@ public sealed class VirtualCrossoverMetricsTests
         left.TransferImpulseResponse = Impulse();
         left.SampleRate = rate;
         return channel;
+    }
+
+    [Fact]
+    public void BuildCurves_ReadsTheSnapshotRate_NotTheLiveChannel()
+    {
+        // Importing a session rebinds every channel's runtime state on the UI
+        // thread while a metric rebuild is still in flight, so the LIVE
+        // channel can momentarily report a zero rate against a real processed
+        // response — the ArgumentOutOfRangeException crash on opening a
+        // session over a loaded one. The render is a snapshot: zeroing the
+        // live channel after processing must change nothing the metric reads.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var seenRates = new ConcurrentBag<int>();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator,
+            (_, _, sampleRate) =>
+            {
+                seenRates.Add(sampleRate);
+                return EmptyMagnitude;
+            });
+        ProcessedChannel first = Processed("A", Impulse(), 10, 48_000);
+        ProcessedChannel second = Processed("B", Impulse(), 10, 48_000);
+        first.Channel.SampleRate = 0;
+        second.Channel.SampleRate = 0;
+
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, _) =
+            metrics.BuildCurves([first, second], 0);
+
+        Assert.NotNull(magnitudes);
+        Assert.NotNull(sum);
+        Assert.NotEmpty(seenRates);
+        Assert.All(seenRates, rate => Assert.Equal(48_000, rate));
     }
 
     [Fact]
@@ -163,7 +195,8 @@ public sealed class VirtualCrossoverMetricsTests
         Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
             impulse, channel.Settings.ToChain(), 48_000);
         return new ProcessedChannel(
-            channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir), OxyColors.White);
+            channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir), 48_000,
+            OxyColors.White);
     }
 
     [Fact]

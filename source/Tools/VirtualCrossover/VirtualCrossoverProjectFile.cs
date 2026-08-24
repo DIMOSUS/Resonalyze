@@ -6,9 +6,11 @@ namespace Resonalyze;
 
 /// <summary>
 /// What the Virtual DSP lower plot shows: one curve per channel's DSP chain
-/// (magnitude / phase / group delay), or the junction-correlation view of one
-/// adjacent channel pair. <see cref="Correlation"/> never reaches the stored
-/// project field — it persists as an additive flag (see
+/// (magnitude / phase / group delay), or one adjacent channel pair's junction
+/// view — the lag-domain correlation (<see cref="Correlation"/>) or the
+/// per-band arrival-coherence ladder (<see cref="Coherence"/>). Neither
+/// junction mode ever reaches the stored project field — each persists as an
+/// additive flag (see
 /// <see cref="VirtualCrossoverProjectFile.SetDspPlotMode"/>) so older builds
 /// open such a session on the magnitude view instead of rejecting an unknown
 /// enum value.
@@ -18,7 +20,8 @@ public enum DspPlotMode
     Magnitude,
     Phase,
     GroupDelay,
-    Correlation
+    Correlation,
+    Coherence
 }
 
 /// <summary>
@@ -639,24 +642,34 @@ public sealed class VirtualCrossoverProjectFile
     // string. No file version bump.
     public bool DspPlotCorrelationView { get; set; }
 
-    // Which adjacent channel pair the correlation view analyzes, as an index
-    // into the by-band-ordered pair list (0 = the lowest junction). Additive.
+    // The junction-coherence ladder of the lower plot — the second junction
+    // mode, additive for the same reason. Correlation wins if a hand-edited
+    // file sets both (see EffectiveDspPlotMode).
+    public bool DspPlotCoherenceView { get; set; }
+
+    // Which adjacent channel pair the junction views (correlation and
+    // coherence — they share the selector) analyze, as an index into the
+    // by-band-ordered pair list (0 = the lowest junction). Additive.
     public int CorrelationPairIndex { get; set; }
 
     /// <summary>
-    /// The in-memory lower-plot mode: <see cref="DspPlotMode.Correlation"/>
-    /// when the flag is set, the stored enum value otherwise. Write through
-    /// <see cref="SetDspPlotMode"/> so the dual representation cannot
+    /// The in-memory lower-plot mode: <see cref="DspPlotMode.Correlation"/> or
+    /// <see cref="DspPlotMode.Coherence"/> when the matching flag is set, the
+    /// stored enum value otherwise. Write through
+    /// <see cref="SetDspPlotMode"/> so the multi-field representation cannot
     /// half-apply.
     /// </summary>
     [JsonIgnore]
     public DspPlotMode EffectiveDspPlotMode =>
-        DspPlotCorrelationView ? DspPlotMode.Correlation : DspPlotMode;
+        DspPlotCorrelationView ? DspPlotMode.Correlation
+        : DspPlotCoherenceView ? DspPlotMode.Coherence
+        : DspPlotMode;
 
     public void SetDspPlotMode(DspPlotMode mode)
     {
         DspPlotCorrelationView = mode == DspPlotMode.Correlation;
-        DspPlotMode = mode == DspPlotMode.Correlation
+        DspPlotCoherenceView = mode == DspPlotMode.Coherence;
+        DspPlotMode = mode is DspPlotMode.Correlation or DspPlotMode.Coherence
             ? DspPlotMode.Magnitude
             : mode;
     }

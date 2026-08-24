@@ -203,9 +203,10 @@ namespace Resonalyze
             InitCore(configuration);
         }
 
-        // The body of Init without its guard, for the one caller that already
-        // holds the measurement busy itself (see ImportRecordedSweep) and would
-        // otherwise have to drop that claim across the call to re-enter here.
+        // The body of Init without its guard, for the callers that already hold
+        // the measurement busy themselves (see ImportRecordedSweep and
+        // RestoreImpulseResponse) and would otherwise have to drop that claim
+        // across the call to re-enter here.
         private void InitCore(SweepMeasurementConfiguration configuration)
         {
             SweepSignalConfiguration signal = configuration.Signal;
@@ -463,11 +464,29 @@ namespace Resonalyze
                     "Transfer impulse response is required for loopback transfer measurements.",
                     nameof(transferImpulseResponse));
             }
-            if (InProgress)
+            // A run blocks; a claim does not. The caller that decoded this file has
+            // usually been holding one across the read and the analysis so nothing
+            // could start a sweep underneath it, and it must still be able to publish
+            // the result it went to the trouble of protecting. Same shape as
+            // ImportRecordedSweep, which faced this first.
+            bool claimedHere = false;
+            lock (stateSync)
             {
-                throw new InvalidOperationException(
-                    "Cannot load an impulse response while a measurement is running.");
+                if (inProgress && !claimed)
+                {
+                    throw new InvalidOperationException(
+                        "Cannot load an impulse response while a measurement is running.");
+                }
+
+                if (!inProgress)
+                {
+                    inProgress = true;
+                    claimedHere = true;
+                }
             }
+
+            try
+            {
             if (sweepDeconvolutionImpulseResponse.Length == 0)
             {
                 throw new ArgumentException(
@@ -492,7 +511,7 @@ namespace Resonalyze
                 throw new ArgumentOutOfRangeException(nameof(transferPeakIndex));
             }
 
-            Init(new SweepMeasurementConfiguration(
+            InitCore(new SweepMeasurementConfiguration(
                 new SweepSignalConfiguration(
                     lowFrequencyHz,
                     highFrequencyHz,
@@ -519,7 +538,7 @@ namespace Resonalyze
                     AverageRunCount,
                     ConfirmEachAverageRun),
                 ProtectiveHighPass));
-            // Init just set these from the sweep it regenerated; the recorded
+            // InitCore just set these from the sweep it regenerated; the recorded
             // geometry wins, since that sweep is a reconstruction and this result
             // came from the original one. The length matters as much as the band:
             // generation is capped at MaxDurationSeconds while a stored sweep may
@@ -555,6 +574,17 @@ namespace Resonalyze
                 AverageRunCount);
             LastError = null;
             Publish(ImpulseResponseChanged);
+            }
+            finally
+            {
+                if (claimedHere)
+                {
+                    lock (stateSync)
+                    {
+                        inProgress = false;
+                    }
+                }
+            }
         }
 
         /// <summary>

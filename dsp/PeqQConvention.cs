@@ -150,9 +150,14 @@ public static class PeqQConventions
     // BANDWIDTH between half-gain points, and a shelf has none — its Q sets the knee
     // (see PeqBandType). Scaling it by the gain would print a shelf that overshoots
     // where the designed one does not, so a shelf's Q goes to the sheet as it is.
+    //
+    // An all-pass is excluded for the same reason: its Q sets how sharply the phase
+    // turns at the corner, and with unity magnitude everywhere there are no half-gain
+    // points to have a bandwidth between. Scaling it by whatever gain the slot still
+    // carries from a type switch would print a different phase filter than designed.
     private static double Scale(PeqBand band, PeqQConvention convention)
     {
-        if (band.IsTransparent || band.Type.IsShelving())
+        if (band.IsTransparent || band.Type.IsShelving() || band.Type.IsAllPass())
         {
             return 1.0;
         }

@@ -26,7 +26,7 @@ public sealed class VirtualCrossoverCorrelationViewTests
         var channel = new VirtualCrossoverChannel(name) { SampleRate = SampleRate };
         return new ProcessedChannel(
             channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir),
-            OxyColors.White, range);
+            SampleRate, OxyColors.White, range);
     }
 
     [Fact]
@@ -82,5 +82,147 @@ public sealed class VirtualCrossoverCorrelationViewTests
         // ...and the blind marker parks on the artifact, 10 ms early on the
         // upper side — the false front a dropped range would draw.
         Assert.InRange(blindView.ArrivalLagMs, 9.0, 11.0);
+    }
+
+    [Fact]
+    public void DrawCorrelation_AddsEnvelopeGuidesOutsideTheLegend()
+    {
+        // The ± envelope guides ride under each comb in its own color but
+        // must not join the legend — four named curves is what the legend
+        // says, and what it must keep saying.
+        var ir = new Complex[IrLength];
+        ir[FrontSample] = 1.0;
+        var range = new ValidSampleRange(FrontSample - 96, IrLength);
+        ProcessedChannel lower = Channel("C", ir, range);
+        ProcessedChannel upper = Channel("D", (Complex[])ir.Clone(), range);
+        JunctionCorrelationView view = VirtualCrossoverPanel.BuildCorrelationView(
+            new AdjacentPair(lower, upper, 1_500, 750, 3_000),
+            [lower, upper]);
+
+        using var plotView = new OxyPlot.WindowsForms.PlotView();
+        var plot = new VirtualCrossoverDspChainPlot(
+            plotView, DspPlotMode.Correlation);
+        plot.DrawCorrelation(view);
+        var model = (PlotModel)plotView.Model;
+
+        List<OxyPlot.Series.LineSeries> guides = model.Series
+            .OfType<OxyPlot.Series.LineSeries>()
+            .Where(series => series.Title is "PHAT envelope" or "PHAT direct envelope")
+            .ToList();
+        // A +/- pair per comb.
+        Assert.Equal(4, guides.Count);
+        Assert.All(guides, series => Assert.False(series.RenderInLegend));
+        // The +/- twins mirror each other around zero.
+        foreach (string title in new[] { "PHAT envelope", "PHAT direct envelope" })
+        {
+            List<OxyPlot.Series.LineSeries> pair = guides
+                .Where(series => series.Title == title)
+                .ToList();
+            Assert.Equal(2, pair.Count);
+            Assert.Equal(
+                pair[0].Points.Select(point => point.Y),
+                pair[1].Points.Select(point => -point.Y));
+        }
+
+        Assert.Equal(
+            ["PHAT", "PHAT direct", "score", "score inv"],
+            model.Series
+                .Where(series => series.RenderInLegend)
+                .Select(series => series.Title)
+                .ToList());
+    }
+
+    [Fact]
+    public void DrawCoherence_DrawsOneKindOfOptimumMarkerAndClaimsNoPolarity()
+    {
+        // The ladder states no polarity: its 2/3-octave probe makes a packet
+        // 4.3x wider than the lobe spacing at every frequency, so the
+        // opposite-signed lobes sit inside the plateau and the carrier's sign
+        // at the maximum is noise (measured 0-6% of envelope contrast across
+        // every archived junction). One marker series, and nothing in the
+        // legend promising a polarity.
+        var view = new JunctionCoherenceView("C-D", "D", 65, 33, 130,
+        [
+            new VirtualCrossoverAnalysis.ArrivalCoherencePoint(
+                103.2, 1.27, 0.981, 0.979, 4.85),
+            new VirtualCrossoverAnalysis.ArrivalCoherencePoint(
+                115.8, -0.40, 0.981, 0.500, 4.32)
+        ]);
+
+        using var plotView = new OxyPlot.WindowsForms.PlotView();
+        var plot = new VirtualCrossoverDspChainPlot(plotView, DspPlotMode.Coherence);
+        plot.DrawCoherence(view);
+        var model = (PlotModel)plotView.Model;
+
+        OxyPlot.Series.ScatterSeries markers = Assert.Single(
+            model.Series.OfType<OxyPlot.Series.ScatterSeries>());
+        Assert.Equal("optimum", markers.Title);
+        Assert.Equal([103.2, 115.8], markers.Points.Select(point => point.X));
+        Assert.DoesNotContain(
+            model.Series.Where(series => series.RenderInLegend),
+            series => series.Title?.Contains("polarity") == true ||
+                series.Title?.Contains("inverted") == true);
+    }
+
+    [Fact]
+    public void DrawCoherence_RefitsTheFrequencyAxisWhenTheBandChanges()
+    {
+        // Editing the pair's crossover keeps the pair title, and both ladders
+        // below sit at the lag axis's 1 ms floor — so an invalidation state of
+        // title-and-lag alone would leave the frequency axis fitted to the
+        // FIRST band and clip most of the rebuilt ladder.
+        static JunctionCoherenceView View(double lowHz, double highHz) =>
+            new("C-D", "D", Math.Sqrt(lowHz * highHz), lowHz, highHz,
+            [
+                new VirtualCrossoverAnalysis.ArrivalCoherencePoint(
+                    lowHz, 0.0, 0.9, 0.9, 500.0 / lowHz),
+                new VirtualCrossoverAnalysis.ArrivalCoherencePoint(
+                    highHz, 0.0, 0.9, 0.9, 500.0 / highHz)
+            ]);
+
+        using var plotView = new OxyPlot.WindowsForms.PlotView();
+        var plot = new VirtualCrossoverDspChainPlot(plotView, DspPlotMode.Coherence);
+        plot.DrawCoherence(View(750, 3_000));
+        plot.DrawCoherence(View(1_500, 6_000));
+
+        OxyPlot.Axes.Axis frequency = ((PlotModel)plotView.Model).Axes
+            .Single(axis => axis.Key == PlotModelFactory.FrequencyAxisKey);
+        Assert.InRange(frequency.Minimum, 1_300, 1_400);
+        Assert.InRange(frequency.Maximum, 6_600, 6_800);
+    }
+
+    [Fact]
+    public void BuildCoherenceView_ReadsTheProcessedPairInTheCorrelationFrame()
+    {
+        // An aligned delta pair through the same crop the correlation view
+        // uses: every surviving band's optimum sits at lag 0 with nothing
+        // left on the table, in the correlation view's own lag convention
+        // (the crop and valid-range plumbing is shared — see
+        // VirtualCrossoverPanel.CropJunctionPair — so a shift bug there
+        // would move these lags off zero).
+        var ir = new Complex[IrLength];
+        ir[FrontSample] = 1.0;
+        var range = new ValidSampleRange(FrontSample - 96, IrLength);
+        ProcessedChannel lower = Channel("C", ir, range);
+        ProcessedChannel upper = Channel("D", (Complex[])ir.Clone(), range);
+
+        JunctionCoherenceView view = VirtualCrossoverPanel.BuildCoherenceView(
+            new AdjacentPair(lower, upper, 1_500, 750, 3_000),
+            [lower, upper]);
+
+        Assert.Equal("C-D", view.PairTitle);
+        Assert.NotEmpty(view.Ladder);
+        Assert.All(view.Ladder, point =>
+        {
+            Assert.InRange(point.FrequencyHz, 750, 3_100);
+            Assert.True(
+                Math.Abs(point.LagMs) < 0.05,
+                $"band {point.FrequencyHz:0} Hz optimum at {point.LagMs:0.000} ms " +
+                "on an aligned pair");
+            Assert.True(
+                point.PeakR - point.CurrentR < 0.05,
+                $"band {point.FrequencyHz:0} Hz leaves coherence on the table " +
+                "while aligned");
+        });
     }
 }

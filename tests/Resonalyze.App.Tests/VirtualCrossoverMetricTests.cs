@@ -208,7 +208,8 @@ public sealed class VirtualCrossoverMetricTests
         double? rivalScore = 0.78,
         double phaseConsistency = 0.93,
         bool bestInvert = false,
-        double oppositePolarityScore = 0.42) =>
+        double oppositePolarityScore = 0.42,
+        double bestExtraDelayMs = -1.30) =>
         new(
             "A/B",
             "A",
@@ -219,7 +220,7 @@ public sealed class VirtualCrossoverMetricTests
                 CurrentScore: 0.96,
                 PhaseAtCrossoverDeg: -3.4,
                 PhaseConsistency: phaseConsistency,
-                BestExtraDelayMs: -0.30,
+                BestExtraDelayMs: bestExtraDelayMs,
                 BestInvert: bestInvert,
                 BestScore: 0.97,
                 OppositePolarityScore: oppositePolarityScore,
@@ -230,37 +231,107 @@ public sealed class VirtualCrossoverMetricTests
                 FitRmsDeg: 10.3));
 
     [Fact]
-    public void FormatPhaseCompact_RendersPhaseFixAndMargin()
+    public void FormatPhaseCompact_RendersPhaseAndFix()
     {
         RunWithInvariantCulture(() =>
         {
+            // Three columns, each one a reader can act on: where the phase
+            // stands at fc, the delay worth applying, and the score the
+            // junction reaches as it stands. The lobe margin moved to the
+            // tooltip — a bare difference of two phase scores carries no
+            // scale, and the only decision it drives is the "!" beside the
+            // fix.
             string text = VirtualCrossoverMetric.FormatPhaseCompact([PhaseJunction()]);
 
             Assert.Equal(
                 "Junction phase\r\n" +
-                "       φfc  fix ms   lobe\r\n" +
-                "A/B     -3°  -0.30   0.19",
+                "       φfc  fix ms  score\r\n" +
+                "A/B     -3°  -1.30   0.96",
                 text);
         });
     }
 
     [Fact]
-    public void FormatPhaseCompact_RendersARoundedZeroFixUnsigned()
+    public void FormatPhaseCompact_ShowsWhereTheJunctionStandsNow()
     {
         RunWithInvariantCulture(() =>
         {
-            // Since the .NET Core 3.0 signed-zero change, a negative value that
-            // rounds to zero renders through a TWO-section format as "-+0.00";
-            // the three-section form must show a plain unsigned zero.
-            VirtualCrossoverMetric.PhaseEntry entry = PhaseJunction() with
+            // The score column reads the junction AS IT STANDS, on the scale
+            // the fix maximizes — bounded, so it needs no legend, and negative
+            // when the overlap is subtracting rather than adding.
+            VirtualCrossoverMetric.PhaseEntry cancelling = PhaseJunction() with
             {
-                Result = PhaseJunction().Result with { BestExtraDelayMs = -0.004 }
+                Result = PhaseJunction().Result with { CurrentScore = -0.42 }
             };
+
+            Assert.Contains(
+                "A/B     -3°  -1.30  -0.42",
+                VirtualCrossoverMetric.FormatPhaseCompact([cancelling]));
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_MutesAFixTooSmallToMatter()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // 0.05 ms at this 80 Hz junction is 1.4° of phase — nothing to
+            // apply, and a settled tune fills the column with such values.
+            string text = VirtualCrossoverMetric.FormatPhaseCompact(
+                [PhaseJunction(bestExtraDelayMs: -0.05)]);
+
+            Assert.Contains("A/B     -3°      ·", text);
+            Assert.DoesNotContain("-0.05", text);
+
+            // The same delay at a 4 kHz junction is most of a period, so it
+            // stays: the threshold is phase at fc, not milliseconds.
+            VirtualCrossoverMetric.PhaseEntry high =
+                PhaseJunction(bestExtraDelayMs: -0.05) with { CrossoverHz = 4_000 };
+            Assert.Contains("-0.05", VirtualCrossoverMetric.FormatPhaseCompact([high]));
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_KeepsThePolarityMarkOnAMutedFix()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // An inversion is not a matter of magnitude: it stays actionable
+            // exactly when the delay beside it does not.
+            string text = VirtualCrossoverMetric.FormatPhaseCompact(
+                [PhaseJunction(bestInvert: true, bestExtraDelayMs: -0.05)]);
+
+            Assert.Contains("A/B     -3°      ·i", text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_KeepsASmallButSignificantFixReadable()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // The mute threshold is a PHASE, so above roughly 5.6 kHz a fix
+            // worth acting on is smaller than 0.005 ms: at 16 kHz these
+            // 0.004 ms are 23° at the crossover. Two decimals would render
+            // that as "0.00" — a significant correction shown as nothing, its
+            // sign lost with it — so such a value takes a third decimal.
+            VirtualCrossoverMetric.PhaseEntry entry =
+                PhaseJunction(bestExtraDelayMs: -0.004) with { CrossoverHz = 16_000 };
 
             string text = VirtualCrossoverMetric.FormatPhaseCompact([entry]);
 
-            Assert.Contains("A/B     -3°   0.00   0.19", text);
+            // Six characters wide, so a three-decimal value fills the column
+            // exactly and the separating space comes from the phase field.
+            Assert.Contains("A/B     -3° -0.004", text);
+            Assert.DoesNotContain("0.00 ", text);
+            // Since the .NET Core 3.0 signed-zero change, a negative value
+            // that rounds to zero renders through a TWO-section format as
+            // "-+0.00"; every fix format here stays three-section.
             Assert.DoesNotContain("-+", text);
+            // The tooltip quotes the same value and must not round it away
+            // either.
+            Assert.Contains(
+                "-0.004 ms", VirtualCrossoverMetric.FormatPhaseDetail([entry]));
         });
     }
 
@@ -272,12 +343,12 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(lobeMargin: 0.04)]);
 
-            Assert.Contains("A/B     -3°  -0.30   0.04 !", text);
+            Assert.Contains("A/B     -3°  -1.30   0.96 !", text);
         });
     }
 
     [Fact]
-    public void FormatPhaseCompact_DashesAMissingRivalLobe()
+    public void FormatPhaseCompact_RaisesNoFlagWithoutARivalLobe()
     {
         RunWithInvariantCulture(() =>
         {
@@ -285,7 +356,7 @@ public sealed class VirtualCrossoverMetricTests
                 [PhaseJunction(
                     lobeMargin: null, rivalExtraMs: null, rivalScore: null)]);
 
-            Assert.Contains("A/B     -3°  -0.30      —", text);
+            Assert.Contains("A/B     -3°  -1.30", text);
             Assert.DoesNotContain("!", text);
         });
     }
@@ -300,7 +371,7 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(phaseConsistency: 0.31)]);
 
-            Assert.Contains("A/B       —  -0.30   0.19", text);
+            Assert.Contains("A/B       —  -1.30", text);
         });
     }
 
@@ -327,7 +398,7 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(bestInvert: true)]);
 
-            Assert.Contains("A/B     -3°  -0.30i  0.19", text);
+            Assert.Contains("A/B     -3°  -1.30i", text);
         });
     }
 
@@ -341,7 +412,7 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(oppositePolarityScore: 0.96)]);
 
-            Assert.Contains("A/B     -3°  -0.30~  0.19", text);
+            Assert.Contains("A/B     -3°  -1.30~", text);
             Assert.DoesNotContain("!", text);
         });
     }
@@ -355,7 +426,7 @@ public sealed class VirtualCrossoverMetricTests
             // current polarity is clearly right, so no mark.
             string text = VirtualCrossoverMetric.FormatPhaseCompact([PhaseJunction()]);
 
-            Assert.Contains("A/B     -3°  -0.30   0.19", text);
+            Assert.Contains("A/B     -3°  -1.30", text);
         });
     }
 
@@ -400,7 +471,7 @@ public sealed class VirtualCrossoverMetricTests
 
             Assert.Contains(
                 "A/B @ 80 Hz: φ -3° at fc (R 0.93); phase score 0.96 now, " +
-                "best 0.97 at -0.30 ms on A (flip scores 0.42);",
+                "best 0.97 at -1.30 ms on A (flip scores 0.42);",
                 text);
             Assert.Contains(
                 "rival lobe 0.78 at -12.20 ms (margin 0.19); " +

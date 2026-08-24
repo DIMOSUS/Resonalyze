@@ -1560,16 +1560,55 @@ inverted rival, the wavefronts within a period or two of the front decide it,
 because that is the part of the record the drivers made and the room had not yet
 answered.
 
+The plot's **Coherence** mode reads the same junction per frequency instead of
+per lag: a sub-band probe slides across the pair band (sixth-octave steps,
+2/3-octave width, each band's direct-sound cut sized to its own period), and
+per band the envelope of the band-limited GCC-PHAT gives **Δt to optimum** —
+the delay that would center this band's arrivals — with **r current** (the
+coherence the applied tune collects at lag 0) dotted against the shaded **r
+attainable** ceiling; the gap between them is what the tune leaves on the
+table, and it closes where a band is centered. A well-aligned junction draws a
+flat Δt near zero inside the dashed **±T/2** corridor; a junction that
+misses by whole periods draws a flat line *offset* from zero; a sloped or
+stepped Δt is dispersion — different bands arriving by different paths, which
+no single delay reconciles, so the tune is a compromise and this plot shows
+where it sits. The ladder deliberately says nothing about POLARITY: a
+2/3-octave probe makes a coherence packet 4.3× wider than the spacing between
+comb lobes — at every frequency, since both scale with 1/f — so the
+opposite-signed lobes sit inside the packet's own plateau, and which one its
+maximum lands on is decided by noise. Measured across the archived cabins the
+envelope falls only 0–6% between a band's optimum and its neighbours, on
+sharply tuned junctions as much as on rough ones; polarity is what the
+correlation view answers instead, over the pair's whole band, where the lobes
+genuinely separate. Bands where one driver's level has fallen 25 dB below the
+other's are dropped rather than drawn: GCC-PHAT deliberately ignores level,
+and would otherwise read confident "coherence" off a crossover remnant the
+sum cannot hear. On junctions below 120 Hz a note warns that the long band
+windows let cabin modes rule the read: the ladder honestly reports that such
+a band is incoherent at the applied tune, but its Δt there is not a move
+recommendation. The mode is a diagnostic for manual work — Auto delay keeps
+its own guarded estimators and never reads this plot.
+
 A **Junction phase** block reads each adjacent pair's steady-state cross-phase in
 a time-sized window (~0.68 s of the processed IR) — the regime sustained program
 material actually sums in, deliberately not the direct-sound phase, because the
 room adds several milliseconds of apparent group delay down low. Per junction it
 shows **φfc**, the lower channel's phase minus the upper at the crossover (≈0°
 means phase-aligned; ±180° does not by itself call for a flip, since an inverted
-channel and a half-period delay are identical at fc); **fix ms**, the extra delay
-on the lower channel that would maximize the overlap-band phase score, with `i`
-recommending a flip and `~` warning that a flip nearly ties; and **lobe**, how
-decisively that delay beats the nearest same-polarity rival. A **Δ L−R** block
+channel and a half-period delay are identical at fc); and **fix ms**, the extra
+delay on the lower channel that would maximize the overlap-band phase score,
+with `i` recommending a flip, `~` warning that a flip nearly ties, and `!`
+warning that the overlap band is too narrow to rule out a whole-period hop — so
+the fix is not to be trusted, and the junction's coherence ladder is the better
+read. A fix worth less than 10° of phase at the crossover (0.03 dB in the sum)
+shows as `·`: a settled tune has nothing to apply there, and a number would
+invite a correction that changes nothing. Last comes **score**, where the
+junction stands as it is — the band's phase-alignment score (−1…+1) that the
+fix maximizes: 1.00 is aligned across the overlap, 0 a wash, negative means the
+two drivers are subtracting. It moves while a delay is dragged, so it answers
+"is this getting better", which the fix alone cannot. The tooltip carries every
+fitted figure behind those columns, including the lobe margin the `!` is drawn
+from. A **Δ L−R** block
 below reports each pair's inter-side state — the two sides' band-limited envelope
 arrivals with their difference (positive means the right side leads, the scene
 offset's convention), plus a **Level Δ L−R** row for the by-ear gain trim that

@@ -6,18 +6,31 @@ namespace Resonalyze;
 
 /// <summary>
 /// A channel's processed response ready for the metric, the complex sum and the
-/// plot: the applied-chain impulse response, its peak index, the channel's
-/// plot color and where the MEASURED content sits inside the processed record
-/// (<see cref="ValidRange"/> — the coordinator computes it with every render;
-/// front detections read it so a chain delay's silent prefix cannot pose as
-/// arrival SNR). Shared by the redraw, the metric read-out and the Auto delay
-/// search. The range defaults to unknown for callers without one — the
-/// analyses then fall back to their padding-signature heuristic.
+/// plot: the applied-chain impulse response, its peak index, the rate it was
+/// processed at, the channel's plot color and where the MEASURED content sits
+/// inside the processed record (<see cref="ValidRange"/> — the coordinator
+/// computes it with every render; front detections read it so a chain delay's
+/// silent prefix cannot pose as arrival SNR). Shared by the redraw, the metric
+/// read-out and the Auto delay search. The range defaults to unknown for
+/// callers without one — the analyses then fall back to their
+/// padding-signature heuristic.
+/// <para>
+/// <see cref="SampleRate"/> is CAPTURED with the response rather than read
+/// back through <see cref="Channel"/>: the record is a snapshot while the
+/// channel is live, and importing a session rebinds every channel's runtime
+/// state on the UI thread while renders and metric rebuilds are still in
+/// flight — a consumer that dereferenced the live channel mid-rebind read a
+/// ZERO rate against a real response (the ArgumentOutOfRangeException crash
+/// on opening a session over a loaded one). Everything derived from
+/// <see cref="ImpulseResponse"/> must take the rate from this snapshot; the
+/// live channel stays for its identity, settings and visibility flags.
+/// </para>
 /// </summary>
 internal sealed record ProcessedChannel(
     VirtualCrossoverChannel Channel,
     Complex[] ImpulseResponse,
     int PeakIndex,
+    int SampleRate,
     OxyColor Color,
     ValidSampleRange ValidRange = default);
 
@@ -109,7 +122,7 @@ internal static class ProcessedChannels
     public static int SharedStartAnchorIndex(
         IReadOnlyList<ProcessedChannel> processed) =>
         processed.Min(item => StartAnchorIndex(
-            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate,
+            item.ImpulseResponse, item.PeakIndex, item.SampleRate,
             item.ValidRange));
 
     public static List<ProcessedChannel> OrderByBand(IReadOnlyList<ProcessedChannel> processed) =>

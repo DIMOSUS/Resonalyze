@@ -47,14 +47,30 @@ internal sealed record JunctionCorrelationView(
     double ArrivalLagMs);
 
 /// <summary>
+/// The junction-coherence view's data: one junction's arrival-coherence
+/// ladder (see <see cref="VirtualCrossoverAnalysis.ArrivalCoherenceLadder"/>),
+/// computed off the UI thread from the same PROCESSED pair as the correlation
+/// view — lag 0 is the applied alignment, every band's lag a correction to
+/// the upper channel.
+/// </summary>
+internal sealed record JunctionCoherenceView(
+    string PairTitle,
+    string UpperName,
+    double CrossoverHz,
+    double BandLowHz,
+    double BandHighHz,
+    List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> Ladder);
+
+/// <summary>
 /// The Virtual DSP lower plot: each enabled channel's DSP-chain response
 /// (magnitude / phase / group delay). The bulk delay is excluded — its timing
 /// effect shows on the acoustic plot, and drawing it here would wrap the phase
 /// into an unreadable sawtooth and swamp the filter group delay. Owns the
 /// PlotView's model, the single value axis it reconfigures per mode, and the
 /// drawn series; the panel supplies the mode and the per-channel curves.
-/// The junction-correlation mode swaps in its own, lag-domain model (see
-/// <see cref="DrawCorrelation"/>); the two models keep their axes' zoom/pan
+/// The junction modes swap in their own models — lag-domain correlation (see
+/// <see cref="DrawCorrelation"/>) and per-band coherence (see
+/// <see cref="DrawCoherence"/>); the models keep their axes' zoom/pan
 /// independently.
 /// </summary>
 internal sealed class VirtualCrossoverDspChainPlot
@@ -66,10 +82,14 @@ internal sealed class VirtualCrossoverDspChainPlot
     private const string CoefficientAxisKey = "corr-r";
     private const string ScoreAxisKey = "corr-score";
     private const string CorrelationTrackerFormat = "{0}\n{2:0.00} ms\n{4:0.00}";
+    private const string CoherenceLagAxisKey = "coh-lag";
+    private const string CoherenceCoefficientAxisKey = "coh-r";
+    private const string CoherenceTrackerFormat = "{0}\n{2:0} Hz\n{4:0.00}";
 
     private readonly PlotView view;
     private readonly PlotModel chainModel;
     private readonly PlotModel correlationModel;
+    private readonly PlotModel coherenceModel;
 
     // Tracks the mode the value axis range was last set for, so switching modes
     // resets the range to the new mode's default while an in-mode redraw (e.g.
@@ -80,6 +100,19 @@ internal sealed class VirtualCrossoverDspChainPlot
     // junction switch resets the ranges, an in-pair redraw (delay edits)
     // preserves the user's zoom/pan.
     private (string Pair, double WindowMs)? correlationAxisState;
+
+    // Same idea for the coherence axes, over everything they are placed from.
+    // The lag range depends on the data (a misaligned junction pushes optima
+    // past the comb corridor), so it is bucketed to half-millisecond steps: a
+    // delay edit that keeps the ladder in the same bucket preserves the user's
+    // zoom, one that leaves it re-fits the axes instead of clipping the points
+    // that moved. The BAND is here because the frequency axis is fitted from
+    // it: editing the pair's crossover keeps the pair title, and the new
+    // ladder's lag limit usually lands in the same bucket (both are typically
+    // at the 1 ms floor), so a state of title-and-lag alone would leave the
+    // frequency axis on the PREVIOUS band and clip most of the rebuilt ladder.
+    private (string Pair, double LagLimitMs, double BandLowHz, double BandHighHz)?
+        coherenceAxisState;
 
     public VirtualCrossoverDspChainPlot(PlotView view, DspPlotMode initialMode)
     {
@@ -108,9 +141,13 @@ internal sealed class VirtualCrossoverDspChainPlot
         ConfigureValueAxis((LinearAxis)model.Axes[^1], initialMode);
         chainModel = model;
         correlationModel = CreateCorrelationModel();
-        view.Model = initialMode == DspPlotMode.Correlation
-            ? correlationModel
-            : chainModel;
+        coherenceModel = CreateCoherenceModel();
+        view.Model = initialMode switch
+        {
+            DspPlotMode.Correlation => correlationModel,
+            DspPlotMode.Coherence => coherenceModel,
+            _ => chainModel
+        };
         PlotInteraction.Enable(view);
     }
 
@@ -213,6 +250,19 @@ internal sealed class VirtualCrossoverDspChainPlot
             }
         }
 
+        // Each comb's analytic envelope first, as thin translucent ± guides
+        // in the parent curve's own color, under everything and out of the
+        // legend: the envelope's extremum is the coherence packet's center
+        // with the carrier lobes stripped — the group optimum the eye can
+        // read a lobe-skip against — while the carrier keeps answering which
+        // LOBE the tune sits on.
+        AddEnvelopeGuides(
+            model, "PHAT envelope", data.Whitened,
+            OxyColor.FromRgb(79, 195, 247));
+        AddEnvelopeGuides(
+            model, "PHAT direct envelope", data.WhitenedDirect,
+            OxyColor.FromRgb(200, 130, 255));
+
         // Four curves, each with its own question: PHAT — the whitened
         // full-record comb (the honest read at bass junctions, where "direct
         // sound" is not a measurable notion); PHAT direct — the drivers'
@@ -273,6 +323,46 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.InvalidatePlot(true);
     }
 
+    // The ± analytic envelope of one correlation comb, as legend-less thin
+    // guides (the title still names them in the tracker). Computed over the
+    // displayed window: the transform's edge wobble stays confined to the
+    // outermost samples of a decayed comb, which a 35%-alpha guide is
+    // entitled to.
+    private static void AddEnvelopeGuides(
+        PlotModel model,
+        string title,
+        List<SignalPoint> points,
+        OxyColor color)
+    {
+        if (points.Count < 3)
+        {
+            return;
+        }
+
+        double[] envelope = SignalEnvelope.Envelope(
+            points.Select(point => point.Y).ToList());
+        foreach (int sign in new[] { 1, -1 })
+        {
+            var series = new LineSeries
+            {
+                Title = title,
+                RenderInLegend = false,
+                Color = OxyColor.FromAColor(90, color),
+                StrokeThickness = 1.0,
+                Tag = SeriesTag,
+                TrackerFormatString = CorrelationTrackerFormat,
+                XAxisKey = LagAxisKey,
+                YAxisKey = CoefficientAxisKey
+            };
+            for (int i = 0; i < points.Count; i++)
+            {
+                series.Points.Add(new DataPoint(points[i].X, sign * envelope[i]));
+            }
+
+            model.Series.Add(series);
+        }
+    }
+
     private static void AddCorrelationSeries(
         PlotModel model,
         string title,
@@ -300,6 +390,237 @@ internal sealed class VirtualCrossoverDspChainPlot
 
         model.Series.Add(series);
     }
+
+    private static PlotModel CreateCoherenceModel()
+    {
+        var model = new PlotModel
+        {
+            IsLegendVisible = true
+        };
+        model.Legends.Add(new OxyPlot.Legends.Legend
+        {
+            LegendPosition = OxyPlot.Legends.LegendPosition.TopRight,
+            LegendTextColor = OxyColor.FromRgb(210, 214, 222),
+            LegendBackground = OxyColor.FromAColor(120, OxyColor.FromRgb(40, 44, 54))
+        });
+        PlotModelStyle.AddFrequencyAxis(model);
+        model.Axes.Add(new LinearAxis
+        {
+            Key = CoherenceLagAxisKey,
+            Position = AxisPosition.Left,
+            Title = "delay to optimum (ms)",
+            MajorGridlineStyle = LineStyle.Solid,
+            MinorGridlineStyle = LineStyle.Dot
+        });
+        model.Axes.Add(new LinearAxis
+        {
+            Key = CoherenceCoefficientAxisKey,
+            Position = AxisPosition.Right,
+            Title = "envelope r",
+            Minimum = 0,
+            Maximum = 1.05,
+            MajorStep = 0.25,
+            MajorGridlineStyle = LineStyle.None,
+            MinorGridlineStyle = LineStyle.None
+        });
+        model.Annotations.Add(new PlotWatermarkAnnotation
+        {
+            Text = "Coherence",
+            TextColor = OxyColor.FromAColor(10, OxyColors.White),
+            FontSize = 40,
+            FontWeight = FontWeights.Bold
+        });
+        return model;
+    }
+
+    /// <summary>
+    /// Swaps in the frequency-domain coherence model and draws one junction's
+    /// arrival-coherence ladder. Null clears the view (no measurable pair);
+    /// a view whose ladder the level gate emptied draws the title alone, so
+    /// "nothing to measure" and "nothing selected" stay distinguishable.
+    /// </summary>
+    public void DrawCoherence(JunctionCoherenceView? data)
+    {
+        view.Model = coherenceModel;
+        PlotModel model = coherenceModel;
+        RemoveSeries(model);
+        for (int index = model.Annotations.Count - 1; index >= 0; index--)
+        {
+            if (Equals(model.Annotations[index].Tag, SeriesTag))
+            {
+                model.Annotations.RemoveAt(index);
+            }
+        }
+
+        if (data == null)
+        {
+            model.Title = null;
+            model.Subtitle = null;
+            model.InvalidatePlot(true);
+            return;
+        }
+
+        model.Title = $"{data.PairTitle}  ·  fc {data.CrossoverHz:0} Hz  ·  " +
+            $"{data.BandLowHz:0}-{data.BandHighHz:0} Hz";
+        model.TitleFontSize = 11;
+        model.TitleColor = OxyColor.FromRgb(210, 214, 222);
+        // Below the engine's own direct-coherence floor the band windows are
+        // long enough for cabin modes to rule the correlation: the ladder
+        // still reports HOW coherent the tune is, but its optima can sit on a
+        // mode rather than on the drivers, and the plot says so.
+        model.Subtitle = data.CrossoverHz < 120
+            ? "low junction: cabin modes can dominate this read"
+            : null;
+        model.SubtitleFontSize = 9;
+        model.SubtitleColor = OxyColor.FromAColor(170, OxyColor.FromRgb(240, 200, 90));
+
+        List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> ladder = data.Ladder;
+        // The default lag range covers the comb corridor and every optimum,
+        // bucketed so in-place delay edits keep the user's zoom (see the
+        // state field).
+        double needed = Math.Max(
+            1.0,
+            1.15 * ladder
+                .Select(point => Math.Max(
+                    Math.Abs(point.LagMs), point.HalfPeriodMs))
+                .DefaultIfEmpty(1.0)
+                .Max());
+        double lagLimit = Math.Ceiling(needed * 2.0) / 2.0;
+        if (coherenceAxisState !=
+            (data.PairTitle, lagLimit, data.BandLowHz, data.BandHighHz))
+        {
+            coherenceAxisState =
+                (data.PairTitle, lagLimit, data.BandLowHz, data.BandHighHz);
+            foreach (Axis axis in model.Axes)
+            {
+                if (axis.Key == CoherenceLagAxisKey)
+                {
+                    axis.Minimum = -lagLimit;
+                    axis.Maximum = lagLimit;
+                }
+                else if (axis.Key == PlotModelFactory.FrequencyAxisKey)
+                {
+                    axis.Minimum = data.BandLowHz / 1.12;
+                    axis.Maximum = data.BandHighHz * 1.12;
+                }
+
+                axis.Reset();
+            }
+        }
+
+        // The comb corridor: past half a period the optimum belongs to the
+        // NEXT lobe — that band's arrivals differ by a whole cycle and no
+        // single delay reconciles it with the bands inside the corridor.
+        var corridorUpper = NewCoherenceLine(
+            "±T/2 (next lobe)", OxyColor.FromAColor(150, OxyColors.Gray),
+            CoherenceLagAxisKey, LineStyle.Dash, 1.0);
+        var corridorLower = NewCoherenceLine(
+            null, OxyColor.FromAColor(150, OxyColors.Gray),
+            CoherenceLagAxisKey, LineStyle.Dash, 1.0);
+        // The attainable-versus-collected gap: the area between the envelope
+        // at the optimum and the envelope at lag 0 is the coherence the
+        // applied tune leaves on the table — zero-height where the band is
+        // centered.
+        var gap = new AreaSeries
+        {
+            Title = "r attainable",
+            Tag = SeriesTag,
+            Color = OxyColors.Transparent,
+            Color2 = OxyColors.Transparent,
+            Fill = OxyColor.FromAColor(50, OxyColor.FromRgb(124, 213, 124)),
+            XAxisKey = PlotModelFactory.FrequencyAxisKey,
+            YAxisKey = CoherenceCoefficientAxisKey,
+            TrackerFormatString = CoherenceTrackerFormat
+        };
+        var currentR = NewCoherenceLine(
+            "r current", OxyColor.FromRgb(124, 213, 124),
+            CoherenceCoefficientAxisKey, LineStyle.Dot, 1.8);
+        var lagLine = NewCoherenceLine(
+            "Δt to optimum", OxyColor.FromAColor(200, OxyColors.White),
+            CoherenceLagAxisKey, LineStyle.Solid, 1.2);
+        // One kind of marker, on purpose. Polarity would be a carrier read,
+        // and the ladder's 2/3-octave probe cannot make one: its coherence
+        // packet is 4.3x wider than the lobe spacing at EVERY frequency (see
+        // the remarks by ArrivalCoherencePoint), so the opposite-signed lobes
+        // sit inside the packet's plateau and whichever the maximum lands on
+        // is decided by noise. The correlation view reads polarity instead,
+        // over the pair's whole band, where the lobes separate.
+        var optimum = new ScatterSeries
+        {
+            Title = "optimum",
+            Tag = SeriesTag,
+            MarkerType = MarkerType.Circle,
+            MarkerSize = 3.5,
+            MarkerFill = OxyColor.FromRgb(79, 195, 247),
+            XAxisKey = PlotModelFactory.FrequencyAxisKey,
+            YAxisKey = CoherenceLagAxisKey,
+            TrackerFormatString = CoherenceTrackerFormat
+        };
+        foreach (VirtualCrossoverAnalysis.ArrivalCoherencePoint point in ladder)
+        {
+            corridorUpper.Points.Add(
+                new DataPoint(point.FrequencyHz, point.HalfPeriodMs));
+            corridorLower.Points.Add(
+                new DataPoint(point.FrequencyHz, -point.HalfPeriodMs));
+            gap.Points.Add(new DataPoint(point.FrequencyHz, point.PeakR));
+            gap.Points2.Add(new DataPoint(point.FrequencyHz, point.CurrentR));
+            currentR.Points.Add(
+                new DataPoint(point.FrequencyHz, point.CurrentR));
+            lagLine.Points.Add(new DataPoint(point.FrequencyHz, point.LagMs));
+            optimum.Points.Add(
+                new ScatterPoint(point.FrequencyHz, point.LagMs));
+        }
+
+        model.Series.Add(gap);
+        model.Series.Add(corridorUpper);
+        model.Series.Add(corridorLower);
+        model.Series.Add(currentR);
+        model.Series.Add(lagLine);
+        model.Series.Add(optimum);
+
+        model.Annotations.Add(new LineAnnotation
+        {
+            Type = LineAnnotationType.Horizontal,
+            Y = 0,
+            YAxisKey = CoherenceLagAxisKey,
+            XAxisKey = PlotModelFactory.FrequencyAxisKey,
+            Color = OxyColor.FromAColor(160, OxyColors.White),
+            StrokeThickness = 1,
+            Tag = SeriesTag
+        });
+        model.Annotations.Add(new LineAnnotation
+        {
+            Type = LineAnnotationType.Vertical,
+            X = data.CrossoverHz,
+            XAxisKey = PlotModelFactory.FrequencyAxisKey,
+            YAxisKey = CoherenceLagAxisKey,
+            Color = OxyColor.FromAColor(120, OxyColors.Gray),
+            LineStyle = LineStyle.Dot,
+            StrokeThickness = 1,
+            Text = "fc",
+            TextColor = OxyColor.FromAColor(170, OxyColors.Gray),
+            Tag = SeriesTag
+        });
+
+        model.InvalidatePlot(true);
+    }
+
+    private static LineSeries NewCoherenceLine(
+        string? title,
+        OxyColor color,
+        string axisKey,
+        LineStyle style,
+        double thickness) => new()
+        {
+            Title = title,
+            Tag = SeriesTag,
+            Color = color,
+            LineStyle = style,
+            StrokeThickness = thickness,
+            XAxisKey = PlotModelFactory.FrequencyAxisKey,
+            YAxisKey = axisKey,
+            TrackerFormatString = CoherenceTrackerFormat
+        };
 
     public void Draw(DspPlotMode mode, IReadOnlyList<DspChainCurve> curves)
     {

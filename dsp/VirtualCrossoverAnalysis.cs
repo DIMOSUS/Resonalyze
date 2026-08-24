@@ -694,12 +694,140 @@ public static class VirtualCrossoverAnalysis
             bandLowHz,
             bandHighHz,
             validRange);
+        var cut = new Complex[impulseResponse.Length];
+        WriteDirectSoundWindow(
+            impulseResponse, front, sampleRate, crossoverHz, cut,
+            destinationOffset: 0);
+        return cut;
+    }
+
+    /// <summary>
+    /// The direct-sound window's span for a front and a crossover: half a
+    /// period of fade each side of a two-period plateau, clamped to the
+    /// record. One definition for <see cref="CutDirectSound"/> and the
+    /// ladder's trimmed per-band cuts, so the two cannot window differently.
+    /// </summary>
+    private static (int Start, int End, int Fade, int Plateau)
+        DirectSoundWindowBounds(
+            int front, int sampleRate, double crossoverHz, int length)
+    {
         double periodSamples = sampleRate / crossoverHz;
         int fade = Math.Max(8, (int)Math.Round(0.5 * periodSamples));
         int plateau = (int)Math.Round(2.0 * periodSamples);
-        int start = Math.Max(0, front - fade);
-        int end = Math.Min(impulseResponse.Length, front + plateau + fade);
-        var cut = new Complex[impulseResponse.Length];
+        return (
+            Math.Max(0, front - fade),
+            Math.Min(length, front + plateau + fade),
+            fade,
+            plateau);
+    }
+
+    /// <summary>
+    /// Both channels of a junction cut to their direct sound and TRIMMED to
+    /// the union of the two window spans: the same windows
+    /// <see cref="CutDirectSound"/> applies, written into buffers sliced by
+    /// ONE shared offset — so every relative position, and therefore every
+    /// lag a correlation of the pair reads, is exactly what the full-length
+    /// cuts would give, while the FFTs downstream shrink from the record's
+    /// length to the window's. The buffers are sized to at least
+    /// <paramref name="searchRangeMs"/> (see the wrap remark on
+    /// <see cref="TrimmedDirectSoundPair"/>): pass the lag range the
+    /// correlation will be read over.
+    /// </summary>
+    public static (Complex[] Lower, Complex[] Upper) CutDirectSoundPair(
+        Complex[] lowerImpulseResponse,
+        Complex[] upperImpulseResponse,
+        int sampleRate,
+        double bandLowHz,
+        double bandHighHz,
+        double crossoverHz,
+        double searchRangeMs,
+        ValidSampleRange lowerValidRange = default,
+        ValidSampleRange upperValidRange = default)
+    {
+        ArgumentNullException.ThrowIfNull(lowerImpulseResponse);
+        ArgumentNullException.ThrowIfNull(upperImpulseResponse);
+        if (lowerImpulseResponse.Length == 0 || upperImpulseResponse.Length == 0)
+        {
+            throw new ArgumentException("The impulse response is empty.");
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+        if (!(crossoverHz > 0) || !(searchRangeMs > 0))
+        {
+            throw new ArgumentException("The cut settings are invalid.");
+        }
+
+        int lowerFront = FindGateAnchor(
+            lowerImpulseResponse, FindPeakIndex(lowerImpulseResponse),
+            sampleRate, bandLowHz, bandHighHz, lowerValidRange);
+        int upperFront = FindGateAnchor(
+            upperImpulseResponse, FindPeakIndex(upperImpulseResponse),
+            sampleRate, bandLowHz, bandHighHz, upperValidRange);
+        return TrimmedDirectSoundPair(
+            lowerImpulseResponse, upperImpulseResponse, sampleRate,
+            crossoverHz, lowerFront, upperFront, searchRangeMs);
+    }
+
+    // The trimming core behind CutDirectSoundPair and the coherence ladder's
+    // probes. The buffers must reach the searched lag range, not just the
+    // content: the correlation's transform is circular, and reading lag R
+    // stays wrap-free only while the padded length covers content + R —
+    // NextPowerOfTwo(2·length) guarantees that for length >= R. A
+    // high-band window of a few dozen samples read over a ±6 ms range
+    // otherwise aliases its own lobes into the far lags. The padding is
+    // zeros, so the correlation's values do not change — only the room
+    // the lags are read in. A pair whose windows land entirely outside the
+    // records comes back as zero buffers, which every downstream read treats
+    // as "nothing measurable".
+    private static (Complex[] Lower, Complex[] Upper) TrimmedDirectSoundPair(
+        Complex[] lowerImpulseResponse,
+        Complex[] upperImpulseResponse,
+        int sampleRate,
+        double crossoverHz,
+        int lowerFront,
+        int upperFront,
+        double searchRangeMs)
+    {
+        (int lowerStart, int lowerEnd, _, _) = DirectSoundWindowBounds(
+            lowerFront, sampleRate, crossoverHz, lowerImpulseResponse.Length);
+        (int upperStart, int upperEnd, _, _) = DirectSoundWindowBounds(
+            upperFront, sampleRate, crossoverHz, upperImpulseResponse.Length);
+        int spanStart = Math.Min(lowerStart, upperStart);
+        int spanEnd = Math.Max(lowerEnd, upperEnd);
+        int rangeSamples =
+            (int)Math.Ceiling(searchRangeMs / 1_000.0 * sampleRate) + 2;
+        int length = Math.Max(Math.Max(spanEnd - spanStart, rangeSamples), 1);
+        var cutLower = new Complex[length];
+        var cutUpper = new Complex[length];
+        if (spanEnd > spanStart)
+        {
+            WriteDirectSoundWindow(
+                lowerImpulseResponse, lowerFront, sampleRate, crossoverHz,
+                cutLower, spanStart);
+            WriteDirectSoundWindow(
+                upperImpulseResponse, upperFront, sampleRate, crossoverHz,
+                cutUpper, spanStart);
+        }
+
+        return (cutLower, cutUpper);
+    }
+
+    // Applies the direct-sound window around a precomputed front, writing the
+    // weighted samples into destination at (i - destinationOffset). The
+    // destination stays zero outside the window; a caller passing a trimmed
+    // destination must size it to hold the window's span.
+    private static void WriteDirectSoundWindow(
+        Complex[] impulseResponse,
+        int front,
+        int sampleRate,
+        double crossoverHz,
+        Complex[] destination,
+        int destinationOffset)
+    {
+        (int start, int end, int fade, int plateau) = DirectSoundWindowBounds(
+            front, sampleRate, crossoverHz, impulseResponse.Length);
         for (int i = start; i < end; i++)
         {
             double weight =
@@ -709,10 +837,8 @@ public static class VirtualCrossoverAnalysis
                         ? 0.5 + 0.5 * Math.Cos(
                             Math.PI * (i - front - plateau) / (double)fade)
                         : 1.0;
-            cut[i] = impulseResponse[i] * weight;
+            destination[i - destinationOffset] = impulseResponse[i] * weight;
         }
-
-        return cut;
     }
 
     /// <summary>
@@ -1261,6 +1387,308 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
+    /// One band of <see cref="ArrivalCoherenceLadder"/>: at
+    /// <see cref="FrequencyHz"/>, adding <see cref="LagMs"/> of delay to the
+    /// UPPER channel puts this band's arrivals at the center of their
+    /// coherence packet (the envelope maximum of the band-limited GCC-PHAT of
+    /// the direct cuts). <see cref="PeakR"/> is the envelope there — the
+    /// band's attainable coherence — and <see cref="CurrentR"/> is the
+    /// envelope at lag 0, the coherence the applied alignment actually
+    /// collects; the two coincide when the band is centered.
+    /// <see cref="HalfPeriodMs"/> is the lag that separates neighbouring comb
+    /// lobes — the corridor a correction may stay inside before it belongs to
+    /// a different cycle. No polarity is reported: see the remarks below.
+    /// </summary>
+    public sealed record ArrivalCoherencePoint(
+        double FrequencyHz,
+        double LagMs,
+        double PeakR,
+        double CurrentR,
+        double HalfPeriodMs);
+
+    // A ladder band states no POLARITY, and cannot: polarity is a carrier
+    // read, and telling one lobe from the opposite-signed lobe half a period
+    // away needs an envelope that falls between them. It does not here, at any
+    // frequency. A probe band of B octaves around f is f·(2^(B/2) − 2^(−B/2))
+    // wide, so its coherence packet runs about 1/that, while the lobe spacing
+    // is 1/(2f) — the RATIO of the two is 2/(2^(B/2) − 2^(−B/2)), free of f. At
+    // the ladder's 2/3 octave that is 4.3: every neighbouring lobe sits deep
+    // inside the packet's plateau. Measured over the archived cabins the
+    // envelope falls 0–6% between a band's optimum and its neighbours — on
+    // every junction, including the sharply tuned ones — so a polarity read
+    // there reports noise, which is exactly what a sub/woofer junction showed
+    // when one band announced an inversion its neighbours contradicted.
+    // The correlation view answers polarity instead: its whitened comb spans
+    // the pair's WHOLE band (two octaves at that junction, ratio 1.3), where
+    // the lobes genuinely separate.
+
+    /// <summary>
+    /// The ladder's frequency grid: one probe every sixth of an octave across
+    /// the pair band — fine enough that the 2/3-octave probe bands
+    /// (<see cref="ArrivalCoherenceBandOctaves"/>) overlap and the drawn
+    /// curve cannot alias a junction-wide trend between probes.
+    /// </summary>
+    public const double ArrivalCoherenceStepOctaves = 1.0 / 6;
+
+    /// <summary>
+    /// Each probe's raised-cosine band width. The trade is time against
+    /// frequency: a narrower band cannot localize its envelope peak (the
+    /// packet widens as 1/bandwidth), a wider one stops being a reading AT a
+    /// frequency. Two thirds of an octave keeps the envelope peak within a
+    /// fraction of the band's period while still resolving a dispersion trend
+    /// across a two-octave pair band.
+    /// </summary>
+    public const double ArrivalCoherenceBandOctaves = 2.0 / 3;
+
+    /// <summary>
+    /// How far apart (dB) the two channels' band-weighted direct-cut energies
+    /// may sit before the band is dropped as unmeasurable. At the pair band's
+    /// edges one driver is deep behind its crossover slope, and PHAT — which
+    /// deliberately ignores magnitude — would happily read "coherence" off
+    /// that channel's filtered remnant; measured on the archived cabins those
+    /// edge bands drew confident optima on content the sum cannot hear. Same
+    /// figure as <see cref="SumLossLevelGateDb"/>: both gates answer "is the
+    /// weaker channel still a participant here".
+    /// </summary>
+    public const double ArrivalCoherenceLevelGateDb = 25;
+
+    /// <summary>
+    /// The arrival-coherence ladder of one junction: a sub-band probe slid
+    /// across the pair band (see <see cref="ArrivalCoherenceStepOctaves"/>),
+    /// each probe re-cutting the direct sound AT ITS OWN SCALE — the front is
+    /// found once, in the pair band, but the window spans two periods of the
+    /// probe frequency, so the cut travels with what it measures (a fixed cut
+    /// would hold one period of the band's low edge and a dozen of its top).
+    /// Per band the cuts' band-limited GCC-PHAT is computed over twice the
+    /// displayed lag range (the envelope's transform edges stay out of the
+    /// read), and the analytic envelope's maximum gives the band's optimum:
+    /// its lag, its height, and the height at lag 0. Not its polarity — the
+    /// probe band is too narrow to separate opposite-signed lobes at all (see
+    /// the remarks by <see cref="ArrivalCoherencePoint"/>).
+    /// <para>
+    /// The channels enter PROCESSED (delays, polarity, filters applied), in
+    /// the correlation view's own frame: lag 0 is the applied alignment and
+    /// every <see cref="ArrivalCoherencePoint.LagMs"/> is a correction to the
+    /// UPPER (second) channel, matching the lag axis of
+    /// <see cref="BandLimitedCorrelationCurve"/>. Envelope readings are
+    /// clamped to 1: the PHAT normalizer counts only contributing bins, so
+    /// the analytic magnitude can overshoot unity by a few percent on a
+    /// clean packet, which would read as nonsense on a coherence axis.
+    /// </para>
+    /// <para>
+    /// A DIAGNOSTIC, deliberately not an input to the alignment search: on a
+    /// low junction the band windows are long enough for cabin modes to rule
+    /// the correlation (the archived v3 mid junction draws its whole mid-band
+    /// optimum on the mode the Auto delay sagas were fought over), so the
+    /// ladder there honestly reports "this band is not coherent at the
+    /// applied tune" while its lag is NOT a move recommendation. The engine
+    /// keeps its own guarded estimators.
+    /// </para>
+    /// </summary>
+    public static List<ArrivalCoherencePoint> ArrivalCoherenceLadder(
+        Complex[] lowerImpulseResponse,
+        Complex[] upperImpulseResponse,
+        int sampleRate,
+        double bandLowHz,
+        double bandHighHz,
+        double crossoverHz,
+        ValidSampleRange lowerValidRange = default,
+        ValidSampleRange upperValidRange = default)
+    {
+        ArgumentNullException.ThrowIfNull(lowerImpulseResponse);
+        ArgumentNullException.ThrowIfNull(upperImpulseResponse);
+        if (lowerImpulseResponse.Length == 0 || upperImpulseResponse.Length == 0)
+        {
+            throw new ArgumentException("Impulse responses are required.");
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+        if (!(crossoverHz > 0) ||
+            !(bandLowHz > 0) || !(bandHighHz > bandLowHz))
+        {
+            throw new ArgumentException("The junction band is invalid.");
+        }
+
+        // The fronts are band-INDEPENDENT — found in the pair band, only the
+        // window scales with the probe — so they are read once per channel
+        // rather than once per band, where the repeated detection was a
+        // sizeable share of the ladder's cost.
+        int lowerFront = FindGateAnchor(
+            lowerImpulseResponse, FindPeakIndex(lowerImpulseResponse),
+            sampleRate, bandLowHz, bandHighHz, lowerValidRange);
+        int upperFront = FindGateAnchor(
+            upperImpulseResponse, FindPeakIndex(upperImpulseResponse),
+            sampleRate, bandLowHz, bandHighHz, upperValidRange);
+
+        var frequencies = new List<double>();
+        double step = Math.Pow(2.0, ArrivalCoherenceStepOctaves);
+        for (double frequency = bandLowHz;
+            frequency <= bandHighHz * 1.0001;
+            frequency *= step)
+        {
+            frequencies.Add(frequency);
+        }
+
+        // The rungs are independent of each other; AsOrdered keeps the
+        // result on the grid's order whatever the scheduling.
+        return frequencies
+            .AsParallel()
+            .AsOrdered()
+            .Select(frequency => ProbeArrivalCoherenceBand(
+                lowerImpulseResponse, upperImpulseResponse, sampleRate,
+                frequency, lowerFront, upperFront))
+            .Where(point => point != null)
+            .Select(point => point!)
+            .ToList();
+    }
+
+    // One rung of the ladder. The cuts are TRIMMED to the union of the two
+    // window spans before correlating: the windows hold a few periods inside
+    // a search-crop-sized record, and correlating the records at full length
+    // padded every FFT a hundredfold for silence — seconds per junction at
+    // 96 kHz. Both cuts are sliced by the SAME offset, so every relative
+    // position — and therefore every lag the curve reads — is unchanged;
+    // only the FFT's bin grid over the band weight coarsens, within the
+    // estimator's own resolution.
+    private static ArrivalCoherencePoint? ProbeArrivalCoherenceBand(
+        Complex[] lowerImpulseResponse,
+        Complex[] upperImpulseResponse,
+        int sampleRate,
+        double frequency,
+        int lowerFront,
+        int upperFront)
+    {
+        double displayMs = Math.Max(3.0, 1.5 * 1000.0 / frequency);
+        (Complex[] cutLower, Complex[] cutUpper) = TrimmedDirectSoundPair(
+            lowerImpulseResponse, upperImpulseResponse, sampleRate, frequency,
+            lowerFront, upperFront, searchRangeMs: 2.0 * displayMs);
+        if (!ArrivalCoherenceBandBalanced(
+            cutLower, cutUpper, sampleRate, frequency))
+        {
+            return null;
+        }
+
+        List<SignalPoint> curve = BandLimitedCorrelationCurve(
+            cutLower, cutUpper, sampleRate, frequency,
+            ArrivalCoherenceBandOctaves, 2.0 * displayMs,
+            centerLagMs: 0, phaseTransform: true);
+        if (curve.Count < 3)
+        {
+            return null;
+        }
+
+        double[] envelope = SignalEnvelope.Envelope(
+            curve.Select(point => point.Y).ToList());
+        int best = -1;
+        double bestValue = 0;
+        int zeroIndex = 0;
+        double zeroDistance = double.MaxValue;
+        for (int i = 1; i < curve.Count - 1; i++)
+        {
+            double lag = curve[i].X;
+            if (Math.Abs(lag) < zeroDistance)
+            {
+                zeroDistance = Math.Abs(lag);
+                zeroIndex = i;
+            }
+
+            if (Math.Abs(lag) <= displayMs && envelope[i] > bestValue)
+            {
+                bestValue = envelope[i];
+                best = i;
+            }
+        }
+
+        if (best < 1 || bestValue <= 0)
+        {
+            return null;
+        }
+
+        double stepMs = curve[1].X - curve[0].X;
+        double lagMs = curve[best].X + stepMs *
+            SignalEnvelope.FindFractionalPeakOffset(
+                envelope[best - 1], envelope[best], envelope[best + 1]);
+        return new ArrivalCoherencePoint(
+            frequency,
+            lagMs,
+            Math.Min(1.0, bestValue),
+            Math.Min(1.0, envelope[zeroIndex]),
+            500.0 / frequency);
+    }
+
+    // The ladder's level gate: both direct cuts' energies under the probe's
+    // own raised-cosine band weight, compared as PROCESSED absolute levels
+    // (the same currency the sum reads). Bands where the weaker channel sits
+    // more than the gate below the stronger are dropped — see
+    // ArrivalCoherenceLevelGateDb.
+    private static bool ArrivalCoherenceBandBalanced(
+        Complex[] firstCut,
+        Complex[] secondCut,
+        int sampleRate,
+        double centerFrequencyHz)
+    {
+        double nyquist = sampleRate / 2.0;
+        double halfOctaves = ArrivalCoherenceBandOctaves / 2.0;
+        double lowHz = Math.Max(
+            20.0, centerFrequencyHz / Math.Pow(2.0, halfOctaves));
+        double highHz = Math.Min(
+            nyquist * 0.95, centerFrequencyHz * Math.Pow(2.0, halfOctaves));
+        if (highHz <= lowHz)
+        {
+            return false;
+        }
+
+        int fftLength = DspMath.NextPowerOfTwo(
+            Math.Max(firstCut.Length, secondCut.Length));
+        double firstEnergy = BandWeightedEnergy(
+            ForwardSpectrum(firstCut, fftLength), sampleRate, lowHz, highHz);
+        double secondEnergy = BandWeightedEnergy(
+            ForwardSpectrum(secondCut, fftLength), sampleRate, lowHz, highHz);
+        if (firstEnergy <= 0 || secondEnergy <= 0)
+        {
+            return false;
+        }
+
+        double balanceDb = 10.0 * Math.Log10(
+            Math.Min(firstEnergy, secondEnergy) /
+            Math.Max(firstEnergy, secondEnergy));
+        return balanceDb >= -ArrivalCoherenceLevelGateDb;
+    }
+
+    // Σ W²(f)·|S(f)|² over the full transform, bins above Nyquist read at
+    // their conjugate-mirror frequency — the same weighting walk as
+    // ComputeBandLimitedCorrelation, so the gate weighs exactly the band the
+    // correlation reads.
+    private static double BandWeightedEnergy(
+        Complex[] spectrum, int sampleRate, double lowHz, double highHz)
+    {
+        double nyquist = sampleRate / 2.0;
+        double energy = 0;
+        for (int k = 0; k < spectrum.Length; k++)
+        {
+            double frequency = (double)k / spectrum.Length * sampleRate;
+            if (frequency > nyquist)
+            {
+                frequency = sampleRate - frequency;
+            }
+
+            double weight = BandWeight(frequency, lowHz, highHz);
+            if (weight <= 0)
+            {
+                continue;
+            }
+
+            Complex value = spectrum[k];
+            energy += weight * weight *
+                (value.Real * value.Real + value.Imaginary * value.Imaginary);
+        }
+
+        return energy;
+    }
+
+    /// <summary>
     /// One probe of <see cref="JunctionLossSweep"/>: the junction's gated
     /// average loss and 1/6-octave dip with the variable channel delayed by
     /// <see cref="DelayMs"/> (and inverted, when the sweep's polarity is
@@ -1356,10 +1784,9 @@ public static class VirtualCrossoverAnalysis
             gateAnchorSample,
             variableValidRange,
             fixedValidRanges: new[] { fixedValidRange });
-        var points = new List<JunctionSweepPoint>();
         if (bins.Count == 0)
         {
-            return points;
+            return [];
         }
 
         double weightSum = 0;
@@ -1368,16 +1795,110 @@ public static class VirtualCrossoverAnalysis
             weightSum += bin.LogWeight;
         }
 
+        return SweepBins(
+            bins, weightSum,
+            SweepDelays(startDelayMs, endDelayMs, stepMs), invertVariable);
+    }
+
+    /// <summary>
+    /// Both polarities of <see cref="JunctionLossSweep"/> from ONE set of
+    /// alignment bins. The bins — the windowed cuts and their band FFTs, the
+    /// expensive part — do not depend on the probe's polarity (inversion is a
+    /// sign in the probe's sum), so the correlation view, which always draws
+    /// both score curves, must not build them twice. Same arguments, same
+    /// per-point arithmetic; the two lists are what two
+    /// <see cref="JunctionLossSweep"/> calls would return.
+    /// </summary>
+    public static (List<JunctionSweepPoint> Normal, List<JunctionSweepPoint> Inverted)
+        JunctionLossSweepBothPolarities(
+            Complex[] variableImpulseResponse,
+            Complex[] fixedImpulseResponse,
+            int sampleRate,
+            double bandLowHz,
+            double bandHighHz,
+            double startDelayMs,
+            double endDelayMs,
+            double stepMs,
+            int? gateAnchorSample = null,
+            bool levelMatch = false,
+            ValidSampleRange variableValidRange = default,
+            ValidSampleRange fixedValidRange = default)
+    {
+        ArgumentNullException.ThrowIfNull(variableImpulseResponse);
+        ArgumentNullException.ThrowIfNull(fixedImpulseResponse);
+        if (variableImpulseResponse.Length == 0 || fixedImpulseResponse.Length == 0)
+        {
+            throw new ArgumentException("Impulse responses are required.");
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+        if (!(stepMs > 0) || !(endDelayMs > startDelayMs))
+        {
+            throw new ArgumentException("The sweep window is invalid.");
+        }
+
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            new List<Complex[]> { fixedImpulseResponse },
+            sampleRate,
+            bandLowHz,
+            bandHighHz,
+            startDelayMs,
+            endDelayMs,
+            levelMatch,
+            gateAnchorSample,
+            variableValidRange,
+            fixedValidRanges: new[] { fixedValidRange });
+        if (bins.Count == 0)
+        {
+            return ([], []);
+        }
+
+        double weightSum = 0;
+        foreach (AlignmentBin bin in bins)
+        {
+            weightSum += bin.LogWeight;
+        }
+
+        List<double> delays = SweepDelays(startDelayMs, endDelayMs, stepMs);
+        return (
+            SweepBins(bins, weightSum, delays, invert: false),
+            SweepBins(bins, weightSum, delays, invert: true));
+    }
+
+    private static List<double> SweepDelays(
+        double startDelayMs, double endDelayMs, double stepMs)
+    {
+        var delays = new List<double>();
         for (double delayMs = startDelayMs;
             delayMs <= endDelayMs + 1e-9;
             delayMs += stepMs)
         {
-            (double lossDb, double dipDb) = DetailedLoss(
-                bins, weightSum, delayMs, invertVariable);
-            points.Add(new JunctionSweepPoint(delayMs, lossDb, dipDb));
+            delays.Add(delayMs);
         }
 
-        return points;
+        return delays;
+    }
+
+    // The probe loop of a sweep. Probes are independent reads of the same
+    // immutable bins (DetailedLoss allocates its own scratch), so they run
+    // across cores; the indexed writes keep the delays' order.
+    private static List<JunctionSweepPoint> SweepBins(
+        List<AlignmentBin> bins,
+        double weightSum,
+        List<double> delays,
+        bool invert)
+    {
+        var points = new JunctionSweepPoint[delays.Count];
+        Parallel.For(0, delays.Count, i =>
+        {
+            (double lossDb, double dipDb) = DetailedLoss(
+                bins, weightSum, delays[i], invert);
+            points[i] = new JunctionSweepPoint(delays[i], lossDb, dipDb);
+        });
+        return [.. points];
     }
 
     // The NEAREST opposite-sign local extremum beside a main one: walking out

@@ -1262,6 +1262,14 @@ plot: that curve has no crossover, delay or polarity in front of it while they
 have all of theirs, so lining it up against them would line up a system nobody
 is building.
 
+![EQ Wizard phase mode](assets/images/eq_wizard_phase.png)
+
+Above: a midbass handed over from Virtual DSP, zoomed onto its 350 Hz junction
+with the midrange. The channel under edit is the solid curve, its dashed twin is
+the same channel before the bank, and the neighbouring drivers keep the colours
+they had on the panel. Slot 4 is a second-order all-pass on the corner, reading
+out the 1.27 ms of group delay it piles up there.
+
 **Phase gate…** is the window those curves are read through — the same dialog,
 and the same settings, the Virtual DSP phase view uses, down to the impulse
 preview of every channel it draws. A handoff arrives with its gate already

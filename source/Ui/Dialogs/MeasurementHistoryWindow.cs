@@ -290,7 +290,7 @@ internal partial class MeasurementHistoryWindow : Form
                 ? UiPalette.TextBright
                 : UiPalette.TextPrimary;
             row.DefaultCellStyle.SelectionBackColor = isActive
-                ? UiPalette.AccentBlueStrong
+                ? UiPalette.AccentFill
                 : UiPalette.ButtonPressedBackground;
             row.DefaultCellStyle.SelectionForeColor = UiPalette.TextPrimary;
             row.DefaultCellStyle.Font = isActive ? activeEntryFont : Font;

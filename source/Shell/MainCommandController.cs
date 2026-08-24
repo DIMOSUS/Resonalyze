@@ -96,7 +96,7 @@ internal sealed class MainCommandController
         {
             button.Enabled = false;
             button.BackColor = UiPalette.ButtonDisabledBackground;
-            button.ForeColor = UiPalette.TextMuted;
+            button.ForeColor = UiPalette.TextDisabled;
         }
         else
         {

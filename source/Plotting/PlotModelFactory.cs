@@ -730,7 +730,7 @@ internal sealed class PlotModelFactory
         }
 
         PlotModelStyle.AddFrequencyAxis(model);
-        model.Axes.Insert(0, new LinearAxis
+        PlotModelStyle.InsertAxis(model, 0, new LinearAxis
         {
             Key = PhaseAxisKey,
             Position = AxisPosition.Left,
@@ -973,7 +973,7 @@ internal sealed class PlotModelFactory
             msAxis.Minimum = minimum - 2;
             msAxis.Maximum = maximum + 2;
         }
-        model.Axes.Insert(0, msAxis);
+        PlotModelStyle.InsertAxis(model, 0, msAxis);
         return model;
     }
 
@@ -1116,8 +1116,8 @@ internal sealed class PlotModelFactory
         // itself the axis takes in whatever is drawn on it, live or attached later, which
         // is what makes the shared normalization readable.
         ApplyDecibelFloor(valueAxis, opt, stepOnLeft, drawn);
-        model.Axes.Add(timeAxis);
-        model.Axes.Add(valueAxis);
+        PlotModelStyle.AddAxis(model, timeAxis);
+        PlotModelStyle.AddAxis(model, valueAxis);
 
         // The counterpart axis is always in the model, visible only when something is
         // drawn against it. An overlay carries the axis key it was captured with, and a
@@ -1131,7 +1131,7 @@ internal sealed class PlotModelFactory
             Title = stepOnLeft ? ImpulseValueUnit(opt.AmplitudeScale) : "step",
             IsAxisVisible = !stepOnLeft && stepCurves.Count > 0,
         };
-        model.Axes.Add(counterpartAxis);
+        PlotModelStyle.AddAxis(model, counterpartAxis);
         return model;
     }
 
@@ -1520,14 +1520,14 @@ internal sealed class PlotModelFactory
             AddRequiresTransferIrAnnotation(model);
         }
 
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = TimeAxisKey,
             Position = AxisPosition.Bottom,
             MajorGridlineStyle = LineStyle.Solid,
             Title = "ms"
         });
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = AutocorrelationAxisKey,
             Position = AxisPosition.Left,
@@ -2090,7 +2090,7 @@ internal sealed class PlotModelFactory
             return;
         }
 
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = CoherenceAxisKey,
             Position = AxisPosition.Right,

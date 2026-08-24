@@ -484,7 +484,7 @@ internal sealed class ChromeTitleBar : Panel
             : UiPalette.AccentBlueMuted;
         button.FlatAppearance.MouseDownBackColor = text == "✕" // X
             ? UiPalette.AccentBlueMutedAlt
-            : UiPalette.AccentBlueStrong;
+            : UiPalette.AccentFill;
         button.Click += clickHandler;
         Controls.Add(button);
     }
@@ -802,14 +802,18 @@ internal sealed class ChromeTitleBar : Panel
         return Math.Max(form.DeviceDpi / 96.0f, graphics.DpiX / 96.0f);
     }
 
+    // The active tab keeps its fill under the pointer instead of lifting: its label
+    // is TitleBarTextSoft, and a blue light enough to read as a hover puts that
+    // label under 4.5:1 (see UiPalette.AccentFill). An inactive tab still lifts —
+    // it is the one a click would actually take you to.
     private static void SetModeTabStyle(Button button, bool active)
     {
         button.BackColor = active
-            ? UiPalette.AccentBlue
+            ? UiPalette.AccentFill
             : UiPalette.ButtonBackground;
         button.FlatAppearance.MouseOverBackColor = active
-            ? UiPalette.AccentBlueHover
+            ? UiPalette.AccentFill
             : UiPalette.ButtonHoverBackground;
-        button.FlatAppearance.MouseDownBackColor = UiPalette.AccentBlueStrong;
+        button.FlatAppearance.MouseDownBackColor = UiPalette.AccentFillPressed;
     }
 }

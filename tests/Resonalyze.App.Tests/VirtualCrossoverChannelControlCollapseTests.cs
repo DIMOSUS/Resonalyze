@@ -141,7 +141,11 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
     }
 
     [Fact]
-    public void FoldingInsideTheChannelList_NeverStacksOneBlockOverAnother()
+    // Shown, so the list is built and realised on one STA thread.
+    public void FoldingInsideTheChannelList_NeverStacksOneBlockOverAnother() =>
+        StaTest.Run(FoldEveryBlockInTurn);
+
+    private static void FoldEveryBlockInTurn()
     {
         // The field bug: with the size pin moved through an unbounded intermediate
         // state, the flow list laid out the FOLLOWING block against a block it read as

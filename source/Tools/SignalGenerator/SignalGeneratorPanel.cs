@@ -31,6 +31,10 @@ public partial class SignalGeneratorPanel : UserControl
     public SignalGeneratorPanel()
     {
         InitializeComponent();
+        // Below its designed size the panel scrolls on native scrollbars; theme
+        // them dark so they match the app instead of showing the default light
+        // bar, the way the Virtual DSP panel already does.
+        Ui.DarkScrollBars.Apply(this);
         InitializeOptions();
         UpdateSignalControls();
         VisibleChanged += (_, _) => RefreshAudioSettings();

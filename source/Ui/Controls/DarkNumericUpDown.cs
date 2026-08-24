@@ -371,12 +371,13 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     protected override void OnEnabledChanged(EventArgs e)
     {
         base.OnEnabledChanged(e);
-        // Keep the inner editor's own Enabled=true so the native EDIT paints its text in our
-        // muted colour instead of the system's dark disabled grey; the disabled parent still
-        // blocks all interaction. ReadOnly is a safety net against programmatic edits.
+        // A disabled control paints its own value (see UpdateEditorVisibility) — the
+        // native EDIT under a disabled parent is coloured by Windows, not by us.
+        // ReadOnly is a safety net against programmatic edits meanwhile.
         editor.ReadOnly = readOnly || !Enabled;
-        editor.ForeColor = Enabled ? ForeColor : UiPalette.TextMuted;
+        editor.ForeColor = Enabled ? ForeColor : UiPalette.TextDisabled;
         editor.BackColor = Enabled ? BackColor : UiPalette.ButtonDisabledBackground;
+        UpdateEditorVisibility();
         Invalidate();
     }
 
@@ -598,7 +599,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
                 resetBounds.Left,
                 Height - 2);
 
-            Color glyphColor = Enabled ? UiPalette.TextPrimarySoft : UiPalette.TextMuted;
+            Color glyphColor = Enabled ? UiPalette.TextPrimarySoft : UiPalette.TextDisabled;
             TextRenderer.DrawText(
                 e.Graphics,
                 "R",
@@ -610,28 +611,33 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
                 TextFormatFlags.NoPadding);
         }
 
-        // In inline-label mode the editor is hidden at rest, so paint the caption
-        // and value ourselves: the caption sits at the inner-left in a half-tone,
-        // the value is right-aligned across the whole field and drawn last so its
-        // digits cover the caption where they meet.
-        if (HasInlineLabel && !editor.Visible)
+        // Whenever the editor is hidden — inline-label mode at rest, or a disabled
+        // control, which hides it so the value is not left to the system's grey —
+        // paint the value here: the caption, if any, sits at the inner-left in a
+        // half-tone, and the value is right-aligned across the whole field and
+        // drawn last so its digits cover the caption where they meet.
+        if (!editor.Visible)
         {
             Rectangle textBounds = editor.Bounds;
-            TextRenderer.DrawText(
-                e.Graphics,
-                inlineLabel,
-                Font,
-                textBounds,
-                UiPalette.TextMuted,
-                TextFormatFlags.Left |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
+            if (HasInlineLabel)
+            {
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    inlineLabel,
+                    Font,
+                    textBounds,
+                    UiPalette.TextDisabled,
+                    TextFormatFlags.Left |
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.NoPadding);
+            }
+
             TextRenderer.DrawText(
                 e.Graphics,
                 FormatValue(value),
                 Font,
                 textBounds,
-                Enabled ? ForeColor : UiPalette.TextMuted,
+                Enabled ? ForeColor : UiPalette.TextDisabled,
                 TextFormatFlags.Right |
                 TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding);
@@ -649,7 +655,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
                 SuffixDisplay,
                 Font,
                 suffixBounds,
-                Enabled ? UiPalette.TextSecondary : UiPalette.TextMuted,
+                Enabled ? UiPalette.TextSecondary : UiPalette.TextDisabled,
                 TextFormatFlags.Left |
                 TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding);
@@ -673,7 +679,13 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     // inline label the editor is always visible and behaviour is unchanged.
     private void UpdateEditorVisibility()
     {
-        bool shouldShow = !HasInlineLabel || ContainsFocus;
+        // A disabled control hides the editor and paints the value itself. Keeping
+        // the inner EDIT's own Enabled=true is not enough: a native edit under a
+        // DISABLED PARENT is painted by Windows in the system's grey (109,109,109)
+        // whatever ForeColor says — 2.5:1 here, and it is the value in force that
+        // goes unreadable (#116). Self-painting is the only way the palette's
+        // colour actually reaches those digits.
+        bool shouldShow = Enabled && (!HasInlineLabel || ContainsFocus);
         if (editor.Visible != shouldShow)
         {
             editor.Visible = shouldShow;
@@ -965,7 +977,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
 
     private void DrawArrow(Graphics graphics, Rectangle bounds, bool up)
     {
-        Color color = Enabled ? UiPalette.TextPrimarySoft : UiPalette.TextMuted;
+        Color color = Enabled ? UiPalette.TextPrimarySoft : UiPalette.TextDisabled;
         float centerX = bounds.Left + bounds.Width / 2f;
         float centerY = bounds.Top + bounds.Height / 2f;
         float halfWidth = Math.Min(

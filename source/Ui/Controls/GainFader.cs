@@ -129,7 +129,13 @@ internal sealed class GainFader : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         Graphics graphics = e.Graphics;
-        graphics.Clear(Parent?.BackColor ?? BackColor);
+        // OUR OWN BackColor, which the strip keeps at its band tint
+        // (PeqSlotControl.ApplyStripColor). Not the parent's: this used to read it
+        // back when the strip's layout was the direct parent, and the fader host
+        // put between them since is Color.Transparent — clearing with an alpha-0
+        // colour writes black, which is what turned every strip's fader area into
+        // a black box.
+        graphics.Clear(BackColor);
         if (Width <= 4 || Height <= 4)
         {
             return;
@@ -188,9 +194,9 @@ internal sealed class GainFader : Control
         }
 
         float labelRight = tickLeft - ScaleF(2);
-        Color maxColor = enabled ? UiPalette.SuccessGreenSoft : UiPalette.TextMuted;
-        Color zeroColor = enabled ? UiPalette.TextSecondary : UiPalette.TextMuted;
-        Color minColor = enabled ? UiPalette.ErrorSoft : UiPalette.TextMuted;
+        Color maxColor = enabled ? UiPalette.SuccessGreenSoft : UiPalette.TextDisabled;
+        Color zeroColor = enabled ? UiPalette.TextSecondary : UiPalette.TextDisabled;
+        Color minColor = enabled ? UiPalette.ErrorSoft : UiPalette.TextDisabled;
         DrawScaleLabel(graphics, FormatDb(maximum), track.Top, labelRight, maxColor);
         DrawScaleLabel(graphics, "0", zeroY, labelRight, zeroColor);
         DrawScaleLabel(graphics, FormatDb(minimum), track.Bottom, labelRight, minColor);
@@ -253,7 +259,7 @@ internal sealed class GainFader : Control
         // The bright grip line down the middle of the cap marks the exact value.
         Color gripColor = enabled
             ? Color.FromArgb(220, UiPalette.TextPrimarySoft)
-            : Color.FromArgb(120, UiPalette.TextMuted);
+            : Color.FromArgb(120, UiPalette.TextDisabled);
         using var gripPen = new Pen(gripColor, Math.Max(1f, ScaleF(1.4f)));
         graphics.DrawLine(gripPen, cap.Left + ScaleF(2), thumbY, cap.Right - ScaleF(2), thumbY);
     }

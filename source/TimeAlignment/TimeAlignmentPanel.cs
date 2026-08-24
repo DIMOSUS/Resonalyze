@@ -7,6 +7,10 @@ public partial class TimeAlignmentPanel : UserControl
     public TimeAlignmentPanel()
     {
         InitializeComponent();
+        // Below its designed size the panel scrolls on native scrollbars; theme
+        // them dark so they match the app instead of showing the default light
+        // bar, the way the Virtual DSP panel already does.
+        Ui.DarkScrollBars.Apply(this);
     }
 
     internal Label SourceSummaryLabel => sourceSummaryLabel;

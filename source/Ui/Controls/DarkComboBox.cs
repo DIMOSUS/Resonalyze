@@ -605,7 +605,7 @@ public sealed class DarkComboBox : UserControl
         string text = modelComboBox.GetItemText(modelComboBox.SelectedItem) ?? string.Empty;
         Color textColor = Enabled
             ? UiPalette.TextPrimary
-            : UiPalette.TextMuted;
+            : UiPalette.TextDisabled;
         TextRenderer.DrawText(
             e.Graphics,
             text,
@@ -636,7 +636,7 @@ public sealed class DarkComboBox : UserControl
         int halfHeight = ScaleLogical(LogicalArrowHalfHeight);
         int centerX = bounds.Width / 2;
         int centerY = bounds.Height / 2 + ScaleLogical(1);
-        using var arrowBrush = new SolidBrush(Enabled ? UiPalette.TextPrimary : UiPalette.TextMuted);
+        using var arrowBrush = new SolidBrush(Enabled ? UiPalette.TextPrimary : UiPalette.TextDisabled);
         e.Graphics.FillPolygon(
             arrowBrush,
             [
@@ -659,7 +659,7 @@ public sealed class DarkComboBox : UserControl
         using var backgroundBrush = new SolidBrush(buttonColor);
         e.Graphics.FillRectangle(backgroundBrush, bounds);
 
-        Color glyphColor = Enabled ? UiPalette.TextPrimary : UiPalette.TextMuted;
+        Color glyphColor = Enabled ? UiPalette.TextPrimary : UiPalette.TextDisabled;
         TextRenderer.DrawText(
             e.Graphics,
             "R",
@@ -681,11 +681,11 @@ public sealed class DarkComboBox : UserControl
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
         Color backgroundColor = selected
-            ? UiPalette.AccentBlueStrong
+            ? UiPalette.AccentFill
             : UiPalette.ControlSurface;
         Color textColor = Enabled
             ? UiPalette.TextPrimary
-            : UiPalette.TextMuted;
+            : UiPalette.TextDisabled;
 
         using var backgroundBrush = new SolidBrush(backgroundColor);
         e.Graphics.FillRectangle(backgroundBrush, e.Bounds);

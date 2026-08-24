@@ -25,7 +25,7 @@ public sealed class OverlayOperationSettingsDialogTests
         OverlayOperation operation,
         bool coherenceOperands,
         bool expectedAmplitudeSpace,
-        bool expectedTilt)
+        bool expectedTilt) => StaTest.Run(() =>
     {
         using OverlayOperationSettingsDialog dialog =
             CreateDialog(operation, coherenceOperands);
@@ -36,18 +36,19 @@ public sealed class OverlayOperationSettingsDialogTests
         // either, or a slot saved before the operands changed would keep applying it.
         Assert.Equal(expectedAmplitudeSpace, dialog.UseAmplitudeSpace);
         Assert.Equal(expectedTilt, dialog.TiltEnabled);
-    }
+    });
 
     [Fact]
-    public void TiltInputs_AreDisabledWithTheirCheckBox()
+    public void TiltInputs_AreDisabledWithTheirCheckBox() => StaTest.Run(() =>
     {
         using OverlayOperationSettingsDialog dialog =
             CreateDialog(OverlayOperation.AMinusB, coherenceOperands: true);
 
         Assert.False(Control<Control>(dialog, "tiltPivotInput").Enabled);
         Assert.False(Control<Control>(dialog, "tiltSlopeInput").Enabled);
-    }
+    });
 
+    // CreateControl realises the handle, so every caller runs on an STA thread.
     private static OverlayOperationSettingsDialog CreateDialog(
         OverlayOperation operation,
         bool coherenceOperands)
@@ -88,7 +89,7 @@ public sealed class OverlayOperationSettingsDialogTests
     private static bool IsOffered(OverlayOperationSettingsDialog dialog, string name)
     {
         CheckBox checkBox = Control<CheckBox>(dialog, name);
-        return checkBox.AutoCheck && checkBox.ForeColor != UiPalette.TextMuted;
+        return checkBox.AutoCheck && checkBox.ForeColor != UiPalette.TextDisabled;
     }
 
     private static T Control<T>(OverlayOperationSettingsDialog dialog, string name) =>

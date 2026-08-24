@@ -207,7 +207,7 @@ namespace Resonalyze.Options
         {
             bool rta = radioModeRta.Checked;
             labelSpl.ForeColor = !rta
-                ? UiPalette.TextMuted
+                ? UiPalette.TextDisabled
                 : splViewOnlyConflict
                     ? UiPalette.WarningAmber
                     : splChoiceReadyForeColor;

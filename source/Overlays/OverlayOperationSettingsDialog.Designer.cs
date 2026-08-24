@@ -408,7 +408,6 @@
             // 
             // saveButton
             // 
-            saveButton.BackColor = Color.FromArgb(64, 116, 255);
             saveButton.DialogResult = DialogResult.OK;
             saveButton.FlatAppearance.BorderSize = 0;
             saveButton.FlatStyle = FlatStyle.Flat;

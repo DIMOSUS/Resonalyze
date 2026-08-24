@@ -235,17 +235,38 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // Two columns: the lobe margin moved to the tooltip. A bare
-            // difference of two phase scores carries no scale a reader can
-            // act on, and the only decision it drives is the "!" beside the
+            // Three columns, each one a reader can act on: where the phase
+            // stands at fc, the delay worth applying, and the score the
+            // junction reaches as it stands. The lobe margin moved to the
+            // tooltip — a bare difference of two phase scores carries no
+            // scale, and the only decision it drives is the "!" beside the
             // fix.
             string text = VirtualCrossoverMetric.FormatPhaseCompact([PhaseJunction()]);
 
             Assert.Equal(
                 "Junction phase\r\n" +
-                "       φfc  fix ms\r\n" +
-                "A/B     -3°  -1.30",
+                "       φfc  fix ms  score\r\n" +
+                "A/B     -3°  -1.30   0.96",
                 text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_ShowsWhereTheJunctionStandsNow()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // The score column reads the junction AS IT STANDS, on the scale
+            // the fix maximizes — bounded, so it needs no legend, and negative
+            // when the overlap is subtracting rather than adding.
+            VirtualCrossoverMetric.PhaseEntry cancelling = PhaseJunction() with
+            {
+                Result = PhaseJunction().Result with { CurrentScore = -0.42 }
+            };
+
+            Assert.Contains(
+                "A/B     -3°  -1.30  -0.42",
+                VirtualCrossoverMetric.FormatPhaseCompact([cancelling]));
         });
     }
 
@@ -312,7 +333,7 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(lobeMargin: 0.04)]);
 
-            Assert.Contains("A/B     -3°  -1.30  !", text);
+            Assert.Contains("A/B     -3°  -1.30   0.96 !", text);
         });
     }
 

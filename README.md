@@ -1565,8 +1565,12 @@ warning that the overlap band is too narrow to rule out a whole-period hop — s
 the fix is not to be trusted, and the junction's coherence ladder is the better
 read. A fix worth less than 10° of phase at the crossover (0.13 dB in the sum)
 shows as `·`: a settled tune has nothing to apply there, and a number would
-invite a correction that changes nothing. The tooltip carries every fitted
-figure behind those two columns, including the lobe margin the `!` is drawn
+invite a correction that changes nothing. Last comes **score**, where the
+junction stands as it is — the band's phase-alignment score (−1…+1) that the
+fix maximizes: 1.00 is aligned across the overlap, 0 a wash, negative means the
+two drivers are subtracting. It moves while a delay is dragged, so it answers
+"is this getting better", which the fix alone cannot. The tooltip carries every
+fitted figure behind those columns, including the lobe margin the `!` is drawn
 from. A **Δ L−R** block
 below reports each pair's inter-side state — the two sides' band-limited envelope
 arrivals with their difference (positive means the right side leads, the scene

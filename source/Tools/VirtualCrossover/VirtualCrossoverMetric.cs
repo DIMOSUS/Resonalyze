@@ -250,12 +250,20 @@ internal static class VirtualCrossoverMetric
 
     /// <summary>
     /// Compact per-junction phase column for the host read-out panel: the phase
-    /// at the crossover and the score-maximizing extra delay on the lower
-    /// channel (with an "i" when flipping that channel's polarity scores
-    /// clearly better, "~" when a flip nearly ties, and "!" when the
-    /// same-polarity lobe margin is too small to rule out a whole-period hop).
-    /// A fix too small to matter renders as "·"; the lobe margin itself, and
-    /// every other fitted figure, lives in <see cref="FormatPhaseDetail"/>.
+    /// at the crossover, the score-maximizing extra delay on the lower channel
+    /// (with an "i" when flipping that channel's polarity scores clearly
+    /// better, "~" when a flip nearly ties, and "!" when the same-polarity lobe
+    /// margin is too small to rule out a whole-period hop), and the phase score
+    /// the junction reaches AS IT STANDS. A fix too small to matter renders as
+    /// "·"; the lobe margin itself, and every other fitted figure, lives in
+    /// <see cref="FormatPhaseDetail"/>.
+    /// <para>
+    /// The score is the one column that reads without a legend: it is bounded
+    /// (−1..+1), it is the quantity the fix maximizes, and it moves while a
+    /// delay is being dragged — so it answers "is this getting better", which
+    /// the fix alone cannot (a fix of −1.30 ms says how far off the optimum
+    /// sits, not how much the junction currently loses to being there).
+    /// </para>
     /// </summary>
     public static string FormatPhaseCompact(IReadOnlyList<PhaseEntry> entries)
     {
@@ -265,7 +273,7 @@ internal static class VirtualCrossoverMetric
         }
 
         var builder = new System.Text.StringBuilder(
-            "Junction phase\r\n       φfc  fix ms\r\n");
+            "Junction phase\r\n       φfc  fix ms  score\r\n");
         foreach (PhaseEntry entry in entries)
         {
             JunctionPhaseResult result = entry.Result;
@@ -300,12 +308,18 @@ internal static class VirtualCrossoverMetric
                 : result.BestScore - result.OppositePolarityScore
                     < JunctionPhaseAlignment.PolarityFlipAdvantage ? "~"
                 : " ";
+            // Where the junction stands NOW, on the same score the fix
+            // maximizes: 1.00 is phase-aligned across the band, 0 is a wash,
+            // negative means the overlap is subtracting. Three sections
+            // because a negative score that rounds to zero would otherwise
+            // render "-0.00" as "-+0.00" (see the fix column).
+            string score = $"{result.CurrentScore,5:0.00;-0.00;0.00}";
             string warning =
                 result.LobeMargin is { } margin && margin < AmbiguousLobeMargin
                     ? " !"
                     : string.Empty;
             builder.AppendLine(
-                $"{entry.Junction.PadRight(6)}{phase} {fix}{polarity}{warning}");
+                $"{entry.Junction.PadRight(6)}{phase} {fix}{polarity} {score}{warning}");
         }
 
         return builder.ToString().TrimEnd();
@@ -351,8 +365,11 @@ internal static class VirtualCrossoverMetric
                     $"({FrequencyText.Format(entry.LowHz)} – " +
                     $"{FrequencyText.Format(entry.HighHz)})";
             })) +
-            "\r\nphase score: Σw·cos(Δφ)/Σw over the band (−1..+1), a phase-" +
-            "alignment score,\r\nnot the magnitude coherence γ². fix: the delay " +
+            "\r\nscore: Σw·cos(Δφ)/Σw over the band as the junction stands " +
+            "(−1..+1), a phase-\r\nalignment score, not the magnitude coherence " +
+            "γ² — 1.00 is aligned across the\r\nband, 0 a wash, negative means " +
+            "the overlap subtracts; it is what the fix\r\nmaximizes, so it " +
+            "moves while a delay is dragged. fix: the delay " +
             "to add to the LOWER channel\r\nthat best aligns the band. A " +
             "negative fix advances the lower channel — apply\r\nit as a +delay " +
             "on the UPPER one when the lower is already at 0. A fix worth less " +

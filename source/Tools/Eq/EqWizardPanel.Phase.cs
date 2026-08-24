@@ -440,20 +440,30 @@ public partial class EqWizardPanel
 
         if (landedPhaseCurve is { } live)
         {
-            AddPhaseSeries(model, live, dimmed: false);
+            // The only curve whose wraps are marked. See AddPhaseSeries.
+            AddPhaseSeries(model, live, dimmed: false, markWraps: true);
         }
     }
 
+    /// <remarks>
+    /// Wrap verticals are drawn for the curve under edit ALONE. Every measured phase
+    /// curve wraps many times over the decade above a few kHz, and with the
+    /// neighbours, the before-curve and this one all marking their own, the plot turns
+    /// into a picket fence in which no trace can be followed — the opposite of what
+    /// the markers are for. A curve that is only being read has its NaN break at the
+    /// wrap, which is enough to keep the jump from reading as a phase transition.
+    /// </remarks>
     private void AddPhaseSeries(
         PlotModel model,
         GatedPhaseCurve curve,
         bool dimmed,
-        LineStyle style = LineStyle.Solid)
+        LineStyle style = LineStyle.Solid,
+        bool markWraps = false)
     {
         OxyColor color = dimmed
             ? OxyColor.FromAColor(170, curve.Color)
             : curve.Color;
-        if (curve.WrapSegments.Count > 0)
+        if (markWraps && curve.WrapSegments.Count > 0)
         {
             // The wrap verticals, faded and thinned well below the curve: visible as
             // wraps without competing with the traces. The empty title keeps them out

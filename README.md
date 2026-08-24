@@ -1238,8 +1238,10 @@ to **Phase**.
 
 **Phase** is a plot mode, not a second curve: the source, the target, the error
 fill and the dB axis leave, and what takes their place is the **measured** phase
-(degrees, wrapped to ±180°, with the wraps drawn as thin dashed verticals rather
-than as jumps in the trace). On a measurement it draws the response through its
+(degrees, wrapped to ±180°; the trace breaks at every wrap so the jump never
+reads as a real transition, and the curve under edit — only that one — marks its
+wraps with thin dashed verticals, because with every curve marking its own the
+plot becomes a picket fence no trace can be followed through). On a measurement it draws the response through its
 chain and the bank under edit, the same response **without** the bank as a dashed
 twin, and the bank's own phase in white; on an imported curve — an overlay slot
 or a text file, which is a magnitude and nothing else — only the bank's phase is

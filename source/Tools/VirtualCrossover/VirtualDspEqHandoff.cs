@@ -171,6 +171,11 @@ internal static class VirtualDspEqHandoff
     /// does. Null when no render exists to follow — the curve then opens on its own
     /// front, the same rule the plot applies to a lone channel.
     /// </param>
+    /// <param name="phaseContext">
+    /// The neighbouring drivers and the phase window the wizard draws them under, from
+    /// the panel's own last render. Null for a raw handoff, which lives in its own time
+    /// rather than the processed view's, and whenever no current render exists to freeze.
+    /// </param>
     public static VirtualDspEqHandoffRequest Build(
         VirtualCrossoverChannel channel,
         bool rightSide,
@@ -178,6 +183,7 @@ internal static class VirtualDspEqHandoff
         PhaseAnalysisSettings gateTemplate,
         double? pinnedGateOffsetMs,
         int? renderAnchorIndex,
+        EqWizardPhaseContext? phaseContext,
         double targetLevelDb,
         double targetLevelMinDb,
         double targetLevelMaxDb,
@@ -276,6 +282,10 @@ internal static class VirtualDspEqHandoff
             // — rather than the bypassed response filtered a second time.
             PreviewImpulseResponse = state.ProcessingSource.CroppedImpulseResponse,
             PreviewChain = previewChain,
+            // Only a chain handoff can carry it: the raw curve is the measurement
+            // before the chain, in its own time, so the processed view's windows and
+            // its neighbours would describe a different signal than the one on screen.
+            PhaseContext = withChain ? phaseContext : null,
             SampleRateHz = sampleRate,
             CurveKind = AnalysisCurveKind.Primary
         };

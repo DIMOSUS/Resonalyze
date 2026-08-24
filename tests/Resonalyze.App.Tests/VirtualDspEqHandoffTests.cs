@@ -37,7 +37,8 @@ public sealed class VirtualDspEqHandoffTests
         VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
 
         // Bit-exact against the same ApplyChain with only the PEQ removed: gain,
-        // delay, polarity, crossover and all-pass all still shape the curve.
+        // delay, polarity and the crossover all still shape the curve. The all-pass
+        // does not — it is a band of the bank, and the bank is what is under edit.
         Complex[] expected = VirtualCrossoverAnalysis.ApplyChain(
             channel.TransferImpulseResponse!,
             channel.Settings.ToChain() with { Peq = null },
@@ -49,6 +50,52 @@ public sealed class VirtualDspEqHandoffTests
             channel.Settings.ToChain(),
             SampleRate);
         Assert.NotEqual(withPeq, request.Source.Measurement.ImpulseResponse);
+    }
+
+    [Fact]
+    public void WithChain_CarriesTheNeighboursThePhaseViewDrawsAgainst()
+    {
+        // What makes an all-pass tunable at all: the drivers it has to line up with.
+        // They travel as processed responses, so the wizard can re-read them at a gate
+        // of its own, and with the window and τ the whole set was placed under.
+        VirtualCrossoverChannel channel = BuildChannel();
+        var neighbourResponse = new Complex[1_024];
+        neighbourResponse[500] = 1.0;
+        var context = new EqWizardPhaseContext(
+            GateTemplate with { GateOffsetMs = 9.0 },
+            GateOffsetMs: 9.5,
+            DetrendMs: 10.0,
+            [new EqWizardPhaseNeighbour(
+                "B", OxyPlot.OxyColors.Orange, neighbourResponse, 9.75)]);
+
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, phaseContext: context);
+
+        Assert.Same(context, request.Source.PhaseContext);
+        Assert.Same(
+            neighbourResponse,
+            request.Source.PhaseContext!.Neighbours.Single().ImpulseResponse);
+    }
+
+    [Fact]
+    public void RawHandoff_DrawsNoNeighbours()
+    {
+        // A raw curve is the measurement BEFORE the chain, in its own time. The
+        // processed view's windows and its neighbours describe a different signal, so
+        // showing them beside it would invite lining a driver up against a curve that
+        // is not the one being edited.
+        VirtualCrossoverChannel channel = BuildChannel();
+        var context = new EqWizardPhaseContext(
+            GateTemplate,
+            GateOffsetMs: 9.5,
+            DetrendMs: 10.0,
+            [new EqWizardPhaseNeighbour(
+                "B", OxyPlot.OxyColors.Orange, new Complex[1_024], 9.75)]);
+
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: false, phaseContext: context);
+
+        Assert.Null(request.Source.PhaseContext);
     }
 
     [Fact]
@@ -845,7 +892,8 @@ public sealed class VirtualDspEqHandoffTests
         int? renderAnchorIndex = 480,
         double targetLevelDb = -41,
         CalibrationFile? calibration = null,
-        long projectGeneration = 1) =>
+        long projectGeneration = 1,
+        EqWizardPhaseContext? phaseContext = null) =>
         VirtualDspEqHandoff.Build(
             channel,
             channel.ActiveRight,
@@ -853,6 +901,7 @@ public sealed class VirtualDspEqHandoffTests
             GateTemplate,
             pinnedGateOffsetMs,
             renderAnchorIndex,
+            phaseContext,
             targetLevelDb,
             targetLevelMinDb: -120,
             targetLevelMaxDb: 60,

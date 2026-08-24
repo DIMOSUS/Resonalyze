@@ -2040,6 +2040,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 renderAnchor,
+                CapturePhaseContext(channel, withChain),
                 (double)numericTargetLevel.Value,
                 (double)numericTargetLevel.Minimum,
                 (double)numericTargetLevel.Maximum,
@@ -2056,6 +2057,69 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         requested(request);
+    }
+
+    /// <summary>
+    /// Freezes what the wizard's phase view needs: the OTHER drivers as this panel has
+    /// them processed right now, and the window and τ the whole set is read under.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Frozen as processed impulse responses, not as drawn curves. The wizard has a
+    /// gate of its own, and a curve gated at this panel's window could not be re-read
+    /// at another — the two sides would stop being comparable exactly when the user
+    /// went looking. The responses are already computed for the plot, so this costs
+    /// nothing but the reference.
+    /// </para>
+    /// <para>
+    /// Resolved over the set the wizard will DRAW — the edited channel plus the shown
+    /// neighbours — so a hidden driver cannot move the windows of the visible ones.
+    /// Null when the render is stale or the channel is not in it: a placement paired
+    /// with the previous chain would put the curves somewhere the plot never had them.
+    /// </para>
+    /// </remarks>
+    private EqWizardPhaseContext? CapturePhaseContext(
+        VirtualCrossoverChannel channel,
+        bool withChain)
+    {
+        if (!withChain ||
+            lastProcessedRender is not { } render ||
+            !processingCoordinator.IsCurrent(render.Revision))
+        {
+            return null;
+        }
+
+        List<ProcessedChannel> drawn = render.Channels
+            .Where(item =>
+                ReferenceEquals(item.Channel, channel) ||
+                item.Channel.Pair.ShowProcessedCurve)
+            .ToList();
+        int index = drawn.FindIndex(item => ReferenceEquals(item.Channel, channel));
+        if (index < 0)
+        {
+            return null;
+        }
+
+        int sampleRate = drawn[0].Channel.SampleRate;
+        double referenceOffsetMs = gatePreview?.OffsetMs
+            ?? ResolveGateOffsetMs(drawn, sampleRate);
+        double detrendMs = ResolveCommonDetrendMs(drawn, referenceOffsetMs, sampleRate);
+        List<double> offsets = ResolvePhaseGateOffsets(drawn, referenceOffsetMs, sampleRate);
+
+        return new EqWizardPhaseContext(
+            CreateVirtualPhaseSettings(
+                referenceOffsetMs, PhaseDetrendMode.Manual, detrendMs),
+            offsets[index],
+            detrendMs,
+            drawn
+                .Select((item, position) => (item, position))
+                .Where(entry => entry.position != index)
+                .Select(entry => new EqWizardPhaseNeighbour(
+                    entry.item.Channel.Name,
+                    entry.item.Color,
+                    entry.item.ImpulseResponse,
+                    offsets[entry.position]))
+                .ToList());
     }
 
     /// <summary>

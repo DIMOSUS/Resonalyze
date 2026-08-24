@@ -26,6 +26,35 @@ internal sealed record EqWizardPhaseNeighbour(
     double GateOffsetMs);
 
 /// <summary>
+/// What a Virtual DSP handoff hands the wizard's phase view: the neighbouring drivers
+/// frozen as they stood, the window they and the edited channel were placed under, and
+/// the one τ they are all read against.
+/// </summary>
+/// <remarks>
+/// <para>
+/// All three are resolved ONCE, over the set the wizard will draw — the edited channel
+/// and the neighbours travelling with it. Resolving over channels nobody can see would
+/// let a hidden driver move the windows of the drawn ones, and resolving per channel
+/// would flatten each curve onto its own arrival, erasing exactly the offsets a
+/// crossover region is read for.
+/// </para>
+/// <para>
+/// Null for every source that is not a chain handoff: a raw handoff lives in its own
+/// time rather than the processed view's, and a curve imported from a file carries no
+/// phase to draw at all.
+/// </para>
+/// </remarks>
+/// <param name="Gate">
+/// The phase gate — the dialog's window, NOT the steady-state one the magnitude
+/// curves use. Its offset is per curve, so the render overwrites it.
+/// </param>
+internal sealed record EqWizardPhaseContext(
+    PhaseAnalysisSettings Gate,
+    double GateOffsetMs,
+    double DetrendMs,
+    IReadOnlyList<EqWizardPhaseNeighbour> Neighbours);
+
+/// <summary>
 /// Everything one phase render needs, captured before it leaves the UI thread.
 /// </summary>
 /// <param name="SourceImpulseResponse">

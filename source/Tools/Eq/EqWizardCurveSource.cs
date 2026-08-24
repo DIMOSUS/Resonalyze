@@ -104,6 +104,20 @@ internal sealed record EqWizardCurveSource
     /// <summary>Whether this source's curves are built through a gate, not the wizard's own window.</summary>
     public bool IsGated => GateSettings != null && PreviewImpulseResponse != null;
 
+    /// <summary>
+    /// What the phase view draws besides this channel: the neighbouring drivers as they
+    /// stood when the handoff was taken, and the window and τ the whole set is read
+    /// under. Null when there are no neighbours to draw — a raw handoff, or a source
+    /// that never came from the Virtual DSP panel.
+    /// </summary>
+    /// <remarks>
+    /// The phase view has its own gate, deliberately: the magnitude curves keep the
+    /// fixed steady-state window that decides tonal balance, while phase is read
+    /// through the Virtual DSP gate, which is where reflections are cut out and where
+    /// FDW lives. Two windows, one source.
+    /// </remarks>
+    public EqWizardPhaseContext? PhaseContext { get; init; }
+
     // --- imported curve sources ---------------------------------------------------
 
     /// <summary>

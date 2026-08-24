@@ -793,6 +793,38 @@ public partial class EqWizardPanel
         CommitBankChange();
     }
 
+    /// <summary>
+    /// A tuned bank with the all-pass bands of the bank it replaces carried over.
+    /// The tuner fits magnitude and emits bells only, so a run would otherwise take
+    /// the user's phase work with it — and an all-pass, being flat, is invisible in
+    /// the error curve that decided the fit.
+    /// </summary>
+    /// <remarks>
+    /// The kept bands go last, which is also where the slot budget bites: when the
+    /// merged bank would overflow, the FITTED bands give way. An all-pass sits on a
+    /// junction the user aligned by hand and the tuner cannot propose one, so the
+    /// bands it can regenerate on the next run are the cheaper ones to lose.
+    /// Deliberately UI-free — the keep-or-clobber decision is the panel's to ask
+    /// and arrives here already made.
+    /// </remarks>
+    internal static EqualizationCurve WithAllPassBands(
+        EqualizationCurve tuned,
+        IReadOnlyList<PeqBand> allPass)
+    {
+        ArgumentNullException.ThrowIfNull(tuned);
+        ArgumentNullException.ThrowIfNull(allPass);
+        if (allPass.Count == 0)
+        {
+            return tuned;
+        }
+
+        return new EqualizationCurve(
+            tuned.Bands
+                .Take(Math.Max(0, MaxPeqSlotCount - allPass.Count))
+                .Concat(allPass),
+            tuned.PreampDb);
+    }
+
     // Replaces the bank with a computed or imported one (Auto Tune, Import) as a
     // single undo step, however many filters it holds.
     private void ApplyEqualizationCurve(EqualizationCurve curve)

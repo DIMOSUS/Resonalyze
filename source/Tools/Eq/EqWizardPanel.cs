@@ -742,10 +742,40 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
+        // The tuner fits magnitude and emits bells only, so a run replaces the whole
+        // bank — all-pass bands included, though nothing in the error curve ever
+        // asked for them to go. Ask before throwing away phase work that was aligned
+        // by ear against a junction; the run itself is unaffected either way, since
+        // an all-pass is flat and the fit is built against a neutral EQ regardless.
+        IReadOnlyList<PeqBand> allPass = CaptureBankState().Bands
+            .Where(band => band.Type.IsAllPass())
+            .ToList();
+        bool keepAllPass = false;
+        if (allPass.Count > 0)
+        {
+            DialogResult answer = MessageBox.Show(
+                FindForm(),
+                $"The bank holds {DescribeAllPassCount(allPass.Count)} the tuner " +
+                "cannot fit and would replace." + Environment.NewLine +
+                Environment.NewLine +
+                "Keep them and tune the remaining slots around them?" +
+                Environment.NewLine +
+                "No replaces the whole bank with the fit.",
+                "EQ Wizard",
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Question);
+            if (answer == DialogResult.Cancel)
+            {
+                return;
+            }
+
+            keepAllPass = answer == DialogResult.Yes;
+        }
+
         var request = new EqWizardAutoTuneRequest(
             render.Source.Points.Select(point => new SignalPoint(point.X, point.Y)),
             render.Target.Points.Select(point => new SignalPoint(point.X, point.Y)),
-            CreateAutoTuneOptions(),
+            CreateAutoTuneOptions(keepAllPass ? allPass.Count : 0),
             // Only a loopback-transfer impulse response carries coherence; an imported
             // curve has none, so boosts fall back to null-detection alone.
             loadedSource?.Coherence);
@@ -781,15 +811,22 @@ public partial class EqWizardPanel : UserControl
 
         // A freshly tuned EQ should be audible/visible, so leave bypass off.
         checkBoxBypass.Checked = false;
-        ApplyEqualizationCurve(tuned);
+        ApplyEqualizationCurve(
+            keepAllPass ? WithAllPassBands(tuned, allPass) : tuned);
     }
 
+    private static string DescribeAllPassCount(int count) =>
+        count == 1 ? "an all-pass filter" : $"{count} all-pass filters";
+
     // Mirrors the control limits so the fit only proposes values the controls accept.
-    private EqAutoTuner.Options CreateAutoTuneOptions()
+    // Bands the caller is holding back (all-pass ones the user chose to keep) come
+    // off the fit's budget, so the merged bank still fits the slot count.
+    private EqAutoTuner.Options CreateAutoTuneOptions(int reservedBands)
     {
         int bandLimit = comboBoxBandsLimit.SelectedItem is int limit
             ? limit
             : MaxPeqSlotCount;
+        bandLimit = Math.Min(bandLimit, MaxPeqSlotCount - reservedBands);
 
         (double minHz, double maxHz) = GetFrequencyWindow();
 

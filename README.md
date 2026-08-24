@@ -1528,6 +1528,30 @@ inverted rival, the wavefronts within a period or two of the front decide it,
 because that is the part of the record the drivers made and the room had not yet
 answered.
 
+The plot's **Coherence** mode reads the same junction per frequency instead of
+per lag: a sub-band probe slides across the pair band (sixth-octave steps,
+2/3-octave width, each band's direct-sound cut sized to its own period), and
+per band the envelope of the band-limited GCC-PHAT gives **Δt to optimum** —
+the delay that would center this band's arrivals — with **r current** (the
+coherence the applied tune collects at lag 0) dotted against the shaded **r
+attainable** ceiling; the gap between them is what the tune leaves on the
+table, and it closes where a band is centered. A well-aligned junction draws a
+flat Δt near zero inside the dashed **±T/2** corridor; a junction that
+misses by whole periods draws a flat line *offset* from zero; a sloped or
+stepped Δt is dispersion — different bands arriving by different paths, which
+no single delay reconciles, so the tune is a compromise and this plot shows
+where it sits. Marker color reads the optimum's carrier polarity (circle:
+in polarity, square: inverted) and only inside the central lobe — past a
+quarter period the optimum sits between opposite-signed lobes and the marker
+stays neutral. Bands where one driver's level has fallen 25 dB below the
+other's are dropped rather than drawn: GCC-PHAT deliberately ignores level,
+and would otherwise read confident "coherence" off a crossover remnant the
+sum cannot hear. On junctions below 120 Hz a note warns that the long band
+windows let cabin modes rule the read: the ladder honestly reports that such
+a band is incoherent at the applied tune, but its Δt there is not a move
+recommendation. The mode is a diagnostic for manual work — Auto delay keeps
+its own guarded estimators and never reads this plot.
+
 A **Junction phase** block reads each adjacent pair's steady-state cross-phase in
 a time-sized window (~0.68 s of the processed IR) — the regime sustained program
 material actually sums in, deliberately not the direct-sound phase, because the

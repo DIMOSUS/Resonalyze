@@ -14,7 +14,7 @@ public sealed class ProcessedChannelsTests
     private static ProcessedChannel Channel(string name, VirtualCrossoverChannelSettings settings)
     {
         var channel = new VirtualCrossoverChannel(name) { Pair = { Left = settings } };
-        return new ProcessedChannel(channel, [Complex.One], 0, OxyColors.White);
+        return new ProcessedChannel(channel, [Complex.One], 0, 48_000, OxyColors.White);
     }
 
     private static VirtualCrossoverChannelSettings LowPass(double hz) => new()
@@ -115,7 +115,7 @@ public sealed class ProcessedChannelsTests
             var channel = new VirtualCrossoverChannel("x") { SampleRate = 48_000 };
             return new ProcessedChannel(
                 channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir),
-                OxyColors.White, range);
+                48_000, OxyColors.White, range);
         }
 
         int anchor = ProcessedChannels.SharedStartAnchorIndex(

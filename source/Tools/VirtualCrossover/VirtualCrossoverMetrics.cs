@@ -68,12 +68,12 @@ internal sealed class VirtualCrossoverMetrics
             .AsParallel()
             .AsOrdered()
             .Select(item => buildMagnitudeCurve(
-                item.ImpulseResponse, anchor, item.Channel.SampleRate))
+                item.ImpulseResponse, anchor, item.SampleRate))
             .ToList();
         Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
             processed.Select(item => item.ImpulseResponse).ToList());
         GatedMagnitude sumCurve = buildMagnitudeCurve(
-            sum, anchor, processed[0].Channel.SampleRate);
+            sum, anchor, processed[0].SampleRate);
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
             sumCurve.Unsmoothed.Points,
             magnitudes
@@ -162,7 +162,7 @@ internal sealed class VirtualCrossoverMetrics
             if (!spectra.TryGetValue(item, out Complex[]? spectrum))
             {
                 spectrum = JunctionPhaseAlignment.BuildAnalysisSpectrum(
-                    item.ImpulseResponse, item.Channel.SampleRate);
+                    item.ImpulseResponse, item.SampleRate);
                 spectra.Add(item, spectrum);
             }
 
@@ -172,7 +172,7 @@ internal sealed class VirtualCrossoverMetrics
         foreach (AdjacentPair pair in ProcessedChannels.GetAdjacentPairs(
             ProcessedChannels.OrderByBand(processed)))
         {
-            if (pair.Lower.Channel.SampleRate != pair.Upper.Channel.SampleRate)
+            if (pair.Lower.SampleRate != pair.Upper.SampleRate)
             {
                 continue;
             }
@@ -180,7 +180,7 @@ internal sealed class VirtualCrossoverMetrics
             JunctionPhaseResult? result = JunctionPhaseAlignment.AnalyzeSpectra(
                 SpectrumOf(pair.Lower),
                 SpectrumOf(pair.Upper),
-                pair.Lower.Channel.SampleRate,
+                pair.Lower.SampleRate,
                 pair.CrossoverHz,
                 pair.BandLowHz,
                 pair.BandHighHz);

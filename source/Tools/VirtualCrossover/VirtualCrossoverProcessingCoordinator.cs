@@ -102,6 +102,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                         channel.Id,
                         entry.ImpulseResponse,
                         entry.PeakIndex,
+                        channel.SampleRate,
                         VirtualCrossoverAnalysis.ChainValidRange(
                             channel.Source.SampleCount,
                             channel.Chain,
@@ -148,6 +149,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                                 pending.Channel.Id,
                                 response,
                                 VirtualCrossoverAnalysis.FindPeakIndex(response),
+                                pending.Channel.SampleRate,
                                 VirtualCrossoverAnalysis.ChainValidRange(
                                     pending.Channel.Source.SampleCount,
                                     pending.Channel.Chain,
@@ -524,10 +526,15 @@ internal sealed class VirtualCrossoverProcessingSnapshot
     public IReadOnlyList<VirtualCrossoverChannelSnapshot> Channels => channels;
 }
 
+// SampleRate is the rate the response was PROCESSED at, carried with the
+// result: consumers must not read it back off the live channel, which a
+// session import rebinds (and momentarily zeroes) while a render is still in
+// flight — see ProcessedChannel.
 internal sealed record VirtualCrossoverProcessedChannel(
     int Id,
     Complex[] ImpulseResponse,
     int PeakIndex,
+    int SampleRate,
     ValidSampleRange ValidRange);
 
 internal sealed record VirtualCrossoverRenderResult(

@@ -1002,6 +1002,44 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void CoherencePlotMode_RoundTripsAsALegacyValuePlusFlag()
+    {
+        // The second junction mode follows the correlation mode's additive
+        // pattern, on its own flag; switching between the two junction modes
+        // must move exactly one flag at a time — a file with both set would
+        // silently open on the correlation view.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            original.SetDspPlotMode(DspPlotMode.Coherence);
+            Assert.Equal(DspPlotMode.Magnitude, original.DspPlotMode);
+            Assert.True(original.DspPlotCoherenceView);
+            Assert.False(original.DspPlotCorrelationView);
+            Assert.Equal(DspPlotMode.Coherence, original.EffectiveDspPlotMode);
+
+            original.Save(root);
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(DspPlotMode.Coherence, loaded.EffectiveDspPlotMode);
+
+            loaded.SetDspPlotMode(DspPlotMode.Correlation);
+            Assert.True(loaded.DspPlotCorrelationView);
+            Assert.False(loaded.DspPlotCoherenceView);
+
+            loaded.SetDspPlotMode(DspPlotMode.Magnitude);
+            Assert.False(loaded.DspPlotCorrelationView);
+            Assert.False(loaded.DspPlotCoherenceView);
+            Assert.Equal(DspPlotMode.Magnitude, loaded.DspPlotMode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ShowSumCurveOnPhase_WithNoAnswerOfItsOwn_InheritsTheMagnitudeOne()
     {
         // A session written before the two views answered separately carries one

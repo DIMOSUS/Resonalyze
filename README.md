@@ -1191,7 +1191,7 @@ and Autocorrelation views, with a **Show all** / **Hide all** pair.
 ## EQ Wizard
 
 The **EQ Wizard** (under the **Tools** tab) designs a parametric equalizer — up
-to 32 peaking (PK) bands plus a preamp — that moves a measured response toward a
+to 32 bands plus a preamp — that moves a measured response toward a
 target. It owns its own target curve, edited through the same dialog the Target
 overlays use but stored with the wizard's own settings, so tuning here never
 disturbs your overlay slots.
@@ -1218,6 +1218,21 @@ its own right-hand dB axis), and a shaded **error fill**. Click a band card to
 overlay that band's contribution as a dashed curve. Each card carries its
 **frequency**, **Q**, and **gain**, and the panel adds a **Target Level**, a
 **Gain** (preamp), a **Bands** count, source **Smoothing**, and **Bypass**.
+
+A band is one of five shapes, picked on the **"+" tile** — each zone adds its
+shape directly — or switched later by right-clicking the band's number: a
+**peaking bell (PK)**; a **high or low shelf (HS / LS)**, whose frequency is
+the middle of the transition and whose Q is the knee (0.7 the steepest that
+stays monotonic); and a **first- or second-order all-pass (AP1 / AP2)**, which
+moves phase only — unity magnitude everywhere, 180° or 360° of rotation around
+its corner, the tool for lining drivers up through a crossover region. An
+all-pass card has no gain field or fader; in their place it reads out the
+**group delay the filter piles up at its own corner** — why an all-pass works
+and, on a low corner, what it costs (it grows with Q and falls with frequency;
+AP1 has a single real pole and takes no Q). The magnitude curves draw an
+all-pass as the flat line it is — except **Source + EQ** on a Virtual DSP
+handoff, which runs the real chain and so can shift slightly where the analysis
+window catches a phase-shifted arrival.
 The Target Level is the user's knob alone — loading a source never moves it, so
 a deliberately placed target survives every source switch (an absolute dB SPL
 curve simply needs the level dialed to its datum once). The one exception
@@ -1339,8 +1354,8 @@ shelves plus REW's `Modal` rows, always 30 slots — a bank has no place for the
 preamp, so it is not written and the wizard tells you which channel gain to enter
 in the PC-Tool instead), and export-only for miniDSP biquads (RBJ coefficients at
 44.1 / 48 / 96 kHz) and GraphicEQ (Wavelet / JamesDSP). Import is deliberately
-lenient: comments, blank lines, disabled (`OFF`) filters, non-peaking types, and
-malformed entries are skipped rather than rejected. The one exception is a
+lenient: comments, blank lines, disabled (`OFF`) filters, unsupported filter
+types, and malformed entries are skipped rather than rejected. The one exception is a
 fixed-layout device bank: the Audiotec-Fischer file is the channel's 30-slot
 table, so a truncated or renumbered one is refused outright rather than imported
 as an empty bank over the EQ you have — and so is one whose enabled slot claims a

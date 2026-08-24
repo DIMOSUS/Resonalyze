@@ -34,6 +34,7 @@ public partial class PeqSlotControl : UserControl
 
     private int slotNumber = 1;
     private PeqBandType bandType = PeqBandType.Peaking;
+    private double sampleRateHz = 48_000;
     private bool suppressGainSync;
     private bool selected;
     private bool dragging;
@@ -46,6 +47,11 @@ public partial class PeqSlotControl : UserControl
         qInput.Minimum = (decimal)MinimumQ;
         qInput.Maximum = (decimal)MaximumQ;
         WireGainFader();
+        // The corner group-delay readout follows the very fields that define the
+        // corner. Hooked unconditionally: on a non-all-pass strip the update is a
+        // no-op, and the strip may become an all-pass at any time.
+        frequencyInput.ValueChanged += (_, _) => UpdateGroupDelayReadout();
+        qInput.ValueChanged += (_, _) => UpdateGroupDelayReadout();
         HookActivation(this);
         // The number strip is the drag handle. It has to be: the fader owns the
         // mouse for gain and the three fields own it for editing, and WinForms
@@ -239,9 +245,10 @@ public partial class PeqSlotControl : UserControl
     }
 
     /// <summary>
-    /// The filter shape this strip holds. The three fields stay the same, but a
-    /// shelf reads two of them differently (see <see cref="PeqBandType"/>), so the
-    /// header names the type rather than leaving it to be guessed from the curve.
+    /// The filter shape this strip holds. The fields stay the same, but a shelf
+    /// reads two of them differently and an all-pass reads no gain at all (see
+    /// <see cref="PeqBandType"/>), so the header names the type rather than leaving
+    /// it to be guessed from the curve.
     /// </summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -253,19 +260,82 @@ public partial class PeqSlotControl : UserControl
             bandType = value;
             UpdateSlotLabel();
             ApplyStripColor();
+            UpdateBandTypeAppearance();
         }
     }
 
-    /// <summary>Short header token for a band shape: "PK", "LS" or "HS".</summary>
+    /// <summary>
+    /// Short header token for a band shape: "PK", "LS", "HS", "AP1" or "AP2". The
+    /// all-pass tokens are the ones Audiotec's PC-Tool names its slots with, so a
+    /// strip and the device field it lands in read the same.
+    /// </summary>
     internal static string DescribeType(PeqBandType type) => type switch
     {
         PeqBandType.LowShelf => "LS",
         PeqBandType.HighShelf => "HS",
+        PeqBandType.AllPassFirstOrder => "AP1",
+        PeqBandType.AllPassSecondOrder => "AP2",
         _ => "PK"
     };
 
     private void UpdateSlotLabel() =>
         slotLabel.Text = $"{slotNumber} {DescribeType(bandType)}";
+
+    // An all-pass has no gain, so the gain field and the fader give way to the one
+    // number a phase-only band has to show: the group delay it piles up at its own
+    // corner — why it works, and on a low corner its main cost. The gain VALUE is
+    // deliberately kept in the hidden field, so switching a bell to an all-pass and
+    // back restores the bell it was.
+    private void UpdateBandTypeAppearance()
+    {
+        bool allPass = bandType.IsAllPass();
+        gainInput.Visible = !allPass;
+        fader.Visible = !allPass;
+        groupDelayLabel.Visible = allPass;
+        // A first-order all-pass has a single real pole and no Q; the field is
+        // greyed rather than hidden so the strip keeps its shape.
+        qInput.Enabled = bandType != PeqBandType.AllPassFirstOrder;
+        UpdateGroupDelayReadout();
+    }
+
+    private void UpdateGroupDelayReadout()
+    {
+        if (!bandType.IsAllPass())
+        {
+            return;
+        }
+
+        // Evaluated at the corner the filter actually runs at (Nyquist-clamped
+        // inside), at the rate the wizard realizes its biquads at. The two formats
+        // match the Virtual DSP channel card the readout came from.
+        double ms = AllPassFilter.CornerGroupDelaySeconds(
+            PeqBiquad.ToAllPassSpec(new PeqBand(
+                (double)frequencyInput.Value, (double)qInput.Value, 0, bandType)),
+            sampleRateHz) * 1_000.0;
+        groupDelayLabel.Text = ms < 100 ? $"= {ms:0.00} ms" : $"= {ms:0} ms";
+    }
+
+    /// <summary>
+    /// The rate the corner group-delay readout is computed at — the wizard's own
+    /// biquad realization rate, pushed by the panel because only it knows which
+    /// source owns the rate.
+    /// </summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal double SampleRateHz
+    {
+        get => sampleRateHz;
+        set
+        {
+            if (value <= 0 || value == sampleRateHz)
+            {
+                return;
+            }
+
+            sampleRateHz = value;
+            UpdateGroupDelayReadout();
+        }
+    }
 
     // Applies a new gain range to both the numeric field and the fader so they
     // keep sharing one scale. The min is <= 0 <= max, so ordering never inverts;
@@ -300,4 +370,7 @@ public partial class PeqSlotControl : UserControl
     internal DarkNumericUpDown QInput => qInput;
 
     internal DarkNumericUpDown GainInput => gainInput;
+
+    // The all-pass corner group-delay readout, exposed so the host can tip it.
+    internal Control GroupDelayReadout => groupDelayLabel;
 }

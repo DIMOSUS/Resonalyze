@@ -32,10 +32,13 @@ namespace Resonalyze
             slotLayout = new TableLayoutPanel();
             slotLabel = new Label();
             gainInput = new DarkNumericUpDown();
+            faderHost = new Panel();
             fader = new GainFader();
+            groupDelayLabel = new Label();
             qInput = new DarkNumericUpDown();
             frequencyInput = new DarkNumericUpDown();
             slotLayout.SuspendLayout();
+            faderHost.SuspendLayout();
             (gainInput).BeginInit();
             (qInput).BeginInit();
             (frequencyInput).BeginInit();
@@ -48,7 +51,7 @@ namespace Resonalyze
             slotLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             slotLayout.Controls.Add(slotLabel, 0, 0);
             slotLayout.Controls.Add(gainInput, 0, 1);
-            slotLayout.Controls.Add(fader, 0, 2);
+            slotLayout.Controls.Add(faderHost, 0, 2);
             slotLayout.Controls.Add(qInput, 0, 3);
             slotLayout.Controls.Add(frequencyInput, 0, 4);
             slotLayout.Dock = DockStyle.Fill;
@@ -99,18 +102,45 @@ namespace Resonalyze
             gainInput.ThousandsSeparator = false;
             gainInput.Value = new decimal(new int[] { 0, 0, 0, 0 });
             //
+            // faderHost
+            //
+            faderHost.BackColor = Color.Transparent;
+            faderHost.Controls.Add(fader);
+            faderHost.Controls.Add(groupDelayLabel);
+            faderHost.Dock = DockStyle.Fill;
+            faderHost.Location = new Point(2, 38);
+            faderHost.Margin = new Padding(2, 1, 2, 1);
+            faderHost.Name = "faderHost";
+            faderHost.Size = new Size(60, 109);
+            faderHost.TabIndex = 2;
+            //
             // fader
             //
             fader.BackColor = Color.FromArgb(44, 50, 60);
             fader.Dock = DockStyle.Fill;
             fader.Font = new Font("Segoe UI", 7.5F);
             fader.ForeColor = Color.FromArgb(185, 190, 200);
-            fader.Location = new Point(2, 38);
-            fader.Margin = new Padding(2, 1, 2, 1);
+            fader.Location = new Point(0, 0);
+            fader.Margin = new Padding(0);
             fader.Name = "fader";
             fader.Size = new Size(60, 109);
-            fader.TabIndex = 2;
+            fader.TabIndex = 0;
             fader.TabStop = false;
+            //
+            // groupDelayLabel
+            //
+            groupDelayLabel.Dock = DockStyle.Fill;
+            groupDelayLabel.Font = new Font("Segoe UI Semibold", 8.25F, FontStyle.Bold);
+            groupDelayLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            groupDelayLabel.Location = new Point(0, 0);
+            groupDelayLabel.Margin = new Padding(0);
+            groupDelayLabel.Name = "groupDelayLabel";
+            groupDelayLabel.Size = new Size(60, 109);
+            groupDelayLabel.TabIndex = 1;
+            groupDelayLabel.Text = "= 0.00 ms";
+            groupDelayLabel.TextAlign = ContentAlignment.MiddleCenter;
+            groupDelayLabel.UseCompatibleTextRendering = true;
+            groupDelayLabel.Visible = false;
             //
             // qInput
             //
@@ -166,6 +196,7 @@ namespace Resonalyze
             Name = "PeqSlotControl";
             Size = new Size(64, 192);
             slotLayout.ResumeLayout(false);
+            faderHost.ResumeLayout(false);
             (gainInput).EndInit();
             (qInput).EndInit();
             (frequencyInput).EndInit();
@@ -177,7 +208,9 @@ namespace Resonalyze
         private TableLayoutPanel slotLayout;
         private Label slotLabel;
         private DarkNumericUpDown gainInput;
+        private Panel faderHost;
         private GainFader fader;
+        private Label groupDelayLabel;
         private DarkNumericUpDown qInput;
         private DarkNumericUpDown frequencyInput;
     }

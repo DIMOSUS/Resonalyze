@@ -49,6 +49,11 @@ public partial class EqWizardPanel : UserControl
     private const string GainTip =
         "Band gain (dB). Positive boosts, negative cuts. A shelf reaches this gain " +
         "beyond its transition and half of it at the center frequency.";
+    private const string AllPassGroupDelayTip =
+        "The extra group delay this all-pass piles up at its own corner — why it " +
+        "works, and on a low corner its main cost. It grows with Q and falls with " +
+        "frequency (≈ 4Q/ω₀ for 2nd order): around 10 ms per unit Q at 60 Hz, but " +
+        "only ~0.3 ms at 2 kHz.";
 
     private readonly WrappingToolTip toolTip = new()
     {
@@ -562,6 +567,14 @@ public partial class EqWizardPanel : UserControl
     // measurement (if any) and the target shape, plus the shared bottom legend.
     private void DrawSelectedCurves()
     {
+        // The realization rate can change under the bank (a source switch, the
+        // rate selector), and every such change funnels through a redraw — so this
+        // is where the strips' corner group-delay readouts learn the current rate.
+        foreach (PeqSlotControl slot in peqSlots)
+        {
+            slot.SampleRateHz = EqSampleRate;
+        }
+
         // Every input the Auto Tune fit consumes funnels through here when it
         // changes (target selection, offsets, smoothing, band edits, source
         // switches), so any redraw orphans an in-flight fit computed against
@@ -671,8 +684,12 @@ public partial class EqWizardPanel : UserControl
         }
 
         double rms = valid > 0 ? Math.Sqrt(sumSquares / valid) : 0;
+        // A filter is "used" when it does something: a gain-bearing band once its
+        // gain is dialled off zero, an all-pass always — its work is phase, which
+        // the gain threshold cannot see.
         int filtersUsed = peqSlots.Count(
-            slot => Math.Abs((double)slot.GainInput.Value) >= 0.05);
+            slot => slot.BandType.IsAllPass() ||
+                Math.Abs((double)slot.GainInput.Value) >= 0.05);
 
         double peakBoost = double.NegativeInfinity;
         double peakCut = double.PositiveInfinity;

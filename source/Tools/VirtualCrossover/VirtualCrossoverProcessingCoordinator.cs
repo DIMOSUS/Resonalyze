@@ -13,7 +13,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
     private readonly object sync = new();
     private readonly Dictionary<ProcessingSlotId, CacheEntry> cache = new();
     private readonly Func<VirtualCrossoverSourceSnapshot, DspChannelChain, int,
-        CancellationToken, Complex[]> processChannel;
+        CancellationToken, Complex[]?> processChannel;
     private CancellationTokenSource revisionCancellation = new();
     private long revision;
     private bool disposed;
@@ -25,7 +25,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
 
     internal VirtualCrossoverProcessingCoordinator(
         Func<VirtualCrossoverSourceSnapshot, DspChannelChain, int,
-            CancellationToken, Complex[]> processChannel)
+            CancellationToken, Complex[]?> processChannel)
     {
         this.processChannel = processChannel ?? throw new ArgumentNullException(nameof(processChannel));
     }
@@ -117,6 +117,11 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         }
         try
         {
+            // EXTERNAL cancellation still propagates as an exception: a caller
+            // that passed its own token asked to be told, and that is the
+            // framework's convention. Only the internal, revision-driven
+            // cancellation — the one every delay edit triggers — is silent.
+            cancellationToken.ThrowIfCancellationRequested();
             if (misses.Count > 0)
             {
                 await Task.Run(() =>
@@ -128,23 +133,37 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                     // scheduling worker; the per-channel zones time each
                     // chain's FFTs on whichever pool thread runs it.
                     using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannels");
+                    // A cancelled batch STOPS the loop instead of throwing out
+                    // of it (see ProcessChannel): ParallelLoopState.Stop keeps
+                    // the "schedule no further iterations" behaviour the
+                    // ParallelOptions token used to give, without an exception
+                    // crossing the TPL boundary on every stale render. The
+                    // abandoned entries stay null in results, which the guard
+                    // below turns into a dropped render.
                     Parallel.For(
                         0,
                         misses.Count,
-                        new ParallelOptions
-                        {
-                            CancellationToken = processingCancellation.Token
-                        },
-                        index =>
+                        (index, state) =>
                         {
                             using var __ = AppProfiler.Zone("VirtualDSP.ProcessChannel");
+                            if (processingCancellation.IsCancellationRequested)
+                            {
+                                state.Stop();
+                                return;
+                            }
+
                             PendingChannel pending = misses[index];
-                            Complex[] response = processChannel(
+                            Complex[]? response = processChannel(
                                 pending.Channel.Source,
                                 pending.Channel.Chain,
                                 pending.Channel.SampleRate,
                                 processingCancellation.Token);
-                            processingCancellation.Token.ThrowIfCancellationRequested();
+                            if (response == null)
+                            {
+                                state.Stop();
+                                return;
+                            }
+
                             results[pending.ResultIndex] = new VirtualCrossoverProcessedChannel(
                                 pending.Channel.Id,
                                 response,
@@ -156,7 +175,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                                     pending.Channel.SampleRate,
                                     response.Length));
                         });
-                }, processingCancellation.Token);
+                });
             }
 
             lock (sync)
@@ -165,6 +184,19 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                     processingCancellation.IsCancellationRequested)
                 {
                     return null;
+                }
+
+                // A channel the loop abandoned leaves its slot null. The
+                // cancellation check above is what normally catches that, but
+                // the two are read at different moments, so the render is only
+                // published once every slot is actually filled — never with a
+                // hole in it.
+                foreach (VirtualCrossoverProcessedChannel? result in results)
+                {
+                    if (result == null)
+                    {
+                        return null;
+                    }
                 }
 
                 foreach (PendingChannel pending in misses)
@@ -185,15 +217,32 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         {
             return null;
         }
+        catch (AggregateException aggregate) when (
+            !cancellationToken.IsCancellationRequested &&
+            aggregate.InnerExceptions.All(inner => inner is OperationCanceledException))
+        {
+            // Backstops the OTHER convention: a processing delegate is still
+            // free to report cancellation by throwing, and without a token on
+            // the ParallelOptions those throws reach here aggregated rather
+            // than as a bare OperationCanceledException.
+            return null;
+        }
         finally
         {
             processingCancellation.Dispose();
         }
     }
 
+    /// <summary>
+    /// Runs one auxiliary computation against a revision, returning null when
+    /// it was superseded. The operation reports its own cancellation by
+    /// RETURNING NULL — same reason as <see cref="ProcessChannel"/>: a stale
+    /// computation is routine, and throwing for it stops a Just My Code
+    /// debugger on every edit.
+    /// </summary>
     public async Task<T?> RunAuxiliaryAsync<T>(
         long candidateRevision,
-        Func<CancellationToken, T> operation,
+        Func<CancellationToken, T?> operation,
         CancellationToken cancellationToken = default)
         where T : class
     {
@@ -216,11 +265,13 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         {
             try
             {
-                T result = await Task.Run(() => operation(linked.Token), linked.Token);
-                return IsCurrent(candidateRevision) ? result : null;
+                T? result = await Task.Run(() => operation(linked.Token));
+                return result != null && IsCurrent(candidateRevision) ? result : null;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
+                // Kept as a backstop: an operation is free to throw for
+                // cancellation, it just no longer has to.
                 return null;
             }
         }
@@ -257,16 +308,25 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         }
     }
 
-    private static Complex[] ProcessChannel(
+    // Cancellation is reported by RETURNING NULL rather than by throwing: a
+    // stale render is an ordinary event here — every delay edit makes one —
+    // and an exception thrown out of this delegate crosses the TPL boundary,
+    // which a debugger with Just My Code enabled stops on as "user-unhandled"
+    // even though ProcessAsync catches it a frame later. Null means "this
+    // response was abandoned"; the caller drops the whole render.
+    private static Complex[]? ProcessChannel(
         VirtualCrossoverSourceSnapshot source,
         DspChannelChain chain,
         int sampleRate,
         CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
         Complex[] response = source.Apply(chain, sampleRate);
-        cancellationToken.ThrowIfCancellationRequested();
-        return response;
+        return cancellationToken.IsCancellationRequested ? null : response;
     }
 
     private sealed record PendingChannel(

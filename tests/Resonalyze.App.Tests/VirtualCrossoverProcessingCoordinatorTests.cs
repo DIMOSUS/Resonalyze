@@ -404,6 +404,59 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_CancellationReportedByNullDropsTheRenderSilently()
+    {
+        // The production delegate reports a superseded render by RETURNING
+        // NULL rather than throwing (see ProcessChannel): every delay edit
+        // supersedes one, and an exception thrown out of the parallel body
+        // stops a Just My Code debugger even though this method catches it.
+        // The render must be dropped just as thoroughly, and no exception may
+        // escape or be raised on the way.
+        using var pool = new PoolHeadroom(parking: 3);
+        using var entered = new CountdownEvent(1);
+        using var release = new ManualResetEventSlim();
+        int thrown = 0;
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, cancellationToken) =>
+            {
+                entered.Signal();
+                Assert.True(release.Wait(RendezvousTimeout));
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return null;
+                }
+
+                Interlocked.Increment(ref thrown);
+                return source.Apply(chain, sampleRate);
+            });
+        long revision = coordinator.Invalidate();
+
+        Task<VirtualCrossoverRenderResult?> render = coordinator.ProcessAsync(
+            CreateSnapshot(revision, 0, false, 3));
+        Assert.True(entered.Wait(RendezvousTimeout));
+        coordinator.Invalidate();
+        release.Set();
+
+        Assert.Null(await render);
+        Assert.Equal(0, thrown);
+
+        // ...and nothing partial was committed: the next render for the same
+        // channel recomputes rather than serving a cached half-result.
+        release.Reset();
+        entered.Reset(1);
+        long next = coordinator.CurrentRevision;
+        Task<VirtualCrossoverRenderResult?> second = coordinator.ProcessAsync(
+            CreateSnapshot(next, 0, false, 3));
+        Assert.True(entered.Wait(RendezvousTimeout));
+        release.Set();
+
+        VirtualCrossoverRenderResult? result = await second;
+        Assert.NotNull(result);
+        Assert.Equal(1, thrown);
+        Assert.InRange(result.Channels[0].ImpulseResponse[3].Real, 0.999, 1.001);
+    }
+
+    [Fact]
     public async Task InvalidateDuringCompletedComputation_DropsResultAtCommitGuard()
     {
         VirtualCrossoverProcessingCoordinator? coordinator = null;

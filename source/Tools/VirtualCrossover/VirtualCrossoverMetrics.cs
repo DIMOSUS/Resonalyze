@@ -340,7 +340,7 @@ internal sealed class VirtualCrossoverMetrics
         bool anyArrivalWork = jobs.Any(job => job.Sides.Any(side => side.Arrival == null));
         if (anyArrivalWork)
         {
-            object? arrivalCompleted = await coordinator.RunAuxiliaryAsync(
+            object? arrivalCompleted = await coordinator.RunAuxiliaryAsync<object>(
                 revision,
                 cancellationToken =>
             {
@@ -348,7 +348,14 @@ internal sealed class VirtualCrossoverMetrics
                 {
                     foreach (SideProcessJob side in job.Sides)
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
+                        // Silent cancellation (see RunAuxiliaryAsync): null
+                        // says "superseded", and the caller drops the read-out
+                        // exactly as it did for the thrown version.
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            return null;
+                        }
+
                         if (side.Arrival == null)
                         {
                             side.Arrival =

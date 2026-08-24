@@ -1,6 +1,27 @@
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
+
+/// <summary>
+/// The three things placing a phase window needs from a channel: the response, where
+/// its peak is, and which part of the record is MEASURED rather than the chain's own
+/// padding. Deliberately not <see cref="ProcessedChannel"/> — the arithmetic belongs
+/// to any caller holding a response, including the EQ Wizard, which has responses
+/// frozen out of a handoff and no live channels at all.
+/// </summary>
+internal readonly record struct PlacementChannel(
+    Complex[] ImpulseResponse,
+    int PeakIndex,
+    ValidSampleRange ValidRange)
+{
+    public static PlacementChannel From(ProcessedChannel channel) =>
+        new(channel.ImpulseResponse, channel.PeakIndex, channel.ValidRange);
+
+    public static IReadOnlyList<PlacementChannel> From(
+        IReadOnlyList<ProcessedChannel> channels) =>
+        channels.Select(From).ToList();
+}
 
 /// <summary>
 /// Where a set of channels' phase windows sit, and against which τ their phase is
@@ -30,7 +51,7 @@ internal static class PhaseGatePlacement
     /// a bare peak read (memoized per IR in <see cref="TransferIrStartCache"/>).
     /// </summary>
     public static double EarliestStartMs(
-        IReadOnlyList<ProcessedChannel> channels,
+        IReadOnlyList<PlacementChannel> channels,
         int sampleRate) =>
         channels.Min(item => TransferIrStartCache.ResolveStartMs(
             item.ImpulseResponse, sampleRate, item.PeakIndex, item.ValidRange));
@@ -41,7 +62,7 @@ internal static class PhaseGatePlacement
     /// delay changes until the user pins it.
     /// </summary>
     public static double ResolveSharedOffsetMs(
-        IReadOnlyList<ProcessedChannel> channels,
+        IReadOnlyList<PlacementChannel> channels,
         int sampleRate,
         double? configuredOffsetMs) =>
         configuredOffsetMs ?? EarliestStartMs(channels, sampleRate);
@@ -60,7 +81,7 @@ internal static class PhaseGatePlacement
     /// </para>
     /// </summary>
     public static List<double> ResolvePerCurveOffsets(
-        IReadOnlyList<ProcessedChannel> channels,
+        IReadOnlyList<PlacementChannel> channels,
         double sharedOffsetMs,
         int sampleRate,
         double? pinnedOffsetMs,
@@ -75,7 +96,7 @@ internal static class PhaseGatePlacement
         }
 
         var perCurve = new List<double>(channels.Count);
-        foreach (ProcessedChannel item in channels)
+        foreach (PlacementChannel item in channels)
         {
             var view = new ImpulseMeasurementView(item.ImpulseResponse, 0, sampleRate);
             double startMs = TransferIrStartCache.ResolveStartMs(
@@ -142,6 +163,14 @@ internal static class PhaseGatePlacement
     /// </remarks>
     public const double MaxLeadingEdgeLossDb = -20.0;
 
+    // The set's shared front: the earliest anchor among them, each read within its
+    // own valid range so a chain delay's silent prefix cannot certify a front.
+    private static int SharedStartAnchorIndex(
+        IReadOnlyList<PlacementChannel> channels,
+        int sampleRate) =>
+        channels.Min(item => ProcessedChannels.StartAnchorIndex(
+            item.ImpulseResponse, item.PeakIndex, sampleRate, item.ValidRange));
+
     /// <summary>
     /// The single τ every curve of the set is detrended by. One τ serves them all, so
     /// their RELATIVE phase — the whole point of the view — survives the detrend:
@@ -158,7 +187,7 @@ internal static class PhaseGatePlacement
     /// the set's own shared front anchor.
     /// </param>
     public static double ResolveCommonDetrendMs(
-        IReadOnlyList<ProcessedChannel> channels,
+        IReadOnlyList<PlacementChannel> channels,
         int sampleRate,
         PhaseAnalysisSettings template,
         PhaseDetrendMode detrendMode,
@@ -172,19 +201,14 @@ internal static class PhaseGatePlacement
         if (detrendMode == PhaseDetrendMode.Manual)
         {
             return manualDetrendMs ??
-                ProcessedChannels.SharedStartAnchorIndex(channels) * 1_000.0 / sampleRate;
+                SharedStartAnchorIndex(channels, sampleRate) * 1_000.0 / sampleRate;
         }
 
         // Estimate once from the existing common anchor (the earliest processed FRONT,
         // the same channel the shared window opens on), then apply that exact value to
         // every driver and the sum.
-        // The rate comes off the SNAPSHOT, never back through the live channel: a
-        // session imported over a loaded one rebinds channels while renders are still
-        // in flight, and a consumer that read the rate there got a zero against a real
-        // response.
-        ProcessedChannel anchor = channels.MinBy(item => ProcessedChannels.StartAnchorIndex(
-            item.ImpulseResponse, item.PeakIndex, item.SampleRate,
-            item.ValidRange))!;
+        PlacementChannel anchor = channels.MinBy(item => ProcessedChannels.StartAnchorIndex(
+            item.ImpulseResponse, item.PeakIndex, sampleRate, item.ValidRange));
         return DataHelper.ResolveCommonPhaseDetrendMilliseconds(
             new ImpulseMeasurementView(anchor.ImpulseResponse, 0, sampleRate),
             template with { DetrendMode = PhaseDetrendMode.Auto });

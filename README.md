@@ -1390,10 +1390,14 @@ bands where the response simply cannot be corrected.
 
 The fit is a magnitude fit, so the bells it places are all it can propose — and a
 run replaces the bank it found. If that bank holds **all-pass** bands, Auto Tune
-asks before starting: keep them and tune the remaining slots around them (they
-are flat, so the error curve never asked for them to go), or let the fit replace
-the bank whole. Keeping takes their count off the **Max Filters** budget, so the
-merged bank still fits the slot count.
+asks before starting: keep them and tune the remaining slots around them (the
+error curve never asked for them to go — they are flat), or let the fit replace
+the bank whole. Keeping takes their count off the **Max Filters** budget, which
+is a budget for the bank and not for the fit alone: keep three of eight and the
+fit places five. And "around them" is literal on a gated channel — the curve the
+fit corrects is the one with those bands already applied, because through a
+window an all-pass is not flat, and correcting a curve the bank never produces
+would leave the tune off by that difference.
 
 **Cuts only** (on by default) is the safe choice for a car tune: a boost cannot
 fill a reflective cabin's interference null — it just burns amplifier headroom on

@@ -146,6 +146,44 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void LoadOrDefault_V7ProjectWithAnUnreadableAllPassType_KeepsTheRestOfTheFile()
+    {
+        // The tolerance the migration promises has to cover the TYPE as well as the
+        // numbers. Typed as the enum it never could: the converter throws on a name
+        // it does not know, and that throw lands during deserialization — before
+        // Migrate runs — taking the whole session to .backup over one bad word.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Pairs[0].Left.DelayMs = 4.25;
+            saved.Save(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 7;
+            JsonObject left = file["pairs"]![0]!["left"]!.AsObject();
+            left["allPassType"] = "SomeGarbage";
+            left["allPassFrequencyHz"] = 120;
+            left["allPassQ"] = 2.5;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            // The all-pass is gone, and NOTHING else is: the rest of the tune loaded.
+            Assert.Empty(loaded.Pairs[0].Left.PeqBands);
+            Assert.Equal(4.25, loaded.Pairs[0].Left.DelayMs);
+            Assert.Null(loaded.BackupNoticePath);
+            loaded.Validate();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadOrDefault_V7ProjectWithANonsenseAllPass_DropsItRatherThanFailing()
     {
         // Migrate runs before Validate, so a hand-edited or truncated stage must degrade

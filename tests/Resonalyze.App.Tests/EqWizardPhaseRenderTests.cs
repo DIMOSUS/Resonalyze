@@ -153,7 +153,7 @@ public sealed class EqWizardPhaseRenderTests
             GateOffsetMs: 9.5,
             [
                 new EqWizardPhaseNeighbour(
-                    "neighbour", OxyColors.Orange, neighbourResponse, 9.5, 9.5)
+                "neighbour", OxyColors.Orange, new PlacementChannel(neighbourResponse, 0, default), 9.5)
             ],
             Gate(),
             DetrendMs: 10.0,

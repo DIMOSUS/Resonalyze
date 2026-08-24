@@ -773,8 +773,7 @@ public partial class EqWizardPanel : UserControl
         // The tuner fits magnitude and emits bells only, so a run replaces the whole
         // bank — all-pass bands included, though nothing in the error curve ever
         // asked for them to go. Ask before throwing away phase work that was aligned
-        // by ear against a junction; the run itself is unaffected either way, since
-        // an all-pass is flat and the fit is built against a neutral EQ regardless.
+        // by ear against a junction.
         IReadOnlyList<PeqBand> allPass = CaptureBankState().Bands
             .Where(band => band.Type.IsAllPass())
             .ToList();
@@ -801,7 +800,8 @@ public partial class EqWizardPanel : UserControl
         }
 
         var request = new EqWizardAutoTuneRequest(
-            render.Source.Points.Select(point => new SignalPoint(point.X, point.Y)),
+            FitSource(render.Source, keepAllPass ? allPass : [])
+                .Select(point => new SignalPoint(point.X, point.Y)),
             render.Target.Points.Select(point => new SignalPoint(point.X, point.Y)),
             CreateAutoTuneOptions(keepAllPass ? allPass.Count : 0),
             // Only a loopback-transfer impulse response carries coherence; an imported
@@ -843,6 +843,37 @@ public partial class EqWizardPanel : UserControl
             keepAllPass ? WithAllPassBands(tuned, allPass) : tuned);
     }
 
+    /// <summary>
+    /// The curve the fit corrects: the source as it stands, or — when all-pass bands
+    /// are being KEPT through a gated source — the source with those bands already
+    /// applied.
+    /// </summary>
+    /// <remarks>
+    /// An all-pass is flat, so on an ungated curve it changes nothing and the source
+    /// is used as it is. Through a WINDOW it is not flat: filtering and windowing do
+    /// not commute, which is the whole reason the gated preview convolves rather than
+    /// adding an ideal magnitude (see <see cref="EqWizardGatedPreview"/>). Fitting
+    /// against the source without them and then putting them back would leave the
+    /// tuner correcting a curve the bank never produces — "keep them and tune the
+    /// remaining slots around them" has to mean tuning around what they DO.
+    /// </remarks>
+    private IReadOnlyList<DataPoint> FitSource(
+        EqWizardCurve source,
+        IReadOnlyList<PeqBand> keptAllPass)
+    {
+        if (keptAllPass.Count == 0 ||
+            loadedSource is not { IsGated: true } gated)
+        {
+            return source.Points;
+        }
+
+        return EqWizardGatedPreview.Render(
+                BuildGatedPreviewRequest(
+                    gated, new EqualizationCurve(keptAllPass, preampDb: 0)))
+            .Select(point => new DataPoint(point.X, point.Y))
+            .ToArray();
+    }
+
     private static string DescribeAllPassCount(int count) =>
         count == 1 ? "an all-pass filter" : $"{count} all-pass filters";
 
@@ -851,10 +882,13 @@ public partial class EqWizardPanel : UserControl
     // off the fit's budget, so the merged bank still fits the slot count.
     private EqAutoTuner.Options CreateAutoTuneOptions(int reservedBands)
     {
-        int bandLimit = comboBoxBandsLimit.SelectedItem is int limit
+        // Max Filters is a budget for the BANK, not for the fit alone: a user who set
+        // it to eight because their processor has eight slots must not get eleven
+        // filters back because three of them were kept. So the reserved bands come off
+        // the number the user chose, and the clamp keeps at least one band for the fit.
+        int bandLimit = (comboBoxBandsLimit.SelectedItem is int limit
             ? limit
-            : MaxPeqSlotCount;
-        bandLimit = Math.Min(bandLimit, MaxPeqSlotCount - reservedBands);
+            : MaxPeqSlotCount) - reservedBands;
 
         (double minHz, double maxHz) = GetFrequencyWindow();
 

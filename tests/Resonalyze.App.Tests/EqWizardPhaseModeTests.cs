@@ -26,12 +26,13 @@ public sealed class EqWizardPhaseModeTests
         var context = new EqWizardPhaseContext(
             Gate(9.0),
             GateOffsetMs: 9.5,
-            AutoGateOffsetMs: 9.5,
             DetrendMs: 10.25,
             PinnedOffset: false,
+            new PlacementChannel(Wavelet(), 0, default),
+            SampleRate,
             OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
-                "B", OxyColors.Orange, Wavelet(), 9.75, 9.75)]);
+                "B", OxyColors.Orange, new PlacementChannel(Wavelet(), 0, default), 9.75)]);
 
         ApplySource(panel, Source(context));
 
@@ -59,12 +60,13 @@ public sealed class EqWizardPhaseModeTests
         var context = new EqWizardPhaseContext(
             Gate(9.0) with { DetrendMode = detrendMode },
             GateOffsetMs: 9.5,
-            AutoGateOffsetMs: 9.5,
             DetrendMs: 10.25,
             pinned,
+            new PlacementChannel(Wavelet(), 0, default),
+            SampleRate,
             OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
-                "B", OxyColors.Orange, Wavelet(), 9.75, 9.75)]);
+                "B", OxyColors.Orange, new PlacementChannel(Wavelet(), 0, default), 9.75)]);
 
         ApplySource(panel, Source(context));
 
@@ -82,11 +84,10 @@ public sealed class EqWizardPhaseModeTests
         // its own correction.
         using var panel = new EqWizardPanel();
         var context = new EqWizardPhaseContext(
-            Gate(9.0), GateOffsetMs: 9.5, AutoGateOffsetMs: 9.5, DetrendMs: 10.25,
-            PinnedOffset: false,
-            OxyColors.SkyBlue,
+            Gate(9.0), GateOffsetMs: 9.5, DetrendMs: 10.25, PinnedOffset: false,
+            new PlacementChannel(Wavelet(), 0, default), SampleRate, OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
-                "B", OxyColors.Orange, Wavelet(), 9.75, 9.75)]);
+                "B", OxyColors.Orange, new PlacementChannel(Wavelet(), 0, default), 9.75)]);
         ApplySource(panel, Source(context));
 
         ApplyPhaseGate(panel, context, 4.0, autoOffset: true, PhaseDetrendMode.Off);
@@ -152,9 +153,10 @@ public sealed class EqWizardPhaseModeTests
         // neighbours that are no longer on screen.
         using var panel = new EqWizardPanel();
         ApplySource(panel, Source(new EqWizardPhaseContext(
-            Gate(9.0), 9.5, 9.5, 10.25, false, OxyColors.SkyBlue,
+            Gate(9.0), 9.5, 10.25, false,
+            new PlacementChannel(Wavelet(), 0, default), SampleRate, OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
-                "B", OxyColors.Orange, Wavelet(), 9.75, 9.75)])));
+                "B", OxyColors.Orange, new PlacementChannel(Wavelet(), 0, default), 9.75)])));
 
         ApplySource(panel, Source(phaseContext: null));
 
@@ -172,11 +174,12 @@ public sealed class EqWizardPhaseModeTests
         // own arrival — which is what the offsets in a handoff's context ARE.
         using var panel = new EqWizardPanel();
         var context = new EqWizardPhaseContext(
-            Gate(9.0), GateOffsetMs: 9.5, AutoGateOffsetMs: 9.5, DetrendMs: 10.25,
-            PinnedOffset: false,
+            Gate(9.0), GateOffsetMs: 5.0, DetrendMs: 10.25, PinnedOffset: false,
+            new PlacementChannel(Arriving(240), 240, default), SampleRate,
             OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
-                "B", OxyColors.Orange, Wavelet(), 9.75, 9.75)]);
+                "B", OxyColors.Orange,
+                new PlacementChannel(Arriving(480), 480, default), 10.0)]);
         ApplySource(panel, Source(context));
 
         ApplyPhaseGate(panel, context, offsetMs: 4.0, autoOffset: false);
@@ -190,9 +193,47 @@ public sealed class EqWizardPhaseModeTests
 
         ApplyPhaseGate(panel, context, offsetMs: 4.0, autoOffset: true);
 
+        // Unpinned, each window goes back onto its own driver's front — resolved from
+        // the responses, not read back from what the context happened to carry.
         EqWizardPhaseContext auto = ContextOf(panel)!;
-        Assert.Equal(9.5, auto.GateOffsetMs);
-        Assert.Equal(9.75, auto.Neighbours.Single().GateOffsetMs);
+        Assert.Equal(5.0, auto.GateOffsetMs, 1);
+        Assert.Equal(10.0, auto.Neighbours.Single().GateOffsetMs, 1);
+    }
+
+    [Fact]
+    public void ChangingTheWindowLengthResolvesThePlacementsAgain()
+    {
+        // Whether each curve may keep its own window, or the whole set falls back to
+        // one shared one, depends on the window LENGTHS — that is what the
+        // leading-edge loss is measured against. Carrying the answer over from the
+        // handoff would let the wizard keep placements the panel would refuse under
+        // the new lengths, and the same gate would then read the junction differently
+        // in the two views.
+        using var panel = new EqWizardPanel();
+        // Two drivers 5 ms apart: with a window long enough for one placement to hold
+        // both, they share it; with a short one they each take their own arrival.
+        var context = new EqWizardPhaseContext(
+            Gate(9.0),
+            GateOffsetMs: 5.0,
+            DetrendMs: 5.0,
+            PinnedOffset: false,
+            new PlacementChannel(Arriving(240), 240, default),
+            SampleRate,
+            OxyColors.SkyBlue,
+            [new EqWizardPhaseNeighbour(
+                "B", OxyColors.Orange,
+                new PlacementChannel(Arriving(480), 480, default), 5.0)]);
+        ApplySource(panel, Source(context));
+
+        ApplyPhaseGate(
+            panel, context, 5.0, autoOffset: true, PhaseDetrendMode.Manual,
+            detrendMs: 5.0, leftMs: 0.5, plateauMs: 4.0, rightMs: 1.5);
+
+        // A 6 ms window cannot hold a driver arriving 5 ms after the first, so each
+        // curve takes its own front — resolved here, not remembered.
+        EqWizardPhaseContext resolved = ContextOf(panel)!;
+        Assert.Equal(5.0, resolved.GateOffsetMs, 1);
+        Assert.Equal(10.0, resolved.Neighbours.Single().GateOffsetMs, 1);
     }
 
     [Fact]
@@ -207,12 +248,14 @@ public sealed class EqWizardPhaseModeTests
         var pinned = new EqWizardPhaseContext(
             Gate(4.0),
             GateOffsetMs: 4.0,
-            AutoGateOffsetMs: 9.5,
             DetrendMs: 10.25,
             PinnedOffset: true,
+            new PlacementChannel(Arriving(240), 240, default),
+            SampleRate,
             OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
-                "B", OxyColors.Orange, Wavelet(), 4.0, AutoGateOffsetMs: 9.75)]);
+                "B", OxyColors.Orange,
+                new PlacementChannel(Arriving(480), 480, default), 4.0)]);
         ApplySource(panel, Source(pinned));
         Assert.True(PinnedFlag(panel));
 
@@ -220,8 +263,8 @@ public sealed class EqWizardPhaseModeTests
 
         EqWizardPhaseContext auto = ContextOf(panel)!;
         Assert.False(PinnedFlag(panel));
-        Assert.Equal(9.5, auto.GateOffsetMs);
-        Assert.Equal(9.75, auto.Neighbours.Single().GateOffsetMs);
+        Assert.Equal(5.0, auto.GateOffsetMs, 1);
+        Assert.Equal(10.0, auto.Neighbours.Single().GateOffsetMs, 1);
     }
 
     private static void ApplyPhaseGate(
@@ -230,11 +273,14 @@ public sealed class EqWizardPhaseModeTests
         double offsetMs,
         bool autoOffset,
         PhaseDetrendMode detrendMode = PhaseDetrendMode.Manual,
-        double detrendMs = 11.5) =>
+        double detrendMs = 11.5,
+        double leftMs = 0.5,
+        double plateauMs = 2.5,
+        double rightMs = 1.5) =>
         typeof(EqWizardPanel)
             .GetMethod("ApplyPhaseGate", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(panel, [
-                opened, offsetMs, autoOffset, 0.5, 2.5, 1.5,
+                opened, offsetMs, autoOffset, leftMs, plateauMs, rightMs,
                 PhaseWindowMode.FrequencyDependent, 6, detrendMode, detrendMs
             ]);
 
@@ -261,6 +307,19 @@ public sealed class EqWizardPhaseModeTests
             SampleRateHz = SampleRate,
             CurveKind = AnalysisCurveKind.Primary
         };
+    }
+
+    // A response whose front sits at the given sample, for the placement cases.
+    private static Complex[] Arriving(int startSample)
+    {
+        var response = new Complex[16_384];
+        for (int i = 0; i < 96; i++)
+        {
+            response[startSample + i] =
+                Math.Exp(-i / 20.0) * Math.Cos(2 * Math.PI * i / 24.0);
+        }
+
+        return response;
     }
 
     // A decaying wavelet arriving at a known sample, so the front estimate has a real

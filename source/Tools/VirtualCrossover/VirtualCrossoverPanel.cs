@@ -2154,17 +2154,6 @@ public partial class VirtualCrossoverPanel : UserControl
             ?? ResolveGateOffsetMs(drawn, sampleRate);
         double detrendMs = ResolveCommonDetrendMs(drawn, referenceOffsetMs, sampleRate);
         List<double> offsets = ResolvePhaseGateOffsets(drawn, referenceOffsetMs, sampleRate);
-        // Where each window would open with the gate UNPINNED. With a pin in force
-        // the offsets above are all one absolute time, and the wizard's own Auto
-        // button would have nothing to put the windows back onto.
-        List<double> autoOffsets = PhaseGatePlacement.ResolvePerCurveOffsets(
-            drawn,
-            PhaseGatePlacement.ResolveSharedOffsetMs(drawn, sampleRate, null),
-            sampleRate,
-            pinnedOffsetMs: null,
-            gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
-            gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
-            gatePreview?.RightMs ?? project.PhaseGateRightMs);
 
         return new EqWizardPhaseContext(
             // The gate as the USER has it, detrend mode included. The curves are always
@@ -2177,11 +2166,17 @@ public partial class VirtualCrossoverPanel : UserControl
                 gatePreview?.DetrendMode ?? project.PhaseDetrendMode,
                 detrendMs),
             offsets[index],
-            autoOffsets[index],
             detrendMs,
             // Pinned here means pinned there: an absolute window the user placed by
             // hand must not turn back into Auto on the way over.
             PinnedGateOffsetMs is not null,
+            // The responses the placements were resolved FROM travel too, so the
+            // wizard can resolve them again — with the same arithmetic, over the same
+            // set — when its own gate dialog changes a window length. Without them a
+            // shortened window there would keep placements this panel would have
+            // refused, and the two views would read the junction differently.
+            PlacementChannel.From(drawn[index]),
+            sampleRate,
             // This channel's plot colour travels with it: the wizard draws the same
             // driver, and reading it as a different colour there is how a tuner loses
             // track of which curve is which between two views of one system.
@@ -2192,9 +2187,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 .Select(entry => new EqWizardPhaseNeighbour(
                     entry.item.Channel.Name,
                     entry.item.Color,
-                    entry.item.ImpulseResponse,
-                    offsets[entry.position],
-                    autoOffsets[entry.position]))
+                    PlacementChannel.From(entry.item),
+                    offsets[entry.position]))
                 .ToList());
     }
 
@@ -4566,7 +4560,7 @@ public partial class VirtualCrossoverPanel : UserControl
         double sharedOffsetMs,
         int sampleRate) =>
         PhaseGatePlacement.ResolvePerCurveOffsets(
-            gatedChannels,
+            PlacementChannel.From(gatedChannels),
             sharedOffsetMs,
             sampleRate,
             PinnedGateOffsetMs,
@@ -4578,7 +4572,7 @@ public partial class VirtualCrossoverPanel : UserControl
         IReadOnlyList<ProcessedChannel> processed,
         int sampleRate) =>
         PhaseGatePlacement.ResolveSharedOffsetMs(
-            processed, sampleRate, ActiveGate.OffsetMs);
+            PlacementChannel.From(processed), sampleRate, ActiveGate.OffsetMs);
 
     /// <summary>Which way the window fails a channel.</summary>
     internal enum GateCutKind
@@ -4919,7 +4913,7 @@ public partial class VirtualCrossoverPanel : UserControl
         double gateOffsetMs,
         int sampleRate) =>
         PhaseGatePlacement.ResolveCommonDetrendMs(
-            processed,
+            PlacementChannel.From(processed),
             sampleRate,
             CreateVirtualPhaseSettings(
                 gateOffsetMs,
@@ -4962,7 +4956,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
         int sampleRate = processed[0].SampleRate;
         int reference = ProcessedChannels.SharedStartAnchorIndex(processed);
-        double fitOffsetMs = PhaseGatePlacement.EarliestStartMs(processed, sampleRate);
+        double fitOffsetMs = PhaseGatePlacement.EarliestStartMs(
+            PlacementChannel.From(processed), sampleRate);
 
         var traces = processed
             .Select(item => new IrPreviewTrace(

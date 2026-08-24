@@ -8,28 +8,25 @@ namespace Resonalyze;
 /// One channel the EQ Wizard draws phase for but does not edit: a neighbouring
 /// driver, frozen when the Virtual DSP handoff was taken.
 /// </summary>
-/// <param name="ImpulseResponse">
-/// Its PROCESSED response — chain and its own bank already applied. The processed
-/// response is frozen rather than the drawn curve on purpose: the wizard's own gate
-/// can be changed, and a curve gated at the panel's window could not be re-read at
-/// the new one, so the two sides would stop being comparable exactly when the user
-/// went looking.
+/// <param name="Channel">
+/// Its PROCESSED response — chain and its own bank already applied — with what
+/// placing a window needs beside it. The response is frozen rather than the drawn
+/// curve on purpose: the wizard's own gate can be changed, and a curve gated at the
+/// panel's window could not be re-read at the new one, so the two sides would stop
+/// being comparable exactly when the user went looking.
 /// </param>
 /// <param name="GateOffsetMs">
 /// Where this channel's window opens, resolved over the whole set by
 /// <see cref="PhaseGatePlacement"/> — not re-derived per channel here.
 /// </param>
-/// <param name="AutoGateOffsetMs">
-/// Where it would open with the gate UNPINNED: this driver's own arrival. It rides
-/// along because a pinned gate makes every window the same absolute time, and there
-/// would otherwise be nothing to return to when the user unpins it here.
-/// </param>
 internal sealed record EqWizardPhaseNeighbour(
     string Name,
     OxyColor Color,
-    Complex[] ImpulseResponse,
-    double GateOffsetMs,
-    double AutoGateOffsetMs);
+    PlacementChannel Channel,
+    double GateOffsetMs)
+{
+    public Complex[] ImpulseResponse => Channel.ImpulseResponse;
+}
 
 /// <summary>
 /// What a Virtual DSP handoff hands the wizard's phase view: the neighbouring drivers
@@ -69,19 +66,27 @@ internal sealed record EqWizardPhaseNeighbour(
 /// it over, so one driver reads the same in both views; a source with no panel behind
 /// it falls back to the wizard's own.
 /// </param>
-/// <param name="AutoGateOffsetMs">
-/// The edited channel's own arrival, for the same reason its neighbours carry theirs:
-/// unpinning the gate here has to put every window back on its driver rather than
-/// leave them all on the absolute time the pin froze them at.
+/// <param name="Channel">
+/// The edited channel's own processed response and what placing its window needs, for
+/// the same reason its neighbours carry theirs: an editor that changes a window length
+/// has to resolve the placements AGAIN, over the same set and by the same rule the
+/// panel used, or unpinning would leave every window frozen where the pin left it and
+/// a shortened gate would keep placements the panel would have refused.
 /// </param>
 internal sealed record EqWizardPhaseContext(
     PhaseAnalysisSettings Gate,
     double GateOffsetMs,
-    double AutoGateOffsetMs,
     double DetrendMs,
     bool PinnedOffset,
+    PlacementChannel Channel,
+    int SampleRate,
     OxyColor ChannelColor,
-    IReadOnlyList<EqWizardPhaseNeighbour> Neighbours);
+    IReadOnlyList<EqWizardPhaseNeighbour> Neighbours)
+{
+    /// <summary>This channel and its neighbours, in the order the placements are in.</summary>
+    public IReadOnlyList<PlacementChannel> PlacementSet =>
+        Neighbours.Select(neighbour => neighbour.Channel).Prepend(Channel).ToList();
+}
 
 /// <summary>
 /// Everything one phase render needs, captured before it leaves the UI thread.

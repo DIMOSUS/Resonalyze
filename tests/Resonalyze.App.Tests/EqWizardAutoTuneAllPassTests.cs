@@ -74,6 +74,20 @@ public sealed class EqWizardAutoTuneAllPassTests
     }
 
     [Fact]
+    public void AutoTuneOptions_TakeTheKeptBandsOffTheCHOSENLimit_NotOffTheSlotCount()
+    {
+        // Max Filters is a budget for the BANK. A user who set it to eight because
+        // their processor has eight slots must not get eleven filters back because
+        // three of them were kept — which is what subtracting from the 32-slot
+        // ceiling instead of from their own number would do.
+        using var panel = new EqWizardPanel();
+        SetBandLimit(panel, 8);
+
+        Assert.Equal(8, MaxBandsFor(panel, reservedBands: 0));
+        Assert.Equal(5, MaxBandsFor(panel, reservedBands: 3));
+    }
+
+    [Fact]
     public void AutoTuneOptions_WithNoRoomLeft_StillAskForAValidFit()
     {
         // A bank that is all all-pass leaves the fit nothing, and MaxBands is a
@@ -83,6 +97,15 @@ public sealed class EqWizardAutoTuneAllPassTests
 
         Assert.Equal(
             1, MaxBandsFor(panel, reservedBands: EqualizationCurve.MaxBandCount));
+    }
+
+    private static void SetBandLimit(EqWizardPanel panel, int limit)
+    {
+        dynamic combo = typeof(EqWizardPanel)
+            .GetField("comboBoxBandsLimit", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(panel)!;
+        combo.SelectedItem = limit;
+        Assert.Equal(limit, (int)combo.SelectedItem);
     }
 
     private static int MaxBandsFor(EqWizardPanel panel, int reservedBands)

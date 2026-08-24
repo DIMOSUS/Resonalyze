@@ -73,6 +73,26 @@ public sealed class EqProfileAllPassFormatsTests
         }
     }
 
+    [Theory]
+    [InlineData(typeof(GenericCsvFormat))]
+    [InlineData(typeof(AudiotecFischerFormat))]
+    public void AGainColumn_ReadsZeroForAnAllPassWhateverTheBandCarries(Type formatType)
+    {
+        // A band can arrive holding a gain it does not use: the wizard's slot keeps
+        // the figure a bell had when it was switched to an all-pass, so switching
+        // back restores it. Writing that into a file states a gain the filter does
+        // not have, to a reader with no reason to doubt it.
+        var format = (IEqProfileFormat)Activator.CreateInstance(formatType)!;
+        var curve = new EqualizationCurve(
+            [new PeqBand(120, 1.5, 6.0, PeqBandType.AllPassSecondOrder)]);
+
+        Assert.True(format.TryImport(format.Export(curve), out EqualizationCurve read));
+
+        PeqBand band = Assert.Single(read.Bands);
+        Assert.Equal(PeqBandType.AllPassSecondOrder, band.Type);
+        Assert.Equal(0, band.GainDb);
+    }
+
     [Fact]
     public void CamillaDsp_WritesTheAllPassParametersItsReaderExpects()
     {

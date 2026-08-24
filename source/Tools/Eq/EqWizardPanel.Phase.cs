@@ -127,8 +127,10 @@ public partial class EqWizardPanel
                 SmoothingInverseOctaves: 0.0),
             startMs,
             startMs,
-            startMs,
             PinnedOffset: false,
+            new PlacementChannel(
+                phaseSource.Response, measurement.PeakIndex, default),
+            measurement.SampleRate,
             EqWizardPhaseRender.EditedChannelColor,
             []);
         UpdatePhaseGateAvailability();
@@ -334,25 +336,38 @@ public partial class EqWizardPanel
             FdwCycles = fdwCycles,
             DetrendMode = detrendMode
         };
-        // Unpinning puts every window back on its own driver's arrival — the figure
-        // each response carries for exactly this. Reusing the offsets in force would
-        // leave them all on the absolute time the pin froze them at while the dialog
-        // said Auto.
-        double resolvedOffsetMs =
-            phaseGatePinned ? offsetMs : opened.AutoGateOffsetMs;
+        // Resolved AGAIN, over the frozen set, with the same arithmetic the panel
+        // runs. Not reused from what arrived: the per-curve placement is only allowed
+        // while every window still opens before its own channel's response, and that
+        // verdict depends on the window LENGTHS the dialog just changed. Carrying the
+        // old answer would let the wizard keep placements the panel would refuse — or
+        // stay on a shared window the panel would have released — and the two views
+        // would read the junction differently.
+        IReadOnlyList<PlacementChannel> set = opened.PlacementSet;
+        List<double> offsets = PhaseGatePlacement.ResolvePerCurveOffsets(
+            set,
+            phaseGatePinned
+                ? offsetMs
+                : PhaseGatePlacement.ResolveSharedOffsetMs(
+                    set, opened.SampleRate, null),
+            opened.SampleRate,
+            phaseGatePinned ? offsetMs : null,
+            leftMs,
+            plateauMs,
+            rightMs);
+
         phaseContext = new EqWizardPhaseContext(
             gate,
-            resolvedOffsetMs,
-            opened.AutoGateOffsetMs,
-            ResolveDetrendMs(opened, gate, resolvedOffsetMs, detrendMode, detrendMs),
+            offsets[0],
+            ResolveDetrendMs(opened, gate, offsets[0], detrendMode, detrendMs),
             phaseGatePinned,
+            opened.Channel,
+            opened.SampleRate,
             opened.ChannelColor,
             opened.Neighbours
-                .Select(neighbour => neighbour with
+                .Select((neighbour, index) => neighbour with
                 {
-                    GateOffsetMs = phaseGatePinned
-                        ? offsetMs
-                        : neighbour.AutoGateOffsetMs
+                    GateOffsetMs = offsets[index + 1]
                 })
                 .ToList());
         InvalidatePhaseCurves();

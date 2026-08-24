@@ -80,7 +80,7 @@ public sealed class VirtualCrossoverPhaseGatePlacementTests
         // Auto tracks the sources: the window opens on whichever channel arrives
         // first, so adding a delay or swapping a measurement moves it. A pinned
         // offset is an absolute time and is used exactly as given.
-        IReadOnlyList<ProcessedChannel> channels = [Arriving(240), Arriving(480)];
+        IReadOnlyList<PlacementChannel> channels = [Arriving(240), Arriving(480)];
 
         Assert.Equal(
             5.0,
@@ -96,7 +96,7 @@ public sealed class VirtualCrossoverPhaseGatePlacementTests
     {
         // The pin is the user saying "read every channel through THIS window";
         // per-curve placement would quietly undo that.
-        IReadOnlyList<ProcessedChannel> channels = [Arriving(240), Arriving(480)];
+        IReadOnlyList<PlacementChannel> channels = [Arriving(240), Arriving(480)];
 
         List<double> offsets = PhaseGatePlacement.ResolvePerCurveOffsets(
             channels, sharedOffsetMs: 4.0, SampleRate, pinnedOffsetMs: 4.0,
@@ -111,7 +111,7 @@ public sealed class VirtualCrossoverPhaseGatePlacementTests
         // Two channels 5 ms apart with a window far too short to hold both from
         // one placement: each takes its own front, which is what keeps the later
         // one inside its window at all.
-        IReadOnlyList<ProcessedChannel> channels = [Arriving(240), Arriving(480)];
+        IReadOnlyList<PlacementChannel> channels = [Arriving(240), Arriving(480)];
 
         List<double> offsets = PhaseGatePlacement.ResolvePerCurveOffsets(
             channels, sharedOffsetMs: 5.0, SampleRate, pinnedOffsetMs: null,
@@ -135,7 +135,7 @@ public sealed class VirtualCrossoverPhaseGatePlacementTests
         // unstated one references the set's own earliest front — never each
         // channel's own, which would flatten every curve and erase the offsets a
         // crossover region is read for.
-        IReadOnlyList<ProcessedChannel> channels = [Arriving(240), Arriving(480)];
+        IReadOnlyList<PlacementChannel> channels = [Arriving(240), Arriving(480)];
         PhaseAnalysisSettings template = Template(gateOffsetMs: 5.0);
 
         Assert.Equal(0.0, PhaseGatePlacement.ResolveCommonDetrendMs(
@@ -153,7 +153,7 @@ public sealed class VirtualCrossoverPhaseGatePlacementTests
 
     // A channel whose response starts at the given sample: a short decaying burst,
     // so the start estimate has a real front to find rather than one lone sample.
-    private static ProcessedChannel Arriving(int startSample)
+    private static PlacementChannel Arriving(int startSample)
     {
         var ir = new Complex[8_192];
         for (int i = 0; i < 64; i++)
@@ -165,13 +165,8 @@ public sealed class VirtualCrossoverPhaseGatePlacementTests
         return Channel(ir, startSample);
     }
 
-    private static ProcessedChannel Channel(Complex[] ir, int peakIndex) =>
-        new(
-            new VirtualCrossoverChannel("x") { SampleRate = SampleRate },
-            ir,
-            peakIndex,
-            SampleRate,
-            OxyColors.White);
+    private static PlacementChannel Channel(Complex[] ir, int peakIndex) =>
+        new(ir, peakIndex, default);
 
     private static PhaseAnalysisSettings Template(double gateOffsetMs) => new(
         PhaseWindowMode.Fixed,

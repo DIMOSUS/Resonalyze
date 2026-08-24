@@ -217,9 +217,14 @@ public sealed class VirtualCrossoverChannelSettings
     // v7→v8 step in Migrate, which appends it to PeqBands and clears these).
     // Nullable purely to tell "absent" from a real value; nothing but Migrate
     // reads them.
+    // A STRING rather than the enum, so a hand-edited or truncated value cannot take
+    // the file down: the enum converter throws on a name it does not know, and that
+    // throw happens during deserialization — before Migrate, which is where this
+    // field's tolerance is supposed to live. Parsed there instead, where an
+    // unreadable type simply means "no all-pass".
     [JsonPropertyName("allPassType")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public AllPassType? LegacyAllPassType { get; set; }
+    public string? LegacyAllPassType { get; set; }
     [JsonPropertyName("allPassFrequencyHz")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? LegacyAllPassFrequencyHz { get; set; }
@@ -1015,11 +1020,15 @@ public sealed class VirtualCrossoverProjectFile
                 foreach (VirtualCrossoverChannelSettings side in
                     new[] { pair.Left, pair.Right })
                 {
-                    bool firstOrder = side.LegacyAllPassType == AllPassType.FirstOrder;
+                    AllPassType? stage =
+                        Enum.TryParse(side.LegacyAllPassType, out AllPassType parsed) &&
+                        Enum.IsDefined(parsed)
+                            ? parsed
+                            : null;
+                    bool firstOrder = stage == AllPassType.FirstOrder;
                     double frequencyHz = side.LegacyAllPassFrequencyHz ?? 0;
                     double q = firstOrder ? 1.0 : side.LegacyAllPassQ ?? 1.0;
-                    if (side.LegacyAllPassType is AllPassType.FirstOrder
-                            or AllPassType.SecondOrder &&
+                    if (stage is AllPassType.FirstOrder or AllPassType.SecondOrder &&
                         double.IsFinite(frequencyHz) && frequencyHz > 0 &&
                         double.IsFinite(q) && q > 0)
                     {

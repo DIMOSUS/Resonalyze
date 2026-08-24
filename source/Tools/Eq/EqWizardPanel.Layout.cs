@@ -37,10 +37,22 @@ public partial class EqWizardPanel
     // Container autoscaling (a font change, a DPI move) scales the controls; the
     // baseline is in the same units and has to follow, or the next layout pass
     // would add 96-DPI deltas to scaled controls.
+    //
+    // But only when the pass in question actually moves the children, and one of
+    // the two this panel gets does not. Its OWN auto-scale rearranges everything
+    // inside it; the shell's cascade afterwards resizes the panel ALONE, because
+    // ContainerControl.ScaleChildren is false for a container that declares an
+    // AutoScaleMode. Scaled on both, the baseline ends a whole factor ahead of the
+    // arrangement it is supposed to measure: at 125% it read 1.5625, so the stretch
+    // sized the plot for a panel a quarter wider than the one it sits in and the
+    // panel came up with both scrollbars and the plot cut off at the right.
+    // The panel's own pass is the one where its declared dimensions still differ
+    // from the current ones — the auto-scale is what brings them into step.
     protected override void ScaleControl(SizeF factor, BoundsSpecified specified)
     {
+        bool rearrangesChildren = AutoScaleDimensions != CurrentAutoScaleDimensions;
         base.ScaleControl(factor, specified);
-        if (baselineClientSize.IsEmpty)
+        if (baselineClientSize.IsEmpty || !rearrangesChildren)
         {
             return;
         }

@@ -132,6 +132,50 @@ public sealed class EqWizardPanelLayoutTests
         Assert.Equal(scaledBankTop, bank.Top);
     }
 
+
+    [Fact]
+    public void TheShellsCascadeAfterItsOwnAutoScale_DoesNotScaleTheArrangementTwice()
+    {
+        using var panel = new EqWizardPanel();
+
+        // A real auto-scale pass, at whatever DPI the machine runs: declaring a
+        // lower source DPI makes the container scale itself by 96/76.8 = 1.25, the
+        // arithmetic a 125% display puts it through. The arrangement inside moves
+        // with it, and so must the baseline the stretch measures against.
+        panel.AutoScaleDimensions = new SizeF(76.8F, 76.8F);
+        Size scaledArrangement = Plot(panel).Size;
+        Size scaledPanel = panel.Size;
+
+        // Then the shell's own scale reaches the panel, and that pass resizes the
+        // PANEL ONLY — measured at a real 125%, a form scaling its children leaves
+        // the arrangement inside an auto-scaling container where it was. So the
+        // baseline must sit this one out: counted twice it ran a whole factor ahead
+        // and the stretch sized the plot for a panel a quarter wider than the one
+        // it is in, which is the field report — both scrollbars at 125%, the plot
+        // cut off at the right.
+        ScaleBoundsOnly(panel, 1.25F);
+        panel.Size = scaledPanel;
+
+        Assert.Equal(scaledArrangement, Plot(panel).Size);
+        Assert.True(
+            panel.DisplayRectangle.Width <= panel.ClientSize.Width,
+            $"content {panel.DisplayRectangle.Width} wide in a {panel.ClientSize.Width} client");
+        Assert.True(
+            panel.DisplayRectangle.Height <= panel.ClientSize.Height,
+            $"content {panel.DisplayRectangle.Height} tall in a {panel.ClientSize.Height} client");
+    }
+
+    // The pass a parent makes over this panel: Control.ScaleControl, the protected
+    // entry point WinForms itself calls, and the one the panel overrides.
+    private static void ScaleBoundsOnly(Control panel, float factor) =>
+        typeof(Control)
+            .GetMethod(
+                "ScaleControl",
+                BindingFlags.NonPublic | BindingFlags.Instance,
+                [typeof(SizeF), typeof(BoundsSpecified)])!
+            .Invoke(panel, [new SizeF(factor, factor), BoundsSpecified.All]);
+
+
     private static PlotView Plot(EqWizardPanel panel) => Field<PlotView>(panel, "plotWizard");
 
     // The panel's controls are private designer fields; the layout they end up

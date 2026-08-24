@@ -4403,124 +4403,29 @@ public partial class VirtualCrossoverPanel : UserControl
         ? preview.AutoOffset ? null : preview.OffsetMs
         : ActiveGate.OffsetMs;
 
-    /// <summary>
-    /// The ceiling on <see cref="DataHelper.GateLeadingEdgeLossDb"/>: above it
-    /// a window is cutting into its channel's leading edge, and the curve stops
-    /// describing that channel — it starts describing what came after it.
-    /// Two placements are put to this figure: whether a phase curve may take
-    /// its own window (<see cref="AllowsPerCurvePhaseGate"/>) and whether the
-    /// window in use holds the channels at all
-    /// (<see cref="JudgeGatePlacement"/>).
-    /// <para>
-    /// Measured on the v5 field session (four processed channels, gate
-    /// 5/50/20 ms): windows placed on each channel's own arrival START read
-    /// -28.4 to -72.2 dB, while the arrival-PEAK placement that drew a
-    /// summing pair as antiphase read -3.5 to -10.8 dB — it discards a fifth
-    /// to nearly half of a steeply low-passed channel's own energy. -20 dB
-    /// sits in the middle of that 17.6 dB gap.
-    /// </para>
-    /// <para>
-    /// The Passat session put the other end on the scale: a 15.06 ms gate
-    /// inherited from another car's project, against processed arrivals at
-    /// 4.10 to 5.97 ms, read +1.0 to +15.2 dB — at the top of that range the
-    /// window discards thirty times the energy it keeps — while the same
-    /// channels gated on their own arrivals read -42.9 to -55.0 dB.
-    /// </para>
-    /// </summary>
-    private const double MaxGateLeadingEdgeLossDb = -20.0;
-
-    /// <summary>
-    /// Whether a per-curve window may be used for a channel, from what it
-    /// discards ahead of its plateau against what the shared window would.
-    /// <para>
-    /// The ceiling alone is not the question, because a gate can be too short
-    /// to hold a channel's leading edge WHEREVER it is placed: the project
-    /// default (0.5/4/1.5 ms) cannot contain one period of a 55 Hz subwoofer,
-    /// and on the field session it read -19.4 dB at the channel's own arrival
-    /// and -19.4 dB at the shared one — identical. Refusing there buys no
-    /// accuracy and costs the per-curve placement that keeps a late channel
-    /// inside FDW's short windows, so the shared window has to be the better
-    /// placement for this channel before it is worth taking. The arrival-PEAK
-    /// placements this guard exists to catch are 25.7 to 61.4 dB worse than
-    /// the shared window, so both conditions hold there with room to spare.
-    /// </para>
-    /// </summary>
-    internal static bool AllowsPerCurvePhaseGate(
-        double perCurveLossDb,
-        double sharedLossDb) =>
-        perCurveLossDb <= MaxGateLeadingEdgeLossDb ||
-        perCurveLossDb <= sharedLossDb;
-
-    /// <summary>
-    /// Where each phase curve's window sits, aligned with
-    /// <paramref name="gatedChannels"/> — the channels that are actually
-    /// gated, so a hidden curve can never move the placement of the drawn
-    /// ones.
-    /// <para>
-    /// A pinned gate is one absolute window for every curve. Auto gives each
-    /// channel its OWN estimated arrival, which is what lets FDW's short
-    /// high-frequency windows sit on that channel's own first cycles instead
-    /// of on whichever channel happened to arrive first — the whole point of
-    /// reading phase through FDW. Per-curve placement is only comparable while
-    /// every window opens before its channel's response does, so each one is
-    /// put to <see cref="AllowsPerCurvePhaseGate"/> and the whole set drops
-    /// back to the shared window if any fails: mixing the two placements would
-    /// be worse than either.
-    /// </para>
-    /// </summary>
+    // The placement arithmetic itself lives in PhaseGatePlacement, which the EQ
+    // Wizard's phase view resolves with too: both must read the same windows and
+    // the same τ from the same channels, or a tune made in one would not hold in
+    // the other. What stays here is the panel's own state — which of the dialog's
+    // live values and the project's committed ones is in force.
     private List<double> ResolvePhaseGateOffsets(
         IReadOnlyList<ProcessedChannel> gatedChannels,
         double sharedOffsetMs,
-        int sampleRate)
-    {
-        List<double> Shared() => gatedChannels.Select(_ => sharedOffsetMs).ToList();
-        if (PinnedGateOffsetMs is not null)
-        {
-            return Shared();
-        }
+        int sampleRate) =>
+        PhaseGatePlacement.ResolvePerCurveOffsets(
+            gatedChannels,
+            sharedOffsetMs,
+            sampleRate,
+            PinnedGateOffsetMs,
+            gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
+            gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
+            gatePreview?.RightMs ?? project.PhaseGateRightMs);
 
-        double leftMs = gatePreview?.LeftMs ?? project.PhaseGateLeftMs;
-        double plateauMs = gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs;
-        double rightMs = gatePreview?.RightMs ?? project.PhaseGateRightMs;
-        var perCurve = new List<double>(gatedChannels.Count);
-        foreach (ProcessedChannel item in gatedChannels)
-        {
-            var view = new ImpulseMeasurementView(item.ImpulseResponse, 0, sampleRate);
-            double startMs = TransferIrStartCache.ResolveStartMs(
-                item.ImpulseResponse, sampleRate, item.PeakIndex,
-                item.ValidRange);
-            if (!AllowsPerCurvePhaseGate(
-                    DataHelper.GateLeadingEdgeLossDb(
-                        view, startMs, leftMs, plateauMs, rightMs),
-                    DataHelper.GateLeadingEdgeLossDb(
-                        view, sharedOffsetMs, leftMs, plateauMs, rightMs)))
-            {
-                return Shared();
-            }
-
-            perCurve.Add(startMs);
-        }
-
-        return perCurve;
-    }
-
-    // A stored gate offset is used as-is; an unconfigured side (Auto) follows
-    // the earliest ESTIMATED IR START of the processed channels — the
-    // band-limited first-arrival front, robust to head garbage that poisons a
-    // bare peak read — so the gate tracks source and delay changes until the
-    // user pins it in the gate dialog.
     private double ResolveGateOffsetMs(
         IReadOnlyList<ProcessedChannel> processed,
         int sampleRate) =>
-        ActiveGate.OffsetMs ?? EarliestStartMs(processed, sampleRate);
-
-    // The Auto gate anchor: the earliest estimated IR start across the
-    // processed channels (memoized per IR in TransferIrStartCache).
-    private static double EarliestStartMs(
-        IReadOnlyList<ProcessedChannel> processed,
-        int sampleRate) =>
-        processed.Min(item => TransferIrStartCache.ResolveStartMs(
-            item.ImpulseResponse, sampleRate, item.PeakIndex, item.ValidRange));
+        PhaseGatePlacement.ResolveSharedOffsetMs(
+            processed, sampleRate, ActiveGate.OffsetMs);
 
     /// <summary>Which way the window fails a channel.</summary>
     internal enum GateCutKind
@@ -4677,7 +4582,7 @@ public partial class VirtualCrossoverPanel : UserControl
     /// of a 55 Hz subwoofer wherever it is placed, and the field session read
     /// -19.4 dB at the channel's own arrival and -19.4 dB at the shared one —
     /// because a gate the user cannot fix by moving is not something to stop
-    /// them with. <see cref="AllowsPerCurvePhaseGate"/> makes the same
+    /// them with. <see cref="PhaseGatePlacement.AllowsPerCurveGate"/> makes the same
     /// comparison with no margin at all, which is right THERE: its penalty for
     /// reading a hair's difference as significant is one curve falling back to
     /// the shared window. Here the penalty is an amber note and two refused
@@ -4698,7 +4603,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         return startMs < gateOffsetMs &&
-            placementLossDb > MaxGateLeadingEdgeLossDb &&
+            placementLossDb > PhaseGatePlacement.MaxLeadingEdgeLossDb &&
             placementLossDb > ownArrivalLossDb + GateMisplacementMarginDb
                 ? GateCutKind.OpensAfterArrival
                 : null;
@@ -4788,7 +4693,8 @@ public partial class VirtualCrossoverPanel : UserControl
             text.AppendLine()
                 .Append("(Leading-edge loss is what the window throws away ahead of its ")
                 .Append("plateau against what it keeps, so ")
-                .Append($"{MaxGateLeadingEdgeLossDb:0} dB is already the ceiling.)")
+                .Append(
+                    $"{PhaseGatePlacement.MaxLeadingEdgeLossDb:0} dB is already the ceiling.)")
                 .AppendLine();
         }
 
@@ -4858,32 +4764,16 @@ public partial class VirtualCrossoverPanel : UserControl
     private double ResolveCommonDetrendMs(
         List<ProcessedChannel> processed,
         double gateOffsetMs,
-        int sampleRate)
-    {
-        PhaseDetrendMode detrendMode = gatePreview?.DetrendMode ?? project.PhaseDetrendMode;
-        if (detrendMode == PhaseDetrendMode.Off)
-        {
-            return 0.0;
-        }
-        if (detrendMode == PhaseDetrendMode.Manual)
-        {
-            return gatePreview?.DetrendMs ?? ResolveDetrendMs(
-                ProcessedChannels.SharedStartAnchorIndex(processed), sampleRate);
-        }
-
-        // Estimate once from the existing common anchor (the earliest
-        // processed FRONT, the same channel the shared window opens on), then
-        // apply that exact value to every driver and the sum.
-        ProcessedChannel anchor = processed.MinBy(item => ProcessedChannels.StartAnchorIndex(
-            item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate,
-            item.ValidRange))!;
-        var view = new ImpulseMeasurementView(anchor.ImpulseResponse, 0, sampleRate);
-        PhaseAnalysisSettings settings = CreateVirtualPhaseSettings(
-            gateOffsetMs,
-            PhaseDetrendMode.Auto,
-            manualDetrendMilliseconds: 0.0);
-        return DataHelper.ResolveCommonPhaseDetrendMilliseconds(view, settings);
-    }
+        int sampleRate) =>
+        PhaseGatePlacement.ResolveCommonDetrendMs(
+            processed,
+            sampleRate,
+            CreateVirtualPhaseSettings(
+                gateOffsetMs,
+                PhaseDetrendMode.Auto,
+                manualDetrendMilliseconds: 0.0),
+            gatePreview?.DetrendMode ?? project.PhaseDetrendMode,
+            gatePreview?.DetrendMs ?? ActiveGate.DetrendMs);
 
     private PhaseAnalysisSettings CreateVirtualPhaseSettings(
         double gateOffsetMs,
@@ -4958,7 +4848,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         int sampleRate = processed[0].Channel.SampleRate;
         int reference = ProcessedChannels.SharedStartAnchorIndex(processed);
-        double fitOffsetMs = EarliestStartMs(processed, sampleRate);
+        double fitOffsetMs = PhaseGatePlacement.EarliestStartMs(processed, sampleRate);
 
         var traces = processed
             .Select(item => new IrPreviewTrace(

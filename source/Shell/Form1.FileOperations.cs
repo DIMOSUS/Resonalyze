@@ -112,17 +112,11 @@ public partial class Form1
             using var dialog = new OpenFileDialog
             {
                 CheckFileExists = true,
-                Filter =
-                    "Measurements (*.json;*.wav;*.txt)|*.json;*.wav;*.txt|" +
-                    "Resonalyze impulse response (*.json)|*.json|" +
-                    "Resonalyze moving-mic capture (*.json)|*.json|" +
-                    "Recorded sweep (*.wav)|*.wav|" +
-                    "REW impulse response export (*.txt)|*.txt|" +
-                    "All files (*.*)|*.*",
+                Filter = MeasurementFileFilter,
                 InitialDirectory = GetImpulseResponseDialogDirectory(),
                 Multiselect = false,
                 RestoreDirectory = true,
-                Title = "Load impulse response, recorded sweep, REW export or capture"
+                Title = MeasurementFileDialogTitle
             };
             if (dialog.ShowDialog(this) != DialogResult.OK)
             {
@@ -152,46 +146,69 @@ public partial class Form1
                 return;
             }
 
-            string extension = Path.GetExtension(dialog.FileName);
-            bool importRecording = string.Equals(extension, ".wav", StringComparison.OrdinalIgnoreCase);
-            bool importRewExport = string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase);
-            commandController.SetSaveAvailable(false);
-            commandController.SetLoadAvailable(false);
-            try
+            await LoadImpulseResponseLikeAsync(dialog.FileName);
+        }
+    }
+
+    /// <summary>
+    /// Loads whatever is NOT a capture: a Resonalyze impulse response, a recorded
+    /// sweep or a REW export, dispatched by extension.
+    /// </summary>
+    /// <remarks>
+    /// Shared by both Load buttons. The file decides which measurement it is, so
+    /// both have to be able to open both kinds; without this the moving-mic button
+    /// refused an impulse response and the main one refused a capture, each telling
+    /// the user the file was the wrong format when it was only the wrong button.
+    /// </remarks>
+    private async Task LoadImpulseResponseLikeAsync(string path)
+    {
+        // An impulse response has nowhere to be shown in a live capture mode, so go
+        // where it belongs first — the mirror of a capture taking the application to
+        // Live Spectrum.
+        if (CurrentMode == Mode.LiveSpectrum)
+        {
+            await SelectModeAsync(ModeTab.Frequency);
+        }
+
+        string extension = Path.GetExtension(path);
+        bool importRecording = string.Equals(extension, ".wav", StringComparison.OrdinalIgnoreCase);
+        bool importRewExport = string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase);
+        commandController.SetSaveAvailable(false);
+        commandController.SetLoadAvailable(false);
+        try
+        {
+            if (importRecording)
             {
-                if (importRecording)
-                {
-                    await ImportRecordedSweepAsync(dialog.FileName);
-                }
-                else if (importRewExport)
-                {
-                    await ImportRewImpulseResponseAsync(dialog.FileName);
-                }
-                else
-                {
-                    await LoadImpulseResponseFileAsync(dialog.FileName);
-                }
+                await ImportRecordedSweepAsync(path);
             }
-            catch (Exception exception)
+            else if (importRewExport)
             {
-                string failure = importRecording
-                    ? "Failed to import the recorded sweep."
-                    : importRewExport
-                        ? "Failed to import the REW impulse response."
-                        : "Failed to load the impulse response.";
-                MessageBox.Show(
-                    this,
-                    $"{failure}\r\n\r\n{exception.Message}",
-                    importRecording || importRewExport ? "Import failed" : "Load failed",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                await ImportRewImpulseResponseAsync(path);
             }
-            finally
+            else
             {
-                commandController.SetSaveAvailable(
-                    expSweepMeasurement.HasImpulseResponse);
-                FinalizeMeasurementCommandState();
+                await LoadImpulseResponseFileAsync(path);
             }
+        }
+        catch (Exception exception)
+        {
+            string failure = importRecording
+                ? "Failed to import the recorded sweep."
+                : importRewExport
+                    ? "Failed to import the REW impulse response."
+                    : "Failed to load the impulse response.";
+            MessageBox.Show(
+                this,
+                $"{failure}\r\n\r\n{exception.Message}",
+                importRecording || importRewExport ? "Import failed" : "Load failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            commandController.SetSaveAvailable(
+                expSweepMeasurement.HasImpulseResponse);
+            FinalizeMeasurementCommandState();
         }
     }
 

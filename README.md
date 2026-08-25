@@ -783,9 +783,10 @@ curve, protective high-pass). The bins are what make a stored capture
 re-renderable rather than merely redrawable. **Load** puts a stored capture back
 on the plot, on the axis its own recipe records. In MMM these two buttons act on
 the capture, not on the impulse response the rest of the application carries —
-and a capture opened through **Load** from any other mode takes the application to
-the mode it belongs to instead of being refused for not being an impulse
-response, because the file records which one produced it.
+and either Load button opens either kind of measurement, because which one a file
+holds is the file's business rather than the button's: a capture opened from any
+other mode takes the application to the mode it belongs to, and an impulse
+response opened from MMM takes it to Frequency Response.
 
 An **SPL anchor is not required**. Without one the title says `MMM, relative (no
 SPL anchor)` and the levels sit on an arbitrary but internally consistent

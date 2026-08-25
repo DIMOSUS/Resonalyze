@@ -15,6 +15,18 @@ public partial class Form1
     private const string LiveCaptureFilter =
         "Resonalyze moving-mic capture (*.json)|*.json|All files (*.*)|*.*";
 
+    // Shared by both Load buttons, so either can open either kind of measurement.
+    internal const string MeasurementFileFilter =
+        "Measurements (*.json;*.wav;*.txt)|*.json;*.wav;*.txt|" +
+        "Resonalyze impulse response (*.json)|*.json|" +
+        "Resonalyze moving-mic capture (*.json)|*.json|" +
+        "Recorded sweep (*.wav)|*.wav|" +
+        "REW impulse response export (*.txt)|*.txt|" +
+        "All files (*.*)|*.*";
+
+    internal const string MeasurementFileDialogTitle =
+        "Load impulse response, recorded sweep, REW export or capture";
+
     private bool LiveCaptureOwnsSaveLoad =>
         CurrentMode == Mode.LiveSpectrum &&
         plotModelFactory.EffectiveLiveAnalysisMode.IsSpatialAverageCapture();
@@ -146,14 +158,17 @@ public partial class Form1
             await liveSpectrumController.AbortAsync();
         }
 
+        // The same choice the main Load button offers. Which measurement a file holds
+        // is the file's business, not the button's: refusing an impulse response here
+        // told the user the format was wrong when only the mode was.
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
-            Filter = LiveCaptureFilter,
+            Filter = MeasurementFileFilter,
             InitialDirectory = GetImpulseResponseDialogDirectory(),
             Multiselect = false,
             RestoreDirectory = true,
-            Title = "Load moving-mic capture"
+            Title = MeasurementFileDialogTitle
         };
         if (dialog.ShowDialog(this) != DialogResult.OK)
         {
@@ -162,26 +177,25 @@ public partial class Form1
 
         try
         {
-            // The same routing the shared Load button uses, so a capture opens the
-            // same way whichever button reached it.
-            if (!await TryOpenLiveCaptureAsync(dialog.FileName))
+            if (await TryOpenLiveCaptureAsync(dialog.FileName))
             {
-                MessageBox.Show(
-                    this,
-                    "That file is not a Resonalyze capture.",
-                    "Load capture",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                return;
             }
         }
         catch (Exception exception)
         {
             MessageBox.Show(
                 this,
-                $"The capture could not be loaded.\n\n{exception.Message}",
-                "Load capture",
+                $"The capture could not be loaded.\r\n\r\n{exception.Message}",
+                "Load failed",
                 MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxIcon.Error);
+            return;
         }
+
+        // Not a capture, so it belongs to the impulse-response side: that path moves
+        // the application to Frequency Response, the mirror of a capture bringing it
+        // here.
+        await LoadImpulseResponseLikeAsync(dialog.FileName);
     }
 }

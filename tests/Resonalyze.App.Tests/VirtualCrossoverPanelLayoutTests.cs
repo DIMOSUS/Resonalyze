@@ -176,6 +176,34 @@ public sealed class VirtualCrossoverPanelLayoutTests
     }
 
 
+    /// <summary>
+    /// The panel's padding is part of the arrangement, and the anchored controls
+    /// are placed against it: the channel column and the buttons under it sit at
+    /// the padding's own corner. A padding left at the designer's 96-DPI number
+    /// while everything around it scaled put every one of them 6 px off at 192 DPI
+    /// (#120) — which is what the shell re-assigning `Padding = new Padding(6)`
+    /// after this panel had scaled its own did.
+    /// </summary>
+    [Fact]
+    public void ItsPadding_ScalesWithTheArrangement()
+    {
+        using var panel = new VirtualCrossoverPanel();
+        Padding designedPadding = panel.Padding;
+        Point designedCorner = Field<Control>(panel, "channelListPanel").Location;
+
+        // Factor 2, the arithmetic of a 192 DPI display.
+        panel.AutoScaleDimensions = new SizeF(48F, 48F);
+
+        Assert.Equal(designedPadding.Left * 2, panel.Padding.Left);
+        Assert.Equal(designedPadding.Top * 2, panel.Padding.Top);
+        Assert.Equal(
+            new Point(designedPadding.Left * 2, designedPadding.Top * 2),
+            panel.DisplayRectangle.Location);
+        Assert.Equal(
+            new Point(designedCorner.X * 2, designedCorner.Y * 2),
+            Field<Control>(panel, "channelListPanel").Location);
+    }
+
     [Fact]
     public void TheShellsCascadeAfterItsOwnAutoScale_DoesNotScaleTheArrangementTwice()
     {

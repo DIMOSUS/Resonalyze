@@ -239,6 +239,18 @@ close.
   `TextSecondaryAlt`, `SuccessGreenSoft`): rename them to their roles as they
   are touched rather than in one sweep — `AccentBlueSoft` is the accent MARK
   (links, focus borders, selection markers), which is the one that matters.
+- [ ] **Do not let the shell re-assign a docked panel's `Padding`.** Both tool
+  panels declare `Padding = new Padding(6)` in their OWN designer, where it scales
+  with the rest of the arrangement; `Form1.Designer.cs` used to set the same
+  literal on them a second time, after the panel had already scaled its own to 12
+  at 192 DPI. The raw 6 won, and every anchored control — the channel column, the
+  buttons under it — landed 6 px off, since anchoring places them against the
+  padded rectangle (#120). Those two lines are gone, but the WinForms designer
+  will happily write them back if someone edits `Form1` in it: if a
+  `<panel>.Padding = new Padding(6)` line reappears in `Form1.Designer.cs`, that is
+  this defect returning. `ItsPadding_ScalesWithTheArrangement` in both layout
+  suites pins the panel's own half of it; nothing can pin the shell's.
+
 - [ ] **The app paints plots on FOUR different surfaces, three of them designer
   literals.** `UiPalette.GraphSurface` (50,55,100) covers the main plot and the
   EQ wizard; Virtual DSP's two views sit on (40,44,80)

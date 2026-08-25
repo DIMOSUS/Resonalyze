@@ -359,7 +359,6 @@ namespace Resonalyze
             eqWizardPanel.ForeColor = Color.White;
             eqWizardPanel.Location = new Point(12, 52);
             eqWizardPanel.Name = "eqWizardPanel";
-            eqWizardPanel.Padding = new Padding(6);
             eqWizardPanel.Size = new Size(1246, 768);
             eqWizardPanel.TabIndex = 28;
             eqWizardPanel.Visible = false;
@@ -388,7 +387,6 @@ namespace Resonalyze
             virtualCrossoverPanel.ForeColor = Color.White;
             virtualCrossoverPanel.Location = new Point(12, 52);
             virtualCrossoverPanel.Name = "virtualCrossoverPanel";
-            virtualCrossoverPanel.Padding = new Padding(6);
             virtualCrossoverPanel.Size = new Size(1246, 768);
             virtualCrossoverPanel.TabIndex = 31;
             virtualCrossoverPanel.Visible = false;

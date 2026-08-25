@@ -242,7 +242,9 @@ namespace Resonalyze
         /// undoes.
         /// </remarks>
         public NoiseColor EffectiveNoiseColor =>
-            AnalysisMode == LiveAnalysisMode.Mmm ? NoiseColor.PinkPeriodic : NoiseColor;
+            AnalysisMode.IsSpatialAverageCapture()
+                ? NoiseColor.PinkPeriodic
+                : NoiseColor;
 
         /// <summary>
         /// The averaging preset the selected mode actually uses. MMM pins Infinite: a
@@ -251,7 +253,9 @@ namespace Resonalyze
         /// path over its beginning.
         /// </summary>
         public AveragingSpeed EffectiveAveragingSpeed =>
-            AnalysisMode == LiveAnalysisMode.Mmm ? AveragingSpeed.Infinite : AveragingSpeed;
+            AnalysisMode.IsSpatialAverageCapture()
+                ? AveragingSpeed.Infinite
+                : AveragingSpeed;
     }
 
     /// <summary>

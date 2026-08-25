@@ -178,6 +178,20 @@ public static class ProtectiveHighPassCompensation
         {
             throw new ArgumentOutOfRangeException(nameof(maximumBoostDb));
         }
+        // The same families the impulse-response path accepts, refused the same way.
+        // The promise above is that the two corrections agree bin for bin, and they do
+        // only for a MONOTONIC high-pass: where a rippled passband puts |H| above one,
+        // this path floors its correction at zero while CappedInverse attenuates, so
+        // the two measurements of one driver would part by the ripple depth — the
+        // smooth, plausible discrepancy both methods exist to remove.
+        if (edge.Family is not (
+            CrossoverFilterFamily.Butterworth or
+            CrossoverFilterFamily.LinkwitzRiley))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(edge),
+                "Protective high-pass compensation supports only Butterworth and Linkwitz-Riley filters.");
+        }
 
         IReadOnlyList<BiquadCoefficients> sections =
             CrossoverFilter.BuildSections(edge, highPass: true, sampleRateHz);

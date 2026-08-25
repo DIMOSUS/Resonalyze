@@ -524,8 +524,9 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             checkBoxShowLoss.Checked = project.ShowLossCurve;
             // The captures it needs are attached later, as the sources resolve, so
-            // this is the intent only; RefreshHybridAvailability drops the tick at
-            // the end of that pass if the set turns out to be short of one.
+            // this is the INTENT only, and it stays ticked either way: HybridRequested
+            // needs the coverage as well, so a session whose captures went missing
+            // opens honest and draws the hybrid again the moment they are re-attached.
             checkBoxHybrid.Checked = project.ShowHybridCurves;
             checkBoxShowTarget.Checked = project.ShowTargetCurve;
             numericTargetLevel.Value =
@@ -2245,10 +2246,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 (double)numericTargetLevel.Value,
-                // What the panel would hand over NOW, decided by the very method the
-                // handoff used — so the two can never disagree about whether this is
-                // a hybrid session.
-                HandoffSpatialAverage(token.Channel, token.RightSide).Capture))
+                // What the panel would hand over NOW, by the same DECISION the handoff
+                // recorded — so the two cannot disagree about whether this is a hybrid
+                // session, and no in-flight redraw can turn a valid return into a
+                // refusal.
+                HybridHandoffCapture(token.Channel, token.RightSide)))
         {
             return false;
         }
@@ -5249,35 +5251,49 @@ public partial class VirtualCrossoverPanel : UserControl
     private (long Revision, double OffsetDb)? lastHybrid;
 
     /// <summary>
-    /// The spatial average this panel would hand the EQ Wizard for one side right now,
-    /// with the offset that puts it on the impulse responses' axis. Null capture when
-    /// the hybrid is not what the panel is drawing.
+    /// Which spatial average this panel would hand the EQ Wizard for one side, or
+    /// null when the hybrid is not what it is drawing.
     /// </summary>
     /// <remarks>
-    /// One answer for both directions of the trip — the handoff and the return guard
-    /// that checks the curve did not change underneath it — because two rules here
-    /// would eventually disagree and refuse a return that was perfectly valid.
-    /// <para>
+    /// The DECISION, deliberately separated from the offset below and deliberately
+    /// cheap: it reads two pieces of live state and nothing a redraw can make stale.
+    /// Both directions of the trip ask this — the handoff, and the return guard that
+    /// checks the curve did not change underneath the tune — so they cannot disagree
+    /// about whether a session is a hybrid one. An earlier version answered it through
+    /// the offset resolution below, which fails while a redraw is in flight: a target
+    /// edit made in the wizard invalidates the panel, and a Return clicked before that
+    /// redraw landed was refused as though the user had turned the hybrid off.
+    /// </remarks>
+    private LiveCaptureDocument? HybridHandoffCapture(
+        VirtualCrossoverChannel channel, bool rightSide) =>
+        HybridRequested ? channel.SideState(rightSide).SpatialAverage : null;
+
+    /// <summary>
+    /// That capture together with the offset that puts it on the impulse responses'
+    /// axis, for the handoff itself. Null capture when there is none to hand over, or
+    /// when no offset can be resolved for it.
+    /// </summary>
+    /// <remarks>
     /// The offset is normally the last magnitude render's, but the phase and impulse
     /// views never build one and the toggle stays ticked across a view switch, so it
     /// is resolved here when no current render carries it. Handing the capture over at
     /// whatever height a previous set left behind would put the curve tens of dB from
     /// where the Target Level says it hangs.
+    /// <para>
+    /// Failing to resolve one falls back to the impulse response, and the token
+    /// records that. The return guard, reading the DECISION rather than this, will
+    /// then refuse such a bank if the panel is meanwhile drawing a hybrid — which is
+    /// right: the tune was fitted against the impulse response and the plot is showing
+    /// something else.
     /// </para>
     /// </remarks>
     private (LiveCaptureDocument? Capture, double OffsetDb) HandoffSpatialAverage(
         VirtualCrossoverChannel channel, bool rightSide)
     {
-        if (!HybridRequested)
+        if (HybridHandoffCapture(channel, rightSide) is not { } capture)
         {
             // The panel is drawing impulse responses, so that is what the handoff
             // promises — even though the captures are attached and could be read.
-            return (null, 0.0);
-        }
-
-        LiveCaptureDocument? capture = channel.SideState(rightSide).SpatialAverage;
-        if (capture == null)
-        {
             return (null, 0.0);
         }
 

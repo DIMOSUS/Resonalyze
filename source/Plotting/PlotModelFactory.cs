@@ -138,24 +138,38 @@ internal sealed class PlotModelFactory
     /// function is a dimensionless ratio with no scalar SPL under noise excitation,
     /// so in Transfer mode the selection is overridden to relative.
     /// </summary>
-    public MagnitudeScale EffectiveLiveSpectrumScale =>
-        EffectiveLiveAnalysisMode switch
+    public MagnitudeScale EffectiveLiveSpectrumScale
+    {
+        get
         {
-            // MMM shows an ABSOLUTE axis only when there is an anchor to put it on.
-            // Without one the band levels are still exactly what a spatial average
-            // needs — a whole set is levelled against the impulse responses by one
-            // common offset later — but they are relative, and calling them dB SPL
-            // puts them below that axis's hard floor of −20, where the curve is
-            // drawn correctly and cannot be seen.
-            LiveAnalysisMode.Mmm => LiveSplOffsetDb.HasValue
-                ? MagnitudeScale.SoundPressureLevel
-                : MagnitudeScale.Relative,
-            // Unchanged: a selected dB SPL without an anchor stays view-only here,
-            // showing SPL overlays and suppressing live curves rather than quietly
-            // redrawing them on a relative axis.
-            LiveAnalysisMode.Rta => liveSpectrumOptions.MagnitudeScale,
-            _ => MagnitudeScale.Relative
-        };
+            LiveAnalysisMode mode = EffectiveLiveAnalysisMode;
+            // A spatial-average capture shows an ABSOLUTE axis only when there is an
+            // anchor to put it on. Without one the band levels are still exactly what
+            // such an average needs — a whole set is levelled against the impulse
+            // responses by one common offset later — but they are relative, and
+            // calling them dB SPL puts them below that axis's hard floor of −20, where
+            // the curve is drawn correctly and cannot be seen.
+            //
+            // By the TRAIT, like LiveUsesBandPower beside it: a mode tested by identity
+            // here would be integrated as band power and then pinned to a relative axis
+            // for good, and its captures would record a relative scale while carrying a
+            // live SPL anchor.
+            if (mode.IsSpatialAverageCapture())
+            {
+                return LiveSplOffsetDb.HasValue
+                    ? MagnitudeScale.SoundPressureLevel
+                    : MagnitudeScale.Relative;
+            }
+
+            // Unchanged for the plain reference-free trace: a selected dB SPL without
+            // an anchor stays view-only here, showing SPL overlays and suppressing live
+            // curves rather than quietly redrawing them on a relative axis. A transfer
+            // function is a dimensionless ratio and has no absolute axis at all.
+            return mode.IsReferenceFree()
+                ? liveSpectrumOptions.MagnitudeScale
+                : MagnitudeScale.Relative;
+        }
+    }
 
     /// <summary>
     /// Whether the reference-free trace is integrated as POWER PER DISPLAY BAND
@@ -1804,17 +1818,9 @@ internal sealed class PlotModelFactory
                     : "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
 
-        int count = document.CurveDb.Length;
-        var points = new List<SignalPoint>(count);
-        for (int i = 0; i < count; i++)
-        {
-            points.Add(new SignalPoint(
-                DataHelper.LogPositionToFrequency(
-                    i / (count - 1.0), document.GridStartHz, document.GridStopHz),
-                document.CurveDb[i]));
-        }
-
-        FillPoints(series, points);
+        // The document's own grid, from the document: the shape of that grid is its
+        // business, and a second copy of the rule here would drift the day it changes.
+        FillPoints(series, document.ToCurvePoints());
         return series;
     }
 

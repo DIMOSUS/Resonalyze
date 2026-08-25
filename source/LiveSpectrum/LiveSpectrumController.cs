@@ -305,7 +305,7 @@ internal sealed class LiveSpectrumController : IDisposable
             liveSpectrumOptions.EffectiveAveragingSpeed == AveragingSpeed.Infinite)
         {
             measurement.ResetAccumulation();
-        lastDrawnFrameCount = -1;
+            lastDrawnFrameCount = -1;
         }
 
         if (!liveSpectrumOptions.PeakHold)

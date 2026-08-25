@@ -5,6 +5,41 @@ namespace Resonalyze.App.Tests;
 
 public sealed class LiveAnalysisModeTests
 {
+    /// <summary>
+    /// The two settings a spatial average cannot be allowed to get wrong follow the
+    /// TRAIT, for every mode the enum holds.
+    /// </summary>
+    /// <remarks>
+    /// The excitation model the slope compensation undoes, and whether the average is
+    /// cumulative, are the pins that fail silently: get either wrong and the capture
+    /// is a smooth, plausible, wrong curve with nothing downstream able to tell. This
+    /// walks the whole enum rather than asserting about MMM, so a mode added to
+    /// IsSpatialAverageCapture and not to the pins fails here instead of in a car.
+    /// </remarks>
+    [Fact]
+    public void ThePinnedRecipeFollowsTheTrait_ForEveryAnalysisMode()
+    {
+        foreach (LiveAnalysisMode mode in Enum.GetValues<LiveAnalysisMode>())
+        {
+            var options = new LiveSpectrumOptions
+            {
+                AnalysisMode = mode,
+                // Deliberately the wrong answers for a capture, so a pin that failed
+                // to fire would be visible rather than accidentally right.
+                NoiseColor = NoiseColor.White,
+                AveragingSpeed = AveragingSpeed.Fast
+            };
+            bool capture = mode.IsSpatialAverageCapture();
+
+            Assert.Equal(
+                capture ? NoiseColor.PinkPeriodic : NoiseColor.White,
+                options.EffectiveNoiseColor);
+            Assert.Equal(
+                capture ? AveragingSpeed.Infinite : AveragingSpeed.Fast,
+                options.EffectiveAveragingSpeed);
+        }
+    }
+
     [Fact]
     public async Task RtaModeWithLoopback_UsesMicOnlyAnalysisAndKeepsTheExcitation()
     {

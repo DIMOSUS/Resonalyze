@@ -102,4 +102,27 @@ public sealed class ProtectiveHighPassMagnitudeTests
         // curve that looks like a measurement; NaN breaks the line instead.
         Assert.All(correction, value => Assert.True(double.IsNaN(value)));
     }
+
+    /// <summary>
+    /// The magnitude path refuses exactly what the impulse-response path refuses.
+    /// </summary>
+    /// <remarks>
+    /// The two are only interchangeable for a MONOTONIC high-pass. Where a rippled
+    /// passband puts the filter above unity, this path floors its correction at zero
+    /// while the impulse path attenuates, so the two measurements of one driver would
+    /// part by the ripple depth — the smooth, plausible discrepancy both methods exist
+    /// to remove. Refusing is the honest answer, and it has to be the SAME refusal.
+    /// </remarks>
+    [Fact]
+    public void ItRefusesTheFamiliesTheImpulseResponsePathRefuses()
+    {
+        var rippled = new CrossoverEdge(CrossoverFilterFamily.Chebyshev, 2_000, 24);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ProtectiveHighPassCompensation.MagnitudeCorrectionDb(
+                rippled, 48_000, 40.0, [1_000.0]));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ProtectiveHighPassCompensation.RemoveFromImpulseResponse(
+                new Complex[8], rippled, 48_000, 40.0));
+    }
 }

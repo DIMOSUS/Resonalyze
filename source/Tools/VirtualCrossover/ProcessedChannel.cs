@@ -48,15 +48,25 @@ internal sealed record GatedMagnitude(AnalysisCurve Display, AnalysisCurve Unsmo
 /// <summary>
 /// One side of the car summed: the complex sum of its participating channels'
 /// processed responses, the earliest arrival among them (the window anchor every
-/// curve built from this sum must share) and the project rate they were measured
-/// at. <see cref="ChannelCount"/> is how many channels went in, for read-outs
-/// that need to say so.
+/// curve built from this sum must share), the project rate they were measured at,
+/// and the channels themselves in the order they went in.
 /// </summary>
+/// <remarks>
+/// <see cref="Channels"/> is what lets that sum be rebuilt from its parts rather
+/// than only drawn: the hybrid sum is the channels' magnitudes plus the summation
+/// loss, so the side that used to hand back one summed response could not take part
+/// in it. The list carries the OPPOSITE side's responses, so anything reading a
+/// channel's own state through <see cref="ProcessedChannel.Channel"/> must ask for
+/// the side this sum was computed for rather than the channel's active one.
+/// </remarks>
 internal sealed record VirtualCrossoverSideSum(
     Complex[] ImpulseResponse,
     int AnchorIndex,
     int SampleRate,
-    int ChannelCount);
+    IReadOnlyList<ProcessedChannel> Channels)
+{
+    public int ChannelCount => Channels.Count;
+}
 
 /// <summary>
 /// Adjacent channels along the spectrum with their shared junction: the pair

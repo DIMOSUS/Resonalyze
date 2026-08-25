@@ -1656,7 +1656,7 @@ the set, never one per channel, because the captures were taken in a single
 analyzer session at a fixed gain: their relative levels are honest measurements,
 and normalizing each channel separately would throw exactly that away.
 
-The **Sum** follows the channels drawn above it: their magnitudes added as
+Both **Sums** follow the channels drawn above them: their magnitudes added as
 amplitudes, then the **summation loss the impulse responses measure** laid on top.
 The averages hold no phase, so they cannot be summed as vectors, and an arithmetic
 sum alone would draw a system that cancels nowhere — the loss curve supplies what
@@ -1671,10 +1671,14 @@ Everything else keeps reading the impulse responses: timing, polarity, the
 junction analyses, Auto delay, the sum-loss read-out and the phase view. The
 toggle needs an average on **every** channel that plays and greys out otherwise,
 since a sum mixing spatially averaged channels with point-measured ones puts two
-references on one axis and still looks like a measurement. For the same reason the
-opposite side's dashed Sum is hidden while the hybrid is on: it is built from that
-side's impulse responses, and beside a hybrid sum it would read as an L/R
-difference that is really a method difference. Like the target and the sum loss it
+references on one axis and still looks like a measurement. The opposite side's
+dashed Sum is built the same way from **its own** captures, so the two sides stay
+comparable — the whole point of that curve; when that side is short of one the
+curve is dropped rather than drawn from impulse responses, which would read as an
+L/R difference that is really a method difference. The two sides share ONE offset
+(the shown side's), because one analyzer session at one input gain produced every
+capture and giving each side its own would erase exactly the L/R level difference
+the captures measured. Like the target and the sum loss it
 is a magnitude toggle, greyed on the phase and impulse views — a spatial average
 carries no phase. The tick itself survives all of that: it says what you want
 drawn, so re-attaching a capture brings the hybrid straight back instead of

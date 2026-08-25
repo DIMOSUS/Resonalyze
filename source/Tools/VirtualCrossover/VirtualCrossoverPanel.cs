@@ -2865,21 +2865,15 @@ public partial class VirtualCrossoverPanel : UserControl
         // The side sum comes from metrics (shared coordinator cache); the CURVE
         // is built here so it windows through the OPPOSITE side's gate
         // placement — the active side's pin must not gate the other side.
-        // Not while the hybrid is on: the other side keeps its own captures and this
-        // curve is built from its impulse responses alone, so drawing it beside a
-        // hybrid sum would put the two references the feature exists to separate on
-        // one axis — and read as an L/R difference that is really a method
-        // difference. Skipped here rather than at the draw, so the side sum is not
-        // computed for a curve nobody will see.
-        AnalysisCurve? oppositeSum = null;
-        if (checkBoxShowSum.Checked && radioViewMagnitude.Checked && !HybridRequested)
+        // Only the summed RESPONSE here; which curve it becomes is decided below,
+        // once the active side's hybrid (and therefore its offset) exists. The two
+        // sides must be drawn by the same method or the comparison stops being about
+        // the tunes.
+        VirtualCrossoverSideSum? oppositeSide = null;
+        if (checkBoxShowSum.Checked && radioViewMagnitude.Checked)
         {
-            VirtualCrossoverSideSum? oppositeSide = await metrics.ComputeSideSumAsync(
+            oppositeSide = await metrics.ComputeSideSumAsync(
                 channels, !project.ActiveSideRight, revision, minimumChannels: 2);
-            if (oppositeSide != null)
-            {
-                oppositeSum = BuildOppositeMagnitudeCurve(oppositeSide);
-            }
         }
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
@@ -2911,7 +2905,24 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             using (AppProfiler.Zone("VirtualDSP.BuildHybrid"))
             {
-                hybrid = BuildHybridMagnitudes(processed, magnitudes);
+                hybrid = BuildHybridMagnitudes(
+                    processed, magnitudes, project.ActiveSideRight);
+            }
+        }
+
+        // The other side, drawn by whichever method this side is drawn by. With the
+        // hybrid on it needs the opposite side's own captures, and when that side is
+        // short of one there is no honest fallback — an impulse-response sum beside a
+        // hybrid one reads as an L/R difference that is really a method difference —
+        // so the curve is dropped instead.
+        AnalysisCurve? oppositeSum = null;
+        if (oppositeSide != null)
+        {
+            using (AppProfiler.Zone("VirtualDSP.BuildOppositeSum"))
+            {
+                oppositeSum = hybrid == null
+                    ? BuildOppositeMagnitudeCurve(oppositeSide)
+                    : BuildOppositeHybridSumCurve(oppositeSide, hybrid.OffsetDb);
             }
         }
 
@@ -4435,6 +4446,77 @@ public partial class VirtualCrossoverPanel : UserControl
             side.SampleRate,
             snapshot.ResolveGateOffsetMs(
                 oppositeSide: true, side.AnchorIndex, side.SampleRate)).Display;
+    }
+
+    /// <summary>
+    /// The opposite side's sum drawn the way the active side's hybrid is: its own
+    /// channels from their own spatial averages, summed as amplitudes, with the
+    /// summation loss ITS impulse responses measure on top. Null when that side is
+    /// short of a capture.
+    /// </summary>
+    /// <remarks>
+    /// Everything is that side's own — its channels, its captures, its loss, its gate
+    /// placement — except the OFFSET, which is the active side's. One analyzer
+    /// session at one input gain produced every capture, so one offset serves them
+    /// all, and giving each side its own would erase exactly the L/R level difference
+    /// the captures measured and this curve exists to show. What that costs is only
+    /// an absolute shift when the side selector flips; the gap between the two curves,
+    /// which is what is being read, is the same either way.
+    /// </remarks>
+    private AnalysisCurve? BuildOppositeHybridSumCurve(
+        VirtualCrossoverSideSum side, double offsetDb)
+    {
+        bool oppositeRight = !project.ActiveSideRight;
+        if (!HasSpatialAverageForEverySideChannel(oppositeRight))
+        {
+            return null;
+        }
+
+        // One anchor and one offset for this side's channels AND its sum — the same
+        // rule the active side's curves are built under, and for the same reason:
+        // per-channel windows would stop the drawn sum being the sum of the drawn
+        // channels, and the loss could poke above its 0 dB ceiling.
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        double gateOffsetMs = snapshot.ResolveGateOffsetMs(
+            oppositeSide: true, side.AnchorIndex, side.SampleRate);
+        GatedMagnitude sum = BuildGatedMagnitudeCurve(
+            snapshot,
+            side.ImpulseResponse,
+            side.AnchorIndex,
+            side.SampleRate,
+            gateOffsetMs);
+        var channelMagnitudes = new List<GatedMagnitude>(side.Channels.Count);
+        foreach (ProcessedChannel item in side.Channels)
+        {
+            channelMagnitudes.Add(BuildGatedMagnitudeCurve(
+                snapshot,
+                item.ImpulseResponse,
+                side.AnchorIndex,
+                item.SampleRate,
+                gateOffsetMs));
+        }
+
+        HybridMagnitudes? hybrid = BuildHybridMagnitudes(
+            side.Channels,
+            channelMagnitudes.Select(curve => curve.Display).ToList(),
+            oppositeRight);
+        if (hybrid == null)
+        {
+            return null;
+        }
+
+        List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
+            sum.Unsmoothed.Points,
+            channelMagnitudes
+                .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
+                .ToList(),
+            snapshot.SmoothingInverseOctaves);
+        // Its own offset is computed on the way and then replaced: it is a fair
+        // figure for this side alone, and using it would level the two sides
+        // separately.
+        List<SignalPoint>? points = BuildHybridSumCurve(
+            hybrid with { OffsetDb = offsetDb }, sum.Display.Points, loss);
+        return points == null ? null : new AnalysisCurve("Sum opposite", points);
     }
 
     // A RAW channel curve lives in its own time: its arrival predates the

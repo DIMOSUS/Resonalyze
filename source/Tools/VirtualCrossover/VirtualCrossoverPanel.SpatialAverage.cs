@@ -220,19 +220,20 @@ public partial class VirtualCrossoverPanel
     /// exactly like a measurement, so a partial set mutes the toggle rather than
     /// drawing something that cannot be read.
     /// </remarks>
-    private bool HasSpatialAverageForEveryChannel
+    private bool HasSpatialAverageForEveryChannel =>
+        HasSpatialAverageForEverySideChannel(project.ActiveSideRight);
+
+    private bool HasSpatialAverageForEverySideChannel(bool rightSide)
     {
-        get
-        {
-            // The channels that actually play: an enabled pair with a measurement
-            // behind it. A disabled or empty one contributes nothing to the sum and
-            // so cannot hold the hybrid view back.
-            List<VirtualCrossoverChannel> playing = channels
-                .Where(channel =>
-                    channel.Pair.Enabled && channel.TransferImpulseResponse != null)
-                .ToList();
-            return playing.Count > 0 && playing.All(channel => channel.SpatialAverage != null);
-        }
+        // The channels that actually play on that side: an enabled pair with a
+        // measurement behind it. A disabled or empty one contributes nothing to the
+        // sum and so cannot hold the hybrid view back.
+        List<VirtualCrossoverChannelState> playing = channels
+            .Where(channel => channel.Pair.Enabled)
+            .Select(channel => channel.SideState(rightSide))
+            .Where(state => state.TransferImpulseResponse != null)
+            .ToList();
+        return playing.Count > 0 && playing.All(state => state.SpatialAverage != null);
     }
 
     // Whether the set could produce a hybrid at all, as of the last refresh. Cached
@@ -274,10 +275,11 @@ public partial class VirtualCrossoverPanel
                     "responses."
                 : "Draw each channel's magnitude from its spatial average with this " +
                     "channel's DSP chain on top, instead of from the impulse response " +
-                    "measured at one point. The sum follows, carrying the summation " +
-                    "loss the impulse responses measure. Timing, polarity and that " +
-                    "loss are unaffected: they keep reading the impulse responses, " +
-                    "and the other side's sum is hidden while this is on.");
+                    "measured at one point. Both sums follow, carrying the summation " +
+                    "loss the impulse responses measure — the other side needs its " +
+                    "own captures too, and its dashed sum is dropped rather than " +
+                    "drawn by the other method. Timing, polarity and that loss are " +
+                    "unaffected: they keep reading the impulse responses.");
     }
 
     /// <summary>
@@ -289,9 +291,10 @@ public partial class VirtualCrossoverPanel
     /// otherwise sum a spatial average against a point measurement, the mix the whole
     /// feature exists to avoid.
     /// </remarks>
-    private HybridMagnitudes? BuildHybridMagnitudes(
-        List<ProcessedChannel> processed,
-        List<AnalysisCurve> references)
+    private static HybridMagnitudes? BuildHybridMagnitudes(
+        IReadOnlyList<ProcessedChannel> processed,
+        IReadOnlyList<AnalysisCurve> references,
+        bool rightSide)
     {
         if (processed.Count == 0 || references.Count < processed.Count)
         {
@@ -301,8 +304,8 @@ public partial class VirtualCrossoverPanel
         var hybrids = new List<IReadOnlyList<SignalPoint>>(processed.Count);
         for (int i = 0; i < processed.Count; i++)
         {
-            if (BuildHybridChannelCurve(processed[i].Channel, references[i].Points)
-                is not { } hybrid)
+            if (BuildHybridChannelCurve(
+                processed[i].Channel, rightSide, references[i].Points) is not { } hybrid)
             {
                 return null;
             }
@@ -334,18 +337,23 @@ public partial class VirtualCrossoverPanel
     /// pure phase, so a hybrid channel curve is the tonal balance alone.
     /// </para>
     /// </remarks>
-    private IReadOnlyList<SignalPoint>? BuildHybridChannelCurve(
+    private static IReadOnlyList<SignalPoint>? BuildHybridChannelCurve(
         VirtualCrossoverChannel channel,
+        bool rightSide,
         IReadOnlyList<SignalPoint> reference)
     {
-        if (channel.SpatialAverage is not { } document || reference.Count == 0)
+        // Explicitly the side asked for, never the channel's ACTIVE one: the
+        // opposite side's sum is built from this too, and reading the shown side's
+        // capture there would draw one side's tuning under the other's label.
+        VirtualCrossoverChannelState state = channel.SideState(rightSide);
+        if (state.SpatialAverage is not { } document || reference.Count == 0)
         {
             return null;
         }
 
         int rate = document.Recipe.SampleRateHz > 0
             ? document.Recipe.SampleRateHz
-            : channel.SampleRate;
+            : state.SampleRate;
         if (rate <= 0)
         {
             return null;
@@ -356,7 +364,9 @@ public partial class VirtualCrossoverPanel
         // chain on its average would make the hybrid the one curve on the plot that
         // ignores the switch.
         var prepared = PreparedDspResponse.Create(
-            channel.Pair.Bypass ? DspChannelChain.Identity : channel.Settings.ToChain(),
+            channel.Pair.Bypass
+                ? DspChannelChain.Identity
+                : channel.SideSettings(rightSide).ToChain(),
             rate);
         var points = new List<SignalPoint>(reference.Count);
         foreach (SignalPoint point in reference)

@@ -463,6 +463,17 @@ public partial class VirtualCrossoverPanel
     }
 
     /// <summary>
+    /// How far below its own peak a channel is still read when its offset is taken.
+    /// </summary>
+    /// <remarks>
+    /// Wide enough to hold a driver's whole working band with its crossover skirts,
+    /// narrow enough to stay out of the stopband — where the impulse response shows
+    /// what the room and the noise floor left of a filtered driver while the hybrid
+    /// shows the filter's own analytic slope, and the two part by tens of dB.
+    /// </remarks>
+    private const double HybridOffsetBandDb = 20;
+
+    /// <summary>
     /// The one offset that puts the whole spatial-average set on the same axis as the
     /// impulse responses, in dB.
     /// </summary>
@@ -472,8 +483,15 @@ public partial class VirtualCrossoverPanel
     /// measurements — arguably better than the point responses' — and normalizing
     /// each channel separately would throw exactly that away.
     /// <para>
-    /// Taken as the median across channels of the median difference within each
-    /// channel's drawn range. A median rather than a mean because the two curves
+    /// Taken as the median across channels of each channel's own median difference,
+    /// read only where that channel is within <see cref="HybridOffsetBandDb"/> of its
+    /// own peak. The band matters more than the statistic: measured over the whole
+    /// drawn range the figure is nonsense, because a channel spends most of that
+    /// range in its stopband, where nothing real is being compared. On a four-way set
+    /// that read the channels as 73 dB apart — ordered by band, which is the tell.
+    /// </para>
+    /// <para>
+    /// A median rather than a mean inside the band, because the two curves
     /// legitimately differ in SHAPE — that difference is the whole point of the
     /// feature — and a few large deviations must not drag the alignment.
     /// </para>
@@ -485,22 +503,9 @@ public partial class VirtualCrossoverPanel
         var perChannel = new List<double>();
         for (int i = 0; i < hybrids.Count && i < references.Count; i++)
         {
-            IReadOnlyList<SignalPoint> hybrid = hybrids[i];
-            IReadOnlyList<SignalPoint> reference = references[i].Points;
-            var differences = new List<double>();
-            for (int k = 0; k < hybrid.Count && k < reference.Count; k++)
+            if (ResolveChannelOffsetDb(hybrids[i], references[i].Points) is { } offset)
             {
-                double difference = reference[k].Y - hybrid[k].Y;
-                if (double.IsFinite(difference))
-                {
-                    differences.Add(difference);
-                }
-            }
-
-            if (differences.Count > 0)
-            {
-                differences.Sort();
-                perChannel.Add(differences[differences.Count / 2]);
+                perChannel.Add(offset);
             }
         }
 
@@ -511,5 +516,48 @@ public partial class VirtualCrossoverPanel
 
         perChannel.Sort();
         return perChannel[perChannel.Count / 2];
+    }
+
+    // One channel's median difference inside its own working band. Null when the two
+    // curves never overlap there — nothing to align against.
+    private static double? ResolveChannelOffsetDb(
+        IReadOnlyList<SignalPoint> hybrid,
+        IReadOnlyList<SignalPoint> reference)
+    {
+        int count = Math.Min(hybrid.Count, reference.Count);
+        // The peak is taken over the points where BOTH curves exist, or the band it
+        // sets could sit where the hybrid has nothing to say.
+        double peak = double.NegativeInfinity;
+        for (int k = 0; k < count; k++)
+        {
+            if (double.IsFinite(reference[k].Y) && double.IsFinite(hybrid[k].Y))
+            {
+                peak = Math.Max(peak, reference[k].Y);
+            }
+        }
+
+        if (double.IsNegativeInfinity(peak))
+        {
+            return null;
+        }
+
+        double floor = peak - HybridOffsetBandDb;
+        var differences = new List<double>();
+        for (int k = 0; k < count; k++)
+        {
+            double difference = reference[k].Y - hybrid[k].Y;
+            if (double.IsFinite(difference) && reference[k].Y >= floor)
+            {
+                differences.Add(difference);
+            }
+        }
+
+        if (differences.Count == 0)
+        {
+            return null;
+        }
+
+        differences.Sort();
+        return differences[differences.Count / 2];
     }
 }

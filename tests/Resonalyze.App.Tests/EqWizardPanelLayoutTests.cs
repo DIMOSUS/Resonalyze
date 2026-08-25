@@ -153,6 +153,14 @@ public sealed class EqWizardPanelLayoutTests
 
         Assert.Equal(designedPadding.Left * 2, panel.Padding.Left);
         Assert.Equal(designedPadding.Top * 2, panel.Padding.Top);
+
+        // And the shell's cascade, which leaves the arrangement alone, must leave
+        // the padding alone with it: base.ScaleControl scales Padding on every
+        // pass, so counted twice it reads 24 where 12 was drawn.
+        ScaleBoundsOnly(panel, 2F);
+
+        Assert.Equal(designedPadding.Left * 2, panel.Padding.Left);
+        Assert.Equal(designedPadding.Top * 2, panel.Padding.Top);
         Assert.Equal(
             new Point(designedPadding.Left * 2, designedPadding.Top * 2),
             panel.DisplayRectangle.Location);

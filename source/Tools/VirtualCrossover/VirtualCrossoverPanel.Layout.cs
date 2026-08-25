@@ -75,8 +75,23 @@ public partial class VirtualCrossoverPanel
     protected override void ScaleControl(SizeF factor, BoundsSpecified specified)
     {
         bool rearrangesChildren = AutoScaleDimensions != CurrentAutoScaleDimensions;
+        Padding padding = Padding;
+
         base.ScaleControl(factor, specified);
-        if (baselineClientSize.IsEmpty || !rearrangesChildren)
+
+        if (!rearrangesChildren)
+        {
+        // base.ScaleControl scales Padding along with the bounds, and the padding
+        // is part of the ARRANGEMENT: anchored controls are placed against the
+        // padded rectangle. So the pass that leaves the arrangement alone has to
+        // leave the padding alone too — scaled on both it doubles, 6 -> 12 -> 24
+        // at 192 DPI, and every anchored control ends up 12 px inside a rectangle
+        // that starts 12 px further in (#120).
+            Padding = padding;
+            return;
+        }
+
+        if (baselineClientSize.IsEmpty)
         {
             return;
         }

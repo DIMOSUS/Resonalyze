@@ -137,6 +137,28 @@ internal static class SpatialAverageHybrid
         int low = (int)Math.Floor(position);
         int high = Math.Min(low + 1, count - 1);
         double fraction = position - low;
+        // Landing ON a stored point must read that point, never its neighbour. The
+        // interpolation below cannot do it: NaN·0 is NaN, so a finite value whose
+        // successor is a gap would come back NaN and the gap would spread one point
+        // backwards — the opposite of "a break is neither bridged nor spread".
+        //
+        // Snapped with a tolerance rather than tested for zero, because the display
+        // grid and a capture's own grid are the SAME log grid: a frequency that
+        // round-trips through the exponential and back lands a few ULPs off the
+        // index it came from, and an exact test would miss the case that matters
+        // most. A billionth of an index step is nothing — the step itself is about
+        // a hundredth of an octave.
+        const double SnapTolerance = 1e-9;
+        if (fraction <= SnapTolerance || high == low)
+        {
+            return curve[low].Y;
+        }
+
+        if (fraction >= 1.0 - SnapTolerance)
+        {
+            return curve[high].Y;
+        }
+
         return curve[low].Y + (curve[high].Y - curve[low].Y) * fraction;
     }
 }

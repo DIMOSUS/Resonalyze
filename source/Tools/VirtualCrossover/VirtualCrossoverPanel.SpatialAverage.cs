@@ -220,10 +220,25 @@ public partial class VirtualCrossoverPanel
     /// exactly like a measurement, so a partial set mutes the toggle rather than
     /// drawing something that cannot be read.
     /// </remarks>
-    private bool HasSpatialAverageForEveryChannel =>
-        HasSpatialAverageForEverySideChannel(project.ActiveSideRight);
+    private LiveCaptureSetVerdict JudgeSpatialAverages =>
+        JudgeSideSpatialAverages(project.ActiveSideRight);
 
-    private bool HasSpatialAverageForEverySideChannel(bool rightSide)
+    private bool HasSpatialAverageForEverySideChannel(bool rightSide) =>
+        JudgeSideSpatialAverages(rightSide).Coherent;
+
+    /// <summary>
+    /// Whether that side's playing channels can produce a hybrid: every one of them
+    /// carries a capture, and those captures form one set.
+    /// </summary>
+    /// <remarks>
+    /// Coverage alone is not enough, and the difference matters. Attaching seven
+    /// captures taken at three frame lengths and two scales leaves every channel
+    /// covered while putting curves compensated by different amounts on one axis,
+    /// under one offset that fits none of them. The set-spread warning is a
+    /// heuristic backstop reading a median over the working band; the recipe is the
+    /// fact, and it is what decides here.
+    /// </remarks>
+    private LiveCaptureSetVerdict JudgeSideSpatialAverages(bool rightSide)
     {
         // The channels that actually play on that side: an enabled pair with a
         // measurement behind it. A disabled or empty one contributes nothing to the
@@ -233,7 +248,25 @@ public partial class VirtualCrossoverPanel
             .Select(channel => channel.SideState(rightSide))
             .Where(state => state.TransferImpulseResponse != null)
             .ToList();
-        return playing.Count > 0 && playing.All(state => state.SpatialAverage != null);
+        if (playing.Count == 0)
+        {
+            return LiveCaptureSetVerdict.No("No channel on this side plays.");
+        }
+
+        var captures = new List<LiveCaptureDocument>(playing.Count);
+        foreach (VirtualCrossoverChannelState state in playing)
+        {
+            if (state.SpatialAverage == null)
+            {
+                return LiveCaptureSetVerdict.No(
+                    "Needs a spatial average on every channel that plays. Attach " +
+                    "one per channel with the MMM button.");
+            }
+
+            captures.Add(state.SpatialAverage);
+        }
+
+        return LiveCaptureDocument.JudgeSet(captures);
     }
 
     // Whether the set could produce a hybrid at all, as of the last refresh. Cached
@@ -254,7 +287,8 @@ public partial class VirtualCrossoverPanel
         // box is ticked, and clearing the tick would only mean the user has to find
         // it again after re-attaching. Same reason a pinned gate outlives its
         // sources.
-        hybridAvailable = HasSpatialAverageForEveryChannel;
+        LiveCaptureSetVerdict verdict = JudgeSpatialAverages;
+        hybridAvailable = verdict.Coherent;
 
         // Magnitude-only, muted the way the Sum and Sum loss toggles are (see
         // UpdateViewDependentControls): a spatial average carries no phase, so there
@@ -267,8 +301,8 @@ public partial class VirtualCrossoverPanel
         toolTip.SetToolTip(
             checkBoxHybrid,
             !hybridAvailable
-                ? "Needs a spatial average on every channel that plays. Attach one " +
-                    "per channel with the MMM button."
+                ? verdict.Reason ?? "Needs a spatial average on every channel that " +
+                    "plays. Attach one per channel with the MMM button."
                 : !radioViewMagnitude.Checked
                 ? "The hybrid is a magnitude view: a spatial average carries no " +
                     "phase, so the phase and impulse views keep reading the impulse " +
@@ -279,7 +313,13 @@ public partial class VirtualCrossoverPanel
                     "loss the impulse responses measure — the other side needs its " +
                     "own captures too, and its dashed sum is dropped rather than " +
                     "drawn by the other method. Timing, polarity and that loss are " +
-                    "unaffected: they keep reading the impulse responses.");
+                    "unaffected: they keep reading the impulse responses.\r\n\r\n" +
+                    "The channel curves are exact — a filter does not depend on " +
+                    "microphone position. The Sum is an estimate: the interference " +
+                    "between channels does depend on position, and its loss is read " +
+                    "at one, so the Sum's dips and peaks are sharper than the " +
+                    "volume's average. Smallest in the bass, largest at a crossover " +
+                    "high up.");
     }
 
     /// <summary>
@@ -397,6 +437,17 @@ public partial class VirtualCrossoverPanel
     /// complex sum and the phase-blind one, measured on the honest impulse responses,
     /// and it carries over because a per-channel filter changes both halves of that
     /// ratio by the same factor.
+    /// <para>
+    /// An ESTIMATE, unlike the per-channel curves, and the distinction is not
+    /// pedantry. A channel's own hybrid is exact because a filter does not depend on
+    /// position. The cross-term between two channels does: ⟨|H₁+H₂|²⟩ needs
+    /// ⟨H₁H₂*⟩ over the volume, and a loss curve read at one microphone position
+    /// carries that product at ONE position. So this draws a point's interference —
+    /// deeper dips and higher peaks than the volume's average, negligible where the
+    /// wavelength dwarfs the volume and worst at a crossover high up. Nothing
+    /// downstream treats it as measured: it is drawn, and the README says which way
+    /// it errs.
+    /// </para>
     /// <para>
     /// Where the loss curve breaks — its level gate finds every channel filtered far
     /// under the local level, so the gap it would report is two noise floors doing

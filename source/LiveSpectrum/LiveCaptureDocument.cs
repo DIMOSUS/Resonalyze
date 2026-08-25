@@ -119,11 +119,9 @@ public sealed class LiveCaptureRecipe
     /// configuration, the same excitation and the same corrections.
     /// </summary>
     /// <remarks>
-    /// The rule lives with the recipe that defines it, but nothing enforces it yet —
-    /// the consumer that checks a whole set against the impulse responses is not
-    /// built. Kept here rather than deferred because the fields that must agree are
-    /// exactly what this format knows, and the tests beside it are where that
-    /// knowledge is written down.
+    /// The rule lives with the recipe that defines it and is enforced by
+    /// <see cref="LiveCaptureDocument.JudgeSet"/>, which the Virtual DSP hybrid
+    /// toggle asks before it offers the view at all.
     /// <para>
     /// The protective high-pass is deliberately NOT compared. It describes the
     /// CHANNEL's own hardware path — a tweeter has one and a subwoofer does not —
@@ -143,6 +141,55 @@ public sealed class LiveCaptureRecipe
             SlopeCompensation == other.SlopeCompensation &&
             MagnitudeScale == other.MagnitudeScale;
     }
+
+    /// <summary>
+    /// Which field makes <see cref="MatchesSetOf"/> false, phrased for the user, or
+    /// null when the two agree. Named rather than counted: "they disagree" leaves the
+    /// user to re-open seven files, while "one is 32768 and one is 65536" is a fix.
+    /// </summary>
+    internal string? DescribeSetMismatch(LiveCaptureRecipe other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        if (SampleRateHz != other.SampleRateHz)
+        {
+            return $"sample rate ({other.SampleRateHz} Hz against {SampleRateHz} Hz)";
+        }
+
+        if (SequenceLength != other.SequenceLength)
+        {
+            return $"frame length ({other.SequenceLength} against {SequenceLength})";
+        }
+
+        if (WindowType != other.WindowType)
+        {
+            return $"analysis window ({other.WindowType} against {WindowType})";
+        }
+
+        if (NoiseColor != other.NoiseColor)
+        {
+            return $"excitation ({other.NoiseColor} against {NoiseColor})";
+        }
+
+        if (SlopeCompensation != other.SlopeCompensation)
+        {
+            return "noise-slope compensation (on in one capture, off in the other)";
+        }
+
+        return MagnitudeScale != other.MagnitudeScale
+            ? $"magnitude scale ({other.MagnitudeScale} against {MagnitudeScale})"
+            : null;
+    }
+}
+
+/// <summary>
+/// Whether a group of captures may be drawn on one axis under one common offset,
+/// and — when it may not — what to tell the user.
+/// </summary>
+public readonly record struct LiveCaptureSetVerdict(bool Coherent, string? Reason)
+{
+    public static LiveCaptureSetVerdict Ok { get; } = new(true, null);
+
+    public static LiveCaptureSetVerdict No(string reason) => new(false, reason);
 }
 
 /// <summary>
@@ -277,6 +324,72 @@ public sealed class LiveCaptureDocument
     /// can undo it exactly.
     /// </remarks>
     public double[] ProtectiveHighPassCorrectionDb { get; set; } = [];
+
+    /// <summary>
+    /// Whether these captures may be levelled onto one axis by ONE common offset —
+    /// the condition the hybrid view is drawn under — and what to say when they may
+    /// not.
+    /// </summary>
+    /// <remarks>
+    /// Two conditions, and they answer different failures.
+    /// <para>
+    /// The recipe must match (<see cref="LiveCaptureRecipe.MatchesSetOf"/>), because
+    /// the corrections a capture carries are CURVES whose shape depends on the frame
+    /// length, the window and the rate together. Two captures compensated on
+    /// different recipes are not one measurement seen twice; they are two, and no
+    /// single scalar puts them on one axis. The set-spread warning may or may not
+    /// notice — it reads a median offset over the working band, and two recipes can
+    /// differ mostly in the bass and still land on a similar median.
+    /// </para>
+    /// <para>
+    /// Then the levels must be comparable. Within one analyzer session they are, by
+    /// construction: one input gain, unchanged. Across sessions only an absolute
+    /// anchor can vouch for them, which is why a mixed-session set is accepted when
+    /// every capture carries one. The microphone calibration is deliberately NOT
+    /// compared here — a consumer undoes each capture's own correction on its own
+    /// grid before applying its own (see SpatialAverageHybrid), so a set taken under
+    /// two different corrections is still levellable, and demanding they match would
+    /// reject a legitimate set for a difference that has already been removed.
+    /// </para>
+    /// </remarks>
+    public static LiveCaptureSetVerdict JudgeSet(
+        IReadOnlyList<LiveCaptureDocument> captures)
+    {
+        ArgumentNullException.ThrowIfNull(captures);
+        if (captures.Count == 0)
+        {
+            return LiveCaptureSetVerdict.No("There are no spatial averages to draw.");
+        }
+
+        LiveCaptureDocument first = captures[0];
+        foreach (LiveCaptureDocument capture in captures)
+        {
+            if (capture.Recipe.MatchesSetOf(first.Recipe))
+            {
+                continue;
+            }
+
+            string? difference = first.Recipe.DescribeSetMismatch(capture.Recipe);
+            return LiveCaptureSetVerdict.No(
+                $"The captures were not all taken the same way — they differ in " +
+                $"{difference ?? "their analyzer recipe"}. Re-take the odd one with " +
+                "the settings the others used.");
+        }
+
+        bool oneSession = captures.All(
+            capture => capture.CaptureSessionId == first.CaptureSessionId);
+        if (oneSession ||
+            captures.All(capture => capture.Recipe.SplAnchorOffsetDb.HasValue))
+        {
+            return LiveCaptureSetVerdict.Ok;
+        }
+
+        return LiveCaptureSetVerdict.No(
+            "The captures come from more than one analyzer session and not all of " +
+            "them carry a dB SPL anchor, so nothing vouches for their levels " +
+            "matching. Re-take them in one session, or with an SPL calibration in " +
+            "force.");
+    }
 
     public void Save(string path)
     {

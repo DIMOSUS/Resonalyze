@@ -1686,7 +1686,20 @@ amplitudes, then the **summation loss the impulse responses measure** laid on to
 The averages hold no phase, so they cannot be summed as vectors, and an arithmetic
 sum alone would draw a system that cancels nowhere — the loss curve supplies what
 the average threw away, and carries over because a per-channel filter changes both
-halves of that ratio by the same factor. Where the loss curve breaks (its level
+halves of that ratio by the same factor.
+
+Unlike the per-channel curves, that sum is an **estimate**, and it is worth knowing
+which way it errs. A channel's own curve is exact: a filter does not depend on
+position, so it factors straight out of the average. The interference *between* two
+channels does depend on position — it varies across the listening volume, and one
+microphone samples one value of it. So the Sum draws the cancellation of a **point**,
+which is sharper than the volume's average in both directions: its dips are deeper
+and its peaks higher than what you would hear moving your head around. The gap is
+small in the bass, where the wavelength dwarfs the volume you averaged over, and
+largest at a crossover high up. Read the channel curves for tonal balance and the
+Sum for where the junctions land, not as a measured spatial average of the system.
+
+Where the loss curve breaks (its level
 gate finds every channel filtered far under the local level) the hybrid sum breaks
 with it, rather than falling back to a lossless sum that would be most confident
 exactly where the measurement is weakest. A channel whose own capture stops — below

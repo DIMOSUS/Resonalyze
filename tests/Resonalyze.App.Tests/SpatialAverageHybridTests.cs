@@ -103,6 +103,39 @@ public sealed class SpatialAverageHybridTests
     }
 
     /// <summary>
+    /// The point immediately before a gap is a measurement and must survive. It did
+    /// not: the sampler interpolated towards its NaN successor, and NaN·0 is NaN, so
+    /// the last good point came back as a gap too and the break spread one point
+    /// backwards. The test above sits far from the edge and never saw it.
+    /// </summary>
+    [Fact]
+    public void ThePointBeforeAGapIsNotSwallowedByIt()
+    {
+        LiveCaptureDocument document = Capture(-20);
+        const int LastGood = 500;
+        for (int i = LastGood + 1; i < document.CurveDb.Length; i++)
+        {
+            document.CurveDb[i] = double.NaN;
+        }
+
+        List<SignalPoint> curve = Build(
+            document,
+            new DspChannelChain(),
+            calibration: null,
+            smoothingCode: 0,
+            frequenciesHz:
+            [
+                document.FrequencyAt(LastGood - 1),
+                document.FrequencyAt(LastGood),
+                document.FrequencyAt(LastGood + 1)
+            ]);
+
+        Assert.Equal(-20, curve[0].Y, 6);
+        Assert.Equal(-20, curve[1].Y, 6);
+        Assert.True(double.IsNaN(curve[2].Y));
+    }
+
+    /// <summary>
     /// Outside the capture's own grid there is no measurement, so there is no curve —
     /// the ends are not clamped into a plausible-looking extension.
     /// </summary>

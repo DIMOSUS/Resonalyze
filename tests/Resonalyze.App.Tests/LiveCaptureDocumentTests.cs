@@ -214,6 +214,72 @@ public sealed class LiveCaptureDocumentTests
         return amplitude;
     }
 
+    /// <summary>
+    /// Full coverage is not a coherent set. Seven captures taken at two frame
+    /// lengths leave every channel attached while putting curves compensated by
+    /// different amounts on one axis, under a single offset that fits none of them —
+    /// and the spread warning is a heuristic that need not notice, since it reads a
+    /// median over the working band and two recipes can differ mostly in the bass.
+    /// </summary>
+    [Fact]
+    public void ASetTakenOnTwoRecipesIsRefusedAndSaysWhich()
+    {
+        LiveCaptureDocument first = BuildJudgeableCapture();
+        LiveCaptureDocument second = BuildJudgeableCapture();
+        second.Recipe.SequenceLength = SequenceLength * 2;
+
+        LiveCaptureSetVerdict verdict =
+            LiveCaptureDocument.JudgeSet([first, second]);
+
+        Assert.False(verdict.Coherent);
+        Assert.Contains("frame length", verdict.Reason);
+        Assert.Contains($"{SequenceLength * 2}", verdict.Reason);
+    }
+
+    [Fact]
+    public void CapturesFromOneSessionNeedNoAnchor()
+    {
+        // One analyzer session is one input gain, unchanged, so the levels are
+        // comparable by construction and an absolute reference adds nothing.
+        var session = Guid.NewGuid();
+        LiveCaptureDocument first = BuildJudgeableCapture(session);
+        LiveCaptureDocument second = BuildJudgeableCapture(session);
+
+        Assert.True(LiveCaptureDocument.JudgeSet([first, second]).Coherent);
+    }
+
+    /// <summary>
+    /// Across sessions only an absolute anchor vouches for the levels — but WITH one
+    /// the set is legitimate, which is the case that matters: re-initializing the
+    /// analyzer (editing the protective high-pass, say) mints a new session id
+    /// between two perfectly good runs.
+    /// </summary>
+    [Fact]
+    public void CapturesFromTwoSessionsNeedAnAnchorOnEveryOne()
+    {
+        LiveCaptureDocument first = BuildJudgeableCapture(Guid.NewGuid());
+        LiveCaptureDocument second = BuildJudgeableCapture(Guid.NewGuid());
+
+        Assert.False(LiveCaptureDocument.JudgeSet([first, second]).Coherent);
+
+        first.Recipe.SplAnchorOffsetDb = 94.0;
+        second.Recipe.SplAnchorOffsetDb = 94.0;
+
+        Assert.True(LiveCaptureDocument.JudgeSet([first, second]).Coherent);
+    }
+
+    private static LiveCaptureDocument BuildJudgeableCapture(Guid? session = null) =>
+        new()
+        {
+            SavedAtUtc = DateTimeOffset.UnixEpoch,
+            Title = "capture",
+            CaptureSessionId = session ?? Guid.Empty,
+            CurveDb = Enumerable.Repeat(-20.0, 1_024).ToArray(),
+            GridStartHz = 20,
+            GridStopHz = 20_000,
+            Recipe = BuildRecipe()
+        };
+
     private static LiveCaptureDocument BuildDocument(
         double[] amplitude,
         List<SignalPoint> curve)

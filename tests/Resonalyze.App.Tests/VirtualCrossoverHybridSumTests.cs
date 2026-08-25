@@ -6,21 +6,32 @@ namespace Resonalyze.App.Tests;
 /// <summary>
 /// The hybrid view's sum. Spatial averages hold no phase, so their channels cannot
 /// be summed as vectors; the sum is their magnitudes added as amplitudes with the
-/// summation loss the honest impulse responses measure laid on top. These pin the
-/// arithmetic that makes that substitution legitimate — and the two ways it is
-/// allowed to break.
+/// summation loss the honest impulse responses measure laid on top. These pin that
+/// ARITHMETIC — that the reconstruction adds no error of its own — and the two ways
+/// it is allowed to break.
+/// <para>
+/// What they do not pin, and cannot: that a point-measured loss is the right loss
+/// for spatially averaged channels. It is not, exactly. The cross-term between two
+/// channels varies over the listening volume, and one microphone position samples
+/// one value of it, so the hybrid sum draws the interference of a POINT — sharper
+/// than the volume's average, in both directions. Small where the wavelength dwarfs
+/// the volume, largest at a crossover high up. The curve is an estimate and is
+/// documented as one.
+/// </para>
 /// </summary>
 public sealed class VirtualCrossoverHybridSumTests
 {
     /// <summary>
     /// The formula's own inverse: fed the honest channel magnitudes, it has to give
-    /// back the honest sum, to the last decimal. That is what makes the loss curve a
-    /// legitimate stand-in for the phase the average threw away — the hybrid sum
-    /// differs from the measured one ONLY where the hybrid channels differ from the
-    /// measured ones, never because of the reconstruction itself.
+    /// back the honest sum, to the last decimal. This is a statement about the
+    /// IMPLEMENTATION and nothing more — the hybrid sum differs from the measured one
+    /// only where the hybrid channels differ from the measured ones, never because
+    /// the reconstruction lost something on the way. It says nothing about whether
+    /// substituting spatial averages for those magnitudes is exact; see the class
+    /// remarks for why it is not.
     /// </summary>
     [Fact]
-    public void FedTheHonestChannels_ItReproducesTheHonestSum()
+    public void FedTheHonestChannels_TheReconstructionAddsNoErrorOfItsOwn()
     {
         // Two channels that genuinely cancel in places, so the loss curve carries
         // real dips rather than a flat zero that any formula would reproduce.

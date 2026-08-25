@@ -2216,6 +2216,68 @@ public sealed class PlotModelFactoryTests
         Assert.Equal(2.0 * 10.0 * Math.Log10(2.0), at8K - at2K, precision: 1);
     }
 
+    /// <summary>
+    /// The curve and the recipe divide out the filter the ACCUMULATION was taken
+    /// through, and it is one field, so they cannot describe different filters.
+    /// </summary>
+    /// <remarks>
+    /// This read the sweep measurement's own copy at first, which is refreshed only
+    /// when a sweep is configured to run: turning the protective high-pass on and
+    /// capturing straight away compensated for the previous filter or for none, and a
+    /// later sweep could restamp a capture already held on screen. Both now read the
+    /// value frozen on the analyzer when the run began.
+    /// </remarks>
+    [Fact]
+    public void AnMmmCaptureDividesOutTheFilterItsRunWasTakenThrough()
+    {
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.Mmm,
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel,
+            NoiseColor = NoiseColor.PinkPeriodic,
+            CompensateNoiseTilt = true,
+            SmoothingInverseOctaves = 0
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+        var magnitude = new double[(noise.SequenceLength / 2) + 1];
+        Array.Fill(magnitude, 0.1);
+
+        LineSeries none = factory.BuildInputMagnitudeSeries(magnitude);
+        LiveCaptureDocument? unfiltered = factory.BuildLiveCaptureDocument(
+            magnitude, frameCount: 8, title: "no filter");
+        Assert.NotNull(unfiltered);
+        Assert.Equal(ProtectiveHighPassKind.Off, unfiltered.Recipe.ProtectiveHighPassKind);
+        Assert.Empty(unfiltered.ProtectiveHighPassCorrectionDb);
+
+        // The run that follows is taken through a filter.
+        noise.SetCaptureProtectiveHighPass(new ProtectiveHighPassConfiguration(
+            ProtectiveHighPassKind.Butterworth, 2_000, 24));
+
+        LineSeries filtered = factory.BuildInputMagnitudeSeries(magnitude);
+        LiveCaptureDocument? compensated = factory.BuildLiveCaptureDocument(
+            magnitude, frameCount: 8, title: "filtered");
+        Assert.NotNull(compensated);
+
+        // The recipe names the filter the curve was corrected for...
+        Assert.Equal(
+            ProtectiveHighPassKind.Butterworth,
+            compensated.Recipe.ProtectiveHighPassKind);
+        Assert.Equal(2_000, compensated.Recipe.ProtectiveHighPassFrequencyHz);
+        Assert.NotEmpty(compensated.ProtectiveHighPassCorrectionDb);
+
+        // ...and the correction it records is exactly what the drawn curve received,
+        // so a reader can undo it.
+        Assert.Equal(compensated.CurveDb.Length, compensated.ProtectiveHighPassCorrectionDb.Length);
+        double before = PointNear(none, 900.0).Y;
+        double after = PointNear(filtered, 900.0).Y;
+        Assert.True(
+            after - before > 10,
+            $"the filter was not divided out: {after - before:0.0} dB at 900 Hz");
+    }
+
     [Fact]
     public void MmmWithoutAnAnchorKeepsBandPowerOnARelativeAxis()
     {

@@ -79,6 +79,42 @@ namespace Resonalyze
         /// the capture read-out and stored in a capture recipe: it is the honest
         /// measure of how long a moving-microphone pass actually ran.
         /// </summary>
+        /// <summary>
+        /// The protective high-pass the CURRENT accumulation was taken through, frozen
+        /// when the run started.
+        /// </summary>
+        /// <remarks>
+        /// A reference-free capture carries that filter — it sits in the user's own DSP
+        /// ahead of the loudspeaker, and there is no loopback to divide it out with — so
+        /// both the rendered curve and the recipe saved beside it must compensate for
+        /// the one that was actually in force while the microphone was walked.
+        /// <para>
+        /// Held HERE, on the accumulation it describes, and written only at the start of
+        /// a run. Read live from a setting instead, it could change mid-capture and
+        /// re-tilt a curve halfway through the pass; read from the sweep measurement's
+        /// own copy — the first version of this — it was the filter of the last
+        /// CONFIGURED SWEEP, which an options edit does not refresh, so turning the
+        /// filter on and capturing straight away compensated for the previous one or
+        /// for none at all, leaving a tweeter low by the whole slope.
+        /// </para>
+        /// </remarks>
+        public ProtectiveHighPassConfiguration CaptureProtectiveHighPass
+        {
+            get;
+            private set;
+        } = ProtectiveHighPassConfiguration.Off;
+
+        /// <summary>
+        /// Freezes <see cref="CaptureProtectiveHighPass"/> for the run about to start.
+        /// Called immediately before <see cref="RunAsync"/>, which is the only moment
+        /// at which it may change: everything drawn or saved from one accumulation has
+        /// to describe one filter.
+        /// </summary>
+        public void SetCaptureProtectiveHighPass(
+            ProtectiveHighPassConfiguration? protectiveHighPass) =>
+            CaptureProtectiveHighPass =
+                ProtectiveHighPassConfiguration.Normalize(protectiveHighPass);
+
         public int AveragedFrameCount
         {
             get

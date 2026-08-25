@@ -349,6 +349,12 @@ public partial class Form1
         // just edited (they are not read back from expSweepMeasurement here).
         SaveMeasurementSettings();
 
+        // Before the early return below: the protective high-pass is not an audio
+        // setting, so an edit to it alone leaves the request unchanged — and it is what
+        // a reference-free capture divides back out, so the live analyzer has to learn
+        // about it without the reconfigure that would restart a running one.
+        liveSpectrumController.ApplyProtectiveHighPass(measurementSettings.Measurement);
+
         AudioSessionRequest request =
             CreateAudioWarmupRequest(measurementSettings.Measurement);
         if (request == requestBefore)

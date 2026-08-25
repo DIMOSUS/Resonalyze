@@ -427,10 +427,13 @@ internal sealed class PlotModelFactory
     public LiveCaptureDocument? BuildLiveCaptureDocument(
         double[]? inputMagnitude,
         int frameCount,
-        string title,
-        ProtectiveHighPassConfiguration protectiveHighPass)
+        string title)
     {
-        ArgumentNullException.ThrowIfNull(protectiveHighPass);
+        // The filter this accumulation was taken through, from the accumulation — the
+        // same field the render divides out, so the curve and the recipe beside it
+        // cannot end up describing different filters.
+        ProtectiveHighPassConfiguration protectiveHighPass =
+            noiseMeasurement.CaptureProtectiveHighPass;
         int sampleRate = noiseMeasurement.SampleRate;
         int sequenceLength = noiseMeasurement.SequenceLength;
         if (inputMagnitude is not { Length: > 1 } ||
@@ -1967,11 +1970,16 @@ internal sealed class PlotModelFactory
         // for a spatial-average capture: that is the curve compared against the
         // impulse responses, and the plain RTA keeps showing what the microphone
         // actually hears.
-        if (EffectiveLiveAnalysisMode.IsSpatialAverageCapture() &&
-            expSweepMeasurement.ProtectiveHighPass.Enabled)
+        // From the ACCUMULATION, not from a live setting or from the sweep
+        // measurement's own copy: this must be the filter that was in force while the
+        // microphone was walked, and the recipe saved beside the curve reads the very
+        // same field so the two can never describe different filters.
+        ProtectiveHighPassConfiguration captureFilter =
+            noiseMeasurement.CaptureProtectiveHighPass;
+        if (EffectiveLiveAnalysisMode.IsSpatialAverageCapture() && captureFilter.Enabled)
         {
             double[] filter = ProtectiveHighPassCompensation.MagnitudeCorrectionDb(
-                expSweepMeasurement.ProtectiveHighPass.ToEdge(),
+                captureFilter.ToEdge(),
                 noiseMeasurement.SampleRate,
                 ProtectiveHighPassConfiguration.MaximumCompensationBoostDb,
                 bands.Select(band => band.X).ToArray());

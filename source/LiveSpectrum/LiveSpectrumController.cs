@@ -59,6 +59,9 @@ internal sealed class LiveSpectrumController : IDisposable
     // only painted once would be replaced by the surviving accumulation the instant
     // any of those happened, which is exactly what Load appeared to do.
     private LiveCaptureDocument? loadedCapture;
+    // The filter the NEXT run will be taken through; see ApplyProtectiveHighPass.
+    private ProtectiveHighPassConfiguration configuredProtectiveHighPass =
+        ProtectiveHighPassConfiguration.Off;
     // The capture read-out, kept between ticks like the series below and for the
     // same reason. It is pooled PER MODEL, not globally: an OxyPlot element belongs
     // to one model at a time, and a rebuild makes a new one.
@@ -143,14 +146,12 @@ internal sealed class LiveSpectrumController : IDisposable
     /// Call <see cref="StopAndHoldAsync"/> first; that is what takes the final
     /// accumulation.
     /// </summary>
-    public LiveCaptureDocument? BuildCaptureDocument(
-        ProtectiveHighPassConfiguration protectiveHighPass) =>
+    public LiveCaptureDocument? BuildCaptureDocument() =>
         lastSnapshot is { } snapshot
             ? plotModelFactory.BuildLiveCaptureDocument(
                 snapshot.InputMagnitude,
                 snapshot.FrameCount,
-                title: string.Empty,
-                protectiveHighPass)
+                title: string.Empty)
             : null;
 
     /// <summary>
@@ -351,8 +352,28 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
+    /// <summary>
+    /// The protective high-pass the next run will be taken through, kept current from
+    /// the measurement settings.
+    /// </summary>
+    /// <remarks>
+    /// Its own entry point because the settings path that carries it does NOT always
+    /// reach <see cref="ConfigureFrom"/>: an edit that leaves the audio session alone
+    /// stops short of reconfiguring the analyzer, deliberately, since reconfiguring
+    /// restarts a running one. A filter change must still arrive — it decides what a
+    /// capture divides back out — and arriving here costs nothing and interrupts
+    /// nothing.
+    /// </remarks>
+    public void ApplyProtectiveHighPass(
+        MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
+    {
+        ArgumentNullException.ThrowIfNull(measurementSettings);
+        configuredProtectiveHighPass = measurementSettings.ToProtectiveHighPass();
+    }
+
     public void ConfigureFrom(MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
     {
+        ApplyProtectiveHighPass(measurementSettings);
         measurement.Init(
             measurementSettings.SampleRate,
             measurementSettings.Bits,
@@ -569,6 +590,10 @@ internal sealed class LiveSpectrumController : IDisposable
         loadedCapture = null;
         plotViewports.Show(plotModelFactory.CreateLiveSpectrum(), getCurrentMode());
         overlayCollection.Show(getCurrentMode());
+        // Frozen for the life of this accumulation, immediately before it begins: what
+        // the curve divides out and what the saved recipe records are then the same
+        // filter, and a setting edited mid-pass cannot re-tilt a walk already underway.
+        measurement.SetCaptureProtectiveHighPass(configuredProtectiveHighPass);
         _ = measurement.RunAsync();
         timer.Start();
         updateRecordButton();

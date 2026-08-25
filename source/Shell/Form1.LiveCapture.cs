@@ -94,8 +94,7 @@ public partial class Form1
         // instead would leave every frame since the last redraw out of the file.
         await liveSpectrumController.StopAndHoldAsync();
 
-        LiveCaptureDocument? document = liveSpectrumController.BuildCaptureDocument(
-            expSweepMeasurement.ProtectiveHighPass);
+        LiveCaptureDocument? document = liveSpectrumController.BuildCaptureDocument();
         if (document == null)
         {
             MessageBox.Show(

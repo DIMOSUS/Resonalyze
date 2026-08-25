@@ -233,6 +233,82 @@ public sealed class LiveSpectrumControllerTests
         Assert.Single(rebuilt.Annotations.OfType<OverlayTextAnnotation>());
     }
 
+    [Fact]
+    public void CaptureReadOut_IsCreatedPerModel()
+    {
+        // The sibling of the view-only notice above, and it went wrong the same way:
+        // the read-out was pooled across ticks to stop it allocating thirty times a
+        // second, but an OxyPlot element belongs to ONE model, and every rebuild — a
+        // tab switch, a display option, a loaded capture — makes a new one. Carrying
+        // one instance across them threw on the add, which left the plot blank and
+        // surfaced later as "the element already belongs to a PlotModel" on the next
+        // load.
+        using var sweep = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var controller = (LiveSpectrumController)RuntimeHelpers.GetUninitializedObject(
+            typeof(LiveSpectrumController));
+        SetField(controller, "measurement", noise);
+        SetField(controller, "liveSpectrumOptions", new LiveSpectrumOptions());
+        SetField(controller, "plotModelFactory", CreateMmmFactory(sweep, noise));
+        // A loaded capture reports its own recipe, so the read-out needs no running
+        // analyzer to have something to say.
+        SetField(controller, "loadedCapture", new LiveCaptureDocument
+        {
+            Recipe = new LiveCaptureRecipe
+            {
+                AnalysisMode = LiveAnalysisMode.Mmm,
+                AveragedFrameCount = 25,
+                IntegratedSeconds = 17.07
+            }
+        });
+
+        var model = new OxyPlot.PlotModel();
+        UpdateCaptureProgressAnnotation(controller, model);
+        OverlayTextAnnotation readOut =
+            Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
+        Assert.Contains("25 frames", readOut.Text, StringComparison.Ordinal);
+
+        // Ticking onto the same model must not stack duplicates.
+        UpdateCaptureProgressAnnotation(controller, model);
+        Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
+
+        // And a rebuilt model gets its own, while the first keeps the one it has.
+        var rebuilt = new OxyPlot.PlotModel();
+        UpdateCaptureProgressAnnotation(controller, rebuilt);
+        Assert.Single(rebuilt.Annotations.OfType<OverlayTextAnnotation>());
+    }
+
+    private static PlotModelFactory CreateMmmFactory(
+        ExpSweepMeasurement sweep,
+        NoiseMeasurement noise) =>
+        new(
+            sweep,
+            noise,
+            _ => null,
+            new PlotPresentationOptions(
+                FrequencyResponse: new FrequencyResponseOptions(),
+                PhaseResponse: new FrequencyResponseOptions(),
+                GroupDelay: new FrequencyResponseOptions(),
+                FrequencyResponseVisibility: new CurveVisibilityOptions(),
+                PhaseResponseVisibility: new CurveVisibilityOptions(),
+                GroupDelayVisibility: new CurveVisibilityOptions(),
+                ImpulseResponse: new ImpulseResponseOptions(),
+                LiveSpectrum: new LiveSpectrumOptions
+                {
+                    AnalysisMode = LiveAnalysisMode.Mmm
+                },
+                Waterfall: new WaterfallGenerateOptions(),
+                BurstDecay: new WaterfallGenerateOptions()));
+
+    private static void UpdateCaptureProgressAnnotation(
+        LiveSpectrumController controller,
+        OxyPlot.PlotModel model) =>
+        typeof(LiveSpectrumController)
+            .GetMethod(
+                "UpdateCaptureProgressAnnotation",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(controller, [model]);
+
     private static void SetField(object target, string name, object value) =>
         typeof(LiveSpectrumController)
             .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!

@@ -59,8 +59,11 @@ internal sealed class LiveSpectrumController : IDisposable
     // only painted once would be replaced by the surviving accumulation the instant
     // any of those happened, which is exactly what Load appeared to do.
     private LiveCaptureDocument? loadedCapture;
-    // The capture read-out, pooled like the series below for the same reason.
+    // The capture read-out, kept between ticks like the series below and for the
+    // same reason. It is pooled PER MODEL, not globally: an OxyPlot element belongs
+    // to one model at a time, and a rebuild makes a new one.
     private OverlayTextAnnotation? captureProgressAnnotation;
+    private PlotModel? captureProgressOwner;
     private string? captureProgressState;
     private int captureProgressFrames = -1;
     // The ~30 fps redraw reuses these series and refills their points in place;
@@ -963,20 +966,35 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
-        // Reused, and its text rebuilt only when the reading actually changes. This
-        // runs on the ~30 fps tick while the count it reports advances once a frame —
-        // once a second at the frame lengths a spatial average uses — so building a
+        // Kept between ticks, and its text rebuilt only when the reading changes:
+        // this runs on the ~30 fps tick while the count it reports advances once a
+        // frame — once a second at the frame lengths a spatial average uses — so a
         // fresh annotation and a fresh string each time is the allocation churn the
         // series above are pooled to avoid.
-        captureProgressAnnotation ??= new OverlayTextAnnotation
+        //
+        // A NEW one per model, though. OxyPlot refuses an element that still belongs
+        // to another model, and every rebuild — a tab switch, a display option, a
+        // loaded capture — builds a new one; carrying a single instance across them
+        // threw on the add, which left the plot empty and surfaced later as an
+        // unrelated-looking "element already belongs to a PlotModel" on the next
+        // load. The reused series avoid this by detaching from the previous model
+        // (see attachedModel); an annotation is cheap enough to simply not share.
+        if (captureProgressAnnotation == null ||
+            !ReferenceEquals(captureProgressOwner, model))
         {
-            Tag = CaptureProgressAnnotationTag,
-            TextPosition = new DataPoint(0.01, 0),
-            TextFlowDirection = TextFlowDirection.TopDown,
-            FontSize = 12,
-            TextColor = OxyColor.FromRgb(150, 165, 190),
-            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left
-        };
+            captureProgressAnnotation = new OverlayTextAnnotation
+            {
+                Tag = CaptureProgressAnnotationTag,
+                TextPosition = new DataPoint(0.01, 0),
+                TextFlowDirection = TextFlowDirection.TopDown,
+                FontSize = 12,
+                TextColor = OxyColor.FromRgb(150, 165, 190),
+                TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left
+            };
+            captureProgressOwner = model;
+            captureProgressState = null;
+        }
+
         if (state != captureProgressState || frames != captureProgressFrames)
         {
             captureProgressState = state;

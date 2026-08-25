@@ -114,8 +114,41 @@ internal sealed record EqWizardCurveSource
     /// </summary>
     public DspChannelChain? PreviewChain { get; init; }
 
-    /// <summary>Whether this source's curves are built through a gate, not the wizard's own window.</summary>
-    public bool IsGated => GateSettings != null && PreviewImpulseResponse != null;
+    /// <summary>
+    /// The channel's spatially averaged magnitude, when it was handed over on the
+    /// hybrid view. Null for every other source.
+    /// </summary>
+    /// <remarks>
+    /// When present it REPLACES the magnitude: the source curve, the corrected preview
+    /// and therefore the fit are all built from it (through
+    /// <see cref="SpatialAverageHybrid"/>, the same builder the Virtual DSP plot uses,
+    /// so a tune is fitted to the curve the user just left). The measurement stays
+    /// beside it and keeps serving the PHASE view — a spatial average carries no phase,
+    /// and the impulse responses do, so the two views legitimately read different
+    /// measurements of the same channel.
+    /// </remarks>
+    public LiveCaptureDocument? SpatialAverage { get; init; }
+
+    /// <summary>
+    /// The offset that put the whole spatial-average SET on the impulse responses'
+    /// axis when the handoff was taken, in dB. It belongs to the set rather than to
+    /// this channel, so it travels as the number the panel resolved rather than being
+    /// re-derived here from one channel, which could not see the set.
+    /// </summary>
+    public double SpatialAverageOffsetDb { get; init; }
+
+    /// <summary>
+    /// Whether this source's MAGNITUDE curves are built through a gate, rather than
+    /// through the wizard's own window or from a stored curve.
+    /// </summary>
+    /// <remarks>
+    /// A spatial average is deliberately excluded even though it arrives with a gate
+    /// and a measurement: it is a steady-state curve with no window at all, so the
+    /// magnitude side of such a source is not gated. Its PHASE still is — that side
+    /// keeps reading the impulse response.
+    /// </remarks>
+    public bool IsGated =>
+        GateSettings != null && PreviewImpulseResponse != null && SpatialAverage == null;
 
     /// <summary>
     /// What the phase view draws besides this channel: the neighbouring drivers as they

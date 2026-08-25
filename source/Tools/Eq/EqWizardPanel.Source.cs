@@ -482,10 +482,65 @@ public partial class EqWizardPanel
             return null;
         }
 
-        IReadOnlyList<SignalPoint> points = source.Measurement != null
-            ? ComputeImpulseResponseSpectrum(source)
+        // A spatial average wins over the measurement beside it: when one is present
+        // it IS the magnitude, and the impulse response is only there for the phase
+        // view. Gaps are kept for everything that is not computed from an impulse
+        // response — a stored curve says NaN where it has nothing to report, and the
+        // fitter reads those breaks rather than bridging them.
+        IReadOnlyList<SignalPoint> points =
+            source.SpatialAverage != null ? ComputeSpatialAverageCurve(source)
+            : source.Measurement != null ? ComputeImpulseResponseSpectrum(source)
             : ComputeImportedCurve(source);
-        return BuildSourceCurve(points, keepGaps: source.Measurement == null);
+        return BuildSourceCurve(
+            points,
+            keepGaps: source.SpatialAverage != null || source.Measurement == null);
+    }
+
+    /// <summary>
+    /// The channel's magnitude from its spatial average with its DSP chain on top —
+    /// the same builder the Virtual DSP plot uses, so the tune is fitted to the curve
+    /// the user just left.
+    /// </summary>
+    /// <remarks>
+    /// On the CAPTURE's own grid, which is the resolution the measurement actually
+    /// has; the panel samples it onto its plot grid instead, and the two are the same
+    /// function read at different densities.
+    /// <para>
+    /// The chain is realized at the CHANNEL's rate rather than the capture's: the bank
+    /// being fitted here is going back to that channel, and the panel will run it at
+    /// the project's rate.
+    /// </para>
+    /// </remarks>
+    private IReadOnlyList<SignalPoint> ComputeSpatialAverageCurve(
+        EqWizardCurveSource source)
+    {
+        LiveCaptureDocument document = source.SpatialAverage!;
+        List<double> grid = document.ToCurvePoints()
+            .Select(point => point.X)
+            .ToList();
+        List<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
+            document,
+            source.PreviewChain ?? DspChannelChain.Identity,
+            source.SampleRateHz ?? EqSampleRate,
+            // Pinned to the panel's, like every other part of a handoff: a bank fitted
+            // under one correction and summed under another would break the identity
+            // the handoff promises.
+            ResolveChosenCalibration(),
+            grid,
+            SourceSmoothingInverseOctaves);
+        if (curve == null)
+        {
+            return Array.Empty<SignalPoint>();
+        }
+
+        // The set's offset last, as one scalar: it belongs to the whole capture set,
+        // and the panel resolved it over every channel. Applied here so the curve hangs
+        // exactly where the plot had it, which is what makes the Target Level that
+        // travelled with the handoff mean the same thing on both sides.
+        double offset = source.SpatialAverageOffsetDb;
+        return offset == 0
+            ? curve
+            : curve.Select(point => new SignalPoint(point.X, point.Y + offset)).ToList();
     }
 
     private IReadOnlyList<SignalPoint> ComputeImpulseResponseSpectrum(

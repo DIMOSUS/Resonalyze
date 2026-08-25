@@ -2124,7 +2124,13 @@ public partial class VirtualCrossoverPanel : UserControl
                 snapshot.SmoothingInverseOctaves,
                 Calibration,
                 SelectedCalibrationName(),
-                projectGeneration);
+                projectGeneration,
+                // The hybrid travels only when the plot is actually drawing it. What
+                // the handoff promises is the curve the user just left, so a panel
+                // showing impulse responses must hand impulse responses over even
+                // though the captures are attached and could be read.
+                HybridRequested ? channel.SideState(channel.ActiveRight).SpatialAverage : null,
+                lastHybridOffsetDb);
         }
         catch (InvalidOperationException)
         {
@@ -2910,6 +2916,11 @@ public partial class VirtualCrossoverPanel : UserControl
                     magnitudes,
                     project.ActiveSideRight,
                     magnitudeGate.SmoothingInverseOctaves);
+            }
+
+            if (hybrid != null)
+            {
+                lastHybridOffsetDb = hybrid.OffsetDb;
             }
         }
 
@@ -5228,6 +5239,11 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // The last applied processed snapshot: the correlation view's data source.
     private ProcessedRender? lastProcessedRender;
+
+    // The offset the last hybrid render resolved for the whole capture set. Kept
+    // because it belongs to the SET: a handoff carries one channel, which on its own
+    // could not re-derive the figure the other channels voted on.
+    private double lastHybridOffsetDb;
 
     // Single-flight for the correlation rebuilds, mirroring the main redraw
     // loop: at most ONE sweep computes at a time, and a request that arrives

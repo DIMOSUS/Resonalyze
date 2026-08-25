@@ -347,9 +347,6 @@ public partial class VirtualCrossoverPanel
             return null;
         }
 
-        int rate = document.Recipe.SampleRateHz > 0
-            ? document.Recipe.SampleRateHz
-            : state.SampleRate;
         return SpatialAverageHybrid.BuildChannelCurve(
             document,
             // The SAME chain the processed response was built through, Bypass included:
@@ -359,7 +356,10 @@ public partial class VirtualCrossoverPanel
             channel.Pair.Bypass
                 ? DspChannelChain.Identity
                 : channel.SideSettings(rightSide).ToChain(),
-            rate,
+            // The CHANNEL's rate: the chain is what the user's DSP will run, and it
+            // will run at the project's rate, not at whatever the capture was taken
+            // at. The capture's own rate is already folded into its stored levels.
+            state.SampleRate,
             Calibration,
             reference.Select(point => point.X).ToList(),
             smoothingCode);

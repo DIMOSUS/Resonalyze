@@ -30,6 +30,13 @@ internal static class SpatialAverageHybrid
     /// that puts a whole SET on the impulse responses' axis belongs to the set and is
     /// applied by the caller that knows it.
     /// </summary>
+    /// <param name="chainSampleRateHz">
+    /// The rate <paramref name="chain"/> is realized at — the CHANNEL's, not the
+    /// capture's. A biquad's response depends on the rate it runs at, and the rate
+    /// that matters is the one the DSP will use; the capture's own rate is already
+    /// folded into its stored levels and has no say over a filter. Passing the
+    /// capture's rate here would draw a prediction of a DSP nobody is building.
+    /// </param>
     /// <param name="calibration">
     /// The correction the result should carry. The capture's own is undone first, on
     /// the capture's own grid, before anything is interpolated: these corrections are
@@ -41,20 +48,21 @@ internal static class SpatialAverageHybrid
     public static List<SignalPoint>? BuildChannelCurve(
         LiveCaptureDocument document,
         DspChannelChain chain,
-        int sampleRateHz,
+        int chainSampleRateHz,
         CalibrationFile? calibration,
         IReadOnlyList<double> frequenciesHz,
         int smoothingCode)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(frequenciesHz);
-        if (sampleRateHz <= 0 || frequenciesHz.Count == 0 || document.CurveDb.Length < 2)
+        if (chainSampleRateHz <= 0 || frequenciesHz.Count == 0 ||
+            document.CurveDb.Length < 2)
         {
             return null;
         }
 
         List<SignalPoint> capture = Uncalibrated(document);
-        var prepared = PreparedDspResponse.Create(chain, sampleRateHz);
+        var prepared = PreparedDspResponse.Create(chain, chainSampleRateHz);
         var points = new List<SignalPoint>(frequenciesHz.Count);
         foreach (double hz in frequenciesHz)
         {

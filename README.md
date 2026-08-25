@@ -1366,6 +1366,21 @@ the moment bypass comes off — a bank tuned against a crossover-less curve woul
 be wrong for the setup. The menu item says so before the trip (it reads *chain —
 block is bypassed*), and so does the source description in the wizard.
 
+When the panel is drawing the [hybrid](#hybrid-spatial-averages-under-the-prediction),
+the handoff carries that instead — the same rule, "the curve you just left". The
+channel's spatial average with its chain on top becomes what the wizard shows,
+what **Auto Tune** fits and what **Source + EQ** is built from; the impulse
+response travels alongside it and keeps serving the **Phase** view, because an
+average carries no phase and the impulse response does. Two measurements of one
+channel, each answering the question it can: tonal balance from the average,
+timing from the impulse response. The whole set's offset travels with it, so the
+curve hangs exactly where the plot had it and the Target Level still means the
+same thing; where the capture has nothing to report — under a protective
+high-pass — the curve breaks and Auto Tune places no band there. There is no gate
+on this curve: an average is a steady-state measurement with no window, so the
+gated preview below is bypassed and **Source + EQ** is the curve plus the bank's
+analytic magnitude, which for a windowless curve is exact.
+
 That identity extends to the corrected curve: **Source + EQ** is not the bare
 curve with the filters' ideal magnitude added on top, the way an equalizer
 normally previews itself. The wizard runs the whole chain — the bank being

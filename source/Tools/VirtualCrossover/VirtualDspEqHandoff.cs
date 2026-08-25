@@ -191,7 +191,9 @@ internal static class VirtualDspEqHandoff
         int smoothingInverseOctaves,
         CalibrationFile? calibration,
         string? calibrationName,
-        long projectGeneration)
+        long projectGeneration,
+        LiveCaptureDocument? spatialAverage,
+        double spatialAverageOffsetDb)
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(gateTemplate);
@@ -249,7 +251,9 @@ internal static class VirtualDspEqHandoff
             : null;
 
         string side = channel.Pair.Mono ? "mono" : rightSide ? "R" : "L";
-        string variant = withChain ? "DSP" : "raw";
+        string variant = spatialAverage != null
+            ? withChain ? "DSP, MMM" : "MMM"
+            : withChain ? "DSP" : "raw";
         // A bypassed block contributes its RAW signal to the plot and the sum, so with
         // bypass on the panel is not drawing this chain at all. The chain is still what
         // the PEQ belongs to — a bank tuned against a crossover-less curve would be
@@ -268,9 +272,18 @@ internal static class VirtualDspEqHandoff
                 (string.IsNullOrWhiteSpace(settings.DisplayName)
                     ? string.Empty
                     : $" — {settings.DisplayName}") +
-                (withChain
-                    ? "\r\nDSP chain applied (PEQ bypassed), windowed by the Virtual DSP gate."
-                    : "\r\nRaw measurement, windowed by the Virtual DSP gate at its own arrival.") +
+                (spatialAverage != null
+                    ? withChain
+                        ? "\r\nSpatial average with the DSP chain applied (PEQ " +
+                          "bypassed). No window: an average is a steady-state curve." +
+                          "\r\nPhase still reads the impulse response, through the " +
+                          "Virtual DSP gate."
+                        : "\r\nSpatial average, as measured with the DSP bypassed." +
+                          "\r\nPhase still reads the impulse response, through the " +
+                          "Virtual DSP gate."
+                    : withChain
+                        ? "\r\nDSP chain applied (PEQ bypassed), windowed by the Virtual DSP gate."
+                        : "\r\nRaw measurement, windowed by the Virtual DSP gate at its own arrival.") +
                 bypassNote,
             Measurement = new ImpulseMeasurementView(response, anchorIndex, sampleRate),
             Coherence = EqWizardSourceResolver.ExtractTransferCoherence(
@@ -292,6 +305,13 @@ internal static class VirtualDspEqHandoff
             // The raw handoff still draws its OWN phase; it simply has nothing
             // truthful to compare against.
             PhaseContext = withChain ? phaseContext : null,
+            // The magnitude side, when the panel is drawing the hybrid: the capture
+            // REPLACES what the wizard fits against, while everything above keeps
+            // serving the phase view from the impulse response. That split is the
+            // whole feature - the average is where tonal balance is honest, the
+            // impulse response is where timing is - and it is why both travel.
+            SpatialAverage = spatialAverage,
+            SpatialAverageOffsetDb = spatialAverageOffsetDb,
             SampleRateHz = sampleRate,
             CurveKind = AnalysisCurveKind.Primary
         };

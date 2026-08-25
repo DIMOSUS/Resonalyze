@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Reflection;
+using OxyPlot;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -903,7 +905,9 @@ public sealed class VirtualDspEqHandoffTests
         double targetLevelDb = -41,
         CalibrationFile? calibration = null,
         long projectGeneration = 1,
-        EqWizardPhaseContext? phaseContext = null) =>
+        EqWizardPhaseContext? phaseContext = null,
+        LiveCaptureDocument? spatialAverage = null,
+        double spatialAverageOffsetDb = 0) =>
         VirtualDspEqHandoff.Build(
             channel,
             channel.ActiveRight,
@@ -918,7 +922,101 @@ public sealed class VirtualDspEqHandoffTests
             smoothingInverseOctaves: 0,
             calibration,
             calibrationName: calibration == null ? null : "mic-1",
-            projectGeneration);
+            projectGeneration,
+            spatialAverage,
+            spatialAverageOffsetDb);
+
+    // -------------------------------------------------------- spatial average
+
+    /// <summary>
+    /// On the hybrid view the capture REPLACES the magnitude, and the impulse response
+    /// stays for the phase view. That split is the whole feature: the average is where
+    /// tonal balance is honest, the impulse response is where timing is.
+    /// </summary>
+    [Fact]
+    public void WithASpatialAverage_TheCaptureTravelsAndTheMagnitudeStopsBeingGated()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        LiveCaptureDocument capture = Capture();
+
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, spatialAverage: capture, spatialAverageOffsetDb: -73.5);
+
+        Assert.Same(capture, request.Source.SpatialAverage);
+        Assert.Equal(-73.5, request.Source.SpatialAverageOffsetDb);
+        // Not gated: an average is a steady-state curve with no window at all, so the
+        // magnitude side must not be routed through the gated preview.
+        Assert.False(request.Source.IsGated);
+        // But the phase side still has everything it needs, and reads the impulse
+        // response through the panel's gate.
+        Assert.NotNull(request.Source.Measurement);
+        Assert.NotNull(request.Source.PreviewImpulseResponse);
+        Assert.NotNull(request.Source.GateSettings);
+        Assert.Contains("MMM", request.Source.DisplayName);
+    }
+
+    /// <summary>
+    /// Without one, nothing changes: the panel is drawing impulse responses and the
+    /// handoff hands impulse responses over, gated exactly as before.
+    /// </summary>
+    [Fact]
+    public void WithoutASpatialAverage_TheMagnitudeIsStillGated()
+    {
+        VirtualDspEqHandoffRequest request = Build(BuildChannel(), withChain: true);
+
+        Assert.Null(request.Source.SpatialAverage);
+        Assert.True(request.Source.IsGated);
+    }
+
+    /// <summary>
+    /// The bank the wizard fits is fitted against the CAPTURE, not against the
+    /// impulse response — which is what the whole hybrid exists for. Driven through a
+    /// live panel, because the choice is made where the source curve is computed.
+    /// </summary>
+    [Fact]
+    public void TheWizardsSourceCurveComesFromTheCapture()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        // No chain and no offset, so the curve IS the capture: a level nothing in the
+        // impulse-response path could produce.
+        channel.Settings.GainDb = 0;
+        channel.Settings.CrossoverKind = CrossoverKind.Off;
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, spatialAverage: Capture(), spatialAverageOffsetDb: 0);
+
+        using var panel = new EqWizardPanel();
+        typeof(EqWizardPanel)
+            .GetMethod("BeginVirtualDspHandoff", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(panel, [request]);
+        object? curve = typeof(EqWizardPanel)
+            .GetMethod("GetSourceCurve", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(panel, []);
+
+        Assert.NotNull(curve);
+        var points = (IReadOnlyList<DataPoint>)typeof(EqWizardCurve)
+            .GetProperty("Points")!
+            .GetValue(curve)!;
+        Assert.NotEmpty(points);
+        Assert.All(
+            points.Where(point => point.X is > 100 and < 10_000),
+            point => Assert.Equal(-20, point.Y, 3));
+    }
+
+    // A flat spatial average at a known level, so what the wizard draws identifies
+    // which of the two measurements it read.
+    private static LiveCaptureDocument Capture() => new()
+    {
+        SavedAtUtc = DateTimeOffset.UnixEpoch,
+        Title = "l tw mmm",
+        CurveDb = Enumerable.Repeat(-20.0, 1_024).ToArray(),
+        GridStartHz = 20,
+        GridStopHz = 20_000,
+        Recipe = new LiveCaptureRecipe
+        {
+            AnalysisMode = LiveAnalysisMode.Mmm,
+            SampleRateHz = SampleRate
+        }
+    };
 
     // A channel whose left side holds a synthetic measurement: a decaying wavelet
     // arriving at sample 480 (10 ms), through a full DSP chain so every stage has

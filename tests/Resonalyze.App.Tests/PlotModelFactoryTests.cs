@@ -2216,6 +2216,116 @@ public sealed class PlotModelFactoryTests
         Assert.Equal(2.0 * 10.0 * Math.Log10(2.0), at8K - at2K, precision: 1);
     }
 
+    /// <summary>
+    /// The curve and the recipe divide out the filter the ACCUMULATION was taken
+    /// through, and it is one field, so they cannot describe different filters.
+    /// </summary>
+    /// <remarks>
+    /// This read the sweep measurement's own copy at first, which is refreshed only
+    /// when a sweep is configured to run: turning the protective high-pass on and
+    /// capturing straight away compensated for the previous filter or for none, and a
+    /// later sweep could restamp a capture already held on screen. Both now read the
+    /// value frozen on the analyzer when the run began.
+    /// </remarks>
+    [Fact]
+    public void AnMmmCaptureDividesOutTheFilterItsRunWasTakenThrough()
+    {
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.Mmm,
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel,
+            NoiseColor = NoiseColor.PinkPeriodic,
+            CompensateNoiseTilt = true,
+            SmoothingInverseOctaves = 0
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+        var magnitude = new double[(noise.SequenceLength / 2) + 1];
+        Array.Fill(magnitude, 0.1);
+
+        LineSeries none = factory.BuildInputMagnitudeSeries(magnitude);
+        LiveCaptureDocument? unfiltered = factory.BuildLiveCaptureDocument(
+            magnitude, frameCount: 8, title: "no filter");
+        Assert.NotNull(unfiltered);
+        Assert.Equal(ProtectiveHighPassKind.Off, unfiltered.Recipe.ProtectiveHighPassKind);
+        Assert.Empty(unfiltered.ProtectiveHighPassCorrectionDb);
+
+        // The run that follows is taken through a filter.
+        noise.SetCaptureProtectiveHighPass(new ProtectiveHighPassConfiguration(
+            ProtectiveHighPassKind.Butterworth, 2_000, 24));
+
+        LineSeries filtered = factory.BuildInputMagnitudeSeries(magnitude);
+        LiveCaptureDocument? compensated = factory.BuildLiveCaptureDocument(
+            magnitude, frameCount: 8, title: "filtered");
+        Assert.NotNull(compensated);
+
+        // The recipe names the filter the curve was corrected for...
+        Assert.Equal(
+            ProtectiveHighPassKind.Butterworth,
+            compensated.Recipe.ProtectiveHighPassKind);
+        Assert.Equal(2_000, compensated.Recipe.ProtectiveHighPassFrequencyHz);
+        Assert.NotEmpty(compensated.ProtectiveHighPassCorrectionDb);
+
+        // ...and the correction it records is exactly what the drawn curve received,
+        // so a reader can undo it.
+        Assert.Equal(compensated.CurveDb.Length, compensated.ProtectiveHighPassCorrectionDb.Length);
+        double before = PointNear(none, 900.0).Y;
+        double after = PointNear(filtered, 900.0).Y;
+        Assert.True(
+            after - before > 10,
+            $"the filter was not divided out: {after - before:0.0} dB at 900 Hz");
+    }
+
+    [Fact]
+    public void MmmWithoutAnAnchorKeepsBandPowerOnARelativeAxis()
+    {
+        // The band-power pipeline is what a spatial average is defined on; the
+        // absolute axis is a separate question, answered by whether an anchor exists.
+        // Tying the two together drew an unanchored capture at raw dBFS onto an axis
+        // whose hard floor is -20 dB SPL: computed correctly, rendered off-plot.
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.Mmm,
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel,
+            NoiseColor = NoiseColor.PinkPeriodic,
+            CompensateNoiseTilt = true,
+            CalibrationId = null,
+            SmoothingInverseOctaves = 0
+        };
+        PlotModelFactory unanchored =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+
+        Assert.True(unanchored.LiveUsesBandPower);
+        Assert.Equal(MagnitudeScale.Relative, unanchored.EffectiveLiveSpectrumScale);
+
+        var magnitude = new double[(noise.SequenceLength / 2) + 1];
+        Array.Fill(magnitude, 0.1);
+        LineSeries relative = unanchored.BuildInputMagnitudeSeries(magnitude);
+        Assert.NotEmpty(relative.Points);
+        Assert.All(relative.Points, point => Assert.True(double.IsFinite(point.Y)));
+
+        // Anchoring must move the whole curve by exactly the anchor and change
+        // nothing else: same pipeline, different reference.
+        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
+        PlotModelFactory anchored =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+        Assert.True(anchored.LiveUsesBandPower);
+        Assert.Equal(MagnitudeScale.SoundPressureLevel, anchored.EffectiveLiveSpectrumScale);
+
+        LineSeries absolute = anchored.BuildInputMagnitudeSeries(magnitude);
+        double offset = PointNear(absolute, 1000.0).Y - PointNear(relative, 1000.0).Y;
+        Assert.Equal(relative.Points.Count, absolute.Points.Count);
+        for (int i = 0; i < relative.Points.Count; i++)
+        {
+            Assert.Equal(relative.Points[i].X, absolute.Points[i].X, precision: 6);
+            Assert.Equal(relative.Points[i].Y + offset, absolute.Points[i].Y, precision: 6);
+        }
+    }
+
     private static OxyPlot.DataPoint PointNear(LineSeries series, double frequency)
     {
         OxyPlot.DataPoint nearest = series.Points[0];

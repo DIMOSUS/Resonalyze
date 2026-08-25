@@ -245,6 +245,87 @@ internal sealed class EqWizardSourceResolver
     }
 
     /// <summary>
+    /// Wraps a stored spatial average as a source: a finished band-level response, on
+    /// the imported-curve path rather than the impulse-response one.
+    /// </summary>
+    /// <remarks>
+    /// The mapping is deliberately complete rather than convenient, because everything
+    /// the wizard is allowed to do to an imported curve is decided from these fields.
+    /// The calibration correction travels frozen on the drawn points, which is what
+    /// lets the selector switch calibration exactly — those corrections are additive
+    /// per frequency, so removing one and applying another loses nothing. The captured
+    /// smoothing code comes from the recipe (a capture is taken unsmoothed, and the
+    /// mode pins it there), which is what permits re-smoothing here; the curve kind
+    /// says it is an analyzer input spectrum, so the re-smoothing that happens is the
+    /// analyzer's own second pass over its band levels rather than a near-enough
+    /// substitute.
+    /// <para>
+    /// NaN levels are carried through untouched. Below a protective high-pass the
+    /// capture has nothing to say, and that has to reach the fitter as "do not
+    /// equalize here" rather than as a level.
+    /// </para>
+    /// <para>
+    /// No coherence: a spatial average is measured with one microphone and no
+    /// reference, so there is none to carry, and Auto Tune gates its boosts on what
+    /// remains rather than on a fabricated one.
+    /// </para>
+    /// </remarks>
+    public static EqWizardCurveSource CreateFromSpatialAverage(
+        LiveCaptureDocument document,
+        string description)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        (IReadOnlyList<SignalPoint> points, double[] pointsCorrection) = NormalizePoints(
+            document.ToCurvePoints(), document.CalibrationCorrectionDb);
+        if (points.Count < 2)
+        {
+            throw new InvalidDataException(
+                "The capture contains fewer than two usable frequency points.");
+        }
+
+        return new EqWizardCurveSource
+        {
+            Kind = EqWizardSourceKind.SpatialAverage,
+            DisplayName = string.IsNullOrWhiteSpace(document.Title)
+                ? "Spatial average"
+                : document.Title,
+            Description = description,
+            Points = points,
+            PointsCalibrationCorrectionDb = pointsCorrection,
+            CapturedSmoothingCode = document.Recipe.SmoothingCode,
+            Scale = document.Recipe.MagnitudeScale,
+            SampleRateHz = document.Recipe.SampleRateHz > 0
+                ? document.Recipe.SampleRateHz
+                : null,
+            // What the analyzer produced: a reference-free input spectrum, the same
+            // kind an RTA capture carries, which is what makes its stored band levels
+            // re-smoothable here.
+            CurveKind = AnalysisCurveKind.InputSpectrum
+        };
+    }
+
+    /// <summary>
+    /// What the source button's tooltip says about a capture: how it was taken, how
+    /// long it integrated, and the recipe facts that decide whether two captures belong
+    /// to one set.
+    /// </summary>
+    public static string DescribeSpatialAverage(LiveCaptureDocument document, string path)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        LiveCaptureRecipe recipe = document.Recipe;
+        string method = document.Method == SpatialAverageMethod.MovingMic
+            ? "Moving microphone"
+            : document.Method.ToString();
+        return
+            $"{path}\r\n{method} spatial average" +
+            (recipe.IntegratedSeconds > 0
+                ? $", {recipe.IntegratedSeconds:0} s integrated"
+                : string.Empty) +
+            $"\r\n{DescribeCurve(recipe.MagnitudeScale, recipe.SampleRateHz)}";
+    }
+
+    /// <summary>
     /// Converts the raw half-spectrum coherence bins stored with a loopback-transfer
     /// measurement into an ascending (Hz, γ²) curve, dropping the DC bin (undefined on
     /// a log axis). Returns null when the file carries no coherence.

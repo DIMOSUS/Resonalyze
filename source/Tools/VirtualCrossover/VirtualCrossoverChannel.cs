@@ -57,6 +57,13 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
     private VirtualCrossoverChannelState Active => SideState(ActiveRight);
 
     public VirtualCrossoverChannelSettings Settings => Pair.SideFor(ActiveRight);
+    /// <summary>The active side's spatial average; see the state class.</summary>
+    public LiveCaptureDocument? SpatialAverage
+    {
+        get => Active.SpatialAverage;
+        set => Active.SpatialAverage = value;
+    }
+
     public Complex[]? TransferImpulseResponse
     {
         get => Active.TransferImpulseResponse;

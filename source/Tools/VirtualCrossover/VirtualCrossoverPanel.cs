@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using OxyPlot;
 using Resonalyze.Dsp;
 using Resonalyze.History;
@@ -522,6 +523,11 @@ public partial class VirtualCrossoverPanel : UserControl
         try
         {
             checkBoxShowLoss.Checked = project.ShowLossCurve;
+            // The captures it needs are attached later, as the sources resolve, so
+            // this is the INTENT only, and it stays ticked either way: HybridRequested
+            // needs the coverage as well, so a session whose captures went missing
+            // opens honest and draws the hybrid again the moment they are re-attached.
+            checkBoxHybrid.Checked = project.ShowHybridCurves;
             checkBoxShowTarget.Checked = project.ShowTargetCurve;
             numericTargetLevel.Value =
                 numericTargetLevel.ClampValue(project.TargetLevelDb);
@@ -854,6 +860,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private void WirePanelEvents()
     {
         checkBoxShowSum.CheckedChanged += (_, _) => OnViewChanged();
+        checkBoxHybrid.CheckedChanged += (_, _) => OnViewChanged();
         checkBoxShowLoss.CheckedChanged += (_, _) => OnViewChanged();
         checkBoxShowTarget.CheckedChanged += (_, _) => OnViewChanged();
         numericTargetLevel.ValueChanged += (_, _) => OnViewChanged();
@@ -1132,6 +1139,7 @@ public partial class VirtualCrossoverPanel : UserControl
         channelControls[channel] = control;
         control.SettingsChanged += (_, _) => OnChannelSettingsChanged(channel);
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
+        control.SpatialAverageClicked += (_, _) => ShowSpatialAverageMenu(channel);
         control.PeqMenuClicked += (_, _) => ShowPeqMenu(channel);
         control.CollapsedChanged += (_, _) => OnChannelCollapsedChanged(channel);
         return channel;
@@ -1383,6 +1391,9 @@ public partial class VirtualCrossoverPanel : UserControl
             checkBoxShowSum, !radioViewImpulse.Checked, interactive: true);
         Ui.UiStyle.SetTextEnabledLook(
             checkBoxShowLoss, radioViewMagnitude.Checked, interactive: true);
+        // Magnitude-only for the same reason the loss is, and it also carries the
+        // coverage answer, so it owns its own refresh.
+        RefreshHybridAvailability();
         UpdateTargetToggleLook();
         // DarkNumericUpDown paints its own disabled state in the palette's muted
         // text, so this one can simply be disabled.
@@ -1441,6 +1452,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         project.ShowLossCurve = checkBoxShowLoss.Checked;
+        project.ShowHybridCurves = checkBoxHybrid.Checked;
         project.ShowTargetCurve = checkBoxShowTarget.Checked;
         project.TargetLevelDb = (double)numericTargetLevel.Value;
         project.ShowPhaseView = radioViewPhase.Checked;
@@ -1843,6 +1855,12 @@ public partial class VirtualCrossoverPanel : UserControl
         settings.DisplayName = string.Empty;
         settings.SourceFilePath = null;
         settings.HistoryEntryId = null;
+        // The spatial average goes with it. A slot with no measurement describes no
+        // driver, so the capture of that driver has nothing left to refine — and
+        // Clear() has already dropped the loaded document, so leaving the reference
+        // behind would only make the button warn about a file that is perfectly fine.
+        settings.SpatialAveragePath = null;
+        settings.SpatialAverageRelativePath = null;
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
     }
@@ -1856,6 +1874,12 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
+        // The side's OTHER persisted reference, resolved on the same pass and ahead
+        // of the measurement's early exit: a channel can carry a spatial average
+        // while its source is still missing, and that attachment has to come back
+        // either way. Synchronous — a capture is under a megabyte of curve, not an
+        // impulse response.
+        ResolveSpatialAverage(settings, state);
         if (!settings.HasSource)
         {
             return;
@@ -1957,6 +1981,11 @@ public partial class VirtualCrossoverPanel : UserControl
     private void UpdateSourceButton(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelControl control = ControlFor(channel);
+        // The spatial-average status rides along: every path that refreshes a
+        // channel's source — a pick, a side flip, a project load — is also a path
+        // that can change whether this channel has an average behind it.
+        RefreshSpatialAverageStatus(channel);
+        RefreshHybridAvailability();
         string? name = channel.Settings.DisplayName;
         bool resolved = channel.TransferImpulseResponse != null;
         control.SourceButton.Text = string.IsNullOrWhiteSpace(name)
@@ -2079,6 +2108,8 @@ public partial class VirtualCrossoverPanel : UserControl
             processingCoordinator.IsCurrent(render.Revision)
                 ? ProcessedChannels.SharedStartAnchorIndex(render.Channels)
                 : null;
+        (LiveCaptureDocument? Capture, double OffsetDb) spatialAverage =
+            HandoffSpatialAverage(channel, channel.ActiveRight);
         VirtualDspEqHandoffRequest request;
         try
         {
@@ -2096,7 +2127,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 snapshot.SmoothingInverseOctaves,
                 Calibration,
                 SelectedCalibrationName(),
-                projectGeneration);
+                projectGeneration,
+                spatialAverage.Capture,
+                spatialAverage.OffsetDb);
         }
         catch (InvalidOperationException)
         {
@@ -2212,7 +2245,12 @@ public partial class VirtualCrossoverPanel : UserControl
                 Calibration,
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
-                (double)numericTargetLevel.Value))
+                (double)numericTargetLevel.Value,
+                // What the panel would hand over NOW, by the same DECISION the handoff
+                // recorded — so the two cannot disagree about whether this is a hybrid
+                // session, and no in-flight redraw can turn a valid return into a
+                // refusal.
+                HybridHandoffCapture(token.Channel, token.RightSide)))
         {
             return false;
         }
@@ -2837,15 +2875,15 @@ public partial class VirtualCrossoverPanel : UserControl
         // The side sum comes from metrics (shared coordinator cache); the CURVE
         // is built here so it windows through the OPPOSITE side's gate
         // placement — the active side's pin must not gate the other side.
-        AnalysisCurve? oppositeSum = null;
+        // Only the summed RESPONSE here; which curve it becomes is decided below,
+        // once the active side's hybrid (and therefore its offset) exists. The two
+        // sides must be drawn by the same method or the comparison stops being about
+        // the tunes.
+        VirtualCrossoverSideSum? oppositeSide = null;
         if (checkBoxShowSum.Checked && radioViewMagnitude.Checked)
         {
-            VirtualCrossoverSideSum? oppositeSide = await metrics.ComputeSideSumAsync(
+            oppositeSide = await metrics.ComputeSideSumAsync(
                 channels, !project.ActiveSideRight, revision, minimumChannels: 2);
-            if (oppositeSide != null)
-            {
-                oppositeSum = BuildOppositeMagnitudeCurve(oppositeSide);
-            }
         }
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
@@ -2868,6 +2906,44 @@ public partial class VirtualCrossoverPanel : UserControl
                 processed, magnitudeGate.SmoothingInverseOctaves);
         }
 
+        // Before the warnings and the render alike: both read it. The warning is
+        // about how well the captures agree with each other, which is a property of
+        // the set the render is about to draw, not something to discover while
+        // walking the curves.
+        HybridMagnitudes? hybrid = null;
+        if (HybridRequested && magnitudes != null && radioViewMagnitude.Checked)
+        {
+            using (AppProfiler.Zone("VirtualDSP.BuildHybrid"))
+            {
+                hybrid = BuildHybridMagnitudes(
+                    processed,
+                    magnitudes,
+                    project.ActiveSideRight,
+                    magnitudeGate.SmoothingInverseOctaves);
+            }
+
+            if (hybrid != null)
+            {
+                lastHybrid = (revision, hybrid.OffsetDb);
+            }
+        }
+
+        // The other side, drawn by whichever method this side is drawn by. With the
+        // hybrid on it needs the opposite side's own captures, and when that side is
+        // short of one there is no honest fallback — an impulse-response sum beside a
+        // hybrid one reads as an L/R difference that is really a method difference —
+        // so the curve is dropped instead.
+        AnalysisCurve? oppositeSum = null;
+        if (oppositeSide != null)
+        {
+            using (AppProfiler.Zone("VirtualDSP.BuildOppositeSum"))
+            {
+                oppositeSum = hybrid == null
+                    ? BuildOppositeMagnitudeCurve(oppositeSide)
+                    : BuildOppositeHybridSumCurve(oppositeSide, hybrid.OffsetDb);
+            }
+        }
+
         using (AppProfiler.Zone("VirtualDSP.UpdateMetric"))
         {
             UpdateMetric(processed, lossCurve, stereoDeltas);
@@ -2875,7 +2951,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))
         {
-            UpdateWarnings(processed);
+            UpdateWarnings(processed, hybrid);
         }
 
         // Split from the draw on purpose: building the curves (the phase view's
@@ -2885,7 +2961,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using (AppProfiler.Zone("VirtualDSP.BuildAcousticRender"))
         {
             acousticRender = BuildAcousticRender(
-                processed, magnitudes, sumCurve, lossCurve, oppositeSum);
+                processed, magnitudes, sumCurve, lossCurve, oppositeSum, hybrid);
         }
 
         using (AppProfiler.Zone("VirtualDSP.AcousticPlotDraw"))
@@ -2903,7 +2979,8 @@ public partial class VirtualCrossoverPanel : UserControl
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
-        AnalysisCurve? oppositeSum)
+        AnalysisCurve? oppositeSum,
+        HybridMagnitudes? hybrid)
     {
         string hint = loadingProject
             ? LoadingHint
@@ -2923,7 +3000,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
         return new AcousticRender(
             hint,
-            BuildMagnitudeCurves(processed, magnitudes, sumCurve, lossCurve, oppositeSum),
+            BuildMagnitudeCurves(
+                processed, magnitudes, sumCurve, lossCurve, oppositeSum, hybrid),
             null);
     }
 
@@ -3101,7 +3179,8 @@ public partial class VirtualCrossoverPanel : UserControl
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
-        AnalysisCurve? oppositeSumCurve)
+        AnalysisCurve? oppositeSumCurve,
+        HybridMagnitudes? hybrid)
     {
         // The processed curves arrive prebuilt from BuildCurves, but a shown RAW
         // curve is spectrum-built right here, one channel after another.
@@ -3113,6 +3192,7 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             curves.Add(target);
         }
+
         for (int i = 0; i < processed.Count; i++)
         {
             ProcessedChannel item = processed[i];
@@ -3145,8 +3225,11 @@ public partial class VirtualCrossoverPanel : UserControl
                             item.SampleRate,
                             item.ValidRange),
                         item.SampleRate).Display;
+                IReadOnlyList<SignalPoint> points = hybrid != null
+                    ? ShiftedBy(hybrid.Channels[i], hybrid.OffsetDb)
+                    : curve.Points;
                 curves.Add(new AcousticCurve(
-                    item.Channel.Name, curve.Points, item.Color, 1.8, LineStyle.Solid));
+                    item.Channel.Name, points, item.Color, 1.8, LineStyle.Solid));
             }
         }
 
@@ -3157,8 +3240,16 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (checkBoxShowSum.Checked)
         {
+            // In the hybrid view the channels drawn above are the ones that have to
+            // add up, so the sum comes from them. Their spatial averages hold no
+            // phase, so the cancellation comes from the impulse responses' own loss
+            // curve (see BuildHybridSumCurve); with no loss curve there is nothing to
+            // put the dips back and the honest sum stays.
+            IReadOnlyList<SignalPoint> sumPoints =
+                (hybrid != null ? BuildActiveHybridSumCurve(processed, magnitudes, hybrid) : null)
+                ?? sumCurve.Points;
             curves.Add(new AcousticCurve(
-                "Sum", sumCurve.Points, SumColor, 2.4, LineStyle.Solid));
+                "Sum", sumPoints, SumColor, 2.4, LineStyle.Solid));
             if (oppositeSumCurve != null)
             {
                 // The other side's sum, dashed and translucent: the two tunes
@@ -3241,7 +3332,8 @@ public partial class VirtualCrossoverPanel : UserControl
     // at all — a window that opens after the drivers arrive turns every one of
     // them into its own reverberant tail, and the crossover spread below is
     // read off the applied delays, which stay true meanwhile.
-    private void UpdateWarnings(List<ProcessedChannel> processed)
+    private void UpdateWarnings(
+        List<ProcessedChannel> processed, HybridMagnitudes? hybrid)
     {
         gatePlacement = JudgeGatePlacement(processed);
         if (gatePlacement is { CutsChannels: true } verdict)
@@ -3253,7 +3345,73 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // Ahead of the crossover warning: that one says a tuning choice is extreme,
+        // while this one says the curve it would be judged on cannot be trusted at
+        // all. Only while the hybrid is actually drawn — a warning about a set the
+        // plot is not showing has nothing for the user to look at.
+        if (hybrid != null && hybrid.SpreadDb > HybridSpreadWarningDb)
+        {
+            ShowWarning(
+                $"⚠ The spatial averages disagree by {hybrid.SpreadDb:0.0} dB — " +
+                    "check the captures.",
+                FormatHybridSpreadDetail(hybrid, processed),
+                GateWarningColor);
+            return;
+        }
+
         UpdateCrossoverWarning(processed);
+    }
+
+    /// <summary>
+    /// How far the per-channel offsets of a spatial-average set may disagree before
+    /// the hybrid view is flagged, in dB.
+    /// </summary>
+    /// <remarks>
+    /// Calibrated on a known-good seven-capture set (HybridOffsetDatumMeasurement,
+    /// which reports it on demand from the archived cabins): 1.4 dB on one side and
+    /// 0.6 on the other — the residue of the two families of measurement differing in
+    /// SHAPE, which they are supposed to. What it must catch is the failures that
+    /// enter PER CAPTURE and are several times larger: a changed input gain, a frame
+    /// length or window that moves the noise-slope compensation (a curve, not a
+    /// constant), a capture from an unrelated session.
+    /// <para>
+    /// It was 5 dB while the datum was read on the PROCESSED curves, where the same
+    /// set read 2.4 and 2.7 — most of which was the chain failing to cancel rather
+    /// than the captures disagreeing. Reading it on the raw pair removed that, and
+    /// the threshold follows the evidence down: it keeps the same margin over a clean
+    /// set that 5 dB kept over 2.7.
+    /// </para>
+    /// </remarks>
+    private const double HybridSpreadWarningDb = 3.0;
+
+    private string FormatHybridSpreadDetail(
+        HybridMagnitudes hybrid, List<ProcessedChannel> processed)
+    {
+        var lines = new StringBuilder();
+        lines.Append(
+            "Every capture in one set is taken with one analyzer recipe at one input " +
+            "gain, so each channel should sit the same distance from its impulse " +
+            "response. These do not:\r\n\r\n");
+        // Positional: ChannelOffsetsDb[i] belongs to processed[i], null included. It
+        // was packed once, and a single channel with nothing to compare then shifted
+        // every figure below it onto the wrong driver's name.
+        for (int i = 0; i < hybrid.ChannelOffsetsDb.Count && i < processed.Count; i++)
+        {
+            VirtualCrossoverChannel channel = processed[i].Channel;
+            string figure = hybrid.ChannelOffsetsDb[i] is { } offset
+                ? $"{offset:+0.0;-0.0} dB"
+                : "no overlap to compare";
+            lines.Append(
+                $"    {channel.Name} {channel.Settings.DisplayName}    {figure}\r\n");
+        }
+
+        lines.Append(
+            "\r\nUsually one capture was taken with a different input gain, a " +
+            "different frame length or window (which moves the noise-slope " +
+            "compensation), or belongs to another session. The hybrid still draws: " +
+            "one offset serves the whole set, so a channel that disagrees is drawn " +
+            "at the level it claims.");
+        return lines.ToString();
     }
 
     private void ShowWarning(string text, string detail, Color color) =>
@@ -4318,6 +4476,91 @@ public partial class VirtualCrossoverPanel : UserControl
                 oppositeSide: true, side.AnchorIndex, side.SampleRate)).Display;
     }
 
+    /// <summary>
+    /// The opposite side's sum drawn the way the active side's hybrid is: its own
+    /// channels from their own spatial averages, summed as amplitudes, with the
+    /// summation loss ITS impulse responses measure on top. Null when that side is
+    /// short of a capture.
+    /// </summary>
+    /// <remarks>
+    /// Everything is that side's own — its channels, its captures, its loss, its gate
+    /// placement — except the OFFSET, which is the active side's. Giving each side its
+    /// own would erase exactly the L/R level difference the captures measured and this
+    /// curve exists to show. What that costs is only an absolute shift when the side
+    /// selector flips; the gap between the two curves, which is what is being read, is
+    /// the same either way.
+    /// <para>
+    /// Borrowing an offset only holds if both sides' captures are ONE set, which
+    /// <see cref="CanDrawOppositeHybridSum"/> checks — per-side checks cannot. Two
+    /// relative capture runs, one per side, are each internally consistent and say
+    /// nothing about how their levels compare, so a gain that moved between them
+    /// would be drawn here as an L/R imbalance the car does not have. Not one side.
+    /// </para>
+    /// </remarks>
+    private AnalysisCurve? BuildOppositeHybridSumCurve(
+        VirtualCrossoverSideSum side, double offsetDb)
+    {
+        bool oppositeRight = !project.ActiveSideRight;
+        if (!CanDrawOppositeHybridSum(oppositeRight))
+        {
+            return null;
+        }
+
+        // One anchor and one offset for this side's channels AND its sum — the same
+        // rule the active side's curves are built under, and for the same reason:
+        // per-channel windows would stop the drawn sum being the sum of the drawn
+        // channels, and the loss could poke above its 0 dB ceiling.
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        double gateOffsetMs = snapshot.ResolveGateOffsetMs(
+            oppositeSide: true, side.AnchorIndex, side.SampleRate);
+        GatedMagnitude sum = BuildGatedMagnitudeCurve(
+            snapshot,
+            side.ImpulseResponse,
+            side.AnchorIndex,
+            side.SampleRate,
+            gateOffsetMs);
+        var channelMagnitudes = new List<GatedMagnitude>(side.Channels.Count);
+        foreach (ProcessedChannel item in side.Channels)
+        {
+            channelMagnitudes.Add(BuildGatedMagnitudeCurve(
+                snapshot,
+                item.ImpulseResponse,
+                side.AnchorIndex,
+                item.SampleRate,
+                gateOffsetMs));
+        }
+
+        HybridMagnitudes? hybrid = BuildHybridMagnitudes(
+            side.Channels,
+            channelMagnitudes.Select(curve => curve.Display).ToList(),
+            oppositeRight,
+            snapshot.SmoothingInverseOctaves);
+        if (hybrid == null)
+        {
+            return null;
+        }
+
+        List<IReadOnlyList<SignalPoint>> operands = channelMagnitudes
+            .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
+            .ToList();
+        // Raw, and smoothed only at the end of the reconstruction — see
+        // BuildHybridSumCurve for why the order is not free here.
+        List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
+            sum.Unsmoothed.Points, operands);
+        // Its own offset is computed on the way and then replaced: it is a fair
+        // figure for this side alone, and using it would level the two sides
+        // separately.
+        List<SignalPoint>? points = BuildHybridSumCurve(
+            hybrid with { OffsetDb = offsetDb },
+            side.Channels,
+            side.AnchorIndex,
+            snapshot,
+            gateOffsetMs,
+            channelMagnitudes.Select(curve => (IReadOnlyList<SignalPoint>)curve.Display.Points)
+                .ToList());
+        return points == null ? null : new AnalysisCurve("Sum opposite", points);
+    }
+
     // A RAW channel curve lives in its own time: its arrival predates the
     // processed gate by the channel's delay, so even a pinned processed-view
     // offset would clip it into the left fade. Same gate durations and window
@@ -4329,6 +4572,32 @@ public partial class VirtualCrossoverPanel : UserControl
     // after the response had begun and read the record minus its direct
     // arrival — octave bands off by 10+ dB against the same IR read from the
     // front.
+    // The active side's hybrid sum. The anchor and the gate are recomputed rather
+    // than threaded through: both are pure functions of the processed set and the
+    // gate snapshot, which is what BuildCurves used to build the measured Sum, so
+    // the two windows cannot part.
+    private List<SignalPoint>? BuildActiveHybridSumCurve(
+        List<ProcessedChannel> processed,
+        List<AnalysisCurve> magnitudes,
+        HybridMagnitudes hybrid)
+    {
+        if (processed.Count == 0)
+        {
+            return null;
+        }
+
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        int anchorIndex = ProcessedChannels.SharedStartAnchorIndex(processed);
+        return BuildHybridSumCurve(
+            hybrid,
+            processed,
+            anchorIndex,
+            snapshot,
+            snapshot.ResolveGateOffsetMs(
+                oppositeSide: false, anchorIndex, processed[0].SampleRate),
+            magnitudes.Select(curve => (IReadOnlyList<SignalPoint>)curve.Points).ToList());
+    }
+
     private AnalysisCurve BuildRawMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
@@ -5023,6 +5292,88 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // The last applied processed snapshot: the correlation view's data source.
     private ProcessedRender? lastProcessedRender;
+
+    // What the last hybrid render resolved for the whole capture set, and which
+    // processing revision it belonged to. Kept because the offset belongs to the SET:
+    // a handoff carries one channel, which on its own could not re-derive the figure
+    // the other channels voted on.
+    private (long Revision, double OffsetDb)? lastHybrid;
+
+    /// <summary>
+    /// Which spatial average this panel would hand the EQ Wizard for one side, or
+    /// null when the hybrid is not what it is drawing.
+    /// </summary>
+    /// <remarks>
+    /// The DECISION, deliberately separated from the offset below and deliberately
+    /// cheap: it reads two pieces of live state and nothing a redraw can make stale.
+    /// Both directions of the trip ask this — the handoff, and the return guard that
+    /// checks the curve did not change underneath the tune — so they cannot disagree
+    /// about whether a session is a hybrid one. An earlier version answered it through
+    /// the offset resolution below, which fails while a redraw is in flight: a target
+    /// edit made in the wizard invalidates the panel, and a Return clicked before that
+    /// redraw landed was refused as though the user had turned the hybrid off.
+    /// </remarks>
+    private LiveCaptureDocument? HybridHandoffCapture(
+        VirtualCrossoverChannel channel, bool rightSide) =>
+        HybridRequested ? channel.SideState(rightSide).SpatialAverage : null;
+
+    /// <summary>
+    /// That capture together with the offset that puts it on the impulse responses'
+    /// axis, for the handoff itself. Null capture when there is none to hand over, or
+    /// when no offset can be resolved for it.
+    /// </summary>
+    /// <remarks>
+    /// The offset is normally the last magnitude render's, but the phase and impulse
+    /// views never build one and the toggle stays ticked across a view switch, so it
+    /// is resolved here when no current render carries it. Handing the capture over at
+    /// whatever height a previous set left behind would put the curve tens of dB from
+    /// where the Target Level says it hangs.
+    /// <para>
+    /// Failing to resolve one falls back to the impulse response, and the token
+    /// records that. The return guard, reading the DECISION rather than this, will
+    /// then refuse such a bank if the panel is meanwhile drawing a hybrid — which is
+    /// right: the tune was fitted against the impulse response and the plot is showing
+    /// something else.
+    /// </para>
+    /// </remarks>
+    private (LiveCaptureDocument? Capture, double OffsetDb) HandoffSpatialAverage(
+        VirtualCrossoverChannel channel, bool rightSide)
+    {
+        if (HybridHandoffCapture(channel, rightSide) is not { } capture)
+        {
+            // The panel is drawing impulse responses, so that is what the handoff
+            // promises — even though the captures are attached and could be read.
+            return (null, 0.0);
+        }
+
+        if (lastHybrid is { } cached && processingCoordinator.IsCurrent(cached.Revision))
+        {
+            return (capture, cached.OffsetDb);
+        }
+
+        if (lastProcessedRender is not { } render ||
+            !processingCoordinator.IsCurrent(render.Revision))
+        {
+            return (null, 0.0);
+        }
+
+        (List<AnalysisCurve>? magnitudes, _, _) =
+            metrics.BuildCurves(render.Channels, magnitudeGate.SmoothingInverseOctaves);
+        if (magnitudes == null ||
+            BuildHybridMagnitudes(
+                render.Channels,
+                magnitudes,
+                rightSide,
+                magnitudeGate.SmoothingInverseOctaves) is not { } hybrid)
+        {
+            // Fewer than two channels, or a set short of a capture: no offset can be
+            // resolved, and the honest response is the only one that can be handed
+            // over at a height the Target Level still describes.
+            return (null, 0.0);
+        }
+
+        return (capture, hybrid.OffsetDb);
+    }
 
     // Single-flight for the correlation rebuilds, mirroring the main redraw
     // loop: at most ONE sweep computes at a time, and a request that arrives

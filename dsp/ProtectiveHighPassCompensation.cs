@@ -140,6 +140,91 @@ public static class ProtectiveHighPassCompensation
         return new ProtectiveHighPassCompensationResult(spectrum, reliability);
     }
 
+    /// <summary>
+    /// The same compensation as a per-frequency dB correction, for a curve that is
+    /// only ever a magnitude: the dB to ADD at each frequency, or NaN where the
+    /// filter has taken the signal below what <paramref name="maximumBoostDb"/>
+    /// allows recovering.
+    /// </summary>
+    /// <remarks>
+    /// A reference-free capture CARRIES the protective high-pass, because the filter
+    /// sits in the hardware ahead of the loudspeaker and there is no loopback to
+    /// divide it out with. A swept impulse response has it removed by
+    /// <see cref="RemoveFromImpulseResponse"/>. Compared against each other without
+    /// this, the two measurements of one tweeter sit a whole filter slope apart —
+    /// 28 dB at 900 Hz under a 2 kHz / 24 dB per octave corner — which is exactly
+    /// the smooth, plausible discrepancy a spatial average must not carry.
+    /// <para>
+    /// Deliberately the same edge, the same cap and the same raised-cosine fade as
+    /// the impulse-response path: the two corrections have to agree bin for bin, or
+    /// the curves they produce cannot be compared, which is the only reason either
+    /// exists. NaN rather than a very negative level where the fade reaches zero —
+    /// there is nothing to recover there, and a plotted −900 dB is a lie a break in
+    /// the curve is not.
+    /// </para>
+    /// </remarks>
+    public static double[] MagnitudeCorrectionDb(
+        CrossoverEdge edge,
+        double sampleRateHz,
+        double maximumBoostDb,
+        IReadOnlyList<double> frequenciesHz)
+    {
+        ArgumentNullException.ThrowIfNull(frequenciesHz);
+        if (sampleRateHz <= 0 || !double.IsFinite(sampleRateHz))
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRateHz));
+        }
+        if (maximumBoostDb < 0 || !double.IsFinite(maximumBoostDb))
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumBoostDb));
+        }
+        // The same families the impulse-response path accepts, refused the same way.
+        // The promise above is that the two corrections agree bin for bin, and they do
+        // only for a MONOTONIC high-pass: where a rippled passband puts |H| above one,
+        // this path floors its correction at zero while CappedInverse attenuates, so
+        // the two measurements of one driver would part by the ripple depth — the
+        // smooth, plausible discrepancy both methods exist to remove.
+        if (edge.Family is not (
+            CrossoverFilterFamily.Butterworth or
+            CrossoverFilterFamily.LinkwitzRiley))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(edge),
+                "Protective high-pass compensation supports only Butterworth and Linkwitz-Riley filters.");
+        }
+
+        IReadOnlyList<BiquadCoefficients> sections =
+            CrossoverFilter.BuildSections(edge, highPass: true, sampleRateHz);
+        var correction = new double[frequenciesHz.Count];
+        for (int i = 0; i < correction.Length; i++)
+        {
+            double frequency = frequenciesHz[i];
+            if (!(frequency > 0))
+            {
+                correction[i] = double.NaN;
+                continue;
+            }
+
+            Complex z1 = Complex.FromPolarCoordinates(
+                1.0, -Math.Tau * frequency / sampleRateHz);
+            double magnitude = Response(sections, z1).Magnitude;
+            double weight = ReliabilityWeight(magnitude, maximumBoostDb);
+            if (weight <= 0.0)
+            {
+                correction[i] = double.NaN;
+                continue;
+            }
+
+            double requiredBoostDb = magnitude > 0.0
+                ? Math.Max(0.0, -20.0 * Math.Log10(magnitude))
+                : maximumBoostDb;
+            correction[i] =
+                Math.Min(requiredBoostDb, maximumBoostDb) + 20.0 * Math.Log10(weight);
+        }
+
+        return correction;
+    }
+
     private static Complex Response(
         IReadOnlyList<BiquadCoefficients> sections,
         Complex z1)

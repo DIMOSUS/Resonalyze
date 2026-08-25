@@ -239,6 +239,9 @@ public partial class Form1
 
     private void UpdateRecordButtonForCurrentMode()
     {
+        // Before the tab guard: the analyzer's lifecycle is also when a capture
+        // appears or is discarded, and Save has to follow it whichever tab is open.
+        RefreshSaveAvailability();
         if (modeController.ActiveTab != ModeTab.LiveSpectrum)
         {
             return;

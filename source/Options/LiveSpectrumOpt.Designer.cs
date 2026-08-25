@@ -31,6 +31,7 @@ namespace Resonalyze.Options
             labelAnalysisMode = new Label();
             radioModeTransfer = new RadioButton();
             radioModeRta = new RadioButton();
+            radioModeMmm = new RadioButton();
             comboCalibration = new DarkComboBox();
             label2 = new Label();
             labelSignalType = new Label();
@@ -78,7 +79,7 @@ namespace Resonalyze.Options
             radioModeTransfer.AutoSize = true;
             radioModeTransfer.Checked = true;
             radioModeTransfer.ForeColor = SystemColors.ControlLight;
-            radioModeTransfer.Location = new Point(85, 11);
+            radioModeTransfer.Location = new Point(56, 11);
             radioModeTransfer.Name = "radioModeTransfer";
             radioModeTransfer.Size = new Size(67, 19);
             radioModeTransfer.TabIndex = 75;
@@ -90,12 +91,23 @@ namespace Resonalyze.Options
             //
             radioModeRta.AutoSize = true;
             radioModeRta.ForeColor = SystemColors.ControlLight;
-            radioModeRta.Location = new Point(168, 11);
+            radioModeRta.Location = new Point(129, 11);
             radioModeRta.Name = "radioModeRta";
             radioModeRta.Size = new Size(46, 19);
             radioModeRta.TabIndex = 76;
             radioModeRta.Text = "RTA";
             radioModeRta.UseVisualStyleBackColor = true;
+            //
+            // radioModeMmm
+            //
+            radioModeMmm.AutoSize = true;
+            radioModeMmm.ForeColor = SystemColors.ControlLight;
+            radioModeMmm.Location = new Point(181, 11);
+            radioModeMmm.Name = "radioModeMmm";
+            radioModeMmm.Size = new Size(53, 19);
+            radioModeMmm.TabIndex = 77;
+            radioModeMmm.Text = "MMM";
+            radioModeMmm.UseVisualStyleBackColor = true;
             //
             // labelSignalType
             //
@@ -416,6 +428,7 @@ namespace Resonalyze.Options
             Controls.Add(labelAnalysisMode);
             Controls.Add(radioModeTransfer);
             Controls.Add(radioModeRta);
+            Controls.Add(radioModeMmm);
             Controls.Add(signalTypeComboBox);
             Controls.Add(labelSignalType);
             Controls.Add(labelSpl);
@@ -461,6 +474,7 @@ namespace Resonalyze.Options
         private Label labelAnalysisMode;
         private RadioButton radioModeTransfer;
         private RadioButton radioModeRta;
+        private RadioButton radioModeMmm;
         private DarkComboBox comboCalibration;
         private Label label2;
         private Label labelSignalType;

@@ -252,6 +252,47 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.NotEmpty(side.ImpulseResponse);
     }
 
+    /// <summary>
+    /// The side sum hands back the PARTS it was made of, not only the total. The
+    /// hybrid view rebuilds that sum a different way — magnitudes added, with the
+    /// summation loss on top, because a spatial average carries no phase — and with
+    /// one summed response and nothing else it could not take part at all.
+    /// </summary>
+    [Fact]
+    public async Task ComputeSideSumAsync_HandsBackThePartsThatWentIntoTheSum()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        VirtualCrossoverChannel a = ResolvedChannel("A", 48_000);
+        VirtualCrossoverChannel b = ResolvedChannel("B", 48_000);
+        // A channel with nothing behind it takes no part, so it must not appear
+        // among the parts either — a caller walking them beside its own per-channel
+        // data would be one out from there on.
+        VirtualCrossoverChannel silent = new("C");
+        long revision = coordinator.Invalidate();
+
+        VirtualCrossoverSideSum? side = await metrics.ComputeSideSumAsync(
+            [a, silent, b], rightSide: false, revision, minimumChannels: 2);
+
+        Assert.NotNull(side);
+        Assert.Equal([a, b], side.Channels.Select(item => item.Channel));
+        Assert.Equal(side.Channels.Count, side.ChannelCount);
+        foreach (ProcessedChannel item in side.Channels)
+        {
+            Assert.Equal(48_000, item.SampleRate);
+            Assert.Equal(side.ImpulseResponse.Length, item.ImpulseResponse.Length);
+        }
+
+        // And they really are that sum's parts: added back up they reproduce it.
+        for (int i = 0; i < side.ImpulseResponse.Length; i++)
+        {
+            Complex total = side.Channels
+                .Aggregate(Complex.Zero, (sum, item) => sum + item.ImpulseResponse[i]);
+            Assert.Equal(side.ImpulseResponse[i].Real, total.Real, 12);
+            Assert.Equal(side.ImpulseResponse[i].Imaginary, total.Imaginary, 12);
+        }
+    }
+
     [Fact]
     public async Task ComputeSideSumAsync_HonorsTheMinimumChannelCount()
     {

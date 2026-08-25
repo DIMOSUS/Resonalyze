@@ -200,6 +200,29 @@ public sealed class VirtualCrossoverChannelSettings
     /// </summary>
     public string? SourceRelativePath { get; set; }
 
+    /// <summary>
+    /// The moving-microphone capture attached to this side, by path — the same
+    /// discipline as <see cref="SourceFilePath"/>, and for the same reason.
+    /// </summary>
+    /// <remarks>
+    /// A reference rather than the capture itself. The payload is a raw bin spectrum
+    /// (about 900 kB per channel, most of it the spectrum), and a session carries up
+    /// to sixteen sides and is rewritten on every knob turn — embedding would put
+    /// megabytes through the debounced autosave to save re-finding a file the session
+    /// already knows how to re-find for its measurements. Absent from files written
+    /// before the hybrid view existed, which therefore open with no average attached.
+    /// </remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SpatialAveragePath { get; set; }
+
+    /// <summary>
+    /// The same capture expressed relative to the exporting session's folder, so an
+    /// exported session finds it again beside the measurements. Written per export,
+    /// exactly like <see cref="SourceRelativePath"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SpatialAverageRelativePath { get; set; }
+
     public Guid? HistoryEntryId { get; set; }
 
     public double GainDb { get; set; }
@@ -576,6 +599,20 @@ public sealed class VirtualCrossoverProjectFile
     public bool ShowLossCurve { get; set; }
 
     /// <summary>
+    /// Whether the magnitude view draws the hybrid — each channel from its spatial
+    /// average — rather than the impulse responses alone.
+    /// </summary>
+    /// <remarks>
+    /// Stored with the captures it needs, because the two are one decision: a session
+    /// that brings its averages back and then opens on the point measurements would
+    /// make the user re-tick the toggle every time. The tick is dropped on load when
+    /// the set no longer has an average on every channel that plays, so a session
+    /// whose captures went missing simply opens honest. Additive: files written
+    /// before the hybrid view existed carry none and open honest too.
+    /// </remarks>
+    public bool ShowHybridCurves { get; set; }
+
+    /// <summary>
     /// Whether the Sum is drawn on the PHASE view. A file written before the two
     /// views answered separately carries no such flag and inherits the magnitude
     /// answer, which is exactly what it used to draw.
@@ -826,16 +863,24 @@ public sealed class VirtualCrossoverProjectFile
     // restate the arrangement it was imported with.
     private void WriteWithExportRelativePaths(string? exportDirectory, Action write)
     {
-        List<(VirtualCrossoverChannelSettings Side, string? RelativePath)> restore = [];
+        List<(VirtualCrossoverChannelSettings Side, string? Source, string? Average)>
+            restore = [];
         foreach (VirtualCrossoverChannelPairSettings pair in Pairs)
         {
             foreach (VirtualCrossoverChannelSettings side in new[] { pair.Left, pair.Right })
             {
-                restore.Add((side, side.SourceRelativePath));
+                restore.Add((
+                    side, side.SourceRelativePath, side.SpatialAverageRelativePath));
                 side.SourceRelativePath = exportDirectory == null
                     ? null
                     : VirtualCrossoverSourceLocator.Relativize(
                         side.SourceFilePath, exportDirectory);
+                // The capture travels with the measurements and is found the same
+                // way, so it is restated against the same folder.
+                side.SpatialAverageRelativePath = exportDirectory == null
+                    ? null
+                    : VirtualCrossoverSourceLocator.Relativize(
+                        side.SpatialAveragePath, exportDirectory);
             }
         }
 
@@ -845,9 +890,11 @@ public sealed class VirtualCrossoverProjectFile
         }
         finally
         {
-            foreach ((VirtualCrossoverChannelSettings side, string? relativePath) in restore)
+            foreach ((VirtualCrossoverChannelSettings side, string? source, string? average)
+                in restore)
             {
-                side.SourceRelativePath = relativePath;
+                side.SourceRelativePath = source;
+                side.SpatialAverageRelativePath = average;
             }
         }
     }

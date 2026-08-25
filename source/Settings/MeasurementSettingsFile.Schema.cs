@@ -235,12 +235,25 @@ internal sealed partial class MeasurementSettingsFile
                 new SweepAveragingConfiguration(
                     Clamp(AverageRunCount, 1, 64),
                     ConfirmEachAverageRun),
-                ProtectiveHighPassConfiguration.Normalize(
-                    new ProtectiveHighPassConfiguration(
-                        ProtectiveHighPassKind,
-                        ProtectiveHighPassFrequencyHz,
-                        ProtectiveHighPassSlopeDbPerOctave)));
+                ToProtectiveHighPass());
         }
+
+        /// <summary>
+        /// The protective high-pass these settings describe, normalized.
+        /// </summary>
+        /// <remarks>
+        /// Its own accessor because the live analyzer needs it WITHOUT building a whole
+        /// sweep configuration: that filter sits in the user's hardware ahead of the
+        /// loudspeaker, so a reference-free capture carries it and has to divide it
+        /// back out, and the sweep measurement's own copy is only refreshed when a
+        /// sweep is configured to run.
+        /// </remarks>
+        public ProtectiveHighPassConfiguration ToProtectiveHighPass() =>
+            ProtectiveHighPassConfiguration.Normalize(
+                new ProtectiveHighPassConfiguration(
+                    ProtectiveHighPassKind,
+                    ProtectiveHighPassFrequencyHz,
+                    ProtectiveHighPassSlopeDbPerOctave));
     }
 
     internal sealed class FrequencyResponseSettings
@@ -750,20 +763,8 @@ internal sealed partial class MeasurementSettingsFile
             return normalized;
         }
 
-        private static int NormalizeSequenceLength(int sequenceLength)
-        {
-            int[] supported = [256, 512, 1024, 2048, 4096, 8192, 16384];
-            int normalized = supported[0];
-            foreach (int candidate in supported)
-            {
-                if (sequenceLength >= candidate)
-                {
-                    normalized = candidate;
-                }
-            }
-
-            return normalized;
-        }
+        private static int NormalizeSequenceLength(int sequenceLength) =>
+            LiveSequenceLengths.Normalize(sequenceLength);
     }
 
     internal sealed class TimeAlignmentSettings

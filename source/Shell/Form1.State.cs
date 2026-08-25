@@ -30,7 +30,10 @@ public partial class Form1
     private void SetImpulseResponseAvailability(bool available)
     {
         sessionTracker.SetImpulseResponseAvailable(available);
-        commandController.SetSaveAvailable(available);
+        // Through the shared decision: in a capture mode the button belongs to the
+        // live analyzer, and setting it straight from the impulse-response state
+        // would take it away from a finished moving-mic pass.
+        RefreshSaveAvailability();
         commandController.SetLoadAvailable(true);
     }
 

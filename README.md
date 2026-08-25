@@ -202,7 +202,9 @@ is set to show no animations (Settings → Accessibility → Visual effects).
 - **Live Spectrum** — a real-time loopback transfer function with coherence, or a
   reference-free RTA in relative dB or dB SPL, with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white, or Silent for the ambient
-  room) and compensation of the noise's own spectral slope
+  room) and compensation of the noise's own spectral slope; plus a dedicated
+  **MMM** mode that pins the recipe a moving-microphone average is valid under and
+  saves the capture — raw bins and full recipe — as its own file
 - **Compare** a second measurement (file or History) across Time Alignment,
   Phase, Group Delay, Frequency Response and Impulse Response, and **overlays** —
   captured, calculated and target curves with styling, curve math,
@@ -747,10 +749,59 @@ without one the choice turns amber and the analyzer runs reference-free anyway,
 because there is nothing to divide by.
 
 **RTA** is that reference-free analyzer as a deliberate choice — the microphone's
-own magnitude spectrum, no transfer function and no coherence. It is what the car
-workflow actually wants: a moving-microphone average, where there is no reference
-to divide by. It captures the microphone alone even when a loopback is configured,
-so the sound card is asked for exactly the channel that is used.
+own magnitude spectrum, no transfer function and no coherence. It captures the
+microphone alone even when a loopback is configured, so the sound card is asked
+for exactly the channel that is used.
+
+**MMM** is the same reference-free analyzer under the one recipe a
+moving-microphone measurement is valid under, and it is a mode rather than a
+preset because those settings are not preferences. Selecting it pins, and locks:
+periodic pink noise (its spectrum is exactly 1/√f and, unlike the filter bank
+behind plain `Pink noise`, does not change shape with the sample rate, so the
+slope compensation stays exact); `Infinite` averaging (a spatial average is a
+cumulative mean of frame power over the whole path the microphone walks, and an
+exponential window would weight the end of that walk over its beginning); the
+banded dB SPL rendering; slope compensation on; and smoothing off. Your own RTA
+choices are remembered and come back when you leave the mode.
+
+**Measure each driver raw.** Bypass the EQ, the crossovers and the delays in your
+own DSP before you capture, and leave only the configured protective high-pass in
+place — one driver at a time, exactly as you would for its sweep. Virtual DSP puts
+the channel's chain onto the capture itself, so a capture taken *through* a chain
+gets that chain applied a second time: the crossover corner doubles its slope and
+every filter counts twice. Nothing downstream can detect this. The curve stays
+smooth and entirely plausible, which is what makes it worth stating here.
+
+If a **protective high-pass** is configured (Measurement Options), MMM divides it
+back out of its curve. That filter sits in your own DSP, ahead of the loudspeaker,
+so a reference-free capture carries it while a swept impulse response has it
+removed — without the same division the two measurements of one tweeter would sit
+a whole filter slope apart, some 28 dB at 900 Hz under a 2 kHz / 24 dB per octave
+corner. The correction is the same one the sweep path applies, capped the same
+way: below the frequency where recovering the signal would need more than 40 dB of
+boost there is nothing left to recover, and the curve breaks rather than showing a
+level that was never measured.
+
+The read-out at the top left counts what has been integrated — `Integrating —
+42 s, 123 frames` — because a spatial average stops visibly moving long before it
+has settled. **Save** writes the capture as its own file: the accumulated FFT
+bins, the curve as drawn, the corrections applied, and the full recipe (rate,
+frame length, window, averaging, excitation, slope compensation, calibration
+curve, protective high-pass). The bins are what make a stored capture
+re-renderable rather than merely redrawable. **Load** puts a stored capture back
+on the plot, on the axis its own recipe records. In MMM these two buttons act on
+the capture, not on the impulse response the rest of the application carries —
+and either Load button opens either kind of measurement, because which one a file
+holds is the file's business rather than the button's: a capture opened from any
+other mode takes the application to the mode it belongs to, and an impulse
+response opened from MMM takes it to Frequency Response.
+
+An **SPL anchor is not required**. Without one the title says `MMM, relative (no
+SPL anchor)` and the levels sit on an arbitrary but internally consistent
+reference — enough, because a whole set of channels is levelled against the
+impulse responses by one common offset later. What it does mean is that every
+channel of a set must be captured in one analyzer session, with the input gain
+untouched between them.
 
 Two checkboxes belong to RTA and are muted in Transfer:
 
@@ -780,7 +831,10 @@ converges almost instantly, so **Window** is forced to `Rectangular` and
 measures whatever the microphone hears: the ambient room, or an external source
 playing its own material.
 
-Further settings: **Sequence Length** (the FFT block size), **Overlap** (`Off` /
+Further settings: **Sequence Length** (the analysis frame, listed with its
+duration in milliseconds — the duration, not the sample count, is what sets the
+resolution, since a rectangular window resolves 2/T hertz whatever the rate, so
+the same resolution costs twice the samples at twice the rate), **Overlap** (`Off` /
 `50%` / `75%`, reclaiming the samples a tapering window attenuates at the block
 edges), **Smoothing**, **Window** (`Hann`, `Flat Top` for amplitude accuracy on
 tones, `Blackman-Harris` for leakage suppression, or `Rectangular`), and
@@ -1202,16 +1256,22 @@ disturbs your overlay slots.
 ### Choosing what to equalize
 
 The **Source…** button picks the curve to tune, and it does not have to be an
-impulse response: an **impulse response from file or history**, a **curve from an
+impulse response: an **impulse response from file or history**, a **curve from a
+moving-mic capture** (what [MMM mode](#live-spectrum) saves), a **curve from an
 overlay slot** (a snapshot, with no live link back), or a **curve from a text
-file**. The case this was built for is a **moving-microphone RTA in dB SPL**:
-park the Live Spectrum RTA on a car's listening area, capture it into an overlay
-slot, and equalize that — such a curve has no impulse response and no coherence
-behind it, and its datum is absolute rather than relative. Only measured
-responses can enter: a harmonic, THD, phase, deviation, EQ-correction, target or
-calculated curve is refused, and imported curves carry their own **Calibration**
-choice, because a curve captured through a calibrated RTA must not be calibrated
-a second time.
+file**. The case this was built for is a **spatially averaged magnitude in
+dB SPL** — one driver as the listening volume hears it rather than as one
+microphone position does, which is the shape a tune should be fitted to. Such a
+curve has no impulse response and no coherence behind it, and its datum is
+absolute rather than relative; where its protective high-pass took the signal
+below what could be recovered it says so, and Auto Tune places no band there
+instead of fitting a level that was never measured. Only measured responses can
+enter: a harmonic, THD, phase, deviation, EQ-correction, target or calculated
+curve is refused, and imported curves carry their own **Calibration** choice,
+because a curve captured through a calibrated RTA must not be calibrated a second
+time — a capture that stored the correction it was taken with can still be
+switched to another, exactly, because those corrections are additive per
+frequency.
 
 The plot shows, on shared frequency/dB axes: **Source** (with optional extra
 smoothing), **Target**, **Source + EQ**, the **EQ** filter response itself (on
@@ -1314,6 +1374,21 @@ the moment bypass comes off — a bank tuned against a crossover-less curve woul
 be wrong for the setup. The menu item says so before the trip (it reads *chain —
 block is bypassed*), and so does the source description in the wizard.
 
+When the panel is drawing the [hybrid](#hybrid-spatial-averages-under-the-prediction),
+the handoff carries that instead — the same rule, "the curve you just left". The
+channel's spatial average with its chain on top becomes what the wizard shows,
+what **Auto Tune** fits and what **Source + EQ** is built from; the impulse
+response travels alongside it and keeps serving the **Phase** view, because an
+average carries no phase and the impulse response does. Two measurements of one
+channel, each answering the question it can: tonal balance from the average,
+timing from the impulse response. The whole set's offset travels with it, so the
+curve hangs exactly where the plot had it and the Target Level still means the
+same thing; where the capture has nothing to report — under a protective
+high-pass — the curve breaks and Auto Tune places no band there. There is no gate
+on this curve: an average is a steady-state measurement with no window, so the
+gated preview below is bypassed and **Source + EQ** is the curve plus the bank's
+analytic magnitude, which for a windowless curve is exact.
+
 That identity extends to the corrected curve: **Source + EQ** is not the bare
 curve with the filters' ideal magnitude added on top, the way an equalizer
 normally previews itself. The wizard runs the whole chain — the bank being
@@ -1340,6 +1415,12 @@ break the identity above, so the correction is changed where it lives. What is
 pinned is the curve the panel draws with — including one a loaded session carries
 that is in no list of yours — under the name the panel shows for it. The wizard's
 standing calibration preference for impulse responses survives untouched.
+
+The return guard covers this too: a bank fitted against the spatial average will
+not land on a panel that has gone back to its impulse responses, or onto a channel
+whose capture was detached or replaced meanwhile. It is the same divergence the
+calibration lock exists for, and just as invisible from the wizard — the curve
+under the tune changed, and the wizard is still showing what it opened on.
 
 **Return PEQ to Virtual DSP** — visible only during such a session — sends the
 finished bank (bands and preamp) back to the channel side it came from, named
@@ -1583,6 +1664,104 @@ level, so it is drawn against its own amber **Sum loss (dB)** axis on the right
 (0 dB near the top, 6 dB steps, deepening to hold a notch) that appears only
 while the curve is shown; it zooms and pans on its own, separately from the
 left dB scale.
+
+### Hybrid: spatial averages under the prediction
+
+A transfer IR is measured at one microphone position, and the deep narrow dips it
+carries move with that microphone — equalizing them corrects a point in space
+rather than a loudspeaker. The **MMM** button on each channel block attaches that
+driver's [moving-microphone capture](#live-spectrum) (the one MMM mode saved), and
+the **Hybrid** checkbox under the plot swaps the magnitude view over to it. The
+button's own text says where each channel stands: `MMM` for none, `MMM ✓` for one
+attached, `MMM ⚠` for one the session still refers to but could not read.
+
+Per channel the hybrid curve is the stored average with that channel's own DSP
+chain added as its **analytic** magnitude, and the whole set lifted onto the
+impulse responses' axis by **one** common offset. That is exact, not a
+convenience: a spatial average is the root-mean-square of |H(f, r)| over the
+listening volume, and a filter does not depend on position, so it factors straight
+out of the average. The chain is added analytically rather than as the difference
+of two gated spectra because a gate does not commute with a filter — the two
+readings part by several dB wherever the bank rings longer than the window. Delay
+and polarity are absent for the reason they are absent from any magnitude: they
+are pure phase, so a hybrid channel curve is tonal balance alone. One offset for
+the set, never one per channel, because the captures were taken in a single
+analyzer session at a fixed gain: their relative levels are honest measurements,
+and normalizing each channel separately would throw exactly that away.
+
+Both **Sums** follow the channels drawn above them, and they are built as **complex**
+sums: each channel's gated spectrum is rescaled, bin by bin, to the level its spatial
+average reports, and the rescaled phasors are added. An average holds no phase, so the
+phase can only come from the impulse response — which is exactly what it is for.
+
+The obvious shortcut, adding the magnitudes and laying the impulse responses' own
+summation loss on top, is what this replaced. A loss is a property of the levels it
+was measured at, so it carries over only while the two families agree about the
+RELATIVE levels of the channels — and at a steep junction they do not. On the owner's
+car at 2154 Hz the impulse responses put the midrange 3.9 dB ABOVE the tweeter, while
+the hybrid, applying the crossover analytically, put it 19.4 dB below: a gate does not
+commute with a 48 dB/octave filter, so a stopband reads far above its analytic slope.
+The borrowed loss then drew a 13 dB dip into a sum whose own channels could not have
+produced more than 1.9 dB. The complex sum reads 0.9 dB there, which is what those
+channels can actually do.
+
+The Sum is still an **estimate**, for a different reason. A channel's own curve is
+exact: a filter does not depend on position, so it factors straight out of the
+average. The interference *between* two channels does depend on position, and the
+phase holding these phasors together was measured at one microphone. So the Sum keeps
+the interference of a **point** rather than a spatially averaged one, and its peaks
+and dips can come out either stronger or weaker than the true average; the sign is not
+determined. What can be said is that the gap tends to grow the faster the relative
+phase turns across the volume you averaged over — generally small in the bass, where
+the wavelength dwarfs that volume, and largest at a crossover high up. Read the
+channel curves for tonal balance and the Sum for where the junctions land, not as a
+measured spatial average of the system.
+
+A channel whose own capture stops — below a protective high-pass, or past the end of
+its grid — drops out of that point's sum while its impulse response says it is
+inaudible there, and takes the point with it when it says the channel is still
+playing.
+
+Everything else keeps reading the impulse responses: timing, polarity, the
+junction analyses, Auto delay, the sum-loss read-out and the phase view. The
+toggle needs an average on **every** channel that plays and greys out otherwise,
+since a sum mixing spatially averaged channels with point-measured ones puts two
+references on one axis and still looks like a measurement. The opposite side's
+dashed Sum is built the same way from **its own** captures, so the two sides stay
+comparable — the whole point of that curve; when that side is short of one the
+curve is dropped rather than drawn from impulse responses, which would read as an
+L/R difference that is really a method difference. The two sides share ONE offset
+(the shown side's), because one analyzer session at one input gain produced every
+capture and giving each side its own would erase exactly the L/R level difference
+the captures measured. Like the target and the sum loss it
+is a magnitude toggle, greyed on the phase and impulse views — a spatial average
+carries no phase. The tick itself survives all of that: it says what you want
+drawn, so re-attaching a capture brings the hybrid straight back instead of
+sending you to find the checkbox again.
+
+The set is checked while it draws. Every capture in one set is taken with one
+analyzer recipe at one input gain, so each channel should sit the same distance
+from its own impulse response — and when they disagree by more than 5 dB the panel
+says so in amber, listing each channel's own figure. That single number catches
+what would otherwise be invisible: one capture taken at a different input gain, one
+taken with a different frame length or window (which moves the
+[noise-slope compensation](#live-spectrum), a curve rather than a constant), one
+belonging to an unrelated session. It does **not** claim the captures and the
+impulse responses agree — they are different measurements of different things and
+their levels may sit tens of dB apart. Only the disagreement between channels is
+evidence, and a known-good seven-capture set reads 2.4–2.7 dB, which is the two
+families of measurement differing in shape as they are supposed to. The hybrid
+still draws while the warning stands: one offset serves the whole set, so a channel
+that disagrees is drawn at the level it claims rather than quietly normalized into
+line.
+
+The attachment is part of the session, and so is the toggle. The capture is stored
+as a path — it is close to a megabyte of spectrum per channel, and the session is
+rewritten on every knob turn — and found again the way the measurements are: by
+the stored path, then beside the session file, then beside the folder you point at
+when relinking. So a session exported with its captures opens with them attached
+on another machine, drawing the hybrid it was tuned on. Clearing a channel's
+source detaches its average too: a slot with no measurement describes no driver.
 
 The panel fills whatever window it is given: both plots take the extra width
 (they share a right edge), and the extra height is **split between them in the

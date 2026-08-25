@@ -31,6 +31,7 @@ namespace Resonalyze
         {
             labelChannel = new Label();
             buttonSource = new Button();
+            buttonSpatialAverage = new Button();
             labelGain = new Label();
             buttonCollapse = new Button();
             numericGain = new DarkNumericUpDown();
@@ -87,7 +88,7 @@ namespace Resonalyze
             buttonSource.ForeColor = Color.White;
             buttonSource.Location = new Point(70, 4);
             buttonSource.Name = "buttonSource";
-            buttonSource.Size = new Size(214, 24);
+            buttonSource.Size = new Size(150, 24);
             buttonSource.TabIndex = 1;
             buttonSource.Text = "Source...";
             buttonSource.TextAlign = ContentAlignment.MiddleLeft;
@@ -406,6 +407,19 @@ namespace Resonalyze
             checkBoxBypass.Text = "Bypass";
             checkBoxBypass.UseVisualStyleBackColor = true;
             // 
+            // buttonSpatialAverage
+            // 
+            buttonSpatialAverage.BackColor = Color.FromArgb(46, 51, 67);
+            buttonSpatialAverage.FlatStyle = FlatStyle.Popup;
+            buttonSpatialAverage.ForeColor = Color.White;
+            buttonSpatialAverage.Location = new Point(224, 4);
+            buttonSpatialAverage.Name = "buttonSpatialAverage";
+            buttonSpatialAverage.Size = new Size(60, 24);
+            buttonSpatialAverage.TabIndex = 2;
+            buttonSpatialAverage.Text = "MMM";
+            buttonSpatialAverage.UseCompatibleTextRendering = true;
+            buttonSpatialAverage.UseVisualStyleBackColor = false;
+            // 
             // buttonMute
             // 
             buttonMute.BackColor = Color.FromArgb(46, 51, 67);
@@ -476,6 +490,7 @@ namespace Resonalyze
             Controls.Add(buttonMute);
             Controls.Add(labelChannel);
             Controls.Add(buttonSource);
+            Controls.Add(buttonSpatialAverage);
             Controls.Add(labelGain);
             Controls.Add(buttonCollapse);
             Controls.Add(numericGain);
@@ -522,6 +537,7 @@ namespace Resonalyze
 
         private Label labelChannel;
         private Button buttonSource;
+        private Button buttonSpatialAverage;
         private Label labelGain;
         private Button buttonCollapse;
         private DarkNumericUpDown numericGain;

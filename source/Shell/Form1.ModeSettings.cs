@@ -141,7 +141,8 @@ public partial class Form1
                     microphoneCalibration.GetEntries(),
                     plotModelFactory.LiveSplOffsetDb.HasValue,
                     liveSpectrumController.HasDisplayableCurve,
-                    liveSpectrumController.HasConfiguredLoopback);
+                    liveSpectrumController.HasConfiguredLoopback,
+                    noiseMeasurement.SampleRate);
                 opt.ResetAverageRequested += liveSpectrumController.ResetAverage;
             },
             ApplyLiveSpectrumOptionsAsync,
@@ -154,6 +155,8 @@ public partial class Form1
         dialog.SetOptions(liveSpectrumOptions);
         LiveSpectrumRestartSnapshot after = LiveSpectrumRestartSnapshot.Capture(liveSpectrumOptions);
         SaveMeasurementSettings();
+        // The analysis mode is part of this snapshot, and it decides who owns Save.
+        RefreshSaveAvailability();
 
         if (before != after)
         {

@@ -67,6 +67,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// <summary>Raised when the user clicks the source button; the host shows the picker menu.</summary>
     public event EventHandler? SourceClicked;
 
+    /// <summary>Raised when the channel's spatial-average button is pressed.</summary>
+    public event EventHandler? SpatialAverageClicked;
+
     /// <summary>
     /// Raised when the user clicks the PEQ button; the host shows the action menu
     /// (load, edit in the EQ Wizard, clear) — the choices' availability depends on
@@ -93,6 +96,46 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     internal Button SourceButton => buttonSource;
+
+    /// <summary>
+    /// Shows whether this channel has a spatial average attached, in the button's own
+    /// text — the presence of that curve decides whether the hybrid view can be shown
+    /// at all, so it has to be readable without opening anything.
+    /// </summary>
+    /// <param name="resolved">
+    /// False for a capture the session still refers to but could not read — the same
+    /// distinction the Source button draws. Losing the file must not look like never
+    /// having attached one: the hybrid toggle goes away either way, and only the
+    /// warning says which of the two happened.
+    /// </param>
+    internal void SetSpatialAverage(
+        string? title, double? integratedSeconds, bool resolved)
+    {
+        bool present = !string.IsNullOrWhiteSpace(title);
+        buttonSpatialAverage.Text = !present ? "MMM" : resolved ? "MMM ✓" : "MMM ⚠";
+        buttonSpatialAverage.ForeColor = !present
+            ? Color.White
+            : resolved ? Color.FromArgb(140, 220, 160) : Color.FromArgb(230, 184, 0);
+        string newLine = Environment.NewLine;
+        spatialAverageTooltip = !present
+            ? "No spatial average for this channel." + newLine + newLine +
+                "Click to attach a moving-microphone capture. The hybrid view " +
+                "needs one on every channel that plays."
+            : resolved
+            ? $"Spatial average: {title}" +
+                (integratedSeconds is { } seconds
+                    ? $"{newLine}{seconds:0} s integrated"
+                    : string.Empty) +
+                newLine + newLine +
+                "Click to replace it, or to detach it."
+            : $"Missing spatial average: {title}" + newLine +
+                "The session still refers to it, but the file could not be read." +
+                newLine + newLine +
+                "Click to attach it again, or to detach it.";
+        // The tooltip host arrives later (ApplyTooltips) and the status can change at
+        // any time, so each side records what it knows and applies whatever is ready.
+        spatialAverageTooltipHost?.SetToolTip(buttonSpatialAverage, spatialAverageTooltip);
+    }
     internal DarkNumericUpDown GainInput => numericGain;
     internal DarkNumericUpDown DelayInput => numericDelay;
     internal CheckBox InvertCheckBox => checkBoxInvert;
@@ -281,8 +324,17 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// block owns the descriptions of its own sub-controls, so the host no longer
     /// reaches through into each input to set them.
     /// </summary>
+    private WrappingToolTip? spatialAverageTooltipHost;
+    private string spatialAverageTooltip = string.Empty;
+
     public void ApplyTooltips(WrappingToolTip toolTip)
     {
+        spatialAverageTooltipHost = toolTip;
+        if (spatialAverageTooltip.Length > 0)
+        {
+            toolTip.SetToolTip(buttonSpatialAverage, spatialAverageTooltip);
+        }
+
         ArgumentNullException.ThrowIfNull(toolTip);
         // The numeric fields register on their inner editor too (via ApplyToolTip) so
         // the tip still shows while the value is being edited, not only when idle.
@@ -523,6 +575,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private void WireEvents()
     {
         buttonSource.Click += (_, _) => SourceClicked?.Invoke(this, EventArgs.Empty);
+        buttonSpatialAverage.Click +=
+            (_, _) => SpatialAverageClicked?.Invoke(this, EventArgs.Empty);
         buttonMute.Click += (_, _) =>
         {
             Muted = !Muted;

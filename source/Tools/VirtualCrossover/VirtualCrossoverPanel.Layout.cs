@@ -43,6 +43,7 @@ public partial class VirtualCrossoverPanel
             buttonTargetSettings,
             labelCalibration,
             comboBoxCalibration,
+            checkBoxHybrid,
             labelView,
             panel1,
             labelSmoothing,

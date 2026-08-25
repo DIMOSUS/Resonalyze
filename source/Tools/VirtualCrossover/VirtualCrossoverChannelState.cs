@@ -25,6 +25,23 @@ internal sealed class VirtualCrossoverChannelState
         }
     }
     public VirtualCrossoverSourceSnapshot? ProcessingSource { get; private set; }
+
+    /// <summary>
+    /// The spatially averaged magnitude attached to this side — a stored capture of
+    /// this driver, taken with the DSP bypassed. Null when none is attached.
+    /// </summary>
+    /// <remarks>
+    /// Optional refinement, never the basis of anything: every complex computation
+    /// here keeps running on the honest impulse response. This curve only replaces
+    /// the MAGNITUDE the hybrid view draws, because a point measurement carries dips
+    /// that the average over the listening volume does not, and equalizing those is
+    /// the mistake the whole feature exists to avoid.
+    /// <para>
+    /// It rides on the SIDE rather than the pair: a moving-microphone pass is taken
+    /// per driver, and a pair's two drivers are two measurements.
+    /// </para>
+    /// </remarks>
+    public LiveCaptureDocument? SpatialAverage { get; set; }
     public int TransferPeakIndex { get; set; }
     public int SampleRate { get; set; }
 
@@ -70,6 +87,9 @@ internal sealed class VirtualCrossoverChannelState
     public void Clear()
     {
         TransferImpulseResponse = null;
+        // The average belongs to the measurement that was here; a slot wiped for a
+        // new source must not keep the old driver's curve.
+        SpatialAverage = null;
         TransferPeakIndex = 0;
         SampleRate = 0;
         TransferCoherence = null;

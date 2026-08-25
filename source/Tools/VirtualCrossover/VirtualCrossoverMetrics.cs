@@ -1,4 +1,5 @@
 using System.Numerics;
+using OxyPlot;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -74,12 +75,11 @@ internal sealed class VirtualCrossoverMetrics
             processed.Select(item => item.ImpulseResponse).ToList());
         GatedMagnitude sumCurve = buildMagnitudeCurve(
             sum, anchor, processed[0].SampleRate);
+        List<IReadOnlyList<SignalPoint>> operands = magnitudes
+            .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
+            .ToList();
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
-            sumCurve.Unsmoothed.Points,
-            magnitudes
-                .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
-                .ToList(),
-            smoothingInverseOctaves);
+            sumCurve.Unsmoothed.Points, operands, smoothingInverseOctaves);
         return (
             magnitudes.Select(curve => curve.Display).ToList(),
             sumCurve.Display,
@@ -275,7 +275,8 @@ internal sealed class VirtualCrossoverMetrics
                     State = state,
                     Source = source,
                     SampleRate = state.SampleRate,
-                    Chain = settings.ToChain()
+                    Chain = settings.ToChain(),
+                    Channel = channel
                 };
 
             SideProcessJob leftJob = Snapshot(leftState, leftSettings, leftSource);
@@ -512,7 +513,8 @@ internal sealed class VirtualCrossoverMetrics
                 State = state,
                 Source = source,
                 SampleRate = state.SampleRate,
-                Chain = chain
+                Chain = chain,
+                Channel = channel
             });
         }
 
@@ -554,7 +556,18 @@ internal sealed class VirtualCrossoverMetrics
                 side.ProcessedIr!, side.ProcessedPeak, side.SampleRate,
                 side.ProcessedValidRange)),
             jobs[0].SampleRate,
-            jobs.Count);
+            // The parts the sum was made of, so a caller that has to rebuild it
+            // differently — the hybrid sum adds magnitudes, not vectors — is not
+            // left with only the finished total. The colour is not this method's to
+            // know: it belongs to the channel's slot in the panel, and nothing that
+            // reads a side sum draws these curves in their own right.
+            jobs.Select(side => new ProcessedChannel(
+                side.Channel,
+                side.ProcessedIr!,
+                side.ProcessedPeak,
+                side.SampleRate,
+                OxyColors.Transparent,
+                side.ProcessedValidRange)).ToList());
     }
 
     // One channel side snapshotted on the UI thread for background processing
@@ -569,6 +582,7 @@ internal sealed class VirtualCrossoverMetrics
         public required VirtualCrossoverSourceSnapshot Source { get; init; }
         public required int SampleRate { get; init; }
         public required DspChannelChain Chain { get; init; }
+        public required VirtualCrossoverChannel Channel { get; init; }
         public Complex[]? ProcessedIr { get; set; }
         public int ProcessedPeak { get; set; }
         public ValidSampleRange ProcessedValidRange { get; set; }

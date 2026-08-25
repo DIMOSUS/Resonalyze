@@ -94,6 +94,8 @@ public partial class Form1
         }
 
         UpdateOverlayAvailability();
+        // Which measurement owns Save changes with the mode.
+        RefreshSaveAvailability();
     }
 
     private async void buttonRecord_Click(object sender, EventArgs e)
@@ -177,7 +179,11 @@ public partial class Form1
     // alone — it follows the analysis mode, not the scale.
     private void ResetLiveSplViewOnlyDisplayForRun()
     {
-        if (plotModelFactory.EffectiveLiveSpectrumScale !=
+        // MMM is never view-only (see LiveSpectrumController.SplViewOnly), so there
+        // is nothing to rescue here — and dropping the scale would fight the mode,
+        // which renders band-power dB SPL whatever this option says.
+        if (plotModelFactory.EffectiveLiveAnalysisMode.IsSpatialAverageCapture() ||
+            plotModelFactory.EffectiveLiveSpectrumScale !=
                 Dsp.MagnitudeScale.SoundPressureLevel ||
             plotModelFactory.LiveSplOffsetDb.HasValue)
         {
@@ -342,6 +348,12 @@ public partial class Form1
         // Captures the other option groups and keeps the measurement settings
         // just edited (they are not read back from expSweepMeasurement here).
         SaveMeasurementSettings();
+
+        // Before the early return below: the protective high-pass is not an audio
+        // setting, so an edit to it alone leaves the request unchanged — and it is what
+        // a reference-free capture divides back out, so the live analyzer has to learn
+        // about it without the reconfigure that would restart a running one.
+        liveSpectrumController.ApplyProtectiveHighPass(measurementSettings.Measurement);
 
         AudioSessionRequest request =
             CreateAudioWarmupRequest(measurementSettings.Measurement);

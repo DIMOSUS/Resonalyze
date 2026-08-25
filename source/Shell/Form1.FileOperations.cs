@@ -36,6 +36,14 @@ public partial class Form1
 
     private async void buttonSave_Click(object sender, EventArgs e)
     {
+        // In MMM the buttons belong to that mode's own measurement, not to the
+        // impulse response (see Form1.LiveCapture).
+        if (LiveCaptureOwnsSaveLoad)
+        {
+            await SaveLiveCaptureAsync();
+            return;
+        }
+
         if (expSweepMeasurement.HasImpulseResponse && !expSweepMeasurement.InProgress)
         {
             if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
@@ -88,6 +96,12 @@ public partial class Form1
 
     private async void buttonLoad_Click(object sender, EventArgs e)
     {
+        if (LiveCaptureOwnsSaveLoad)
+        {
+            await LoadLiveCaptureAsync();
+            return;
+        }
+
         if (!expSweepMeasurement.InProgress)
         {
             if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
@@ -98,62 +112,103 @@ public partial class Form1
             using var dialog = new OpenFileDialog
             {
                 CheckFileExists = true,
-                Filter =
-                    "Measurements (*.json;*.wav;*.txt)|*.json;*.wav;*.txt|" +
-                    "Resonalyze impulse response (*.json)|*.json|" +
-                    "Recorded sweep (*.wav)|*.wav|" +
-                    "REW impulse response export (*.txt)|*.txt|" +
-                    "All files (*.*)|*.*",
+                Filter = MeasurementFileFilter,
                 InitialDirectory = GetImpulseResponseDialogDirectory(),
                 Multiselect = false,
                 RestoreDirectory = true,
-                Title = "Load impulse response, recorded sweep or REW export"
+                Title = MeasurementFileDialogTitle
             };
             if (dialog.ShowDialog(this) != DialogResult.OK)
             {
                 return;
             }
 
-            string extension = Path.GetExtension(dialog.FileName);
-            bool importRecording = string.Equals(extension, ".wav", StringComparison.OrdinalIgnoreCase);
-            bool importRewExport = string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase);
-            commandController.SetSaveAvailable(false);
-            commandController.SetLoadAvailable(false);
+            // A stored capture knows which mode it belongs to, so opening one here
+            // takes the application there rather than refusing it for not being an
+            // impulse response. A file that CLAIMS to be a capture and then fails to
+            // parse is reported as the broken capture it is, not handed on to the
+            // impulse-response loader to be misdiagnosed as a bad format.
             try
             {
-                if (importRecording)
+                if (await TryOpenLiveCaptureAsync(dialog.FileName))
                 {
-                    await ImportRecordedSweepAsync(dialog.FileName);
-                }
-                else if (importRewExport)
-                {
-                    await ImportRewImpulseResponseAsync(dialog.FileName);
-                }
-                else
-                {
-                    await LoadImpulseResponseFileAsync(dialog.FileName);
+                    return;
                 }
             }
             catch (Exception exception)
             {
-                string failure = importRecording
-                    ? "Failed to import the recorded sweep."
-                    : importRewExport
-                        ? "Failed to import the REW impulse response."
-                        : "Failed to load the impulse response.";
                 MessageBox.Show(
                     this,
-                    $"{failure}\r\n\r\n{exception.Message}",
-                    importRecording || importRewExport ? "Import failed" : "Load failed",
+                    $"The capture could not be loaded.\r\n\r\n{exception.Message}",
+                    "Load failed",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
+                return;
             }
-            finally
+
+            await LoadImpulseResponseLikeAsync(dialog.FileName);
+        }
+    }
+
+    /// <summary>
+    /// Loads whatever is NOT a capture: a Resonalyze impulse response, a recorded
+    /// sweep or a REW export, dispatched by extension.
+    /// </summary>
+    /// <remarks>
+    /// Shared by both Load buttons. The file decides which measurement it is, so
+    /// both have to be able to open both kinds; without this the moving-mic button
+    /// refused an impulse response and the main one refused a capture, each telling
+    /// the user the file was the wrong format when it was only the wrong button.
+    /// </remarks>
+    private async Task LoadImpulseResponseLikeAsync(string path)
+    {
+        // An impulse response has nowhere to be shown in a live capture mode, so go
+        // where it belongs first — the mirror of a capture taking the application to
+        // Live Spectrum.
+        if (CurrentMode == Mode.LiveSpectrum)
+        {
+            await SelectModeAsync(ModeTab.Frequency);
+        }
+
+        string extension = Path.GetExtension(path);
+        bool importRecording = string.Equals(extension, ".wav", StringComparison.OrdinalIgnoreCase);
+        bool importRewExport = string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase);
+        commandController.SetSaveAvailable(false);
+        commandController.SetLoadAvailable(false);
+        try
+        {
+            if (importRecording)
             {
-                commandController.SetSaveAvailable(
-                    expSweepMeasurement.HasImpulseResponse);
-                FinalizeMeasurementCommandState();
+                await ImportRecordedSweepAsync(path);
             }
+            else if (importRewExport)
+            {
+                await ImportRewImpulseResponseAsync(path);
+            }
+            else
+            {
+                await LoadImpulseResponseFileAsync(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            string failure = importRecording
+                ? "Failed to import the recorded sweep."
+                : importRewExport
+                    ? "Failed to import the REW impulse response."
+                    : "Failed to load the impulse response.";
+            MessageBox.Show(
+                this,
+                $"{failure}\r\n\r\n{exception.Message}",
+                importRecording || importRewExport ? "Import failed" : "Load failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            commandController.SetSaveAvailable(
+                expSweepMeasurement.HasImpulseResponse);
+            FinalizeMeasurementCommandState();
         }
     }
 
@@ -211,6 +266,14 @@ public partial class Form1
         // validates the anchor against the input it was measured on — not the
         // app's current device — and keeps it.
         expSweepMeasurement.MeasurementSplCalibration = file.SplCalibration;
+        // Whatever the file knows about the protective high-pass travels with it,
+        // including "nothing": the app's own setting describes the next run, not the
+        // response just loaded.
+        expSweepMeasurement.MeasurementProtectiveHighPass =
+            file.ProtectiveHighPass is { } entry
+                ? new ProtectiveHighPassConfiguration(
+                    entry.Kind, entry.FrequencyHz, entry.SlopeDbPerOctave)
+                : null;
         expSweepMeasurement.MeasurementInput = file.SplCalibration?.CaptureIdentity;
         ApplyLoadedImpulseResponseState(path);
         sessionTracker.MarkLoadedFile(path, file);

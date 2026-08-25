@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Reflection;
+using OxyPlot;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -441,7 +443,7 @@ public sealed class VirtualDspEqHandoffTests
             new[] { new PeqBand(250, 3, -6) }, preampDb: -1.5);
 
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
 
         VirtualCrossoverChannelSettings right = channel.Pair.SideFor(rightSide: true);
         Assert.Equal(curve.Bands, right.PeqBands);
@@ -464,7 +466,7 @@ public sealed class VirtualDspEqHandoffTests
 
         Assert.False(request.Token.RightSide);
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, request.Token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { channel }, request.Token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Equal(curve.Bands, channel.Pair.SideFor(rightSide: false).PeqBands);
     }
 
@@ -480,7 +482,7 @@ public sealed class VirtualDspEqHandoffTests
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Pair.SideFor(rightSide: false).PeqBands);
     }
 
@@ -497,7 +499,7 @@ public sealed class VirtualDspEqHandoffTests
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
     }
 
@@ -517,12 +519,12 @@ public sealed class VirtualDspEqHandoffTests
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1,
-            CalibrationFile.Parse("20 0\n20000 -1.5\n"), GateTemplate, null, TargetLevel));
+            CalibrationFile.Parse("20 0\n20000 -1.5\n"), GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
 
         // Turning it off entirely is a change too — not a way back to "no opinion".
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
 
         // The same correction, re-read (a settings refresh hands the panel a fresh
@@ -530,7 +532,7 @@ public sealed class VirtualDspEqHandoffTests
         // content, never by reference or by the name this machine gives them.
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1,
-            CalibrationFile.Parse("20 0\n20000 1.5\n"), GateTemplate, null, TargetLevel));
+            CalibrationFile.Parse("20 0\n20000 1.5\n"), GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Equal(curve.Bands, channel.Settings.PeqBands);
     }
 
@@ -549,7 +551,7 @@ public sealed class VirtualDspEqHandoffTests
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve,
-            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Equal(newer, channel.Settings.PeqBands);
 
         // Cleared counts the same: an empty bank is a state, not an absence.
@@ -558,7 +560,7 @@ public sealed class VirtualDspEqHandoffTests
         channel.Settings.PeqPreampDb = 0;
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, second, curve,
-            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
     }
 
@@ -575,13 +577,13 @@ public sealed class VirtualDspEqHandoffTests
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve,
             projectGeneration: 1, calibration: null,
-            GateTemplate with { PlateauMs = 400 }, null, TargetLevel));
+            GateTemplate with { PlateauMs = 400 }, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve,
             projectGeneration: 1, calibration: null,
-            GateTemplate, pinnedGateOffsetMs: 12.5, TargetLevel));
+            GateTemplate, pinnedGateOffsetMs: 12.5, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
     }
 
@@ -598,7 +600,7 @@ public sealed class VirtualDspEqHandoffTests
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve,
             projectGeneration: 1, calibration: null,
-            GateTemplate, null, targetLevelDb: TargetLevel + 5));
+            GateTemplate, null, targetLevelDb: TargetLevel + 5, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
     }
 
@@ -615,7 +617,7 @@ public sealed class VirtualDspEqHandoffTests
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
     }
 
@@ -631,14 +633,14 @@ public sealed class VirtualDspEqHandoffTests
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
 
         // Switching it off entirely is a change too.
         VirtualDspEqReturnToken fresh = TokenFor(channel, rightSide: false);
         channel.Settings.CrossoverKind = CrossoverKind.Off;
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, fresh, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { channel }, fresh, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
     }
 
@@ -658,7 +660,7 @@ public sealed class VirtualDspEqHandoffTests
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, delayToken, curve,
-            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
 
         channel.Settings.PeqBands =
             [new PeqBand(40, 2, 0, PeqBandType.AllPassSecondOrder)];
@@ -667,7 +669,7 @@ public sealed class VirtualDspEqHandoffTests
             [new PeqBand(40, 20, 0, PeqBandType.AllPassSecondOrder)];
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, apToken, curve,
-            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Equal(20, Assert.Single(channel.Settings.PeqBands).Q);
     }
 
@@ -683,7 +685,7 @@ public sealed class VirtualDspEqHandoffTests
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Equal(curve.Bands, channel.Settings.PeqBands);
     }
 
@@ -705,7 +707,7 @@ public sealed class VirtualDspEqHandoffTests
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, request.Token, curve,
-            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
     }
 
@@ -731,7 +733,7 @@ public sealed class VirtualDspEqHandoffTests
                 Unwrap = true
             },
             null,
-            TargetLevel));
+            TargetLevel, spatialAverage: null));
         Assert.Equal(curve.Bands, channel.Settings.PeqBands);
     }
 
@@ -746,7 +748,7 @@ public sealed class VirtualDspEqHandoffTests
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve,
             projectGeneration: 1, calibration: null,
-            GateTemplate with { PlateauMs = 400 }, null, TargetLevel));
+            GateTemplate with { PlateauMs = 400 }, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
     }
 
@@ -777,7 +779,7 @@ public sealed class VirtualDspEqHandoffTests
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, request.Token, curve,
             projectGeneration: 1, calibration: null,
-            GateTemplate, pinnedGateOffsetMs: 12.5, TargetLevel));
+            GateTemplate, pinnedGateOffsetMs: 12.5, TargetLevel, spatialAverage: null));
         Assert.Equal(curve.Bands, channel.Settings.PeqBands);
     }
 
@@ -793,7 +795,7 @@ public sealed class VirtualDspEqHandoffTests
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, request.Token, curve,
             projectGeneration: 1, calibration: null,
-            GateTemplate, pinnedGateOffsetMs: 12.5, TargetLevel));
+            GateTemplate, pinnedGateOffsetMs: 12.5, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
     }
 
@@ -811,7 +813,7 @@ public sealed class VirtualDspEqHandoffTests
         Assert.False(request.Token.WithChain);
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, request.Token, curve,
-            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Equal(curve.Bands, channel.Settings.PeqBands);
     }
 
@@ -830,7 +832,7 @@ public sealed class VirtualDspEqHandoffTests
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { channel }, token, curve, projectGeneration: 5, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { channel }, token, curve, projectGeneration: 5, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Empty(channel.Settings.PeqBands);
 
         // The generation ALONE is what refuses it: an untouched channel of the same
@@ -840,9 +842,9 @@ public sealed class VirtualDspEqHandoffTests
         VirtualDspEqReturnToken control =
             TokenFor(untouched, rightSide: false) with { ProjectGeneration = 4 };
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { untouched }, control, curve, projectGeneration: 5, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { untouched }, control, curve, projectGeneration: 5, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { untouched }, control, curve, projectGeneration: 4, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { untouched }, control, curve, projectGeneration: 4, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
         Assert.Equal(curve.Bands, untouched.Settings.PeqBands);
     }
 
@@ -855,7 +857,7 @@ public sealed class VirtualDspEqHandoffTests
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
-            new[] { survivor }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel));
+            new[] { survivor }, token, curve, projectGeneration: 1, calibration: null, GateTemplate, null, TargetLevel, spatialAverage: null));
 
         Assert.Empty(removed.Settings.PeqBands);
         Assert.Empty(survivor.Settings.PeqBands);
@@ -881,7 +883,8 @@ public sealed class VirtualDspEqHandoffTests
             TargetLevel,
             GateTemplate,
             PinnedGateOffsetMs: null,
-            Calibration: null);
+            Calibration: null,
+            SpatialAverage: null);
 
     private static EqWizardGatedPreviewRequest Preview(
         VirtualDspEqHandoffRequest request, EqualizationCurve? bank) =>
@@ -903,7 +906,9 @@ public sealed class VirtualDspEqHandoffTests
         double targetLevelDb = -41,
         CalibrationFile? calibration = null,
         long projectGeneration = 1,
-        EqWizardPhaseContext? phaseContext = null) =>
+        EqWizardPhaseContext? phaseContext = null,
+        LiveCaptureDocument? spatialAverage = null,
+        double spatialAverageOffsetDb = 0) =>
         VirtualDspEqHandoff.Build(
             channel,
             channel.ActiveRight,
@@ -918,7 +923,134 @@ public sealed class VirtualDspEqHandoffTests
             smoothingInverseOctaves: 0,
             calibration,
             calibrationName: calibration == null ? null : "mic-1",
-            projectGeneration);
+            projectGeneration,
+            spatialAverage,
+            spatialAverageOffsetDb);
+
+    // -------------------------------------------------------- spatial average
+
+    /// <summary>
+    /// On the hybrid view the capture REPLACES the magnitude, and the impulse response
+    /// stays for the phase view. That split is the whole feature: the average is where
+    /// tonal balance is honest, the impulse response is where timing is.
+    /// </summary>
+    [Fact]
+    public void WithASpatialAverage_TheCaptureTravelsAndTheMagnitudeStopsBeingGated()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        LiveCaptureDocument capture = Capture();
+
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, spatialAverage: capture, spatialAverageOffsetDb: -73.5);
+
+        Assert.Same(capture, request.Source.SpatialAverage);
+        Assert.Equal(-73.5, request.Source.SpatialAverageOffsetDb);
+        // Not gated: an average is a steady-state curve with no window at all, so the
+        // magnitude side must not be routed through the gated preview.
+        Assert.False(request.Source.IsGated);
+        // But the phase side still has everything it needs, and reads the impulse
+        // response through the panel's gate.
+        Assert.NotNull(request.Source.Measurement);
+        Assert.NotNull(request.Source.PreviewImpulseResponse);
+        Assert.NotNull(request.Source.GateSettings);
+        Assert.Contains("MMM", request.Source.DisplayName);
+    }
+
+    /// <summary>
+    /// Without one, nothing changes: the panel is drawing impulse responses and the
+    /// handoff hands impulse responses over, gated exactly as before.
+    /// </summary>
+    [Fact]
+    public void WithoutASpatialAverage_TheMagnitudeIsStillGated()
+    {
+        VirtualDspEqHandoffRequest request = Build(BuildChannel(), withChain: true);
+
+        Assert.Null(request.Source.SpatialAverage);
+        Assert.True(request.Source.IsGated);
+    }
+
+    /// <summary>
+    /// The bank the wizard fits is fitted against the CAPTURE, not against the
+    /// impulse response — which is what the whole hybrid exists for. Driven through a
+    /// live panel, because the choice is made where the source curve is computed.
+    /// </summary>
+    [Fact]
+    public void TheWizardsSourceCurveComesFromTheCapture()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        // No chain and no offset, so the curve IS the capture: a level nothing in the
+        // impulse-response path could produce.
+        channel.Settings.GainDb = 0;
+        channel.Settings.CrossoverKind = CrossoverKind.Off;
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, spatialAverage: Capture(), spatialAverageOffsetDb: 0);
+
+        using var panel = new EqWizardPanel();
+        typeof(EqWizardPanel)
+            .GetMethod("BeginVirtualDspHandoff", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(panel, [request]);
+        object? curve = typeof(EqWizardPanel)
+            .GetMethod("GetSourceCurve", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(panel, []);
+
+        Assert.NotNull(curve);
+        var points = (IReadOnlyList<DataPoint>)typeof(EqWizardCurve)
+            .GetProperty("Points")!
+            .GetValue(curve)!;
+        Assert.NotEmpty(points);
+        Assert.All(
+            points.Where(point => point.X is > 100 and < 10_000),
+            point => Assert.Equal(-20, point.Y, 3));
+    }
+
+    /// <summary>
+    /// A bank fitted against the spatial average must not land on a panel that has
+    /// gone back to its impulse responses. It is the same invisible divergence the
+    /// calibration guard refuses, and by the same line: it moves the MAGNITUDE the
+    /// bank was fitted against, and the wizard is still showing what it opened on.
+    /// </summary>
+    [Fact]
+    public void ReturnAfterTheHybridWasTurnedOff_Refuses()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        LiveCaptureDocument capture = Capture();
+        VirtualDspEqReturnToken token = Build(
+            channel, withChain: true, spatialAverage: capture).Token;
+        var curve = new EqualizationCurve([new PeqBand(120, 1.4, -3)], -1.5);
+
+        // The panel is back on impulse responses: nothing to hand over now.
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null,
+            GateTemplate, null, TargetLevel, spatialAverage: null));
+
+        // A DIFFERENT capture is refused too, even one whose numbers match: it is a
+        // different measurement, and a re-attached file is a different capture.
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null,
+            GateTemplate, null, TargetLevel, spatialAverage: Capture()));
+
+        // The one it was fitted against still lands.
+        Assert.True(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null,
+            GateTemplate, null, TargetLevel, spatialAverage: capture));
+        Assert.Equal(curve.Bands, channel.Settings.PeqBands);
+    }
+
+    // A flat spatial average at a known level, so what the wizard draws identifies
+    // which of the two measurements it read.
+    private static LiveCaptureDocument Capture() => new()
+    {
+        SavedAtUtc = DateTimeOffset.UnixEpoch,
+        Title = "l tw mmm",
+        CurveDb = Enumerable.Repeat(-20.0, 1_024).ToArray(),
+        GridStartHz = 20,
+        GridStopHz = 20_000,
+        Recipe = new LiveCaptureRecipe
+        {
+            AnalysisMode = LiveAnalysisMode.Mmm,
+            SampleRateHz = SampleRate
+        }
+    };
 
     // A channel whose left side holds a synthetic measurement: a decaying wavelet
     // arriving at sample 480 (10 ms), through a full DSP chain so every stage has

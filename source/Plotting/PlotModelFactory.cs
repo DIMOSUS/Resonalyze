@@ -123,7 +123,8 @@ internal sealed class PlotModelFactory
     /// never disagree about which curves the mode has.
     /// </summary>
     public LiveAnalysisMode EffectiveLiveAnalysisMode =>
-        noiseMeasurement.IsMicOnly
+        noiseMeasurement.IsMicOnly &&
+        liveSpectrumOptions.AnalysisMode == LiveAnalysisMode.TransferFunction
             ? LiveAnalysisMode.Rta
             : liveSpectrumOptions.AnalysisMode;
 
@@ -137,10 +138,55 @@ internal sealed class PlotModelFactory
     /// function is a dimensionless ratio with no scalar SPL under noise excitation,
     /// so in Transfer mode the selection is overridden to relative.
     /// </summary>
-    public MagnitudeScale EffectiveLiveSpectrumScale =>
-        EffectiveLiveAnalysisMode == LiveAnalysisMode.Rta
-            ? liveSpectrumOptions.MagnitudeScale
-            : MagnitudeScale.Relative;
+    public MagnitudeScale EffectiveLiveSpectrumScale
+    {
+        get
+        {
+            LiveAnalysisMode mode = EffectiveLiveAnalysisMode;
+            // A spatial-average capture shows an ABSOLUTE axis only when there is an
+            // anchor to put it on. Without one the band levels are still exactly what
+            // such an average needs — a whole set is levelled against the impulse
+            // responses by one common offset later — but they are relative, and
+            // calling them dB SPL puts them below that axis's hard floor of −20, where
+            // the curve is drawn correctly and cannot be seen.
+            //
+            // By the TRAIT, like LiveUsesBandPower beside it: a mode tested by identity
+            // here would be integrated as band power and then pinned to a relative axis
+            // for good, and its captures would record a relative scale while carrying a
+            // live SPL anchor.
+            if (mode.IsSpatialAverageCapture())
+            {
+                return LiveSplOffsetDb.HasValue
+                    ? MagnitudeScale.SoundPressureLevel
+                    : MagnitudeScale.Relative;
+            }
+
+            // Unchanged for the plain reference-free trace: a selected dB SPL without
+            // an anchor stays view-only here, showing SPL overlays and suppressing live
+            // curves rather than quietly redrawing them on a relative axis. A transfer
+            // function is a dimensionless ratio and has no absolute axis at all.
+            return mode.IsReferenceFree()
+                ? liveSpectrumOptions.MagnitudeScale
+                : MagnitudeScale.Relative;
+        }
+    }
+
+    /// <summary>
+    /// Whether the reference-free trace is integrated as POWER PER DISPLAY BAND
+    /// rather than read per FFT bin. MMM always is; the RTA is when dB SPL is
+    /// selected.
+    /// </summary>
+    /// <remarks>
+    /// This is the rendering PIPELINE, deliberately separate from the axis above. A
+    /// spatial average is defined on band levels — that is what makes it
+    /// FFT-size-independent, and what keeps its slope compensation small and confined
+    /// to the bass instead of spanning 30 dB — and none of that needs an absolute
+    /// reference. The two were one switch, which is how an unanchored MMM capture
+    /// ended up computed correctly and rendered off the bottom of the plot.
+    /// </remarks>
+    public bool LiveUsesBandPower =>
+        EffectiveLiveAnalysisMode.IsSpatialAverageCapture() ||
+        EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
 
     /// <summary>
     /// The spectral model of the excitation the live RTA display compensates, or
@@ -151,14 +197,33 @@ internal sealed class PlotModelFactory
     /// toggling it drops the envelope.
     /// </summary>
     public NoiseSpectralModel? LiveTiltModel =>
-        liveSpectrumOptions.CompensateNoiseTilt &&
-        EffectiveLiveAnalysisMode == LiveAnalysisMode.Rta
-            ? NoiseColorTilt.SpectralModel(liveSpectrumOptions.NoiseColor)
+        EffectiveLiveAnalysisMode.IsReferenceFree() &&
+        (liveSpectrumOptions.CompensateNoiseTilt ||
+            EffectiveLiveAnalysisMode.IsSpatialAverageCapture())
+            ? NoiseColorTilt.SpectralModel(liveSpectrumOptions.EffectiveNoiseColor)
             : null;
 
     // The dB offset applied to the live RTA / peak-hold curves when the plot is in
     // SPL mode; zero in the native (relative) view. The transfer function is never
     // shifted — it is a dimensionless ratio, not an absolute level.
+    /// <summary>
+    /// The display smoothing the live curves are drawn with. MMM pins it Off.
+    /// </summary>
+    /// <remarks>
+    /// Not because smoothing would corrupt anything — it is level-preserving and
+    /// applied after the band levels — but because the dB SPL path already
+    /// integrates a FIXED 1/12-octave band per display point
+    /// (<see cref="DataHelper.LogarithmicPowerBandResample"/>), deliberately
+    /// decoupled from this setting. That band is what makes an unsmoothed spatial
+    /// average read clean; smoothing on top would only blur a curve that is already
+    /// an average, and it would put a knob into a capture recipe that must not
+    /// differ across a set. What is drawn is then what the capture records.
+    /// </remarks>
+    public int EffectiveLiveSmoothingCode =>
+        EffectiveLiveAnalysisMode.IsSpatialAverageCapture()
+            ? 0
+            : liveSpectrumOptions.SmoothingInverseOctaves;
+
     private double LiveSplRenderOffset =>
         EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel
             ? LiveSplOffsetDb ?? 0.0
@@ -307,10 +372,10 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        int smoothingCode = liveSpectrumOptions.SmoothingInverseOctaves;
-        if (EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel)
+        int smoothingCode = EffectiveLiveSmoothingCode;
+        if (LiveUsesBandPower)
         {
-            // No raw form, but the SPL trace applies its correction additively per band,
+            // No raw form, but the band trace applies its correction additively per band,
             // so handing the calibration over lets a consumer swap it exactly later.
             return DescribeWithoutRawForm(
                 smoothingCode,
@@ -337,6 +402,112 @@ internal sealed class PlotModelFactory
                 GetCalibration(liveSpectrumOptions)),
             smoothingCode,
             noiseMeasurement.SampleRate > 0 ? noiseMeasurement.SampleRate : null);
+    }
+
+    /// <summary>
+    /// Snapshots the current reference-free capture as a whole document: the
+    /// accumulated bins, the recipe that renders them, the corrections applied and
+    /// the curve as drawn. Null when there is nothing to store, or when the display
+    /// is not on the band-power (dB SPL) path a spatial average is defined on.
+    /// </summary>
+    /// <remarks>
+    /// Built here rather than in the controller because everything the recipe must
+    /// record is a property of THIS pipeline — the window figures the band integrator
+    /// divides by, the grid its clamps produce, the compensation curve it renders.
+    /// A recipe assembled from the options object instead would describe what was
+    /// asked for, not what was drawn, and the two part company in exactly the modes
+    /// that pin their settings.
+    /// </remarks>
+    /// <param name="frameCount">
+    /// The frames <paramref name="inputMagnitude"/> is the average of, taken from the
+    /// same snapshot. Not read back off the analyzer here: between the snapshot and
+    /// this call another frame can land, and the recipe would then claim integration
+    /// the stored bins do not contain.
+    /// </param>
+    public LiveCaptureDocument? BuildLiveCaptureDocument(
+        double[]? inputMagnitude,
+        int frameCount,
+        string title)
+    {
+        // The filter this accumulation was taken through, from the accumulation — the
+        // same field the render divides out, so the curve and the recipe beside it
+        // cannot end up describing different filters.
+        ProtectiveHighPassConfiguration protectiveHighPass =
+            noiseMeasurement.CaptureProtectiveHighPass;
+        int sampleRate = noiseMeasurement.SampleRate;
+        int sequenceLength = noiseMeasurement.SequenceLength;
+        if (inputMagnitude is not { Length: > 1 } ||
+            sampleRate < 1 ||
+            sequenceLength < 2 ||
+            !LiveUsesBandPower)
+        {
+            return null;
+        }
+
+        var applied = new LiveRtaApplied();
+        List<SignalPoint> curve = ResampleLiveRta(inputMagnitude, applied);
+        if (curve.Count != LiveCaptureDocument.CurvePointCount)
+        {
+            return null;
+        }
+
+        CalibrationFile? calibration = GetCalibration(liveSpectrumOptions);
+
+        int hop = Math.Max(1, noiseMeasurement.AnalysisHopSize);
+        int frames = frameCount;
+        return new LiveCaptureDocument
+        {
+            SavedAtUtc = DateTimeOffset.UtcNow,
+            Title = title ?? string.Empty,
+            Method = SpatialAverageMethod.MovingMic,
+            CaptureSessionId = noiseMeasurement.CaptureSessionId,
+            SpectrumDb = LiveCaptureDocument.StoreSpectrumBins(
+                inputMagnitude, sequenceLength, sampleRate),
+            CurveDb = curve.Select(point => point.Y).ToArray(),
+            GridStartHz = curve[0].X,
+            GridStopHz = curve[^1].X,
+            TiltCompensationDb = applied.TiltDb,
+            CalibrationCorrectionDb = applied.CalibrationDb,
+            ProtectiveHighPassCorrectionDb = applied.ProtectiveHighPassDb,
+            // The CURVE travels, named by the id the live options selected it with —
+            // a calibration file's own name is not something CalibrationFile keeps,
+            // and the id is the only handle this layer has. The points are what the
+            // consumer needs; the name is a hint, exactly as in a Virtual DSP session.
+            Calibration = calibration != null
+                ? VirtualCrossoverCalibrationSettings.From(
+                    calibration,
+                    liveSpectrumOptions.CalibrationId ?? string.Empty,
+                    fileName: null)
+                : null,
+            Recipe = new LiveCaptureRecipe
+            {
+                AnalysisMode = EffectiveLiveAnalysisMode,
+                SampleRateHz = sampleRate,
+                SequenceLength = sequenceLength,
+                FrameMilliseconds = 1000.0 * sequenceLength / sampleRate,
+                WindowType = noiseMeasurement.AnalysisWindowType,
+                WindowEnbwBins = noiseMeasurement.AnalysisWindowEnbwBins,
+                WindowMainLobeBins = noiseMeasurement.AnalysisWindowMainLobeBins,
+                OverlapPercent = 100 - 100 * hop / sequenceLength,
+                AveragingSpeed = liveSpectrumOptions.EffectiveAveragingSpeed,
+                AveragedFrameCount = frames,
+                IntegratedSeconds = (double)frames * hop / sampleRate,
+                NoiseColor = liveSpectrumOptions.EffectiveNoiseColor,
+                // What the curve actually received, not what was asked for: the
+                // render skips a misaligned compensation, and a recipe that claimed
+                // one anyway would send a reader looking for an array that is empty.
+                SlopeCompensation = applied.TiltDb.Length > 0,
+                // Absolute only when an anchor lifted it; the offset beside this says
+                // by how much, and null there means the levels are relative but
+                // internally consistent across the set.
+                MagnitudeScale = EffectiveLiveSpectrumScale,
+                SplAnchorOffsetDb = LiveSplOffsetDb,
+                SmoothingCode = EffectiveLiveSmoothingCode,
+                ProtectiveHighPassKind = protectiveHighPass.Kind,
+                ProtectiveHighPassFrequencyHz = protectiveHighPass.FrequencyHz,
+                ProtectiveHighPassSlopeDbPerOctave = protectiveHighPass.SlopeDbPerOctave
+            }
+        };
     }
 
     // A capture with no re-smoothable samples: the overlay stores the drawn curve, but the
@@ -1537,10 +1708,17 @@ internal sealed class PlotModelFactory
 
     // The reference-free RTA is the only trace when the effective analysis mode is
     // RTA — selected, or forced by a missing loopback reference.
-    private bool LiveRtaOnly =>
-        EffectiveLiveAnalysisMode == LiveAnalysisMode.Rta;
+    private bool LiveRtaOnly => EffectiveLiveAnalysisMode.IsReferenceFree();
 
-    public PlotModel CreateLiveSpectrum()
+    /// <param name="scaleOverride">
+    /// The axis to build instead of the live one. Passed when the plot is showing a
+    /// STORED capture: its levels are absolute or relative according to the anchor
+    /// that existed when it was taken, and building the current session's axis around
+    /// them either hides the curve under the SPL floor of −20 or presents absolute
+    /// levels on a relative axis. Null follows the live state, as every other caller
+    /// wants.
+    /// </param>
+    public PlotModel CreateLiveSpectrum(MagnitudeScale? scaleOverride = null)
     {
         // In RTA mode the whole plot is the reference-free microphone spectrum — in
         // dB SPL when that scale is selected, in the native scale otherwise. The
@@ -1549,15 +1727,23 @@ internal sealed class PlotModelFactory
         // compensation is named in the title: the level is reshaped by the
         // excitation's own spectrum and must not be read as the plain measurement.
         bool renderSpl =
-            EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
+            (scaleOverride ?? EffectiveLiveSpectrumScale) == MagnitudeScale.SoundPressureLevel;
         bool rtaOnly = LiveRtaOnly;
+        bool mmm = EffectiveLiveAnalysisMode.IsSpatialAverageCapture();
         string tiltSuffix = LiveTiltModel != null ? " (noise-compensated)" : "";
+        // MMM says so, and says which reference it is on. An unanchored capture is a
+        // perfectly good spatial average — the set is levelled against the impulse
+        // responses later — but the title must not let it pass for absolute.
         PlotModel model = PlotModelStyle.CreateTitledModel(
-            renderSpl
-                ? "Live Spectrum — dB SPL" + tiltSuffix
-                : rtaOnly
-                    ? "Live Spectrum (RTA)" + tiltSuffix
-                    : "Live Transfer Function");
+            mmm
+                ? (renderSpl
+                    ? "Live Spectrum — MMM, dB SPL"
+                    : "Live Spectrum — MMM, relative (no SPL anchor)") + tiltSuffix
+                : renderSpl
+                    ? "Live Spectrum — dB SPL" + tiltSuffix
+                    : rtaOnly
+                        ? "Live Spectrum (RTA)" + tiltSuffix
+                        : "Live Transfer Function");
 
         PlotModelStyle.AddFrequencyAxis(model);
         if (renderSpl)
@@ -1606,6 +1792,40 @@ internal sealed class PlotModelFactory
     // objects on every tick.
     public void UpdateNoiseSeries(LineSeries series, double[] magnitude) =>
         FillPoints(series, ResampleLiveSpectrumMagnitude(magnitude));
+
+    /// <summary>
+    /// A stored capture drawn as it was captured — the curve straight out of the
+    /// document, on the grid the document records.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately NOT re-rendered from the stored bins here. Re-rendering is what
+    /// the bins are for, but it belongs where a rendering choice is actually being
+    /// made (another smoothing, another calibration); loading a capture to look at it
+    /// should show what was captured, and a curve that quietly differed from the one
+    /// its author saw would be the wrong thing to hand back.
+    /// </remarks>
+    public LineSeries BuildLoadedCaptureSeries(LiveCaptureDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        var series = new LineSeries
+        {
+            Color = OxyColor.FromRgb(80, 170, 255),
+            Title = string.IsNullOrWhiteSpace(document.Title)
+                ? "Loaded capture"
+                : document.Title,
+            // The document's own unit, not the session's: a capture taken without an
+            // anchor carries relative levels however this machine is calibrated.
+            TrackerFormatString =
+                document.Recipe.MagnitudeScale == MagnitudeScale.SoundPressureLevel
+                    ? "{0}\n{2:0.0} Hz\n{4:0.00} dB SPL"
+                    : "{0}\n{2:0.0} Hz\n{4:0.00} dB"
+        };
+
+        // The document's own grid, from the document: the shape of that grid is its
+        // business, and a second copy of the rule here would drift the day it changes.
+        FillPoints(series, document.ToCurvePoints());
+        return series;
+    }
 
     public LineSeries BuildInputMagnitudeSeries(double[] inputMagnitude)
     {
@@ -1665,18 +1885,49 @@ internal sealed class PlotModelFactory
     // compensation subtracts the excitation's own rendered shape — per bin on the
     // native path, per display band on the SPL path, whose band law tilts differently
     // (see NoiseTiltCompensation).
-    private List<SignalPoint> ResampleLiveRta(double[] amplitudeSpectrum)
+    /// <summary>
+    /// What the band render baked into the curve, recorded for a capture that has to
+    /// be able to undo it exactly.
+    /// </summary>
+    /// <remarks>
+    /// Reported by the render rather than recomputed beside it. Two independent
+    /// derivations of "what was applied" can disagree with what actually was — the
+    /// compensation is skipped on a length mismatch, and a separate copy of that
+    /// guard would have stored an applied array the curve never received while the
+    /// recipe still claimed compensation.
+    /// </remarks>
+    private sealed class LiveRtaApplied
+    {
+        public double[] TiltDb { get; set; } = [];
+
+        /// <summary>
+        /// The protective high-pass divided back out, per drawn point, in dB — NaN
+        /// where the filter took the signal below what can be recovered. Empty when
+        /// no such filter was configured.
+        /// </summary>
+        public double[] ProtectiveHighPassDb { get; set; } = [];
+
+        /// <summary>
+        /// The microphone correction per drawn point, in the sign convention of
+        /// <see cref="CalibrationFile.GetDecibelCorrection"/> — the render SUBTRACTS
+        /// it. Empty when no calibration was in force.
+        /// </summary>
+        public double[] CalibrationDb { get; set; } = [];
+    }
+
+    private List<SignalPoint> ResampleLiveRta(
+        double[] amplitudeSpectrum,
+        LiveRtaApplied? applied = null)
     {
         NoiseSpectralModel? tiltModel = LiveTiltModel;
-        if (EffectiveLiveSpectrumScale != MagnitudeScale.SoundPressureLevel)
+        if (!LiveUsesBandPower)
         {
             return ResampleLiveSpectrumMagnitude(amplitudeSpectrum, 0.0, tiltModel);
         }
 
-        double smoothingOctaves = SpectrumSmoothing.SmoothingOctaves(
-            liveSpectrumOptions.SmoothingInverseOctaves);
-        bool psychoacoustic = SpectrumSmoothing.IsPsychoacoustic(
-            liveSpectrumOptions.SmoothingInverseOctaves);
+        int smoothingCode = EffectiveLiveSmoothingCode;
+        double smoothingOctaves = SpectrumSmoothing.SmoothingOctaves(smoothingCode);
+        bool psychoacoustic = SpectrumSmoothing.IsPsychoacoustic(smoothingCode);
         List<SignalPoint> bands = DataHelper.LogarithmicPowerBandResample(
             amplitudeSpectrum,
             noiseMeasurement.SequenceLength,
@@ -1691,13 +1942,56 @@ internal sealed class PlotModelFactory
 
         double offsetDb = LiveSplRenderOffset;
         CalibrationFile? calibration = GetCalibration(liveSpectrumOptions);
+        double[]? recordedCorrection =
+            applied != null && calibration != null ? new double[bands.Count] : null;
         for (int i = 0; i < bands.Count; i++)
         {
             // The microphone correction is a per-frequency dB gain (same sign
             // convention as LogarithmicResample); it applies identically to a power
             // level, so subtract it at the band centre, then lift to dB SPL.
             double correction = calibration?.GetDecibelCorrection(bands[i].X) ?? 0.0;
+            if (recordedCorrection != null)
+            {
+                recordedCorrection[i] = correction;
+            }
+
             bands[i] = new SignalPoint(bands[i].X, bands[i].Y - correction + offsetDb);
+        }
+
+        if (applied != null && recordedCorrection != null)
+        {
+            applied.CalibrationDb = recordedCorrection;
+        }
+
+        // The protective high-pass sits in the user's own DSP, ahead of the
+        // loudspeaker, so a reference-free capture CARRIES it — a swept impulse
+        // response has it divided back out, and without the same division here the
+        // two measurements of one tweeter would sit a whole filter slope apart. Only
+        // for a spatial-average capture: that is the curve compared against the
+        // impulse responses, and the plain RTA keeps showing what the microphone
+        // actually hears.
+        // From the ACCUMULATION, not from a live setting or from the sweep
+        // measurement's own copy: this must be the filter that was in force while the
+        // microphone was walked, and the recipe saved beside the curve reads the very
+        // same field so the two can never describe different filters.
+        ProtectiveHighPassConfiguration captureFilter =
+            noiseMeasurement.CaptureProtectiveHighPass;
+        if (EffectiveLiveAnalysisMode.IsSpatialAverageCapture() && captureFilter.Enabled)
+        {
+            double[] filter = ProtectiveHighPassCompensation.MagnitudeCorrectionDb(
+                captureFilter.ToEdge(),
+                noiseMeasurement.SampleRate,
+                ProtectiveHighPassConfiguration.MaximumCompensationBoostDb,
+                bands.Select(band => band.X).ToArray());
+            for (int i = 0; i < bands.Count; i++)
+            {
+                bands[i] = new SignalPoint(bands[i].X, bands[i].Y + filter[i]);
+            }
+
+            if (applied != null)
+            {
+                applied.ProtectiveHighPassDb = filter;
+            }
         }
 
         if (tiltModel is { } bandModel)
@@ -1712,6 +2006,11 @@ internal sealed class PlotModelFactory
                 for (int i = 0; i < bands.Count; i++)
                 {
                     bands[i] = new SignalPoint(bands[i].X, bands[i].Y + compensation[i]);
+                }
+
+                if (applied != null)
+                {
+                    applied.TiltDb = compensation;
                 }
             }
         }
@@ -1793,10 +2092,9 @@ internal sealed class PlotModelFactory
             20000,
             1024,
             GetCalibration(liveSpectrumOptions),
-            SpectrumSmoothing.SmoothingOctaves(
-                liveSpectrumOptions.SmoothingInverseOctaves),
+            SpectrumSmoothing.SmoothingOctaves(EffectiveLiveSmoothingCode),
             psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
-                liveSpectrumOptions.SmoothingInverseOctaves));
+                EffectiveLiveSmoothingCode));
     }
 
     public LineSeries BuildCoherenceSeries(double[] coherence)

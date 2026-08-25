@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -110,10 +111,14 @@ public sealed class VirtualCrossoverHybridSideTests
     {
         MethodInfo method = typeof(VirtualCrossoverPanel).GetMethod(
             "BuildHybridChannelCurve",
-            BindingFlags.NonPublic | BindingFlags.Static)
+            BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new InvalidOperationException("BuildHybridChannelCurve is gone.");
+        // An uninitialized panel: the builder reads the channel, the side and the
+        // panel's calibration (null here) and touches nothing a constructor would set,
+        // so this asks the production code the question without a Windows message loop.
+        object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
         object? result = method.Invoke(
-            null, [channel, rightSide, reference, smoothingCode]);
+            panel, [channel, rightSide, reference, smoothingCode]);
         return Assert.IsAssignableFrom<IReadOnlyList<SignalPoint>>(result);
     }
 

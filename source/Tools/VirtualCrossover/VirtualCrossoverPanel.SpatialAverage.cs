@@ -291,7 +291,7 @@ public partial class VirtualCrossoverPanel
     /// otherwise sum a spatial average against a point measurement, the mix the whole
     /// feature exists to avoid.
     /// </remarks>
-    private static HybridMagnitudes? BuildHybridMagnitudes(
+    private HybridMagnitudes? BuildHybridMagnitudes(
         IReadOnlyList<ProcessedChannel> processed,
         IReadOnlyList<AnalysisCurve> references,
         bool rightSide,
@@ -322,32 +322,25 @@ public partial class VirtualCrossoverPanel
 
     /// <summary>
     /// One channel's magnitude drawn from its spatial average instead of from the
-    /// impulse response measured at one point: the stored curve with this channel's
-    /// own DSP chain on top, on the reference curve's frequency grid and at the
-    /// capture's own level. Null when the channel has no average attached.
+    /// impulse response measured at one point, on the reference curve's frequency grid
+    /// and at the capture's own level. Null when the channel has no average attached.
     /// </summary>
     /// <remarks>
-    /// The chain is added as its ANALYTIC magnitude, not as the difference between
-    /// two gated spectra. A spatial average is a steady-state curve with no window,
-    /// and a gate does not commute with a filter — the two readings part by several
-    /// dB wherever the bank rings longer than the window.
-    /// <para>
-    /// This is exact rather than a convenience. A spatial average is
-    /// √⟨|H(f,r)|²⟩ over the listening volume, and a filter D(f) does not depend on
-    /// position, so ⟨|D·H|²⟩ = |D|²·⟨|H|²⟩ — the filter comes straight out of the
-    /// average. Delay and polarity are absent from it for the same reason: they are
-    /// pure phase, so a hybrid channel curve is the tonal balance alone.
-    /// </para>
+    /// The arithmetic lives in <see cref="SpatialAverageHybrid"/>, shared with the EQ
+    /// Wizard so a tune is fitted to the curve this plot drew. What is decided HERE is
+    /// the context: which side, which chain, and the panel's own calibration, which the
+    /// capture is rebased onto so the hybrid and the measured curves beside it carry
+    /// one correction rather than two.
     /// </remarks>
-    private static IReadOnlyList<SignalPoint>? BuildHybridChannelCurve(
+    private IReadOnlyList<SignalPoint>? BuildHybridChannelCurve(
         VirtualCrossoverChannel channel,
         bool rightSide,
         IReadOnlyList<SignalPoint> reference,
         int smoothingCode)
     {
-        // Explicitly the side asked for, never the channel's ACTIVE one: the
-        // opposite side's sum is built from this too, and reading the shown side's
-        // capture there would draw one side's tuning under the other's label.
+        // Explicitly the side asked for, never the channel's ACTIVE one: the opposite
+        // side's sum is built from this too, and reading the shown side's capture there
+        // would draw one side's tuning under the other's label.
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
         if (state.SpatialAverage is not { } document || reference.Count == 0)
         {
@@ -357,47 +350,19 @@ public partial class VirtualCrossoverPanel
         int rate = document.Recipe.SampleRateHz > 0
             ? document.Recipe.SampleRateHz
             : state.SampleRate;
-        if (rate <= 0)
-        {
-            return null;
-        }
-
-        // The SAME chain the processed response was built through, Bypass included:
-        // a bypassed channel contributes its raw measured signal, so putting the
-        // chain on its average would make the hybrid the one curve on the plot that
-        // ignores the switch.
-        var prepared = PreparedDspResponse.Create(
+        return SpatialAverageHybrid.BuildChannelCurve(
+            document,
+            // The SAME chain the processed response was built through, Bypass included:
+            // a bypassed channel contributes its raw measured signal, so putting the
+            // chain on its average would make the hybrid the one curve on the plot that
+            // ignores the switch.
             channel.Pair.Bypass
                 ? DspChannelChain.Identity
                 : channel.SideSettings(rightSide).ToChain(),
-            rate);
-        // The panel's own display smoothing, replayed over the capture's band levels on
-        // THEIR grid before anything is read off them. The honest curves beside these
-        // carry it, so a hybrid that ignored the selector would answer a different
-        // question from the rest of the plot every time it was moved. Replayed rather
-        // than approximated: this is the analyzer's own second pass over the very band
-        // levels it stored (see DataHelper.SmoothBandLevels), and the same curve goes
-        // on to feed the EQ Wizard's fit.
-        IReadOnlyList<SignalPoint> curve = SmoothedCapture(document, smoothingCode);
-        var points = new List<SignalPoint>(reference.Count);
-        foreach (SignalPoint point in reference)
-        {
-            double average = SampleSpatialAverageDb(document, curve, point.X);
-            if (double.IsNaN(average))
-            {
-                // The capture says it has nothing here — below a protective
-                // high-pass, typically. A break is the honest answer; inventing a
-                // level would put a curve where no measurement exists.
-                points.Add(new SignalPoint(point.X, double.NaN));
-                continue;
-            }
-
-            double chainDb = DataHelper.AmplitudeToDecibels(
-                prepared.Response(point.X).Magnitude);
-            points.Add(new SignalPoint(point.X, average + chainDb));
-        }
-
-        return points;
+            rate,
+            Calibration,
+            reference.Select(point => point.X).ToList(),
+            smoothingCode);
     }
 
     // The set's common offset, applied on the way to the plot.
@@ -484,47 +449,6 @@ public partial class VirtualCrossoverPanel
         return points;
     }
 
-    // The stored curve at one frequency, interpolated on its own logarithmic grid.
-    // Linear in dB between neighbours, and NaN as soon as either neighbour is NaN:
-    // a gap must not be bridged by the points around it.
-    private static double SampleSpatialAverageDb(
-        LiveCaptureDocument document,
-        IReadOnlyList<SignalPoint> curve,
-        double hz)
-    {
-        int count = curve.Count;
-        double position = document.IndexOf(hz);
-        if (double.IsNaN(position) || position < 0 || position > count - 1)
-        {
-            return double.NaN;
-        }
-
-        int low = (int)Math.Floor(position);
-        int high = Math.Min(low + 1, count - 1);
-        double fraction = position - low;
-        return curve[low].Y + (curve[high].Y - curve[low].Y) * fraction;
-    }
-
-    /// <summary>
-    /// One capture's band levels at the panel's current display smoothing, on the
-    /// capture's own grid. Zero returns the stored curve untouched.
-    /// </summary>
-    /// <remarks>
-    /// A capture is always taken UNSMOOTHED (the mode pins it there), which is what
-    /// makes this legitimate: smoothing an already smoothed curve compounds it.
-    /// </remarks>
-    private static IReadOnlyList<SignalPoint> SmoothedCapture(
-        LiveCaptureDocument document, int smoothingCode)
-    {
-        List<SignalPoint> points = document.ToCurvePoints();
-        return smoothingCode == 0 || points.Count < 2
-            ? points
-            : DataHelper.SmoothBandLevels(
-                points,
-                SpectrumSmoothing.SmoothingOctaves(smoothingCode),
-                SpectrumSmoothing.IsPsychoacoustic(smoothingCode));
-    }
-
     /// <summary>
     /// How far below its own peak a channel is still read when its offset is taken.
     /// </summary>
@@ -536,29 +460,6 @@ public partial class VirtualCrossoverPanel
     /// </remarks>
     private const double HybridOffsetBandDb = 20;
 
-    /// <summary>
-    /// The one offset that puts the whole spatial-average set on the same axis as the
-    /// impulse responses, in dB.
-    /// </summary>
-    /// <remarks>
-    /// ONE offset for the set, never one per channel. The captures were taken in a
-    /// single analyzer session at a fixed gain, so their relative levels are honest
-    /// measurements — arguably better than the point responses' — and normalizing
-    /// each channel separately would throw exactly that away.
-    /// <para>
-    /// Taken as the median across channels of each channel's own median difference,
-    /// read only where that channel is within <see cref="HybridOffsetBandDb"/> of its
-    /// own peak. The band matters more than the statistic: measured over the whole
-    /// drawn range the figure is nonsense, because a channel spends most of that
-    /// range in its stopband, where nothing real is being compared. On a four-way set
-    /// that read the channels as 73 dB apart — ordered by band, which is the tell.
-    /// </para>
-    /// <para>
-    /// A median rather than a mean inside the band, because the two curves
-    /// legitimately differ in SHAPE — that difference is the whole point of the
-    /// feature — and a few large deviations must not drag the alignment.
-    /// </para>
-    /// </remarks>
     /// <returns>
     /// Each channel's own offset, in channel order and skipping the channels with
     /// nothing to compare, together with the set's single figure — the median of

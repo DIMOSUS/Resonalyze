@@ -50,12 +50,19 @@ internal sealed class LiveSpectrumController : IDisposable
     private List<SignalPoint>? peakHoldPoints;
     private long peakHoldResumeTick;
     private LiveSpectrumSnapshot? lastSnapshot;
+    // The accumulation's frame count as of the last drawn tick, so a tick that has no
+    // new frame behind it can skip the clone-and-re-render entirely.
+    private int lastDrawnFrameCount = -1;
     // A stored capture put on the plot in place of the live trace. It is STATE, not a
     // one-off draw: every rebuild of the model — a tab switch, a display option, a
     // calibration change — goes through RebuildModel, and a loaded capture that were
     // only painted once would be replaced by the surviving accumulation the instant
     // any of those happened, which is exactly what Load appeared to do.
     private LiveCaptureDocument? loadedCapture;
+    // The capture read-out, pooled like the series below for the same reason.
+    private OverlayTextAnnotation? captureProgressAnnotation;
+    private string? captureProgressState;
+    private int captureProgressFrames = -1;
     // The ~30 fps redraw reuses these series and refills their points in place;
     // recreating the plot objects (and their point lists) every tick was pure
     // allocation churn. They are removed from and re-added to the model each
@@ -278,6 +285,7 @@ internal sealed class LiveSpectrumController : IDisposable
     public void ResetAverage()
     {
         measurement.ResetAccumulation();
+        lastDrawnFrameCount = -1;
         SuspendPeakHold();
     }
 
@@ -294,6 +302,7 @@ internal sealed class LiveSpectrumController : IDisposable
             liveSpectrumOptions.EffectiveAveragingSpeed == AveragingSpeed.Infinite)
         {
             measurement.ResetAccumulation();
+        lastDrawnFrameCount = -1;
         }
 
         if (!liveSpectrumOptions.PeakHold)
@@ -425,6 +434,7 @@ internal sealed class LiveSpectrumController : IDisposable
     public void DiscardCapturedData()
     {
         measurement.ResetAccumulation();
+        lastDrawnFrameCount = -1;
         // The loaded capture goes too: it was taken under the previous acquisition
         // parameters, and its recipe no longer describes what this analyzer would do.
         loadedCapture = null;
@@ -551,6 +561,7 @@ internal sealed class LiveSpectrumController : IDisposable
         // no longer gated on a configured loopback.
         SuspendPeakHold();
         lastSnapshot = null;
+        lastDrawnFrameCount = -1;
         // A new run is what replaces a loaded capture; until then it stays on screen.
         loadedCapture = null;
         plotViewports.Show(plotModelFactory.CreateLiveSpectrum(), getCurrentMode());
@@ -599,13 +610,39 @@ internal sealed class LiveSpectrumController : IDisposable
         redrawInProgress = true;
         try
         {
-            LiveSpectrumSnapshot? snapshot = measurement.GetAccumulatedSpectrumSnapshot(
-                NeedsInputMagnitude);
             PlotModel? model = plotView.Model;
-            if (snapshot == null || model == null || getCurrentMode() != Mode.LiveSpectrum)
+            if (model == null || getCurrentMode() != Mode.LiveSpectrum)
             {
                 return;
             }
+
+            // Redraw only what has actually changed. A snapshot clones the
+            // accumulators under the data lock and rebuilds the whole display curve
+            // from them, which is worth doing once per analysis FRAME — not thirty
+            // times a second regardless. With the long frames a spatial average needs
+            // (683 ms at 32768 and 48 kHz) a frame lands once in some forty ticks, so
+            // the other thirty-nine would clone a quarter of a megabyte and re-render
+            // it to an identical curve, contending with the audio thread for the lock
+            // each time. The notices still follow every tick: an overload is a
+            // shortage of frames, so gating it on new frames would silence it exactly
+            // when it matters.
+            int frames = measurement.AveragedFrameCount;
+            if (frames == lastDrawnFrameCount && lastSnapshot != null)
+            {
+                UpdateOverloadAnnotation(model);
+                UpdateCaptureProgressAnnotation(model);
+                model.InvalidatePlot(false);
+                return;
+            }
+
+            LiveSpectrumSnapshot? snapshot = measurement.GetAccumulatedSpectrumSnapshot(
+                NeedsInputMagnitude);
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            lastDrawnFrameCount = frames;
 
             lastSnapshot = snapshot;
             RemoveLiveSpectrumSeries(model);
@@ -852,19 +889,8 @@ internal sealed class LiveSpectrumController : IDisposable
         });
     }
 
-    private static void RemoveSplViewOnlyAnnotation(PlotModel model)
-    {
-        for (int index = model.Annotations.Count - 1; index >= 0; index--)
-        {
-            if (model.Annotations[index] is OverlayTextAnnotation
-                {
-                    Tag: SplViewOnlyAnnotationTag
-                })
-            {
-                model.Annotations.RemoveAt(index);
-            }
-        }
-    }
+    private static void RemoveSplViewOnlyAnnotation(PlotModel model) =>
+        RemoveTaggedAnnotations(model, SplViewOnlyAnnotationTag);
 
     private static void RemoveOverloadAnnotation(PlotModel? model) =>
         RemoveTaggedAnnotations(model, OverloadAnnotationTag);
@@ -937,16 +963,28 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
-        model.Annotations.Add(new OverlayTextAnnotation
+        // Reused, and its text rebuilt only when the reading actually changes. This
+        // runs on the ~30 fps tick while the count it reports advances once a frame —
+        // once a second at the frame lengths a spatial average uses — so building a
+        // fresh annotation and a fresh string each time is the allocation churn the
+        // series above are pooled to avoid.
+        captureProgressAnnotation ??= new OverlayTextAnnotation
         {
             Tag = CaptureProgressAnnotationTag,
-            Text = $"{state} — {seconds:0} s, {frames} frames",
             TextPosition = new DataPoint(0.01, 0),
             TextFlowDirection = TextFlowDirection.TopDown,
             FontSize = 12,
             TextColor = OxyColor.FromRgb(150, 165, 190),
             TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left
-        });
+        };
+        if (state != captureProgressState || frames != captureProgressFrames)
+        {
+            captureProgressState = state;
+            captureProgressFrames = frames;
+            captureProgressAnnotation.Text = $"{state} — {seconds:0} s, {frames} frames";
+        }
+
+        model.Annotations.Add(captureProgressAnnotation);
     }
 
     private static void RemoveLiveSpectrumSeries(PlotModel model)

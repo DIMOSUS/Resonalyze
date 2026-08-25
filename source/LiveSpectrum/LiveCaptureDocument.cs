@@ -116,9 +116,15 @@ public sealed class LiveCaptureRecipe
 
     /// <summary>
     /// Whether two captures may be levelled by one common offset: the same analyzer
-    /// configuration, the same excitation and the same corrections. Compared by the
-    /// document, never by the consumer.
+    /// configuration, the same excitation and the same corrections.
     /// </summary>
+    /// <remarks>
+    /// The rule lives with the recipe that defines it, but nothing enforces it yet —
+    /// the consumer that checks a whole set against the impulse responses is not
+    /// built. Kept here rather than deferred because the fields that must agree are
+    /// exactly what this format knows, and the tests beside it are where that
+    /// knowledge is written down.
+    /// </remarks>
     public bool MatchesSetOf(LiveCaptureRecipe other)
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -201,8 +207,10 @@ public sealed class LiveCaptureDocument
     public SpatialAverageMethod Method { get; set; } = SpatialAverageMethod.MovingMic;
 
     /// <summary>
-    /// The analyzer configuration this capture was taken under. Captures sharing it
-    /// are levelled by one common offset; see NoiseMeasurement.CaptureSessionId.
+    /// The analyzer configuration this capture was taken under. Recorded so a set can
+    /// later be checked for having been taken in one session; nothing reads it yet,
+    /// and it is persisted now because a capture that did not record it could never
+    /// be checked afterwards. See NoiseMeasurement.CaptureSessionId.
     /// </summary>
     public Guid CaptureSessionId { get; set; }
 
@@ -314,8 +322,44 @@ public sealed class LiveCaptureDocument
     }
 
     /// <summary>
+    /// The accumulated amplitude spectrum as this format stores it: dB per bin, from
+    /// bin 0 up to <see cref="StoredSpectrumCeilingHz"/>.
+    /// </summary>
+    /// <remarks>
+    /// Indexing starts at DC and is never trimmed at the low end: the band integrator
+    /// addresses bins by index, so dropping the first ones would shift every band it
+    /// reads. It lives here rather than beside its caller because it is the inverse of
+    /// <see cref="ToAmplitudeSpectrum"/> — the two define the storage between them,
+    /// and a test that re-implemented this half was already checking a copy of the
+    /// rule instead of the rule.
+    /// </remarks>
+    public static double[] StoreSpectrumBins(
+        double[] amplitudeSpectrum,
+        int sequenceLength,
+        int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(amplitudeSpectrum);
+        double binWidth = (double)sampleRate / sequenceLength;
+        int lastBin = Math.Min(
+            amplitudeSpectrum.Length - 1,
+            Math.Min(
+                sequenceLength / 2,
+                (int)Math.Ceiling(StoredSpectrumCeilingHz / binWidth)));
+        var stored = new double[lastBin + 1];
+        for (int bin = 0; bin <= lastBin; bin++)
+        {
+            double amplitude = amplitudeSpectrum[bin];
+            stored[bin] = amplitude > 0
+                ? Math.Max(SilentBinDb, DataHelper.AmplitudeToDecibels(amplitude))
+                : SilentBinDb;
+        }
+
+        return stored;
+    }
+
+    /// <summary>
     /// The stored spectrum as linear amplitude per bin, ready for the band
-    /// integrator — the inverse of what the builder stored.
+    /// integrator — the inverse of <see cref="StoreSpectrumBins"/>.
     /// </summary>
     public double[] ToAmplitudeSpectrum()
     {

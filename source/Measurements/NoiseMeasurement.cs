@@ -838,10 +838,10 @@ namespace Resonalyze
         /// to Rectangular and the overlap to Off. The rule itself lives on
         /// <see cref="LiveSpectrumOptions"/> so the plot factory cannot disagree.
         /// </summary>
-        public NoiseColor EffectiveNoiseColor => LiveSpectrumOptions.EffectiveNoiseColor;
+        private NoiseColor EffectiveNoiseColor => LiveSpectrumOptions.EffectiveNoiseColor;
 
         /// <summary>The averaging preset actually applied; see the options.</summary>
-        public AveragingSpeed EffectiveAveragingSpeed =>
+        private AveragingSpeed EffectiveAveragingSpeed =>
             LiveSpectrumOptions.EffectiveAveragingSpeed;
 
         /// <summary>

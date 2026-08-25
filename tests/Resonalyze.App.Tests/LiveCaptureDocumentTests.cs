@@ -200,19 +200,10 @@ public sealed class LiveCaptureDocumentTests
         double[] amplitude,
         List<SignalPoint> curve)
     {
-        double binWidth = (double)SampleRate / SequenceLength;
-        int lastBin = Math.Min(
-            amplitude.Length - 1,
-            (int)Math.Ceiling(LiveCaptureDocument.StoredSpectrumCeilingHz / binWidth));
-        var spectrumDb = new double[lastBin + 1];
-        for (int bin = 0; bin <= lastBin; bin++)
-        {
-            spectrumDb[bin] = amplitude[bin] > 0
-                ? Math.Max(
-                    LiveCaptureDocument.SilentBinDb,
-                    DataHelper.AmplitudeToDecibels(amplitude[bin]))
-                : LiveCaptureDocument.SilentBinDb;
-        }
+        // The production storage rule, not a copy of it — a copy had already lost
+        // the half-spectrum clamp, so the round-trip test was pinning the wrong thing.
+        double[] spectrumDb = LiveCaptureDocument.StoreSpectrumBins(
+            amplitude, SequenceLength, SampleRate);
 
         return new LiveCaptureDocument
         {

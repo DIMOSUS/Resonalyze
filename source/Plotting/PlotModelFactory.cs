@@ -427,32 +427,14 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        List<SignalPoint> curve = ResampleLiveRta(inputMagnitude);
+        var applied = new LiveRtaApplied();
+        List<SignalPoint> curve = ResampleLiveRta(inputMagnitude, applied);
         if (curve.Count != LiveCaptureDocument.CurvePointCount)
         {
             return null;
         }
 
-        int smoothingCode = EffectiveLiveSmoothingCode;
-        double smoothingOctaves = SpectrumSmoothing.SmoothingOctaves(smoothingCode);
-        bool psychoacoustic = SpectrumSmoothing.IsPsychoacoustic(smoothingCode);
         CalibrationFile? calibration = GetCalibration(liveSpectrumOptions);
-        NoiseSpectralModel? tiltModel = LiveTiltModel;
-
-        double[] tilt = tiltModel is { } model
-            ? LiveTiltBandCompensation(
-                model, inputMagnitude.Length, smoothingOctaves, psychoacoustic)
-            : [];
-        if (tilt.Length != curve.Count)
-        {
-            tilt = [];
-        }
-
-        var correction = new double[calibration != null ? curve.Count : 0];
-        for (int i = 0; i < correction.Length; i++)
-        {
-            correction[i] = calibration!.GetDecibelCorrection(curve[i].X);
-        }
 
         int hop = Math.Max(1, noiseMeasurement.AnalysisHopSize);
         int frames = frameCount;
@@ -462,12 +444,13 @@ internal sealed class PlotModelFactory
             Title = title ?? string.Empty,
             Method = SpatialAverageMethod.MovingMic,
             CaptureSessionId = noiseMeasurement.CaptureSessionId,
-            SpectrumDb = StoreSpectrumBins(inputMagnitude, sequenceLength, sampleRate),
+            SpectrumDb = LiveCaptureDocument.StoreSpectrumBins(
+                inputMagnitude, sequenceLength, sampleRate),
             CurveDb = curve.Select(point => point.Y).ToArray(),
             GridStartHz = curve[0].X,
             GridStopHz = curve[^1].X,
-            TiltCompensationDb = tilt,
-            CalibrationCorrectionDb = correction,
+            TiltCompensationDb = applied.TiltDb,
+            CalibrationCorrectionDb = applied.CalibrationDb,
             // The CURVE travels, named by the id the live options selected it with —
             // a calibration file's own name is not something CalibrationFile keeps,
             // and the id is the only handle this layer has. The points are what the
@@ -492,46 +475,21 @@ internal sealed class PlotModelFactory
                 AveragedFrameCount = frames,
                 IntegratedSeconds = (double)frames * hop / sampleRate,
                 NoiseColor = liveSpectrumOptions.EffectiveNoiseColor,
-                SlopeCompensation = tiltModel != null,
+                // What the curve actually received, not what was asked for: the
+                // render skips a misaligned compensation, and a recipe that claimed
+                // one anyway would send a reader looking for an array that is empty.
+                SlopeCompensation = applied.TiltDb.Length > 0,
                 // Absolute only when an anchor lifted it; the offset beside this says
                 // by how much, and null there means the levels are relative but
                 // internally consistent across the set.
                 MagnitudeScale = EffectiveLiveSpectrumScale,
                 SplAnchorOffsetDb = LiveSplOffsetDb,
-                SmoothingCode = smoothingCode,
+                SmoothingCode = EffectiveLiveSmoothingCode,
                 ProtectiveHighPassKind = protectiveHighPass.Kind,
                 ProtectiveHighPassFrequencyHz = protectiveHighPass.FrequencyHz,
                 ProtectiveHighPassSlopeDbPerOctave = protectiveHighPass.SlopeDbPerOctave
             }
         };
-    }
-
-    // Bins 0 .. the last one at or below the stored ceiling, in dB. Indexing starts at
-    // DC and is never trimmed at the low end: the band integrator addresses bins by
-    // index, so dropping the first ones would shift every band it reads.
-    private static double[] StoreSpectrumBins(
-        double[] amplitudeSpectrum,
-        int sequenceLength,
-        int sampleRate)
-    {
-        double binWidth = (double)sampleRate / sequenceLength;
-        int lastBin = Math.Min(
-            amplitudeSpectrum.Length - 1,
-            Math.Min(
-                sequenceLength / 2,
-                (int)Math.Ceiling(LiveCaptureDocument.StoredSpectrumCeilingHz / binWidth)));
-        var stored = new double[lastBin + 1];
-        for (int bin = 0; bin <= lastBin; bin++)
-        {
-            double amplitude = amplitudeSpectrum[bin];
-            stored[bin] = amplitude > 0
-                ? Math.Max(
-                    LiveCaptureDocument.SilentBinDb,
-                    DataHelper.AmplitudeToDecibels(amplitude))
-                : LiveCaptureDocument.SilentBinDb;
-        }
-
-        return stored;
     }
 
     // A capture with no re-smoothable samples: the overlay stores the drawn curve, but the
@@ -1917,7 +1875,32 @@ internal sealed class PlotModelFactory
     // compensation subtracts the excitation's own rendered shape — per bin on the
     // native path, per display band on the SPL path, whose band law tilts differently
     // (see NoiseTiltCompensation).
-    private List<SignalPoint> ResampleLiveRta(double[] amplitudeSpectrum)
+    /// <summary>
+    /// What the band render baked into the curve, recorded for a capture that has to
+    /// be able to undo it exactly.
+    /// </summary>
+    /// <remarks>
+    /// Reported by the render rather than recomputed beside it. Two independent
+    /// derivations of "what was applied" can disagree with what actually was — the
+    /// compensation is skipped on a length mismatch, and a separate copy of that
+    /// guard would have stored an applied array the curve never received while the
+    /// recipe still claimed compensation.
+    /// </remarks>
+    private sealed class LiveRtaApplied
+    {
+        public double[] TiltDb { get; set; } = [];
+
+        /// <summary>
+        /// The microphone correction per drawn point, in the sign convention of
+        /// <see cref="CalibrationFile.GetDecibelCorrection"/> — the render SUBTRACTS
+        /// it. Empty when no calibration was in force.
+        /// </summary>
+        public double[] CalibrationDb { get; set; } = [];
+    }
+
+    private List<SignalPoint> ResampleLiveRta(
+        double[] amplitudeSpectrum,
+        LiveRtaApplied? applied = null)
     {
         NoiseSpectralModel? tiltModel = LiveTiltModel;
         if (!LiveUsesBandPower)
@@ -1942,13 +1925,25 @@ internal sealed class PlotModelFactory
 
         double offsetDb = LiveSplRenderOffset;
         CalibrationFile? calibration = GetCalibration(liveSpectrumOptions);
+        double[]? recordedCorrection =
+            applied != null && calibration != null ? new double[bands.Count] : null;
         for (int i = 0; i < bands.Count; i++)
         {
             // The microphone correction is a per-frequency dB gain (same sign
             // convention as LogarithmicResample); it applies identically to a power
             // level, so subtract it at the band centre, then lift to dB SPL.
             double correction = calibration?.GetDecibelCorrection(bands[i].X) ?? 0.0;
+            if (recordedCorrection != null)
+            {
+                recordedCorrection[i] = correction;
+            }
+
             bands[i] = new SignalPoint(bands[i].X, bands[i].Y - correction + offsetDb);
+        }
+
+        if (applied != null && recordedCorrection != null)
+        {
+            applied.CalibrationDb = recordedCorrection;
         }
 
         if (tiltModel is { } bandModel)
@@ -1963,6 +1958,11 @@ internal sealed class PlotModelFactory
                 for (int i = 0; i < bands.Count; i++)
                 {
                     bands[i] = new SignalPoint(bands[i].X, bands[i].Y + compensation[i]);
+                }
+
+                if (applied != null)
+                {
+                    applied.TiltDb = compensation;
                 }
             }
         }

@@ -36,6 +36,14 @@ public partial class Form1
 
     private async void buttonSave_Click(object sender, EventArgs e)
     {
+        // In MMM the buttons belong to that mode's own measurement, not to the
+        // impulse response (see Form1.LiveCapture).
+        if (LiveCaptureOwnsSaveLoad)
+        {
+            await SaveLiveCaptureAsync();
+            return;
+        }
+
         if (expSweepMeasurement.HasImpulseResponse && !expSweepMeasurement.InProgress)
         {
             if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
@@ -88,6 +96,12 @@ public partial class Form1
 
     private async void buttonLoad_Click(object sender, EventArgs e)
     {
+        if (LiveCaptureOwnsSaveLoad)
+        {
+            await LoadLiveCaptureAsync();
+            return;
+        }
+
         if (!expSweepMeasurement.InProgress)
         {
             if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
@@ -101,16 +115,40 @@ public partial class Form1
                 Filter =
                     "Measurements (*.json;*.wav;*.txt)|*.json;*.wav;*.txt|" +
                     "Resonalyze impulse response (*.json)|*.json|" +
+                    "Resonalyze moving-mic capture (*.json)|*.json|" +
                     "Recorded sweep (*.wav)|*.wav|" +
                     "REW impulse response export (*.txt)|*.txt|" +
                     "All files (*.*)|*.*",
                 InitialDirectory = GetImpulseResponseDialogDirectory(),
                 Multiselect = false,
                 RestoreDirectory = true,
-                Title = "Load impulse response, recorded sweep or REW export"
+                Title = "Load impulse response, recorded sweep, REW export or capture"
             };
             if (dialog.ShowDialog(this) != DialogResult.OK)
             {
+                return;
+            }
+
+            // A stored capture knows which mode it belongs to, so opening one here
+            // takes the application there rather than refusing it for not being an
+            // impulse response. A file that CLAIMS to be a capture and then fails to
+            // parse is reported as the broken capture it is, not handed on to the
+            // impulse-response loader to be misdiagnosed as a bad format.
+            try
+            {
+                if (await TryOpenLiveCaptureAsync(dialog.FileName))
+                {
+                    return;
+                }
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(
+                    this,
+                    $"The capture could not be loaded.\r\n\r\n{exception.Message}",
+                    "Load failed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
                 return;
             }
 
@@ -211,6 +249,14 @@ public partial class Form1
         // validates the anchor against the input it was measured on — not the
         // app's current device — and keeps it.
         expSweepMeasurement.MeasurementSplCalibration = file.SplCalibration;
+        // Whatever the file knows about the protective high-pass travels with it,
+        // including "nothing": the app's own setting describes the next run, not the
+        // response just loaded.
+        expSweepMeasurement.MeasurementProtectiveHighPass =
+            file.ProtectiveHighPass is { } entry
+                ? new ProtectiveHighPassConfiguration(
+                    entry.Kind, entry.FrequencyHz, entry.SlopeDbPerOctave)
+                : null;
         expSweepMeasurement.MeasurementInput = file.SplCalibration?.CaptureIdentity;
         ApplyLoadedImpulseResponseState(path);
         sessionTracker.MarkLoadedFile(path, file);

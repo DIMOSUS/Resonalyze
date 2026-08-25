@@ -66,6 +66,26 @@ public sealed class ImpulseResponseFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SplCalibration? SplCalibration { get; set; }
 
+    /// <summary>
+    /// The protective high-pass that was divided out of the transfer impulse
+    /// response, or null when the file predates this record.
+    /// </summary>
+    /// <remarks>
+    /// Null and <see cref="ProtectiveHighPassKind.Off"/> are DIFFERENT answers, which
+    /// is why this is a nullable entry rather than three scalars: "no filter" can be
+    /// checked against a reference-free capture that carries one, while "not recorded"
+    /// cannot, and silently treating the second as the first would pass a tweeter
+    /// whose two measurements sit a whole filter slope apart.
+    /// <para>
+    /// The setting itself lives in the application's measurement options, so until
+    /// now nothing tied a saved impulse response to the filter it was corrected for.
+    /// Deliberately NOT a format version bump: the field is additive and optional, and
+    /// bumping would make every file this build writes unreadable to older ones for
+    /// the sake of metadata they would ignore anyway.
+    /// </para>
+    /// </remarks>
+    public ProtectiveHighPassFileEntry? ProtectiveHighPass { get; set; }
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LevelSnapshotFileEntry? MicrophoneLevels { get; set; }
 
@@ -145,6 +165,15 @@ public sealed class ImpulseResponseFile
             AverageRunCount = measurement.AverageRunCount,
             AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
             SplCalibration = splCalibration,
+            // The filter that belongs to THIS result — snapshotted at run start, or
+            // carried in from the file it was loaded from — never the app's current
+            // setting. Recorded whether or not it is enabled, because "Off" is an
+            // answer a later consistency check can use and a missing record is not;
+            // null stays null, so re-saving a response measured before this existed
+            // does not invent a filter for it.
+            ProtectiveHighPass = measurement.MeasurementProtectiveHighPass is { } filter
+                ? ProtectiveHighPassFileEntry.From(filter)
+                : null,
             AudioSession = CreateAudioSessionFileEntry(
                 measurement.LastAudioSessionDiagnostics,
                 measurement.SampleRate,
@@ -757,6 +786,29 @@ public sealed class ImpulseResponseFile
         public int SmoothingInverseOctaves { get; set; }
         public double[] Frequencies { get; set; } = Array.Empty<double>();
         public double[] MagnitudesDb { get; set; } = Array.Empty<double>();
+    }
+
+    /// <summary>
+    /// The protective high-pass configured in the user's own DSP between the sound
+    /// card output and the loudspeaker, as it stood when this response was measured.
+    /// </summary>
+    public sealed class ProtectiveHighPassFileEntry
+    {
+        public ProtectiveHighPassKind Kind { get; set; }
+        public double FrequencyHz { get; set; } = 2_000.0;
+        public int SlopeDbPerOctave { get; set; } = 24;
+
+        public static ProtectiveHighPassFileEntry From(
+            ProtectiveHighPassConfiguration configuration)
+        {
+            ArgumentNullException.ThrowIfNull(configuration);
+            return new ProtectiveHighPassFileEntry
+            {
+                Kind = configuration.Kind,
+                FrequencyHz = configuration.FrequencyHz,
+                SlopeDbPerOctave = configuration.SlopeDbPerOctave
+            };
+        }
     }
 
     public sealed class AudioSessionFileEntry

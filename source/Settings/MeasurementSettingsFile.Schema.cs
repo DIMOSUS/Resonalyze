@@ -750,20 +750,8 @@ internal sealed partial class MeasurementSettingsFile
             return normalized;
         }
 
-        private static int NormalizeSequenceLength(int sequenceLength)
-        {
-            int[] supported = [256, 512, 1024, 2048, 4096, 8192, 16384];
-            int normalized = supported[0];
-            foreach (int candidate in supported)
-            {
-                if (sequenceLength >= candidate)
-                {
-                    normalized = candidate;
-                }
-            }
-
-            return normalized;
-        }
+        private static int NormalizeSequenceLength(int sequenceLength) =>
+            LiveSequenceLengths.Normalize(sequenceLength);
     }
 
     internal sealed class TimeAlignmentSettings

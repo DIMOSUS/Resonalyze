@@ -202,7 +202,9 @@ is set to show no animations (Settings → Accessibility → Visual effects).
 - **Live Spectrum** — a real-time loopback transfer function with coherence, or a
   reference-free RTA in relative dB or dB SPL, with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white, or Silent for the ambient
-  room) and compensation of the noise's own spectral slope
+  room) and compensation of the noise's own spectral slope; plus a dedicated
+  **MMM** mode that pins the recipe a moving-microphone average is valid under and
+  saves the capture — raw bins and full recipe — as its own file
 - **Compare** a second measurement (file or History) across Time Alignment,
   Phase, Group Delay, Frequency Response and Impulse Response, and **overlays** —
   captured, calculated and target curves with styling, curve math,
@@ -747,10 +749,40 @@ without one the choice turns amber and the analyzer runs reference-free anyway,
 because there is nothing to divide by.
 
 **RTA** is that reference-free analyzer as a deliberate choice — the microphone's
-own magnitude spectrum, no transfer function and no coherence. It is what the car
-workflow actually wants: a moving-microphone average, where there is no reference
-to divide by. It captures the microphone alone even when a loopback is configured,
-so the sound card is asked for exactly the channel that is used.
+own magnitude spectrum, no transfer function and no coherence. It captures the
+microphone alone even when a loopback is configured, so the sound card is asked
+for exactly the channel that is used.
+
+**MMM** is the same reference-free analyzer under the one recipe a
+moving-microphone measurement is valid under, and it is a mode rather than a
+preset because those settings are not preferences. Selecting it pins, and locks:
+periodic pink noise (its spectrum is exactly 1/√f and, unlike the filter bank
+behind plain `Pink noise`, does not change shape with the sample rate, so the
+slope compensation stays exact); `Infinite` averaging (a spatial average is a
+cumulative mean of frame power over the whole path the microphone walks, and an
+exponential window would weight the end of that walk over its beginning); the
+banded dB SPL rendering; slope compensation on; and smoothing off. Your own RTA
+choices are remembered and come back when you leave the mode.
+
+The read-out at the top left counts what has been integrated — `Integrating —
+42 s, 123 frames` — because a spatial average stops visibly moving long before it
+has settled. **Save** writes the capture as its own file: the accumulated FFT
+bins, the curve as drawn, the corrections applied, and the full recipe (rate,
+frame length, window, averaging, excitation, slope compensation, calibration
+curve, protective high-pass). The bins are what make a stored capture
+re-renderable rather than merely redrawable. **Load** puts a stored capture back
+on the plot, on the axis its own recipe records. In MMM these two buttons act on
+the capture, not on the impulse response the rest of the application carries —
+and a capture opened through **Load** from any other mode takes the application to
+the mode it belongs to instead of being refused for not being an impulse
+response, because the file records which one produced it.
+
+An **SPL anchor is not required**. Without one the title says `MMM, relative (no
+SPL anchor)` and the levels sit on an arbitrary but internally consistent
+reference — enough, because a whole set of channels is levelled against the
+impulse responses by one common offset later. What it does mean is that every
+channel of a set must be captured in one analyzer session, with the input gain
+untouched between them.
 
 Two checkboxes belong to RTA and are muted in Transfer:
 
@@ -780,7 +812,10 @@ converges almost instantly, so **Window** is forced to `Rectangular` and
 measures whatever the microphone hears: the ambient room, or an external source
 playing its own material.
 
-Further settings: **Sequence Length** (the FFT block size), **Overlap** (`Off` /
+Further settings: **Sequence Length** (the analysis frame, listed with its
+duration in milliseconds — the duration, not the sample count, is what sets the
+resolution, since a rectangular window resolves 2/T hertz whatever the rate, so
+the same resolution costs twice the samples at twice the rate), **Overlap** (`Off` /
 `50%` / `75%`, reclaiming the samples a tapering window attenuates at the block
 edges), **Smoothing**, **Window** (`Hann`, `Flat Top` for amplitude accuracy on
 tones, `Blackman-Harris` for leakage suppression, or `Rectangular`), and
@@ -1204,7 +1239,9 @@ disturbs your overlay slots.
 The **Source…** button picks the curve to tune, and it does not have to be an
 impulse response: an **impulse response from file or history**, a **curve from an
 overlay slot** (a snapshot, with no live link back), or a **curve from a text
-file**. The case this was built for is a **moving-microphone RTA in dB SPL**:
+file**. The case this was built for is a **moving-microphone average in dB SPL**
+(for a full pass, use the dedicated [MMM mode](#live-spectrum), which saves its
+own capture file; an overlay slot still works for a quick look):
 park the Live Spectrum RTA on a car's listening area, capture it into an overlay
 slot, and equalize that — such a curve has no impulse response and no coherence
 behind it, and its datum is absolute rather than relative. Only measured

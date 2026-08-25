@@ -143,6 +143,15 @@ namespace Resonalyze
         // retroactively change the meaning of an already-measured impulse response.
         public SplCalibration? MeasurementSplCalibration { get; set; }
 
+        // The protective high-pass that belongs to the CURRENT result: a snapshot
+        // taken when the sweep ran, or the one a loaded file carried. NULL means
+        // unknown — a file written before this was recorded — and that is a different
+        // answer from Off, which is why a save must stamp this rather than the
+        // configured ProtectiveHighPass above. Stamping the live setting would turn
+        // "nobody knows what filter this response was corrected for" into a confident
+        // claim about a filter it never passed through.
+        public ProtectiveHighPassConfiguration? MeasurementProtectiveHighPass { get; set; }
+
         // The input identity the CURRENT result was produced on: a snapshot of the
         // input when the sweep ran, or the input a loaded file was measured on. The
         // SPL anchor is validated against this, not the app's current configuration,
@@ -251,6 +260,7 @@ namespace Resonalyze
             // The old result is gone; its calibration and input snapshots go with it.
             // The next run re-snapshots the configured calibration and input.
             MeasurementSplCalibration = null;
+            MeasurementProtectiveHighPass = null;
             MeasurementInput = null;
             TransferCoherence = null;
             MicrophoneRecordedSamples = null;
@@ -317,6 +327,7 @@ namespace Resonalyze
                 // result, so a later setting change cannot rewrite what it means or
                 // which input it is validated against.
                 MeasurementSplCalibration = SplCalibration;
+                MeasurementProtectiveHighPass = ProtectiveHighPass;
                 MeasurementInput = CurrentInputIdentity();
                 TransferCoherence = null;
                 MicrophoneRecordedSamples = null;

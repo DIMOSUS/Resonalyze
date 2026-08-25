@@ -2216,6 +2216,54 @@ public sealed class PlotModelFactoryTests
         Assert.Equal(2.0 * 10.0 * Math.Log10(2.0), at8K - at2K, precision: 1);
     }
 
+    [Fact]
+    public void MmmWithoutAnAnchorKeepsBandPowerOnARelativeAxis()
+    {
+        // The band-power pipeline is what a spatial average is defined on; the
+        // absolute axis is a separate question, answered by whether an anchor exists.
+        // Tying the two together drew an unanchored capture at raw dBFS onto an axis
+        // whose hard floor is -20 dB SPL: computed correctly, rendered off-plot.
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.Mmm,
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel,
+            NoiseColor = NoiseColor.PinkPeriodic,
+            CompensateNoiseTilt = true,
+            CalibrationId = null,
+            SmoothingInverseOctaves = 0
+        };
+        PlotModelFactory unanchored =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+
+        Assert.True(unanchored.LiveUsesBandPower);
+        Assert.Equal(MagnitudeScale.Relative, unanchored.EffectiveLiveSpectrumScale);
+
+        var magnitude = new double[(noise.SequenceLength / 2) + 1];
+        Array.Fill(magnitude, 0.1);
+        LineSeries relative = unanchored.BuildInputMagnitudeSeries(magnitude);
+        Assert.NotEmpty(relative.Points);
+        Assert.All(relative.Points, point => Assert.True(double.IsFinite(point.Y)));
+
+        // Anchoring must move the whole curve by exactly the anchor and change
+        // nothing else: same pipeline, different reference.
+        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
+        PlotModelFactory anchored =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+        Assert.True(anchored.LiveUsesBandPower);
+        Assert.Equal(MagnitudeScale.SoundPressureLevel, anchored.EffectiveLiveSpectrumScale);
+
+        LineSeries absolute = anchored.BuildInputMagnitudeSeries(magnitude);
+        double offset = PointNear(absolute, 1000.0).Y - PointNear(relative, 1000.0).Y;
+        Assert.Equal(relative.Points.Count, absolute.Points.Count);
+        for (int i = 0; i < relative.Points.Count; i++)
+        {
+            Assert.Equal(relative.Points[i].X, absolute.Points[i].X, precision: 6);
+            Assert.Equal(relative.Points[i].Y + offset, absolute.Points[i].Y, precision: 6);
+        }
+    }
+
     private static OxyPlot.DataPoint PointNear(LineSeries series, double frequency)
     {
         OxyPlot.DataPoint nearest = series.Points[0];

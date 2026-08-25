@@ -6,8 +6,10 @@ namespace Resonalyze.Options
 {
     public partial class LiveSpectrumOpt : Form
     {
-        private static readonly int[] SequenceLengths =
-            { 256, 512, 1024, 2048, 4096, 8192, 16384 };
+        // Shared with the settings schema, which used to keep its own copy and would
+        // floor a newly offered length straight back out of the saved file.
+        private static readonly IReadOnlyList<int> SequenceLengths =
+            LiveSequenceLengths.Supported;
         private static readonly int[] OverlapPercents = { 0, 50, 75 };
         private static readonly int[] CoherenceLimits = { 0, 10, 20, 25, 30, 40, 50 };
         private readonly WrappingToolTip toolTip = new();
@@ -30,6 +32,16 @@ namespace Resonalyze.Options
         // transfer function has nothing to correlate against without an excitation —
         // so it exists in RTA mode only; every real noise colour is shared.
         private NoiseColor userSignalType = NoiseColor.PinkPeriodic;
+
+        // The user's real choices for the three settings MMM pins. MMM forces the
+        // controls themselves (see UpdateMmmPinnedControls), so without these a trip
+        // through MMM and back would silently rewrite the RTA preferences — the same
+        // contract userWindowType and userOverlapPercent already have for periodic
+        // pink. Captured on a real toggle only, never from the forced state.
+        private bool userCompensateNoiseTilt;
+        private bool userSplScale;
+        private AveragingSpeed userAveragingSpeed = AveragingSpeed.Medium;
+        private int userSmoothingInverseOctaves = 6;
 
         // The designer's normal text colours, restored when a choice leaves its
         // amber conflict state.
@@ -70,7 +82,13 @@ namespace Resonalyze.Options
             windowComboBox.SelectionChangeCommitted += (_, _) => CaptureUserWindow();
             overlapComboBox.SelectionChangeCommitted += (_, _) => CaptureUserOverlap();
             radioModeRta.CheckedChanged += (_, _) => UpdateModeDependentControls();
+            radioModeMmm.CheckedChanged += (_, _) => UpdateModeDependentControls();
             checkInputMagnitude.Click += (_, _) => CaptureUserInputMagnitude();
+            checkTilt.Click += (_, _) => CaptureUserTilt();
+            checkSpl.Click += (_, _) => CaptureUserSplScale();
+            averagingComboBox.SelectionChangeCommitted += (_, _) => CaptureUserAveraging();
+            comboSmoothingInverseOctaves.SelectionChangeCommitted +=
+                (_, _) => CaptureUserSmoothing();
             InitializeToolTips();
             Disposed += (_, _) => toolTip.Dispose();
         }
@@ -80,7 +98,8 @@ namespace Resonalyze.Options
             IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries,
             bool isSplAvailable,
             bool hasLiveCurve,
-            bool hasTransferReference)
+            bool hasTransferReference,
+            int sampleRateHz)
         {
             // The signal list is populated per mode in UpdateModeDependentControls
             // below; remember the stored signal so it survives a mode round-trip.
@@ -90,9 +109,12 @@ namespace Resonalyze.Options
             sequenceLengthComboBox.Items.Clear();
             foreach (int sequenceLength in SequenceLengths)
             {
-                sequenceLengthComboBox.Items.Add(sequenceLength);
+                sequenceLengthComboBox.Items.Add(
+                    new SequenceLengthOption(sequenceLength, sampleRateHz));
             }
-            sequenceLengthComboBox.SelectedItem = NormalizeSequenceLength(options.SequenceLength);
+
+            sequenceLengthComboBox.SelectedIndex =
+                FloorIndex(SequenceLengths, options.SequenceLength);
 
             overlapComboBox.Items.Clear();
             foreach (int overlapPercent in OverlapPercents)
@@ -102,8 +124,9 @@ namespace Resonalyze.Options
             userOverlapPercent = options.OverlapPercent;
             overlapComboBox.SelectedIndex = FindOverlapIndex(options.OverlapPercent);
 
-            comboSmoothingInverseOctaves.SelectedItem =
+            userSmoothingInverseOctaves =
                 SmoothingPresetOptions.Normalize(options.SmoothingInverseOctaves);
+            comboSmoothingInverseOctaves.SelectedItem = userSmoothingInverseOctaves;
 
             windowComboBox.Items.Clear();
             windowComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -123,6 +146,7 @@ namespace Resonalyze.Options
             averagingComboBox.Items.Add(new AveragingOption(AveragingSpeed.Slow, "Slow"));
             averagingComboBox.Items.Add(
                 new AveragingOption(AveragingSpeed.Infinite, "Infinite"));
+            userAveragingSpeed = options.AveragingSpeed;
             averagingComboBox.SelectedIndex = FindAveragingIndex(options.AveragingSpeed);
 
             coherenceLimitComboBox.Items.Clear();
@@ -139,6 +163,7 @@ namespace Resonalyze.Options
             checkPeakHold.Checked = options.PeakHold;
             checkCoherence.Checked = options.ShowCoherence;
             checkTilt.Checked = options.CompensateNoiseTilt;
+            userCompensateNoiseTilt = options.CompensateNoiseTilt;
 
             // The selection follows the options verbatim: dB SPL is choosable even
             // without a matching calibration (view-only), and Transfer even without
@@ -147,9 +172,13 @@ namespace Resonalyze.Options
             RefreshAvailability(isSplAvailable, hasLiveCurve, hasTransferReference);
             checkSpl.Checked =
                 options.MagnitudeScale == MagnitudeScale.SoundPressureLevel;
-            bool rta = options.AnalysisMode == LiveAnalysisMode.Rta;
-            radioModeRta.Checked = rta;
-            radioModeTransfer.Checked = !rta;
+            userSplScale = checkSpl.Checked;
+            // Assign all three: WinForms clears the siblings when one is set, so the
+            // single true value wins whichever order the assignments run in.
+            radioModeMmm.Checked = options.AnalysisMode == LiveAnalysisMode.Mmm;
+            radioModeRta.Checked = options.AnalysisMode == LiveAnalysisMode.Rta;
+            radioModeTransfer.Checked =
+                options.AnalysisMode == LiveAnalysisMode.TransferFunction;
             UpdateModeDependentControls();
 
             MicrophoneCalibrationComboHelper.Configure(
@@ -205,6 +234,16 @@ namespace Resonalyze.Options
         // textless checkbox only needs its AutoCheck toggled.
         private void UpdateSplChoiceColor()
         {
+            // MMM renders band-power dB SPL by definition and needs no anchor, so the
+            // row is neither muted nor amber there — it is pinned, and
+            // UpdateMmmPinnedControls owns its interactivity. Calling
+            // SetTextEnabledLook here would hand AutoCheck back and undo that pin.
+            if (radioModeMmm.Checked)
+            {
+                labelSpl.ForeColor = splChoiceReadyForeColor;
+                return;
+            }
+
             bool rta = radioModeRta.Checked;
             labelSpl.ForeColor = !rta
                 ? UiPalette.TextDisabled
@@ -277,36 +316,65 @@ namespace Resonalyze.Options
         /// (or loses its calibration mid-run) while the display is view-only SPL;
         /// checking it again afterwards stays available.
         /// </summary>
-        public void ForceSplScaleOff() => checkSpl.Checked = false;
+        /// <summary>
+        /// Moves the panel onto <paramref name="mode"/> without a user click. The
+        /// host calls this when something outside the panel changes the analysis mode
+        /// — opening a stored capture switches to the mode that capture belongs to.
+        /// </summary>
+        /// <remarks>
+        /// An open panel that kept showing the old radio would write it straight back
+        /// on its next apply-on-change, since SetOptions reads the controls. Setting
+        /// Checked runs the CheckedChanged handler, so the pinned settings follow.
+        /// </remarks>
+        public void ForceAnalysisMode(LiveAnalysisMode mode)
+        {
+            radioModeMmm.Checked = mode == LiveAnalysisMode.Mmm;
+            radioModeRta.Checked = mode == LiveAnalysisMode.Rta;
+            radioModeTransfer.Checked = mode == LiveAnalysisMode.TransferFunction;
+        }
+
+        public void ForceSplScaleOff()
+        {
+            // The remembered choice has to go with the checkbox. Unchecking alone
+            // raises no Click, so CaptureUserSplScale never runs, and SetOptions —
+            // which persists the CACHE, not the control — would write dB SPL straight
+            // back on the panel's next apply, undoing the very reset the caller made.
+            userSplScale = false;
+            checkSpl.Checked = false;
+        }
 
         public void SetOptions(LiveSpectrumOptions options)
         {
-            options.AnalysisMode = radioModeRta.Checked
-                ? LiveAnalysisMode.Rta
-                : LiveAnalysisMode.TransferFunction;
-            options.NoiseColor =
-                signalTypeComboBox.SelectedItem is NoiseColorOption noiseColorOption
+            options.AnalysisMode = radioModeMmm.Checked
+                ? LiveAnalysisMode.Mmm
+                : radioModeRta.Checked
+                    ? LiveAnalysisMode.Rta
+                    : LiveAnalysisMode.TransferFunction;
+            // MMM offers periodic pink alone, so the combo carries no choice there:
+            // persist the user's real one instead. NoiseMeasurement pins the played
+            // colour through EffectiveNoiseColor either way.
+            options.NoiseColor = radioModeMmm.Checked
+                ? userSignalType
+                : signalTypeComboBox.SelectedItem is NoiseColorOption noiseColorOption
                     ? noiseColorOption.NoiseColor
                     : NoiseColor.PinkPeriodic;
             options.CalibrationId =
                 MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration);
-            options.SequenceLength = sequenceLengthComboBox.SelectedItem is int sequenceLength
-                ? sequenceLength
-                : SequenceLengths[0];
+            options.SequenceLength =
+                sequenceLengthComboBox.SelectedItem is SequenceLengthOption lengthOption
+                    ? lengthOption.Length
+                    : SequenceLengths[0];
             // Persist the user's real overlap choice, not the Off value the combo is
             // forced to (and disabled at) while periodic pink noise is selected.
             options.OverlapPercent = userOverlapPercent;
-            options.SmoothingInverseOctaves =
-                comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
-                    ? inverseOctaves
-                    : SmoothingPresetOptions.SupportedInverseOctaves[0];
+            // The user's real choice, not the Off value MMM forces the combo to.
+            options.SmoothingInverseOctaves = userSmoothingInverseOctaves;
             // Persist the user's real window choice, not the Rectangular value the combo
             // is forced to (and disabled at) while periodic pink noise is selected.
             options.WindowType = userWindowType;
-            options.AveragingSpeed =
-                averagingComboBox.SelectedItem is AveragingOption averagingOption
-                    ? averagingOption.Speed
-                    : AveragingSpeed.Medium;
+            // Likewise the user's real averaging choice, not the Infinite value MMM
+            // forces the combo to.
+            options.AveragingSpeed = userAveragingSpeed;
             options.ShowMainCurve = checkMainCurve.Checked;
             // Persist the user's real RTA choice, not the value forced (and locked) on
             // while RTA mode is selected.
@@ -317,11 +385,11 @@ namespace Resonalyze.Options
                 coherenceLimitComboBox.SelectedItem is CoherenceLimitOption limitOption
                     ? limitOption.Percent
                     : CoherenceLimits[0];
-            // The SPL and tilt checkboxes are merely muted (never rewritten) in
-            // Transfer mode, so these persist the user's real RTA-mode choices; the
-            // effective scale and tilt ignore them while Transfer is selected.
-            options.CompensateNoiseTilt = checkTilt.Checked;
-            options.MagnitudeScale = checkSpl.Checked
+            // The SPL and tilt checkboxes are muted (never rewritten) in Transfer
+            // mode and FORCED ON in MMM, so these persist the user's real RTA-mode
+            // choices; the effective scale and tilt ignore them in both.
+            options.CompensateNoiseTilt = userCompensateNoiseTilt;
+            options.MagnitudeScale = userSplScale
                 ? MagnitudeScale.SoundPressureLevel
                 : MagnitudeScale.Relative;
         }
@@ -344,6 +412,31 @@ namespace Resonalyze.Options
             }
 
             return index;
+        }
+
+        // The analysis frame, shown by its DURATION as well as its sample count.
+        // Duration is the rate-independent quantity: a rectangular window resolves
+        // 2/T hertz and a Hann one 4/T, so 32768 means 341 ms at 96 kHz and 683 ms
+        // at 48 kHz — the same list entry, two very different measurements. Naming
+        // the milliseconds is what stops a rate change from silently coarsening the
+        // bass of a spatial average. The count alone is shown until the analyzer
+        // reports a rate.
+        private sealed class SequenceLengthOption
+        {
+            private readonly int sampleRateHz;
+
+            public SequenceLengthOption(int length, int sampleRateHz)
+            {
+                Length = length;
+                this.sampleRateHz = sampleRateHz;
+            }
+
+            public int Length { get; }
+
+            public override string ToString() =>
+                sampleRateHz > 0
+                    ? $"{Length} — {1000.0 * Length / sampleRateHz:0} ms"
+                    : $"{Length}";
         }
 
         private sealed class CoherenceLimitOption
@@ -391,8 +484,12 @@ namespace Resonalyze.Options
         // properties of the RTA and are muted in Transfer mode instead.
         private void UpdateModeDependentControls()
         {
-            bool rta = radioModeRta.Checked;
-            UpdateSignalTypesForMode(rta);
+            bool mmm = radioModeMmm.Checked;
+            // MMM is a reference-free mode too: it shares the whole mic-only path
+            // with the RTA and differs only in which settings it allows.
+            bool rta = mmm || radioModeRta.Checked;
+            UpdateSignalTypesForMode(rta, mmm);
+            UpdateMmmPinnedControls(mmm);
 
             // Mute (rather than WinForms-disable) the transfer/coherence controls so
             // they read as the theme's muted colour, not the near-black system grey.
@@ -418,10 +515,91 @@ namespace Resonalyze.Options
         // excitation out, and Silent means an external source of unknown colour.
         private void UpdateTiltAvailability()
         {
+            // In MMM the compensation is not offered but REQUIRED, so the row keeps
+            // its normal colour and is pinned instead of muted (UpdateMmmPinnedControls).
+            if (radioModeMmm.Checked)
+            {
+                UiStyle.SetTextEnabledLook(labelTilt, true);
+                return;
+            }
+
             bool applicable =
                 radioModeRta.Checked && SelectedNoiseColor() != NoiseColor.Silent;
             UiStyle.SetTextEnabledLook(labelTilt, applicable);
             UiStyle.SetTextEnabledLook(checkTilt, applicable, interactive: true);
+        }
+
+        // MMM pins the settings a spatial average is only valid under. They are
+        // FORCED, not muted: a muted control reads "not applicable / ignored", and
+        // these are the opposite — mandatory. So the rows keep their normal colour
+        // and only stop responding, with the tooltip saying why. The user's own
+        // choices live in the userXxx fields and come back on the way out.
+        private void UpdateMmmPinnedControls(bool mmm)
+        {
+            if (mmm)
+            {
+                checkSpl.Checked = true;
+                checkTilt.Checked = true;
+                averagingComboBox.SelectedIndex =
+                    FindAveragingIndex(AveragingSpeed.Infinite);
+                comboSmoothingInverseOctaves.SelectedItem = 0;
+            }
+            else
+            {
+                checkSpl.Checked = userSplScale;
+                checkTilt.Checked = userCompensateNoiseTilt;
+                averagingComboBox.SelectedIndex = FindAveragingIndex(userAveragingSpeed);
+                comboSmoothingInverseOctaves.SelectedItem = userSmoothingInverseOctaves;
+            }
+
+            SetPinned(checkSpl, mmm);
+            SetPinned(checkTilt, mmm);
+            averagingComboBox.Enabled = !mmm;
+            comboSmoothingInverseOctaves.Enabled = !mmm;
+        }
+
+        // Stops a checkbox responding without giving it the muted "not applicable"
+        // colour: AutoCheck:false makes a click leave the state untouched, exactly
+        // as UiStyle.SetTextEnabledLook does for the muted case.
+        private static void SetPinned(CheckBox checkBox, bool pinned)
+        {
+            checkBox.AutoCheck = !pinned;
+            checkBox.TabStop = !pinned;
+        }
+
+        // Only a real user toggle updates the remembered preference; the pinned
+        // state above sets Checked programmatically and must not pollute it. The
+        // AutoCheck guard is the same one CaptureUserInputMagnitude uses.
+        private void CaptureUserTilt()
+        {
+            if (checkTilt.AutoCheck)
+            {
+                userCompensateNoiseTilt = checkTilt.Checked;
+            }
+        }
+
+        private void CaptureUserSplScale()
+        {
+            if (checkSpl.AutoCheck)
+            {
+                userSplScale = checkSpl.Checked;
+            }
+        }
+
+        private void CaptureUserSmoothing()
+        {
+            if (comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves)
+            {
+                userSmoothingInverseOctaves = inverseOctaves;
+            }
+        }
+
+        private void CaptureUserAveraging()
+        {
+            if (averagingComboBox.SelectedItem is AveragingOption option)
+            {
+                userAveragingSpeed = option.Speed;
+            }
         }
 
         private NoiseColor SelectedNoiseColor() =>
@@ -436,10 +614,26 @@ namespace Resonalyze.Options
         // excitation, and the one whose spectrum the slope compensation knows
         // exactly). The last signal is kept when the new mode still has it, so a
         // mode round-trip does not silently swap the excitation.
-        private void UpdateSignalTypesForMode(bool rta)
+        private void UpdateSignalTypesForMode(bool referenceFree, bool mmm)
         {
             signalTypeComboBox.Items.Clear();
-            if (rta)
+            if (mmm)
+            {
+                // MMM offers periodic pink alone. Its spectrum is exactly 1/√f and,
+                // unlike the Kellett bank behind plain "Pink noise" (whose poles sit
+                // in normalized frequency), the model the slope compensation undoes
+                // does not move with the sample rate. Silent has no known spectrum
+                // at all, so it cannot be compensated even in principle.
+                signalTypeComboBox.Items.Add(
+                    new NoiseColorOption(NoiseColor.PinkPeriodic, "Pink noise (periodic)"));
+                signalTypeComboBox.SelectedIndex = 0;
+                signalTypeComboBox.Enabled = false;
+                UpdatePeriodicPinkControls();
+                return;
+            }
+
+            signalTypeComboBox.Enabled = true;
+            if (referenceFree)
             {
                 signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.Silent, "Silent"));
             }
@@ -576,8 +770,6 @@ namespace Resonalyze.Options
             }
         }
 
-        private static int NormalizeSequenceLength(int sequenceLength) =>
-            SequenceLengths[FloorIndex(SequenceLengths, sequenceLength)];
 
         private int FindNoiseColorIndex(NoiseColor noiseColor)
         {

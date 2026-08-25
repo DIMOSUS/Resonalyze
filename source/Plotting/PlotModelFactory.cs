@@ -451,6 +451,7 @@ internal sealed class PlotModelFactory
             GridStopHz = curve[^1].X,
             TiltCompensationDb = applied.TiltDb,
             CalibrationCorrectionDb = applied.CalibrationDb,
+            ProtectiveHighPassCorrectionDb = applied.ProtectiveHighPassDb,
             // The CURVE travels, named by the id the live options selected it with —
             // a calibration file's own name is not something CalibrationFile keeps,
             // and the id is the only handle this layer has. The points are what the
@@ -1891,6 +1892,13 @@ internal sealed class PlotModelFactory
         public double[] TiltDb { get; set; } = [];
 
         /// <summary>
+        /// The protective high-pass divided back out, per drawn point, in dB — NaN
+        /// where the filter took the signal below what can be recovered. Empty when
+        /// no such filter was configured.
+        /// </summary>
+        public double[] ProtectiveHighPassDb { get; set; } = [];
+
+        /// <summary>
         /// The microphone correction per drawn point, in the sign convention of
         /// <see cref="CalibrationFile.GetDecibelCorrection"/> — the render SUBTRACTS
         /// it. Empty when no calibration was in force.
@@ -1944,6 +1952,32 @@ internal sealed class PlotModelFactory
         if (applied != null && recordedCorrection != null)
         {
             applied.CalibrationDb = recordedCorrection;
+        }
+
+        // The protective high-pass sits in the user's own DSP, ahead of the
+        // loudspeaker, so a reference-free capture CARRIES it — a swept impulse
+        // response has it divided back out, and without the same division here the
+        // two measurements of one tweeter would sit a whole filter slope apart. Only
+        // for a spatial-average capture: that is the curve compared against the
+        // impulse responses, and the plain RTA keeps showing what the microphone
+        // actually hears.
+        if (EffectiveLiveAnalysisMode.IsSpatialAverageCapture() &&
+            expSweepMeasurement.ProtectiveHighPass.Enabled)
+        {
+            double[] filter = ProtectiveHighPassCompensation.MagnitudeCorrectionDb(
+                expSweepMeasurement.ProtectiveHighPass.ToEdge(),
+                noiseMeasurement.SampleRate,
+                ProtectiveHighPassConfiguration.MaximumCompensationBoostDb,
+                bands.Select(band => band.X).ToArray());
+            for (int i = 0; i < bands.Count; i++)
+            {
+                bands[i] = new SignalPoint(bands[i].X, bands[i].Y + filter[i]);
+            }
+
+            if (applied != null)
+            {
+                applied.ProtectiveHighPassDb = filter;
+            }
         }
 
         if (tiltModel is { } bandModel)

@@ -764,6 +764,16 @@ exponential window would weight the end of that walk over its beginning); the
 banded dB SPL rendering; slope compensation on; and smoothing off. Your own RTA
 choices are remembered and come back when you leave the mode.
 
+If a **protective high-pass** is configured (Measurement Options), MMM divides it
+back out of its curve. That filter sits in your own DSP, ahead of the loudspeaker,
+so a reference-free capture carries it while a swept impulse response has it
+removed — without the same division the two measurements of one tweeter would sit
+a whole filter slope apart, some 28 dB at 900 Hz under a 2 kHz / 24 dB per octave
+corner. The correction is the same one the sweep path applies, capped the same
+way: below the frequency where recovering the signal would need more than 40 dB of
+boost there is nothing left to recover, and the curve breaks rather than showing a
+level that was never measured.
+
 The read-out at the top left counts what has been integrated — `Integrating —
 42 s, 123 frames` — because a spatial average stops visibly moving long before it
 has settled. **Save** writes the capture as its own file: the accumulated FFT

@@ -259,6 +259,20 @@ public sealed class LiveCaptureDocument
     /// </summary>
     public double[] CalibrationCorrectionDb { get; set; } = [];
 
+    /// <summary>
+    /// The protective high-pass divided back out of <see cref="CurveDb"/>, per drawn
+    /// point, in dB — NaN where the filter took the signal below what could be
+    /// recovered. Empty when no such filter was configured.
+    /// </summary>
+    /// <remarks>
+    /// A reference-free capture carries that filter; a swept impulse response has it
+    /// removed. Without this the two measurements of one tweeter sit a whole filter
+    /// slope apart, which is precisely the smooth, plausible discrepancy this format
+    /// exists to keep out. Stored applied, like the corrections above, so a reader
+    /// can undo it exactly.
+    /// </remarks>
+    public double[] ProtectiveHighPassCorrectionDb { get; set; } = [];
+
     public void Save(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -434,10 +448,26 @@ public sealed class LiveCaptureDocument
             throw new InvalidDataException("The stored calibration correction is misaligned.");
         }
 
-        if (SpectrumDb.Any(value => !double.IsFinite(value)) ||
-            CurveDb.Any(value => !double.IsFinite(value)))
+        if (ProtectiveHighPassCorrectionDb.Length is not 0 &&
+            ProtectiveHighPassCorrectionDb.Length != CurvePointCount)
         {
-            throw new InvalidDataException("The capture holds a non-finite level.");
+            throw new InvalidDataException(
+                "The stored protective high-pass correction is misaligned.");
+        }
+
+        // The BINS must all be real numbers — they are the measurement. The drawn
+        // curve may legitimately hold NaN: where the protective high-pass took the
+        // signal below what the compensation can recover there is nothing to plot,
+        // and a break in the line is the honest answer where a very negative level
+        // would be a fabricated one.
+        if (SpectrumDb.Any(value => !double.IsFinite(value)))
+        {
+            throw new InvalidDataException("The capture spectrum holds a non-finite level.");
+        }
+
+        if (CurveDb.Any(double.IsInfinity))
+        {
+            throw new InvalidDataException("The capture curve holds an infinite level.");
         }
 
         Title = Title?.Trim() ?? string.Empty;

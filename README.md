@@ -1689,30 +1689,38 @@ the set, never one per channel, because the captures were taken in a single
 analyzer session at a fixed gain: their relative levels are honest measurements,
 and normalizing each channel separately would throw exactly that away.
 
-Both **Sums** follow the channels drawn above them: their magnitudes added as
-amplitudes, then the **summation loss the impulse responses measure** laid on top.
-The averages hold no phase, so they cannot be summed as vectors, and an arithmetic
-sum alone would draw a system that cancels nowhere — the loss curve supplies what
-the average threw away, and carries over because a per-channel filter changes both
-halves of that ratio by the same factor.
+Both **Sums** follow the channels drawn above them, and they are built as **complex**
+sums: each channel's gated spectrum is rescaled, bin by bin, to the level its spatial
+average reports, and the rescaled phasors are added. An average holds no phase, so the
+phase can only come from the impulse response — which is exactly what it is for.
 
-Unlike the per-channel curves, that sum is an **estimate**. A channel's own curve is
+The obvious shortcut, adding the magnitudes and laying the impulse responses' own
+summation loss on top, is what this replaced. A loss is a property of the levels it
+was measured at, so it carries over only while the two families agree about the
+RELATIVE levels of the channels — and at a steep junction they do not. On the owner's
+car at 2154 Hz the impulse responses put the midrange 3.9 dB ABOVE the tweeter, while
+the hybrid, applying the crossover analytically, put it 19.4 dB below: a gate does not
+commute with a 48 dB/octave filter, so a stopband reads far above its analytic slope.
+The borrowed loss then drew a 13 dB dip into a sum whose own channels could not have
+produced more than 1.9 dB. The complex sum reads 0.9 dB there, which is what those
+channels can actually do.
+
+The Sum is still an **estimate**, for a different reason. A channel's own curve is
 exact: a filter does not depend on position, so it factors straight out of the
-average. The interference *between* two channels does depend on position — it varies
-across the listening volume, and one microphone samples one value of it. So the Sum
-keeps the interference of a **point** rather than a spatially averaged one, and its
-peaks and dips can come out either stronger or weaker than the true average; the sign
-is not determined. What can be said is that the gap tends to grow the faster the
-relative phase turns across the volume you averaged over — generally small in the
-bass, where the wavelength dwarfs that volume, and largest at a crossover high up.
-Read the channel curves for tonal balance and the Sum for where the junctions land,
-not as a measured spatial average of the system.
+average. The interference *between* two channels does depend on position, and the
+phase holding these phasors together was measured at one microphone. So the Sum keeps
+the interference of a **point** rather than a spatially averaged one, and its peaks
+and dips can come out either stronger or weaker than the true average; the sign is not
+determined. What can be said is that the gap tends to grow the faster the relative
+phase turns across the volume you averaged over — generally small in the bass, where
+the wavelength dwarfs that volume, and largest at a crossover high up. Read the
+channel curves for tonal balance and the Sum for where the junctions land, not as a
+measured spatial average of the system.
 
-Where the loss curve breaks (its level
-gate finds every channel filtered far under the local level) the hybrid sum breaks
-with it, rather than falling back to a lossless sum that would be most confident
-exactly where the measurement is weakest. A channel whose own capture stops — below
-a protective high-pass, or past the end of its grid — drops out of that point's sum.
+A channel whose own capture stops — below a protective high-pass, or past the end of
+its grid — drops out of that point's sum while its impulse response says it is
+inaudible there, and takes the point with it when it says the channel is still
+playing.
 
 Everything else keeps reading the impulse responses: timing, polarity, the
 junction analyses, Auto delay, the sum-loss read-out and the phase view. The

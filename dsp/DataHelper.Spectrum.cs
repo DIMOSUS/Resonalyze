@@ -190,6 +190,143 @@ namespace Resonalyze.Dsp
                 unsmoothed);
         }
 
+        /// <summary>
+        /// The summed magnitude of a channel set whose MAGNITUDE is taken from one
+        /// measurement and whose PHASE is taken from another: each channel's gated
+        /// complex spectrum is rescaled, bin by bin, to the level
+        /// <paramref name="channels"/> supplies, and the rescaled phasors are added.
+        /// </summary>
+        /// <remarks>
+        /// This exists for the Virtual DSP hybrid view, where the levels come from
+        /// spatial averages (which hold no phase) and the phase can only come from
+        /// the impulse responses. The obvious shortcut — add the supplied magnitudes
+        /// as amplitudes and lay the impulse responses' own summation loss on top —
+        /// is wrong wherever the two families disagree about the RELATIVE levels of
+        /// the channels, because that loss is a property of the levels it was
+        /// measured at. On a real car at a 1.6 kHz junction the disagreement reached
+        /// 23 dB (a gate does not commute with a steep filter, so a stopband reads
+        /// far above its analytic slope), and the borrowed loss drew a 13 dB dip into
+        /// a sum whose own channels could not have produced more than 1.9 dB.
+        /// <para>
+        /// One window for every channel, the caller's: the sum of gated spectra is
+        /// the gated sum only while they share it. A channel whose supplied level is
+        /// NaN contributes nothing here — deciding whether that is a hole or a
+        /// silence belongs to the caller, which knows what the channel was doing.
+        /// </para>
+        /// </remarks>
+        public static List<SignalPoint> GetGatedSubstitutedMagnitudeSum(
+            IReadOnlyList<(IImpulseMeasurement Measurement,
+                IReadOnlyList<SignalPoint> MagnitudeDb)> channels,
+            PhaseAnalysisSettings settings,
+            double smoothingInverseOctaves)
+        {
+            ArgumentNullException.ThrowIfNull(channels);
+            if (channels.Count == 0)
+            {
+                return [];
+            }
+
+            Complex[]? total = null;
+            int sampleRate = 0;
+            foreach ((IImpulseMeasurement measurement,
+                IReadOnlyList<SignalPoint> magnitudeDb) in channels)
+            {
+                Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
+                total ??= new Complex[spectrum.Length];
+                sampleRate = measurement.SampleRate;
+                int usable = Math.Min(total.Length, spectrum.Length);
+                for (int i = 1; i < usable / 2; i++)
+                {
+                    double magnitude = spectrum[i].Magnitude;
+                    if (magnitude <= 0)
+                    {
+                        continue;
+                    }
+
+                    double frequency = i * (sampleRate / (double)spectrum.Length);
+                    double levelDb = InterpolateLevelDb(magnitudeDb, frequency);
+                    if (!double.IsFinite(levelDb))
+                    {
+                        continue;
+                    }
+
+                    // The channel's own phase, at the level the other measurement
+                    // says: a unit phasor times the substituted amplitude.
+                    total[i] += spectrum[i] / magnitude * DecibelsToAmplitude(levelDb);
+                }
+            }
+
+            if (total == null || sampleRate <= 0)
+            {
+                return [];
+            }
+
+            var bins = new List<SignalPoint>(total.Length / 2);
+            for (int i = 1; i < total.Length / 2; i++)
+            {
+                bins.Add(new SignalPoint(
+                    i * (sampleRate / (double)total.Length),
+                    AmplitudeToDecibels(total[i].Magnitude)));
+            }
+
+            return LogarithmicResample(
+                bins,
+                20,
+                20000,
+                1024,
+                calibration: null,
+                SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves),
+                psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(smoothingInverseOctaves));
+        }
+
+        // A level from an ascending (Hz, dB) curve, interpolated on the logarithmic
+        // frequency axis it is sampled on. NaN outside the curve and wherever the
+        // curve itself has none — a hole must not be bridged by its neighbours.
+        private static double InterpolateLevelDb(
+            IReadOnlyList<SignalPoint> curve, double frequency)
+        {
+            if (curve.Count == 0 || frequency <= 0 ||
+                frequency < curve[0].X || frequency > curve[^1].X)
+            {
+                return double.NaN;
+            }
+
+            int low = 0;
+            int high = curve.Count - 1;
+            while (high - low > 1)
+            {
+                int middle = (low + high) / 2;
+                if (curve[middle].X <= frequency)
+                {
+                    low = middle;
+                }
+                else
+                {
+                    high = middle;
+                }
+            }
+
+            double span = Math.Log(curve[high].X / curve[low].X);
+            if (span <= 0)
+            {
+                return curve[low].Y;
+            }
+
+            // Snapped at the ends for the same reason the capture sampler is: NaN
+            // times zero is NaN, so a point landing ON a level next to a hole would
+            // come back as a hole itself.
+            double fraction = Math.Log(frequency / curve[low].X) / span;
+            const double SnapTolerance = 1e-9;
+            if (fraction <= SnapTolerance)
+            {
+                return curve[low].Y;
+            }
+
+            return fraction >= 1.0 - SnapTolerance
+                ? curve[high].Y
+                : curve[low].Y + (curve[high].Y - curve[low].Y) * fraction;
+        }
+
         private static AnalysisCurve ResampleGatedMagnitude(
             List<SignalPoint> bins,
             CalibrationFile? calibration,

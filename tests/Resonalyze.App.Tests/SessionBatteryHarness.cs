@@ -528,7 +528,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                         project.SmoothingCode);
                 return new GatedMagnitude(display, unsmoothed);
             });
-        (_, _, List<SignalPoint>? loss, _) = metrics.BuildCurves(
+        (_, _, List<SignalPoint>? loss) = metrics.BuildCurves(
             processed, project.SmoothingCode);
         return metrics.BuildEntries(processed, loss);
     }

@@ -2900,12 +2900,9 @@ public partial class VirtualCrossoverPanel : UserControl
         List<AnalysisCurve>? magnitudes;
         AnalysisCurve? sumCurve;
         List<SignalPoint>? lossCurve;
-        // The raw ratio too: the hybrid sum has no measured total to smooth once and
-        // has to reconstruct one, which only works from unsmoothed operands.
-        List<SignalPoint>? unsmoothedLossCurve;
         using (AppProfiler.Zone("VirtualDSP.BuildCurves"))
         {
-            (magnitudes, sumCurve, lossCurve, unsmoothedLossCurve) = metrics.BuildCurves(
+            (magnitudes, sumCurve, lossCurve) = metrics.BuildCurves(
                 processed, magnitudeGate.SmoothingInverseOctaves);
         }
 
@@ -2964,8 +2961,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using (AppProfiler.Zone("VirtualDSP.BuildAcousticRender"))
         {
             acousticRender = BuildAcousticRender(
-                processed, magnitudes, sumCurve, lossCurve, unsmoothedLossCurve,
-                oppositeSum, hybrid);
+                processed, magnitudes, sumCurve, lossCurve, oppositeSum, hybrid);
         }
 
         using (AppProfiler.Zone("VirtualDSP.AcousticPlotDraw"))
@@ -2983,7 +2979,6 @@ public partial class VirtualCrossoverPanel : UserControl
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
-        List<SignalPoint>? unsmoothedLossCurve,
         AnalysisCurve? oppositeSum,
         HybridMagnitudes? hybrid)
     {
@@ -3006,8 +3001,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return new AcousticRender(
             hint,
             BuildMagnitudeCurves(
-                processed, magnitudes, sumCurve, lossCurve, unsmoothedLossCurve,
-                oppositeSum, hybrid),
+                processed, magnitudes, sumCurve, lossCurve, oppositeSum, hybrid),
             null);
     }
 
@@ -3185,7 +3179,6 @@ public partial class VirtualCrossoverPanel : UserControl
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
-        List<SignalPoint>? unsmoothedLossCurve,
         AnalysisCurve? oppositeSumCurve,
         HybridMagnitudes? hybrid)
     {
@@ -3253,14 +3246,7 @@ public partial class VirtualCrossoverPanel : UserControl
             // curve (see BuildHybridSumCurve); with no loss curve there is nothing to
             // put the dips back and the honest sum stays.
             IReadOnlyList<SignalPoint> sumPoints =
-                (hybrid != null && unsmoothedLossCurve != null
-                    ? BuildHybridSumCurve(
-                        hybrid,
-                        sumCurve.Points,
-                        magnitudes.Select(curve => curve.Points).ToList(),
-                        unsmoothedLossCurve,
-                        magnitudeGate.SmoothingInverseOctaves)
-                    : null)
+                (hybrid != null ? BuildActiveHybridSumCurve(processed, magnitudes, hybrid) : null)
                 ?? sumCurve.Points;
             curves.Add(new AcousticCurve(
                 "Sum", sumPoints, SumColor, 2.4, LineStyle.Solid));
@@ -3912,7 +3898,7 @@ public partial class VirtualCrossoverPanel : UserControl
         bool metricSideRight = project.ActiveSideRight;
         ProcessedRender? render = await ProcessChannelsAsync();
         List<ProcessedChannel> outcomeChannels = render?.Channels ?? [];
-        (_, _, List<SignalPoint>? outcomeLoss, _) =
+        (_, _, List<SignalPoint>? outcomeLoss) =
             metrics.BuildCurves(outcomeChannels, magnitudeGate.SmoothingInverseOctaves);
         result.Log.AppendLine(
             $"Metric ({(metricSideRight ? "R" : "L")} side):");
@@ -4566,11 +4552,12 @@ public partial class VirtualCrossoverPanel : UserControl
         // separately.
         List<SignalPoint>? points = BuildHybridSumCurve(
             hybrid with { OffsetDb = offsetDb },
-            sum.Display.Points,
+            side.Channels,
+            side.AnchorIndex,
+            snapshot,
+            gateOffsetMs,
             channelMagnitudes.Select(curve => (IReadOnlyList<SignalPoint>)curve.Display.Points)
-                .ToList(),
-            loss,
-            snapshot.SmoothingInverseOctaves);
+                .ToList());
         return points == null ? null : new AnalysisCurve("Sum opposite", points);
     }
 
@@ -4585,6 +4572,32 @@ public partial class VirtualCrossoverPanel : UserControl
     // after the response had begun and read the record minus its direct
     // arrival — octave bands off by 10+ dB against the same IR read from the
     // front.
+    // The active side's hybrid sum. The anchor and the gate are recomputed rather
+    // than threaded through: both are pure functions of the processed set and the
+    // gate snapshot, which is what BuildCurves used to build the measured Sum, so
+    // the two windows cannot part.
+    private List<SignalPoint>? BuildActiveHybridSumCurve(
+        List<ProcessedChannel> processed,
+        List<AnalysisCurve> magnitudes,
+        HybridMagnitudes hybrid)
+    {
+        if (processed.Count == 0)
+        {
+            return null;
+        }
+
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        int anchorIndex = ProcessedChannels.SharedStartAnchorIndex(processed);
+        return BuildHybridSumCurve(
+            hybrid,
+            processed,
+            anchorIndex,
+            snapshot,
+            snapshot.ResolveGateOffsetMs(
+                oppositeSide: false, anchorIndex, processed[0].SampleRate),
+            magnitudes.Select(curve => (IReadOnlyList<SignalPoint>)curve.Points).ToList());
+    }
+
     private AnalysisCurve BuildRawMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
@@ -5344,7 +5357,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return (null, 0.0);
         }
 
-        (List<AnalysisCurve>? magnitudes, _, _, _) =
+        (List<AnalysisCurve>? magnitudes, _, _) =
             metrics.BuildCurves(render.Channels, magnitudeGate.SmoothingInverseOctaves);
         if (magnitudes == null ||
             BuildHybridMagnitudes(
@@ -5837,7 +5850,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
         List<ProcessedChannel> metricChannels = render.Channels;
-        (_, _, List<SignalPoint>? metricLoss, _) =
+        (_, _, List<SignalPoint>? metricLoss) =
             metrics.BuildCurves(metricChannels, magnitudeGate.SmoothingInverseOctaves);
         string metricLine = VirtualCrossoverMetric.FormatLabel(
             metrics.BuildEntries(metricChannels, metricLoss));

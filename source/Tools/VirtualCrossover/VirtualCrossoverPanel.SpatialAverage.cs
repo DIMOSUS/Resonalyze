@@ -402,12 +402,12 @@ public partial class VirtualCrossoverPanel
                     "drawn by the other method. Timing, polarity and that loss are " +
                     "unaffected: they keep reading the impulse responses.\r\n\r\n" +
                     "The channel curves are exact — a filter does not depend on " +
-                    "microphone position. The Sum is an estimate: the interference " +
-                    "between channels does depend on position, and its loss is read " +
-                    "at one, so its peaks and dips can be either stronger or weaker " +
-                    "than the volume's average. The gap tends to grow the faster the " +
-                    "phase turns across that volume — generally small in the bass, " +
-                    "largest at a crossover high up.");
+                    "microphone position. The Sum is an estimate: it adds the " +
+                    "channels as phasors, and the phase holding them together was " +
+                    "measured at ONE position, so its peaks and dips can be either " +
+                    "stronger or weaker than the volume's average. The gap tends to " +
+                    "grow the faster the phase turns across that volume — generally " +
+                    "small in the bass, largest at a crossover high up.");
     }
 
     /// <summary>
@@ -626,13 +626,60 @@ public partial class VirtualCrossoverPanel
     /// </remarks>
     private static List<SignalPoint>? BuildHybridSumCurve(
         HybridMagnitudes hybrid,
-        IReadOnlyList<SignalPoint> reference,
-        IReadOnlyList<IReadOnlyList<SignalPoint>> channelReferences,
-        IReadOnlyList<SignalPoint> unsmoothedLoss,
-        int smoothingCode)
+        IReadOnlyList<ProcessedChannel> processed,
+        int anchorIndex,
+        MagnitudeGateSnapshot snapshot,
+        double gateOffsetMs,
+        IReadOnlyList<IReadOnlyList<SignalPoint>> channelReferences)
     {
-        int count = Math.Min(reference.Count, unsmoothedLoss.Count);
-        foreach (IReadOnlyList<SignalPoint> channel in hybrid.UnsmoothedChannels)
+        if (processed.Count == 0 || hybrid.UnsmoothedChannels.Count < processed.Count)
+        {
+            return null;
+        }
+
+        PhaseAnalysisSettings gate = snapshot.Template with { GateOffsetMs = gateOffsetMs };
+        var channels =
+            new List<(IImpulseMeasurement, IReadOnlyList<SignalPoint>)>(processed.Count);
+        for (int c = 0; c < processed.Count; c++)
+        {
+            // Raw levels in, one smoothing at the end: the same rule the measured Sum
+            // beside this one is built under.
+            channels.Add((
+                new ImpulseMeasurementView(
+                    processed[c].ImpulseResponse, anchorIndex, processed[c].SampleRate),
+                hybrid.UnsmoothedChannels[c]));
+        }
+
+        List<SignalPoint> sum = DataHelper.GetGatedSubstitutedMagnitudeSum(
+            channels, gate, snapshot.SmoothingInverseOctaves);
+        if (sum.Count == 0)
+        {
+            return null;
+        }
+
+        return MaskMissingContributors(
+            sum, hybrid.Channels, channelReferences, hybrid.OffsetDb);
+    }
+
+    /// <summary>
+    /// The finished sum with the set's offset on it, broken at the points where a
+    /// channel has no capture while its impulse response says it is still playing.
+    /// </summary>
+    /// <remarks>
+    /// Dropping a channel that still contributes would sum one set of sources and
+    /// present it as the whole; it is ignorable only below
+    /// <see cref="HybridDropoutFloorDb"/> under the loudest channel, where its own
+    /// crossover has removed it anyway. Pure and separate so the rule can be pinned
+    /// without a panel.
+    /// </remarks>
+    internal static List<SignalPoint> MaskMissingContributors(
+        IReadOnlyList<SignalPoint> sum,
+        IReadOnlyList<IReadOnlyList<SignalPoint>> hybridChannels,
+        IReadOnlyList<IReadOnlyList<SignalPoint>> channelReferences,
+        double offsetDb)
+    {
+        int count = sum.Count;
+        foreach (IReadOnlyList<SignalPoint> channel in hybridChannels)
         {
             count = Math.Min(count, channel.Count);
         }
@@ -642,15 +689,10 @@ public partial class VirtualCrossoverPanel
             count = Math.Min(count, channel.Count);
         }
 
-        if (count <= 0)
-        {
-            return null;
-        }
-
-        var points = new List<SignalPoint>(count);
+        var points = new List<SignalPoint>(Math.Max(0, count));
         for (int i = 0; i < count; i++)
         {
-            // The loudest impulse-response level here, so a missing channel can be
+            // The loudest impulse-response level here, so a missing capture can be
             // judged against what is actually playing rather than against a constant.
             double loudest = double.NegativeInfinity;
             for (int c = 0; c < channelReferences.Count; c++)
@@ -662,44 +704,31 @@ public partial class VirtualCrossoverPanel
                 }
             }
 
-            double amplitude = 0;
             bool missingContributor = false;
-            for (int c = 0; c < hybrid.UnsmoothedChannels.Count; c++)
+            for (int c = 0; c < hybridChannels.Count && c < channelReferences.Count; c++)
             {
-                double level = hybrid.UnsmoothedChannels[c][i].Y;
-                if (double.IsFinite(level))
+                if (double.IsFinite(hybridChannels[c][i].Y))
                 {
-                    amplitude += DataHelper.DecibelsToAmplitude(level);
                     continue;
                 }
 
-                // No capture here. Ignorable only while the impulse response says this
-                // channel is not part of the sum at this frequency either.
-                double reference_c = c < channelReferences.Count
-                    ? channelReferences[c][i].Y
-                    : double.NaN;
-                if (double.IsFinite(reference_c) && double.IsFinite(loudest) &&
-                    reference_c > loudest - HybridDropoutFloorDb)
+                double level = channelReferences[c][i].Y;
+                if (double.IsFinite(level) && double.IsFinite(loudest) &&
+                    level > loudest - HybridDropoutFloorDb)
                 {
                     missingContributor = true;
                     break;
                 }
             }
 
-            double lossDb = unsmoothedLoss[i].Y;
             points.Add(new SignalPoint(
-                reference[i].X,
-                !missingContributor && amplitude > 0 && double.IsFinite(lossDb)
-                    ? DataHelper.AmplitudeToDecibels(amplitude) + hybrid.OffsetDb + lossDb
+                sum[i].X,
+                !missingContributor && double.IsFinite(sum[i].Y)
+                    ? sum[i].Y + offsetDb
                     : double.NaN));
         }
 
-        return smoothingCode == 0 || points.Count < 2
-            ? points
-            : DataHelper.SmoothBandLevels(
-                points,
-                SpectrumSmoothing.SmoothingOctaves(smoothingCode),
-                SpectrumSmoothing.IsPsychoacoustic(smoothingCode));
+        return points;
     }
 
     /// <summary>

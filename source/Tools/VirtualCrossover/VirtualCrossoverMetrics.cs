@@ -34,13 +34,12 @@ internal sealed class VirtualCrossoverMetrics
     // pair and smoothed afterwards (see VirtualCrossoverAnalysis.SumLossCurve),
     // which is why the builder hands back both widths.
     // Fewer than two channels yield no metric.
-    public (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum, List<SignalPoint>? Loss,
-        List<SignalPoint>? UnsmoothedLoss)
+    public (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum, List<SignalPoint>? Loss)
         BuildCurves(List<ProcessedChannel> processed, int smoothingInverseOctaves)
     {
         if (processed.Count < 2)
         {
-            return (null, null, null, null);
+            return (null, null, null);
         }
 
         // Every curve — the channels AND the sum — shares one window anchor
@@ -81,18 +80,10 @@ internal sealed class VirtualCrossoverMetrics
             .ToList();
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
             sumCurve.Unsmoothed.Points, operands, smoothingInverseOctaves);
-        // The same ratio before the display smoothing, for the hybrid sum: that curve
-        // has no measured total to smooth once, so it reconstructs one and must do it
-        // from raw operands, exactly as this loss does (see BuildHybridSumCurve).
-        List<SignalPoint> unsmoothedLoss = smoothingInverseOctaves == 0
-            ? loss
-            : VirtualCrossoverAnalysis.SumLossCurve(
-                sumCurve.Unsmoothed.Points, operands);
         return (
             magnitudes.Select(curve => curve.Display).ToList(),
             sumCurve.Display,
-            loss,
-            unsmoothedLoss);
+            loss);
     }
 
     // Builds the sum-loss read-outs for a processed set without touching any

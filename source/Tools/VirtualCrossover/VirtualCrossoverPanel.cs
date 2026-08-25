@@ -4474,18 +4474,24 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </summary>
     /// <remarks>
     /// Everything is that side's own — its channels, its captures, its loss, its gate
-    /// placement — except the OFFSET, which is the active side's. One analyzer
-    /// session at one input gain produced every capture, so one offset serves them
-    /// all, and giving each side its own would erase exactly the L/R level difference
-    /// the captures measured and this curve exists to show. What that costs is only
-    /// an absolute shift when the side selector flips; the gap between the two curves,
-    /// which is what is being read, is the same either way.
+    /// placement — except the OFFSET, which is the active side's. Giving each side its
+    /// own would erase exactly the L/R level difference the captures measured and this
+    /// curve exists to show. What that costs is only an absolute shift when the side
+    /// selector flips; the gap between the two curves, which is what is being read, is
+    /// the same either way.
+    /// <para>
+    /// Borrowing an offset only holds if both sides' captures are ONE set, which
+    /// <see cref="CanDrawOppositeHybridSum"/> checks — per-side checks cannot. Two
+    /// relative capture runs, one per side, are each internally consistent and say
+    /// nothing about how their levels compare, so a gain that moved between them
+    /// would be drawn here as an L/R imbalance the car does not have. Not one side.
+    /// </para>
     /// </remarks>
     private AnalysisCurve? BuildOppositeHybridSumCurve(
         VirtualCrossoverSideSum side, double offsetDb)
     {
         bool oppositeRight = !project.ActiveSideRight;
-        if (!HasSpatialAverageForEverySideChannel(oppositeRight))
+        if (!CanDrawOppositeHybridSum(oppositeRight))
         {
             return null;
         }

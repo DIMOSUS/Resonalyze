@@ -223,8 +223,59 @@ public partial class VirtualCrossoverPanel
     private LiveCaptureSetVerdict JudgeSpatialAverages =>
         JudgeSideSpatialAverages(project.ActiveSideRight);
 
-    private bool HasSpatialAverageForEverySideChannel(bool rightSide) =>
-        JudgeSideSpatialAverages(rightSide).Coherent;
+    /// <summary>
+    /// Whether the dashed opposite-side hybrid sum may be drawn: BOTH sides' captures
+    /// have to form one set, not each side its own.
+    /// </summary>
+    /// <remarks>
+    /// That curve borrows the active side's offset outright
+    /// (<see cref="BuildOppositeHybridSumCurve"/>) — deliberately, since levelling
+    /// the sides separately would erase the very L/R difference it exists to show.
+    /// Judging the sides independently leaves that borrowing unchecked: two relative
+    /// capture runs, one per side, are each internally consistent and say nothing
+    /// about how their levels compare, so an input gain that moved between them would
+    /// be drawn as an L/R imbalance the car does not have. A recipe that differs
+    /// across the sides is the same hole.
+    /// </remarks>
+    private bool CanDrawOppositeHybridSum(bool oppositeRight)
+    {
+        if (!TryCollectSideCaptures(project.ActiveSideRight, out var active).Coherent ||
+            !TryCollectSideCaptures(oppositeRight, out var opposite).Coherent)
+        {
+            return false;
+        }
+
+        return JudgeSidesShareAnOffset(active, opposite).Coherent;
+    }
+
+    /// <summary>
+    /// Whether one offset may level both sides' captures — the condition the dashed
+    /// opposite sum is drawn under. Static and pure so it can be pinned directly.
+    /// </summary>
+    internal static LiveCaptureSetVerdict JudgeSidesShareAnOffset(
+        IReadOnlyList<LiveCaptureDocument> active,
+        IReadOnlyList<LiveCaptureDocument> opposite)
+    {
+        ArgumentNullException.ThrowIfNull(active);
+        ArgumentNullException.ThrowIfNull(opposite);
+        if (active.Count == 0 || opposite.Count == 0)
+        {
+            return LiveCaptureSetVerdict.No("One side has no spatial averages.");
+        }
+
+        var union = new List<LiveCaptureDocument>(active.Count + opposite.Count);
+        union.AddRange(active);
+        union.AddRange(opposite);
+
+        // A mono pair contributes the same capture to both lists; a document matches
+        // itself, so the duplicate costs nothing.
+        LiveCaptureSetVerdict verdict = LiveCaptureDocument.JudgeSet(union);
+        return verdict.Coherent
+            ? verdict
+            : LiveCaptureSetVerdict.No(
+                "The two sides' captures are not one set, so the active side's " +
+                "offset cannot level them both. " + verdict.Reason);
+    }
 
     /// <summary>
     /// Whether that side's playing channels can produce a hybrid: every one of them
@@ -240,6 +291,15 @@ public partial class VirtualCrossoverPanel
     /// </remarks>
     private LiveCaptureSetVerdict JudgeSideSpatialAverages(bool rightSide)
     {
+        LiveCaptureSetVerdict gathered =
+            TryCollectSideCaptures(rightSide, out List<LiveCaptureDocument> captures);
+        return gathered.Coherent ? LiveCaptureDocument.JudgeSet(captures) : gathered;
+    }
+
+    // That side's captures, or why it has none to give.
+    private LiveCaptureSetVerdict TryCollectSideCaptures(
+        bool rightSide, out List<LiveCaptureDocument> captures)
+    {
         // The channels that actually play on that side: an enabled pair with a
         // measurement behind it. A disabled or empty one contributes nothing to the
         // sum and so cannot hold the hybrid view back.
@@ -248,12 +308,12 @@ public partial class VirtualCrossoverPanel
             .Select(channel => channel.SideState(rightSide))
             .Where(state => state.TransferImpulseResponse != null)
             .ToList();
+        captures = new List<LiveCaptureDocument>(playing.Count);
         if (playing.Count == 0)
         {
             return LiveCaptureSetVerdict.No("No channel on this side plays.");
         }
 
-        var captures = new List<LiveCaptureDocument>(playing.Count);
         foreach (VirtualCrossoverChannelState state in playing)
         {
             if (state.SpatialAverage == null)
@@ -266,7 +326,7 @@ public partial class VirtualCrossoverPanel
             captures.Add(state.SpatialAverage);
         }
 
-        return LiveCaptureDocument.JudgeSet(captures);
+        return LiveCaptureSetVerdict.Ok;
     }
 
     // Whether the set could produce a hybrid at all, as of the last refresh. Cached
@@ -317,9 +377,10 @@ public partial class VirtualCrossoverPanel
                     "The channel curves are exact — a filter does not depend on " +
                     "microphone position. The Sum is an estimate: the interference " +
                     "between channels does depend on position, and its loss is read " +
-                    "at one, so the Sum's dips and peaks are sharper than the " +
-                    "volume's average. Smallest in the bass, largest at a crossover " +
-                    "high up.");
+                    "at one, so its peaks and dips can be either stronger or weaker " +
+                    "than the volume's average. The gap tends to grow the faster the " +
+                    "phase turns across that volume — generally small in the bass, " +
+                    "largest at a crossover high up.");
     }
 
     /// <summary>
@@ -442,11 +503,14 @@ public partial class VirtualCrossoverPanel
     /// pedantry. A channel's own hybrid is exact because a filter does not depend on
     /// position. The cross-term between two channels does: ⟨|H₁+H₂|²⟩ needs
     /// ⟨H₁H₂*⟩ over the volume, and a loss curve read at one microphone position
-    /// carries that product at ONE position. So this draws a point's interference —
-    /// deeper dips and higher peaks than the volume's average, negligible where the
-    /// wavelength dwarfs the volume and worst at a crossover high up. Nothing
-    /// downstream treats it as measured: it is drawn, and the README says which way
-    /// it errs.
+    /// carries that product at ONE position. So this draws a point's interference,
+    /// and its peaks and dips may come out either stronger OR weaker than the
+    /// volume's average — nothing makes one position's cross-term the more extreme
+    /// of the two, and a position where the two channels sit near quadrature carries
+    /// almost none of it while the average may be firmly constructive. What holds is
+    /// only a tendency: the gap grows the faster the relative phase turns across the
+    /// volume, so it is generally small in the bass and largest at a crossover high
+    /// up. Nothing downstream treats this as measured.
     /// </para>
     /// <para>
     /// Where the loss curve breaks — its level gate finds every channel filtered far

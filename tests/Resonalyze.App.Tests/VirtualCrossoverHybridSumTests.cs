@@ -13,9 +13,11 @@ namespace Resonalyze.App.Tests;
 /// What they do not pin, and cannot: that a point-measured loss is the right loss
 /// for spatially averaged channels. It is not, exactly. The cross-term between two
 /// channels varies over the listening volume, and one microphone position samples
-/// one value of it, so the hybrid sum draws the interference of a POINT — sharper
-/// than the volume's average, in both directions. Small where the wavelength dwarfs
-/// the volume, largest at a crossover high up. The curve is an estimate and is
+/// one value of it, so the hybrid sum draws the interference of a POINT. Which way
+/// that errs is NOT determined — a position near quadrature carries almost no
+/// cross-term while the volume's average may be firmly constructive, and the other
+/// way round just as easily. Only the tendency holds: the gap grows the faster the
+/// relative phase turns across the volume. The curve is an estimate and is
 /// documented as one.
 /// </para>
 /// </summary>
@@ -169,6 +171,82 @@ public sealed class VirtualCrossoverHybridSumTests
 
         return (low, high, sum, VirtualCrossoverAnalysis.SumLossCurve(sum, [low, high]));
     }
+
+    /// <summary>
+    /// The dashed opposite sum borrows the ACTIVE side's offset, so both sides'
+    /// captures have to be one set. Judging each side on its own cannot see this:
+    /// two relative capture runs, one per side, are each internally consistent and
+    /// say nothing about how their levels compare, so a gain that moved between them
+    /// would be drawn as an L/R imbalance the car does not have.
+    /// </summary>
+    [Fact]
+    public void RelativeCapturesFromDifferentSessionsAcrossSidesDoNotShareAnOffset()
+    {
+        var leftSession = Guid.NewGuid();
+        var rightSession = Guid.NewGuid();
+        List<LiveCaptureDocument> active = [SideCapture(leftSession), SideCapture(leftSession)];
+        List<LiveCaptureDocument> opposite =
+            [SideCapture(rightSession), SideCapture(rightSession)];
+
+        // Each side alone passes — which is exactly why the pair must be judged too.
+        Assert.True(LiveCaptureDocument.JudgeSet(active).Coherent);
+        Assert.True(LiveCaptureDocument.JudgeSet(opposite).Coherent);
+
+        Assert.False(
+            VirtualCrossoverPanel.JudgeSidesShareAnOffset(active, opposite).Coherent);
+    }
+
+    [Fact]
+    public void AnchoredCapturesFromDifferentSessionsAcrossSidesMayShareAnOffset()
+    {
+        // An absolute anchor re-establishes the reference each session, which is the
+        // whole reason separate sessions are allowed at all.
+        List<LiveCaptureDocument> active =
+            [SideCapture(Guid.NewGuid(), 94.0), SideCapture(Guid.NewGuid(), 94.0)];
+        List<LiveCaptureDocument> opposite =
+            [SideCapture(Guid.NewGuid(), 94.0), SideCapture(Guid.NewGuid(), 94.0)];
+
+        Assert.True(
+            VirtualCrossoverPanel.JudgeSidesShareAnOffset(active, opposite).Coherent);
+    }
+
+    [Fact]
+    public void SidesTakenOnDifferentRecipesDoNotShareAnOffset()
+    {
+        var session = Guid.NewGuid();
+        List<LiveCaptureDocument> active = [SideCapture(session)];
+        LiveCaptureDocument odd = SideCapture(session);
+        odd.Recipe.SequenceLength *= 2;
+
+        LiveCaptureSetVerdict verdict =
+            VirtualCrossoverPanel.JudgeSidesShareAnOffset(active, [odd]);
+
+        Assert.False(verdict.Coherent);
+        Assert.Contains("frame length", verdict.Reason);
+    }
+
+    private static LiveCaptureDocument SideCapture(
+        Guid session, double? splAnchorOffsetDb = null) =>
+        new()
+        {
+            SavedAtUtc = DateTimeOffset.UnixEpoch,
+            Title = "capture",
+            CaptureSessionId = session,
+            CurveDb = Enumerable.Repeat(-20.0, 1_024).ToArray(),
+            GridStartHz = 20,
+            GridStopHz = 20_000,
+            Recipe = new LiveCaptureRecipe
+            {
+                AnalysisMode = LiveAnalysisMode.Mmm,
+                SampleRateHz = 48_000,
+                SequenceLength = 32_768,
+                WindowType = WindowType.Rectangular,
+                NoiseColor = NoiseColor.PinkPeriodic,
+                SlopeCompensation = true,
+                MagnitudeScale = MagnitudeScale.SoundPressureLevel,
+                SplAnchorOffsetDb = splAnchorOffsetDb
+            }
+        };
 
     // The panel's own builder, reached directly: the arithmetic is what is under
     // test, and routing it through a live panel would test the plot instead.

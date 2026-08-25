@@ -1408,6 +1408,12 @@ pinned is the curve the panel draws with — including one a loaded session carr
 that is in no list of yours — under the name the panel shows for it. The wizard's
 standing calibration preference for impulse responses survives untouched.
 
+The return guard covers this too: a bank fitted against the spatial average will
+not land on a panel that has gone back to its impulse responses, or onto a channel
+whose capture was detached or replaced meanwhile. It is the same divergence the
+calibration lock exists for, and just as invisible from the wizard — the curve
+under the tune changed, and the wizard is still showing what it opened on.
+
 **Return PEQ to Virtual DSP** — visible only during such a session — sends the
 finished bank (bands and preamp) back to the channel side it came from, named
 "EQ Wizard" in its read-out, and switches back to the Virtual DSP tab. The

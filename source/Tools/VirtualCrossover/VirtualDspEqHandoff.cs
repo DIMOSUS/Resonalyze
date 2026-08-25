@@ -106,7 +106,8 @@ internal sealed record VirtualDspEqReturnToken(
     double TargetLevelDb,
     PhaseAnalysisSettings GateTemplate,
     double? PinnedGateOffsetMs,
-    CalibrationFile? Calibration);
+    CalibrationFile? Calibration,
+    LiveCaptureDocument? SpatialAverage);
 
 /// <summary>
 /// Everything one Virtual DSP channel side sends into the EQ Wizard: the curve to
@@ -348,7 +349,13 @@ internal static class VirtualDspEqHandoff
                 targetLevelDb,
                 gateTemplate,
                 pinnedGateOffsetMs,
-                calibration));
+                calibration,
+                // Which MEASUREMENT the magnitude was read from. A bank fitted against
+                // the spatial average and a panel back on its impulse responses is the
+                // same divergence the calibration guard refuses, and just as invisible
+                // from the wizard: null here means "fitted against the impulse
+                // response", and the two must still agree on the way back.
+                spatialAverage));
     }
 
     /// <summary>
@@ -386,7 +393,8 @@ internal static class VirtualDspEqHandoff
         CalibrationFile? calibration,
         PhaseAnalysisSettings gateTemplate,
         double? pinnedGateOffsetMs,
-        double targetLevelDb)
+        double targetLevelDb,
+        LiveCaptureDocument? spatialAverage)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(token);
@@ -404,6 +412,18 @@ internal static class VirtualDspEqHandoff
         // which a session deliberately survives, so the same rule has to hold here or
         // the lock is decorative.
         if (!CalibrationFile.SameCurve(token.Calibration, calibration))
+        {
+            return false;
+        }
+
+        // The magnitude must still come from the measurement the bank was fitted to.
+        // Turning the hybrid off, or detaching the capture, swaps the curve underneath
+        // a tune the wizard is still showing — the same invisible divergence the
+        // calibration guard exists for, and by the same line: it moves the MAGNITUDE
+        // the bank was fitted against. Reference identity is the right test: the panel
+        // hands over the very document it is drawing from, and a re-attached file is a
+        // different capture whether or not its bytes match.
+        if (!ReferenceEquals(token.SpatialAverage, spatialAverage))
         {
             return false;
         }

@@ -2246,7 +2246,12 @@ public partial class VirtualCrossoverPanel : UserControl
                 Calibration,
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
-                (double)numericTargetLevel.Value))
+                (double)numericTargetLevel.Value,
+                // What the panel would hand over NOW: the capture only while the
+                // hybrid is actually being drawn, exactly as the handoff decided it.
+                HybridRequested
+                    ? token.Channel.PhysicalSideState(token.RightSide).SpatialAverage
+                    : null))
         {
             return false;
         }

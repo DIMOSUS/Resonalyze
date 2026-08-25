@@ -1456,6 +1456,75 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
+    /// <summary>
+    /// A session remembers which moving-microphone capture each side was tuned with.
+    /// Re-picking seven files by hand on every open would make the hybrid view a
+    /// ceremony rather than a toggle.
+    /// </summary>
+    [Fact]
+    public void SaveToAndLoadFrom_RoundTripTheSpatialAverageReference()
+    {
+        string root = CreateTemporaryDirectory();
+        string path = Path.Combine(root, "session.json");
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            original.Pairs[0].Left.SpatialAveragePath = Path.Combine(root, "sub mmm.json");
+
+            original.SaveTo(path);
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
+
+            Assert.Equal(
+                original.Pairs[0].Left.SpatialAveragePath,
+                loaded.Pairs[0].Left.SpatialAveragePath);
+            // Additive: a session written before the hybrid view existed carries none,
+            // and opens with nothing attached rather than failing to open.
+            Assert.Null(loaded.Pairs[1].Left.SpatialAveragePath);
+            // The view goes with the captures: bringing them back and then opening on
+            // the point measurements would mean re-ticking the toggle every time.
+            Assert.False(loaded.ShowHybridCurves);
+            original.ShowHybridCurves = true;
+            original.SaveTo(path);
+            Assert.True(VirtualCrossoverProjectFile.LoadFrom(path).ShowHybridCurves);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The capture travels with the measurements, so an export restates its path
+    /// against the export's own folder — the same rescue the sources get, and the
+    /// only thing that lets a session opened on another machine find it at all.
+    /// </summary>
+    [Fact]
+    public void SaveTo_RestatesTheSpatialAveragePathAgainstTheExportsFolder()
+    {
+        string root = CreateTemporaryDirectory();
+        string path = Path.Combine(root, "session.json");
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            original.Pairs[0].Left.SpatialAveragePath =
+                Path.Combine(root, "captures", "sub mmm.json");
+
+            original.SaveTo(path);
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
+
+            Assert.Equal(
+                Path.Combine("captures", "sub mmm.json"),
+                loaded.Pairs[0].Left.SpatialAverageRelativePath);
+            // Strictly a property of the WRITE: the live project keeps whatever it
+            // was imported with, so a relink still has the hint it needs.
+            Assert.Null(original.Pairs[0].Left.SpatialAverageRelativePath);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTemporaryDirectory()
     {
         string path = Path.Combine(

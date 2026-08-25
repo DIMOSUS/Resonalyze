@@ -1632,6 +1632,62 @@ level, so it is drawn against its own amber **Sum loss (dB)** axis on the right
 while the curve is shown; it zooms and pans on its own, separately from the
 left dB scale.
 
+### Hybrid: spatial averages under the prediction
+
+A transfer IR is measured at one microphone position, and the deep narrow dips it
+carries move with that microphone — equalizing them corrects a point in space
+rather than a loudspeaker. The **MMM** button on each channel block attaches that
+driver's [moving-microphone capture](#live-spectrum) (the one MMM mode saved), and
+the **Hybrid** checkbox under the plot swaps the magnitude view over to it. The
+button's own text says where each channel stands: `MMM` for none, `MMM ✓` for one
+attached, `MMM ⚠` for one the session still refers to but could not read.
+
+Per channel the hybrid curve is the stored average with that channel's own DSP
+chain added as its **analytic** magnitude, and the whole set lifted onto the
+impulse responses' axis by **one** common offset. That is exact, not a
+convenience: a spatial average is the root-mean-square of |H(f, r)| over the
+listening volume, and a filter does not depend on position, so it factors straight
+out of the average. The chain is added analytically rather than as the difference
+of two gated spectra because a gate does not commute with a filter — the two
+readings part by several dB wherever the bank rings longer than the window. Delay
+and polarity are absent for the reason they are absent from any magnitude: they
+are pure phase, so a hybrid channel curve is tonal balance alone. One offset for
+the set, never one per channel, because the captures were taken in a single
+analyzer session at a fixed gain: their relative levels are honest measurements,
+and normalizing each channel separately would throw exactly that away.
+
+The **Sum** follows the channels drawn above it: their magnitudes added as
+amplitudes, then the **summation loss the impulse responses measure** laid on top.
+The averages hold no phase, so they cannot be summed as vectors, and an arithmetic
+sum alone would draw a system that cancels nowhere — the loss curve supplies what
+the average threw away, and carries over because a per-channel filter changes both
+halves of that ratio by the same factor. Where the loss curve breaks (its level
+gate finds every channel filtered far under the local level) the hybrid sum breaks
+with it, rather than falling back to a lossless sum that would be most confident
+exactly where the measurement is weakest. A channel whose own capture stops — below
+a protective high-pass, or past the end of its grid — drops out of that point's sum.
+
+Everything else keeps reading the impulse responses: timing, polarity, the
+junction analyses, Auto delay, the sum-loss read-out and the phase view. The
+toggle needs an average on **every** channel that plays and greys out otherwise,
+since a sum mixing spatially averaged channels with point-measured ones puts two
+references on one axis and still looks like a measurement. For the same reason the
+opposite side's dashed Sum is hidden while the hybrid is on: it is built from that
+side's impulse responses, and beside a hybrid sum it would read as an L/R
+difference that is really a method difference. Like the target and the sum loss it
+is a magnitude toggle, greyed on the phase and impulse views — a spatial average
+carries no phase. The tick itself survives all of that: it says what you want
+drawn, so re-attaching a capture brings the hybrid straight back instead of
+sending you to find the checkbox again.
+
+The attachment is part of the session, and so is the toggle. The capture is stored
+as a path — it is close to a megabyte of spectrum per channel, and the session is
+rewritten on every knob turn — and found again the way the measurements are: by
+the stored path, then beside the session file, then beside the folder you point at
+when relinking. So a session exported with its captures opens with them attached
+on another machine, drawing the hybrid it was tuned on. Clearing a channel's
+source detaches its average too: a slot with no measurement describes no driver.
+
 The panel fills whatever window it is given: both plots take the extra width
 (they share a right edge), and the extra height is **split between them in the
 designer's proportion**, so a maximized window enlarges the pair rather than one

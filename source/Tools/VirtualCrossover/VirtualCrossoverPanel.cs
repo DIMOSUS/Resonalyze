@@ -522,6 +522,10 @@ public partial class VirtualCrossoverPanel : UserControl
         try
         {
             checkBoxShowLoss.Checked = project.ShowLossCurve;
+            // The captures it needs are attached later, as the sources resolve, so
+            // this is the intent only; RefreshHybridAvailability drops the tick at
+            // the end of that pass if the set turns out to be short of one.
+            checkBoxHybrid.Checked = project.ShowHybridCurves;
             checkBoxShowTarget.Checked = project.ShowTargetCurve;
             numericTargetLevel.Value =
                 numericTargetLevel.ClampValue(project.TargetLevelDb);
@@ -1385,6 +1389,9 @@ public partial class VirtualCrossoverPanel : UserControl
             checkBoxShowSum, !radioViewImpulse.Checked, interactive: true);
         Ui.UiStyle.SetTextEnabledLook(
             checkBoxShowLoss, radioViewMagnitude.Checked, interactive: true);
+        // Magnitude-only for the same reason the loss is, and it also carries the
+        // coverage answer, so it owns its own refresh.
+        RefreshHybridAvailability();
         UpdateTargetToggleLook();
         // DarkNumericUpDown paints its own disabled state in the palette's muted
         // text, so this one can simply be disabled.
@@ -1443,6 +1450,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         project.ShowLossCurve = checkBoxShowLoss.Checked;
+        project.ShowHybridCurves = checkBoxHybrid.Checked;
         project.ShowTargetCurve = checkBoxShowTarget.Checked;
         project.TargetLevelDb = (double)numericTargetLevel.Value;
         project.ShowPhaseView = radioViewPhase.Checked;
@@ -1845,6 +1853,12 @@ public partial class VirtualCrossoverPanel : UserControl
         settings.DisplayName = string.Empty;
         settings.SourceFilePath = null;
         settings.HistoryEntryId = null;
+        // The spatial average goes with it. A slot with no measurement describes no
+        // driver, so the capture of that driver has nothing left to refine — and
+        // Clear() has already dropped the loaded document, so leaving the reference
+        // behind would only make the button warn about a file that is perfectly fine.
+        settings.SpatialAveragePath = null;
+        settings.SpatialAverageRelativePath = null;
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
     }
@@ -1858,6 +1872,12 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
+        // The side's OTHER persisted reference, resolved on the same pass and ahead
+        // of the measurement's early exit: a channel can carry a spatial average
+        // while its source is still missing, and that attachment has to come back
+        // either way. Synchronous — a capture is under a megabyte of curve, not an
+        // impulse response.
+        ResolveSpatialAverage(settings, state);
         if (!settings.HasSource)
         {
             return;
@@ -2844,8 +2864,14 @@ public partial class VirtualCrossoverPanel : UserControl
         // The side sum comes from metrics (shared coordinator cache); the CURVE
         // is built here so it windows through the OPPOSITE side's gate
         // placement — the active side's pin must not gate the other side.
+        // Not while the hybrid is on: the other side keeps its own captures and this
+        // curve is built from its impulse responses alone, so drawing it beside a
+        // hybrid sum would put the two references the feature exists to separate on
+        // one axis — and read as an L/R difference that is really a method
+        // difference. Skipped here rather than at the draw, so the side sum is not
+        // computed for a curve nobody will see.
         AnalysisCurve? oppositeSum = null;
-        if (checkBoxShowSum.Checked && radioViewMagnitude.Checked)
+        if (checkBoxShowSum.Checked && radioViewMagnitude.Checked && !HybridRequested)
         {
             VirtualCrossoverSideSum? oppositeSide = await metrics.ComputeSideSumAsync(
                 channels, !project.ActiveSideRight, revision, minimumChannels: 2);
@@ -3121,13 +3147,12 @@ public partial class VirtualCrossoverPanel : UserControl
             curves.Add(target);
         }
 
-        // One offset for the whole spatial-average set, resolved before any channel
-        // is drawn: it is a property of the set, not of a channel, so it cannot be
-        // decided while walking them one at a time.
-        bool hybrid = checkBoxHybrid.Checked && checkBoxHybrid.Enabled && magnitudes != null;
-        double hybridOffsetDb = hybrid
-            ? ResolveHybridOffsetDb(processed, magnitudes!)
-            : 0.0;
+        // The whole hybrid set, built before any channel is drawn: its offset is a
+        // property of the SET, not of a channel, so it cannot be decided while
+        // walking them one at a time — and the sum below reads the very same curves.
+        HybridMagnitudes? hybrid = HybridRequested && magnitudes != null
+            ? BuildHybridMagnitudes(processed, magnitudes)
+            : null;
         for (int i = 0; i < processed.Count; i++)
         {
             ProcessedChannel item = processed[i];
@@ -3160,14 +3185,9 @@ public partial class VirtualCrossoverPanel : UserControl
                             item.SampleRate,
                             item.ValidRange),
                         item.SampleRate).Display;
-                IReadOnlyList<SignalPoint> points = curve.Points;
-                if (hybrid &&
-                    BuildHybridChannelCurve(item.Channel, points, hybridOffsetDb)
-                        is { } hybridPoints)
-                {
-                    points = hybridPoints;
-                }
-
+                IReadOnlyList<SignalPoint> points = hybrid != null
+                    ? ShiftedBy(hybrid.Channels[i], hybrid.OffsetDb)
+                    : curve.Points;
                 curves.Add(new AcousticCurve(
                     item.Channel.Name, points, item.Color, 1.8, LineStyle.Solid));
             }
@@ -3180,8 +3200,18 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (checkBoxShowSum.Checked)
         {
+            // In the hybrid view the channels drawn above are the ones that have to
+            // add up, so the sum comes from them. Their spatial averages hold no
+            // phase, so the cancellation comes from the impulse responses' own loss
+            // curve (see BuildHybridSumCurve); with no loss curve there is nothing to
+            // put the dips back and the honest sum stays.
+            IReadOnlyList<SignalPoint> sumPoints =
+                (hybrid != null && lossCurve != null
+                    ? BuildHybridSumCurve(hybrid, sumCurve.Points, lossCurve)
+                    : null)
+                ?? sumCurve.Points;
             curves.Add(new AcousticCurve(
-                "Sum", sumCurve.Points, SumColor, 2.4, LineStyle.Solid));
+                "Sum", sumPoints, SumColor, 2.4, LineStyle.Solid));
             if (oppositeSumCurve != null)
             {
                 // The other side's sum, dashed and translucent: the two tunes

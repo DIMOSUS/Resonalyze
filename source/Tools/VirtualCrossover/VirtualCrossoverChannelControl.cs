@@ -102,24 +102,36 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// text — the presence of that curve decides whether the hybrid view can be shown
     /// at all, so it has to be readable without opening anything.
     /// </summary>
-    internal void SetSpatialAverage(string? title, double? integratedSeconds)
+    /// <param name="resolved">
+    /// False for a capture the session still refers to but could not read — the same
+    /// distinction the Source button draws. Losing the file must not look like never
+    /// having attached one: the hybrid toggle goes away either way, and only the
+    /// warning says which of the two happened.
+    /// </param>
+    internal void SetSpatialAverage(
+        string? title, double? integratedSeconds, bool resolved)
     {
         bool present = !string.IsNullOrWhiteSpace(title);
-        buttonSpatialAverage.Text = present ? "MMM ✓" : "MMM";
-        buttonSpatialAverage.ForeColor = present
-            ? Color.FromArgb(140, 220, 160)
-            : Color.White;
+        buttonSpatialAverage.Text = !present ? "MMM" : resolved ? "MMM ✓" : "MMM ⚠";
+        buttonSpatialAverage.ForeColor = !present
+            ? Color.White
+            : resolved ? Color.FromArgb(140, 220, 160) : Color.FromArgb(230, 184, 0);
         string newLine = Environment.NewLine;
-        spatialAverageTooltip = present
+        spatialAverageTooltip = !present
+            ? "No spatial average for this channel." + newLine + newLine +
+                "Click to attach a moving-microphone capture. The hybrid view " +
+                "needs one on every channel that plays."
+            : resolved
             ? $"Spatial average: {title}" +
                 (integratedSeconds is { } seconds
                     ? $"{newLine}{seconds:0} s integrated"
                     : string.Empty) +
                 newLine + newLine +
                 "Click to replace it, or to detach it."
-            : "No spatial average for this channel." + newLine + newLine +
-                "Click to attach a moving-microphone capture. The hybrid view " +
-                "needs one on every channel that plays.";
+            : $"Missing spatial average: {title}" + newLine +
+                "The session still refers to it, but the file could not be read." +
+                newLine + newLine +
+                "Click to attach it again, or to detach it.";
         // The tooltip host arrives later (ApplyTooltips) and the status can change at
         // any time, so each side records what it knows and applies whatever is ready.
         spatialAverageTooltipHost?.SetToolTip(buttonSpatialAverage, spatialAverageTooltip);

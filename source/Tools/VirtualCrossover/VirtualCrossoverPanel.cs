@@ -854,6 +854,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private void WirePanelEvents()
     {
         checkBoxShowSum.CheckedChanged += (_, _) => OnViewChanged();
+        checkBoxHybrid.CheckedChanged += (_, _) => OnViewChanged();
         checkBoxShowLoss.CheckedChanged += (_, _) => OnViewChanged();
         checkBoxShowTarget.CheckedChanged += (_, _) => OnViewChanged();
         numericTargetLevel.ValueChanged += (_, _) => OnViewChanged();
@@ -1132,6 +1133,7 @@ public partial class VirtualCrossoverPanel : UserControl
         channelControls[channel] = control;
         control.SettingsChanged += (_, _) => OnChannelSettingsChanged(channel);
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
+        control.SpatialAverageClicked += (_, _) => ShowSpatialAverageMenu(channel);
         control.PeqMenuClicked += (_, _) => ShowPeqMenu(channel);
         control.CollapsedChanged += (_, _) => OnChannelCollapsedChanged(channel);
         return channel;
@@ -1957,6 +1959,11 @@ public partial class VirtualCrossoverPanel : UserControl
     private void UpdateSourceButton(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelControl control = ControlFor(channel);
+        // The spatial-average status rides along: every path that refreshes a
+        // channel's source — a pick, a side flip, a project load — is also a path
+        // that can change whether this channel has an average behind it.
+        RefreshSpatialAverageStatus(channel);
+        RefreshHybridAvailability();
         string? name = channel.Settings.DisplayName;
         bool resolved = channel.TransferImpulseResponse != null;
         control.SourceButton.Text = string.IsNullOrWhiteSpace(name)
@@ -3113,6 +3120,14 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             curves.Add(target);
         }
+
+        // One offset for the whole spatial-average set, resolved before any channel
+        // is drawn: it is a property of the set, not of a channel, so it cannot be
+        // decided while walking them one at a time.
+        bool hybrid = checkBoxHybrid.Checked && checkBoxHybrid.Enabled && magnitudes != null;
+        double hybridOffsetDb = hybrid
+            ? ResolveHybridOffsetDb(processed, magnitudes!)
+            : 0.0;
         for (int i = 0; i < processed.Count; i++)
         {
             ProcessedChannel item = processed[i];
@@ -3145,8 +3160,16 @@ public partial class VirtualCrossoverPanel : UserControl
                             item.SampleRate,
                             item.ValidRange),
                         item.SampleRate).Display;
+                IReadOnlyList<SignalPoint> points = curve.Points;
+                if (hybrid &&
+                    BuildHybridChannelCurve(item.Channel, points, hybridOffsetDb)
+                        is { } hybridPoints)
+                {
+                    points = hybridPoints;
+                }
+
                 curves.Add(new AcousticCurve(
-                    item.Channel.Name, curve.Points, item.Color, 1.8, LineStyle.Solid));
+                    item.Channel.Name, points, item.Color, 1.8, LineStyle.Solid));
             }
         }
 

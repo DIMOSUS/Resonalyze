@@ -46,6 +46,7 @@ namespace Resonalyze
             buttonTargetSettings = new Button();
             labelCalibration = new Label();
             checkBoxShowSum = new CheckBox();
+            checkBoxHybrid = new CheckBox();
             checkBoxShowLoss = new CheckBox();
             radioViewMagnitude = new RadioButton();
             radioViewPhase = new RadioButton();
@@ -278,6 +279,18 @@ namespace Resonalyze
             labelCalibration.Size = new Size(45, 15);
             labelCalibration.TabIndex = 30;
             labelCalibration.Text = "Mic cal";
+            // 
+            // checkBoxHybrid
+            // 
+            checkBoxHybrid.AutoSize = true;
+            checkBoxHybrid.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxHybrid.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxHybrid.Location = new Point(980, 409);
+            checkBoxHybrid.Name = "checkBoxHybrid";
+            checkBoxHybrid.Size = new Size(63, 19);
+            checkBoxHybrid.TabIndex = 30;
+            checkBoxHybrid.Text = "Hybrid";
+            checkBoxHybrid.UseVisualStyleBackColor = true;
             // 
             // checkBoxShowSum
             // 
@@ -606,6 +619,7 @@ namespace Resonalyze
             Controls.Add(buttonTargetSettings);
             Controls.Add(labelCalibration);
             Controls.Add(checkBoxShowSum);
+            Controls.Add(checkBoxHybrid);
             Controls.Add(checkBoxShowLoss);
             Controls.Add(labelSmoothing);
             Controls.Add(comboBoxSmoothing);
@@ -661,6 +675,7 @@ namespace Resonalyze
         private Button buttonTargetSettings;
         private Label labelCalibration;
         private CheckBox checkBoxShowSum;
+        private CheckBox checkBoxHybrid;
         private CheckBox checkBoxShowLoss;
         private RadioButton radioViewMagnitude;
         private RadioButton radioViewPhase;

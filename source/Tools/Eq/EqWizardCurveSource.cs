@@ -16,6 +16,19 @@ internal enum EqWizardSourceKind
     TextCurve,
 
     /// <summary>
+    /// A spatially averaged magnitude — a stored capture of one driver over the
+    /// listening volume, rather than at one microphone position.
+    /// </summary>
+    /// <remarks>
+    /// Named for what it IS and not for how it was taken: a moving microphone is one
+    /// way to produce such a curve and a microphone array is another, and everything
+    /// downstream of the capture treats them identically. An imported curve like the
+    /// two above — a finished band-level response with its own recipe — and handled
+    /// on that path throughout.
+    /// </remarks>
+    SpatialAverage,
+
+    /// <summary>
     /// One Virtual DSP channel side handed over for PEQ editing. An impulse response
     /// like <see cref="ImpulseResponse"/>, but rendered through the gate the Virtual
     /// DSP plot draws with (<see cref="EqWizardCurveSource.GateSettings"/>) and pinned

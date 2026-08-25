@@ -22,7 +22,7 @@ public partial class EqWizardPanel
         { PeqQConvention.Rbj, PeqQConvention.Symmetric, PeqQConvention.Classic };
 
     private const string NoSourceHint =
-        "Load a source to equalize — an impulse response,\n" +
+        "Load a source to equalize — an impulse response, a moving-mic capture,\n" +
         "or a measured curve from an overlay slot or a text file.\n" +
         "Use Target… to shape the goal curve.";
 
@@ -114,6 +114,10 @@ public partial class EqWizardPanel
         PopulateSlotMenu(slotItem);
         menu.Items.Add(slotItem);
 
+        menu.Items.Add(
+            "Curve from moving-mic capture…",
+            null,
+            (_, _) => LoadCurveFromSpatialAverage());
         menu.Items.Add("Curve from text file…", null, (_, _) => LoadCurveFromTextFile());
         return menu;
     }
@@ -269,6 +273,50 @@ public partial class EqWizardPanel
                 "EQ Wizard",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
+            return;
+        }
+
+        ApplySource(source);
+    }
+
+    // A spatial average equalized on its own, with no Virtual DSP set behind it: one
+    // driver's magnitude over the listening volume instead of at one microphone
+    // position, which is the shape a tune should be fitted to.
+    private void LoadCurveFromSpatialAverage()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            CheckFileExists = true,
+            Filter = "Resonalyze moving-mic capture (*.json)|*.json|All files (*.*)|*.*",
+            Title = "Load spatial average"
+        };
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        {
+            return;
+        }
+
+        sourceLoadGeneration++;
+        EqWizardCurveSource source;
+        try
+        {
+            if (!LiveCaptureDocument.TryLoad(dialog.FileName, out LiveCaptureDocument document))
+            {
+                MessageBox.Show(
+                    FindForm(),
+                    "That file is not a Resonalyze capture.",
+                    "EQ Wizard",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            source = EqWizardSourceResolver.CreateFromSpatialAverage(
+                document,
+                EqWizardSourceResolver.DescribeSpatialAverage(document, dialog.FileName));
+        }
+        catch (Exception exception)
+        {
+            ShowFileError("The capture could not be loaded.", exception);
             return;
         }
 

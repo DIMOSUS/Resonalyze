@@ -377,6 +377,47 @@ public sealed class LiveCaptureDocument
     }
 
     /// <summary>
+    /// The drawn curve as (frequency, dB) points on its own grid.
+    /// </summary>
+    /// <remarks>
+    /// The grid's shape — geometric between <see cref="GridStartHz"/> and
+    /// <see cref="GridStopHz"/> — is the document's own business, so every consumer
+    /// asks rather than reconstructing it. NaN levels are kept: below a protective
+    /// high-pass the capture has nothing to say, and that is a different statement
+    /// from a level of zero.
+    /// </remarks>
+    public List<SignalPoint> ToCurvePoints()
+    {
+        var points = new List<SignalPoint>(CurveDb.Length);
+        for (int i = 0; i < CurveDb.Length; i++)
+        {
+            points.Add(new SignalPoint(FrequencyAt(i), CurveDb[i]));
+        }
+
+        return points;
+    }
+
+    /// <summary>
+    /// The drawn grid's frequency at one index, or NaN when the grid is unusable.
+    /// </summary>
+    public double FrequencyAt(int index) =>
+        CurveDb.Length < 2 || !(GridStartHz > 0) || !(GridStopHz > GridStartHz)
+            ? double.NaN
+            : GridStartHz * Math.Pow(
+                GridStopHz / GridStartHz, index / (CurveDb.Length - 1.0));
+
+    /// <summary>
+    /// Where <paramref name="hz"/> falls on the drawn grid, as a fractional index, or
+    /// NaN when the grid is unusable. The inverse of <see cref="FrequencyAt"/>.
+    /// </summary>
+    public double IndexOf(double hz) =>
+        CurveDb.Length < 2 || !(hz > 0) ||
+        !(GridStartHz > 0) || !(GridStopHz > GridStartHz)
+            ? double.NaN
+            : Math.Log(hz / GridStartHz) /
+                Math.Log(GridStopHz / GridStartHz) * (CurveDb.Length - 1);
+
+    /// <summary>
     /// The stored spectrum as linear amplitude per bin, ready for the band
     /// integrator — the inverse of <see cref="StoreSpectrumBins"/>.
     /// </summary>

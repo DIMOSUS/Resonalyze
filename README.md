@@ -1248,18 +1248,22 @@ disturbs your overlay slots.
 ### Choosing what to equalize
 
 The **Source…** button picks the curve to tune, and it does not have to be an
-impulse response: an **impulse response from file or history**, a **curve from an
+impulse response: an **impulse response from file or history**, a **curve from a
+moving-mic capture** (what [MMM mode](#live-spectrum) saves), a **curve from an
 overlay slot** (a snapshot, with no live link back), or a **curve from a text
-file**. The case this was built for is a **moving-microphone average in dB SPL**
-(for a full pass, use the dedicated [MMM mode](#live-spectrum), which saves its
-own capture file; an overlay slot still works for a quick look):
-park the Live Spectrum RTA on a car's listening area, capture it into an overlay
-slot, and equalize that — such a curve has no impulse response and no coherence
-behind it, and its datum is absolute rather than relative. Only measured
-responses can enter: a harmonic, THD, phase, deviation, EQ-correction, target or
-calculated curve is refused, and imported curves carry their own **Calibration**
-choice, because a curve captured through a calibrated RTA must not be calibrated
-a second time.
+file**. The case this was built for is a **spatially averaged magnitude in
+dB SPL** — one driver as the listening volume hears it rather than as one
+microphone position does, which is the shape a tune should be fitted to. Such a
+curve has no impulse response and no coherence behind it, and its datum is
+absolute rather than relative; where its protective high-pass took the signal
+below what could be recovered it says so, and Auto Tune places no band there
+instead of fitting a level that was never measured. Only measured responses can
+enter: a harmonic, THD, phase, deviation, EQ-correction, target or calculated
+curve is refused, and imported curves carry their own **Calibration** choice,
+because a curve captured through a calibrated RTA must not be calibrated a second
+time — a capture that stored the correction it was taken with can still be
+switched to another, exactly, because those corrections are additive per
+frequency.
 
 The plot shows, on shared frequency/dB axes: **Source** (with optional extra
 smoothing), **Target**, **Source + EQ**, the **EQ** filter response itself (on

@@ -480,15 +480,8 @@ public partial class VirtualCrossoverPanel
     {
         double[] curve = document.CurveDb;
         int count = curve.Length;
-        if (count < 2 || !(hz > 0) ||
-            !(document.GridStartHz > 0) || !(document.GridStopHz > document.GridStartHz))
-        {
-            return double.NaN;
-        }
-
-        double position = Math.Log(hz / document.GridStartHz) /
-            Math.Log(document.GridStopHz / document.GridStartHz) * (count - 1);
-        if (position < 0 || position > count - 1)
+        double position = document.IndexOf(hz);
+        if (double.IsNaN(position) || position < 0 || position > count - 1)
         {
             return double.NaN;
         }

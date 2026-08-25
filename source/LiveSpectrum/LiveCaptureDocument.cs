@@ -124,6 +124,14 @@ public sealed class LiveCaptureRecipe
     /// built. Kept here rather than deferred because the fields that must agree are
     /// exactly what this format knows, and the tests beside it are where that
     /// knowledge is written down.
+    /// <para>
+    /// The protective high-pass is deliberately NOT compared. It describes the
+    /// CHANNEL's own hardware path — a tweeter has one and a subwoofer does not —
+    /// and each capture has its own divided back out, so two channels filtered
+    /// differently are still on the same footing afterwards. Comparing it rejected a
+    /// perfectly good seven-channel set for the one difference that was physically
+    /// correct.
+    /// </para>
     /// </remarks>
     public bool MatchesSetOf(LiveCaptureRecipe other)
     {
@@ -133,10 +141,7 @@ public sealed class LiveCaptureRecipe
             WindowType == other.WindowType &&
             NoiseColor == other.NoiseColor &&
             SlopeCompensation == other.SlopeCompensation &&
-            MagnitudeScale == other.MagnitudeScale &&
-            ProtectiveHighPassKind == other.ProtectiveHighPassKind &&
-            ProtectiveHighPassFrequencyHz.Equals(other.ProtectiveHighPassFrequencyHz) &&
-            ProtectiveHighPassSlopeDbPerOctave == other.ProtectiveHighPassSlopeDbPerOctave;
+            MagnitudeScale == other.MagnitudeScale;
     }
 }
 

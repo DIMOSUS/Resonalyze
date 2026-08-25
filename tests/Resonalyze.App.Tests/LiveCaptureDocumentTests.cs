@@ -80,6 +80,24 @@ public sealed class LiveCaptureDocumentTests
     }
 
     [Fact]
+    public void ChannelsFilteredDifferentlyAreStillOneSet()
+    {
+        // The protective high-pass belongs to the channel's own hardware path: a
+        // tweeter has one and a subwoofer does not, and each capture has its own
+        // divided back out. Rejecting a set for that difference threw out a correct
+        // seven-channel measurement of a real car.
+        LiveCaptureRecipe tweeter = BuildRecipe();
+        tweeter.ProtectiveHighPassKind = ProtectiveHighPassKind.Butterworth;
+        tweeter.ProtectiveHighPassFrequencyHz = 1000.0;
+        tweeter.ProtectiveHighPassSlopeDbPerOctave = 48;
+
+        LiveCaptureRecipe subwoofer = BuildRecipe();
+        subwoofer.ProtectiveHighPassKind = ProtectiveHighPassKind.Off;
+
+        Assert.True(tweeter.MatchesSetOf(subwoofer));
+    }
+
+    [Fact]
     public void AMisalignedCorrectionIsRejected()
     {
         double[] amplitude = BuildPinkishSpectrum();

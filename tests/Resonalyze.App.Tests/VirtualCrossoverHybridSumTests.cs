@@ -173,7 +173,7 @@ public sealed class VirtualCrossoverHybridSumTests
             ?? throw new InvalidOperationException("BuildHybridSumCurve is gone.");
         object? result = method.Invoke(
             null,
-            [new HybridMagnitudes(channels, offsetDb), reference, loss]);
+            [new HybridMagnitudes(channels, [], offsetDb), reference, loss]);
         return Assert.IsType<List<SignalPoint>>(result);
     }
 }

@@ -15,7 +15,32 @@ namespace Resonalyze;
 /// </remarks>
 internal sealed record HybridMagnitudes(
     IReadOnlyList<IReadOnlyList<SignalPoint>> Channels,
-    double OffsetDb);
+    IReadOnlyList<double> ChannelOffsetsDb,
+    double OffsetDb)
+{
+    /// <summary>
+    /// How far apart the channels are about where the captures sit relative to the
+    /// impulse responses — the largest per-channel offset minus the smallest, in dB.
+    /// </summary>
+    /// <remarks>
+    /// The one number that judges a SET. Every capture in a valid set was taken with
+    /// one analyzer recipe at one input gain, so whatever separates the two families
+    /// of measurement separates them by the SAME amount in every channel, and the
+    /// offsets agree. They stop agreeing when something entered per capture: a
+    /// changed input gain, a different frame length or window (the noise-slope
+    /// compensation is a curve, not a constant), a mixed scale, a capture from an
+    /// unrelated session. The detector does not care which — it says the set does not
+    /// hang together, and one offset therefore cannot serve it.
+    /// <para>
+    /// What it does NOT claim is that the captures and the impulse responses agree.
+    /// They are different measurements of different things and their levels may sit
+    /// tens of dB apart; only the DISAGREEMENT between channels is evidence.
+    /// </para>
+    /// </remarks>
+    public double SpreadDb => ChannelOffsetsDb.Count < 2
+        ? 0.0
+        : ChannelOffsetsDb.Max() - ChannelOffsetsDb.Min();
+}
 
 // Attaching a spatially averaged magnitude to a channel, and deciding whether the
 // hybrid view can be shown at all.
@@ -285,7 +310,9 @@ public partial class VirtualCrossoverPanel
             hybrids.Add(hybrid);
         }
 
-        return new HybridMagnitudes(hybrids, ResolveHybridOffsetDb(hybrids, references));
+        (List<double> offsets, double setOffset) =
+            ResolveHybridOffsetsDb(hybrids, references);
+        return new HybridMagnitudes(hybrids, offsets, setOffset);
     }
 
     /// <summary>
@@ -496,7 +523,16 @@ public partial class VirtualCrossoverPanel
     /// feature — and a few large deviations must not drag the alignment.
     /// </para>
     /// </remarks>
-    private static double ResolveHybridOffsetDb(
+    /// <returns>
+    /// Each channel's own offset, in channel order and skipping the channels with
+    /// nothing to compare, together with the set's single figure — the median of
+    /// them. Both, because the SPREAD between the per-channel offsets is what judges
+    /// the set (see <see cref="HybridMagnitudes.SpreadDb"/>) and taking the median
+    /// alone would throw it away. Zero for an empty set: with nothing to align
+    /// against, the captures are drawn at their own level rather than pushed
+    /// somewhere by an invented figure.
+    /// </returns>
+    private static (List<double> PerChannel, double SetOffsetDb) ResolveHybridOffsetsDb(
         IReadOnlyList<IReadOnlyList<SignalPoint>> hybrids,
         IReadOnlyList<AnalysisCurve> references)
     {
@@ -511,11 +547,12 @@ public partial class VirtualCrossoverPanel
 
         if (perChannel.Count == 0)
         {
-            return 0.0;
+            return (perChannel, 0.0);
         }
 
-        perChannel.Sort();
-        return perChannel[perChannel.Count / 2];
+        var sorted = new List<double>(perChannel);
+        sorted.Sort();
+        return (perChannel, sorted[sorted.Count / 2]);
     }
 
     // One channel's median difference inside its own working band. Null when the two

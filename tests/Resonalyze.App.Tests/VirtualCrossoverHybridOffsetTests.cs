@@ -71,11 +71,41 @@ public sealed class VirtualCrossoverHybridOffsetTests
         List<SignalPoint> reference = Flat(0);
         List<SignalPoint> missing = Flat(double.NaN);
 
-        double offset = ResolveOffset(
+        (List<double> perChannel, double offset) = Resolve(
             [missing, Flat(-9)], [reference, reference]);
 
         Assert.Equal(9, offset, 6);
+        // Not counted as an offset of zero, which would read as a set disagreeing
+        // by 9 dB when only one of its channels has anything to say.
+        Assert.Equal([9.0], perChannel);
     }
+
+    /// <summary>
+    /// The set's own verdict on itself: how far its channels disagree about where
+    /// the captures sit. A capture taken at a different input gain, or with a
+    /// different frame length (which moves the noise-slope compensation), lands
+    /// here — the detector does not care which, only that one offset can no longer
+    /// serve the set.
+    /// </summary>
+    [Fact]
+    public void TheSpread_IsTheDisagreementBetweenChannelsAndNotTheirDistanceFromTheIrs()
+    {
+        List<SignalPoint> reference = Flat(0);
+
+        // Ninety dB away from the impulse responses, but in perfect agreement:
+        // nothing is wrong with this set.
+        (List<double> agreeing, _) = Resolve(
+            [Flat(-90), Flat(-90), Flat(-90)], [reference, reference, reference]);
+        Assert.Equal(0.0, Spread(agreeing), 6);
+
+        // One capture eight dB out: the same distance, now disagreed upon.
+        (List<double> mixed, _) = Resolve(
+            [Flat(-90), Flat(-90), Flat(-82)], [reference, reference, reference]);
+        Assert.Equal(8.0, Spread(mixed), 6);
+    }
+
+    private static double Spread(List<double> offsets) =>
+        new HybridMagnitudes([], offsets, 0).SpreadDb;
 
     private static List<SignalPoint> Flat(double db)
     {
@@ -90,12 +120,17 @@ public sealed class VirtualCrossoverHybridOffsetTests
 
     private static double ResolveOffset(
         IReadOnlyList<IReadOnlyList<SignalPoint>> hybrids,
+        IReadOnlyList<IReadOnlyList<SignalPoint>> references) =>
+        Resolve(hybrids, references).SetOffsetDb;
+
+    private static (List<double> PerChannel, double SetOffsetDb) Resolve(
+        IReadOnlyList<IReadOnlyList<SignalPoint>> hybrids,
         IReadOnlyList<IReadOnlyList<SignalPoint>> references)
     {
         MethodInfo method = typeof(VirtualCrossoverPanel).GetMethod(
-            "ResolveHybridOffsetDb",
+            "ResolveHybridOffsetsDb",
             BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("ResolveHybridOffsetDb is gone.");
+            ?? throw new InvalidOperationException("ResolveHybridOffsetsDb is gone.");
         object? result = method.Invoke(
             null,
             [
@@ -104,6 +139,6 @@ public sealed class VirtualCrossoverHybridOffsetTests
                     .Select(points => new AnalysisCurve("channel", points))
                     .ToList()
             ]);
-        return Assert.IsType<double>(result);
+        return ((List<double>, double))result!;
     }
 }

@@ -1680,6 +1680,22 @@ carries no phase. The tick itself survives all of that: it says what you want
 drawn, so re-attaching a capture brings the hybrid straight back instead of
 sending you to find the checkbox again.
 
+The set is checked while it draws. Every capture in one set is taken with one
+analyzer recipe at one input gain, so each channel should sit the same distance
+from its own impulse response — and when they disagree by more than 5 dB the panel
+says so in amber, listing each channel's own figure. That single number catches
+what would otherwise be invisible: one capture taken at a different input gain, one
+taken with a different frame length or window (which moves the
+[noise-slope compensation](#live-spectrum), a curve rather than a constant), one
+belonging to an unrelated session. It does **not** claim the captures and the
+impulse responses agree — they are different measurements of different things and
+their levels may sit tens of dB apart. Only the disagreement between channels is
+evidence, and a known-good seven-capture set reads 2.4–2.7 dB, which is the two
+families of measurement differing in shape as they are supposed to. The hybrid
+still draws while the warning stands: one offset serves the whole set, so a channel
+that disagrees is drawn at the level it claims rather than quietly normalized into
+line.
+
 The attachment is part of the session, and so is the toggle. The capture is stored
 as a path — it is close to a megabyte of spectrum per channel, and the session is
 rewritten on every knob turn — and found again the way the measurements are: by

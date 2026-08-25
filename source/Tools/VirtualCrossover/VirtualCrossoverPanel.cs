@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using OxyPlot;
 using Resonalyze.Dsp;
 using Resonalyze.History;
@@ -2901,6 +2902,19 @@ public partial class VirtualCrossoverPanel : UserControl
                 processed, magnitudeGate.SmoothingInverseOctaves);
         }
 
+        // Before the warnings and the render alike: both read it. The warning is
+        // about how well the captures agree with each other, which is a property of
+        // the set the render is about to draw, not something to discover while
+        // walking the curves.
+        HybridMagnitudes? hybrid = null;
+        if (HybridRequested && magnitudes != null && radioViewMagnitude.Checked)
+        {
+            using (AppProfiler.Zone("VirtualDSP.BuildHybrid"))
+            {
+                hybrid = BuildHybridMagnitudes(processed, magnitudes);
+            }
+        }
+
         using (AppProfiler.Zone("VirtualDSP.UpdateMetric"))
         {
             UpdateMetric(processed, lossCurve, stereoDeltas);
@@ -2908,7 +2922,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))
         {
-            UpdateWarnings(processed);
+            UpdateWarnings(processed, hybrid);
         }
 
         // Split from the draw on purpose: building the curves (the phase view's
@@ -2918,7 +2932,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using (AppProfiler.Zone("VirtualDSP.BuildAcousticRender"))
         {
             acousticRender = BuildAcousticRender(
-                processed, magnitudes, sumCurve, lossCurve, oppositeSum);
+                processed, magnitudes, sumCurve, lossCurve, oppositeSum, hybrid);
         }
 
         using (AppProfiler.Zone("VirtualDSP.AcousticPlotDraw"))
@@ -2936,7 +2950,8 @@ public partial class VirtualCrossoverPanel : UserControl
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
-        AnalysisCurve? oppositeSum)
+        AnalysisCurve? oppositeSum,
+        HybridMagnitudes? hybrid)
     {
         string hint = loadingProject
             ? LoadingHint
@@ -2956,7 +2971,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
         return new AcousticRender(
             hint,
-            BuildMagnitudeCurves(processed, magnitudes, sumCurve, lossCurve, oppositeSum),
+            BuildMagnitudeCurves(
+                processed, magnitudes, sumCurve, lossCurve, oppositeSum, hybrid),
             null);
     }
 
@@ -3134,7 +3150,8 @@ public partial class VirtualCrossoverPanel : UserControl
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
-        AnalysisCurve? oppositeSumCurve)
+        AnalysisCurve? oppositeSumCurve,
+        HybridMagnitudes? hybrid)
     {
         // The processed curves arrive prebuilt from BuildCurves, but a shown RAW
         // curve is spectrum-built right here, one channel after another.
@@ -3147,12 +3164,6 @@ public partial class VirtualCrossoverPanel : UserControl
             curves.Add(target);
         }
 
-        // The whole hybrid set, built before any channel is drawn: its offset is a
-        // property of the SET, not of a channel, so it cannot be decided while
-        // walking them one at a time — and the sum below reads the very same curves.
-        HybridMagnitudes? hybrid = HybridRequested && magnitudes != null
-            ? BuildHybridMagnitudes(processed, magnitudes)
-            : null;
         for (int i = 0; i < processed.Count; i++)
         {
             ProcessedChannel item = processed[i];
@@ -3294,7 +3305,8 @@ public partial class VirtualCrossoverPanel : UserControl
     // at all — a window that opens after the drivers arrive turns every one of
     // them into its own reverberant tail, and the crossover spread below is
     // read off the applied delays, which stay true meanwhile.
-    private void UpdateWarnings(List<ProcessedChannel> processed)
+    private void UpdateWarnings(
+        List<ProcessedChannel> processed, HybridMagnitudes? hybrid)
     {
         gatePlacement = JudgeGatePlacement(processed);
         if (gatePlacement is { CutsChannels: true } verdict)
@@ -3306,7 +3318,61 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // Ahead of the crossover warning: that one says a tuning choice is extreme,
+        // while this one says the curve it would be judged on cannot be trusted at
+        // all. Only while the hybrid is actually drawn — a warning about a set the
+        // plot is not showing has nothing for the user to look at.
+        if (hybrid != null && hybrid.SpreadDb > HybridSpreadWarningDb)
+        {
+            ShowWarning(
+                $"⚠ The spatial averages disagree by {hybrid.SpreadDb:0.0} dB — " +
+                    "check the captures.",
+                FormatHybridSpreadDetail(hybrid, processed),
+                GateWarningColor);
+            return;
+        }
+
         UpdateCrossoverWarning(processed);
+    }
+
+    /// <summary>
+    /// How far the per-channel offsets of a spatial-average set may disagree before
+    /// the hybrid view is flagged, in dB.
+    /// </summary>
+    /// <remarks>
+    /// Calibrated on a known-good seven-capture set, which reads 2.4 dB on one side
+    /// and 2.7 on the other — the residue of the two families of measurement
+    /// differing in SHAPE, which they are supposed to. The guess this replaced was
+    /// 3 dB, close enough to that residue to cry on a clean set. What it must catch
+    /// is the failures that enter PER CAPTURE and are several times larger: a
+    /// changed input gain, a frame length or window that moves the noise-slope
+    /// compensation (a curve, not a constant), a capture from an unrelated session.
+    /// </remarks>
+    private const double HybridSpreadWarningDb = 5.0;
+
+    private string FormatHybridSpreadDetail(
+        HybridMagnitudes hybrid, List<ProcessedChannel> processed)
+    {
+        var lines = new StringBuilder();
+        lines.Append(
+            "Every capture in one set is taken with one analyzer recipe at one input " +
+            "gain, so each channel should sit the same distance from its impulse " +
+            "response. These do not:\r\n\r\n");
+        for (int i = 0; i < hybrid.ChannelOffsetsDb.Count && i < processed.Count; i++)
+        {
+            VirtualCrossoverChannel channel = processed[i].Channel;
+            lines.Append(
+                $"    {channel.Name} {channel.Settings.DisplayName}    " +
+                $"{hybrid.ChannelOffsetsDb[i]:+0.0;-0.0} dB\r\n");
+        }
+
+        lines.Append(
+            "\r\nUsually one capture was taken with a different input gain, a " +
+            "different frame length or window (which moves the noise-slope " +
+            "compensation), or belongs to another session. The hybrid still draws: " +
+            "one offset serves the whole set, so a channel that disagrees is drawn " +
+            "at the level it claims.");
+        return lines.ToString();
     }
 
     private void ShowWarning(string text, string detail, Color color) =>

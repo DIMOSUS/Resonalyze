@@ -3381,15 +3381,22 @@ public partial class VirtualCrossoverPanel : UserControl
     /// the hybrid view is flagged, in dB.
     /// </summary>
     /// <remarks>
-    /// Calibrated on a known-good seven-capture set, which reads 2.4 dB on one side
-    /// and 2.7 on the other — the residue of the two families of measurement
-    /// differing in SHAPE, which they are supposed to. The guess this replaced was
-    /// 3 dB, close enough to that residue to cry on a clean set. What it must catch
-    /// is the failures that enter PER CAPTURE and are several times larger: a
-    /// changed input gain, a frame length or window that moves the noise-slope
-    /// compensation (a curve, not a constant), a capture from an unrelated session.
+    /// Calibrated on a known-good seven-capture set (HybridOffsetDatumMeasurement,
+    /// which reports it on demand from the archived cabins): 1.4 dB on one side and
+    /// 0.6 on the other — the residue of the two families of measurement differing in
+    /// SHAPE, which they are supposed to. What it must catch is the failures that
+    /// enter PER CAPTURE and are several times larger: a changed input gain, a frame
+    /// length or window that moves the noise-slope compensation (a curve, not a
+    /// constant), a capture from an unrelated session.
+    /// <para>
+    /// It was 5 dB while the datum was read on the PROCESSED curves, where the same
+    /// set read 2.4 and 2.7 — most of which was the chain failing to cancel rather
+    /// than the captures disagreeing. Reading it on the raw pair removed that, and
+    /// the threshold follows the evidence down: it keeps the same margin over a clean
+    /// set that 5 dB kept over 2.7.
+    /// </para>
     /// </remarks>
-    private const double HybridSpreadWarningDb = 5.0;
+    private const double HybridSpreadWarningDb = 3.0;
 
     private string FormatHybridSpreadDetail(
         HybridMagnitudes hybrid, List<ProcessedChannel> processed)

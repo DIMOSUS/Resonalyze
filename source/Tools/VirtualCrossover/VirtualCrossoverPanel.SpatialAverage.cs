@@ -454,8 +454,15 @@ public partial class VirtualCrossoverPanel
                     SpectrumSmoothing.IsPsychoacoustic(smoothingCode)));
         }
 
+        // The datum is read on the two measurements BEFORE any chain, never on the
+        // curves above. Those carry the DSP on both sides and it does NOT cancel: the
+        // impulse response is filtered and then gated while the capture is filtered
+        // analytically, and a gate does not commute with a filter; and the band the
+        // median is taken over is set by the channel's peak, which the crossover
+        // moves. Reading it there made the whole hybrid set drift up and down the
+        // axis while the user tuned — and that offset travels to the EQ Wizard.
         (double?[] offsets, double setOffset) =
-            ResolveHybridOffsetsDb(hybrids, references);
+            ResolveRawHybridOffsetsDb(processed, rightSide);
         return new HybridMagnitudes(hybrids, unsmoothed, offsets, setOffset);
     }
 
@@ -502,6 +509,53 @@ public partial class VirtualCrossoverPanel
             Calibration,
             reference.Select(point => point.X).ToList(),
             smoothingCode);
+    }
+
+    /// <summary>
+    /// Each channel's datum and the set's, read on the RAW pair: the capture with no
+    /// chain against the channel's bypass response. A property of the two
+    /// measurements, so nothing the user tunes can move it.
+    /// </summary>
+    /// <remarks>
+    /// The raw impulse-response curve is built here rather than taken from the
+    /// redraw, which only has it when the Raw view is switched on. One gated build
+    /// per channel while the hybrid is drawn; the alternative — reading the datum off
+    /// the processed curves — is what this exists to stop.
+    /// </remarks>
+    private (double?[] PerChannel, double SetOffsetDb) ResolveRawHybridOffsetsDb(
+        IReadOnlyList<ProcessedChannel> processed,
+        bool rightSide)
+    {
+        using var _ = AppProfiler.Zone("VirtualDSP.HybridOffsets");
+        var captures = new List<IReadOnlyList<SignalPoint>>(processed.Count);
+        var references = new List<AnalysisCurve>(processed.Count);
+        for (int i = 0; i < processed.Count; i++)
+        {
+            VirtualCrossoverChannelState state =
+                processed[i].Channel.SideState(rightSide);
+            AnalysisCurve? rawIr = state.TransferImpulseResponse is { } ir &&
+                state.SampleRate > 0
+                    ? BuildRawMagnitudeCurve(ir, state.TransferPeakIndex, state.SampleRate)
+                    : null;
+            IReadOnlyList<SignalPoint>? rawCapture =
+                rawIr != null && state.SpatialAverage is { } document
+                    ? SpatialAverageHybrid.BuildChannelCurve(
+                        document,
+                        DspChannelChain.Identity,
+                        state.SampleRate,
+                        Calibration,
+                        rawIr.Points.Select(point => point.X).ToList(),
+                        magnitudeGate.SmoothingInverseOctaves)
+                    : null;
+
+            // A channel that cannot produce the raw pair contributes no datum. Its
+            // hole stays in place; it never falls back to the processed curves, which
+            // would put one channel's offset on a different footing from the rest.
+            captures.Add(rawCapture ?? []);
+            references.Add(rawIr ?? new AnalysisCurve("raw", []));
+        }
+
+        return ResolveHybridOffsetsDb(captures, references);
     }
 
     // The set's common offset, applied on the way to the plot.

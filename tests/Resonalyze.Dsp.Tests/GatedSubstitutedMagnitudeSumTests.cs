@@ -169,6 +169,72 @@ public sealed class GatedSubstitutedMagnitudeSumTests
         }
     }
 
+    /// <summary>
+    /// The known limitation, characterized rather than guarded: the substitution
+    /// trusts the phase completely, so where a channel's own gated spectrum has a deep
+    /// null its phase is noise — and the level substituted over it is not.
+    /// </summary>
+    /// <remarks>
+    /// This is deliberately NOT asserted into a hole. The mode exists to serve the EQ,
+    /// and the per-channel curves it equalizes are mathematically clean; the Sum is an
+    /// approximate view, and breaking it wherever one channel's point response happens
+    /// to null would cost more than the error it avoids. Measured on the owner's car,
+    /// the pathology does not arise at all: of the four points where the drawn sum
+    /// dips more than 10 dB under its loudest channel, NONE has a contributing channel
+    /// whose phase came from a bin 30 dB under its own envelope — a channel deep in a
+    /// point null is not usually a top contributor there either. So this test bounds
+    /// the arithmetic and records the scale rather than demanding a behaviour.
+    /// </remarks>
+    [Fact]
+    public void APhaseTakenFromADeepNull_StaysInsideTheInterferenceWindow()
+    {
+        Complex[] plain = Ir(0, 1.0, 40);
+
+        // A channel that cancels itself at a comb of frequencies: its own gated
+        // magnitude nulls there, so the phasor normalised out of those bins is
+        // whatever numerical noise survives.
+        var nulled = new Complex[32_768];
+        nulled[Anchor] = 1.0;
+        nulled[Anchor + 24] = -1.0;
+
+        PhaseAnalysisSettings gate = Gate();
+        List<SignalPoint> plainLevel = Own(plain, gate);
+
+        // The capture disagrees with the point measurement completely: it says this
+        // channel plays at the other one's level everywhere, nulls included.
+        List<SignalPoint> strongLevel = plainLevel
+            .Select(point => new SignalPoint(point.X, point.Y))
+            .ToList();
+
+        List<SignalPoint> sum = DataHelper.GetGatedSubstitutedMagnitudeSum(
+            [(Measure(plain), plainLevel), (Measure(nulled), strongLevel)],
+            gate,
+            smoothingInverseOctaves: 0);
+
+        double worstAbove = double.NegativeInfinity;
+        double worstBelow = double.PositiveInfinity;
+        for (int i = 0; i < sum.Count && i < plainLevel.Count; i++)
+        {
+            if (!InBand(plainLevel[i]) || !double.IsFinite(sum[i].Y))
+            {
+                continue;
+            }
+
+            double relative = sum[i].Y - plainLevel[i].Y;
+            worstAbove = Math.Max(worstAbove, relative);
+            worstBelow = Math.Min(worstBelow, relative);
+        }
+
+        // Two equal contributions can reach +6.02 dB together and cancel to nothing.
+        // The phase decides where inside that window each point lands, and where it
+        // came from a null it decides arbitrarily — but it cannot leave the window,
+        // and a result outside it would mean the substitution itself is broken.
+        Assert.True(
+            worstAbove <= 6.03,
+            $"sum reached {worstAbove:0.00} dB over one channel, above the +6.02 dB ceiling");
+        Assert.True(worstBelow < 0, "the pair never interfered at all");
+    }
+
     private static bool InBand(SignalPoint point) =>
         point.X is >= 100 and <= 10_000 && double.IsFinite(point.Y);
 

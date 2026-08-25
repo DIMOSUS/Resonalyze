@@ -63,7 +63,7 @@ public sealed class VirtualCrossoverMetricsTests
         first.Channel.SampleRate = 0;
         second.Channel.SampleRate = 0;
 
-        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, _) =
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, _, _) =
             metrics.BuildCurves([first, second], 0);
 
         Assert.NotNull(magnitudes);
@@ -78,7 +78,7 @@ public sealed class VirtualCrossoverMetricsTests
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
 
-        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, List<SignalPoint>? loss) =
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, List<SignalPoint>? loss, _) =
             metrics.BuildCurves([Processed("A", Impulse(), 5, 48_000)], 0);
 
         Assert.Null(magnitudes);
@@ -134,7 +134,7 @@ public sealed class VirtualCrossoverMetricsTests
         Complex[] a = Impulse(12);
         Complex[] b = Impulse(20);
 
-        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, _) = metrics.BuildCurves(
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, _, _) = metrics.BuildCurves(
         [
             Processed("A", a, peak: 5, rate: 48_000),
             Processed("B", b, peak: 2, rate: 48_000)

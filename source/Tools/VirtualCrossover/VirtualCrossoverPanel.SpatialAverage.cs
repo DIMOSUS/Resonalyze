@@ -13,9 +13,28 @@ namespace Resonalyze;
 /// same arrays — and the sum shifts by exactly that scalar too, since a common
 /// gain factors straight out of a magnitude sum.
 /// </remarks>
+/// <param name="Channels">
+/// What the plot draws: each channel at the display smoothing.
+/// </param>
+/// <param name="UnsmoothedChannels">
+/// What the SUM is built from, and the reason the two exist separately — the same
+/// split, for the same reason, as <see cref="GatedMagnitude"/>. Smoothing does not
+/// commute with an amplitude sum: a fractional-octave window straddling a steep
+/// crossover skirt pulls each channel's level up toward its own passband, so a sum
+/// of smoothed channels rides above the smoothed sum exactly at the corners, which
+/// is where a hybrid gets read. Sum the raw curves, add the raw loss, smooth the
+/// finished curve once — the order the measured Sum beside it is built in.
+/// </param>
+/// <param name="ChannelOffsetsDb">
+/// Each channel's own offset IN CHANNEL ORDER, null where the two curves never
+/// overlap enough to compare. Positional rather than packed: the spread read-out
+/// names the channel beside its figure, and a packed list silently shifted those
+/// names onto the wrong drivers as soon as one channel had nothing to say.
+/// </param>
 internal sealed record HybridMagnitudes(
     IReadOnlyList<IReadOnlyList<SignalPoint>> Channels,
-    IReadOnlyList<double> ChannelOffsetsDb,
+    IReadOnlyList<IReadOnlyList<SignalPoint>> UnsmoothedChannels,
+    IReadOnlyList<double?> ChannelOffsetsDb,
     double OffsetDb)
 {
     /// <summary>
@@ -37,9 +56,17 @@ internal sealed record HybridMagnitudes(
     /// tens of dB apart; only the DISAGREEMENT between channels is evidence.
     /// </para>
     /// </remarks>
-    public double SpreadDb => ChannelOffsetsDb.Count < 2
-        ? 0.0
-        : ChannelOffsetsDb.Max() - ChannelOffsetsDb.Min();
+    public double SpreadDb
+    {
+        get
+        {
+            List<double> known = ChannelOffsetsDb
+                .Where(offset => offset.HasValue)
+                .Select(offset => offset!.Value)
+                .ToList();
+            return known.Count < 2 ? 0.0 : known.Max() - known.Min();
+        }
+    }
 }
 
 // Attaching a spatially averaged magnitude to a channel, and deciding whether the
@@ -404,21 +431,32 @@ public partial class VirtualCrossoverPanel
         }
 
         var hybrids = new List<IReadOnlyList<SignalPoint>>(processed.Count);
+        var unsmoothed = new List<IReadOnlyList<SignalPoint>>(processed.Count);
         for (int i = 0; i < processed.Count; i++)
         {
+            // Built RAW and smoothed here rather than twice through the chain: the
+            // shared builder's own last step is this same smoothing, so smoothing its
+            // unsmoothed output reproduces what it would have returned, and the
+            // expensive part — the analytic chain over the whole grid — runs once.
             if (BuildHybridChannelCurve(
-                processed[i].Channel, rightSide, references[i].Points, smoothingCode)
-                is not { } hybrid)
+                processed[i].Channel, rightSide, references[i].Points, smoothingCode: 0)
+                is not { } raw)
             {
                 return null;
             }
 
-            hybrids.Add(hybrid);
+            unsmoothed.Add(raw);
+            hybrids.Add(smoothingCode == 0 || raw.Count < 2
+                ? raw
+                : DataHelper.SmoothBandLevels(
+                    raw,
+                    SpectrumSmoothing.SmoothingOctaves(smoothingCode),
+                    SpectrumSmoothing.IsPsychoacoustic(smoothingCode)));
         }
 
-        (List<double> offsets, double setOffset) =
+        (double?[] offsets, double setOffset) =
             ResolveHybridOffsetsDb(hybrids, references);
-        return new HybridMagnitudes(hybrids, offsets, setOffset);
+        return new HybridMagnitudes(hybrids, unsmoothed, offsets, setOffset);
     }
 
     /// <summary>
@@ -518,19 +556,34 @@ public partial class VirtualCrossoverPanel
     /// arithmetic — the hybrid sum breaks with it rather than falling back to a
     /// lossless sum, which would draw its most confident fiction exactly where the
     /// measurement is weakest. A channel whose own curve is NaN at a point (below its
-    /// protective high-pass, or past the end of its capture's grid) simply drops out
-    /// of that point's sum: its output there is far under the others and its own
-    /// crossover removes it anyway, so carrying the whole sum away with it would cost
-    /// more than it protects.
+    /// protective high-pass, or past the end of its capture's grid) drops out of that
+    /// point's sum only while it is INAUDIBLE there — see
+    /// <see cref="HybridDropoutFloorDb"/>. Dropping a channel that still contributes
+    /// would leave the numerator summing one set of sources while the loss correcting
+    /// it was measured across another.
+    /// </para>
+    /// <para>
+    /// Operands unsmoothed, result smoothed once — the rule
+    /// <see cref="VirtualCrossoverAnalysis.SumLossCurve"/> is built on, and it applies
+    /// here for the same reason. A fractional-octave window straddling a crossover
+    /// skirt lifts each channel toward its own passband, so summing smoothed channels
+    /// draws a sum that rides above the truth at every corner.
     /// </para>
     /// </remarks>
     private static List<SignalPoint>? BuildHybridSumCurve(
         HybridMagnitudes hybrid,
         IReadOnlyList<SignalPoint> reference,
-        IReadOnlyList<SignalPoint> loss)
+        IReadOnlyList<IReadOnlyList<SignalPoint>> channelReferences,
+        IReadOnlyList<SignalPoint> unsmoothedLoss,
+        int smoothingCode)
     {
-        int count = Math.Min(reference.Count, loss.Count);
-        foreach (IReadOnlyList<SignalPoint> channel in hybrid.Channels)
+        int count = Math.Min(reference.Count, unsmoothedLoss.Count);
+        foreach (IReadOnlyList<SignalPoint> channel in hybrid.UnsmoothedChannels)
+        {
+            count = Math.Min(count, channel.Count);
+        }
+
+        foreach (IReadOnlyList<SignalPoint> channel in channelReferences)
         {
             count = Math.Min(count, channel.Count);
         }
@@ -543,26 +596,70 @@ public partial class VirtualCrossoverPanel
         var points = new List<SignalPoint>(count);
         for (int i = 0; i < count; i++)
         {
-            double amplitude = 0;
-            foreach (IReadOnlyList<SignalPoint> channel in hybrid.Channels)
+            // The loudest impulse-response level here, so a missing channel can be
+            // judged against what is actually playing rather than against a constant.
+            double loudest = double.NegativeInfinity;
+            for (int c = 0; c < channelReferences.Count; c++)
             {
-                double level = channel[i].Y;
+                double level = channelReferences[c][i].Y;
                 if (double.IsFinite(level))
                 {
-                    amplitude += DataHelper.DecibelsToAmplitude(level);
+                    loudest = Math.Max(loudest, level);
                 }
             }
 
-            double lossDb = loss[i].Y;
+            double amplitude = 0;
+            bool missingContributor = false;
+            for (int c = 0; c < hybrid.UnsmoothedChannels.Count; c++)
+            {
+                double level = hybrid.UnsmoothedChannels[c][i].Y;
+                if (double.IsFinite(level))
+                {
+                    amplitude += DataHelper.DecibelsToAmplitude(level);
+                    continue;
+                }
+
+                // No capture here. Ignorable only while the impulse response says this
+                // channel is not part of the sum at this frequency either.
+                double reference_c = c < channelReferences.Count
+                    ? channelReferences[c][i].Y
+                    : double.NaN;
+                if (double.IsFinite(reference_c) && double.IsFinite(loudest) &&
+                    reference_c > loudest - HybridDropoutFloorDb)
+                {
+                    missingContributor = true;
+                    break;
+                }
+            }
+
+            double lossDb = unsmoothedLoss[i].Y;
             points.Add(new SignalPoint(
                 reference[i].X,
-                amplitude > 0 && double.IsFinite(lossDb)
+                !missingContributor && amplitude > 0 && double.IsFinite(lossDb)
                     ? DataHelper.AmplitudeToDecibels(amplitude) + hybrid.OffsetDb + lossDb
                     : double.NaN));
         }
 
-        return points;
+        return smoothingCode == 0 || points.Count < 2
+            ? points
+            : DataHelper.SmoothBandLevels(
+                points,
+                SpectrumSmoothing.SmoothingOctaves(smoothingCode),
+                SpectrumSmoothing.IsPsychoacoustic(smoothingCode));
     }
+
+    /// <summary>
+    /// How far under the loudest channel an absent capture must sit before the sum
+    /// carries on without it, in dB.
+    /// </summary>
+    /// <remarks>
+    /// A capture stops below its channel's protective high-pass, which is usually far
+    /// under that channel's own crossover, so in practice this is never reached and
+    /// the sum simply continues. When it IS reached the honest answer is a break: the
+    /// alternative sums one set of sources and corrects it with a loss measured across
+    /// another, which reads as a confident curve rather than as the gap it is.
+    /// </remarks>
+    private const double HybridDropoutFloorDb = 25;
 
     /// <summary>
     /// How far below its own peak a channel is still read when its offset is taken.
@@ -584,27 +681,39 @@ public partial class VirtualCrossoverPanel
     /// against, the captures are drawn at their own level rather than pushed
     /// somewhere by an invented figure.
     /// </returns>
-    private static (List<double> PerChannel, double SetOffsetDb) ResolveHybridOffsetsDb(
+    private static (double?[] PerChannel, double SetOffsetDb) ResolveHybridOffsetsDb(
         IReadOnlyList<IReadOnlyList<SignalPoint>> hybrids,
         IReadOnlyList<AnalysisCurve> references)
     {
-        var perChannel = new List<double>();
+        var perChannel = new double?[hybrids.Count];
         for (int i = 0; i < hybrids.Count && i < references.Count; i++)
         {
-            if (ResolveChannelOffsetDb(hybrids[i], references[i].Points) is { } offset)
-            {
-                perChannel.Add(offset);
-            }
+            perChannel[i] = ResolveChannelOffsetDb(hybrids[i], references[i].Points);
         }
 
-        if (perChannel.Count == 0)
-        {
-            return (perChannel, 0.0);
-        }
+        List<double> known = perChannel
+            .Where(offset => offset.HasValue)
+            .Select(offset => offset!.Value)
+            .ToList();
+        return known.Count == 0 ? (perChannel, 0.0) : (perChannel, Median(known));
+    }
 
-        var sorted = new List<double>(perChannel);
-        sorted.Sort();
-        return (perChannel, sorted[sorted.Count / 2]);
+    /// <summary>
+    /// The middle of a set of levels — the mean of the two central values when there
+    /// is an even number of them, not the upper one.
+    /// </summary>
+    /// <remarks>
+    /// Taking the upper central value moves the whole hybrid set by half the gap
+    /// between the two middle channels, which on a four-way is not a rounding
+    /// difference. The list is sorted in place.
+    /// </remarks>
+    private static double Median(List<double> values)
+    {
+        values.Sort();
+        int middle = values.Count / 2;
+        return values.Count % 2 == 1
+            ? values[middle]
+            : 0.5 * (values[middle - 1] + values[middle]);
     }
 
     // One channel's median difference inside its own working band. Null when the two
@@ -641,12 +750,6 @@ public partial class VirtualCrossoverPanel
             }
         }
 
-        if (differences.Count == 0)
-        {
-            return null;
-        }
-
-        differences.Sort();
-        return differences[differences.Count / 2];
+        return differences.Count == 0 ? null : Median(differences);
     }
 }

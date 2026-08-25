@@ -764,6 +764,14 @@ exponential window would weight the end of that walk over its beginning); the
 banded dB SPL rendering; slope compensation on; and smoothing off. Your own RTA
 choices are remembered and come back when you leave the mode.
 
+**Measure each driver raw.** Bypass the EQ, the crossovers and the delays in your
+own DSP before you capture, and leave only the configured protective high-pass in
+place — one driver at a time, exactly as you would for its sweep. Virtual DSP puts
+the channel's chain onto the capture itself, so a capture taken *through* a chain
+gets that chain applied a second time: the crossover corner doubles its slope and
+every filter counts twice. Nothing downstream can detect this. The curve stays
+smooth and entirely plausible, which is what makes it worth stating here.
+
 If a **protective high-pass** is configured (Measurement Options), MMM divides it
 back out of its curve. That filter sits in your own DSP, ahead of the loudspeaker,
 so a reference-free capture carries it while a swept impulse response has it

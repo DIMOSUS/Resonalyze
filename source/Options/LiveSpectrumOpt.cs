@@ -813,6 +813,18 @@ namespace Resonalyze.Options
                 "Reference-free RTA: the magnitude spectrum of the microphone input " +
                 "alone, no loopback division. The only mode with an absolute dB SPL " +
                 "scale and the noise slope compensation.");
+            toolTip.SetToolTip(
+                radioModeMmm,
+                "Moving-microphone capture: the same reference-free analyzer, pinned " +
+                "to the one recipe a spatial average is valid under — periodic pink, " +
+                "Infinite averaging, banded dB SPL, slope compensation on, smoothing " +
+                "off. Walk the microphone through the listening volume while it " +
+                "integrates, then Save.\r\n\r\n" +
+                "Measure each driver RAW: bypass EQ, crossovers and delays in your " +
+                "own DSP and leave only the configured protective high-pass. Virtual " +
+                "DSP adds the channel's chain to the capture itself, so a capture " +
+                "taken through a chain gets that chain applied twice — and the result " +
+                "still looks entirely plausible.");
             // radioModeTransfer's tooltip is owned by UpdateTransferChoiceColor: it
             // names the loopback availability, which a static line here cannot.
             toolTip.SetToolTip(

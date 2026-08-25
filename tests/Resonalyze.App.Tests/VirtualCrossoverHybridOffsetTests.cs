@@ -104,8 +104,31 @@ public sealed class VirtualCrossoverHybridOffsetTests
         Assert.Equal(8.0, Spread(mixed), 6);
     }
 
+    /// <summary>
+    /// The offsets come back IN CHANNEL ORDER, with a hole where a channel had
+    /// nothing to compare. Packed, they silently shifted every figure below that
+    /// channel onto the next driver's name in the spread read-out — a diagnostic
+    /// blaming the wrong capture is worse than no diagnostic.
+    /// </summary>
+    [Fact]
+    public void AChannelWithNothingToCompare_LeavesAHoleInPlaceAndDoesNotShiftTheRest()
+    {
+        List<SignalPoint> reference = Flat(0);
+        List<SignalPoint> nothing = Flat(double.NaN);
+
+        (double?[] offsets, _) = ResolvePositional(
+            [Flat(-90), nothing, Flat(-82)],
+            [reference, reference, reference]);
+
+        Assert.Equal(3, offsets.Length);
+        Assert.Equal(90.0, offsets[0]!.Value, 6);
+        Assert.Null(offsets[1]);
+        Assert.Equal(82.0, offsets[2]!.Value, 6);
+    }
+
     private static double Spread(List<double> offsets) =>
-        new HybridMagnitudes([], offsets, 0).SpreadDb;
+        new HybridMagnitudes(
+            [], [], offsets.Select(offset => (double?)offset).ToList(), 0).SpreadDb;
 
     private static List<SignalPoint> Flat(double db)
     {
@@ -139,6 +162,34 @@ public sealed class VirtualCrossoverHybridOffsetTests
                     .Select(points => new AnalysisCurve("channel", points))
                     .ToList()
             ]);
-        return ((List<double>, double))result!;
+        (double?[] positional, double setOffset) = ((double?[], double))result!;
+        // The dense view these tests read: the offsets that could be resolved, in
+        // order. The positional form — with a null where a channel had nothing to
+        // compare — is what the spread read-out needs, and ResolvePositional returns
+        // it untouched.
+        return (
+            positional.Where(offset => offset.HasValue)
+                .Select(offset => offset!.Value)
+                .ToList(),
+            setOffset);
+    }
+
+    private static (double?[] PerChannel, double SetOffsetDb) ResolvePositional(
+        IReadOnlyList<IReadOnlyList<SignalPoint>> hybrids,
+        IReadOnlyList<IReadOnlyList<SignalPoint>> references)
+    {
+        MethodInfo method = typeof(VirtualCrossoverPanel).GetMethod(
+            "ResolveHybridOffsetsDb",
+            BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("ResolveHybridOffsetsDb is gone.");
+        object? result = method.Invoke(
+            null,
+            [
+                hybrids,
+                references
+                    .Select(points => new AnalysisCurve("channel", points))
+                    .ToList()
+            ]);
+        return ((double?[], double))result!;
     }
 }

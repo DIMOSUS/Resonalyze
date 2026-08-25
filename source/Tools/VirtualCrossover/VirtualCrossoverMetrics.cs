@@ -34,12 +34,13 @@ internal sealed class VirtualCrossoverMetrics
     // pair and smoothed afterwards (see VirtualCrossoverAnalysis.SumLossCurve),
     // which is why the builder hands back both widths.
     // Fewer than two channels yield no metric.
-    public (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum, List<SignalPoint>? Loss)
+    public (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum, List<SignalPoint>? Loss,
+        List<SignalPoint>? UnsmoothedLoss)
         BuildCurves(List<ProcessedChannel> processed, int smoothingInverseOctaves)
     {
         if (processed.Count < 2)
         {
-            return (null, null, null);
+            return (null, null, null, null);
         }
 
         // Every curve — the channels AND the sum — shares one window anchor
@@ -75,16 +76,23 @@ internal sealed class VirtualCrossoverMetrics
             processed.Select(item => item.ImpulseResponse).ToList());
         GatedMagnitude sumCurve = buildMagnitudeCurve(
             sum, anchor, processed[0].SampleRate);
+        List<IReadOnlyList<SignalPoint>> operands = magnitudes
+            .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
+            .ToList();
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
-            sumCurve.Unsmoothed.Points,
-            magnitudes
-                .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
-                .ToList(),
-            smoothingInverseOctaves);
+            sumCurve.Unsmoothed.Points, operands, smoothingInverseOctaves);
+        // The same ratio before the display smoothing, for the hybrid sum: that curve
+        // has no measured total to smooth once, so it reconstructs one and must do it
+        // from raw operands, exactly as this loss does (see BuildHybridSumCurve).
+        List<SignalPoint> unsmoothedLoss = smoothingInverseOctaves == 0
+            ? loss
+            : VirtualCrossoverAnalysis.SumLossCurve(
+                sumCurve.Unsmoothed.Points, operands);
         return (
             magnitudes.Select(curve => curve.Display).ToList(),
             sumCurve.Display,
-            loss);
+            loss,
+            unsmoothedLoss);
     }
 
     // Builds the sum-loss read-outs for a processed set without touching any

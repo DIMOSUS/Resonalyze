@@ -112,22 +112,49 @@ public sealed class VirtualCrossoverHybridSumTests
     }
 
     /// <summary>
-    /// A channel whose own capture stops — below its protective high-pass, or past
-    /// the end of its grid — drops out of that point's sum instead of taking the
-    /// whole sum with it. Its output there is far under the others and its own
-    /// crossover removes it anyway.
+    /// A channel whose capture stops where its impulse response says it is INAUDIBLE
+    /// drops out of that point's sum: it is below its own crossover, the others carry
+    /// the point, and taking the whole sum away would cost more than it protects.
     /// </summary>
     [Fact]
-    public void AChannelThatBreaks_DropsOutOfThatPointOnly()
+    public void AChannelThatBreaksFarBelowTheOthers_DropsOutOfThatPointOnly()
     {
         (List<SignalPoint> low, List<SignalPoint> high, List<SignalPoint> sum,
             List<SignalPoint> loss) = SimpleSet();
         high[3] = new SignalPoint(high[3].X, double.NaN);
 
-        List<SignalPoint> hybrid = BuildHybridSum([low, high], offsetDb: 0, sum, loss);
+        // Its impulse response puts it 40 dB under the other channel here, so it is
+        // not part of this point's sum whether or not the capture reaches.
+        List<SignalPoint> quiet = [.. high];
+        quiet[3] = new SignalPoint(high[3].X, low[3].Y - 40);
+
+        List<SignalPoint> hybrid =
+            BuildHybridSum([low, high], offsetDb: 0, sum, loss, [low, quiet]);
 
         // The surviving channel alone, plus the point's loss.
         Assert.Equal(low[3].Y + loss[3].Y, hybrid[3].Y, 10);
+    }
+
+    /// <summary>
+    /// A channel whose capture stops while it is still PLAYING takes the point with
+    /// it. Dropping it would sum one set of sources and correct the total with a loss
+    /// measured across another — a curve that looks like a measurement and is not.
+    /// </summary>
+    [Fact]
+    public void AChannelThatBreaksWhileStillPlaying_TakesThePointWithIt()
+    {
+        (List<SignalPoint> low, List<SignalPoint> high, List<SignalPoint> sum,
+            List<SignalPoint> loss) = SimpleSet();
+        List<SignalPoint> references = [.. high];
+        high[3] = new SignalPoint(high[3].X, double.NaN);
+
+        // Its impulse response has it within a few dB of the other channel here.
+        List<SignalPoint> hybrid =
+            BuildHybridSum([low, high], offsetDb: 0, sum, loss, [low, references]);
+
+        Assert.True(double.IsNaN(hybrid[3].Y));
+        Assert.True(double.IsFinite(hybrid[2].Y));
+        Assert.True(double.IsFinite(hybrid[4].Y));
     }
 
     /// <summary>
@@ -254,15 +281,24 @@ public sealed class VirtualCrossoverHybridSumTests
         IReadOnlyList<IReadOnlyList<SignalPoint>> channels,
         double offsetDb,
         IReadOnlyList<SignalPoint> reference,
-        IReadOnlyList<SignalPoint> loss)
+        IReadOnlyList<SignalPoint> loss,
+        IReadOnlyList<IReadOnlyList<SignalPoint>>? channelReferences = null)
     {
         MethodInfo method = typeof(VirtualCrossoverPanel).GetMethod(
             "BuildHybridSumCurve",
             BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException("BuildHybridSumCurve is gone.");
+        // Raw and display are the same list here: these tests feed unsmoothed
+        // curves and a raw loss, which is what the reconstruction wants.
         object? result = method.Invoke(
             null,
-            [new HybridMagnitudes(channels, [], offsetDb), reference, loss]);
+            [
+                new HybridMagnitudes(channels, channels, [], offsetDb),
+                reference,
+                channelReferences ?? channels,
+                loss,
+                0
+            ]);
         return Assert.IsType<List<SignalPoint>>(result);
     }
 }

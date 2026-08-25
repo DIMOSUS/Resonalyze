@@ -294,7 +294,8 @@ public partial class VirtualCrossoverPanel
     private static HybridMagnitudes? BuildHybridMagnitudes(
         IReadOnlyList<ProcessedChannel> processed,
         IReadOnlyList<AnalysisCurve> references,
-        bool rightSide)
+        bool rightSide,
+        int smoothingCode)
     {
         if (processed.Count == 0 || references.Count < processed.Count)
         {
@@ -305,7 +306,8 @@ public partial class VirtualCrossoverPanel
         for (int i = 0; i < processed.Count; i++)
         {
             if (BuildHybridChannelCurve(
-                processed[i].Channel, rightSide, references[i].Points) is not { } hybrid)
+                processed[i].Channel, rightSide, references[i].Points, smoothingCode)
+                is not { } hybrid)
             {
                 return null;
             }
@@ -340,7 +342,8 @@ public partial class VirtualCrossoverPanel
     private static IReadOnlyList<SignalPoint>? BuildHybridChannelCurve(
         VirtualCrossoverChannel channel,
         bool rightSide,
-        IReadOnlyList<SignalPoint> reference)
+        IReadOnlyList<SignalPoint> reference,
+        int smoothingCode)
     {
         // Explicitly the side asked for, never the channel's ACTIVE one: the
         // opposite side's sum is built from this too, and reading the shown side's
@@ -368,10 +371,18 @@ public partial class VirtualCrossoverPanel
                 ? DspChannelChain.Identity
                 : channel.SideSettings(rightSide).ToChain(),
             rate);
+        // The panel's own display smoothing, replayed over the capture's band levels on
+        // THEIR grid before anything is read off them. The honest curves beside these
+        // carry it, so a hybrid that ignored the selector would answer a different
+        // question from the rest of the plot every time it was moved. Replayed rather
+        // than approximated: this is the analyzer's own second pass over the very band
+        // levels it stored (see DataHelper.SmoothBandLevels), and the same curve goes
+        // on to feed the EQ Wizard's fit.
+        IReadOnlyList<SignalPoint> curve = SmoothedCapture(document, smoothingCode);
         var points = new List<SignalPoint>(reference.Count);
         foreach (SignalPoint point in reference)
         {
-            double average = SampleSpatialAverageDb(document, point.X);
+            double average = SampleSpatialAverageDb(document, curve, point.X);
             if (double.IsNaN(average))
             {
                 // The capture says it has nothing here — below a protective
@@ -476,10 +487,12 @@ public partial class VirtualCrossoverPanel
     // The stored curve at one frequency, interpolated on its own logarithmic grid.
     // Linear in dB between neighbours, and NaN as soon as either neighbour is NaN:
     // a gap must not be bridged by the points around it.
-    private static double SampleSpatialAverageDb(LiveCaptureDocument document, double hz)
+    private static double SampleSpatialAverageDb(
+        LiveCaptureDocument document,
+        IReadOnlyList<SignalPoint> curve,
+        double hz)
     {
-        double[] curve = document.CurveDb;
-        int count = curve.Length;
+        int count = curve.Count;
         double position = document.IndexOf(hz);
         if (double.IsNaN(position) || position < 0 || position > count - 1)
         {
@@ -489,7 +502,27 @@ public partial class VirtualCrossoverPanel
         int low = (int)Math.Floor(position);
         int high = Math.Min(low + 1, count - 1);
         double fraction = position - low;
-        return curve[low] + (curve[high] - curve[low]) * fraction;
+        return curve[low].Y + (curve[high].Y - curve[low].Y) * fraction;
+    }
+
+    /// <summary>
+    /// One capture's band levels at the panel's current display smoothing, on the
+    /// capture's own grid. Zero returns the stored curve untouched.
+    /// </summary>
+    /// <remarks>
+    /// A capture is always taken UNSMOOTHED (the mode pins it there), which is what
+    /// makes this legitimate: smoothing an already smoothed curve compounds it.
+    /// </remarks>
+    private static IReadOnlyList<SignalPoint> SmoothedCapture(
+        LiveCaptureDocument document, int smoothingCode)
+    {
+        List<SignalPoint> points = document.ToCurvePoints();
+        return smoothingCode == 0 || points.Count < 2
+            ? points
+            : DataHelper.SmoothBandLevels(
+                points,
+                SpectrumSmoothing.SmoothingOctaves(smoothingCode),
+                SpectrumSmoothing.IsPsychoacoustic(smoothingCode));
     }
 
     /// <summary>

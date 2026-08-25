@@ -55,16 +55,65 @@ public sealed class VirtualCrossoverHybridSideTests
         Assert.Equal(-14, right[right.Count / 2].Y, 3);
     }
 
+    /// <summary>
+    /// The panel's display smoothing reaches the hybrid curve too. The honest curves
+    /// beside it carry the selector, so a hybrid that ignored it would answer a
+    /// different question from the rest of the plot every time it was moved.
+    /// </summary>
+    [Fact]
+    public void ThePanelsSmoothing_ReachesTheHybridCurve()
+    {
+        VirtualCrossoverChannel channel = new("A");
+        channel.PhysicalSideState(false).SampleRate = 48_000;
+        // A capture with scatter in it: smoothing has something to remove, and a
+        // builder that ignored the selector would return the scatter untouched.
+        LiveCaptureDocument document = Capture(-20);
+        for (int i = 0; i < document.CurveDb.Length; i++)
+        {
+            document.CurveDb[i] = -20 + (i % 2 == 0 ? 6 : -6);
+        }
+
+        channel.PhysicalSideState(false).SpatialAverage = document;
+        IReadOnlyList<SignalPoint> reference = Grid();
+
+        IReadOnlyList<SignalPoint> raw = Build(channel, false, reference);
+        IReadOnlyList<SignalPoint> smoothed = Build(channel, false, reference, 6);
+
+        Assert.True(Scatter(raw) > 4, $"the unsmoothed curve scattered only {Scatter(raw):0.0} dB");
+        Assert.True(
+            Scatter(smoothed) < Scatter(raw) / 2,
+            $"smoothing left {Scatter(smoothed):0.0} dB of {Scatter(raw):0.0}");
+    }
+
+    // Mean absolute step between neighbours: what smoothing is there to reduce.
+    private static double Scatter(IReadOnlyList<SignalPoint> points)
+    {
+        double total = 0;
+        int count = 0;
+        for (int i = 1; i < points.Count; i++)
+        {
+            if (double.IsFinite(points[i].Y) && double.IsFinite(points[i - 1].Y))
+            {
+                total += Math.Abs(points[i].Y - points[i - 1].Y);
+                count++;
+            }
+        }
+
+        return count == 0 ? 0 : total / count;
+    }
+
     private static IReadOnlyList<SignalPoint> Build(
         VirtualCrossoverChannel channel,
         bool rightSide,
-        IReadOnlyList<SignalPoint> reference)
+        IReadOnlyList<SignalPoint> reference,
+        int smoothingCode = 0)
     {
         MethodInfo method = typeof(VirtualCrossoverPanel).GetMethod(
             "BuildHybridChannelCurve",
             BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException("BuildHybridChannelCurve is gone.");
-        object? result = method.Invoke(null, [channel, rightSide, reference]);
+        object? result = method.Invoke(
+            null, [channel, rightSide, reference, smoothingCode]);
         return Assert.IsAssignableFrom<IReadOnlyList<SignalPoint>>(result);
     }
 

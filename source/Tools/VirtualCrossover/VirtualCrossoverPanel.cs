@@ -2906,7 +2906,10 @@ public partial class VirtualCrossoverPanel : UserControl
             using (AppProfiler.Zone("VirtualDSP.BuildHybrid"))
             {
                 hybrid = BuildHybridMagnitudes(
-                    processed, magnitudes, project.ActiveSideRight);
+                    processed,
+                    magnitudes,
+                    project.ActiveSideRight,
+                    magnitudeGate.SmoothingInverseOctaves);
             }
         }
 
@@ -4499,7 +4502,8 @@ public partial class VirtualCrossoverPanel : UserControl
         HybridMagnitudes? hybrid = BuildHybridMagnitudes(
             side.Channels,
             channelMagnitudes.Select(curve => curve.Display).ToList(),
-            oppositeRight);
+            oppositeRight,
+            snapshot.SmoothingInverseOctaves);
         if (hybrid == null)
         {
             return null;

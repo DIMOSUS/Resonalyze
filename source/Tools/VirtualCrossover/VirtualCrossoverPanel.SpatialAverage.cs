@@ -1,3 +1,4 @@
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -18,12 +19,13 @@ namespace Resonalyze;
 /// </param>
 /// <param name="UnsmoothedChannels">
 /// What the SUM is built from, and the reason the two exist separately — the same
-/// split, for the same reason, as <see cref="GatedMagnitude"/>. Smoothing does not
-/// commute with an amplitude sum: a fractional-octave window straddling a steep
-/// crossover skirt pulls each channel's level up toward its own passband, so a sum
-/// of smoothed channels rides above the smoothed sum exactly at the corners, which
-/// is where a hybrid gets read. Sum the raw curves, add the raw loss, smooth the
-/// finished curve once — the order the measured Sum beside it is built in.
+/// split, for the same reason, as <see cref="GatedMagnitude"/>. The sum substitutes
+/// these levels bin by bin into the channels' gated spectra, so it wants them before
+/// any display smoothing: smoothing does not commute with the substitution, and a
+/// fractional-octave window straddling a steep crossover skirt pulls each channel's
+/// level up toward its own passband — exactly at the corners a hybrid gets read at.
+/// The finished sum is smoothed once, the order the measured Sum beside it is built
+/// in.
 /// </param>
 /// <param name="ChannelOffsetsDb">
 /// Each channel's own offset IN CHANNEL ORDER, null where the two curves never
@@ -251,6 +253,33 @@ public partial class VirtualCrossoverPanel
         JudgeSideSpatialAverages(project.ActiveSideRight);
 
     /// <summary>
+    /// A channel's bypass response read on CANONICAL terms — its own onset, the fixed
+    /// steady-state window, no calibration and no display smoothing.
+    /// </summary>
+    /// <remarks>
+    /// Both halves of the datum have to be read the same way or the difference between
+    /// them stops being a property of the measurements. Calibration would cancel if it
+    /// were on both, but smoothing would not: it is applied to two differently shaped
+    /// curves and does not commute with their subtraction. Pinning both here also
+    /// keeps the panel's figure identical to the one the threshold was calibrated on.
+    /// </remarks>
+    private AnalysisCurve BuildCanonicalRawCurve(
+        Complex[] impulseResponse, int peakIndex, int sampleRate)
+    {
+        int anchorIndex = ProcessedChannels.StartAnchorIndex(
+            impulseResponse, peakIndex, sampleRate);
+        PhaseAnalysisSettings gate = magnitudeGate.Template with
+        {
+            GateOffsetMs = anchorIndex * 1_000.0 / sampleRate
+        };
+        return DataHelper.GetGatedPrimarySpectrumPair(
+            new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate),
+            gate,
+            calibration: null,
+            smoothingInverseOctaves: 0).Unsmoothed;
+    }
+
+    /// <summary>
     /// Whether the dashed opposite-side hybrid sum may be drawn: BOTH sides' captures
     /// have to form one set, not each side its own.
     /// </summary>
@@ -396,10 +425,11 @@ public partial class VirtualCrossoverPanel
                     "responses."
                 : "Draw each channel's magnitude from its spatial average with this " +
                     "channel's DSP chain on top, instead of from the impulse response " +
-                    "measured at one point. Both sums follow, carrying the summation " +
-                    "loss the impulse responses measure — the other side needs its " +
-                    "own captures too, and its dashed sum is dropped rather than " +
-                    "drawn by the other method. Timing, polarity and that loss are " +
+                    "measured at one point. Both sums follow, adding the channels as " +
+                    "phasors with the phase the impulse responses measure — the other " +
+                    "side needs its own captures too, and its dashed sum is dropped " +
+                    "rather than drawn by the other method. Timing, polarity and the " +
+                    "sum-loss read-out are " +
                     "unaffected: they keep reading the impulse responses.\r\n\r\n" +
                     "The channel curves are exact — a filter does not depend on " +
                     "microphone position. The Sum is an estimate: it adds the " +
@@ -535,7 +565,7 @@ public partial class VirtualCrossoverPanel
                 processed[i].Channel.SideState(rightSide);
             AnalysisCurve? rawIr = state.TransferImpulseResponse is { } ir &&
                 state.SampleRate > 0
-                    ? BuildRawMagnitudeCurve(ir, state.TransferPeakIndex, state.SampleRate)
+                    ? BuildCanonicalRawCurve(ir, state.TransferPeakIndex, state.SampleRate)
                     : null;
             IReadOnlyList<SignalPoint>? rawCapture =
                 rawIr != null && state.SpatialAverage is { } document
@@ -543,9 +573,15 @@ public partial class VirtualCrossoverPanel
                         document,
                         DspChannelChain.Identity,
                         state.SampleRate,
-                        Calibration,
+                        // Canonical, not what the plot happens to be showing:
+                        // identity chain, no calibration, no display smoothing. A
+                        // datum that moved with the smoothing selector would not be a
+                        // property of the two measurements, and the threshold the
+                        // spread is judged against is calibrated on these very terms
+                        // (HybridOffsetDatumMeasurement reads them the same way).
+                        calibration: null,
                         rawIr.Points.Select(point => point.X).ToList(),
-                        magnitudeGate.SmoothingInverseOctaves)
+                        smoothingCode: 0)
                     : null;
 
             // A channel that cannot produce the raw pair contributes no datum. Its
@@ -578,50 +614,32 @@ public partial class VirtualCrossoverPanel
     }
 
     /// <summary>
-    /// The hybrid channels summed the way the impulse responses sum: their magnitudes
-    /// added as amplitudes, then the summation loss the impulse responses measure
-    /// laid on top. Null when the set has no usable grid.
+    /// The hybrid channels summed as PHASORS: each channel's gated spectrum rescaled,
+    /// bin by bin, to the level its spatial average reports, and the rescaled phasors
+    /// added. Null when the set has no usable grid.
     /// </summary>
     /// <remarks>
-    /// A spatial average carries no phase, so the channels cannot be summed as
-    /// vectors — the arithmetic sum alone would draw a system that cancels nowhere,
-    /// which is exactly the picture a tune must not be built on. The loss curve
-    /// supplies what the average threw away: it is the signed dB gap between the
-    /// complex sum and the phase-blind one, measured on the honest impulse responses,
-    /// and it carries over because a per-channel filter changes both halves of that
-    /// ratio by the same factor.
+    /// A spatial average carries no phase, so the phase can only come from the impulse
+    /// response — which is why the two measurements travel side by side. Nothing is
+    /// borrowed here, which is the point: the previous construction added the
+    /// magnitudes and laid the impulse responses' own summation loss on top, and a
+    /// loss is a property of the LEVELS it was measured at. At a steep junction on the
+    /// owner's car the two families disagreed about the relative levels of two
+    /// channels by 23 dB — a gate does not commute with a 48 dB/octave filter, so a
+    /// stopband reads far above its analytic slope — and the borrowed loss drew a
+    /// 13 dB dip into a sum whose own channels could not have made more than 1.9 dB.
     /// <para>
     /// An ESTIMATE, unlike the per-channel curves, and the distinction is not
     /// pedantry. A channel's own hybrid is exact because a filter does not depend on
-    /// position. The cross-term between two channels does: ⟨|H₁+H₂|²⟩ needs
-    /// ⟨H₁H₂*⟩ over the volume, and a loss curve read at one microphone position
-    /// carries that product at ONE position. So this draws a point's interference,
-    /// and its peaks and dips may come out either stronger OR weaker than the
-    /// volume's average — nothing makes one position's cross-term the more extreme
-    /// of the two, and a position where the two channels sit near quadrature carries
-    /// almost none of it while the average may be firmly constructive. What holds is
-    /// only a tendency: the gap grows the faster the relative phase turns across the
-    /// volume, so it is generally small in the bass and largest at a crossover high
-    /// up. Nothing downstream treats this as measured.
-    /// </para>
-    /// <para>
-    /// Where the loss curve breaks — its level gate finds every channel filtered far
-    /// under the local level, so the gap it would report is two noise floors doing
-    /// arithmetic — the hybrid sum breaks with it rather than falling back to a
-    /// lossless sum, which would draw its most confident fiction exactly where the
-    /// measurement is weakest. A channel whose own curve is NaN at a point (below its
-    /// protective high-pass, or past the end of its capture's grid) drops out of that
-    /// point's sum only while it is INAUDIBLE there — see
-    /// <see cref="HybridDropoutFloorDb"/>. Dropping a channel that still contributes
-    /// would leave the numerator summing one set of sources while the loss correcting
-    /// it was measured across another.
-    /// </para>
-    /// <para>
-    /// Operands unsmoothed, result smoothed once — the rule
-    /// <see cref="VirtualCrossoverAnalysis.SumLossCurve"/> is built on, and it applies
-    /// here for the same reason. A fractional-octave window straddling a crossover
-    /// skirt lifts each channel toward its own passband, so summing smoothed channels
-    /// draws a sum that rides above the truth at every corner.
+    /// position. The phase holding these phasors together does: it was measured at ONE
+    /// microphone position, so this draws a point's interference, and its peaks and
+    /// dips may come out either stronger OR weaker than the volume's average — nothing
+    /// makes one position's relationship the more extreme of the two, and a position
+    /// where two channels sit near quadrature carries almost none of a cross-term the
+    /// average may hold firmly. What holds is only a tendency: the gap grows the
+    /// faster the relative phase turns across the volume, so it is generally small in
+    /// the bass and largest at a crossover high up. Nothing downstream treats this as
+    /// measured.
     /// </para>
     /// </remarks>
     private static List<SignalPoint>? BuildHybridSumCurve(
@@ -650,15 +668,27 @@ public partial class VirtualCrossoverPanel
                 hybrid.UnsmoothedChannels[c]));
         }
 
+        // Unsmoothed, then masked, THEN smoothed. The order is the contract: a point
+        // the mask will break must not have taken part in its neighbours' means on
+        // the way, or the hole is filled by the very values that are not allowed to
+        // stand. SmoothBandLevels passes a NaN through and excludes it from the
+        // neighbours it would otherwise pollute, which is exactly what is wanted.
         List<SignalPoint> sum = DataHelper.GetGatedSubstitutedMagnitudeSum(
-            channels, gate, snapshot.SmoothingInverseOctaves);
+            channels, gate, smoothingInverseOctaves: 0);
         if (sum.Count == 0)
         {
             return null;
         }
 
-        return MaskMissingContributors(
-            sum, hybrid.Channels, channelReferences, hybrid.OffsetDb);
+        List<SignalPoint> masked = MaskMissingContributors(
+            sum, hybrid.UnsmoothedChannels, channelReferences, hybrid.OffsetDb);
+        int smoothingCode = snapshot.SmoothingInverseOctaves;
+        return smoothingCode == 0 || masked.Count < 2
+            ? masked
+            : DataHelper.SmoothBandLevels(
+                masked,
+                SpectrumSmoothing.SmoothingOctaves(smoothingCode),
+                SpectrumSmoothing.IsPsychoacoustic(smoothingCode));
     }
 
     /// <summary>

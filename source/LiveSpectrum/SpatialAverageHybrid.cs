@@ -77,11 +77,6 @@ internal static class SpatialAverageHybrid
                 continue;
             }
 
-            if (calibration != null)
-            {
-                level -= calibration.GetDecibelCorrection(hz);
-            }
-
             points.Add(new SignalPoint(
                 hz,
                 level + DataHelper.AmplitudeToDecibels(prepared.Response(hz).Magnitude)));
@@ -93,12 +88,32 @@ internal static class SpatialAverageHybrid
         // corner razor sharp here while the measured curve beside it rounds off, and a
         // corner is exactly where the two get compared. A level-preserving mean of band
         // POWER, which passes a gap through and excludes it from its neighbours' means.
-        return smoothingCode == 0 || points.Count < 2
+        List<SignalPoint> smoothed = smoothingCode == 0 || points.Count < 2
             ? points
             : DataHelper.SmoothBandLevels(
                 points,
                 SpectrumSmoothing.SmoothingOctaves(smoothingCode),
                 SpectrumSmoothing.IsPsychoacoustic(smoothingCode));
+
+        // Calibration LAST, after the smoothing — the operation order the rest of the
+        // app's frequency-response pipeline uses, and the one the same capture is
+        // corrected under when the EQ Wizard opens it directly rather than through a
+        // handoff. Correcting first and smoothing afterwards smooths the correction
+        // too, so a frequency-dependent calibration file made one capture read
+        // slightly differently by which route it arrived.
+        if (calibration == null)
+        {
+            return smoothed;
+        }
+
+        for (int i = 0; i < smoothed.Count; i++)
+        {
+            smoothed[i] = new SignalPoint(
+                smoothed[i].X,
+                smoothed[i].Y - calibration.GetDecibelCorrection(smoothed[i].X));
+        }
+
+        return smoothed;
     }
 
     // The capture back at the level the analyzer measured, before any microphone

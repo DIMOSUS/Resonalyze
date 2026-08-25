@@ -416,6 +416,14 @@ internal static class VirtualDspEqHandoff
             return false;
         }
 
+        // The pair's routing must still be the one the address was written for: mono
+        // sends both sides to the left set, so a pair that changed since would deliver
+        // the bank to settings the tune was never taken from.
+        if (token.Mono != token.Channel.Pair.Mono)
+        {
+            return false;
+        }
+
         // The magnitude must still come from the measurement the bank was fitted to.
         // Turning the hybrid off, or detaching the capture, swaps the curve underneath
         // a tune the wizard is still showing — the same invisible divergence the
@@ -424,14 +432,6 @@ internal static class VirtualDspEqHandoff
         // hands over the very document it is drawing from, and a re-attached file is a
         // different capture whether or not its bytes match.
         if (!ReferenceEquals(token.SpatialAverage, spatialAverage))
-        {
-            return false;
-        }
-
-        // The pair's routing must still be the one the address was written for: mono
-        // sends both sides to the left set, so a pair that changed since would deliver
-        // the bank to settings the tune was never taken from.
-        if (token.Mono != token.Channel.Pair.Mono)
         {
             return false;
         }

@@ -2107,6 +2107,8 @@ public partial class VirtualCrossoverPanel : UserControl
             processingCoordinator.IsCurrent(render.Revision)
                 ? ProcessedChannels.SharedStartAnchorIndex(render.Channels)
                 : null;
+        (LiveCaptureDocument? Capture, double OffsetDb) spatialAverage =
+            HandoffSpatialAverage(channel, channel.ActiveRight);
         VirtualDspEqHandoffRequest request;
         try
         {
@@ -2125,12 +2127,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 Calibration,
                 SelectedCalibrationName(),
                 projectGeneration,
-                // The hybrid travels only when the plot is actually drawing it. What
-                // the handoff promises is the curve the user just left, so a panel
-                // showing impulse responses must hand impulse responses over even
-                // though the captures are attached and could be read.
-                HybridRequested ? channel.SideState(channel.ActiveRight).SpatialAverage : null,
-                lastHybridOffsetDb);
+                spatialAverage.Capture,
+                spatialAverage.OffsetDb);
         }
         catch (InvalidOperationException)
         {
@@ -2247,11 +2245,10 @@ public partial class VirtualCrossoverPanel : UserControl
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 (double)numericTargetLevel.Value,
-                // What the panel would hand over NOW: the capture only while the
-                // hybrid is actually being drawn, exactly as the handoff decided it.
-                HybridRequested
-                    ? token.Channel.PhysicalSideState(token.RightSide).SpatialAverage
-                    : null))
+                // What the panel would hand over NOW, decided by the very method the
+                // handoff used — so the two can never disagree about whether this is
+                // a hybrid session.
+                HandoffSpatialAverage(token.Channel, token.RightSide).Capture))
         {
             return false;
         }
@@ -2925,7 +2922,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
             if (hybrid != null)
             {
-                lastHybridOffsetDb = hybrid.OffsetDb;
+                lastHybrid = (revision, hybrid.OffsetDb);
             }
         }
 
@@ -5245,10 +5242,73 @@ public partial class VirtualCrossoverPanel : UserControl
     // The last applied processed snapshot: the correlation view's data source.
     private ProcessedRender? lastProcessedRender;
 
-    // The offset the last hybrid render resolved for the whole capture set. Kept
-    // because it belongs to the SET: a handoff carries one channel, which on its own
-    // could not re-derive the figure the other channels voted on.
-    private double lastHybridOffsetDb;
+    // What the last hybrid render resolved for the whole capture set, and which
+    // processing revision it belonged to. Kept because the offset belongs to the SET:
+    // a handoff carries one channel, which on its own could not re-derive the figure
+    // the other channels voted on.
+    private (long Revision, double OffsetDb)? lastHybrid;
+
+    /// <summary>
+    /// The spatial average this panel would hand the EQ Wizard for one side right now,
+    /// with the offset that puts it on the impulse responses' axis. Null capture when
+    /// the hybrid is not what the panel is drawing.
+    /// </summary>
+    /// <remarks>
+    /// One answer for both directions of the trip — the handoff and the return guard
+    /// that checks the curve did not change underneath it — because two rules here
+    /// would eventually disagree and refuse a return that was perfectly valid.
+    /// <para>
+    /// The offset is normally the last magnitude render's, but the phase and impulse
+    /// views never build one and the toggle stays ticked across a view switch, so it
+    /// is resolved here when no current render carries it. Handing the capture over at
+    /// whatever height a previous set left behind would put the curve tens of dB from
+    /// where the Target Level says it hangs.
+    /// </para>
+    /// </remarks>
+    private (LiveCaptureDocument? Capture, double OffsetDb) HandoffSpatialAverage(
+        VirtualCrossoverChannel channel, bool rightSide)
+    {
+        if (!HybridRequested)
+        {
+            // The panel is drawing impulse responses, so that is what the handoff
+            // promises — even though the captures are attached and could be read.
+            return (null, 0.0);
+        }
+
+        LiveCaptureDocument? capture = channel.SideState(rightSide).SpatialAverage;
+        if (capture == null)
+        {
+            return (null, 0.0);
+        }
+
+        if (lastHybrid is { } cached && processingCoordinator.IsCurrent(cached.Revision))
+        {
+            return (capture, cached.OffsetDb);
+        }
+
+        if (lastProcessedRender is not { } render ||
+            !processingCoordinator.IsCurrent(render.Revision))
+        {
+            return (null, 0.0);
+        }
+
+        (List<AnalysisCurve>? magnitudes, _, _) =
+            metrics.BuildCurves(render.Channels, magnitudeGate.SmoothingInverseOctaves);
+        if (magnitudes == null ||
+            BuildHybridMagnitudes(
+                render.Channels,
+                magnitudes,
+                rightSide,
+                magnitudeGate.SmoothingInverseOctaves) is not { } hybrid)
+        {
+            // Fewer than two channels, or a set short of a capture: no offset can be
+            // resolved, and the honest response is the only one that can be handed
+            // over at a height the Target Level still describes.
+            return (null, 0.0);
+        }
+
+        return (capture, hybrid.OffsetDb);
+    }
 
     // Single-flight for the correlation rebuilds, mirroring the main redraw
     // loop: at most ONE sweep computes at a time, and a request that arrives

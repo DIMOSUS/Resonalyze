@@ -341,7 +341,12 @@ be buried in noise, so use the **coherence** trace to identify the region that i
 longer trustworthy. The declared filter must match the real DSP filter exactly.
 
 **Disable HPF compensation when measuring a channel that does not use that filter.**
-The setting is not stored inside the saved measurement.
+It is a live Record Settings value: nothing resets it between runs, and loading a
+saved measurement does not change it either. The saved file *does* record which
+filter its own response was corrected for — a capture written before that was
+tracked says "unknown", which is deliberately a different answer from "none" — so a
+measurement's provenance is preserved. But that stamp describes the run behind you,
+not the one you are about to take.
 
 A permanent passive protection component, such as a series capacitor, is part of the
 installed loudspeaker. Leave it in place and do *not* compensate for it.
@@ -913,9 +918,11 @@ Nothing has to be selected, typed, or matched by hand, and no file changes hands
    through the **DSP** chain, off that channel's **MMM** spatial average. Read this
    before you touch anything — it is the one place that says what you are about to
    equalize.
-2. **What came across, locked.** Calibration, target level, smoothing, the processor's
-   rate and the bank's preamp. The greyed ones belong to the project, not to the wizard,
-   and are shown so you can see them rather than set them.
+2. **What came across.** Calibration, target level, smoothing, the processor's rate
+   and the bank's preamp. **Calibration** and **Rate** are greyed — with **DSP Q**
+   further down they belong to the project rather than to the wizard, and are shown so
+   you can see what applies. The rest arrived as a starting point and stay yours to
+   change, smoothing especially: it is a reading width, not part of the tune.
 3. **The way back.** **Return PEQ to Virtual DSP** writes the bank onto the channel it
    came from; **Back without applying** leaves the channel alone and keeps your edits
    here.

@@ -1287,9 +1287,11 @@ wherever it is taken. That is 1 Hz around 100 Hz, 7 Hz at 1 kHz and 145 Hz at
 20 kHz, in place of the flat 10 Hz these fields used to move by — which was
 nearly half an octave at 30 Hz and a rounding error at 15 kHz. Below about 69 Hz
 a 96th of an octave is under half a Hz, so the field steps by the 1 Hz it can
-show. Typing a frequency is unaffected, and a step up and straight back down
-always returns to the value it started from. The [Virtual DSP](#virtual-dsp)
-crossover corners and its **Auto crossover** frequency window take the same step.
+show. Typing a frequency is unaffected, and the steps walk a ladder anchored on
+wherever the value last came from — so a step and a step straight back always
+land on the value they left, whichever way round they are taken. The
+[Virtual DSP](#virtual-dsp) crossover corners and its **Auto crossover**
+frequency window take the same step.
 
 A band is one of five shapes, picked on the **"+" tile** — each zone adds its
 shape directly — or switched later by right-clicking the band's number: a

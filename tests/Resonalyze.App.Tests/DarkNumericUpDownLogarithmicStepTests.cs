@@ -73,10 +73,71 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
         PressUp(control);
         PressDown(control);
 
-        // Why the way down divides rather than subtracting what the way up added: at
-        // 10 kHz the step is 72 Hz and grows by half a Hz across one step of its own,
-        // so a re-measured step would round to 73 and give the value back one Hz short.
+        // Why the steps walk an anchored ladder rather than measuring a fresh step off
+        // the value each time: at 10 kHz the step is 72 Hz and grows by half a Hz across
+        // one step of its own, so a re-measured step rounds to 73 coming back and hands
+        // the value back one Hz short.
         Assert.Equal(from, control.Value);
+    }
+
+    [Theory]
+    // 347 Hz is the case that showed the way down and the way up disagreeing: down to
+    // 345, and back up to 348. It is reachable by stepping, not only by typing — a
+    // step down from 350 lands on it.
+    [InlineData(347)]
+    [InlineData(1320)]
+    [InlineData(4100)]
+    [InlineData(18_000)]
+    [InlineData(20)]
+    [InlineData(63)]
+    [InlineData(1000)]
+    public void AStepDownAndStraightBackUp_LandsWhereItStarted(int from)
+    {
+        using DarkNumericUpDown control = NewFrequencyControl();
+        control.Value = from;
+
+        PressDown(control);
+        PressUp(control);
+
+        Assert.Equal(from, control.Value);
+    }
+
+    [Fact]
+    public void EveryWholeHzInTheBand_ReturnsFromAStepAndAStepBack_BothWaysRound()
+    {
+        // The range is opened up so nothing clamps: clamping is its own behaviour and
+        // would mask what this sweep is for.
+        using var control = new DarkNumericUpDown
+        {
+            DecimalPlaces = 0,
+            Minimum = 1,
+            Maximum = 1_000_000,
+            LogarithmicFrequencyStep = true
+        };
+        var upThenDown = new List<int>();
+        var downThenUp = new List<int>();
+
+        for (int frequency = 10; frequency <= 24_000; frequency++)
+        {
+            control.Value = frequency;
+            PressUp(control);
+            PressDown(control);
+            if (control.Value != frequency)
+            {
+                upThenDown.Add(frequency);
+            }
+
+            control.Value = frequency;
+            PressDown(control);
+            PressUp(control);
+            if (control.Value != frequency)
+            {
+                downThenUp.Add(frequency);
+            }
+        }
+
+        Assert.Empty(upThenDown);
+        Assert.Empty(downThenUp);
     }
 
     [Fact]
@@ -124,7 +185,8 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     {
         using DarkNumericUpDown control = NewFrequencyControl();
         control.Value = 20;
-        decimal previousStep = 0;
+        decimal firstStep = 0;
+        decimal lastStep = 0;
         int steps = 0;
 
         while (control.Value < 20_000m)
@@ -133,20 +195,27 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
             PressUp(control);
             decimal step = control.Value - before;
 
-            // Either the ratio landed the value (within the half unit rounding takes)
-            // or the 1 Hz floor did, which is at most another half unit away from it.
+            // A rung sits within half a unit of the exact 96th of an octave at each end
+            // of the step, so the pair can be a shade over one unit apart. That is also
+            // why the whole-Hz width alternates — 1, 1, 2, 1, 2 either side of 141 Hz,
+            // where a 96th of an octave is 1.02 Hz — which is the field's resolution
+            // showing, not the spacing changing.
             Assert.True(
-                Math.Abs((double)control.Value - ((double)before * StepRatio)) <= 1.0,
+                Math.Abs((double)control.Value - ((double)before * StepRatio)) <= 1.01,
                 $"{before} Hz stepped to {control.Value} Hz, off a 96th of an octave.");
-            // The step never narrows on the way up: that is the same distance in pixels.
-            Assert.True(
-                step >= previousStep,
-                $"The step shrank from {previousStep} to {step} at {before} Hz.");
-            previousStep = step;
+            lastStep = step;
+            if (steps == 0)
+            {
+                firstStep = step;
+            }
+
             steps++;
             Assert.True(steps < 5_000, "Stepping up never reached the top of the band.");
         }
 
+        // The 1 Hz the field can show at the bottom, a 96th of an octave at the top.
+        Assert.Equal(1m, firstStep);
+        Assert.InRange(lastStep, 143m, 147m);
         // Ten octaves at 96 steps each, less the low end where the 1 Hz floor is wider.
         Assert.InRange(steps, 700, 900);
     }

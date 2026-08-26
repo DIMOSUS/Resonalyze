@@ -18,10 +18,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     // what makes it the same distance everywhere on a logarithmic frequency axis.
     private const int LogarithmicStepsPerOctave = 96;
 
-    // The ratio one such step multiplies (or divides) the value by.
-    private static readonly double LogarithmicStepRatio =
-        Math.Pow(2, 1.0 / LogarithmicStepsPerOctave);
-
     private readonly TextBox editor;
     private decimal minimum;
     private decimal maximum = 100;
@@ -42,6 +38,8 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     private bool initializing;
     private string inlineLabel = string.Empty;
     private string valueSuffix = string.Empty;
+    private decimal logarithmicAnchor;
+    private int logarithmicPosition;
 
     public DarkNumericUpDown()
     {
@@ -164,7 +162,9 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     /// 1 Hz at 100 Hz, 7 Hz at 1 kHz and 145 Hz at 20 kHz — rounded to what the
     /// field can show and never below one unit of it, which is why a whole-Hz field
     /// under about 69 Hz moves by 1 Hz and so covers more than a 96th of an octave
-    /// there. Off by default, which leaves the control stepping by
+    /// there. The steps walk a ladder anchored on wherever the value last came from,
+    /// so a step and a step straight back always land on the value they left, whichever
+    /// way round they are taken. Off by default, which leaves the control stepping by
     /// <see cref="Increment"/> as before.
     /// </summary>
     [Browsable(true)]
@@ -886,48 +886,59 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         Value = defaultValue.Value;
     }
 
-    // One step up from a value: the fixed Increment, or a 96th of an octave scaled
-    // onto the value itself. The way down DIVIDES by the same ratio rather than
-    // subtracting what the way up added, and that is what makes a step up and a step
-    // straight back down land where they started: the rounding a field's resolution
-    // imposes stays inside half a unit, so dividing lands back on the value it came
-    // from instead of on a step re-measured from the new, wider place.
-    private decimal SteppedUp(decimal from)
+    // The ladder a logarithmic step walks: rungs at anchor × 2 ^ (n / 96), rounded to
+    // what the field displays. Anchoring the ladder — rather than measuring a fresh
+    // step off the current value every time — is what makes the two directions exact
+    // opposites, so a step and a step straight back always land on the value they
+    // left. A measured step cannot promise that: the ratio rounds one way going out
+    // and another coming back, which sent 347 Hz down to 345 and back up to 348.
+    // The ladder is rebuilt wherever the value came from something other than a step —
+    // typed, loaded with a session, fitted by Auto Tune — and a value that is no
+    // longer the rung the last step left on is exactly what says so.
+    private decimal NextRung(int direction)
     {
-        if (!LogarithmicFrequencyStep)
+        if (value != RungValue(logarithmicPosition))
         {
-            return from + increment;
+            logarithmicAnchor = value;
+            logarithmicPosition = 0;
         }
 
-        decimal stepped = RoundToDecimalPlaces((decimal)((double)from * LogarithmicStepRatio));
-        return stepped > from ? stepped : from + SmallestDisplayableStep;
-    }
-
-    private decimal SteppedDown(decimal from)
-    {
-        if (!LogarithmicFrequencyStep)
+        if (value <= 0)
         {
-            return from - increment;
+            // A logarithmic ladder says nothing about zero or below.
+            return value + (direction * SmallestDisplayableStep);
         }
 
-        decimal stepped = RoundToDecimalPlaces((decimal)((double)from / LogarithmicStepRatio));
-        return stepped < from ? stepped : from - SmallestDisplayableStep;
+        // Rungs that round onto the value we are already on are stepped over: below
+        // about 69 Hz a 96th of an octave is under half a Hz, and a spin button that
+        // moves nothing reads as a broken control.
+        int position = logarithmicPosition;
+        decimal rung;
+        do
+        {
+            position += direction;
+            rung = RungValue(position);
+        }
+        while (direction > 0 ? rung <= value : rung >= value);
+
+        logarithmicPosition = position;
+        return rung;
     }
 
-    // Below about 69 Hz a 96th of an octave is under half a Hz, which a whole-Hz field
-    // rounds away entirely — and a spin button that moves nothing reads as a broken
-    // control, so the smallest change the field can show is the floor: 1, 0.1, 0.01 ...
-    // for its decimal places (the decimal constructor's scale argument is exactly that
-    // power of ten).
+    private decimal RungValue(int position) => RoundToDecimalPlaces((decimal)(
+        (double)logarithmicAnchor *
+        Math.Pow(2, position / (double)LogarithmicStepsPerOctave)));
+
+    // The smallest change the field can show: 1, 0.1, 0.01 ... for its decimal places
+    // (the decimal constructor's scale argument is exactly that power of ten).
     private decimal SmallestDisplayableStep => new decimal(1, 0, 0, false, (byte)decimalPlaces);
 
     // Commit first: stepping must apply to what the user typed, not overwrite
-    // uncommitted editor text with lastCommitted ± the step — which, in logarithmic
-    // mode, is also measured off the committed value, so a typed 5 kHz steps by 5 kHz's
-    // own step and not by that of the value it replaced. A read-only field
+    // uncommitted editor text with lastCommitted ± the step — and in logarithmic mode
+    // that committed value is also what the ladder is rebuilt on. A read-only field
     // ignores every step path alike (spin buttons, wheel, arrow keys, reset) — the
     // single choke point that makes ReadOnly a true lock, not just a typing block.
-    private void StepUp()
+    private void Step(int direction)
     {
         if (readOnly)
         {
@@ -935,19 +946,26 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         }
 
         CommitEditorText();
-        Value = SteppedUp(value);
-    }
-
-    private void StepDown()
-    {
-        if (readOnly)
+        if (!LogarithmicFrequencyStep)
         {
+            Value = value + (direction * increment);
             return;
         }
 
-        CommitEditorText();
-        Value = SteppedDown(value);
+        decimal rung = NextRung(direction);
+        Value = rung;
+        if (value != rung)
+        {
+            // The range clamped the step; rebuild the ladder on where it actually
+            // landed rather than leave it pointing at a rung outside the range.
+            logarithmicAnchor = value;
+            logarithmicPosition = 0;
+        }
     }
+
+    private void StepUp() => Step(1);
+
+    private void StepDown() => Step(-1);
 
     private void LayoutEditor()
     {

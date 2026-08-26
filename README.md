@@ -285,24 +285,29 @@ the output turned down and verify the signal path before measuring.
 If you are starting from zero, this is the minimal hardware path — roughly
 €100–200 total:
 
-- **A USB audio interface with at least two inputs** (any entry-level
-  two-channel interface with phantom power works). Two inputs matter because
-  every measurement records a **loopback reference** alongside the microphone —
-  that is what makes the timing analysis absolute. Community-verified so far:
-  **Focusrite Scarlett Solo** (the developer's own rig).
+- **A USB audio interface that can capture two channels at once** (any
+  entry-level two-channel interface with phantom power works). The second
+  channel matters because every measurement records a **loopback reference**
+  alongside the microphone — that is what makes the timing analysis absolute.
+  Many interfaces provide that loopback internally, as extra input channels the
+  driver exposes; on one that does not, a spare physical input serves instead.
+  Community-verified so far: **Focusrite Scarlett Solo 4th Gen** (the developer's
+  own rig), whose loopback is internal.
 - **An analog measurement microphone** (an inexpensive electret measurement mic
   with an individual calibration file is ideal). A USB measurement mic such as
   the UMIK-1 will **not** work — see the [FAQ](#faq) for why.
-- **Two cables**: one to feed the system under test from the interface's
-  output 1, and one short cable from output 2 straight back into input 2 —
-  that is the loopback.
+- **One cable**, to feed the system under test from an interface output — plus a
+  second short one only if your interface has no internal loopback, run from
+  another output straight back into a spare input.
 
 Then, in about ten minutes, take one measurement and convince yourself the rig
 works:
 
-1. Wire it up: mic → input 1, output 2 → input 2 (loopback), output 1 → the
-   system's input (in a car: the DSP's aux/optical input, with only the driver
-   under test unmuted).
+1. Wire it up: microphone → the mic input, and one output → the system's input
+   (in a car: the DSP's aux/optical input, with only the driver under test
+   unmuted). The loopback is a channel selection rather than a cable where the
+   interface provides it internally; otherwise run a second output back into a
+   spare input.
 2. Start Resonalyze, open the measurement settings, select the interface, and
    assign the **input** and **loopback** channels. The measurement will not start
    without a loopback — that is by design. Set **Measurements** to at least `4`:

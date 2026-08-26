@@ -36,8 +36,9 @@ your taste. It removes the repetitive part of tuning, not the judgment.
 > *Eifersucht* was I able to hear the overlays of Till's voice, which I had previously
 > only heard through headphones.
 
-**Why not just REW?** REW's alignment tool aligns a pair of drivers with a crossover,
-delay, and polarity and shows the sum. Resonalyze works on the whole system at once,
+**Why not just REW?** REW's alignment tool takes a pair of already-filtered
+measurements, offers gain, delay and polarity, and shows the predicted sum.
+Resonalyze works on the whole system at once,
 searches crossover frequencies, slopes, and filter families instead of asking you to
 pick them, decides delay and polarity per junction with a confidence report, and
 exports PEQ already restated in your processor's Q convention. The equalizer is also

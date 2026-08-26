@@ -201,8 +201,14 @@ microphone and loopback channel selection as MME.
 The microphone input is the primary measurement channel, and a loopback reference
 channel is **required** for every measurement. Both are recorded simultaneously
 and the main impulse response is derived as a transfer function from the loopback
-reference to the microphone response, which removes the playback path (DAC,
-amplifier, output routing) from the analysis. All IR-based views come from this
+reference to the microphone response, which divides out the excitation signal
+itself and makes the timing absolute rather than relative to an arbitrary
+trigger. What it does **not** do is remove whatever sits downstream of the point
+the reference is tapped: an interface's internal loopback taps before the
+converter, so the DAC, the amplifier, the cabling and the loudspeaker all stay in
+the measured response — which is the point, since they are the thing under test.
+A physical output-to-input loop carries the DAC and a converter pair into the
+reference as well, and those do divide out. All IR-based views come from this
 transfer IR; harmonic distortion, THD and THD+N use the ordinary
 sweep-deconvolution response instead, drawing HD2–HD4 at the **excitation**
 frequency (a second-harmonic hump from a 1 kHz drive appears at 1 kHz, not at

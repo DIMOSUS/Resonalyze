@@ -310,6 +310,47 @@ public static class AutoAlignmentEngine
     /// </summary>
     private const double PhatSeedMinRivalDominance = 0.05;
 
+    /// <summary>
+    /// The direct-cut seed witness runs at junctions this high. The full-record
+    /// PHAT correlates everything the record holds, and at a mid/tweeter junction
+    /// most of that is the cabin: across the archived cabins its dominant extremum
+    /// sat 3.4-4.7 periods from the owner's hand tune in HALF of the 1.3-2.9 kHz
+    /// junction cells — while passing every trust gate above (r, dominance, reach),
+    /// so the gates cannot catch it. The same PHAT on the direct-sound cuts
+    /// (<see cref="VirtualCrossoverAnalysis.CutDirectSoundPair"/>: 1-2 periods
+    /// behind each front — the drivers, not the room) read r 0.58-0.96 with zero
+    /// catastrophic misses on the same cells, reproduced two owner tunes to 6 us
+    /// on the junction that exposed this, and held its position to ~10 us across
+    /// record rates. Below ~1 kHz the cut does not isolate a wavefront (the same
+    /// physics as <see cref="DirectCoherenceMinCrossoverHz"/>) and the witness
+    /// stays out — the sub/bass junctions belong to the arrival envelope and the
+    /// modal-latch machinery, which the same bench measured as the better seeds
+    /// there.
+    /// </summary>
+    private const double DirectSeedMinCrossoverHz = 1000;
+
+    /// <summary>
+    /// The minimum |r| of the direct-cut extremum for the witness to speak at all.
+    /// Far above <see cref="PhatSeedMinCoefficient"/> deliberately: the cuts hold a
+    /// couple of periods of wavefront, so an honest pair correlates strongly there
+    /// (0.58 was the weakest field value) and a middling coefficient means the cut
+    /// caught reflections after all.
+    /// </summary>
+    private const double DirectSeedMinCoefficient = 0.5;
+
+    /// <summary>
+    /// When the trusted full-record extremum and the direct-cut extremum disagree
+    /// by more than half a period, the seed goes to whichever position carries the
+    /// higher JOINT support — the smaller of the two surfaces' |r| within a quarter
+    /// period — by at least this margin; otherwise the full-record extremum stands
+    /// (the least change). Field calibration: the four contested cells split 0.24
+    /// vs 0.02, 0.32 vs 0.02, 0.28 vs 0.20 and 0.13 vs 0.02 toward the owner's
+    /// lobe, while the one cell where the full extremum was right read 0.51 vs
+    /// 0.35 the other way — and the near-ties (0.03, 0.05) sat within one lobe
+    /// pair, where either pick's stage-2 window covers the truth.
+    /// </summary>
+    private const double DirectSeedJointTieMarginR = 0.05;
+
     // The sub-precedence margin: at a junction with the shared mono sub, a
     // near-tie between the comb lobe that leaves the sub TRAILING the stack and
     // the one that leaves it LEADING is not acoustically resolvable, but it is
@@ -1509,28 +1550,183 @@ public static class AutoAlignmentEngine
             }
             string? distrust = Distrust();
             bool trustPhat = distrust == null;
-            double increment =
-                trustPhat ? -seed.DelayMs : upperArrival - lowerArrival;
+
+            // The direct-cut witness (see DirectSeedMinCrossoverHz): the same
+            // whitened correlation on the two channels' direct-sound cuts, so the
+            // reflections that grow the full record's phantom lobes never enter
+            // it. It is subject to its own gates — an edge-pinned cut, a weak
+            // coefficient (the cuts caught reflections after all) or a position
+            // past the arrival's reach silence it, and the full-record path then
+            // behaves exactly as before this witness existed.
+            CorrelationAlignmentResult? directPhat = null;
+            CorrelationDelayCandidate? directSeed = null;
+            Complex[] lowerDirectCut = [];
+            Complex[] upperDirectCut = [];
+            if (pair.CrossoverHz >= DirectSeedMinCrossoverHz)
+            {
+                (lowerDirectCut, upperDirectCut) =
+                    VirtualCrossoverAnalysis.CutDirectSoundPair(
+                        pair.Lower.ImpulseResponse,
+                        pair.Upper.ImpulseResponse,
+                        pair.Lower.Channel.SampleRate,
+                        pair.BandLowHz,
+                        pair.BandHighHz,
+                        pair.CrossoverHz,
+                        SeedCorrelationRangeMs(pair.CrossoverHz),
+                        pair.Lower.ValidRange,
+                        pair.Upper.ValidRange);
+                directPhat = VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                    lowerDirectCut,
+                    upperDirectCut,
+                    pair.Lower.Channel.SampleRate,
+                    pair.CrossoverHz,
+                    passOctaves,
+                    SeedCorrelationRangeMs(pair.CrossoverHz),
+                    centerLagMs,
+                    phaseTransform: true);
+                CorrelationDelayCandidate directBest = directPhat.BestByMagnitude;
+                CorrelationDelayCandidate? directRival = directBest.InvertPolarity
+                    ? directPhat.NegativeRival
+                    : directPhat.PositiveRival;
+                // The same-sign rival gate matters here as much as on the full
+                // record: a cut holding a genuinely periodic front (an echo one
+                // period out at near-equal strength) ties its own lobes, and a
+                // witness deciding that by half a percent of r would hand the
+                // timeline a coin flip. Field margins of honest direct seeds
+                // run 0.10-0.47.
+                if (!directPhat.PositivePeak.EdgePinned &&
+                    !directPhat.NegativeTrough.EdgePinned &&
+                    Math.Abs(directBest.Coefficient) >= DirectSeedMinCoefficient &&
+                    (directRival == null ||
+                        Math.Abs(directBest.Coefficient) -
+                            Math.Abs(directRival.Coefficient) >=
+                        PhatSeedMinRivalDominance) &&
+                    Math.Abs(directBest.DelayMs - centerLagMs) <
+                        SeedReachMs(pair.CrossoverHz))
+                {
+                    directSeed = directBest;
+                }
+            }
+
+            // A trusted seed fixes WHERE the pair of adjacent lobes sits, not
+            // WHICH of them is right: the peak-vs-trough margin is a statement
+            // about the band's width, so the polarity partner a half period away
+            // is still a live candidate and the loss search is what settles it
+            // (see PhatSeedMinRivalDominance). That only holds if the fine
+            // window can reach the partner, and the fixed ±2.5 ms cap cannot
+            // below ~200 Hz: measured across the archived cabins, 10 of 13
+            // junctions under 400 Hz put their partner OUTSIDE it (7.57 ms out
+            // at 60 Hz, 3.18 at 150 against a 2.5 ms reach). So every
+            // non-arrival seed records how far its partner actually sits,
+            // measured on the SURFACE that produced the seed.
+            // A local alias: an out parameter cannot be captured by a local
+            // function, and the dictionary instance is what matters.
+            Dictionary<AlignmentJunction, double> partnerReachByPair =
+                seedPartnerDistanceMs;
+            void RecordPartnerReach(CorrelationAlignmentResult source)
+            {
+                if (LobeBoundaryMs(source) is > 0 and { } halfSpacingMs)
+                {
+                    partnerReachByPair[pair] = 2.0 * halfSpacingMs;
+                }
+            }
+
+            double halfPeriodAtFcMs = 500.0 / pair.CrossoverHz;
+            double increment;
+            string seedSource;
+            bool arrivalSeeded = false;
+            if (directSeed is { } adjudicated && trustPhat &&
+                Math.Abs(adjudicated.DelayMs - seed.DelayMs) > halfPeriodAtFcMs)
+            {
+                // Two trusted extrema on different lobes: adjudicate by JOINT
+                // support — the smaller of what the two surfaces read within a
+                // quarter period of each candidate. A phantom lobe is strong on
+                // the surface that manufactured it and near-zero on the other
+                // (0.02 against 0.20+ in every catastrophic field cell), while
+                // the true lobe carries both drivers' wavefronts and so shows on
+                // both. See DirectSeedJointTieMarginR for the calibration.
+                List<SignalPoint> fullCurve =
+                    VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                        pair.Lower.ImpulseResponse,
+                        pair.Upper.ImpulseResponse,
+                        pair.Lower.Channel.SampleRate,
+                        pair.CrossoverHz,
+                        passOctaves,
+                        SeedCorrelationRangeMs(pair.CrossoverHz),
+                        centerLagMs,
+                        phaseTransform: true);
+                List<SignalPoint> directCurve =
+                    VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                        lowerDirectCut,
+                        upperDirectCut,
+                        pair.Lower.Channel.SampleRate,
+                        pair.CrossoverHz,
+                        passOctaves,
+                        SeedCorrelationRangeMs(pair.CrossoverHz),
+                        centerLagMs,
+                        phaseTransform: true);
+                double SupportNear(List<SignalPoint> curve, double positionMs)
+                {
+                    double best = 0;
+                    foreach (SignalPoint point in curve)
+                    {
+                        if (Math.Abs(point.X - positionMs) <= halfPeriodAtFcMs / 2.0)
+                        {
+                            best = Math.Max(best, Math.Abs(point.Y));
+                        }
+                    }
+
+                    return best;
+                }
+                double fullJoint = Math.Min(
+                    SupportNear(fullCurve, seed.DelayMs),
+                    SupportNear(directCurve, seed.DelayMs));
+                double directJoint = Math.Min(
+                    SupportNear(fullCurve, adjudicated.DelayMs),
+                    SupportNear(directCurve, adjudicated.DelayMs));
+                if (directJoint > fullJoint + DirectSeedJointTieMarginR)
+                {
+                    increment = -adjudicated.DelayMs;
+                    seedSource = FormattableString.Invariant(
+                        $"direct-cut over phat (joint {directJoint:0.00} vs {fullJoint:0.00})");
+                    RecordPartnerReach(directPhat!);
+                }
+                else
+                {
+                    increment = -seed.DelayMs;
+                    seedSource = FormattableString.Invariant(
+                        $"phat (joint {fullJoint:0.00} vs direct {directJoint:0.00})");
+                    RecordPartnerReach(phat);
+                }
+            }
+            else if (trustPhat)
+            {
+                increment = -seed.DelayMs;
+                seedSource = directSeed != null ? "phat (direct-cut concurs)" : "phat";
+                RecordPartnerReach(phat);
+            }
+            else if (directSeed is { } rescue)
+            {
+                // The full-record extremum failed its own gates; before this
+                // witness the arrival envelope seeded here, and at these
+                // junctions it sat 0.6-1.2 periods off the owner's tunes in
+                // most field cells — recoverable only by luck of the onset
+                // lock. The direct front is the honest read.
+                increment = -rescue.DelayMs;
+                seedSource = FormattableString.Invariant(
+                    $"direct-cut (phat: {distrust})");
+                RecordPartnerReach(directPhat!);
+            }
+            else
+            {
+                increment = upperArrival - lowerArrival;
+                seedSource = FormattableString.Invariant($"arrival ({distrust})");
+                arrivalSeeded = true;
+            }
             timeline[pair.Upper.Channel] = timeline[pair.Lower.Channel] + increment;
-            if (!trustPhat)
+            if (arrivalSeeded)
             {
                 untrustedSeedJunctions.Add(pair);
-            }
-            else if (LobeBoundaryMs(phat) is > 0 and { } halfSpacingMs)
-            {
-                // A trusted seed fixes WHERE the pair of adjacent lobes sits,
-                // not WHICH of them is right: the peak-vs-trough margin is a
-                // statement about the band's width, so the polarity partner a
-                // half period away is still a live candidate and the loss
-                // search is what settles it (see PhatSeedMinRivalDominance).
-                // That only holds if the fine window can reach the partner, and
-                // the fixed ±2.5 ms cap cannot below ~200 Hz: measured across
-                // the archived cabins, 10 of 13 junctions under 400 Hz put
-                // their partner OUTSIDE it (7.57 ms out at 60 Hz, 3.18 at 150
-                // against a 2.5 ms reach). So a trusted junction records how
-                // far its partner actually sits and the fine window grows to
-                // cover it.
-                seedPartnerDistanceMs[pair] = 2.0 * halfSpacingMs;
             }
 
             // Full-band processed-IR peak times, a detector-independent arrival
@@ -1552,8 +1748,13 @@ public static class AutoAlignmentEngine
                 $"diff {upperArrival - lowerArrival:+0.000;-0.000} ms, " +
                 $"phat {seedLabel} {seed.DelayMs:+0.000;-0.000} ms " +
                 $"(r {seed.Coefficient:+0.000;-0.000}, " +
-                $"dom {phat.Confidence:0.000}) -> seed " +
-                $"{(trustPhat ? "phat" : $"arrival ({distrust})")}");
+                $"dom {phat.Confidence:0.000})" +
+                (directPhat is { } directForLog
+                    ? $", direct-cut {directForLog.BestByMagnitude.DelayMs:+0.000;-0.000} ms " +
+                      $"(r {directForLog.BestByMagnitude.Coefficient:+0.000;-0.000}" +
+                      $"{(directSeed == null ? ", unusable" : "")})"
+                    : "") +
+                $" -> seed {seedSource}");
         }
 
         return timeline;
@@ -3304,6 +3505,11 @@ public static class AutoAlignmentEngine
         // vote on the mono channel at all.
         ComoveMonoChannels(plan, reprocess, alignment, log, allChannels, decisions);
 
+        // The far side's own last word: every far channel may leave its scene
+        // position by at most FarSideJunctionPolishMs to buy its own junction
+        // summation back — see the method for why the scene can afford it.
+        PolishFarSideJunctions(plan, rightByBand, reprocess, alignment, log, decisions);
+
         NormalizeAndVerifyFeasibility(allChannels, alignment, log);
 
         // The invariant the user requires of automatic delay: no driver is ever
@@ -3534,6 +3740,20 @@ public static class AutoAlignmentEngine
     // comb lobe off its mid at a high junction.
     private const double PairComoveSearchRangeMs = 1.2;
     private const double PairComoveMinimumGainDb = 0.05;
+
+    // The far-side junction polish (see PolishFarSideJunctions): how far a far
+    // channel may leave the position the scene machinery assigned it, and the
+    // least mean dip-penalized gain that buys a move. The budget is a phase
+    // trim — 0.03 ms is a twentieth of a period at a 1.6 kHz junction and 17°
+    // of phase, an order of magnitude under interaural blur — so the scene
+    // stays perceptually intact while the far side's handovers stop paying
+    // full price for it. The gain threshold sits below the co-move's 0.05 dB
+    // deliberately: a 0.03 ms trim can only ever buy fractions of a dB, and a
+    // threshold sized for half-period moves would leave the stage dead —
+    // measured on the v6 cabin the honest gains ran 0.01-0.03 dB, so even
+    // 0.02 dB refused every one of them.
+    private const double FarSideJunctionPolishMs = 0.03;
+    private const double FarSidePolishMinimumGainDb = 0.01;
 
     // The mono-channel co-move (see ComoveMonoChannels): the search spans a
     // full half period of the mono channel's tightest junction to each side, in
@@ -3955,6 +4175,153 @@ public static class AutoAlignmentEngine
                     $"Co-move {link.Left.Name}+{link.Right.Name}: kept " +
                     $"(best gain {bestScore - baseline:0.00} dB below the " +
                     $"{PairComoveMinimumGainDb:0.00} dB threshold)");
+            }
+        }
+    }
+
+    // The far-side junction polish: the scene machinery pinned every far
+    // channel — the bridge by arithmetic with no search at all, the rest by
+    // scene locks around the cross-side target — and their OWN junction sums
+    // paid for it. With everything settled, each far channel may now leave its
+    // scene position by at most FarSideJunctionPolishMs to buy that summation
+    // back, judged by the mean dip-penalized loss of its own adjacent far-side
+    // junctions. The budget cannot hop a lobe (a twentieth of a period at the
+    // junctions it matters for), cannot smear the image (an order of magnitude
+    // under interaural blur), and is spent per channel from its scene position
+    // — one pass in band order from the bridge down, each channel judged
+    // against neighbors that already carry their own polish. Mono channels are
+    // shared with the reference side and never move here.
+    // Internal so the tests can pin the budget, the threshold and the mono
+    // exclusion directly, the way ComoveMonoChannels is pinned.
+    internal static void PolishFarSideJunctions(
+        StereoAlignmentPlan plan,
+        IReadOnlyList<AlignmentSnapshot> rightByBand,
+        AlignmentReprocessor reprocess,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions)
+    {
+        foreach (AlignmentSnapshot entry in rightByBand
+            .OrderByDescending(item => plan.RightPairs
+                .Where(pair => pair.Lower.Channel == item.Channel ||
+                    pair.Upper.Channel == item.Channel)
+                .Select(pair => pair.CrossoverHz)
+                .DefaultIfEmpty(0)
+                .Max()))
+        {
+            IAlignmentChannel channel = entry.Channel;
+            if (plan.MonoChannels.Contains(channel))
+            {
+                continue;
+            }
+
+            List<AlignmentJunction> adjacent = plan.RightPairs
+                .Where(pair => pair.Lower.Channel == channel ||
+                    pair.Upper.Channel == channel)
+                .ToList();
+            if (adjacent.Count == 0)
+            {
+                continue;
+            }
+
+            AlignmentOverride current = alignment.GetValueOrDefault(channel);
+            IReadOnlyList<AlignmentSnapshot> snapshots = reprocess(alignment);
+            AlignmentSnapshot SnapshotOf(IAlignmentChannel member) =>
+                snapshots.First(item => item.Channel == member);
+
+            var evaluators = new List<VirtualCrossoverAnalysis.SumLossEvaluator>();
+            foreach (AlignmentJunction junction in adjacent)
+            {
+                IAlignmentChannel neighbor = junction.Lower.Channel == channel
+                    ? junction.Upper.Channel
+                    : junction.Lower.Channel;
+                VirtualCrossoverAnalysis.SumLossEvaluator? evaluator =
+                    VirtualCrossoverAnalysis.SumLossEvaluator.Create(
+                        SnapshotOf(channel).ImpulseResponse,
+                        new List<Complex[]>
+                        {
+                            SnapshotOf(neighbor).ImpulseResponse
+                        },
+                        channel.SampleRate,
+                        junction.BandLowHz,
+                        junction.BandHighHz,
+                        levelMatch: true,
+                        requireDelayEvidence: true,
+                        gateAnchorSample: null,
+                        SnapshotOf(channel).ValidRange,
+                        new[] { SnapshotOf(neighbor).ValidRange });
+                if (evaluator != null)
+                {
+                    evaluators.Add(evaluator);
+                }
+            }
+            if (evaluators.Count == 0)
+            {
+                continue;
+            }
+
+            double Score(double deltaMs)
+            {
+                double total = 0;
+                foreach (VirtualCrossoverAnalysis.SumLossEvaluator evaluator
+                    in evaluators)
+                {
+                    (double lossDb, double dipDb) = evaluator.Evaluate(deltaMs);
+                    total += lossDb +
+                        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                        (dipDb - lossDb);
+                }
+
+                return total / evaluators.Count;
+            }
+
+            double baseline = Score(0);
+            double bestDelta = 0;
+            double bestScore = baseline;
+            // The DSP's own 0.01 ms grid: the applied delay is rounded onto it
+            // anyway, so probing between its points would report gains no
+            // realizable delay can collect.
+            for (double delta = -FarSideJunctionPolishMs;
+                delta <= FarSideJunctionPolishMs + 1e-9;
+                delta += 0.01)
+            {
+                if (current.DelayMs + delta < 0)
+                {
+                    // Delays are non-negative and a polish never earns a
+                    // uniform shift of the whole field.
+                    continue;
+                }
+
+                double score = Score(delta);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestDelta = delta;
+                }
+            }
+
+            if (bestDelta != 0 && bestScore > baseline + FarSidePolishMinimumGainDb)
+            {
+                alignment[channel] = current with
+                {
+                    DelayMs = Math.Round(current.DelayMs + bestDelta, 2)
+                };
+                log.AppendLine(
+                    $"Far-side polish {channel.Name}: " +
+                    $"{bestDelta:+0.00;-0.00} ms off the scene position " +
+                    $"(own-junction dip-penalized loss " +
+                    $"{baseline:0.00} -> {bestScore:0.00} dB)");
+                string amendment = FormattableString.Invariant(
+                    $"far-side polish {bestDelta:+0.00;-0.00} ms (scene spent, <= ") +
+                    FormattableString.Invariant($"{FarSideJunctionPolishMs:0.00} ms)");
+                AmendDecision(decisions, channel, amendment);
+            }
+            else
+            {
+                log.AppendLine(
+                    $"Far-side polish {channel.Name}: kept " +
+                    $"(best gain {bestScore - baseline:0.00} dB below the " +
+                    $"{FarSidePolishMinimumGainDb:0.00} dB threshold)");
             }
         }
     }

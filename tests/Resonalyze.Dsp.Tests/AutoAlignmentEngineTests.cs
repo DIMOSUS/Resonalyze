@@ -80,6 +80,37 @@ public sealed class AutoAlignmentEngineTests
         return ir;
     }
 
+    // A genuinely PERIODIC front: three near-equal copies one period apart.
+    // Every correlation witness ties its own same-sign rivals on such a front —
+    // the full-record PHAT and the direct-sound cut alike — so the seed honestly
+    // falls back to the arrival envelope, and the onset lock is the one
+    // authority left that reads something other than a correlation lobe.
+    private static Complex[] PeriodicFront(double periodMs)
+    {
+        var ir = new Complex[IrLength];
+        int period = (int)Math.Round(periodMs / 1000.0 * SampleRate);
+        ir[BasePosition] = 0.995;
+        ir[BasePosition + period] = 1.0;
+        ir[BasePosition + (2 * period)] = 0.995;
+        return ir;
+    }
+
+    // A clean front with one strong LATE reflection — late enough to stay
+    // outside the direct-sound cut. Two channels whose reflections correlate
+    // (the cabin's shared geometry) grow a whitened-correlation lobe at the
+    // REFLECTION pair's lag: a phantom the full-record trust gates cannot see
+    // through, since it is a genuine, dominant, separated extremum.
+    private static Complex[] ReflectedFront(
+        double frontMs, double reflectionAfterMs, double reflectionAmplitude)
+    {
+        var ir = new Complex[IrLength];
+        ir[BasePosition + (int)Math.Round(frontMs / 1000.0 * SampleRate)] = 1.0;
+        ir[BasePosition +
+            (int)Math.Round((frontMs + reflectionAfterMs) / 1000.0 * SampleRate)] =
+            reflectionAmplitude;
+        return ir;
+    }
+
     // A SOFT band-limited front under a strong late resonant build-up BELOW
     // the pair band — the field shape of the modal latch. The front is an
     // impulse smeared by a band-pass (a real driver through its crossover has
@@ -349,9 +380,10 @@ public sealed class AutoAlignmentEngineTests
     [Fact]
     public void Compute_SeedErrorAtASharpJunction_OnsetLockRecoversDirectly()
     {
-        // A 2 kHz junction whose seed is NOT trusted — the tweeter carries a
-        // near-equal copy a full period out, so the whitened correlation's
-        // same-polarity rival ties and the coarse offset falls back to the
+        // A 2 kHz junction whose seed is NOT trusted — the tweeter's front is
+        // genuinely PERIODIC (three near-equal copies one period apart), so
+        // the same-polarity rivals tie on the full-record PHAT and on the
+        // direct-sound cut alike, and the coarse offset falls back to the
         // arrival envelope. That envelope says 1.0 ms while the search-time
         // optimum is +0.4 ms, 1.2 periods off and beyond the fine window
         // around it. Above the lock's frequency gate the broadband onsets of
@@ -359,7 +391,41 @@ public sealed class AutoAlignmentEngineTests
         // optimum is found directly: no edge retry, no promotion, and the
         // chosen delay lands on the front-aligned lobe. (With a TRUSTED seed
         // the lock stands down — it replaces an arrival anchor, and a measured
-        // extremum is the better witness; see Compute_ReportsPerChannelDecisions.)
+        // extremum is the better witness; see Compute_ReportsPerChannelDecisions.
+        // A SINGLE competing copy no longer reaches the lock: the direct-cut
+        // witness resolves it — see
+        // Compute_UntrustedPhatAtAHighJunction_DirectCutWitnessSeeds.)
+        var woofer = new TestChannel("W", DelayedImpulse(1.0));
+        var tweeter = new TestChannel(
+            "T", PeriodicFront(0.5),
+            reprocessIr: DelayedImpulse(0.6));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([woofer, tweeter], [2_000], log, bands: [(700, 5_600)]);
+
+        Assert.InRange(alignment[tweeter].DelayMs, 0.35, 0.45);
+        Assert.Contains("ONSET-LOCKED", log.ToString());
+        Assert.Contains("onset gap after", log.ToString());
+        Assert.Contains("direct-cut", log.ToString());
+        Assert.Contains("unusable", log.ToString());
+        Assert.DoesNotContain(
+            "WARNING: fine result at the search edge", log.ToString());
+        Assert.DoesNotContain("promoted", log.ToString());
+    }
+
+    [Fact]
+    public void Compute_UntrustedPhatAtAHighJunction_DirectCutWitnessSeeds()
+    {
+        // The rescue the direct-cut witness exists for. The tweeter carries a
+        // slightly stronger copy one period behind its front, so the
+        // full-record PHAT's same-polarity rivals tie and its extremum fails
+        // the trust gates. Before the witness this junction fell back to the
+        // arrival envelope; measured across the archived cabins that fallback
+        // sat 0.6-1.2 periods off the owner's tunes at mid/tweeter junctions.
+        // The direct-sound cut tapers the copy against the front and resolves
+        // a usable extremum, which seeds the stage-2 window onto the correct
+        // lobe directly — no onset lock, no recovery machinery.
         var woofer = new TestChannel("W", DelayedImpulse(1.0));
         var tweeter = new TestChannel(
             "T", ImpulseWithEcho(0.0, 0.995, 0.5, 1.0),
@@ -370,11 +436,33 @@ public sealed class AutoAlignmentEngineTests
             Run([woofer, tweeter], [2_000], log, bands: [(700, 5_600)]);
 
         Assert.InRange(alignment[tweeter].DelayMs, 0.35, 0.45);
-        Assert.Contains("ONSET-LOCKED", log.ToString());
-        Assert.Contains("onset gap after", log.ToString());
-        Assert.DoesNotContain(
-            "WARNING: fine result at the search edge", log.ToString());
-        Assert.DoesNotContain("promoted", log.ToString());
+        Assert.Contains("seed direct-cut (phat:", log.ToString());
+        Assert.DoesNotContain("ONSET-LOCKED", log.ToString());
+    }
+
+    [Fact]
+    public void Compute_TrustedPhantomLobe_JointSupportSeedsFromTheDirectCut()
+    {
+        // The catastrophic field shape: both channels carry one strong LATE
+        // reflection off the cabin's shared geometry, and the reflection
+        // pair's whitened-correlation lobe DOMINATES the full record — a
+        // separated, high-r extremum every full-record trust gate accepts,
+        // 2.5 ms (five periods) from the true front alignment. Measured across
+        // the archived cabins this passed the gates with the extremum 3.4-4.7
+        // periods off the owner's tune in half of the mid/tweeter cells. The
+        // direct cuts exclude the reflections, and the JOINT-support
+        // adjudication (see DirectSeedJointTieMarginR) reads the phantom's
+        // absence from the direct surface — near-zero there against real
+        // support at the front lobe — and seeds from the direct cut.
+        var woofer = new TestChannel("W", ReflectedFront(1.0, 3.0, 1.4));
+        var tweeter = new TestChannel("T", ReflectedFront(0.0, 5.5, 1.4));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([woofer, tweeter], [2_000], log, bands: [(700, 5_600)]);
+
+        Assert.InRange(alignment[tweeter].DelayMs, 0.9, 1.1);
+        Assert.Contains("seed direct-cut over phat (joint", log.ToString());
     }
 
     [Fact]

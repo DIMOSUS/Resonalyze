@@ -351,6 +351,41 @@ public static class AutoAlignmentEngine
     /// </summary>
     private const double DirectSeedJointTieMarginR = 0.05;
 
+    /// <summary>
+    /// How far from the arrival estimate the FULL-RECORD extremum may sit, in
+    /// junction periods, while the direct-cut witness offers a usable seed of its
+    /// own. <see cref="SeedReachMs"/>'s fixed 3 ms floor is sized for low
+    /// junctions and amounts to four or five periods at a mid/tweeter split,
+    /// where it therefore vetoes nothing. Field: across the archived cabins the
+    /// full-record extrema that agreed with the owner's tune sit within 1.15
+    /// periods of the arrival, while the phantoms grown by correlated cabin
+    /// reflections sit from 1.66 out (to 3.9) — so a period and a half separates
+    /// them with room on both sides.
+    /// </summary>
+    private const double DirectSeedTrustReachPeriods = 1.5;
+
+    /// <summary>
+    /// How far two corners may sit apart (Hz) and still count as ONE crossover
+    /// for <see cref="FilterPolarityPreferenceDb"/>. A hair of tolerance only —
+    /// the corners come from the same UI fields and are typed, not measured, so
+    /// they either match or the split was deliberately staggered.
+    /// </summary>
+    private const double MatchedSplitToleranceHz = 0.5;
+
+    /// <summary>
+    /// How much better the inverted sum of the two channels' FILTERS must be,
+    /// across the junction band, before the search expects the pair to be
+    /// relatively inverted (see <see cref="ExpectsRelativeInversion"/>). The
+    /// question is not close for the shapes that matter — an odd-order
+    /// Linkwitz-Riley (LR12, LR36) or a Butterworth 12 puts the two filters
+    /// exactly 180° apart at the corner, so one polarity nulls where the other
+    /// sums — and the margin exists only so that a junction whose filters say
+    /// nothing (Butterworth 18's 90°, a channel with no crossover at all, an
+    /// asymmetric pair of corners) keeps the historical in-phase expectation
+    /// rather than flipping on rounding noise.
+    /// </summary>
+    private const double ExpectedInversionMarginDb = 1.0;
+
     // The sub-precedence margin: at a junction with the shared mono sub, a
     // near-tie between the comb lobe that leaves the sub TRAILING the stack and
     // the one that leaves it LEADING is not acoustically resolvable, but it is
@@ -1031,6 +1066,102 @@ public static class AutoAlignmentEngine
     // pairwise differences chain into one relative timeline. Only the
     // differences matter downstream, so the anchor value of the first channel
     // is arbitrary (zero).
+    /// <summary>
+    /// Whether the junction's own FILTERS ask for the two channels to be
+    /// relatively inverted — computed from the crossover settings alone, with no
+    /// measurement involved: the two chains' responses are summed across the
+    /// junction band in both relative polarities, and the inverted sum has to
+    /// win by <see cref="ExpectedInversionMarginDb"/>.
+    /// <para>
+    /// This is the piece the search could not see before. A crossover's summing
+    /// polarity is a property of its order: LR24 and LR48 sum in phase, LR12 and
+    /// LR36 sum INVERTED (their filters sit 180° apart at the corner), Butterworth
+    /// 12 likewise. Where the filters are that explicit, an inverted junction is
+    /// the crossover working as designed, and the invert preference in
+    /// <see cref="AlignmentSelection"/> — written for "a flipped driver is a
+    /// wiring fault worth several dB" — has to defend the OTHER polarity, or it
+    /// spends its 0.5 dB defending the null. Measured on the v6 cabin with the
+    /// mid/tweeter split set to LR36: on the correct alignment the in-phase sum
+    /// runs 4.8-5.8 dB below the inverted one, yet once each polarity is allowed
+    /// its own optimum delay the gap between them is only 0.28-0.49 dB, so the
+    /// undefended margin decided it — one side of the same cabin came out right
+    /// and the other wrong.
+    /// </para>
+    /// <para>
+    /// The gain, delay and polarity of each chain are neutralized first: gain
+    /// would weight one channel's filter over the other's, and delay and polarity
+    /// are exactly what the search is about to decide. What remains is the
+    /// crossover (and any PEQ, which does bend phase and belongs here).
+    /// </para>
+    /// </summary>
+    private static bool ExpectsRelativeInversion(AlignmentJunction pair) =>
+        FilterPolarityPreferenceDb(pair) > ExpectedInversionMarginDb;
+
+    /// <summary>
+    /// <see cref="ExpectsRelativeInversion"/>'s figure: how much better (dB) the
+    /// junction's own two filters sum AT THE CORNER when one channel is inverted.
+    /// Positive means the crossover asks for the flip. NaN — "the filters say
+    /// nothing" — whenever the question is not well posed.
+    /// <para>
+    /// It is well posed only for a MATCHED split: the lower channel's low-pass
+    /// and the upper channel's high-pass sharing family, corner and slope. Then
+    /// the pair is one crossover, its summing polarity is a designed property of
+    /// the order (LR12 and LR36 sum inverted, LR24 and LR48 in phase; Butterworth
+    /// 12 and 36 inverted, 24 and 48 in phase, 18 indifferent at 90°), and it is
+    /// read at the corner where both halves are at −6 dB and the answer is exact.
+    /// </para>
+    /// <para>
+    /// Any other arrangement returns NaN, and deliberately so. A split with two
+    /// different corners or slopes has no single phase relation to state: its
+    /// filters overlap across a region rather than crossing at a point, and its
+    /// best relative delay is not zero — so summing them AS THEY STAND answers a
+    /// question nobody asked. Measured: the v2 cabin's 1500/1900 Hz Butterworth
+    /// 36 split reads "inverted, +1 dB" that way, while the real junction, each
+    /// polarity allowed its own optimum delay, prefers IN PHASE by 3.3 dB at the
+    /// owner's setting. Same for the LR24-against-LR48 splits in the 3RC and
+    /// Passat cabins. Those junctions keep the historical in-phase expectation
+    /// and are decided, as before, by the summation search.
+    /// </para>
+    /// </summary>
+    private static double FilterPolarityPreferenceDb(AlignmentJunction pair)
+    {
+        if (pair.Lower.ProcessingChain?.Crossover is not { } lowerCrossover ||
+            pair.Upper.ProcessingChain?.Crossover is not { } upperCrossover ||
+            lowerCrossover.LowPassEdge is not { } lowPass ||
+            upperCrossover.HighPassEdge is not { } highPass ||
+            lowerCrossover.Kind is not (CrossoverKind.LowPass or CrossoverKind.BandPass) ||
+            upperCrossover.Kind is not (CrossoverKind.HighPass or CrossoverKind.BandPass))
+        {
+            return double.NaN;
+        }
+
+        // One crossover, or two filters that merely meet? Only the first has a
+        // polarity to speak of.
+        if (lowPass.Family != highPass.Family ||
+            lowPass.SlopeDbPerOctave != highPass.SlopeDbPerOctave ||
+            Math.Abs(lowPass.FrequencyHz - highPass.FrequencyHz) >
+                MatchedSplitToleranceHz)
+        {
+            return double.NaN;
+        }
+
+        int rate = pair.Lower.Channel.ProcessorSampleRate;
+        double cornerHz = 0.5 * (lowPass.FrequencyHz + highPass.FrequencyHz);
+        Complex low = CrossoverFilter.Response(
+            new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: lowPass),
+            cornerHz,
+            rate);
+        Complex high = CrossoverFilter.Response(
+            new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: highPass),
+            cornerHz,
+            rate);
+        double same = (low + high).Magnitude;
+        double inverted = (low - high).Magnitude;
+        return same > 0 && inverted > 0
+            ? 20.0 * Math.Log10(inverted / same)
+            : double.NaN;
+    }
+
     private static Dictionary<IAlignmentChannel, double> BuildArrivalTimeline(
         IReadOnlyList<AlignmentSnapshot> byBand,
         IReadOnlyList<AlignmentJunction> pairs,
@@ -1487,6 +1618,13 @@ public static class AutoAlignmentEngine
                 seed.InvertPolarity ? phat.NegativeRival : phat.PositiveRival;
             string seedLabel = seed.InvertPolarity ? "trough" : "peak";
             double seedOffsetMs = seed.DelayMs - centerLagMs;
+            // Declared ahead of the trust gate below, which reads the witness
+            // (a local function cannot capture a variable declared after it).
+            CorrelationAlignmentResult? directPhat = null;
+            CorrelationDelayCandidate? directSeed = null;
+            Complex[] lowerDirectCut = [];
+            Complex[] upperDirectCut = [];
+
             string? Distrust()
             {
                 if (phat.PositivePeak.EdgePinned || phat.NegativeTrough.EdgePinned)
@@ -1540,6 +1678,23 @@ public static class AutoAlignmentEngine
                 // A gate must not be tightened by evidence fifteen times coarser
                 // than the distance it decides.
                 double reachMs = SeedReachMs(pair.CrossoverHz);
+                // Where the DIRECT-CUT witness produced a usable extremum, that
+                // reach is tightened to a period and a half. The fixed 3 ms floor
+                // above is sized for low junctions; at a mid/tweeter split it is
+                // four to five periods, so it admits anything — which is exactly
+                // how the full-record extremum passed every gate while sitting
+                // 1.7-3.9 periods from the arrival on five of the archived
+                // cabins. The honest full-record extrema measured there sit
+                // within 1.15 periods, the phantoms from 1.66 out, so the bound
+                // separates them; and it only applies when there is a measured
+                // direct front to seed from instead, never leaving the junction
+                // with nothing but the envelope.
+                if (directSeed != null)
+                {
+                    reachMs = Math.Min(
+                        reachMs, DirectSeedTrustReachPeriods * 1000.0 / pair.CrossoverHz);
+                }
+
                 // At the boundary itself the two lobes are equidistant, so
                 // the extremum is refused rather than admitted.
                 if (!arrivalReanchored && Math.Abs(seedOffsetMs) >= reachMs)
@@ -1548,9 +1703,6 @@ public static class AutoAlignmentEngine
                 }
                 return null;
             }
-            string? distrust = Distrust();
-            bool trustPhat = distrust == null;
-
             // The direct-cut witness (see DirectSeedMinCrossoverHz): the same
             // whitened correlation on the two channels' direct-sound cuts, so the
             // reflections that grow the full record's phantom lobes never enter
@@ -1558,10 +1710,6 @@ public static class AutoAlignmentEngine
             // coefficient (the cuts caught reflections after all) or a position
             // past the arrival's reach silence it, and the full-record path then
             // behaves exactly as before this witness existed.
-            CorrelationAlignmentResult? directPhat = null;
-            CorrelationDelayCandidate? directSeed = null;
-            Complex[] lowerDirectCut = [];
-            Complex[] upperDirectCut = [];
             if (pair.CrossoverHz >= DirectSeedMinCrossoverHz)
             {
                 (lowerDirectCut, upperDirectCut) =
@@ -1607,6 +1755,9 @@ public static class AutoAlignmentEngine
                     directSeed = directBest;
                 }
             }
+
+            string? distrust = Distrust();
+            bool trustPhat = distrust == null;
 
             // A trusted seed fixes WHERE the pair of adjacent lobes sits, not
             // WHICH of them is right: the peak-vs-trough margin is a statement
@@ -1823,6 +1974,48 @@ public static class AutoAlignmentEngine
         // of the quadratic lobe deterrent: between the two coarse bases when
         // both junctions constrain the channel.
         double anchorMs = priorOverrideMs ?? (primaryBase + secondaryBase) / 2.0;
+
+        // A matched odd-order split (LR12/LR36, Butterworth 12/36) sums to a NULL
+        // at its corner unless one channel is flipped — the crossover is designed
+        // that way, and nothing measured can overrule arithmetic. So the polarity
+        // is settled here, from the settings, and the search below is left to do
+        // only what it is good at: find the delay. Measured on the v6 cabin with
+        // its mid/tweeter split set to LR36, letting the summation decide instead
+        // gave the two sides opposite answers, each on a 0.2-0.5 dB margin — the
+        // in-phase option buys nearly all of the null back by sliding a quarter
+        // period, so the score cannot see what the corner makes obvious.
+        // A caller-supplied polarity (the stereo descent inheriting its
+        // counterpart's) outranks this: there the whole point is that the two
+        // sides of one driver never differ.
+        // ... and only where the search knows WHICH lobe it is on. Under a wide
+        // seed the coarse offset can be half a period out, the window spans
+        // several lobes, and the recovery machinery (the edge retry, the
+        // wide-window promotion) navigates by comparing candidates of both
+        // polarities; removing half of them there does not fix the polarity, it
+        // strands the delay — measured on the v4 cabin's wide-seeded 180 Hz
+        // Butterworth 36 junction, forcing the (correct) flip moved the channel
+        // a whole period off the lobe the free search had found.
+        // ... and only above DirectSeedMinCrossoverHz. Lower down the cabin's
+        // modes, not the crossover, shape the junction band: the sum there is a
+        // room response with a filter in it, the arrivals need the modal-latch
+        // machinery to be read at all, and the archived cabins' two matched
+        // Butterworth 36 splits (70 and 180 Hz) answer the polarity question by
+        // moving up to a period rather than by flipping. Above 1 kHz the
+        // crossover dominates its own band, which is where this rule can be
+        // believed — and where the owner's LR36 test lives.
+        bool expectsInversion = ExpectsRelativeInversion(pair) &&
+            pair.CrossoverHz >= DirectSeedMinCrossoverHz;
+        if (forcedPolarity == null && expectsInversion && !wideSeed &&
+            secondaryNeighbor == null)
+        {
+            forcedPolarity =
+                alignment.GetValueOrDefault(neighborChannel).InvertPolarity ^ true;
+            log.AppendLine(
+                $"  the matched {pair.CrossoverHz:0} Hz split nulls in phase — " +
+                $"{channel.Name} takes the opposite polarity to " +
+                $"{neighborChannel.Name} by construction; the search settles the " +
+                "delay alone");
+        }
 
         // Reprocess so the settled neighbors participate with their new delays
         // and polarities. The searched channel is dropped from the override map
@@ -2086,9 +2279,15 @@ public static class AutoAlignmentEngine
             // the onset line its inverted twin sits on.
             bool neighborInverted =
                 alignment.GetValueOrDefault(neighborChannel).InvertPolarity;
+            // ... and "pure" itself is what the junction's FILTERS ask for: an
+            // odd-order Linkwitz-Riley (LR12, LR36) or a Butterworth 12 sums
+            // INVERTED, so there the preference must defend the flipped pair
+            // instead (see ExpectsRelativeInversion).
+
             AlignmentCandidate? selected = candidates.Count > 0
                 ? AlignmentSelection.Select(candidates, anchorMs,
-                    neighborInverted: neighborInverted)
+                    neighborInverted: neighborInverted,
+                    expectedRelativeInversion: expectsInversion)
                 : null;
             if (selected is { } fineSelected && fineSelected != candidates[0])
             {
@@ -2100,9 +2299,11 @@ public static class AutoAlignmentEngine
                     $"(margin {candidates[0].ScoreDb - fineSelected.ScoreDb:0.00} dB)");
             }
             else if (selected is { } keptPick &&
+                !expectsInversion &&
                 keptPick.InvertPolarity != neighborInverted &&
                 AlignmentSelection.DeclinedInvertRescue(candidates, anchorMs,
-                    neighborInverted: neighborInverted)
+                    neighborInverted: neighborInverted,
+                    expectedRelativeInversion: expectsInversion)
                     is { } rescue)
             {
                 log.AppendLine(
@@ -2143,7 +2344,8 @@ public static class AutoAlignmentEngine
             if (selected == null && wide.Count > 0)
             {
                 selected = AlignmentSelection.Select(wide, anchorMs,
-                    neighborInverted: neighborInverted);
+                    neighborInverted: neighborInverted,
+                    expectedRelativeInversion: expectsInversion);
                 log.AppendLine(
                     $"  fine window empty — adopted {selected.DelayMs:0.000} ms" +
                     $"{(selected.InvertPolarity ? " inv" : "")} from the wide sweep");
@@ -2207,7 +2409,8 @@ public static class AutoAlignmentEngine
                     // the result to a (flip + half-period) impostor that the
                     // invert margin and the arrival tie-break exist to reject.
                     chosen = AlignmentSelection.Select(retried, anchorMs,
-                        neighborInverted: neighborInverted);
+                        neighborInverted: neighborInverted,
+                        expectedRelativeInversion: expectsInversion);
                 }
 
                 log.AppendLine(
@@ -2230,7 +2433,7 @@ public static class AutoAlignmentEngine
                 AlignmentCandidate gated = AlignmentSelection.GateWideSeedLobe(
                     candidates, chosen, AcousticScore, anchorMs,
                     trustedReachMs, WideWindowPromotionMarginDb,
-                    neighborInverted);
+                    neighborInverted, expectsInversion);
                 if (gated != chosen)
                 {
                     log.AppendLine(
@@ -2263,7 +2466,8 @@ public static class AutoAlignmentEngine
             {
                 AlignmentCandidate wideChosen =
                     AlignmentSelection.Select(wide, anchorMs,
-                        neighborInverted: neighborInverted);
+                        neighborInverted: neighborInverted,
+                        expectedRelativeInversion: expectsInversion);
                 // Only a lobe's reach from the arrival pick: past that the "better"
                 // score is a comb alias the summation cannot distinguish, so the
                 // envelope stays authoritative (see PromotionReachPeriods). Inside

@@ -414,6 +414,112 @@ public sealed class AutoAlignmentEngineTests
         Assert.DoesNotContain("promoted", log.ToString());
     }
 
+    [Theory]
+    // A matched odd-order split nulls in phase at its corner, so the pair is
+    // inverted BY CONSTRUCTION and the engine must not leave that to the
+    // summation score (which, once each polarity is allowed its own delay, sees
+    // only fractions of a dB either way).
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 36, true)]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 12, true)]
+    [InlineData(CrossoverFilterFamily.Butterworth, 12, true)]
+    // ... while the even-order ones sum in phase and must stay that way.
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 24, false)]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 48, false)]
+    public void Compute_MatchedSplit_TakesThePolarityItsFiltersAskFor(
+        CrossoverFilterFamily family,
+        int slopeDbPerOctave,
+        bool expectInverted)
+    {
+        var log = new StringBuilder();
+        (Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+            IAlignmentChannel lower,
+            IAlignmentChannel upper) = RunFilteredJunction(
+                family, slopeDbPerOctave, upperCornerHz: 2_000, log: log);
+
+        // The reference channel of a two-channel walk carries no override at
+        // all, which reads as "not inverted" — the same thing the panel applies.
+        Assert.Equal(
+            expectInverted,
+            alignment.GetValueOrDefault(lower).InvertPolarity !=
+                alignment.GetValueOrDefault(upper).InvertPolarity);
+        Assert.Equal(expectInverted, log.ToString().Contains("nulls in phase"));
+    }
+
+    [Fact]
+    public void Compute_StaggeredSplit_LeavesThePolarityToTheSearch()
+    {
+        // Two corners that merely meet (2000 against 2400 Hz) are not one
+        // crossover: they overlap across a region instead of crossing at a
+        // point, and their best relative delay is not zero — so the filters have
+        // no single phase relation to state and the rule must stay out. The
+        // archived cabins' staggered Butterworth 36 and LR24-against-LR48 splits
+        // are exactly this shape, and reading them as "inverted" moved four
+        // channels of the field battery.
+        var log = new StringBuilder();
+        RunFilteredJunction(
+            CrossoverFilterFamily.LinkwitzRiley, 36, upperCornerHz: 2_400, log: log);
+
+        Assert.DoesNotContain("nulls in phase", log.ToString());
+    }
+
+    // A synthetic junction made of FILTERS: one impulse per channel, the lower
+    // through a low-pass and the upper through a high-pass, both arriving
+    // together. The snapshots carry their chains, which is what lets the engine
+    // read the split's designed polarity.
+    private static (Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
+        IAlignmentChannel Lower, IAlignmentChannel Upper) RunFilteredJunction(
+        CrossoverFilterFamily family,
+        int slopeDbPerOctave,
+        double upperCornerHz,
+        StringBuilder log)
+    {
+        const double lowerCornerHz = 2_000;
+        var lowPass = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            LowPassEdge: new CrossoverEdge(family, lowerCornerHz, slopeDbPerOctave)));
+        var highPass = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.HighPass,
+            HighPassEdge: new CrossoverEdge(family, upperCornerHz, slopeDbPerOctave)));
+
+        AlignmentSnapshot lower = PredictableSnapshot("W", UnitImpulse(BasePosition), lowPass);
+        AlignmentSnapshot upper = PredictableSnapshot("T", UnitImpulse(BasePosition), highPass);
+        var junction = new AlignmentJunction(
+            lower, upper, lowerCornerHz, lowerCornerHz / 2, lowerCornerHz * 2);
+
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
+        {
+            AlignmentSnapshot Apply(AlignmentSnapshot snapshot, DspChannelChain chain)
+            {
+                AlignmentOverride over = overrides.GetValueOrDefault(snapshot.Channel);
+                Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
+                    snapshot.BypassedImpulseResponse!,
+                    chain with
+                    {
+                        DelayMs = over.DelayMs,
+                        InvertPolarity = over.InvertPolarity
+                    },
+                    SampleRate,
+                    SampleRate,
+                    out ValidSampleRange range);
+                return new AlignmentSnapshot(
+                    snapshot.Channel,
+                    ir,
+                    VirtualCrossoverAnalysis.FindPeakIndex(ir),
+                    range,
+                    chain,
+                    snapshot.BypassedImpulseResponse);
+            }
+
+            return [Apply(lower, lowPass), Apply(upper, highPass)];
+        }
+
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        AutoAlignmentEngine.Compute(
+            [lower, upper], [junction], Reprocess, alignment, log);
+        return (alignment, lower.Channel, upper.Channel);
+    }
+
     [Fact]
     public void Compute_UntrustedPhatAtAHighJunction_DirectCutWitnessSeeds()
     {
@@ -441,19 +547,19 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
-    public void Compute_TrustedPhantomLobe_JointSupportSeedsFromTheDirectCut()
+    public void Compute_ReflectionPhantomFarFromTheArrival_IsRefusedForTheDirectCut()
     {
         // The catastrophic field shape: both channels carry one strong LATE
-        // reflection off the cabin's shared geometry, and the reflection
-        // pair's whitened-correlation lobe DOMINATES the full record — a
-        // separated, high-r extremum every full-record trust gate accepts,
-        // 2.5 ms (five periods) from the true front alignment. Measured across
-        // the archived cabins this passed the gates with the extremum 3.4-4.7
-        // periods off the owner's tune in half of the mid/tweeter cells. The
-        // direct cuts exclude the reflections, and the JOINT-support
-        // adjudication (see DirectSeedJointTieMarginR) reads the phantom's
-        // absence from the direct surface — near-zero there against real
-        // support at the front lobe — and seeds from the direct cut.
+        // reflection off the cabin's shared geometry, and the reflection pair's
+        // whitened-correlation lobe DOMINATES the full record — a separated,
+        // high-r extremum that r, dominance and the OLD 3 ms reach all accepted,
+        // sitting five periods from the true front alignment. Measured across
+        // the archived cabins this passed every gate with the extremum 3.4-4.7
+        // periods off the owner's tune in half of the mid/tweeter cells; the
+        // honest ones sit within 1.15. With a usable direct-cut witness in hand
+        // the reach tightens to a period and a half, which is what refuses this
+        // one — and the direct front, which never sees the reflections, seeds
+        // instead.
         var woofer = new TestChannel("W", ReflectedFront(1.0, 3.0, 1.4));
         var tweeter = new TestChannel("T", ReflectedFront(0.0, 5.5, 1.4));
         var log = new StringBuilder();
@@ -462,7 +568,8 @@ public sealed class AutoAlignmentEngineTests
             Run([woofer, tweeter], [2_000], log, bands: [(700, 5_600)]);
 
         Assert.InRange(alignment[tweeter].DelayMs, 0.9, 1.1);
-        Assert.Contains("seed direct-cut over phat (joint", log.ToString());
+        Assert.Contains(
+            "seed direct-cut (phat: peak beyond the arrival's reach)", log.ToString());
     }
 
     [Fact]

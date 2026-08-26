@@ -517,6 +517,40 @@ public static class AutoAlignmentEngine
     private const double DirectCoherenceMinAdvantage = 0.05;
 
     /// <summary>
+    /// The second opinion on a mid/tweeter lobe: where the direct-sound
+    /// correlation's advantage is itself slim, the arrival-coherence ladder
+    /// votes, and a decisive vote for the STANDING lobe vetoes the swap.
+    /// <para>
+    /// The two witnesses read different things. The correlation is one
+    /// whitened comb over the pair's whole band, so it carries the polarity,
+    /// but its neighbouring lobes differ by very little; the ladder resolves
+    /// the band into sub-band probes, each re-cutting the direct sound at its
+    /// own scale, so it cannot see polarity at all (see the remarks by
+    /// <see cref="VirtualCrossoverAnalysis.ArrivalCoherencePoint"/>) but it
+    /// can say how many bands actually want the upper channel where a
+    /// candidate puts it. A slim correlation advantage together with a clear
+    /// disagreement across the bands is the one combination where the comb is
+    /// deciding on noise.
+    /// </para>
+    /// <para>
+    /// Only above <see cref="LadderVetoMinCrossoverHz"/>, where the ladder's
+    /// windows are short enough that a band's optimum is its driver's
+    /// wavefront rather than a cabin mode — the ladder's own remarks disclaim
+    /// low junctions for exactly that reason. Only bands the ladder itself
+    /// calls coherent vote, and the vote must carry
+    /// <see cref="LadderVetoMinBandMargin"/> bands: field calibration
+    /// (2026-08-27) has the archive's high junctions splitting 4 bands to 1
+    /// where the veto belongs (v3 L, whose swap the correlation asked for on a
+    /// 0.07 advantage while the summation score reads the two lobes 0.05 dB
+    /// apart) and 3 to 2 where it does not (v6 L, where the correlation is
+    /// decisive at 0.11 and never reaches this gate).
+    /// </para>
+    /// </summary>
+    private const double LadderVetoMaxAdvantage = 0.10;
+    private const double LadderVetoMinCrossoverHz = 1000;
+    private const int LadderVetoMinBandMargin = 2;
+
+    /// <summary>
     /// The minimum envelope peak-to-noise grade (dB) both channels' onset
     /// estimates must carry before the lock trusts them. The spread gate alone
     /// cannot refuse a noise-only record: random crossings can look stable
@@ -2659,7 +2693,68 @@ public static class AutoAlignmentEngine
 
                     double chosenR = CoherenceOf(chosen);
                     double rivalR = CoherenceOf(rival);
-                    if (rivalR >= DirectCoherenceMinR &&
+
+                    // The ladder's veto (see the LadderVeto* constants): a swap
+                    // the comb asks for by a hair, at a junction high enough for
+                    // the sub-band probes to read wavefronts, is refused when the
+                    // coherent bands decisively want the standing lobe instead.
+                    string? ladderVetoDetail = null;
+                    if (rivalR - chosenR < LadderVetoMaxAdvantage &&
+                        pair.CrossoverHz >= LadderVetoMinCrossoverHz)
+                    {
+                        // The ladder reads a pair AT its applied alignment: its
+                        // lag axis spans a few periods around zero, while the
+                        // variable channel here is still un-delayed against a
+                        // neighbor carrying its settled delay. So the variable is
+                        // first slid onto the standing candidate — a whole number
+                        // of samples, whose rounding is a fraction of the quarter
+                        // period the vote asks about — and every lag the ladder
+                        // reports is then a correction to THAT placement.
+                        int slideSamples = (int)Math.Round(
+                            chosen.DelayMs * channel.SampleRate / 1000.0);
+                        double slideMs = slideSamples * 1000.0 / channel.SampleRate;
+                        IReadOnlyList<VirtualCrossoverAnalysis.ArrivalCoherencePoint>
+                            ladder = VirtualCrossoverAnalysis.ArrivalCoherenceLadder(
+                                neighborIrs[0],
+                                SlideBySamples(variableIr, slideSamples),
+                                channel.SampleRate,
+                                bandLowHz,
+                                bandHighHz,
+                                pair.CrossoverHz,
+                                primaryNeighborSnapshot.ValidRange,
+                                SlideBySamples(
+                                    variableSnapshot.ValidRange, slideSamples));
+                        int chosenBands = VirtualCrossoverAnalysis.CountLadderAgreement(
+                            ladder, chosen.DelayMs - slideMs, halfPeriodMs / 2.0,
+                            DirectCoherenceMinR);
+                        int rivalBands = VirtualCrossoverAnalysis.CountLadderAgreement(
+                            ladder, rival.DelayMs - slideMs, halfPeriodMs / 2.0,
+                            DirectCoherenceMinR);
+                        log.AppendLine(
+                            $"  [diag] coherence ladder: {chosen.DelayMs:0.000} ms " +
+                            $"holds {chosenBands} bands, {rival.DelayMs:0.000} ms " +
+                            $"holds {rivalBands}, of " +
+                            $"{ladder.Count(point => point.PeakR >= DirectCoherenceMinR)} " +
+                            $"coherent of {ladder.Count} probed.");
+                        if (chosenBands - rivalBands >= LadderVetoMinBandMargin)
+                        {
+                            ladderVetoDetail = string.Create(
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                $"the coherence ladder holds the lobe " +
+                                $"{chosenBands} bands to {rivalBands}");
+                            log.AppendLine(
+                                $"  direct coherence: the swap to " +
+                                $"{rival.DelayMs:0.000} ms" +
+                                $"{(rival.InvertPolarity ? " inv" : "")} is " +
+                                $"refused — r gains only " +
+                                $"{rivalR - chosenR:0.00}, and the coherence " +
+                                $"ladder wants {chosen.DelayMs:0.000} ms by " +
+                                $"{chosenBands} coherent bands to {rivalBands}.");
+                        }
+                    }
+
+                    if (ladderVetoDetail == null &&
+                        rivalR >= DirectCoherenceMinR &&
                         rivalR >= chosenR + DirectCoherenceMinAdvantage)
                     {
                         log.AppendLine(
@@ -2678,13 +2773,18 @@ public static class AutoAlignmentEngine
                             $"{chosenR:0.00} decided the polarity tie");
                         chosen = rival;
                     }
-                    else if (chosenR > double.NegativeInfinity)
+                    else if (ladderVetoDetail == null &&
+                        chosenR > double.NegativeInfinity)
                     {
                         log.AppendLine(
                             $"  direct coherence: {chosen.DelayMs:0.000} ms" +
                             $" stands (r {chosenR:0.00} vs rival " +
                             $"{rivalR:0.00})");
                     }
+
+                    // A veto is a decision too: the report should say the lobe
+                    // was held by the bands, not leave the swap unexplained.
+                    directCoherenceDetail ??= ladderVetoDetail;
                 }
             }
 
@@ -2923,6 +3023,33 @@ public static class AutoAlignmentEngine
     // way to "advance" a channel that would otherwise need a negative delay.
     // Uniformity is what preserves the alignment, so the scope must cover every
     // channel whose relative timing has already been settled.
+    /// <summary>
+    /// A response slid LATER by a whole number of samples, keeping its length:
+    /// the cheapest honest way to place an un-delayed channel at a candidate's
+    /// timing for a witness that reads a pair at its applied alignment. Whole
+    /// samples only — a fractional shift would need a resampling kernel, and
+    /// the readers that use this ask questions coarser than one sample.
+    /// </summary>
+    private static Complex[] SlideBySamples(Complex[] response, int samples)
+    {
+        if (samples <= 0)
+        {
+            return response;
+        }
+
+        var slid = new Complex[response.Length];
+        int copied = Math.Max(0, response.Length - samples);
+        Array.Copy(response, 0, slid, samples, copied);
+        return slid;
+    }
+
+    /// <summary>The same slide applied to a response's valid range.</summary>
+    private static ValidSampleRange SlideBySamples(
+        ValidSampleRange range, int samples) =>
+        range.IsKnown && samples > 0
+            ? new ValidSampleRange(
+                range.StartSample + samples, range.EndSample + samples)
+            : range;
     private static void ShiftAllExcept(
         IReadOnlyList<AlignmentSnapshot> scope,
         IAlignmentChannel except,

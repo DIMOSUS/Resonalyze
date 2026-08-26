@@ -45,7 +45,7 @@ Key structural points:
 - **`Shell/Form1` is the hub**, split into partial classes by concern (`Form1.Measurement.cs`, `Form1.Plotting.cs`, `Form1.History.cs`, `Form1.Compare.cs`, etc.). The `Mode` enum in `Form1.cs` defines all analysis modes (frequency/phase/group delay/waterfall/burst decay/live spectrum/time alignment/EQ wizard/signal generator/virtual crossover); `ModeSwitching/ModeController` orchestrates tab switches.
 - **`Options/`** holds one settings panel per mode (`FROptions`, `IROpt`, `GDOpt`, ...), docked into the shell via `Shell/DockedModeSettingsHost`.
 - **`Tools/`** contains the larger feature panels: EQ Wizard, Signal Generator, Virtual DSP (`VirtualCrossoverPanel` + project file persistence), and PDF tuning-sheet export (PDFsharp/MigraDoc). `EqWizardPanel` is self-contained: it owns its source, uses a mode-local target curve and persists through `MeasurementSettingsFile.EqWizard`. It picks that source itself — an impulse response (file or history), a captured overlay slot, or a text curve — through `EqWizardSourceResolver`, which reads overlay slot FILES and history snapshots as one-time imports. Keep it that way: the panel must not reach into the live `OverlayCollection` or the current measurement, and an imported curve is a snapshot with no link back to what it came from.
-- **`Plotting/` owns the plot INTERACTION as well as the models.** `PlotInteraction.Enable` installs `PlotGestureController` on every `PlotView` in the app, and that controller is the single place the mouse/keyboard map lives — it is shaped after REW's graph panel (wheel zooms both axes, Shift/Ctrl or the pointer over an axis restricts it, the end of an axis moves one limit, middle-drag is a variable zoom, double click opens `Ui/Dialogs/GraphLimitsDialog`), and the README table under "Graph Zoom and Limits" is the user-facing copy of it. Keep new gestures there rather than on individual views. `PlotViewportMemory` carries a plot's zoom across the constant model rebuilds — the main plot keyed per `Mode`, the two Time Alignment previews one memory each — by asking the axes which ranges a user forced on them (`PlotAxisViewport.CaptureOverrides` resets an axis, reads what the model computes on its own, and puts the override back). Do NOT replace that with a baseline captured when a model is shown: overlays join a plot afterwards — a mode switch restores its slots after `ModeController` has drawn, Show All later still — and on an auto-scaled axis they widen the range through the data, which a baseline comparison reads as a zoom. An axis the user moved is restored; an untouched one is left to the new model, so `RaiseDecibelViewCeiling` and the group-delay auto-fit still work. A setting that changes what an axis MEANS calls `Forget`.
+- **`Plotting/` owns the plot INTERACTION as well as the models.** `PlotInteraction.Enable` installs `PlotGestureController` on every `PlotView` in the app, and that controller is the single place the mouse/keyboard map lives — it is shaped after REW's graph panel (wheel zooms both axes, Shift/Ctrl or the pointer over an axis restricts it, the end of an axis moves one limit, middle-drag is a variable zoom, double click opens `Ui/Dialogs/GraphLimitsDialog`), and the `REFERENCE.md` table under "Graph Zoom and Limits" is the user-facing copy of it. Keep new gestures there rather than on individual views. `PlotViewportMemory` carries a plot's zoom across the constant model rebuilds — the main plot keyed per `Mode`, the two Time Alignment previews one memory each — by asking the axes which ranges a user forced on them (`PlotAxisViewport.CaptureOverrides` resets an axis, reads what the model computes on its own, and puts the override back). Do NOT replace that with a baseline captured when a model is shown: overlays join a plot afterwards — a mode switch restores its slots after `ModeController` has drawn, Show All later still — and on an auto-scaled axis they widen the range through the data, which a baseline comparison reads as a zoom. An axis the user moved is restored; an untouched one is left to the new model, so `RaiseDecibelViewCeiling` and the group-delay auto-fit still work. A setting that changes what an axis MEANS calls `Forget`.
 - **`Overlays/`** manages persistent overlay slots and calculated (math) overlays; **`History/`** persists measurement snapshots with per-entry working state.
 - Update checking uses NetSparkle + `Settings/GitHubReleaseChecker`.
 
@@ -123,15 +123,29 @@ The build treats warnings as errors (`Directory.Build.props`), excluding only th
 
 ## Documentation
 
-`README.md` is the product's only user-facing manual — there is no separate help,
-no wiki, no release notes describing behaviour. A feature that is not there does
-not exist for anyone who did not write it.
+The user-facing documentation is three files, and a change lands in whichever one
+matches the question it answers:
+
+- **`REFERENCE.md`** — every mode, panel, setting and graph gesture, plus the
+  reasoning behind the ones whose behaviour is not obvious (why a window is
+  anchored where it is, why a read-out refuses rather than guesses, what a number
+  was measured against). Nearly every user-visible change belongs here.
+- **`MANUAL.md`** — the car-tuning workflow in order, from measuring drivers to
+  verifying the tune in the car. A change belongs here only when it changes what
+  the tuner should DO, or in what order.
+- **`README.md`** — the introduction: what the program is, what it needs, and how
+  to take a first measurement. Only a change to that story belongs here.
+
+Together they are the product's only user-facing manual — there is no separate
+help, no wiki, no release notes describing behaviour. A feature that is in none
+of them does not exist for anyone who did not write it.
 
 So a change that alters what the user sees or does is **not finished until the
-README says so**, in the same commit. That covers a new control or dialog, a new
-setting or default, a refusal or warning the user can hit, a renamed or removed
-control, and any change to what a curve, axis or read-out means. Purely internal
-work (a refactor, a test, an optimization that no dial exposes) needs nothing.
+documentation says so**, in the same commit. That covers a new control or dialog,
+a new setting or default, a refusal or warning the user can hit, a renamed or
+removed control, and any change to what a curve, axis or read-out means. Purely
+internal work (a refactor, a test, an optimization that no dial exposes) needs
+nothing.
 
 Two failure modes, both seen in this repository:
 
@@ -140,13 +154,15 @@ Two failure modes, both seen in this repository:
   went five commits without a line of README.
 - **Prose that quietly became false.** A retired curve was still listed in the
   Virtual DSP section, and the Live Spectrum scale paragraph described a control
-  that had been replaced. Adding a paragraph is not enough: **grep the README for
-  the terms your change makes obsolete** and fix what you find, because a stale
-  sentence is worse than a missing one — a reader has no way to tell it is wrong.
+  that had been replaced. Adding a paragraph is not enough: **grep all three files
+  for the terms your change makes obsolete** and fix what you find, because a
+  stale sentence is worse than a missing one — a reader has no way to tell it is
+  wrong.
 
-When a change alters a panel the README screenshots, say so in the PR description
-so the owner can re-capture; the images live in `assets/images/` and are not
-generated.
+When a change alters a panel any of them screenshots, say so in the PR
+description so the owner can re-capture. The images live in `assets/images/`
+(README and reference) and `assets/images/manual/` (the manual, whose figures are
+taken from one real tuning session), and none of them are generated by the build.
 
 ## Pull requests
 

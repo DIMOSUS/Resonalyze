@@ -246,6 +246,7 @@
             numericToHz.ForeColor = Color.White;
             numericToHz.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericToHz.Location = new Point(93, 81);
+            numericToHz.LogarithmicFrequencyStep = true;
             numericToHz.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
             numericToHz.Minimum = new decimal(new int[] { 20, 0, 0, 0 });
             numericToHz.MinimumSize = new Size(36, 19);
@@ -265,6 +266,7 @@
             numericFromHz.ForeColor = Color.White;
             numericFromHz.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericFromHz.Location = new Point(93, 56);
+            numericFromHz.LogarithmicFrequencyStep = true;
             numericFromHz.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
             numericFromHz.Minimum = new decimal(new int[] { 20, 0, 0, 0 });
             numericFromHz.MinimumSize = new Size(36, 19);

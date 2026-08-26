@@ -247,6 +247,7 @@ namespace Resonalyze
             numericHighPassHz.ForeColor = Color.White;
             numericHighPassHz.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericHighPassHz.Location = new Point(70, 103);
+            numericHighPassHz.LogarithmicFrequencyStep = true;
             numericHighPassHz.Maximum = new decimal(new int[] { 24000, 0, 0, 0 });
             numericHighPassHz.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
             numericHighPassHz.MinimumSize = new Size(36, 19);
@@ -295,6 +296,7 @@ namespace Resonalyze
             numericLowPassHz.ForeColor = Color.White;
             numericLowPassHz.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericLowPassHz.Location = new Point(70, 129);
+            numericLowPassHz.LogarithmicFrequencyStep = true;
             numericLowPassHz.Maximum = new decimal(new int[] { 24000, 0, 0, 0 });
             numericLowPassHz.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
             numericLowPassHz.MinimumSize = new Size(36, 19);

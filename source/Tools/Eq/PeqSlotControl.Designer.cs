@@ -173,6 +173,7 @@ namespace Resonalyze
             frequencyInput.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             frequencyInput.InlineLabel = "F";
             frequencyInput.Location = new Point(1, 171);
+            frequencyInput.LogarithmicFrequencyStep = true;
             frequencyInput.Margin = new Padding(1);
             frequencyInput.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
             frequencyInput.Minimum = new decimal(new int[] { 10, 0, 0, 0 });

@@ -14,6 +14,14 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     private const int LogicalArrowHalfWidth = 4;
     private const int LogicalArrowHalfHeight = 2;
 
+    // One step of LogarithmicFrequencyStep is this fraction of an octave, which is
+    // what makes it the same distance everywhere on a logarithmic frequency axis.
+    private const int LogarithmicStepsPerOctave = 96;
+
+    // The ratio one such step multiplies (or divides) the value by.
+    private static readonly double LogarithmicStepRatio =
+        Math.Pow(2, 1.0 / LogarithmicStepsPerOctave);
+
     private readonly TextBox editor;
     private decimal minimum;
     private decimal maximum = 100;
@@ -145,6 +153,24 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             increment = value <= 0 ? 1 : value;
         }
     }
+
+    /// <summary>
+    /// Makes one step — spin button, wheel or arrow key — a fixed fraction of an
+    /// octave (a 96th) rather than the fixed <see cref="Increment"/>, so one wheel
+    /// notch covers the same distance wherever it is taken on a logarithmic
+    /// frequency axis. It is meant for fields in Hz, where no absolute step fits
+    /// the whole band: the 10 Hz a crossover corner used to move by is nearly half
+    /// an octave at 30 Hz and a rounding error at 15 kHz. The step comes out at
+    /// 1 Hz at 100 Hz, 7 Hz at 1 kHz and 145 Hz at 20 kHz — rounded to what the
+    /// field can show and never below one unit of it, which is why a whole-Hz field
+    /// under about 69 Hz moves by 1 Hz and so covers more than a 96th of an octave
+    /// there. Off by default, which leaves the control stepping by
+    /// <see cref="Increment"/> as before.
+    /// </summary>
+    [Browsable(true)]
+    [DefaultValue(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
+    public bool LogarithmicFrequencyStep { get; set; }
 
     [Browsable(true)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
@@ -860,8 +886,45 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         Value = defaultValue.Value;
     }
 
+    // One step up from a value: the fixed Increment, or a 96th of an octave scaled
+    // onto the value itself. The way down DIVIDES by the same ratio rather than
+    // subtracting what the way up added, and that is what makes a step up and a step
+    // straight back down land where they started: the rounding a field's resolution
+    // imposes stays inside half a unit, so dividing lands back on the value it came
+    // from instead of on a step re-measured from the new, wider place.
+    private decimal SteppedUp(decimal from)
+    {
+        if (!LogarithmicFrequencyStep)
+        {
+            return from + increment;
+        }
+
+        decimal stepped = RoundToDecimalPlaces((decimal)((double)from * LogarithmicStepRatio));
+        return stepped > from ? stepped : from + SmallestDisplayableStep;
+    }
+
+    private decimal SteppedDown(decimal from)
+    {
+        if (!LogarithmicFrequencyStep)
+        {
+            return from - increment;
+        }
+
+        decimal stepped = RoundToDecimalPlaces((decimal)((double)from / LogarithmicStepRatio));
+        return stepped < from ? stepped : from - SmallestDisplayableStep;
+    }
+
+    // Below about 69 Hz a 96th of an octave is under half a Hz, which a whole-Hz field
+    // rounds away entirely — and a spin button that moves nothing reads as a broken
+    // control, so the smallest change the field can show is the floor: 1, 0.1, 0.01 ...
+    // for its decimal places (the decimal constructor's scale argument is exactly that
+    // power of ten).
+    private decimal SmallestDisplayableStep => new decimal(1, 0, 0, false, (byte)decimalPlaces);
+
     // Commit first: stepping must apply to what the user typed, not overwrite
-    // uncommitted editor text with lastCommitted ± increment. A read-only field
+    // uncommitted editor text with lastCommitted ± the step — which, in logarithmic
+    // mode, is also measured off the committed value, so a typed 5 kHz steps by 5 kHz's
+    // own step and not by that of the value it replaced. A read-only field
     // ignores every step path alike (spin buttons, wheel, arrow keys, reset) — the
     // single choke point that makes ReadOnly a true lock, not just a typing block.
     private void StepUp()
@@ -872,7 +935,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         }
 
         CommitEditorText();
-        Value += increment;
+        Value = SteppedUp(value);
     }
 
     private void StepDown()
@@ -883,7 +946,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         }
 
         CommitEditorText();
-        Value -= increment;
+        Value = SteppedDown(value);
     }
 
     private void LayoutEditor()

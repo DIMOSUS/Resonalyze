@@ -138,6 +138,7 @@ namespace Resonalyze
             minCrossover.Minimum = 20m;
             minCrossover.Maximum = 20000m;
             minCrossover.Increment = 10m;
+            minCrossover.LogarithmicFrequencyStep = true;
             minCrossover.DecimalPlaces = 0;
             minCrossover.MinimumSize = new Size(36, 19);
             minCrossover.Name = "minCrossover";
@@ -161,6 +162,7 @@ namespace Resonalyze
             maxCrossover.Minimum = 20m;
             maxCrossover.Maximum = 20000m;
             maxCrossover.Increment = 100m;
+            maxCrossover.LogarithmicFrequencyStep = true;
             maxCrossover.DecimalPlaces = 0;
             maxCrossover.MinimumSize = new Size(36, 19);
             maxCrossover.Name = "maxCrossover";

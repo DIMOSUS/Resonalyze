@@ -1280,6 +1280,17 @@ overlay that band's contribution as a dashed curve. Each card carries its
 **frequency**, **Q**, and **gain**, and the panel adds a **Target Level**, a
 **Gain** (preamp), a **Bands** count, source **Smoothing**, and **Bypass**.
 
+Every **frequency** field here — a card's own, and the **From** / **To** of the
+fit range — steps logarithmically: one wheel notch, spin-button click or arrow
+key moves it a 96th of an octave, the same distance on the plot's frequency axis
+wherever it is taken. That is 1 Hz around 100 Hz, 7 Hz at 1 kHz and 145 Hz at
+20 kHz, in place of the flat 10 Hz these fields used to move by — which was
+nearly half an octave at 30 Hz and a rounding error at 15 kHz. Below about 69 Hz
+a 96th of an octave is under half a Hz, so the field steps by the 1 Hz it can
+show. Typing a frequency is unaffected, and a step up and straight back down
+always returns to the value it started from. The [Virtual DSP](#virtual-dsp)
+crossover corners and its **Auto crossover** frequency window take the same step.
+
 A band is one of five shapes, picked on the **"+" tile** — each zone adds its
 shape directly — or switched later by right-clicking the band's number: a
 **peaking bell (PK)**; a **high or low shelf (HS / LS)**, whose frequency is
@@ -1601,7 +1612,9 @@ Each channel runs through:
 - **Crossover** — Off, low-pass, high-pass, or band-pass; each edge picks
   **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/36/48 dB/oct),
   **Bessel** (6–48 dB/oct, near-constant group delay), or **Chebyshev**
-  (6–48 dB/oct, with a selectable passband **ripple**) with its own corner.
+  (6–48 dB/oct, with a selectable passband **ripple**) with its own corner, a
+  field that steps by a 96th of an octave per wheel notch the way the
+  [EQ Wizard's frequency fields](#eq-wizard) do.
   A Linkwitz-Riley pair sums flat only when its two halves are in phase:
   LR24 and LR48 are, LR12 and LR36 sit 180° apart, so one of the two
   channels needs **Invert** or the sum nulls at the corner

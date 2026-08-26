@@ -141,6 +141,58 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     }
 
     [Fact]
+    public void AStepTheMaximumCutShort_StillStepsBackToWhereItCameFrom()
+    {
+        // The wizard's From / To fields stop at 20 kHz, where the rung above 19 997 Hz
+        // does not exist. The value has to come back off the limit all the same.
+        using DarkNumericUpDown control = NewWizardRangeControl();
+        control.Value = 19_997;
+
+        PressUp(control);
+        Assert.Equal(20_000m, control.Value);
+
+        PressDown(control);
+        Assert.Equal(19_997m, control.Value);
+    }
+
+    [Fact]
+    public void HeldAgainstTheMaximum_TheWayBackIsStillOneStep()
+    {
+        using DarkNumericUpDown control = NewWizardRangeControl();
+        control.Value = 19_997;
+
+        // Three notches into a limit that only had room for none of them.
+        PressUp(control);
+        PressUp(control);
+        PressUp(control);
+        Assert.Equal(20_000m, control.Value);
+
+        PressDown(control);
+
+        Assert.Equal(19_997m, control.Value);
+    }
+
+    [Fact]
+    public void AStepTheMinimumCutShort_StillStepsBackToWhereItCameFrom()
+    {
+        using var control = new DarkNumericUpDown
+        {
+            DecimalPlaces = 0,
+            Minimum = 1000,
+            Maximum = 20_000,
+            LogarithmicFrequencyStep = true,
+            Value = 1001
+        };
+
+        PressDown(control);
+        Assert.Equal(1000m, control.Value);
+
+        PressUp(control);
+
+        Assert.Equal(1001m, control.Value);
+    }
+
+    [Fact]
     public void TheModeReplacesTheFixedIncrement()
     {
         using DarkNumericUpDown control = NewFrequencyControl();
@@ -245,6 +297,17 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
         // 0.1449 Hz rounds to 0.1 here, where a whole-Hz field has to spend a whole Hz.
         Assert.Equal(20.1m, control.Value);
     }
+
+    // The EQ Wizard's From / To fields, whose 20 kHz ceiling a step can run into.
+    private static DarkNumericUpDown NewWizardRangeControl() => new()
+    {
+        DecimalPlaces = 0,
+        Minimum = 20,
+        Maximum = 20_000,
+        Increment = 10,
+        LogarithmicFrequencyStep = true,
+        Value = 1000
+    };
 
     private static DarkNumericUpDown NewFrequencyControl() => new()
     {

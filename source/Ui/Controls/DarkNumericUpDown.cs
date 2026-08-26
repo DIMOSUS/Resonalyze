@@ -39,6 +39,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     private string inlineLabel = string.Empty;
     private string valueSuffix = string.Empty;
     private decimal logarithmicAnchor;
+    private decimal logarithmicRung;
     private int logarithmicPosition;
 
     public DarkNumericUpDown()
@@ -893,16 +894,19 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     // left. A measured step cannot promise that: the ratio rounds one way going out
     // and another coming back, which sent 347 Hz down to 345 and back up to 348.
     // The ladder is rebuilt wherever the value came from something other than a step —
-    // typed, loaded with a session, fitted by Auto Tune — and a value that is no
-    // longer the rung the last step left on is exactly what says so.
-    private decimal NextRung(int direction)
+    // typed, loaded with a session, fitted by Auto Tune — and a value that is not the
+    // one the last step left behind is exactly what says so. A step the range clamped
+    // counts as a step: the ladder keeps its anchor and the position it climbed to, so
+    // the way back off the limit returns to the value that ran into it.
+    private decimal NextRung(int direction, out int position)
     {
-        if (value != RungValue(logarithmicPosition))
+        if (value != logarithmicRung || logarithmicAnchor <= 0)
         {
             logarithmicAnchor = value;
             logarithmicPosition = 0;
         }
 
+        position = logarithmicPosition;
         if (value <= 0)
         {
             // A logarithmic ladder says nothing about zero or below.
@@ -912,7 +916,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         // Rungs that round onto the value we are already on are stepped over: below
         // about 69 Hz a 96th of an octave is under half a Hz, and a spin button that
         // moves nothing reads as a broken control.
-        int position = logarithmicPosition;
         decimal rung;
         do
         {
@@ -921,7 +924,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         }
         while (direction > 0 ? rung <= value : rung >= value);
 
-        logarithmicPosition = position;
         return rung;
     }
 
@@ -952,17 +954,19 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             return;
         }
 
-        decimal rung = NextRung(direction);
-        Value = rung;
-        if (value != rung)
-        {
-            // The range clamped the step; rebuild the ladder on where it actually
-            // landed rather than leave it pointing at a rung outside the range.
-            logarithmicAnchor = value;
-            logarithmicPosition = 0;
-        }
-    }
+        decimal previous = value;
+        Value = NextRung(direction, out int position);
 
+        // The climb is recorded only when the value actually moved, so a wheel held
+        // against a limit does not wind the position up past the rung that first
+        // reached it — which is the one a step back has to come off.
+        if (value != previous)
+        {
+            logarithmicPosition = position;
+        }
+
+        logarithmicRung = value;
+    }
     private void StepUp() => Step(1);
 
     private void StepDown() => Step(-1);

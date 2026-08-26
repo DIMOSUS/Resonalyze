@@ -281,7 +281,7 @@ public sealed class TransferIrDiagnosticsTests
             raw[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
         }
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            raw, new DspChannelChain(DelayMs: 25), 48_000,
+            raw, new DspChannelChain(DelayMs: 25), 48_000, 48_000,
             out ValidSampleRange validRange);
 
         Assert.Null(TransferIrDiagnostics.EstimateIrStart(raw, 48_000));
@@ -294,7 +294,7 @@ public sealed class TransferIrDiagnosticsTests
         var front = new Complex[8_192];
         front[480] = Complex.One;
         Complex[] frontDelayed = VirtualCrossoverAnalysis.ApplyChain(
-            front, new DspChannelChain(DelayMs: 25), 48_000,
+            front, new DspChannelChain(DelayMs: 25), 48_000, 48_000,
             out ValidSampleRange frontRange);
         IrStartEstimate? plain =
             TransferIrDiagnostics.EstimateIrStart(front, 48_000);

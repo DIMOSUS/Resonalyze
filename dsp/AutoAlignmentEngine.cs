@@ -59,7 +59,19 @@ public sealed record AlignmentDecision(
 public interface IAlignmentChannel
 {
     string Name { get; }
+
+    /// <summary>The MEASUREMENT's rate — the grid every impulse response here lives on.</summary>
     int SampleRate { get; }
+
+    /// <summary>
+    /// The rate the simulated processor runs its filters at, which need not be
+    /// the measurement's (see <see cref="PreparedDspResponse"/>). The engine
+    /// only needs it where it pushes a chain through
+    /// <see cref="VirtualCrossoverAnalysis.ApplyChain(System.Numerics.Complex[], DspChannelChain, int, int)"/>;
+    /// every other read here is of measured content and belongs to
+    /// <see cref="SampleRate"/>.
+    /// </summary>
+    int ProcessorSampleRate { get; }
 }
 
 /// <summary>
@@ -67,7 +79,7 @@ public interface IAlignmentChannel
 /// arrival detection and correlation.
 /// <see cref="ValidRange"/> is where the MEASURED content sits inside the
 /// (delay-shifted, FFT-length-padded) record — the range the
-/// <see cref="VirtualCrossoverAnalysis.ApplyChain(System.Numerics.Complex[], DspChannelChain, int, out ValidSampleRange)"/>
+/// <see cref="VirtualCrossoverAnalysis.ApplyChain(System.Numerics.Complex[], DspChannelChain, int, int, out ValidSampleRange)"/>
 /// overload reports — so envelope/SNR analyses skip both the delay prefix and
 /// the manufactured tail. Empty means unknown: the analyses then fall back to
 /// the padding-signature heuristic.
@@ -577,6 +589,7 @@ public static class AutoAlignmentEngine
         }
 
         int sampleRate = side.Channel.SampleRate;
+        int processorRate = side.Channel.ProcessorSampleRate;
         TimeAlignmentAnalysisResult bare =
             VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                 bypassed, sampleRate, bandLowHz, bandHighHz,
@@ -596,8 +609,8 @@ public static class AutoAlignmentEngine
             ? side.BypassedValidRange.EndSample - side.BypassedValidRange.StartSample
             : bypassed.Length;
         return bare.FirstArrivalDelayMilliseconds +
-            ChainArrivalShiftMs(chain, sampleRate, bandLowHz, bandHighHz,
-                contentLength, side.PeakIndex);
+            ChainArrivalShiftMs(chain, sampleRate, processorRate, bandLowHz,
+                bandHighHz, contentLength, side.PeakIndex);
     }
 
     // How much later the band-limited arrival detector reads a signal once
@@ -610,6 +623,7 @@ public static class AutoAlignmentEngine
     private static double ChainArrivalShiftMs(
         DspChannelChain chain,
         int sampleRate,
+        int processorSampleRate,
         double bandLowHz,
         double bandHighHz,
         int length,
@@ -624,12 +638,13 @@ public static class AutoAlignmentEngine
         // heuristic when not — so the two ends of this subtraction would not be
         // measured alike.
         Complex[] bareResponse = VirtualCrossoverAnalysis.ApplyChain(
-            impulse, DspChannelChain.Identity, sampleRate,
+            impulse, DspChannelChain.Identity, sampleRate, processorSampleRate,
             out ValidSampleRange bareRange);
         Complex[] filteredResponse = VirtualCrossoverAnalysis.ApplyChain(
             impulse,
             chain with { DelayMs = 0, InvertPolarity = false },
             sampleRate,
+            processorSampleRate,
             out ValidSampleRange filteredRange);
         double bare = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
             bareResponse, sampleRate, bandLowHz, bandHighHz, bareRange)

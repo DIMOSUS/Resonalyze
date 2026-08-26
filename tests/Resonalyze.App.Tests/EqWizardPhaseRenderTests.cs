@@ -141,7 +141,7 @@ public sealed class EqWizardPhaseRenderTests
         impulse[ArrivalSample] = 1.0;
 
         Complex[] neighbourResponse = VirtualCrossoverAnalysis.ApplyChain(
-            impulse, neighbourChain, SampleRate);
+            impulse, neighbourChain, SampleRate, SampleRate);
 
         return new EqWizardPhaseRequest(
             impulse,
@@ -157,6 +157,7 @@ public sealed class EqWizardPhaseRenderTests
             ],
             Gate(),
             DetrendMs: 10.0,
+            SampleRate,
             SampleRate);
     }
 

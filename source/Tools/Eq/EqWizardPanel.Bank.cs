@@ -298,7 +298,7 @@ public partial class EqWizardPanel
             Margin = new Padding(1)
         };
         slot.SetGainRange(numericGainMin.Value, numericGainMax.Value);
-        slot.SampleRateHz = EqSampleRate;
+        slot.SampleRateHz = EqProcessorSampleRate;
         // Values first, handlers second: a fresh strip is not an edit of the
         // bank and must not arm the undo timer or redraw the plot three times.
         WriteBand(slot, band);

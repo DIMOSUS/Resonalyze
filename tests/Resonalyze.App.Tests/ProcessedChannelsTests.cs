@@ -107,7 +107,7 @@ public sealed class ProcessedChannelsTests
             noise[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
         }
         Complex[] noisy = VirtualCrossoverAnalysis.ApplyChain(
-            noise, new DspChannelChain(DelayMs: 25), 48_000,
+            noise, new DspChannelChain(DelayMs: 25), 48_000, 48_000,
             out ValidSampleRange noisyRange);
 
         ProcessedChannel Item(Complex[] ir, ValidSampleRange range)

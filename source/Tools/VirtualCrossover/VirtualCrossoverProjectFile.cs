@@ -517,6 +517,26 @@ public sealed class VirtualCrossoverProjectFile
         new VirtualCrossoverChannelPairSettings()
     ];
 
+    // ---------------------------------------------------------- DSP processor
+
+    // The processor this project is designed for, by catalog id (see
+    // DspProcessorCatalog). Additive: a file from before the selector, or one naming a
+    // device this build does not know, opens as Custom and keeps the numbers below —
+    // exactly the simulation that file described.
+    public string? DspProcessorModelId { get; set; }
+
+    // The rate the processor runs its filters at, and the ONLY rate the simulated
+    // biquads are designed for — deliberately independent of the rate the channels
+    // were measured at, so a 48 kHz sound card can carry a 96 kHz processor. Null
+    // means "follow the measurements", the Custom default; a named model ignores it
+    // and answers from the catalog.
+    public int? DspProcessorSampleRateHz { get; set; }
+
+    // How the processor READS the Q of a peaking band. It does not change the
+    // simulation — every band here is an RBJ biquad — only how the numbers are
+    // stated where they leave for the device (the tuning sheets).
+    public PeqQConvention DspProcessorQConvention { get; set; } = PeqQConvention.Rbj;
+
     // The stereo Auto delay scene offset (ms) ON THE WIRE: the magnitude
     // with the steering layout in its SIGN (negative = right-hand drive) —
     // deliberately the exact pre-flag format. A build from before

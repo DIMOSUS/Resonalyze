@@ -385,6 +385,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     channel,
                     channel.TransferImpulseResponse!,
                     channel.SampleRate,
+                    channel.ProcessorSampleRate,
                     channel.Settings.ToChain())).ToList(),
                 log));
         IReadOnlyList<AlignmentSnapshot> initial = reprocessor.Reprocess(
@@ -464,7 +465,8 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 };
             }
 
-            Complex[] response = state.ProcessingSource!.Apply(chain, state.SampleRate);
+            Complex[] response = state.ProcessingSource!.Apply(
+                chain, state.SampleRate, channel.ProcessorSampleRate);
             processed.Add(new ProcessedChannel(
                 channel,
                 response,

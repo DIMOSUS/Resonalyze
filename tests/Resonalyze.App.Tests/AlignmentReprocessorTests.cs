@@ -22,6 +22,7 @@ public sealed class AlignmentReprocessorTests
 
         public string Name { get; }
         public int SampleRate { get; }
+        public int ProcessorSampleRate => SampleRate;
     }
 
     private static Complex[] Impulse(int peak)
@@ -35,7 +36,7 @@ public sealed class AlignmentReprocessorTests
         new(
             channels
                 .Select((channel, i) => new AlignmentReprocessInput(
-                    channel, Impulse(64 + i), 48_000, DspChannelChain.Identity))
+                    channel, Impulse(64 + i), 48_000, 48_000, DspChannelChain.Identity))
                 .ToList(),
             cropLength: 128,
             cropPrePeakSamples: 16);
@@ -115,7 +116,7 @@ public sealed class AlignmentReprocessorTests
         var channel = new FakeChannel("SUB", Rate);
         var reprocessor = new AlignmentReprocessor(
             [new AlignmentReprocessInput(
-                channel, source, Rate, DspChannelChain.Identity)]);
+                channel, source, Rate, Rate, DspChannelChain.Identity)]);
 
         AlignmentSnapshot snapshot = reprocessor.Reprocess(NoOverrides)[0];
 

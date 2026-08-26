@@ -615,7 +615,7 @@ public partial class EqWizardPanel : UserControl
         // is where the strips' corner group-delay readouts learn the current rate.
         foreach (PeqSlotControl slot in peqSlots)
         {
-            slot.SampleRateHz = EqSampleRate;
+            slot.SampleRateHz = EqProcessorSampleRate;
         }
 
         // Every input the Auto Tune fit consumes funnels through here when it
@@ -752,7 +752,7 @@ public partial class EqWizardPanel : UserControl
         foreach (double frequency in EqualizationCurve.LogFrequencyGrid(20, 20_000, 256))
         {
             double gain = DigitalEqualizationResponse.MagnitudeDbAt(
-                eq, frequency, EqSampleRate);
+                eq, frequency, EqProcessorSampleRate);
             peakBoost = Math.Max(peakBoost, gain);
             peakCut = Math.Min(peakCut, gain);
         }
@@ -951,7 +951,7 @@ public partial class EqWizardPanel : UserControl
             BandGainMinDb = (double)numericGainMin.Value,
             BandGainMaxDb = (double)numericGainMax.Value,
             TotalGainMaxDb = cutsOnly ? 0 : double.PositiveInfinity,
-            SampleRateHz = EqSampleRate,
+            SampleRateHz = EqProcessorSampleRate,
             // Cuts-only is the safe default for a car tune: never boost an
             // interference null. Unchecking it allows boosts, still gated to
             // reliable regions (high coherence, not inside a narrow deep null).
@@ -1014,7 +1014,7 @@ public partial class EqWizardPanel : UserControl
                 dialog.FileName,
                 target,
                 curve,
-                EqSampleRate,
+                EqProcessorSampleRate,
                 System.IO.Path.GetFileNameWithoutExtension(dialog.FileName),
                 minHz,
                 maxHz,
@@ -1159,7 +1159,7 @@ public partial class EqWizardPanel : UserControl
             .Select(point => new DataPoint(
                 point.X,
                 DigitalEqualizationResponse.MagnitudeDbAt(
-                    eqWithoutGain, point.X, EqSampleRate)))
+                    eqWithoutGain, point.X, EqProcessorSampleRate)))
             .ToArray();
         AddWizardSeries(
             model,
@@ -1195,7 +1195,7 @@ public partial class EqWizardPanel : UserControl
     {
         BiquadCoefficients[] sections = bands
             .Where(band => !band.IsTransparent)
-            .Select(band => PeqBiquad.Compute(band, EqSampleRate))
+            .Select(band => PeqBiquad.Compute(band, EqProcessorSampleRate))
             .ToArray();
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(
             Math.Max(1, baseline.Points[0].X),
@@ -1209,7 +1209,7 @@ public partial class EqWizardPanel : UserControl
             Complex response = Complex.One;
             foreach (BiquadCoefficients section in sections)
             {
-                response *= BiquadResponse.Evaluate(section, frequency, EqSampleRate);
+                response *= BiquadResponse.Evaluate(section, frequency, EqProcessorSampleRate);
             }
 
             double degrees = response.Phase * (180.0 / Math.PI);
@@ -1262,7 +1262,7 @@ public partial class EqWizardPanel : UserControl
             .Select(point => new DataPoint(
                 point.X,
                 point.Y + DigitalEqualizationResponse.MagnitudeDbAt(
-                    band, point.X, EqSampleRate)))
+                    band, point.X, EqProcessorSampleRate)))
             .ToArray();
         AddWizardSeries(
             model,

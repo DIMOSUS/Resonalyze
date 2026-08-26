@@ -9,14 +9,15 @@ namespace Resonalyze;
 
 /// <summary>
 /// One channel's curve on the DSP-chain plot: its chain (drawn without the bulk
-/// delay, so the filters' own shape stays readable), its sample rate and its
-/// plot color. The panel hands these ready to draw; the presenter owns the
-/// OxyPlot mechanics.
+/// delay, so the filters' own shape stays readable), the rate the PROCESSOR
+/// realizes that chain at — this plot is the filters themselves, so it belongs to
+/// the device rather than to the measurement — and its plot color. The panel hands
+/// these ready to draw; the presenter owns the OxyPlot mechanics.
 /// </summary>
 internal readonly record struct DspChainCurve(
     string Title,
     DspChannelChain Chain,
-    int SampleRate,
+    int ProcessorSampleRate,
     OxyColor Color);
 
 /// <summary>
@@ -640,7 +641,8 @@ internal sealed class VirtualCrossoverDspChainPlot
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 512);
         foreach (DspChainCurve curve in curves)
         {
-            PreparedDspResponse response = PreparedDspResponse.Create(curve.Chain, curve.SampleRate);
+            PreparedDspResponse response =
+                PreparedDspResponse.Create(curve.Chain, curve.ProcessorSampleRate);
             var points = new List<DataPoint>(grid.Count);
             foreach (double frequency in grid)
             {

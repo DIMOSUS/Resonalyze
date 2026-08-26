@@ -6,6 +6,16 @@ namespace Resonalyze.Dsp;
 /// Prepared frequency response of a <see cref="DspChannelChain"/>.
 /// Filter coefficients and scalar gain are built once, then reused for plot
 /// drawing and FFT-bin processing.
+/// <para>
+/// The rate passed here is the PROCESSOR's — the rate the hardware being
+/// simulated runs its biquads at — and it is the only rate the coefficients
+/// know. It is deliberately NOT the measurement's: the bilinear transform
+/// warps every corner by the rate it was designed at, so a chain built at the
+/// measurement rate is a different filter from the one the device realizes
+/// (an LR4 low-pass at 8 kHz designed at 48 kHz sits 1.5 dB below the 96 kHz
+/// one at 10 kHz and 4.1 dB at 12 kHz). <see cref="ApplyToSpectrum"/> takes
+/// the record's own rate separately.
+/// </para>
 /// </summary>
 public sealed class PreparedDspResponse
 {
@@ -13,24 +23,28 @@ public sealed class PreparedDspResponse
 
     private readonly double linearGain;
     private readonly double delayMs;
-    private readonly double delaySamples;
-    private readonly int sampleRate;
+    private readonly double delayProcessorSamples;
+    private readonly int processorRate;
     private readonly BiquadCoefficients[] sections;
 
     private PreparedDspResponse(
         double linearGain,
         double delayMs,
-        double delaySamples,
-        int sampleRate,
+        double delayProcessorSamples,
+        int processorRate,
         BiquadCoefficients[] sections)
     {
         this.linearGain = linearGain;
         this.delayMs = delayMs;
-        this.delaySamples = delaySamples;
-        this.sampleRate = sampleRate;
+        this.delayProcessorSamples = delayProcessorSamples;
+        this.processorRate = processorRate;
         this.sections = sections;
     }
 
+    /// <summary>
+    /// Builds the cascade at <paramref name="sampleRate"/> — the PROCESSOR's
+    /// processing rate, not the measurement's (see the type remarks).
+    /// </summary>
     public static PreparedDspResponse Create(DspChannelChain chain, int sampleRate)
     {
         ArgumentNullException.ThrowIfNull(chain);
@@ -81,9 +95,24 @@ public sealed class PreparedDspResponse
     /// hundreds of milliseconds — far past any fixed pad sized for crossovers.
     /// Clamped to [<paramref name="minSamples"/>, <paramref name="maxSamples"/>];
     /// a numerically unstable section (pole radius ≥ 1) gets the maximum.
+    /// <para>
+    /// The pole radius is a per-sample decay at the PROCESSOR's rate, so the
+    /// count it yields is converted to <paramref name="signalSampleRate"/>
+    /// before it is clamped: the ringing lasts a fixed number of milliseconds,
+    /// and it is the record's own samples that have to hold it.
+    /// </para>
     /// </summary>
-    public int RequiredTailSamples(double targetDecayDb, int minSamples, int maxSamples)
+    public int RequiredTailSamples(
+        double targetDecayDb,
+        int minSamples,
+        int maxSamples,
+        int signalSampleRate)
     {
+        if (signalSampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(signalSampleRate));
+        }
+
         double maxRadius = 0.0;
         foreach (BiquadCoefficients section in sections)
         {
@@ -122,6 +151,7 @@ public sealed class PreparedDspResponse
 
         double required = Math.Log(
             Math.Pow(10.0, -Math.Abs(targetDecayDb) / 20.0)) / Math.Log(maxRadius);
+        required *= (double)signalSampleRate / processorRate;
         return (int)Math.Clamp(Math.Ceiling(required), minSamples, maxSamples);
     }
 
@@ -144,11 +174,11 @@ public sealed class PreparedDspResponse
 
     public Complex Response(double frequencyHz)
     {
-        double radians = -Math.Tau * frequencyHz / sampleRate;
+        double radians = -Math.Tau * frequencyHz / processorRate;
         Complex z1 = UnitPhasor(radians);
         Complex delay = delayMs == 0
             ? Complex.One
-            : UnitPhasor(radians * delaySamples);
+            : UnitPhasor(radians * delayProcessorSamples);
         return Response(z1, delay);
     }
 
@@ -171,59 +201,120 @@ public sealed class PreparedDspResponse
         double samples = 0;
         foreach (BiquadCoefficients section in sections)
         {
-            samples += BiquadResponse.GroupDelaySamples(section, frequencyHz, sampleRate);
+            samples += BiquadResponse.GroupDelaySamples(
+                section, frequencyHz, processorRate);
         }
 
-        return (samples / sampleRate * 1_000.0) + delayMs;
+        return (samples / processorRate * 1_000.0) + delayMs;
     }
 
-    public void ApplyToSpectrum(Complex[] spectrum)
+    /// <summary>
+    /// Multiplies <paramref name="spectrum"/> — the FFT of a record sampled at
+    /// <paramref name="signalSampleRate"/> — by this chain's response, bin by bin
+    /// (conjugate-mirrored, so a real input stays real).
+    /// <para>
+    /// The two rates are independent. Bin <c>i</c> sits at
+    /// <c>i·signalSampleRate/N</c> Hz, which is
+    /// <c>ω = 2π·i·signalSampleRate/(N·processorRate)</c> on the PROCESSOR's unit
+    /// circle — so a 48 kHz measurement reads a 96 kHz chain across the lower half
+    /// of that circle, which is exactly the band a 48 kHz record can carry. This is
+    /// not an approximation: a chain is LTI and invents no frequency its input
+    /// lacks, so what it does to a band-limited record is fully described by H over
+    /// that band. The user's measuring rate and the device's processing rate are
+    /// therefore free to differ, and the simulated filters stay the ones the device
+    /// realizes.
+    /// </para>
+    /// <para>
+    /// Bins past the processor's own Nyquist — a record sampled ABOVE the
+    /// processing rate — are zeroed rather than left to the periodic continuation
+    /// of H, which would filter them with a mirrored response no device produces.
+    /// The processor reconstructs nothing up there, and zeroing is also what makes
+    /// the same setup measured at 96 and at 192 kHz simulate alike.
+    /// </para>
+    /// </summary>
+    public void ApplyToSpectrum(Complex[] spectrum, int signalSampleRate)
     {
-        if (sections.Length == 0)
+        ArgumentNullException.ThrowIfNull(spectrum);
+        if (signalSampleRate <= 0)
         {
-            ApplyGainAndDelayToSpectrum(spectrum);
-            return;
+            throw new ArgumentOutOfRangeException(nameof(signalSampleRate));
         }
 
         int length = spectrum.Length;
         int half = length / 2;
-        Complex zStep = Complex.Exp(new Complex(0, -Math.Tau / length));
-        Complex delayStep = GetDelayStep(length);
-        Complex z1 = Complex.One;
-        Complex delay = Complex.One;
+        // ω per bin on the processor's circle, in units of the record's own bin
+        // spacing: 1 when the rates agree, ½ for a 48 kHz record through a 96 kHz
+        // processor, 2 the other way round.
+        double rateRatio = (double)signalSampleRate / processorRate;
+        // The delay is a time, not a sample count, so it is expressed in the
+        // RECORD's samples — that is the grid the phase ramp runs on.
+        double delaySamples = delayMs * signalSampleRate / 1_000.0;
 
-        spectrum[0] *= Response(z1, delay);
-        for (int i = 1; i < half; i++)
+        if (sections.Length == 0)
         {
-            if (i % PhaseRefreshInterval == 0)
+            ApplyGainAndDelayToSpectrum(spectrum, delaySamples);
+        }
+        else
+        {
+            Complex zStep = Complex.Exp(new Complex(0, -Math.Tau * rateRatio / length));
+            Complex delayStep = GetDelayStep(length, delaySamples);
+            Complex z1 = Complex.One;
+            Complex delay = Complex.One;
+
+            spectrum[0] *= Response(z1, delay);
+            for (int i = 1; i < half; i++)
             {
-                z1 = UnitPhasor(-Math.Tau * i / length);
-                delay = DelayPhasor(i, length);
-            }
-            else
-            {
-                z1 *= zStep;
-                delay *= delayStep;
+                if (i % PhaseRefreshInterval == 0)
+                {
+                    z1 = UnitPhasor(-Math.Tau * i * rateRatio / length);
+                    delay = DelayPhasor(i, length, delaySamples);
+                }
+                else
+                {
+                    z1 *= zStep;
+                    delay *= delayStep;
+                }
+
+                Complex response = Response(z1, delay);
+                spectrum[i] *= response;
+                spectrum[length - i] *= Complex.Conjugate(response);
             }
 
-            Complex response = Response(z1, delay);
-            spectrum[i] *= response;
-            spectrum[length - i] *= Complex.Conjugate(response);
+            z1 = UnitPhasor(-Math.PI * rateRatio);
+            delay = DelayPhasor(half, length, delaySamples);
+            // The record's Nyquist bin has no conjugate partner; a real scale keeps
+            // a real impulse real (the discarded imaginary part is a half-sample
+            // artifact). Below the processor's Nyquist the chain's response there is
+            // genuinely complex, so this drops a fraction of one bin — the record's
+            // top edge, 24 kHz for a 48 kHz measurement.
+            spectrum[half] *= Response(z1, delay).Real;
         }
 
-        z1 = UnitPhasor(-Math.PI);
-        delay = DelayPhasor(half, length);
-        // The Nyquist bin has no conjugate partner; a real scale keeps a real
-        // impulse real (the discarded imaginary part is a half-sample artifact).
-        spectrum[half] *= Response(z1, delay).Real;
+        SilenceAboveProcessorNyquist(spectrum, rateRatio);
     }
 
-    private Complex GetDelayStep(int length) =>
+    // Everything the processor cannot reconstruct. Only a record sampled above the
+    // processing rate has such bins (rateRatio > 1); at or below it the loop does
+    // not run.
+    private static void SilenceAboveProcessorNyquist(
+        Complex[] spectrum,
+        double rateRatio)
+    {
+        int half = spectrum.Length / 2;
+        int lastBin = (int)Math.Floor(half / rateRatio);
+        for (int i = lastBin + 1; i <= half; i++)
+        {
+            spectrum[i] = Complex.Zero;
+            spectrum[spectrum.Length - i] = Complex.Zero;
+        }
+    }
+
+    private Complex GetDelayStep(int length, double delaySamples) =>
         delayMs == 0
             ? Complex.One
             : Complex.Exp(new Complex(0, -Math.Tau * delaySamples / length));
 
-    private Complex DelayPhasor(int bin, int length) =>
+    private Complex DelayPhasor(int bin, int length, double delaySamples) =>
         delayMs == 0
             ? Complex.One
             : UnitPhasor(-Math.Tau * delaySamples * bin / length);
@@ -231,7 +322,7 @@ public sealed class PreparedDspResponse
     private static Complex UnitPhasor(double radians) =>
         Complex.Exp(new Complex(0, radians));
 
-    private void ApplyGainAndDelayToSpectrum(Complex[] spectrum)
+    private void ApplyGainAndDelayToSpectrum(Complex[] spectrum, double delaySamples)
     {
         if (delayMs == 0)
         {
@@ -245,21 +336,21 @@ public sealed class PreparedDspResponse
 
         int length = spectrum.Length;
         int half = length / 2;
-        Complex delayStep = GetDelayStep(length);
+        Complex delayStep = GetDelayStep(length, delaySamples);
         Complex delay = Complex.One;
 
         spectrum[0] *= linearGain;
         for (int i = 1; i < half; i++)
         {
             delay = i % PhaseRefreshInterval == 0
-                ? DelayPhasor(i, length)
+                ? DelayPhasor(i, length, delaySamples)
                 : delay * delayStep;
             Complex response = linearGain * delay;
             spectrum[i] *= response;
             spectrum[length - i] *= Complex.Conjugate(response);
         }
 
-        delay = DelayPhasor(half, length);
+        delay = DelayPhasor(half, length, delaySamples);
         spectrum[half] *= (linearGain * delay).Real;
     }
 

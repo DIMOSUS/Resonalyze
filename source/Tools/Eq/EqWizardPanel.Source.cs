@@ -15,11 +15,11 @@ public partial class EqWizardPanel
 {
     private const int DefaultSampleRateHz = 48_000;
 
-    private static readonly int[] SelectableSampleRatesHz =
-        { 44_100, 48_000, 88_200, 96_000, 176_400, 192_000 };
+    private static readonly IReadOnlyList<int> SelectableSampleRatesHz =
+        DspProcessorCatalog.SelectableSampleRatesHz;
 
-    private static readonly PeqQConvention[] SelectableQConventions =
-        { PeqQConvention.Rbj, PeqQConvention.Symmetric, PeqQConvention.Classic };
+    private static readonly IReadOnlyList<PeqQConvention> SelectableQConventions =
+        DspProcessorCatalog.SelectableQConventions;
 
     private const string NoSourceHint =
         "Load a source to equalize — an impulse response, a moving-mic capture,\n" +
@@ -67,6 +67,10 @@ public partial class EqWizardPanel
     private bool suppressSettingsSave;
     // The rate used when the source does not state one; persisted, unlike the source.
     private int manualSampleRateHz = DefaultSampleRateHz;
+    // The user's OWN convention, kept apart from the one a Virtual DSP handoff forces
+    // on the selector: that one belongs to the project's processor and must not
+    // overwrite what the user picked for their own exports.
+    private PeqQConvention manualQConvention = PeqQConvention.Rbj;
 
     /// <summary>Raised when a persisted setting changes so the host can save.</summary>
     internal event Action? SettingsChanged;
@@ -381,6 +385,7 @@ public partial class EqWizardPanel
             comboBoxSmooth.Enabled = source.SupportsSmoothing;
             PopulateCalibrationCombo();
             RefreshSampleRateCombo();
+            RefreshQConventionCombo();
             InvalidateSourceCurve();
 
             ApplyAxisForSource();
@@ -463,6 +468,7 @@ public partial class EqWizardPanel
             bank,
             source.Measurement!.PeakIndex,
             source.Measurement.SampleRate,
+            EqProcessorSampleRate,
             source.GateSettings!,
             ResolveChosenCalibration(),
             SourceSmoothingInverseOctaves);
@@ -521,7 +527,8 @@ public partial class EqWizardPanel
         List<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
             document,
             source.PreviewChain ?? DspChannelChain.Identity,
-            source.SampleRateHz ?? EqSampleRate,
+            // The chain is realized at the PROCESSOR's rate, not the capture's.
+            EqProcessorSampleRate,
             // Pinned to the panel's, like every other part of a handoff: a bank fitted
             // under one correction and summed under another would break the identity
             // the handoff promises.
@@ -736,7 +743,7 @@ public partial class EqWizardPanel
             points[i] = new DataPoint(
                 point.X,
                 point.Y + DigitalEqualizationResponse.MagnitudeDbAt(
-                    eq, point.X, EqSampleRate));
+                    eq, point.X, EqProcessorSampleRate));
         }
 
         return new EqWizardCurve("Source + EQ", SourcePlusEqColor, 2, LineStyle.Solid, points);
@@ -1154,28 +1161,21 @@ public partial class EqWizardPanel
 
     // --------------------------------------------------------------- sample rate
 
-    // The rate the fitted biquads are realized at, and the one written into an exported
-    // profile. An impulse response OWNS its rate — it is the measurement — so that exact
-    // value is used regardless of what standard rate the (locked) selector rounds to. An
-    // imported curve only suggests a rate: its capture rate need not be the rate of the
-    // DSP the profile is bound for, so the selector wins there.
-    private int EqSampleRate
+    // The rate the fitted biquads are REALIZED at: a property of the processor being
+    // tuned, not of the measurement. The two are independent — a 48 kHz sound card can
+    // measure a system driven by a 96 kHz processor, and the filters must still be the
+    // ones that processor builds (see PreparedDspResponse) — so the selector answers
+    // for every source, and only a handoff that KNOWS the processor overrides it.
+    private int EqProcessorSampleRate
     {
         get
         {
-            // Every measurement-backed source states its own rate exactly, and the
-            // filters are realized at it downstream — the gated preview filters the
-            // IR at the measurement's rate, and Virtual DSP runs the returned bank at
-            // the project's. Letting the combo answer instead would design and export
-            // biquads for one rate while two other places realize them at another.
-            if (loadedSource is
-                {
-                    Kind: EqWizardSourceKind.ImpulseResponse
-                        or EqWizardSourceKind.VirtualDspChannel,
-                    SampleRateHz: int rate
-                })
+            // A Virtual DSP handoff carries the project's processor. The bank returns
+            // to that project and is realized there, so letting the combo disagree
+            // would fit biquads for one rate and run them at another.
+            if (loadedSource?.ProcessorProfile is { } profile)
             {
-                return rate;
+                return profile.SampleRateHz;
             }
 
             return comboBoxSampleRate.SelectedItem is int selected
@@ -1201,6 +1201,7 @@ public partial class EqWizardPanel
             : PeqQConvention.Rbj;
         set
         {
+            manualQConvention = value;
             suppressQConventionEvents = true;
             try
             {
@@ -1212,6 +1213,14 @@ public partial class EqWizardPanel
             }
         }
     }
+
+    /// <summary>
+    /// The convention the USER selected, which is what the application settings
+    /// persist. While a Virtual DSP handoff is loaded the selector shows that
+    /// project's processor instead, and saving THAT would silently retarget every
+    /// later export at a device the user never chose.
+    /// </summary>
+    internal PeqQConvention ManualQConvention => manualQConvention;
 
     private void InitializeQConventionComboBox()
     {
@@ -1234,9 +1243,30 @@ public partial class EqWizardPanel
         {
             if (!suppressQConventionEvents)
             {
+                manualQConvention = TargetDspQConvention;
                 RaiseSettingsChanged();
             }
         };
+    }
+
+    // The convention a Virtual DSP handoff brings is the project processor's, and it
+    // is locked here for the same reason its rate is: the tune belongs to that
+    // project's device, and the place to change the device is that project's DSP
+    // processor dialog. Any other source leaves the selector to the user.
+    private void RefreshQConventionCombo()
+    {
+        PeqQConvention? fromProcessor = loadedSource?.ProcessorProfile?.QConvention;
+        suppressQConventionEvents = true;
+        try
+        {
+            comboBoxQConvention.SelectedItem = fromProcessor ?? manualQConvention;
+        }
+        finally
+        {
+            suppressQConventionEvents = false;
+        }
+
+        comboBoxQConvention.Enabled = fromProcessor == null;
     }
 
     private void InitializeSampleRateComboBox()
@@ -1254,8 +1284,10 @@ public partial class EqWizardPanel
 
     private void RefreshSampleRateCombo()
     {
-        int? sourceRate = loadedSource?.SampleRateHz;
-        int selectRate = sourceRate ?? manualSampleRateHz;
+        // The PROCESSOR's rate, not the measurement's: a handoff states it, and
+        // anything else leaves the user's own pick standing.
+        int selectRate =
+            loadedSource?.ProcessorProfile?.SampleRateHz ?? manualSampleRateHz;
 
         suppressSampleRateEvents = true;
         try
@@ -1266,9 +1298,9 @@ public partial class EqWizardPanel
                 comboBoxSampleRate.Items.Add(rate);
             }
 
-            // A measurement at a non-standard rate joins the list so the selector shows
+            // A processor at a non-standard rate joins the list so the selector shows
             // the true rate rather than the nearest standard one — the tune must be
-            // realized at exactly the rate the source states.
+            // realized at exactly the rate the device runs.
             if (!SelectableSampleRatesHz.Contains(selectRate))
             {
                 comboBoxSampleRate.Items.Add(selectRate);
@@ -1281,14 +1313,12 @@ public partial class EqWizardPanel
             suppressSampleRateEvents = false;
         }
 
-        // A measurement is authoritative, so its rate is shown but locked — an
-        // impulse response and a Virtual DSP channel alike (see EqSampleRate). An
-        // imported curve only suggests one, so it stays editable for a differing DSP.
-        comboBoxSampleRate.Enabled = loadedSource is not
-        {
-            Kind: EqWizardSourceKind.ImpulseResponse
-                or EqWizardSourceKind.VirtualDspChannel
-        };
+        // A Virtual DSP handoff brings the project's processor with it, and the bank
+        // goes back to be realized there — so the rate is shown but locked, and it is
+        // changed where it belongs, in that project's DSP processor dialog. Every other
+        // source leaves it editable: the measurement does not decide which device the
+        // tune is for (see EqProcessorSampleRate).
+        comboBoxSampleRate.Enabled = loadedSource?.ProcessorProfile == null;
     }
 
     private void OnSampleRateChanged()
@@ -1299,7 +1329,8 @@ public partial class EqWizardPanel
         }
 
         // A manual pick is the user's preference and is persisted; it also becomes the
-        // rate used for the current imported curve (an IR ignores it, being locked).
+        // rate the current source's filters are realized at (a handoff ignores it,
+        // being locked to its project's processor).
         if (comboBoxSampleRate.SelectedItem is int rate)
         {
             manualSampleRateHz = rate;
@@ -1361,6 +1392,7 @@ public partial class EqWizardPanel
             ApplyGainRange();
             RefreshCalibrationCombo();
             RefreshSampleRateCombo();
+            RefreshQConventionCombo();
             DrawSelectedCurves();
         }
         finally

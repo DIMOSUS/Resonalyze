@@ -182,6 +182,7 @@ internal static class VirtualDspEqHandoff
         VirtualCrossoverChannel channel,
         bool rightSide,
         bool withChain,
+        DspProcessorProfile processorProfile,
         PhaseAnalysisSettings gateTemplate,
         double? pinnedGateOffsetMs,
         int? renderAnchorIndex,
@@ -198,6 +199,7 @@ internal static class VirtualDspEqHandoff
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(gateTemplate);
+        ArgumentNullException.ThrowIfNull(processorProfile);
 
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
         VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
@@ -208,6 +210,10 @@ internal static class VirtualDspEqHandoff
         }
 
         int sampleRate = state.SampleRate;
+        // The chain is realized at the PROCESSOR's rate, the record stays on the
+        // measurement's — the preview the wizard redraws must run the same pair, which
+        // is why the profile travels with the source.
+        int processorSampleRate = processorProfile.SampleRateHz;
         Complex[] response;
         int anchorIndex;
         double gateOffsetMs;
@@ -224,7 +230,8 @@ internal static class VirtualDspEqHandoff
             // magnitude-transparent but keep the response in the processed view's
             // time, where the pinned offset and the render anchor point.
             DspChannelChain chain = previewChain;
-            response = state.ProcessingSource.Apply(chain, sampleRate);
+            response = state.ProcessingSource.Apply(
+                chain, sampleRate, processorSampleRate);
             anchorIndex = renderAnchorIndex ?? ProcessedChannels.StartAnchorIndex(
                 response,
                 VirtualCrossoverAnalysis.FindPeakIndex(response),
@@ -314,6 +321,7 @@ internal static class VirtualDspEqHandoff
             SpatialAverage = spatialAverage,
             SpatialAverageOffsetDb = spatialAverageOffsetDb,
             SampleRateHz = sampleRate,
+            ProcessorProfile = processorProfile,
             CurveKind = AnalysisCurveKind.Primary
         };
 

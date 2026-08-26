@@ -89,4 +89,26 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
         get => Active.SampleRate;
         set => Active.SampleRate = value;
     }
+
+    /// <summary>
+    /// Answers with the rate the project's DSP processor realizes its filters at. The
+    /// panel installs it when the block is created, so the rate is READ when a
+    /// simulation needs it rather than copied into every channel each time the user
+    /// picks another processor — a copy is what goes stale. Unset (the tests, a block
+    /// outside a panel) falls back to the measurement's own rate, which is what every
+    /// project did before the processor became selectable.
+    /// </summary>
+    public Func<int>? ProcessorSampleRateProvider { get; set; }
+
+    public int ProcessorSampleRate => ProcessorSampleRateFor(ActiveRight);
+
+    /// <summary>
+    /// <see cref="ProcessorSampleRate"/> for one particular side. The processor's rate
+    /// is a project-wide property, so the side only decides the fallback — which
+    /// measurement's rate answers when no panel installed a provider.
+    /// </summary>
+    public int ProcessorSampleRateFor(bool rightSide) =>
+        ProcessorSampleRateProvider?.Invoke() is int rate && rate > 0
+            ? rate
+            : SideState(rightSide).SampleRate;
 }

@@ -111,7 +111,8 @@ internal sealed record EqWizardPhaseRequest(
     IReadOnlyList<EqWizardPhaseNeighbour> Neighbours,
     PhaseAnalysisSettings Gate,
     double DetrendMs,
-    int SampleRate);
+    int SampleRate,
+    int ProcessorSampleRate);
 
 /// <summary>
 /// The EQ Wizard's phase view: the channel being edited, drawn through its chain and
@@ -172,7 +173,8 @@ internal static class EqWizardPhaseRender
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
             request.SourceImpulseResponse,
             request.Chain with { Peq = request.Bank },
-            request.SampleRate);
+            request.SampleRate,
+            request.ProcessorSampleRate);
 
         return GatedPhaseCurves.Read(
             processed,

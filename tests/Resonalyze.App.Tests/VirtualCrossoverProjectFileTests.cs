@@ -700,6 +700,67 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void SaveToAndLoadFrom_CarryTheProcessorTheProjectIsDesignedFor()
+    {
+        // The processor decides the rate every simulated filter is BUILT at, so it is
+        // part of the project rather than of the machine that opens it.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new VirtualCrossoverProjectFile
+            {
+                DspProcessorModelId = "helix-dsp-ultra-s",
+                DspProcessorSampleRateHz = 96_000,
+                DspProcessorQConvention = PeqQConvention.Symmetric
+            };
+            string path = Path.Combine(root, "session.json");
+
+            original.SaveTo(path);
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
+
+            Assert.Equal("helix-dsp-ultra-s", loaded.DspProcessorModelId);
+            Assert.Equal(96_000, loaded.DspProcessorSampleRateHz);
+            Assert.Equal(PeqQConvention.Symmetric, loaded.DspProcessorQConvention);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_AProjectFromBeforeTheProcessorSelector_FollowsItsMeasurements()
+    {
+        // Additive: an existing file names no processor, so it opens as Custom with no
+        // stored rate — which the panel reads as "follow the measurements", the exact
+        // simulation that file described.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(root, "virtual-crossover.json"),
+                """
+                {
+                  "format": "resonalyze-virtual-crossover",
+                  "version": 8,
+                  "pairs": [ { "left": { "displayName": "A" } } ]
+                }
+                """);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Null(loaded.DspProcessorModelId);
+            Assert.Null(loaded.DspProcessorSampleRateHz);
+            Assert.Equal(PeqQConvention.Rbj, loaded.DspProcessorQConvention);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveToAndLoadFrom_CarryTheCalibrationCurveItself()
     {
         // The session states the correction it was tuned with as the CURVE, so a

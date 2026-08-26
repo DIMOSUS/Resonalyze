@@ -44,12 +44,14 @@ public sealed class VirtualDspEqHandoffTests
         Complex[] expected = VirtualCrossoverAnalysis.ApplyChain(
             channel.TransferImpulseResponse!,
             channel.Settings.ToChain() with { Peq = null },
+            SampleRate,
             SampleRate);
         Assert.Equal(expected, request.Source.Measurement!.ImpulseResponse);
 
         Complex[] withPeq = VirtualCrossoverAnalysis.ApplyChain(
             channel.TransferImpulseResponse!,
             channel.Settings.ToChain(),
+            SampleRate,
             SampleRate);
         Assert.NotEqual(withPeq, request.Source.Measurement.ImpulseResponse);
     }
@@ -143,6 +145,7 @@ public sealed class VirtualDspEqHandoffTests
             channel.TransferImpulseResponse!,
             channel.Settings.ToChain() with { Peq = null },
             SampleRate,
+            SampleRate,
             out ValidSampleRange validRange);
         int expectedAnchor = ProcessedChannels.StartAnchorIndex(
             response,
@@ -205,6 +208,7 @@ public sealed class VirtualDspEqHandoffTests
                 VirtualCrossoverAnalysis.ApplyChain(
                     channel.TransferImpulseResponse!,
                     channel.Settings.ToChain() with { Peq = null },
+                    SampleRate,
                     SampleRate),
                 480,
                 SampleRate),
@@ -240,6 +244,7 @@ public sealed class VirtualDspEqHandoffTests
                 bank,
                 request.Source.Measurement!.PeakIndex,
                 SampleRate,
+                SampleRate,
                 request.Source.GateSettings!,
                 Calibration: null,
                 SmoothingInverseOctaves: 0));
@@ -249,6 +254,7 @@ public sealed class VirtualDspEqHandoffTests
                 VirtualCrossoverAnalysis.ApplyChain(
                     channel.TransferImpulseResponse!,
                     channel.Settings.ToChain() with { Peq = bank },
+                    SampleRate,
                     SampleRate),
                 480,
                 SampleRate),
@@ -316,6 +322,7 @@ public sealed class VirtualDspEqHandoffTests
                 VirtualCrossoverAnalysis.ApplyChain(
                     channel.TransferImpulseResponse!,
                     channel.Settings.ToChain() with { Peq = null },
+                    SampleRate,
                     SampleRate),
                 480,
                 SampleRate),
@@ -894,6 +901,7 @@ public sealed class VirtualDspEqHandoffTests
             bank,
             request.Source.Measurement!.PeakIndex,
             SampleRate,
+            SampleRate,
             request.Source.GateSettings!,
             Calibration: null,
             SmoothingInverseOctaves: 0);
@@ -908,11 +916,13 @@ public sealed class VirtualDspEqHandoffTests
         long projectGeneration = 1,
         EqWizardPhaseContext? phaseContext = null,
         LiveCaptureDocument? spatialAverage = null,
-        double spatialAverageOffsetDb = 0) =>
+        double spatialAverageOffsetDb = 0,
+        DspProcessorProfile? processorProfile = null) =>
         VirtualDspEqHandoff.Build(
             channel,
             channel.ActiveRight,
             withChain,
+            processorProfile ?? DspProcessorProfile.Custom(SampleRate, PeqQConvention.Rbj),
             GateTemplate,
             pinnedGateOffsetMs,
             renderAnchorIndex,
@@ -1055,6 +1065,38 @@ public sealed class VirtualDspEqHandoffTests
     // A channel whose left side holds a synthetic measurement: a decaying wavelet
     // arriving at sample 480 (10 ms), through a full DSP chain so every stage has
     // something to prove it travelled — or was left out.
+    [Fact]
+    public void AHandoff_CarriesTheProjectsProcessorAndRealizesTheChainAtItsRate()
+    {
+        // The wizard has to tune for the DEVICE, not for the sound card: the profile
+        // travels so its rate reaches the fit, the previews and the exported profile,
+        // while the measurement keeps stating its own rate for gates and windows.
+        VirtualCrossoverChannel channel = BuildChannel();
+        DspProcessorProfile processor =
+            DspProcessorCatalog.Preset("helix-dsp-ultra-s")!.ToProfile();
+
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, processorProfile: processor);
+
+        Assert.Equal(processor, request.Source.ProcessorProfile);
+        Assert.Equal(96_000, request.Source.ProcessorProfile!.SampleRateHz);
+        // The record is still the measurement's, at its own rate.
+        Assert.Equal(SampleRate, request.Source.SampleRateHz);
+        Assert.Equal(SampleRate, request.Source.Measurement!.SampleRate);
+
+        // And the curve the wizard opens on is the chain realized at the PROCESSOR's
+        // rate — the panel's own arithmetic for that channel.
+        Complex[] expected = VirtualCrossoverAnalysis.ApplyChain(
+            channel.SideState(channel.ActiveRight).ProcessingSource!.CroppedImpulseResponse,
+            request.Source.PreviewChain!,
+            SampleRate,
+            96_000);
+        Complex[] actual = request.Source.Measurement.ImpulseResponse!;
+        Assert.Equal(
+            expected.Take(2_048).Select(value => value.Real),
+            actual.Take(2_048).Select(value => value.Real));
+    }
+
     private static VirtualCrossoverChannel BuildChannel()
     {
         var impulseResponse = new Complex[4_096];

@@ -55,6 +55,7 @@ namespace Resonalyze
             comboBoxSmoothing = new DarkComboBox();
             buttonAutoDelay = new Button();
             buttonAutoSetup = new Button();
+            buttonDspProcessor = new Button();
             buttonCaptureOverlay = new Button();
             buttonExport = new Button();
             buttonPhaseGate = new Button();
@@ -382,7 +383,7 @@ namespace Resonalyze
             buttonAutoDelay.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoDelay.FlatStyle = FlatStyle.Popup;
             buttonAutoDelay.ForeColor = Color.White;
-            buttonAutoDelay.Location = new Point(359, 500);
+            buttonAutoDelay.Location = new Point(359, 530);
             buttonAutoDelay.Name = "buttonAutoDelay";
             buttonAutoDelay.Size = new Size(125, 24);
             buttonAutoDelay.TabIndex = 12;
@@ -394,12 +395,24 @@ namespace Resonalyze
             buttonAutoSetup.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoSetup.FlatStyle = FlatStyle.Popup;
             buttonAutoSetup.ForeColor = Color.White;
-            buttonAutoSetup.Location = new Point(359, 470);
+            buttonAutoSetup.Location = new Point(359, 500);
             buttonAutoSetup.Name = "buttonAutoSetup";
             buttonAutoSetup.Size = new Size(125, 24);
             buttonAutoSetup.TabIndex = 19;
             buttonAutoSetup.Text = "Auto crossover...";
             buttonAutoSetup.UseVisualStyleBackColor = false;
+            // 
+            // buttonDspProcessor
+            // 
+            buttonDspProcessor.BackColor = Color.FromArgb(46, 51, 67);
+            buttonDspProcessor.FlatStyle = FlatStyle.Popup;
+            buttonDspProcessor.ForeColor = Color.White;
+            buttonDspProcessor.Location = new Point(359, 470);
+            buttonDspProcessor.Name = "buttonDspProcessor";
+            buttonDspProcessor.Size = new Size(125, 24);
+            buttonDspProcessor.TabIndex = 20;
+            buttonDspProcessor.Text = "DSP processor...";
+            buttonDspProcessor.UseVisualStyleBackColor = false;
             // 
             // buttonCaptureOverlay
             // 
@@ -625,6 +638,7 @@ namespace Resonalyze
             Controls.Add(comboBoxSmoothing);
             Controls.Add(buttonAutoDelay);
             Controls.Add(buttonAutoSetup);
+            Controls.Add(buttonDspProcessor);
             Controls.Add(buttonCaptureOverlay);
             Controls.Add(buttonExport);
             Controls.Add(buttonPhaseGate);
@@ -684,6 +698,7 @@ namespace Resonalyze
         private DarkComboBox comboBoxSmoothing;
         private Button buttonAutoDelay;
         private Button buttonAutoSetup;
+        private Button buttonDspProcessor;
         private Button buttonCaptureOverlay;
         private Button buttonExport;
         private Button buttonPhaseGate;

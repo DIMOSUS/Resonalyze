@@ -6,14 +6,17 @@ namespace Resonalyze;
 /// <summary>
 /// One channel/side's immutable inputs to an Auto delay run: its identity
 /// (reference equality keys the engine's override maps), the measured IR to
-/// search over, its sample rate and its base DSP chain (gain, crossover, PEQ —
-/// the delay and polarity are supplied per step as overrides). Captured before
-/// the search so the reprocessor reads no live model state while it runs.
+/// search over, its sample rate, the rate the project's processor realizes filters
+/// at, and its base DSP chain (gain, crossover, PEQ — the delay and polarity are
+/// supplied per step as overrides). Captured before the search so the reprocessor
+/// reads no live model state while it runs — the processing rate included, which the
+/// user can change from the panel while a run is in flight.
 /// </summary>
 internal sealed record AlignmentReprocessInput(
     IAlignmentChannel Channel,
     Complex[] MeasuredImpulseResponse,
     int SampleRate,
+    int ProcessorSampleRate,
     DspChannelChain BaseChain);
 
 /// <summary>
@@ -33,6 +36,7 @@ internal sealed class AlignmentReprocessor
     private readonly IReadOnlyList<IAlignmentChannel> channels;
     private readonly Complex[][] croppedImpulseResponses;
     private readonly int[] sampleRates;
+    private readonly int[] processorSampleRates;
     private readonly DspChannelChain[] baseChains;
     private readonly Dictionary<IAlignmentChannel, CacheEntry> cache = new();
     private readonly Complex[]?[] bypassedImpulseResponses;
@@ -101,6 +105,9 @@ internal sealed class AlignmentReprocessor
         ArgumentNullException.ThrowIfNull(inputs);
         channels = inputs.Select(input => input.Channel).ToList();
         sampleRates = inputs.Select(input => input.SampleRate).ToArray();
+        processorSampleRates = inputs
+            .Select(input => input.ProcessorSampleRate)
+            .ToArray();
         baseChains = inputs.Select(input => input.BaseChain).ToArray();
         // One shared crop offset for every channel keeps the inter-channel
         // timing intact; the search only reads the gated direct sound, so the
@@ -122,6 +129,7 @@ internal sealed class AlignmentReprocessor
                 croppedImpulseResponses[i],
                 DspChannelChain.Identity,
                 sampleRates[i],
+                processorSampleRates[i],
                 out ValidSampleRange bypassedRange);
             bypassedValidRanges[i] = bypassedRange;
         });
@@ -170,7 +178,7 @@ internal sealed class AlignmentReprocessor
         {
             Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
                 croppedImpulseResponses[i], chains[i], sampleRates[i],
-                out ValidSampleRange validRange);
+                processorSampleRates[i], out ValidSampleRange validRange);
             results[i] = new CacheEntry(
                 keys[i], result, VirtualCrossoverAnalysis.FindPeakIndex(result),
                 validRange);

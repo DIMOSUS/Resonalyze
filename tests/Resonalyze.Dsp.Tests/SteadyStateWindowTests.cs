@@ -507,7 +507,7 @@ public sealed class SteadyStateWindowTests
         PhaseAnalysisSettings gate) =>
         DataHelper.GetGatedPrimarySpectrum(
             new WindowMeasurement(
-                VirtualCrossoverAnalysis.ApplyChain(impulse, chain, sampleRate),
+                VirtualCrossoverAnalysis.ApplyChain(impulse, chain, sampleRate, sampleRate),
                 peak,
                 sampleRate),
             gate,
@@ -571,7 +571,7 @@ public sealed class SteadyStateWindowTests
             SmoothingInverseOctaves: 0.0);
 
         Complex[] filtered = VirtualCrossoverAnalysis.ApplyChain(
-            impulse, new DspChannelChain(Peq: bank), sampleRate);
+            impulse, new DspChannelChain(Peq: bank), sampleRate, sampleRate);
         AnalysisCurve flat = DataHelper.GetGatedPrimarySpectrum(
             new WindowMeasurement(impulse, peak, sampleRate), gate, null, 0);
         AnalysisCurve corrected = DataHelper.GetGatedPrimarySpectrum(

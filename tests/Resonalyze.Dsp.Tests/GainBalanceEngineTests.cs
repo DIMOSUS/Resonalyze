@@ -20,6 +20,7 @@ public sealed class GainBalanceEngineTests
     {
         public string Name { get; } = name;
         public int SampleRate => GainBalanceEngineTests.SampleRate;
+        public int ProcessorSampleRate => SampleRate;
     }
 
     private static Complex[] Impulse(double amplitude)

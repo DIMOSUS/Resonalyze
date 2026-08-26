@@ -12,6 +12,7 @@ internal sealed record EqWizardGatedPreviewRequest(
     EqualizationCurve? Bank,
     int AnchorIndex,
     int SampleRate,
+    int ProcessorSampleRate,
     PhaseAnalysisSettings Gate,
     CalibrationFile? Calibration,
     double SmoothingInverseOctaves);
@@ -56,7 +57,8 @@ internal static class EqWizardGatedPreview
         // is where an all-pass lives, so it rides in with the rest of the filters.
         DspChannelChain chain = request.Chain with { Peq = request.Bank };
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            request.ImpulseResponse, chain, request.SampleRate);
+            request.ImpulseResponse, chain, request.SampleRate,
+            request.ProcessorSampleRate);
 
         // The anchor is the one resolved when the handoff was taken, not re-read from
         // this response: the window has to stay put while the user turns a knob, or the

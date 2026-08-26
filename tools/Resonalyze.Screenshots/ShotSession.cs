@@ -1,0 +1,277 @@
+using System.Drawing.Imaging;
+
+namespace Resonalyze.Screenshots;
+
+/// <summary>
+/// One run of the application, driven to produce screenshots.
+/// </summary>
+/// <remarks>
+/// Four things here are not obvious and were each learned the hard way:
+/// <list type="bullet">
+/// <item>The shell runs under a real <see cref="Application.Run(Form)"/> loop, with
+/// the work driven from <c>Shown</c>. Only that loop installs the WinForms
+/// synchronization context; without it an <c>await</c> inside the EQ Wizard's Auto
+/// Tune resumes on a thread-pool thread and builds its band controls there, which
+/// WinForms then refuses to parent.</item>
+/// <item>Waiting is done by pumping messages, never by blocking. The panels marshal
+/// their background work back to this thread, so a plain <c>Wait()</c> deadlocks.</item>
+/// <item>A mode's settings panel is a separate owned window
+/// (<c>DockedModeSettingsHost</c> calls <c>Show</c>), so <see cref="Control.DrawToBitmap"/>
+/// on the shell renders everything except it. Those shots come off the SCREEN.</item>
+/// <item>That panel docks to whichever side of the shell has room, so the shell is
+/// pinned to the right edge of the screen. With space on the right it docks outside
+/// the window and lands outside the captured rectangle.</item>
+/// </list>
+/// </remarks>
+internal sealed class ShotSession
+{
+    /// <summary>The size the committed assets are taken at.</summary>
+    public static readonly Size AssetWindowSize = new(1494, 832);
+
+    /// <summary>Roomier, for the manual's figures of the densest panels.</summary>
+    public static readonly Size ManualWindowSize = new(1720, 1035);
+
+    private readonly ShotConfig config;
+    private readonly Size windowSize;
+
+    private ShotSession(ShotConfig config, Size windowSize, Form1 shell)
+    {
+        this.config = config;
+        this.windowSize = windowSize;
+        Shell = shell;
+    }
+
+    public Form1 Shell { get; }
+
+    public ShotConfig Config => config;
+
+    /// <summary>
+    /// Opens the application, runs <paramref name="body"/> against it, and closes it.
+    /// </summary>
+    public static void Run(ShotConfig config, Size windowSize, Action<ShotSession> body)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(body);
+
+        Rectangle screen = Screen.PrimaryScreen?.WorkingArea
+            ?? new Rectangle(0, 0, windowSize.Width, windowSize.Height);
+        if (screen.Width < windowSize.Width || screen.Height < windowSize.Height)
+        {
+            throw new InvalidOperationException(
+                $"The screen is {screen.Width}x{screen.Height}; the shots need at " +
+                $"least {windowSize.Width}x{windowSize.Height}.");
+        }
+
+        var shell = new Form1
+        {
+            FormBorderStyle = FormBorderStyle.None,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(screen.Right - windowSize.Width, screen.Top),
+            Size = windowSize
+        };
+
+        var session = new ShotSession(config, windowSize, shell);
+        Exception? failure = null;
+        shell.Shown += (_, _) =>
+        {
+            try
+            {
+                session.Pump(1_500);
+                body(session);
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+            finally
+            {
+                shell.Close();
+            }
+        };
+
+        Application.Run(shell);
+        if (failure != null)
+        {
+            throw new InvalidOperationException("A shot failed.", failure);
+        }
+    }
+
+    // ------------------------------------------------------------------ waiting
+
+    /// <summary>Runs the message loop for a while without blocking it.</summary>
+    public void Pump(int milliseconds)
+    {
+        for (int elapsed = 0; elapsed < milliseconds; elapsed += 20)
+        {
+            Application.DoEvents();
+            Thread.Sleep(20);
+        }
+    }
+
+    /// <summary>Awaits work that marshals back to this thread.</summary>
+    public void Await(Task task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        while (!task.IsCompleted)
+        {
+            Application.DoEvents();
+            Thread.Sleep(20);
+        }
+
+        task.GetAwaiter().GetResult();
+    }
+
+    // ----------------------------------------------------------------- steering
+
+    /// <summary>Switches modes the way a tab click does — layout included.</summary>
+    public void SelectTab(string tabName)
+    {
+        object controller = Reflect.Field(Shell, "modeController");
+        Type tabType = typeof(Form1).Assembly.GetType("Resonalyze.ModeTab")
+            ?? throw new InvalidOperationException("No Resonalyze.ModeTab type.");
+        Await((Task)Reflect.Invoke(controller, "SelectAsync", Enum.Parse(tabType, tabName))!);
+        Pump(1_500);
+    }
+
+    /// <summary>Loads an impulse response, a recorded sweep or a REW export.</summary>
+    public void LoadMeasurement(string path)
+    {
+        Await((Task)Reflect.Invoke(Shell, "LoadImpulseResponseLikeAsync", path)!);
+        Pump(4_000);
+    }
+
+    /// <summary>Opens the current mode's settings panel if it is not already open.</summary>
+    public void OpenModeSettings()
+    {
+        var button = Reflect.Field<Button>(Shell, "buttonCurrentModeSettings");
+        if (!button.Enabled)
+        {
+            return;
+        }
+
+        object host = Reflect.Field(Shell, "dockedModeSettingsHost");
+        if (!(bool)Reflect.Property(host, "IsOpen"))
+        {
+            button.PerformClick();
+        }
+
+        Pump(1_500);
+    }
+
+    /// <summary>The dialog the mode settings panel is currently showing, if any.</summary>
+    public Form? ModeSettingsDialog
+    {
+        get
+        {
+            object host = Reflect.Field(Shell, "dockedModeSettingsHost");
+            return (bool)Reflect.Property(host, "IsOpen")
+                ? (Form)Reflect.Field(host, "activeDialog")
+                : null;
+        }
+    }
+
+    // ----------------------------------------------------------------- capturing
+
+    /// <summary>
+    /// Captures the shell from the screen, which is the only way to include an owned
+    /// window such as the mode settings panel.
+    /// </summary>
+    public void CaptureScreen(string name)
+    {
+        Shell.Activate();
+        Pump(600);
+        Rectangle bounds = Shell.Bounds;
+        using var bitmap = new Bitmap(bounds.Width, bounds.Height);
+        using (Graphics graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
+        }
+
+        Write(bitmap, name);
+    }
+
+    /// <summary>Captures a control's own rendering, owned windows excluded.</summary>
+    public void Capture(Control control, string name)
+    {
+        ArgumentNullException.ThrowIfNull(control);
+        using var bitmap = new Bitmap(control.Width, control.Height);
+        control.DrawToBitmap(bitmap, new Rectangle(Point.Empty, control.Size));
+        Write(bitmap, name);
+    }
+
+    /// <summary>
+    /// Shoots a modal dialog: the real button is clicked, and a timer running inside
+    /// the dialog's own message loop grabs it and cancels out. <paramref name="pose"/>
+    /// runs on that timer, so a dialog can be driven (a value typed, a search run)
+    /// before the shot.
+    /// </summary>
+    public void CaptureModal(
+        string name,
+        Action open,
+        int settleMs = 1_500,
+        Action<Form>? pose = null)
+    {
+        ArgumentNullException.ThrowIfNull(open);
+        bool shot = false;
+        using var timer = new System.Windows.Forms.Timer { Interval = settleMs };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            Form? dialog = Application.OpenForms
+                .Cast<Form>()
+                .LastOrDefault(form => form != Shell && form.Visible && form.Modal);
+            if (dialog == null)
+            {
+                return;
+            }
+
+            pose?.Invoke(dialog);
+            Application.DoEvents();
+            // DrawToBitmap renders a bordered dialog's frame too, so the bitmap is
+            // sized to the WHOLE window; sizing it to ClientSize crops the buttons
+            // off the bottom by exactly the title bar's height.
+            using (var bitmap = new Bitmap(dialog.Width, dialog.Height))
+            {
+                dialog.DrawToBitmap(bitmap, new Rectangle(Point.Empty, dialog.Size));
+                Write(bitmap, name);
+            }
+
+            shot = true;
+            dialog.DialogResult = DialogResult.Cancel;
+            dialog.Close();
+        };
+        timer.Start();
+        open();
+        timer.Stop();
+        Pump(400);
+
+        if (!shot)
+        {
+            throw new InvalidOperationException(
+                $"{name}: no modal dialog appeared within {settleMs} ms.");
+        }
+    }
+
+    /// <summary>Captures a dialog opened without a modal loop.</summary>
+    public void CaptureDialog(Form dialog, string name)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+        dialog.Show();
+        Pump(600);
+        using var bitmap = new Bitmap(dialog.Width, dialog.Height);
+        dialog.DrawToBitmap(bitmap, new Rectangle(Point.Empty, dialog.Size));
+        Write(bitmap, name);
+        dialog.Close();
+    }
+
+    private void Write(Bitmap bitmap, string name)
+    {
+        string path = config.Resolve(name);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        bitmap.Save(path, ImageFormat.Png);
+        Console.WriteLine($"  {name}  {bitmap.Width}x{bitmap.Height}  ->  {path}");
+    }
+
+    /// <summary>The size this session's shell was opened at.</summary>
+    public Size WindowSize => windowSize;
+}

@@ -38,9 +38,20 @@ one. Ask for it by name, with the rig plugged in:
 dotnet run --project tools/Resonalyze.Screenshots -- measurement-options
 ```
 
-The screen must be at least 1720×1035, and the run drives real windows: it takes over
-the foreground for a minute or two and cannot share the machine with anything that
-steals focus.
+**The run needs the screen to itself.** Several shots are screen captures, so the
+tool raises the shell above everything else and refuses the shot when another
+process's window still covers it — without that check a grab quietly returns whatever
+was on top, and a browser window ends up committed as a figure. The screen must also
+be at least 1720×1035. Expect a full sweep to take about ten minutes and to own the
+display for all of it.
+
+**It never touches your own configuration.** `portable.flag` is copied beside the
+executable, which puts the application into portable mode: its settings, history and
+overlays go to the tool's output folder rather than `%LocalAppData%\Resonalyze`.
+Without it a sweep would flush whatever it touched — a cleared EQ bank, an audio
+configuration it fell back to when the interface was absent — over the developer's
+working setup, and every measurement it loads would land in their history. Do not
+remove that file.
 
 ## What it cannot take
 
@@ -68,6 +79,15 @@ getting it wrong first:
 - **That panel docks to whichever side has room**, so the shell is pinned to the
   right edge of the screen to make it dock inside. With space to the right it lands
   outside the captured rectangle, and the shot silently loses the panel.
+
+**Never drive a control that can raise a `MessageBox` or a file dialog.** Those are
+window class `#32770`, not Forms, so they never appear in `Application.OpenForms` and
+nothing here can close them — the click that opened one blocks for ever. Two are
+already avoided: the EQ Wizard's *Reset filters* asks before clearing, so the bank is
+emptied directly; and *Export* only shows the Q chooser while the project names no
+processor model, so that dialog is constructed rather than clicked. `CaptureModal`
+closes a stray native dialog and fails with a clear message, but that is a net, not a
+licence.
 
 The tool reaches the shell's private fields by name, because it drives panels the
 application never meant to expose. Every accessor throws with the name it could not

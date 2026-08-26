@@ -26,6 +26,13 @@
     <None Update="screenshots.example.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- Isolation, and it is not optional: the tool drives a real Form1, which
+         persists what it touches on close. Beside the executable this marker makes
+         ApplicationDataPaths put the settings, history and overlays in the output
+         folder instead of the developer's %LocalAppData%\Resonalyze. -->
+    <None Update="portable.flag">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

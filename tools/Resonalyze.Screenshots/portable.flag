@@ -1,0 +1,11 @@
+This marker puts the application into PORTABLE mode when the screenshot tool runs
+it, so ApplicationDataPaths.Current.RootDirectory becomes this output folder
+instead of %LocalAppData%\Resonalyze.
+
+Without it a sweep drives a real Form1 against the developer's own profile: the
+settings saver and Form1_FormClosing flush whatever the run touched — the EQ
+Wizard bank it cleared, the audio configuration it fell back to when the
+interface was absent — over their working setup, and every measurement it loads
+lands in their measurement history.
+
+Re-taking documentation must not cost anyone their configuration.

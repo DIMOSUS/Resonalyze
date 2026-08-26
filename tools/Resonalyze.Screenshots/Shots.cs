@@ -216,12 +216,15 @@ internal static class Shots
             session.Pump(3_000);
         }
 
-        // The tuning-sheet Q chooser only appears while the project names no model,
-        // which is the state a session without a processor opens in.
+        // Built directly rather than by pressing Export. Export only shows this
+        // chooser while the project names NO model; a session naming a catalog
+        // processor skips it and opens a native SaveFileDialog instead, which is not
+        // a Form in Application.OpenForms and which nothing here could close — the
+        // run would hang on the click. The figure is of the dialog either way.
         if (wanted("manual/tuning-sheet-q"))
         {
-            session.CaptureModal("manual/tuning-sheet-q",
-                () => Reflect.Field<Button>(panel, "buttonExport").PerformClick(), 2_000);
+            session.CaptureDialog(
+                QConventionDialog(Dsp.PeqQConvention.Rbj), "manual/tuning-sheet-q");
         }
 
         if (wanted("manual/dsp-processor"))
@@ -309,6 +312,22 @@ internal static class Shots
         session.SelectTab("ToolsEqWizard");
         session.Pump(6_000);
         return Reflect.Field<EqWizardPanel>(session.Shell, "eqWizardPanel");
+    }
+
+    private static Form QConventionDialog(Dsp.PeqQConvention selected)
+    {
+        Type type = typeof(VirtualCrossoverPanel).Assembly
+            .GetType("Resonalyze.TuningSheetQConventionDialog")
+            ?? throw new InvalidOperationException(
+                "No Resonalyze.TuningSheetQConventionDialog type.");
+        return (Form)Activator.CreateInstance(
+            type,
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.NonPublic |
+            System.Reflection.BindingFlags.Public,
+            binder: null,
+            [selected],
+            culture: null)!;
     }
 
     private static Form DspProcessorDialog(

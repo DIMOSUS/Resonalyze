@@ -1,4 +1,6 @@
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Resonalyze.Screenshots;
 
@@ -178,16 +180,61 @@ internal sealed class ShotSession
     /// </summary>
     public void CaptureScreen(string name)
     {
-        Shell.Activate();
-        Pump(600);
-        Rectangle bounds = Shell.Bounds;
-        using var bitmap = new Bitmap(bounds.Width, bounds.Height);
-        using (Graphics graphics = Graphics.FromImage(bitmap))
+        // Activate() cannot raise a window while another process owns the foreground
+        // — Windows refuses the steal — and a screen grab then copies whatever IS on
+        // top. TopMost does not need the foreground, and the check below refuses to
+        // write a frame that is not ours rather than saving someone's browser.
+        bool wasTopMost = Shell.TopMost;
+        try
         {
-            graphics.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
-        }
+            Shell.TopMost = true;
+            Shell.Activate();
+            Pump(600);
 
-        Write(bitmap, name);
+            Rectangle bounds = Shell.Bounds;
+            EnsureNothingCovers(bounds, name);
+            using var bitmap = new Bitmap(bounds.Width, bounds.Height);
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
+            }
+
+            Write(bitmap, name);
+        }
+        finally
+        {
+            Shell.TopMost = wasTopMost;
+        }
+    }
+
+    /// <summary>
+    /// Refuses the shot when another process's window sits over the rectangle about
+    /// to be copied. Sampling the corners and the middle catches anything large
+    /// enough to matter, and a foreign pixel means the figure would be wrong in a way
+    /// no later review would notice.
+    /// </summary>
+    private static void EnsureNothingCovers(Rectangle bounds, string name)
+    {
+        Point[] probes =
+        [
+            new(bounds.Left + 8, bounds.Top + 8),
+            new(bounds.Right - 8, bounds.Top + 8),
+            new(bounds.Left + 8, bounds.Bottom - 8),
+            new(bounds.Right - 8, bounds.Bottom - 8),
+            new(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2)
+        ];
+        foreach (Point probe in probes)
+        {
+            nint window = WindowFromPoint(probe);
+            GetWindowThreadProcessId(window, out uint owner);
+            if (owner != (uint)Environment.ProcessId)
+            {
+                throw new InvalidOperationException(
+                    $"{name}: another window is covering the shell at " +
+                    $"{probe.X},{probe.Y}. The run needs the screen to itself — " +
+                    "nothing may sit over the application while it shoots.");
+            }
+        }
     }
 
     /// <summary>Captures a control's own rendering, owned windows excluded.</summary>
@@ -213,6 +260,7 @@ internal sealed class ShotSession
     {
         ArgumentNullException.ThrowIfNull(open);
         bool shot = false;
+        bool wasNative = false;
         using var timer = new System.Windows.Forms.Timer { Interval = settleMs };
         timer.Tick += (_, _) =>
         {
@@ -222,6 +270,10 @@ internal sealed class ShotSession
                 .LastOrDefault(form => form != Shell && form.Visible && form.Modal);
             if (dialog == null)
             {
+                // A MessageBox or a common file dialog is not a Form in OpenForms, so
+                // nothing above can see it — and it blocks the click that opened it
+                // for ever. Closing turns a hang into the error below.
+                wasNative = CloseNativeDialog();
                 return;
             }
 
@@ -247,8 +299,11 @@ internal sealed class ShotSession
 
         if (!shot)
         {
-            throw new InvalidOperationException(
-                $"{name}: no modal dialog appeared within {settleMs} ms.");
+            throw new InvalidOperationException(wasNative
+                ? $"{name}: the click opened a native dialog (a MessageBox or a file " +
+                  "dialog), not a Form this tool can capture. Drive the panel a way " +
+                  "that does not raise one, or construct the dialog directly."
+                : $"{name}: no modal dialog appeared within {settleMs} ms.");
         }
     }
 
@@ -263,6 +318,69 @@ internal sealed class ShotSession
         Write(bitmap, name);
         dialog.Close();
     }
+
+    /// <summary>
+    /// Closes a native dialog this process is showing, if any. MessageBox and the
+    /// common file dialogs are window class <c>#32770</c> rather than WinForms
+    /// windows, so they never appear in <see cref="Application.OpenForms"/>.
+    /// </summary>
+    private static bool CloseNativeDialog()
+    {
+        nint found = 0;
+        EnumWindows((handle, _) =>
+        {
+            GetWindowThreadProcessId(handle, out uint owner);
+            if (owner != (uint)Environment.ProcessId || !IsWindowVisible(handle))
+            {
+                return true;
+            }
+
+            var name = new StringBuilder(64);
+            GetClassName(handle, name, name.Capacity);
+            if (name.ToString() != "#32770")
+            {
+                return true;
+            }
+
+            found = handle;
+            return false;
+        }, 0);
+
+        if (found == 0)
+        {
+            return false;
+        }
+
+        const uint WM_CLOSE = 0x0010;
+        PostMessage(found, WM_CLOSE, 0, 0);
+        return true;
+    }
+
+    private delegate bool EnumWindowsProc(nint window, nint parameter);
+
+    // DllImport rather than LibraryImport: the source generator needs
+    // AllowUnsafeBlocks, and it cannot marshal StringBuilder — neither is worth
+    // taking on for five calls that run once per shot.
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumWindows(EnumWindowsProc callback, nint parameter);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
+
+    [DllImport("user32.dll")]
+    private static extern nint WindowFromPoint(Point point);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(nint window);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetClassNameW")]
+    private static extern int GetClassName(nint window, StringBuilder name, int capacity);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "PostMessageW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(nint window, uint message, nint w, nint l);
 
     private void Write(Bitmap bitmap, string name)
     {

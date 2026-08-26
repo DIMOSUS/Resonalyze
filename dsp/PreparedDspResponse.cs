@@ -84,8 +84,23 @@ public sealed class PreparedDspResponse
             sections.ToArray());
     }
 
+    /// <summary>
+    /// True when this chain is a scalar — no filters, no delay — so a caller can
+    /// multiply the record and skip the FFT entirely.
+    /// </summary>
     public bool IsTimeDomainScaleOnly =>
         delayMs == 0 && sections.Length == 0;
+
+    /// <summary>
+    /// <see cref="IsTimeDomainScaleOnly"/>, and the record holds nothing the processor
+    /// would have to cut. A record sampled ABOVE the processing rate always needs the
+    /// spectrum path even for a scalar chain: the band past the processor's Nyquist
+    /// has to go (see <see cref="ApplyToSpectrum"/>), or a bypassed channel would keep
+    /// ultrasonics that every filtered channel beside it loses — and the two would then
+    /// sum, and be timed, against different bandwidths.
+    /// </summary>
+    public bool CanScaleInTimeDomain(int signalSampleRate) =>
+        IsTimeDomainScaleOnly && signalSampleRate <= processorRate;
 
     /// <summary>
     /// Zero-padding (samples) needed for this chain's ringing to decay by

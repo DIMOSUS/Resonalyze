@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text;
 using OxyPlot;
 using Resonalyze.Dsp;
@@ -2299,7 +2299,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 // recorded — so the two cannot disagree about whether this is a hybrid
                 // session, and no in-flight redraw can turn a valid return into a
                 // refusal.
-                HybridHandoffCapture(token.Channel, token.RightSide)))
+                HybridHandoffCapture(token.Channel, token.RightSide),
+                ProcessorSampleRateHz))
         {
             return false;
         }

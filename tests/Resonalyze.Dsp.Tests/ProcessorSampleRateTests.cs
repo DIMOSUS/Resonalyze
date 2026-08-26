@@ -133,6 +133,34 @@ public sealed class ProcessorSampleRateTests
         Assert.True(MagnitudeDb(processed, 1_000, fastRecord) > -1.0);
     }
 
+    [Fact]
+    public void AScaleOnlyChainIsBandLimitedToo_WhenTheRecordOutrunsTheProcessor()
+    {
+        // A gain-only or bypassed channel must lose the same ultrasonic band a
+        // filtered one does: the record went through the same processor, and a sum
+        // whose members are band-limited differently is timed and added on two
+        // different bandwidths. The FFT-free fast path is therefore only taken when
+        // the record has nothing above the processor's Nyquist to lose.
+        const int fastRecord = 192_000;
+        Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(), DspChannelChain.Identity, fastRecord, ProcessorRate);
+        Complex[] gainOnly = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(), new DspChannelChain(GainDb: 6), fastRecord, ProcessorRate);
+
+        foreach (Complex[] response in new[] { bypassed, gainOnly })
+        {
+            Assert.True(MagnitudeDb(response, 60_000, fastRecord) < -120.0);
+            Assert.True(MagnitudeDb(response, 1_000, fastRecord) > -1.0);
+        }
+
+        // At or below the processing rate there is nothing to cut, so the scalar path
+        // stays: the response is the input times the gain, sample for sample.
+        Complex[] cheap = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(), new DspChannelChain(GainDb: 6), MeasurementRate, ProcessorRate);
+        Assert.Equal(
+            Math.Pow(10.0, 6.0 / 20.0), cheap[ArrivalSample].Real, 12);
+    }
+
     private static DspChannelChain LowPass(double frequencyHz) =>
         new(Crossover: LowPassSpec(frequencyHz));
 

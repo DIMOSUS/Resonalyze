@@ -262,7 +262,7 @@ public static class VirtualCrossoverAnalysis
             impulseResponse.Length + delaySamples + tailPadding);
         validRange = ChainValidRange(
             impulseResponse.Length, chain, sampleRate, length);
-        if (preparedChain.IsTimeDomainScaleOnly)
+        if (preparedChain.CanScaleInTimeDomain(sampleRate))
         {
             return preparedChain.ApplyTimeDomainScale(impulseResponse, length);
         }

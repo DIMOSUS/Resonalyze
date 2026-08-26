@@ -1179,11 +1179,21 @@ public sealed class StereoAlignmentTests
     // positions — the shape the scene locks and the arithmetic bridge leave
     // behind on a real far side. Returns the two delays after the polish.
     private static (double MidDelayMs, double TwrDelayMs, string Log)
-        RunFarSidePolish(double twrLateMs, bool midIsMono = false)
+        RunFarSidePolish(
+            double twrLateMs,
+            bool midIsMono = false,
+            double baseDelayMs = 1.0,
+            bool withFieldFloor = false)
     {
         var farMid = new TestChannel("R mid", ImpulseAtMs(5.0));
         var farTwr = new TestChannel("R twr", ImpulseAtMs(5.0 + twrLateMs));
-        TestChannel[] all = [farMid, farTwr];
+        // A stand-in for the rest of the field: it carries no right junction, so
+        // the polish walks past it, but it is what the realizable span is
+        // measured FROM — the earliest channel of the whole system.
+        var fieldFloor = new TestChannel("L ref", ImpulseAtMs(5.0));
+        TestChannel[] all = withFieldFloor
+            ? [farMid, farTwr, fieldFloor]
+            : [farMid, farTwr];
 
         IReadOnlyList<AlignmentSnapshot> Reprocess(
             IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
@@ -1204,12 +1214,18 @@ public sealed class StereoAlignmentTests
             farMid, farTwr, 1_250, 5_000, SceneOffsetMs: 0);
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
         {
-            [farMid] = new(1.0, false),
-            [farTwr] = new(1.0, false)
+            [farMid] = new(baseDelayMs, false),
+            [farTwr] = new(baseDelayMs, false)
         };
+        if (withFieldFloor)
+        {
+            alignment[fieldFloor] = new(0.0, false);
+        }
+
         var log = new StringBuilder();
         AutoAlignmentEngine.PolishFarSideJunctions(
-            plan, snapshots, Reprocess, alignment, log, decisions: null);
+            plan, snapshots, snapshots, Reprocess, alignment, log,
+            decisions: null);
         return (alignment[farMid].DelayMs, alignment[farTwr].DelayMs, log.ToString());
     }
 
@@ -1244,6 +1260,20 @@ public sealed class StereoAlignmentTests
         Assert.True(twrDelay < 1.0, $"twr did not move earlier ({twrDelay:0.000})");
     }
 
+    [Fact]
+    public void PolishFarSideJunctions_StaysInsideTheRealizableDelaySpan()
+    {
+        // The field already spans the DSP's whole range with the earliest
+        // channel at zero. The polish is the only pass that moves a channel
+        // LATER after the cascade settles, so without a ceiling it would spend
+        // a hundredth of a decibel to make the proposal unrealizable — and the
+        // feasibility check would then refuse the whole run.
+        (double midDelay, double twrDelay, string _) = RunFarSidePolish(
+            0.02, baseDelayMs: 50.0, withFieldFloor: true);
+
+        Assert.InRange(midDelay, 0, 50.0);
+        Assert.InRange(twrDelay, 0, 50.0);
+    }
     [Fact]
     public void PolishFarSideJunctions_NeverMovesAMonoChannel()
     {

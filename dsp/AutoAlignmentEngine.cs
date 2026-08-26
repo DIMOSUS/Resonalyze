@@ -3839,7 +3839,8 @@ public static class AutoAlignmentEngine
         // The far side's own last word: every far channel may leave its scene
         // position by at most FarSideJunctionPolishMs to buy its own junction
         // summation back — see the method for why the scene can afford it.
-        PolishFarSideJunctions(plan, rightByBand, reprocess, alignment, log, decisions);
+        PolishFarSideJunctions(
+            plan, rightByBand, allChannels, reprocess, alignment, log, decisions);
 
         NormalizeAndVerifyFeasibility(allChannels, alignment, log);
 
@@ -4527,6 +4528,7 @@ public static class AutoAlignmentEngine
     internal static void PolishFarSideJunctions(
         StereoAlignmentPlan plan,
         IReadOnlyList<AlignmentSnapshot> rightByBand,
+        IReadOnlyList<AlignmentSnapshot> fullScope,
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
@@ -4606,6 +4608,13 @@ public static class AutoAlignmentEngine
                 return total / evaluators.Count;
             }
 
+            // The same span NormalizeAndVerifyFeasibility will judge: it
+            // rebases on the earliest channel of the WHOLE field, so the
+            // ceiling is read there — and re-read per channel, since an
+            // earlier polish may have moved the earliest one.
+            double ceilingMs = fullScope.Min(
+                item => alignment.GetValueOrDefault(item.Channel).DelayMs) +
+                MaxDelayMs;
             double baseline = Score(0);
             double bestDelta = 0;
             double bestScore = baseline;
@@ -4616,10 +4625,16 @@ public static class AutoAlignmentEngine
                 delta <= FarSideJunctionPolishMs + 1e-9;
                 delta += 0.01)
             {
-                if (current.DelayMs + delta < 0)
+                if (current.DelayMs + delta < 0 ||
+                    current.DelayMs + delta > ceilingMs)
                 {
                     // Delays are non-negative and a polish never earns a
-                    // uniform shift of the whole field.
+                    // uniform shift of the whole field. Nor may it widen the
+                    // spread past what the DSP can realize: this is the only
+                    // pass that moves a channel LATER after the cascade has
+                    // settled, so on a system already at the range limit a
+                    // hundredth of a decibel would otherwise turn a valid
+                    // proposal into the feasibility check's refusal.
                     continue;
                 }
 

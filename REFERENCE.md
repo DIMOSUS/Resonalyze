@@ -1512,8 +1512,10 @@ and would otherwise read confident "coherence" off a crossover remnant the
 sum cannot hear. On junctions below 120 Hz a note warns that the long band
 windows let cabin modes rule the read: the ladder honestly reports that such
 a band is incoherent at the applied tune, but its Δt there is not a move
-recommendation. The mode is a diagnostic for manual work — Auto delay keeps
-its own guarded estimators and never reads this plot.
+recommendation. The mode is above all a diagnostic for manual work: Auto delay
+keeps its own guarded estimators, and reads this ladder in exactly one place —
+to settle a mid/tweeter lobe the direct-sound correlation can only call by a
+hair (see Auto delay above). It never takes a Δt from it as a move.
 
 A **Junction phase** block reads each adjacent pair's steady-state cross-phase in
 a time-sized window (~0.68 s of the processed IR) — the regime sustained program
@@ -1624,9 +1626,13 @@ actually achievable after the best per-junction delay.
 **Auto delay** aligns in two stages: band-limited first arrivals, refined by a
 GCC-PHAT cross-correlation whose dominant extremum of either polarity seeds the
 junction (an inverted junction — a subwoofer against its midbass is the classic
-— seeds from the trough, with the polarity decision left to the sum search);
-then a fractional-delay search minimizing the sum-loss metric at each junction,
-through a direct-sound window so late room reflections do not steer it. That
+— seeds from the trough); then a fractional-delay search minimizing the
+sum-loss metric at each junction, through a direct-sound window so late room
+reflections do not steer it. Above ~1 kHz the seeding correlation is taken on
+the two channels' **direct sound alone**: across a whole record a mid/tweeter
+handover's strongest extremum is often a reflection three to five periods from
+the arrival, and cutting to the wavefronts first is what keeps the seed on the
+right lobe. That
 window is the junction's own: it opens on the earliest **front** of the two
 channels being joined, read in their shared band (never later than the peak, and
 falling back to it where the band carries no measurable arrival), and it is
@@ -1643,6 +1649,28 @@ flip polarity without a real improvement. If the resulting delays span more
 than ~10 ms — usually one channel's crossover having excessive group delay — a
 banner flags the lagging driver.
 
+Polarity is normally the sum search's to decide, with one exception: where the
+lower channel's low-pass and the upper channel's high-pass share family, corner
+and slope above ~1 kHz, the junction is a single crossover and its summing
+polarity is arithmetic rather than evidence. An odd-order Linkwitz-Riley (LR12,
+LR36) and a Butterworth 12 or 36 put their two halves 180° apart at the corner,
+so that pair only sums with one side flipped, while LR24/LR48 and Butterworth
+24/48 sum in phase. There the polarity is read off the filters and only the
+delay is searched. Two corners that merely meet are left to the search: they
+overlap across a region instead of crossing at a point, and carry no single
+phase relation to read.
+
+Where two candidates of opposite polarity still score within a fraction of a
+decibel — at a mid/tweeter junction the summation metric frequently cannot tell
+a lobe from the flipped one half a period away at all — the **direct sound's
+whitened correlation** decides, the same curve the correlation view's direct
+twin draws. Where that advantage is itself slim, the junction's **coherence
+ladder** is asked whether its bands agree, and a decisive vote for the standing
+lobe keeps it: the correlation is one comb across the whole pair band, so it
+carries the polarity but separates neighbouring lobes poorly, while the ladder
+reads polarity not at all and counts how many bands actually want the upper
+channel where a candidate puts it.
+
 With stereo pairs, Auto delay tunes **both sides in one run**, and an
 **LHD / RHD** toggle says which seat you are tuning for. The driver's side is
 the reference: it aligns first, the top pair is bridged to it by band-limited
@@ -1654,7 +1682,10 @@ entered the same way, as a cut on the near side. The gain balance itself is
 alone until you tick **Balance channel gains (cut-only)**. Pairs whose shared band
 reaches the localization region are pinned to the scene, because the image
 outranks the handover there; a final scene-preserving pass may then shift both
-sides of a pair by one shared delta to recover what the pin cost.
+sides of a pair by one shared delta to recover what the pin cost. Each far-side
+channel may also leave its own scene position by up to 0.03 ms to buy back its
+junction's summation — below what the scene can resolve, and enough to close the
+skew the arithmetic bridge leaves behind.
 
 A run only proposes: the dialog answers with a report and nothing is written
 until **Apply**. It carries a row per channel — a value the run changes reads

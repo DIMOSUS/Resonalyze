@@ -1490,13 +1490,16 @@ public static class VirtualCrossoverAnalysis
     /// clean packet, which would read as nonsense on a coherence axis.
     /// </para>
     /// <para>
-    /// A DIAGNOSTIC, deliberately not an input to the alignment search: on a
-    /// low junction the band windows are long enough for cabin modes to rule
-    /// the correlation (the archived v3 mid junction draws its whole mid-band
-    /// optimum on the mode the Auto delay sagas were fought over), so the
-    /// ladder there honestly reports "this band is not coherent at the
-    /// applied tune" while its lag is NOT a move recommendation. The engine
-    /// keeps its own guarded estimators.
+    /// Chiefly a DIAGNOSTIC: on a low junction the band windows are long
+    /// enough for cabin modes to rule the correlation (the archived v3 mid
+    /// junction draws its whole mid-band optimum on the mode the Auto delay
+    /// sagas were fought over), so the ladder there honestly reports "this
+    /// band is not coherent at the applied tune" while its lag is NOT a move
+    /// recommendation. The engine keeps its own guarded estimators and takes
+    /// no Δt from here; its single use of the ladder is to COUNT how many
+    /// coherent bands stand with a candidate above a kilohertz, where the
+    /// direct-sound correlation can only separate two lobes by a hair (see
+    /// <see cref="CountLadderAgreement"/>).
     /// </para>
     /// </summary>
     public static List<ArrivalCoherencePoint> ArrivalCoherenceLadder(
@@ -1717,7 +1720,7 @@ public static class VirtualCrossoverAnalysis
     /// a witness that carries it.
     /// </para>
     /// </summary>
-    public static int CountLadderAgreement(
+    internal static int CountLadderAgreement(
         IReadOnlyList<ArrivalCoherencePoint> ladder,
         double delayMs,
         double quarterPeriodMs,

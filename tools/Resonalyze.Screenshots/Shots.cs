@@ -260,21 +260,18 @@ internal static class Shots
         if (wanted("manual/auto-delay"))
         {
             // The empty dialog says nothing; the figure needs the proposal, so Run is
-            // pressed inside the dialog's own loop and the shot waits for Apply to arm.
+            // pressed inside the dialog's own loop. The regions are measured while the
+            // dialog is still on screen and drawn once the file exists.
+            AutoDelayFigure.Layout? layout = null;
             session.CaptureModal(
                 "manual/auto-delay",
                 () => Reflect.Field<Button>(panel, "buttonAutoDelay").PerformClick(),
                 2_500,
-                dialog =>
-                {
-                    var apply = Reflect.Field<Button>(dialog, "buttonApply");
-                    Reflect.Field<Button>(dialog, "buttonRun").PerformClick();
-                    for (int attempt = 0; attempt < 240 && !apply.Enabled; attempt++)
-                    {
-                        session.Pump(500);
-                    }
-                });
-            AnnotateAutoDelay(session.Config.Resolve("manual/auto-delay"));
+                dialog => layout = AutoDelayFigure.PoseAndMeasure(session, dialog));
+            if (layout != null)
+            {
+                AutoDelayFigure.Draw(layout, session.Config.Resolve("manual/auto-delay"));
+            }
         }
 
         if (wanted("manual/audition-track"))
@@ -377,22 +374,6 @@ internal static class Shots
               .Region(Box(18, 985, 202, 1014), "5", new Point(26, 999), leader: true)
               .Detail(Box(18, 883, 200, 935))
               .Region(Box(1494, 682, 1712, 1018), "6", new Point(1584, 962))
-              .Save(path);
-    }
-
-    private static void AnnotateAutoDelay(string path)
-    {
-        using Annotate figure = Annotate.Open(path);
-        figure.Region(Box(14, 40, 778, 104), "1", new Point(715, 56))
-              .Region(Box(14, 110, 776, 244), "2", new Point(735, 145))
-              .Region(Box(14, 248, 776, 388), "3", new Point(735, 268))
-              .Region(Box(14, 392, 776, 608), "4", new Point(735, 570))
-              .Region(Box(14, 612, 776, 662), "5", new Point(735, 637))
-              .Detail(Box(350, 252, 448, 384))
-              // The connection the prose could only assert: a LOW in the confidence
-              // column is explained by a note in the block below.
-              .Arrow(new Point(452, 318), new Point(694, 318),
-                     new Point(694, 468), new Point(584, 468))
               .Save(path);
     }
 

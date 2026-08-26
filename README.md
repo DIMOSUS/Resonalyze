@@ -70,7 +70,7 @@ fabricating a number when the measurement cannot support one.
 </p>
 
 <p align="center">
-  <img src="assets/images/compare.jpg" alt="Sum loss per crossover junction: manual tune vs one automatic pass">
+  <img src="assets/images/compare.png" alt="Sum loss per crossover junction: manual tune vs one automatic pass">
 </p>
 
 <p align="center">
@@ -229,12 +229,12 @@ Virtual DSP, the EQ Wizard, and Time Alignment are shown in the
 <table>
   <tr>
     <td width="50%">
-      <img src="assets/images/fr.jpg" alt="Frequency response plot">
+      <img src="assets/images/fr.png" alt="Frequency response plot">
       <p><strong>Frequency Response</strong> — smoothing, calibration, an optional
       dB SPL scale, distortion curves, overlays, targets, and coherence.</p>
     </td>
     <td width="50%">
-      <img src="assets/images/noise.jpg" alt="Live Spectrum plot">
+      <img src="assets/images/noise.png" alt="Live Spectrum plot">
       <p><strong>Live Spectrum</strong> — a loopback transfer function with
       coherence and peak hold, or a reference-free RTA in dB SPL, on selectable
       excitation noise.</p>
@@ -242,13 +242,13 @@ Virtual DSP, the EQ Wizard, and Time Alignment are shown in the
   </tr>
   <tr>
     <td width="50%">
-      <img src="assets/images/impulse.jpg" alt="Impulse response plot">
+      <img src="assets/images/impulse.png" alt="Impulse response plot">
       <p><strong>Impulse Response</strong> — impulse, envelope (ETC) and step on
       one timeline, save it as readable JSON, and reuse it across analysis modes
       without re-measuring.</p>
     </td>
     <td width="50%">
-      <img src="assets/images/gd.jpg" alt="Group delay plot">
+      <img src="assets/images/gd.png" alt="Group delay plot">
       <p><strong>Group Delay</strong> — timing from the transfer IR, with a
       millisecond gate, gate offset, and a live impulse-window preview.</p>
     </td>
@@ -258,10 +258,10 @@ Virtual DSP, the EQ Wizard, and Time Alignment are shown in the
 <details>
 <summary><strong>More plots</strong> — waterfall, phase, Burst Decay, overlays</summary>
 
-![Waterfall plot](assets/images/waterfall.jpg)
-![Phase response plot](assets/images/phase.jpg)
-![Burst Decay plot](assets/images/burst.jpg)
-![Calculated overlay settings](assets/images/calc_overlay.jpg)
+![Waterfall plot](assets/images/waterfall.png)
+![Phase response plot](assets/images/phase.png)
+![Burst Decay plot](assets/images/burst.png)
+![Calculated overlay settings](assets/images/calc_overlay.png)
 
 </details>
 

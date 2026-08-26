@@ -503,7 +503,7 @@ Another very useful view is **Group Delay**. Open its settings panel to choose w
 curves are displayed and adjust the IR gate and smoothing if necessary. Pay particular
 attention to **Excess Group Delay**.
 
-![Group Delay with the excess curve and coherence shown](assets/images/gd.jpg)
+![Group Delay: the measured curve against its minimum-phase and excess twins, with coherence](assets/images/gd.png)
 
 Excess Group Delay shows where the measured response departs from the minimum-phase
 behavior implied by its magnitude response. Strong anomalies can be caused by

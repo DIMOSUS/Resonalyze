@@ -787,8 +787,8 @@ dialog refuses to save it. A live-curve operand counts as whatever the plot is
 showing right now. The tilt and amplitude-space math likewise apply only where
 decibels do — both grey out while the operands are a coherence trace.
 
-![Ordinary overlay](assets/images/regular_overlay.jpg)
-![Calculated overlay](assets/images/calc_overlay.jpg)
+![Ordinary overlay](assets/images/regular_overlay.png)
+![Calculated overlay](assets/images/calc_overlay.png)
 
 Captured overlay settings cover a name, line color, thickness, style and opacity,
 optional `1/48` … `1/3` octave smoothing, and a **Clear** action for that slot
@@ -833,7 +833,7 @@ flat to 2 kHz, then ≈-3 dB/oct. The deviation curve is **Deviation**
 dial into an equalizer), or **None**. Target overlays are available in Frequency
 Response and Live Spectrum.
 
-![Target overlay settings](assets/images/target_overlay.jpg)
+![Target overlay settings](assets/images/target_overlay.png)
 
 ### Import and export
 

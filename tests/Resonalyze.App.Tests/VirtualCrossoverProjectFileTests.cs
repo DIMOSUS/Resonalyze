@@ -700,6 +700,117 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void AStatedProcessorRate_SurvivesTheMeasurementsBeingReplaced()
+    {
+        // "Follow the measurements" and "48 kHz" describe the same simulation while
+        // the measurements are at 48 kHz, and they part company the moment those are
+        // replaced — so the two must be stored apart. Stating 48 kHz keeps 48 kHz.
+        var stated = new VirtualCrossoverProjectFile();
+        stated.SetDspProcessor(
+            DspProcessorProfile.Custom(48_000, PeqQConvention.Rbj),
+            followsMeasurements: false);
+
+        Assert.Equal(48_000, stated.DspProcessorSampleRateHz);
+        Assert.False(stated.DspProcessorRateFollowsMeasurements);
+        Assert.Equal(48_000, stated.ResolveDspProcessor(48_000).SampleRateHz);
+        Assert.Equal(48_000, stated.ResolveDspProcessor(96_000).SampleRateHz);
+    }
+
+    [Fact]
+    public void AFollowingProcessorRate_TracksWhateverTheMeasurementsAre()
+    {
+        var following = new VirtualCrossoverProjectFile();
+        following.SetDspProcessor(
+            DspProcessorProfile.Custom(48_000, PeqQConvention.Symmetric),
+            followsMeasurements: true);
+
+        Assert.Null(following.DspProcessorSampleRateHz);
+        Assert.True(following.DspProcessorRateFollowsMeasurements);
+        Assert.Equal(48_000, following.ResolveDspProcessor(48_000).SampleRateHz);
+        Assert.Equal(96_000, following.ResolveDspProcessor(96_000).SampleRateHz);
+        // The convention is the user's either way.
+        Assert.Equal(
+            PeqQConvention.Symmetric,
+            following.ResolveDspProcessor(96_000).QConvention);
+    }
+
+    [Fact]
+    public void ANamedModel_StatesItsOwnRateAndNeverFollows()
+    {
+        var project = new VirtualCrossoverProjectFile();
+        DspProcessorProfile helix =
+            DspProcessorCatalog.Preset("helix-dsp-ultra-s")!.ToProfile();
+
+        // Even asked to follow: a device brings its own rate, and storing "follow"
+        // for it would make the model's own preset a lie the next time it resolves.
+        project.SetDspProcessor(helix, followsMeasurements: true);
+
+        Assert.False(project.DspProcessorRateFollowsMeasurements);
+        Assert.Equal(96_000, project.ResolveDspProcessor(44_100).SampleRateHz);
+    }
+
+    [Fact]
+    public void SaveToAndLoadFrom_CarryTheProcessorTheProjectIsDesignedFor()
+    {
+        // The processor decides the rate every simulated filter is BUILT at, so it is
+        // part of the project rather than of the machine that opens it.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new VirtualCrossoverProjectFile
+            {
+                DspProcessorModelId = "helix-dsp-ultra-s",
+                DspProcessorSampleRateHz = 96_000,
+                DspProcessorQConvention = PeqQConvention.Symmetric
+            };
+            string path = Path.Combine(root, "session.json");
+
+            original.SaveTo(path);
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
+
+            Assert.Equal("helix-dsp-ultra-s", loaded.DspProcessorModelId);
+            Assert.Equal(96_000, loaded.DspProcessorSampleRateHz);
+            Assert.Equal(PeqQConvention.Symmetric, loaded.DspProcessorQConvention);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_AProjectFromBeforeTheProcessorSelector_FollowsItsMeasurements()
+    {
+        // Additive: an existing file names no processor, so it opens as Custom with no
+        // stored rate — which the panel reads as "follow the measurements", the exact
+        // simulation that file described.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(root, "virtual-crossover.json"),
+                """
+                {
+                  "format": "resonalyze-virtual-crossover",
+                  "version": 8,
+                  "pairs": [ { "left": { "displayName": "A" } } ]
+                }
+                """);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Null(loaded.DspProcessorModelId);
+            Assert.Null(loaded.DspProcessorSampleRateHz);
+            Assert.Equal(PeqQConvention.Rbj, loaded.DspProcessorQConvention);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveToAndLoadFrom_CarryTheCalibrationCurveItself()
     {
         // The session states the correction it was tuned with as the CURVE, so a

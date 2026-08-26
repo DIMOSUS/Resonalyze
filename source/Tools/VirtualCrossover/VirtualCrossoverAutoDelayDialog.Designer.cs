@@ -37,7 +37,6 @@ namespace Resonalyze
             checkBoxGains = new CheckBox();
             labelNearSideCut = new Label();
             numericNearSideCut = new DarkNumericUpDown();
-            labelNearSideCutHint = new Label();
             buttonRun = new Button();
             labelStatus = new Label();
             textBoxReport = new TextBox();
@@ -46,9 +45,9 @@ namespace Resonalyze
             (numericSceneOffset).BeginInit();
             (numericNearSideCut).BeginInit();
             SuspendLayout();
-            //
+            // 
             // radioLeftHandDrive
-            //
+            // 
             radioLeftHandDrive.AutoSize = true;
             radioLeftHandDrive.Checked = true;
             radioLeftHandDrive.ForeColor = Color.White;
@@ -58,19 +57,19 @@ namespace Resonalyze
             radioLeftHandDrive.TabIndex = 0;
             radioLeftHandDrive.TabStop = true;
             radioLeftHandDrive.Text = "LHD";
-            //
+            // 
             // radioRightHandDrive
-            //
+            // 
             radioRightHandDrive.AutoSize = true;
             radioRightHandDrive.ForeColor = Color.White;
             radioRightHandDrive.Location = new Point(64, 13);
             radioRightHandDrive.Name = "radioRightHandDrive";
-            radioRightHandDrive.Size = new Size(50, 19);
+            radioRightHandDrive.Size = new Size(49, 19);
             radioRightHandDrive.TabIndex = 1;
             radioRightHandDrive.Text = "RHD";
-            //
+            // 
             // labelSceneOffset
-            //
+            // 
             labelSceneOffset.AutoSize = true;
             labelSceneOffset.ForeColor = Color.FromArgb(185, 190, 200);
             labelSceneOffset.Location = new Point(124, 16);
@@ -78,9 +77,9 @@ namespace Resonalyze
             labelSceneOffset.Size = new Size(42, 15);
             labelSceneOffset.TabIndex = 2;
             labelSceneOffset.Text = "Offset:";
-            //
+            // 
             // numericSceneOffset
-            //
+            // 
             numericSceneOffset.BackColor = Color.FromArgb(55, 60, 72);
             numericSceneOffset.DecimalPlaces = 2;
             numericSceneOffset.ForeColor = Color.White;
@@ -96,9 +95,9 @@ namespace Resonalyze
             numericSceneOffset.ThousandsSeparator = false;
             numericSceneOffset.Value = new decimal(new int[] { 27, 0, 0, 131072 });
             numericSceneOffset.ValueSuffix = "ms";
-            //
+            // 
             // checkBoxGains
-            //
+            // 
             checkBoxGains.AutoSize = true;
             checkBoxGains.ForeColor = Color.White;
             checkBoxGains.Location = new Point(268, 14);
@@ -106,19 +105,19 @@ namespace Resonalyze
             checkBoxGains.Size = new Size(199, 19);
             checkBoxGains.TabIndex = 4;
             checkBoxGains.Text = "Balance channel gains (cut-only)";
-            //
+            // 
             // labelNearSideCut
-            //
+            // 
             labelNearSideCut.AutoSize = true;
             labelNearSideCut.ForeColor = Color.FromArgb(185, 190, 200);
             labelNearSideCut.Location = new Point(475, 16);
             labelNearSideCut.Name = "labelNearSideCut";
-            labelNearSideCut.Size = new Size(84, 15);
+            labelNearSideCut.Size = new Size(79, 15);
             labelNearSideCut.TabIndex = 5;
             labelNearSideCut.Text = "Near side cut:";
-            //
+            // 
             // numericNearSideCut
-            //
+            // 
             numericNearSideCut.BackColor = Color.FromArgb(55, 60, 72);
             numericNearSideCut.DecimalPlaces = 1;
             numericNearSideCut.ForeColor = Color.White;
@@ -134,19 +133,9 @@ namespace Resonalyze
             numericNearSideCut.ThousandsSeparator = false;
             numericNearSideCut.Value = new decimal(new int[] { 1, 0, 0, 0 });
             numericNearSideCut.ValueSuffix = "dB";
-            //
-            // labelNearSideCutHint
-            //
-            labelNearSideCutHint.AutoSize = true;
-            labelNearSideCutHint.ForeColor = Color.FromArgb(120, 125, 135);
-            labelNearSideCutHint.Location = new Point(645, 16);
-            labelNearSideCutHint.Name = "labelNearSideCutHint";
-            labelNearSideCutHint.Size = new Size(70, 15);
-            labelNearSideCutHint.TabIndex = 7;
-            labelNearSideCutHint.Text = "typical 1…2";
-            //
+            // 
             // buttonRun
-            //
+            // 
             buttonRun.BackColor = Color.FromArgb(46, 51, 67);
             buttonRun.FlatStyle = FlatStyle.Popup;
             buttonRun.ForeColor = Color.White;
@@ -156,18 +145,18 @@ namespace Resonalyze
             buttonRun.TabIndex = 8;
             buttonRun.Text = "Run";
             buttonRun.UseVisualStyleBackColor = false;
-            //
+            // 
             // labelStatus
-            //
+            // 
             labelStatus.AutoSize = true;
             labelStatus.ForeColor = Color.FromArgb(185, 190, 200);
             labelStatus.Location = new Point(144, 50);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(0, 15);
             labelStatus.TabIndex = 9;
-            //
+            // 
             // textBoxReport
-            //
+            // 
             textBoxReport.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             textBoxReport.BackColor = Color.FromArgb(33, 36, 45);
             textBoxReport.BorderStyle = BorderStyle.FixedSingle;
@@ -180,9 +169,9 @@ namespace Resonalyze
             textBoxReport.ScrollBars = ScrollBars.Vertical;
             textBoxReport.Size = new Size(752, 553);
             textBoxReport.TabIndex = 10;
-            //
+            // 
             // buttonApply
-            //
+            // 
             buttonApply.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonApply.BackColor = Color.FromArgb(46, 51, 67);
             buttonApply.DialogResult = DialogResult.OK;
@@ -194,9 +183,9 @@ namespace Resonalyze
             buttonApply.TabIndex = 11;
             buttonApply.Text = "Apply";
             buttonApply.UseVisualStyleBackColor = false;
-            //
+            // 
             // buttonCancel
-            //
+            // 
             buttonCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
@@ -207,9 +196,9 @@ namespace Resonalyze
             buttonCancel.TabIndex = 12;
             buttonCancel.Text = "Discard";
             buttonCancel.UseVisualStyleBackColor = true;
-            //
+            // 
             // VirtualCrossoverAutoDelayDialog
-            //
+            // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(40, 44, 54);
@@ -221,7 +210,6 @@ namespace Resonalyze
             Controls.Add(checkBoxGains);
             Controls.Add(labelNearSideCut);
             Controls.Add(numericNearSideCut);
-            Controls.Add(labelNearSideCutHint);
             Controls.Add(buttonRun);
             Controls.Add(labelStatus);
             Controls.Add(textBoxReport);
@@ -250,7 +238,6 @@ namespace Resonalyze
         private CheckBox checkBoxGains;
         private Label labelNearSideCut;
         private DarkNumericUpDown numericNearSideCut;
-        private Label labelNearSideCutHint;
         private Button buttonRun;
         private Label labelStatus;
         private TextBox textBoxReport;

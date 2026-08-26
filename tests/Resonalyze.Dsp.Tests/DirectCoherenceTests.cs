@@ -19,6 +19,7 @@ public sealed class DirectCoherenceTests
     {
         public string Name { get; } = name;
         public int SampleRate => DirectCoherenceTests.SampleRate;
+        public int ProcessorSampleRate => SampleRate;
     }
 
     private static Complex[] Impulse(double offsetMs = 0, double amplitude = 1.0)
@@ -132,7 +133,7 @@ public sealed class DirectCoherenceTests
                     DelayMs = over.DelayMs,
                     InvertPolarity = over.InvertPolarity
                 },
-                SampleRate, out ValidSampleRange range);
+                SampleRate, SampleRate, out ValidSampleRange range);
             return new AlignmentSnapshot(
                 channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir), range);
         }

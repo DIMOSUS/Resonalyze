@@ -117,6 +117,7 @@ public sealed class VirtualCrossoverAnalysisTests
                     CrossoverFilterFamily.LinkwitzRiley, 700, 48),
                 HighPassEdge: new CrossoverEdge(
                     CrossoverFilterFamily.LinkwitzRiley, 500, 48))),
+            SampleRate,
             SampleRate);
 
         double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
@@ -138,6 +139,7 @@ public sealed class VirtualCrossoverAnalysisTests
                 CrossoverKind.LowPass,
                 LowPassEdge: new CrossoverEdge(
                     CrossoverFilterFamily.Butterworth, 125, 36))),
+            SampleRate,
             SampleRate);
         Complex[] variableIr = UnitImpulse(4_096, 100);
 
@@ -161,6 +163,7 @@ public sealed class VirtualCrossoverAnalysisTests
                 CrossoverKind.LowPass,
                 LowPassEdge: new CrossoverEdge(
                     CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
             SampleRate);
         Complex[] upper = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(4_096, 100),
@@ -168,6 +171,7 @@ public sealed class VirtualCrossoverAnalysisTests
                 CrossoverKind.HighPass,
                 HighPassEdge: new CrossoverEdge(
                     CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
             SampleRate);
 
         double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
@@ -200,6 +204,7 @@ public sealed class VirtualCrossoverAnalysisTests
                     CrossoverFilterFamily.LinkwitzRiley, 160, 24),
                 HighPassEdge: new CrossoverEdge(
                     CrossoverFilterFamily.LinkwitzRiley, 40, 24))),
+            sampleRate,
             sampleRate);
     }
 
@@ -278,7 +283,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Complex[] ir = UnitImpulse(2_048, 100);
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            ir, DspChannelChain.Identity, SampleRate);
+            ir, DspChannelChain.Identity, SampleRate, SampleRate);
 
         Assert.Equal(100, VirtualCrossoverAnalysis.FindPeakIndex(processed));
         Assert.Equal(1.0, processed[100].Real, 9);
@@ -293,7 +298,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Complex[] ir = UnitImpulse(2_048, 100);
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            ir, new DspChannelChain(DelayMs: 1.0), SampleRate);
+            ir, new DspChannelChain(DelayMs: 1.0), SampleRate, SampleRate);
 
         Assert.Equal(148, VirtualCrossoverAnalysis.FindPeakIndex(processed));
         Assert.Equal(1.0, processed[148].Real, 9);
@@ -307,6 +312,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
             ir,
             new DspChannelChain(GainDb: -6.0206, InvertPolarity: true),
+            SampleRate,
             SampleRate);
 
         Assert.Equal(-0.5, processed[10].Real, 6);
@@ -326,6 +332,7 @@ public sealed class VirtualCrossoverAnalysisTests
                 Crossover: new CrossoverSpec(
                     CrossoverKind.LowPass,
                     new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24))),
+            SampleRate,
             SampleRate);
 
         double maxImaginary = processed.Max(sample => Math.Abs(sample.Imaginary));
@@ -357,7 +364,7 @@ public sealed class VirtualCrossoverAnalysisTests
                 preampDb: -1.5));
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            ir, chain, SampleRate);
+            ir, chain, SampleRate, SampleRate);
         Complex[] expectedSpectrum = new Complex[processed.Length];
         Array.Copy(ir, expectedSpectrum, ir.Length);
         Fourier.Forward(expectedSpectrum, FourierOptions.Matlab);
@@ -422,7 +429,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Complex[] ir = UnitImpulse(1_024, 1_000);
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            ir, new DspChannelChain(DelayMs: 5.0), SampleRate);
+            ir, new DspChannelChain(DelayMs: 5.0), SampleRate, SampleRate);
 
         Assert.Equal(1_240, VirtualCrossoverAnalysis.FindPeakIndex(processed));
         Assert.True(processed.Length >= 1_240);
@@ -448,6 +455,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Complex[] b = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(512, 20),
             new DspChannelChain(InvertPolarity: true),
+            SampleRate,
             SampleRate);
 
         Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses([a, b]);
@@ -468,12 +476,14 @@ public sealed class VirtualCrossoverAnalysisTests
             new DspChannelChain(Crossover: new CrossoverSpec(
                 CrossoverKind.LowPass,
                 new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
             SampleRate);
         Complex[] highBranch = VirtualCrossoverAnalysis.ApplyChain(
             ir,
             new DspChannelChain(Crossover: new CrossoverSpec(
                 CrossoverKind.HighPass,
                 HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
             SampleRate);
 
         Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses([lowBranch, highBranch]);
@@ -503,6 +513,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Complex[] fixedIr = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(4_096, 100),
             new DspChannelChain(DelayMs: 0.7708),
+            SampleRate,
             SampleRate);
 
         double delay = VirtualCrossoverAnalysis.FindBestDelayMs(
@@ -536,6 +547,7 @@ public sealed class VirtualCrossoverAnalysisTests
             new DspChannelChain(Crossover: new CrossoverSpec(
                 CrossoverKind.LowPass,
                 new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
             SampleRate);
         Complex[] high = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(8_192, 300),
@@ -544,6 +556,7 @@ public sealed class VirtualCrossoverAnalysisTests
                 Crossover: new CrossoverSpec(
                     CrossoverKind.HighPass,
                     HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
             SampleRate);
 
         double delay = VirtualCrossoverAnalysis.FindBestDelayMs(
@@ -788,9 +801,10 @@ public sealed class VirtualCrossoverAnalysisTests
         Complex[] variable = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(4_096, 100),
             new DspChannelChain(InvertPolarity: true),
+            SampleRate,
             SampleRate);
         Complex[] fixedDelayed = VirtualCrossoverAnalysis.ApplyChain(
-            fixedIr, new DspChannelChain(DelayMs: 0.5), SampleRate);
+            fixedIr, new DspChannelChain(DelayMs: 0.5), SampleRate, SampleRate);
 
         AlignmentResult result = VirtualCrossoverAnalysis.FindBestAlignment(
             variable, [fixedDelayed], SampleRate, 200, 10_000, -1, 2);
@@ -825,6 +839,7 @@ public sealed class VirtualCrossoverAnalysisTests
             new DspChannelChain(Crossover: new CrossoverSpec(
                 CrossoverKind.HighPass,
                 HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
             SampleRate);
         Complex[] fixedIr = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(8_192, 200),
@@ -833,6 +848,7 @@ public sealed class VirtualCrossoverAnalysisTests
                 Crossover: new CrossoverSpec(
                     CrossoverKind.LowPass,
                     new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
             SampleRate);
 
         AlignmentResult result = VirtualCrossoverAnalysis.FindBestAlignment(
@@ -896,7 +912,7 @@ public sealed class VirtualCrossoverAnalysisTests
             new[] { new PeqBand(frequencyHz, q, gainDb) }));
         PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
 
-        int tail = prepared.RequiredTailSamples(120.0, 8_192, 262_144);
+        int tail = prepared.RequiredTailSamples(120.0, 8_192, 262_144, 48_000);
 
         Assert.Equal(8_192, tail);
     }
@@ -909,7 +925,7 @@ public sealed class VirtualCrossoverAnalysisTests
             new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24)));
         PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
 
-        Assert.Equal(8_192, prepared.RequiredTailSamples(120.0, 8_192, 262_144));
+        Assert.Equal(8_192, prepared.RequiredTailSamples(120.0, 8_192, 262_144, 48_000));
     }
 
     [Fact]
@@ -922,7 +938,7 @@ public sealed class VirtualCrossoverAnalysisTests
             new[] { new PeqBand(20, 10, 12) }));
         PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
 
-        int tail = prepared.RequiredTailSamples(120.0, 8_192, 262_144);
+        int tail = prepared.RequiredTailSamples(120.0, 8_192, 262_144, 48_000);
 
         Assert.InRange(tail, 50_000, 262_143);
     }
@@ -940,7 +956,7 @@ public sealed class VirtualCrossoverAnalysisTests
         var chain = new DspChannelChain(Peq: new EqualizationCurve(
             new[] { new PeqBand(20, 10, 12) }));
 
-        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(ir, chain, 48_000);
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(ir, chain, 48_000, 48_000);
 
         double peak = 0;
         for (int i = 0; i < processed.Length; i++)
@@ -973,6 +989,7 @@ public sealed class VirtualCrossoverAnalysisTests
             new DspChannelChain(Crossover: new CrossoverSpec(
                 CrossoverKind.LowPass,
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_300, 24))),
+            SampleRate,
             SampleRate);
         Complex[] tweeter = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(16_384, 400),
@@ -980,6 +997,7 @@ public sealed class VirtualCrossoverAnalysisTests
                 CrossoverKind.HighPass,
                 HighPassEdge: new CrossoverEdge(
                     CrossoverFilterFamily.Butterworth, 1_800, 24))),
+            SampleRate,
             SampleRate);
 
         IReadOnlyList<AlignmentCandidate> candidates =
@@ -1011,6 +1029,7 @@ public sealed class VirtualCrossoverAnalysisTests
             new DspChannelChain(Crossover: new CrossoverSpec(
                 CrossoverKind.LowPass,
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_300, 24))),
+            SampleRate,
             SampleRate);
         Complex[] tweeter = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(16_384, 400),
@@ -1018,6 +1037,7 @@ public sealed class VirtualCrossoverAnalysisTests
                 CrossoverKind.HighPass,
                 HighPassEdge: new CrossoverEdge(
                     CrossoverFilterFamily.Butterworth, 1_800, 24))),
+            SampleRate,
             SampleRate);
 
         IReadOnlyList<AlignmentCandidate> free =
@@ -1070,6 +1090,7 @@ public sealed class VirtualCrossoverAnalysisTests
                 CrossoverKind.BandPass,
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 150, 36),
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 100, 36))),
+            SampleRate,
             SampleRate);
         for (int i = 0; i < woofer.Length; i++)
         {
@@ -1135,6 +1156,7 @@ public sealed class VirtualCrossoverAnalysisTests
             new DspChannelChain(Crossover: new CrossoverSpec(
                 CrossoverKind.LowPass,
                 new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
             SampleRate);
 
         double arrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
@@ -1157,6 +1179,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Complex[] quieter = VirtualCrossoverAnalysis.ApplyChain(
             reference,
             new DspChannelChain(GainDb: -6),
+            SampleRate,
             SampleRate);
 
         double? referenceLevel = VirtualCrossoverAnalysis.MeasureBandLevelDb(
@@ -1572,7 +1595,7 @@ public sealed class VirtualCrossoverAnalysisTests
         raw[2_000] += Complex.One;
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            raw, new DspChannelChain(DelayMs: 25), SampleRate,
+            raw, new DspChannelChain(DelayMs: 25), SampleRate, SampleRate,
             out ValidSampleRange validRange);
 
         int delaySamples = (int)(25.0 / 1_000.0 * SampleRate);
@@ -1642,6 +1665,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Complex[] negative = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(256, 50),
             new DspChannelChain(InvertPolarity: true),
+            SampleRate,
             SampleRate);
         Assert.Equal(
             PolarityEstimate.Negative,
@@ -1720,9 +1744,9 @@ public sealed class VirtualCrossoverAnalysisTests
     public void GuardClauses_RejectInvalidInput()
     {
         Assert.Throws<ArgumentException>(() => VirtualCrossoverAnalysis.ApplyChain(
-            Array.Empty<Complex>(), DspChannelChain.Identity, SampleRate));
+            Array.Empty<Complex>(), DspChannelChain.Identity, SampleRate, SampleRate));
         Assert.Throws<ArgumentOutOfRangeException>(() => VirtualCrossoverAnalysis.ApplyChain(
-            UnitImpulse(16, 0), DspChannelChain.Identity, 0));
+            UnitImpulse(16, 0), DspChannelChain.Identity, 0, 0));
         Assert.Throws<ArgumentException>(
             () => VirtualCrossoverAnalysis.SumImpulseResponses([]));
         Assert.Throws<ArgumentException>(

@@ -12,7 +12,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
 {
     private readonly object sync = new();
     private readonly Dictionary<ProcessingSlotId, CacheEntry> cache = new();
-    private readonly Func<VirtualCrossoverSourceSnapshot, DspChannelChain, int,
+    private readonly Func<VirtualCrossoverSourceSnapshot, DspChannelChain, int, int,
         CancellationToken, Complex[]?> processChannel;
     private CancellationTokenSource revisionCancellation = new();
     private long revision;
@@ -24,7 +24,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
     }
 
     internal VirtualCrossoverProcessingCoordinator(
-        Func<VirtualCrossoverSourceSnapshot, DspChannelChain, int,
+        Func<VirtualCrossoverSourceSnapshot, DspChannelChain, int, int,
             CancellationToken, Complex[]?> processChannel)
     {
         this.processChannel = processChannel ?? throw new ArgumentNullException(nameof(processChannel));
@@ -94,7 +94,11 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             for (int index = 0; index < snapshot.Channels.Count; index++)
             {
                 VirtualCrossoverChannelSnapshot channel = snapshot.Channels[index];
-                var key = new CacheKey(channel.Source, channel.SampleRate, channel.Chain);
+                var key = new CacheKey(
+                    channel.Source,
+                    channel.SampleRate,
+                    channel.ProcessorSampleRate,
+                    channel.Chain);
                 if (cache.TryGetValue(channel.SlotId, out CacheEntry? entry) &&
                     entry.Key.Equals(key))
                 {
@@ -157,6 +161,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                                 pending.Channel.Source,
                                 pending.Channel.Chain,
                                 pending.Channel.SampleRate,
+                                pending.Channel.ProcessorSampleRate,
                                 processingCancellation.Token);
                             if (response == null)
                             {
@@ -333,6 +338,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         VirtualCrossoverSourceSnapshot source,
         DspChannelChain chain,
         int sampleRate,
+        int processorSampleRate,
         CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
@@ -340,7 +346,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             return null;
         }
 
-        Complex[] response = source.Apply(chain, sampleRate);
+        Complex[] response = source.Apply(chain, sampleRate, processorSampleRate);
         return cancellationToken.IsCancellationRequested ? null : response;
     }
 
@@ -358,15 +364,21 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
     {
         private readonly VirtualCrossoverSourceSnapshot source;
         private readonly int sampleRate;
+        private readonly int processorSampleRate;
         private readonly DspChannelChainCacheKey chain;
 
         public CacheKey(
             VirtualCrossoverSourceSnapshot source,
             int sampleRate,
+            int processorSampleRate,
             DspChannelChain chain)
         {
             this.source = source;
             this.sampleRate = sampleRate;
+            // Part of the key because the SAME chain realized at another processing
+            // rate is another filter: switching the project's DSP model must not be
+            // served the responses computed for the previous one.
+            this.processorSampleRate = processorSampleRate;
             this.chain = new DspChannelChainCacheKey(chain);
         }
 
@@ -374,13 +386,14 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             other != null &&
             ReferenceEquals(source, other.source) &&
             sampleRate == other.sampleRate &&
+            processorSampleRate == other.processorSampleRate &&
             chain.Equals(other.chain);
 
         public override bool Equals(object? obj) => obj is CacheKey other && Equals(other);
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(source, sampleRate, chain);
+            return HashCode.Combine(source, sampleRate, processorSampleRate, chain);
         }
     }
 }
@@ -484,8 +497,9 @@ internal sealed class VirtualCrossoverSourceSnapshot
         this.impulseResponse = TakeHead(impulseResponse);
     }
 
-    public Complex[] Apply(DspChannelChain chain, int sampleRate) =>
-        VirtualCrossoverAnalysis.ApplyChain(impulseResponse, chain, sampleRate);
+    public Complex[] Apply(DspChannelChain chain, int sampleRate, int processorSampleRate) =>
+        VirtualCrossoverAnalysis.ApplyChain(
+            impulseResponse, chain, sampleRate, processorSampleRate);
 
     /// <summary>
     /// The cropped measurement itself, for a caller that must run
@@ -537,8 +551,15 @@ internal sealed class VirtualCrossoverChannelSnapshot
         int id,
         VirtualCrossoverSourceSnapshot source,
         int sampleRate,
+        int processorSampleRate,
         DspChannelChain chain)
-        : this(id, new ProcessingSlotId(id, false), source, sampleRate, chain)
+        : this(
+            id,
+            new ProcessingSlotId(id, false),
+            source,
+            sampleRate,
+            processorSampleRate,
+            chain)
     {
     }
 
@@ -547,6 +568,7 @@ internal sealed class VirtualCrossoverChannelSnapshot
         ProcessingSlotId slotId,
         VirtualCrossoverSourceSnapshot source,
         int sampleRate,
+        int processorSampleRate,
         DspChannelChain chain)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -555,11 +577,16 @@ internal sealed class VirtualCrossoverChannelSnapshot
         {
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
+        if (processorSampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(processorSampleRate));
+        }
 
         Id = id;
         SlotId = slotId;
         Source = source;
         SampleRate = sampleRate;
+        ProcessorSampleRate = processorSampleRate;
         // Only the PEQ needs detaching — its band list is mutable and the UI thread may
         // edit it while this snapshot is processed in the background. Everything else is
         // immutable, so `with` carries it across untouched. Copying member by member (as
@@ -575,7 +602,12 @@ internal sealed class VirtualCrossoverChannelSnapshot
     public int Id { get; }
     public ProcessingSlotId SlotId { get; }
     public VirtualCrossoverSourceSnapshot Source { get; }
+    /// <summary>The MEASUREMENT's rate: the grid the source impulse response lives on.</summary>
     public int SampleRate { get; }
+
+    /// <summary>The rate the simulated processor realizes <see cref="Chain"/> at.</summary>
+    public int ProcessorSampleRate { get; }
+
     public DspChannelChain Chain { get; }
 }
 

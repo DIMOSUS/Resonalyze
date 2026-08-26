@@ -47,6 +47,7 @@ public sealed class CrossoverAutoSetupTests
             minHz,
             maxHz,
             independentSlopes,
+            SampleRate,
             SampleRate);
 
     // Peak-to-peak ripple (dB) of the predicted magnitude sum over the system's
@@ -64,7 +65,7 @@ public sealed class CrossoverAutoSetupTests
         // own roll-off skirts are unavoidable and not what the crossover controls.
         double trim = Math.Pow(2.0, 0.5);
         var window = CrossoverAutoSetup
-            .SummedResponseDb(channels, proposals, SampleRate)
+            .SummedResponseDb(channels, proposals, SampleRate, SampleRate)
             .Where(point => point.X >= low.LowHz * trim && point.X <= high.HighHz / trim)
             .Select(point => point.Y)
             .ToList();

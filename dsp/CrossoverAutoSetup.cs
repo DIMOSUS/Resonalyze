@@ -119,16 +119,29 @@ public sealed record RankedCrossoverProposal(
 /// rate is needed because the optimizer evaluates the exact digital biquad
 /// cascades the DSP runs.
 /// </summary>
+/// <param name="SampleRateHz">
+/// The MEASUREMENT's rate: it bounds the analysis grid and the crossover window
+/// (nothing above its Nyquist was measured).
+/// </param>
+/// <param name="ProcessorSampleRateHz">
+/// The rate the target device realizes its filters at, which need not be the
+/// measurement's — the bilinear transform warps a corner by the rate it was
+/// designed at, so a proposal scored at the wrong rate is scored on filters the
+/// device will not produce (see <see cref="PreparedDspResponse"/>).
+/// </param>
 public sealed record CrossoverAutoSetupOptions(
     IReadOnlyList<CrossoverFilterFamily> Families,
     double MinCrossoverHz,
     double MaxCrossoverHz,
     bool IndependentSlopes,
     double SampleRateHz,
+    double ProcessorSampleRateHz,
     double? SubElevationDb = null)
 {
     /// <summary>All families, the full 20 Hz – 20 kHz window, independent slopes.</summary>
-    public static CrossoverAutoSetupOptions Default(double sampleRateHz) =>
+    public static CrossoverAutoSetupOptions Default(
+        double sampleRateHz,
+        double processorSampleRateHz) =>
         new(
             [
                 CrossoverFilterFamily.LinkwitzRiley,
@@ -138,7 +151,8 @@ public sealed record CrossoverAutoSetupOptions(
             20,
             20_000,
             IndependentSlopes: true,
-            sampleRateHz);
+            sampleRateHz,
+            processorSampleRateHz);
 }
 
 /// <summary>
@@ -1051,6 +1065,7 @@ public static class CrossoverAutoSetup
         if (impulseResponses != null)
         {
             int sampleRate = (int)Math.Round(options.SampleRateHz);
+            int processorRate = (int)Math.Round(options.ProcessorSampleRateHz);
             int[] orderedIndex = Enumerable.Range(0, channels.Count)
                 .OrderBy(index => channels[index].Type)
                 .ToArray();
@@ -1064,7 +1079,8 @@ public static class CrossoverAutoSetup
                     cropped,
                     orderedIndex.Select(index => candidate.Proposals[index]).ToArray(),
                     arrivalCache,
-                    sampleRate))
+                    sampleRate,
+                    processorRate))
                 .ToArray();
         }
 
@@ -1153,7 +1169,8 @@ public static class CrossoverAutoSetup
         Complex[][] croppedOrdered,
         CrossoverProposal[] orderedProposals,
         ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)> arrivalCache,
-        int sampleRate)
+        int sampleRate,
+        int processorSampleRate)
     {
         var processed = new Complex[croppedOrdered.Length][];
         for (int channel = 0; channel < croppedOrdered.Length; channel++)
@@ -1167,7 +1184,8 @@ public static class CrossoverAutoSetup
                         proposal.Kind,
                         proposal.LowPassEdge,
                         proposal.HighPassEdge)),
-                sampleRate);
+                sampleRate,
+                processorSampleRate);
         }
 
         double penalty = 0;
@@ -1249,7 +1267,8 @@ public static class CrossoverAutoSetup
     public static IReadOnlyList<SignalPoint> SummedResponseDb(
         IReadOnlyList<AutoSetupSource> channels,
         IReadOnlyList<CrossoverProposal> proposals,
-        double sampleRateHz)
+        double sampleRateHz,
+        double processorSampleRateHz)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(proposals);
@@ -1262,6 +1281,10 @@ public static class CrossoverAutoSetup
         if (sampleRateHz <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(sampleRateHz));
+        }
+        if (processorSampleRateHz <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(processorSampleRateHz));
         }
 
         double[] grid = BuildGrid(sampleRateHz);
@@ -1281,7 +1304,8 @@ public static class CrossoverAutoSetup
                 {
                     combined[k] += gainLinear
                         * DataHelper.DecibelsToAmplitude(driverDb)
-                        * CrossoverFilter.Response(spec, grid[k], sampleRateHz).Magnitude;
+                        * CrossoverFilter.Response(
+                            spec, grid[k], processorSampleRateHz).Magnitude;
                 }
             }
         }
@@ -1304,6 +1328,12 @@ public static class CrossoverAutoSetup
             throw new ArgumentOutOfRangeException(
                 nameof(options),
                 "The sample rate must be positive.");
+        }
+        if (options.ProcessorSampleRateHz <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "The processor sample rate must be positive.");
         }
 
         var families = options.Families
@@ -1965,7 +1995,7 @@ public static class CrossoverAutoSetup
                 delay = CrossoverFilter.MaxGroupDelaySeconds(
                     new CrossoverEdge(family, fcHz, slope),
                     highPass: false,
-                    options.SampleRateHz);
+                    options.ProcessorSampleRateHz);
                 groupDelayCache[key] = delay;
             }
 
@@ -2624,7 +2654,8 @@ public static class CrossoverAutoSetup
             var magnitude = new double[grid.Length];
             for (int k = 0; k < grid.Length; k++)
             {
-                magnitude[k] = CrossoverFilter.Response(spec, grid[k], options.SampleRateHz).Magnitude;
+                magnitude[k] = CrossoverFilter
+                    .Response(spec, grid[k], options.ProcessorSampleRateHz).Magnitude;
             }
 
             magnitudeCache[key] = magnitude;

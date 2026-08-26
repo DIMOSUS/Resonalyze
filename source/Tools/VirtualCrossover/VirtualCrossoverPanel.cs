@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text;
 using OxyPlot;
 using Resonalyze.Dsp;
@@ -212,6 +212,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         buttonAutoDelay.Click += (_, _) => AutoAlignDelay();
         buttonAutoSetup.Click += (_, _) => OpenAutoSetupWizard();
+        buttonDspProcessor.Click += (_, _) => OpenDspProcessorDialog();
         buttonCaptureOverlay.Click += async (_, _) => await CaptureSumToOverlayAsync();
         buttonExport.Click += async (_, _) => await ExportTuningSheetAsync();
         buttonPhaseGate.Click += async (_, _) => await OpenPhaseGateDialogAsync();
@@ -241,17 +242,6 @@ public partial class VirtualCrossoverPanel : UserControl
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal MeasurementHistoryService? HistoryService { get; set; }
-
-    /// <summary>
-    /// How the DSP being tuned defines Q, mirrored here from the application settings
-    /// (the EQ Wizard owns the selector). Only pre-selects the export's own question —
-    /// the simulated chain itself is always the RBJ realization, so this cannot change
-    /// what the panel plots or what a project file holds.
-    /// </summary>
-    [System.ComponentModel.Browsable(false)]
-    [System.ComponentModel.DesignerSerializationVisibility(
-        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    internal PeqQConvention TargetDspQConvention { get; set; } = PeqQConvention.Rbj;
 
     /// <summary>
     /// Microphone calibration applied to the magnitude curves, resolved from the
@@ -1135,7 +1125,12 @@ public partial class VirtualCrossoverPanel : UserControl
         // Add-channel button) are created here too and would otherwise show none.
         control.ApplyTooltips(toolTip);
 
-        var channel = new VirtualCrossoverChannel(ChannelNameFor(index));
+        var channel = new VirtualCrossoverChannel(ChannelNameFor(index))
+        {
+            // Read on demand rather than copied in: the user can change the
+            // processor at any time, and a copied rate is the one that goes stale.
+            ProcessorSampleRateProvider = () => ProcessorSampleRateHz
+        };
         channelControls[channel] = control;
         control.SettingsChanged += (_, _) => OnChannelSettingsChanged(channel);
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
@@ -1154,7 +1149,15 @@ public partial class VirtualCrossoverPanel : UserControl
     // load — so the first resolved side answers for the whole project. Both physical
     // sides are read because the side currently on screen may be the empty one. A project
     // with no source yet has no rate of its own, and the blocks keep their default.
-    private double ProjectSampleRateHz
+    private double ProjectSampleRateHz => MeasuredSampleRateHz ?? DefaultSampleRateHz;
+
+    /// <summary>
+    /// The rate the project's measurements were actually taken at, or null while it
+    /// has none. Kept apart from <see cref="ProjectSampleRateHz"/>, which substitutes
+    /// a default: anything TELLING the user what the project is measured at has to be
+    /// able to say "nothing yet" instead of naming a rate no measurement has.
+    /// </summary>
+    private int? MeasuredSampleRateHz
     {
         get
         {
@@ -1173,7 +1176,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 }
             }
 
-            return DefaultSampleRateHz;
+            return null;
         }
     }
 
@@ -1183,6 +1186,60 @@ public partial class VirtualCrossoverPanel : UserControl
     /// rate before a measurement exists.
     /// </summary>
     private const double DefaultSampleRateHz = 48_000;
+
+    /// <summary>
+    /// The processor the project is designed for. A named model always answers from
+    /// the catalog, so a corrected preset corrects every project naming it; a Custom
+    /// profile without a stored rate follows the measurements, which is what a project
+    /// did before the processor became selectable.
+    /// </summary>
+    private DspProcessorProfile ProcessorProfile =>
+        project.ResolveDspProcessor((int)Math.Round(ProjectSampleRateHz));
+
+    /// <summary>
+    /// The rate every simulated filter in this project is designed at — NOT the rate
+    /// the channels were measured at (see <see cref="PreparedDspResponse"/>). Read
+    /// wherever a chain is realized, so switching the processor takes effect
+    /// everywhere at once.
+    /// </summary>
+    private int ProcessorSampleRateHz => ProcessorProfile.SampleRateHz;
+
+    private bool ProcessorRateFollowsMeasurements =>
+        project.DspProcessorRateFollowsMeasurements;
+
+    // Names the device the project is designed for. Its processing rate is what every
+    // simulated filter is built at, so a change re-runs the whole tool: the coordinator
+    // keys its cache on that rate, and RedrawAll re-processes every channel through it.
+    private void OpenDspProcessorDialog()
+    {
+        // The dialog is told what the project REALLY has, zero included: it reports the
+        // band the simulation can speak for, and a project with no measurement must not
+        // be shown a rate it does not hold.
+        using var dialog = new DspProcessorDialog(
+            ProcessorProfile,
+            ProcessorRateFollowsMeasurements,
+            MeasuredSampleRateHz ?? 0);
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        {
+            return;
+        }
+
+        DspProcessorProfile profile = dialog.Profile;
+        // The INTENT is compared, not only the numbers: "follow the measurements" and
+        // "48 kHz" describe the same simulation while the measurements are at 48 kHz,
+        // and they part company the moment those measurements are replaced — so
+        // switching between them has to be stored, not read as a no-op.
+        bool follows = dialog.FollowsMeasurements;
+        if (profile == ProcessorProfile && follows == ProcessorRateFollowsMeasurements)
+        {
+            return;
+        }
+
+        project.SetDspProcessor(profile, follows);
+
+        ScheduleSave();
+        RedrawAll();
+    }
 
     // Channel names run A, B, C… by index; shared with the tuning sheets.
     private static string ChannelNameFor(int index) =>
@@ -2117,6 +2174,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 channel,
                 channel.ActiveRight,
                 withChain,
+                ProcessorProfile,
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 renderAnchor,
@@ -2250,7 +2308,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 // recorded — so the two cannot disagree about whether this is a hybrid
                 // session, and no in-flight redraw can turn a valid return into a
                 // refusal.
-                HybridHandoffCapture(token.Channel, token.RightSide)))
+                HybridHandoffCapture(token.Channel, token.RightSide),
+                ProcessorSampleRateHz))
         {
             return false;
         }
@@ -2310,14 +2369,16 @@ public partial class VirtualCrossoverPanel : UserControl
                 dialog.FileName,
                 target,
                 curve,
-                ProjectSampleRateHz,
+                // The device realizes these numbers, so they are stated for ITS rate
+                // and its Q convention — not for the rate the channel was measured at.
+                ProcessorSampleRateHz,
                 $"Channel {channel.Name} ({side})",
                 minHz,
                 maxHz,
                 // No fit statistics: these bands were not necessarily fitted here,
                 // and a sheet is better with the figure absent than invented.
                 Stats: null,
-                TargetDspQConvention));
+                ProcessorProfile.QConvention));
         if (!result.Success)
         {
             ShowError("PEQ could not be exported.", result.Exception!.Message);
@@ -2617,6 +2678,17 @@ public partial class VirtualCrossoverPanel : UserControl
             "Sources stay with their side; mono channels are not\r\n" +
             "offered.");
         toolTip.SetToolTip(
+            buttonDspProcessor,
+            "The processor this project is designed for: pick a model and\r\n" +
+            "its processing rate and PEQ Q convention come with it, or\r\n" +
+            "pick Custom and state them yourself.\r\n" +
+            "The processing rate is the rate every simulated filter is\r\n" +
+            "BUILT at — independent of the rate the channels were\r\n" +
+            "measured at, so a 48 kHz sound card can simulate a 96 kHz\r\n" +
+            "processor exactly, up to its own Nyquist.\r\n" +
+            "The Q convention only restates the numbers on a tuning\r\n" +
+            "sheet; it never moves a filter.");
+        toolTip.SetToolTip(
             buttonAutoSetup,
             "Crossover wizard: detect each channel's driver type from\r\n" +
             "its response, confirm the types, and get a starting point —\r\n" +
@@ -2816,6 +2888,7 @@ public partial class VirtualCrossoverPanel : UserControl
                         !channel.Pair.Mono && channel.ActiveRight),
                     source,
                     state.SampleRate,
+                    ProcessorSampleRateHz,
                     chain));
                 bindings.Add(i, (channel, ChannelColors[i]));
             }
@@ -3969,6 +4042,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     channel,
                     channel.TransferImpulseResponse!,
                     channel.SampleRate,
+                    ProcessorSampleRateHz,
                     channel.Settings.ToChain())).ToList(),
                 log));
 
@@ -4328,6 +4402,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     side,
                     side.State.TransferImpulseResponse!,
                     side.State.SampleRate,
+                    ProcessorSampleRateHz,
                     side.Settings.ToChain())).ToList(),
                 log));
 
@@ -5415,7 +5490,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 ? DspChannelChain.Identity
                 : channel.Settings.ToChain() with { DelayMs = 0 };
             curves.Add(new DspChainCurve(
-                $"{channel.Name} filter", chain, channel.SampleRate, ChannelColors[i]));
+                $"{channel.Name} filter", chain, ProcessorSampleRateHz, ChannelColors[i]));
         }
 
         dspChainPlot.Draw(CurrentDspPlotMode(), curves);
@@ -5854,13 +5929,10 @@ public partial class VirtualCrossoverPanel : UserControl
             metrics.BuildCurves(metricChannels, magnitudeGate.SmoothingInverseOctaves);
         string metricLine = VirtualCrossoverMetric.FormatLabel(
             metrics.BuildEntries(metricChannels, metricLoss));
-        // The sheet prints BOTH sides, so the rate comes from any physically
-        // resolved side — reading only the active side through the delegating
-        // properties would fall back to 48 kHz when, say, the shown left side
-        // is empty and every 44.1 kHz source sits on the right.
-        int sampleRate = ResolvedSidesExcept(null)
-            .Select(item => item.State.SampleRate)
-            .FirstOrDefault(48_000);
+        // The chain graph on the sheet is the FILTERS, so it is drawn at the rate the
+        // device realizes them at — the same rate the panel's own DSP plot uses, and
+        // not the rate the channels happen to have been measured at.
+        int sampleRate = ProcessorSampleRateHz;
         try
         {
             if (dialog.FilterIndex == 1)
@@ -5889,17 +5961,22 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // The convention the sheet's Q column is stated in is a property of the processor
-    // being tuned, and Virtual DSP has no selector of its own. Inheriting the EQ
-    // Wizard's meant a crossover sheet silently stated for whatever device THAT mode
-    // was last pointed at, so the export asks instead: pre-selected with the session's
-    // last EXPORTED convention (the shared setting until one is written), and never
-    // written back, so the wizard's own sheets keep following its selector. The answer
-    // is only returned here — the caller records it once the sheet exists.
-    // Null when the user cancels.
+    // being tuned, and the project now names that processor: a known model states its
+    // own convention, so the export takes it and asks nothing. A Custom profile has
+    // only what the user typed into the DSP processor dialog, so the export still asks
+    // — pre-selected with the session's last EXPORTED answer, or that profile's
+    // convention until one is written. The answer is only returned here; the caller
+    // records it once the sheet exists. Null when the user cancels.
     private PeqQConvention? AskSheetQConvention()
     {
+        DspProcessorProfile profile = ProcessorProfile;
+        if (!profile.IsCustom)
+        {
+            return profile.QConvention;
+        }
+
         using var dialog = new TuningSheetQConventionDialog(
-            sheetQConvention ?? TargetDspQConvention);
+            sheetQConvention ?? profile.QConvention);
         return dialog.ShowDialog(FindForm()) == DialogResult.OK
             ? dialog.SelectedConvention
             : null;
@@ -5980,6 +6057,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using var dialog = new VirtualCrossoverAutoSetupDialog();
         dialog.Init(
             participating[0].SampleRate,
+            ProcessorSampleRateHz,
             dialogChannels,
             participating.Select(channel => channel.TransferImpulseResponse!).ToList());
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||

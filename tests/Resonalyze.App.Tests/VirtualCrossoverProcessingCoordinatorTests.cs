@@ -76,7 +76,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             Peq: new EqualizationCurve([new PeqBand(1_000, 1.0, -2.0)], -1.0));
 
         var snapshot = new VirtualCrossoverChannelSnapshot(
-            1, new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0)), 48_000, chain);
+            1, new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0)), 48_000, 48_000, chain);
 
         // The PEQ is deliberately a fresh instance and EqualizationCurve has no value
         // equality, so compare everything else wholesale — that is what has to survive
@@ -108,6 +108,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
                 Crossover: new CrossoverSpec(
                     CrossoverKind.HighPass,
                     HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24))),
+            48_000,
             48_000);
 
         // 65536 head + the filter tail, rounded up — not the 1048576 the full record forced.
@@ -128,7 +129,8 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         late[60_000] = 1.0;
 
         var snapshot = new VirtualCrossoverSourceSnapshot(late);
-        Complex[] processed = snapshot.Apply(new DspChannelChain(GainDb: 1), 48_000);
+        Complex[] processed =
+            snapshot.Apply(new DspChannelChain(GainDb: 1), 48_000, 48_000);
 
         Assert.True(
             processed.Length >= 524_288,
@@ -191,11 +193,11 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     {
         int processCount = 0;
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, cancellationToken) =>
+            (source, chain, sampleRate, _, cancellationToken) =>
             {
                 Interlocked.Increment(ref processCount);
                 cancellationToken.ThrowIfCancellationRequested();
-                return source.Apply(chain, sampleRate);
+                return source.Apply(chain, sampleRate, sampleRate);
             });
         var first = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0));
         var second = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 9, 0.5));
@@ -204,10 +206,11 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         var snapshot = new VirtualCrossoverProcessingSnapshot(
             revision,
             [
-                new VirtualCrossoverChannelSnapshot(17, first, 48_000, DspChannelChain.Identity),
+                new VirtualCrossoverChannelSnapshot(17, first, 48_000, 48_000, DspChannelChain.Identity),
                 new VirtualCrossoverChannelSnapshot(
                     4,
                     second,
+                    48_000,
                     48_000,
                     new DspChannelChain(GainDb: 6))
             ]);
@@ -232,18 +235,18 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         using var release = new ManualResetEventSlim();
         int processCount = 0;
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, _) =>
+            (source, chain, sampleRate, _, _) =>
             {
                 Interlocked.Increment(ref processCount);
                 entered.Set();
                 Assert.True(release.Wait(RendezvousTimeout));
-                return source.Apply(chain, sampleRate);
+                return source.Apply(chain, sampleRate, sampleRate);
             });
         var source = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 4, 1.0));
         long oldRevision = coordinator.Invalidate();
         var oldSnapshot = new VirtualCrossoverProcessingSnapshot(
             oldRevision,
-            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, DspChannelChain.Identity)]);
+            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, 48_000, DspChannelChain.Identity)]);
 
         Task<VirtualCrossoverRenderResult?> oldTask = coordinator.ProcessAsync(oldSnapshot);
         Assert.True(entered.Wait(RendezvousTimeout));
@@ -254,7 +257,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
 
         var newSnapshot = new VirtualCrossoverProcessingSnapshot(
             newRevision,
-            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, DspChannelChain.Identity)]);
+            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, 48_000, DspChannelChain.Identity)]);
         VirtualCrossoverRenderResult? current = await coordinator.ProcessAsync(newSnapshot);
 
         Assert.NotNull(current);
@@ -268,10 +271,10 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     {
         int processCount = 0;
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, _) =>
+            (source, chain, sampleRate, _, _) =>
             {
                 Interlocked.Increment(ref processCount);
-                return source.Apply(chain, sampleRate);
+                return source.Apply(chain, sampleRate, sampleRate);
             });
         var left = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0));
         var right = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 11, 1.0));
@@ -283,6 +286,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
                 new ProcessingSlotId(0, false),
                 left,
                 48_000,
+                48_000,
                 DspChannelChain.Identity)]);
         var rightSnapshot = new VirtualCrossoverProcessingSnapshot(
             revision,
@@ -290,6 +294,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
                 0,
                 new ProcessingSlotId(0, true),
                 right,
+                48_000,
                 48_000,
                 DspChannelChain.Identity)]);
 
@@ -307,10 +312,10 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     {
         int processCount = 0;
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, _) =>
+            (source, chain, sampleRate, _, _) =>
             {
                 Interlocked.Increment(ref processCount);
-                return source.Apply(chain, sampleRate);
+                return source.Apply(chain, sampleRate, sampleRate);
             });
         var source = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0));
         var slot = new ProcessingSlotId(0, false);
@@ -318,11 +323,11 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         var original = new VirtualCrossoverProcessingSnapshot(
             revision,
             [new VirtualCrossoverChannelSnapshot(
-                0, slot, source, 48_000, DspChannelChain.Identity)]);
+                0, slot, source, 48_000, 48_000, DspChannelChain.Identity)]);
         var changed = new VirtualCrossoverProcessingSnapshot(
             revision,
             [new VirtualCrossoverChannelSnapshot(
-                0, slot, source, 48_000, new DspChannelChain(GainDb: 6))]);
+                0, slot, source, 48_000, 48_000, new DspChannelChain(GainDb: 6))]);
 
         await coordinator.ProcessAsync(original);
         await coordinator.ProcessAsync(changed);
@@ -361,12 +366,12 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         using var entered = new CountdownEvent(2);
         using var release = new ManualResetEventSlim();
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, cancellationToken) =>
+            (source, chain, sampleRate, _, cancellationToken) =>
             {
                 entered.Signal();
                 Assert.True(release.Wait(RendezvousTimeout));
                 cancellationToken.ThrowIfCancellationRequested();
-                return source.Apply(chain, sampleRate);
+                return source.Apply(chain, sampleRate, sampleRate);
             });
         long revision = coordinator.Invalidate();
         VirtualCrossoverProcessingSnapshot left = CreateSnapshot(
@@ -390,12 +395,12 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         using var entered = new CountdownEvent(2);
         using var release = new ManualResetEventSlim();
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, cancellationToken) =>
+            (source, chain, sampleRate, _, cancellationToken) =>
             {
                 entered.Signal();
                 Assert.True(release.Wait(RendezvousTimeout));
                 cancellationToken.ThrowIfCancellationRequested();
-                return source.Apply(chain, sampleRate);
+                return source.Apply(chain, sampleRate, sampleRate);
             });
         long revision = coordinator.Invalidate();
 
@@ -425,7 +430,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         using var release = new ManualResetEventSlim();
         int thrown = 0;
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, cancellationToken) =>
+            (source, chain, sampleRate, _, cancellationToken) =>
             {
                 entered.Signal();
                 Assert.True(release.Wait(RendezvousTimeout));
@@ -435,7 +440,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
                 }
 
                 Interlocked.Increment(ref thrown);
-                return source.Apply(chain, sampleRate);
+                return source.Apply(chain, sampleRate, sampleRate);
             });
         long revision = coordinator.Invalidate();
 
@@ -470,10 +475,10 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         VirtualCrossoverProcessingCoordinator? coordinator = null;
         int processCount = 0;
         coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, _) =>
+            (source, chain, sampleRate, _, _) =>
             {
                 Interlocked.Increment(ref processCount);
-                Complex[] result = source.Apply(chain, sampleRate);
+                Complex[] result = source.Apply(chain, sampleRate, sampleRate);
                 ForceRevisionWithoutCancellation(
                     coordinator!,
                     coordinator!.CurrentRevision + 1);
@@ -484,7 +489,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         long oldRevision = coordinator.Invalidate();
         var oldSnapshot = new VirtualCrossoverProcessingSnapshot(
             oldRevision,
-            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, DspChannelChain.Identity)]);
+            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, 48_000, DspChannelChain.Identity)]);
 
         VirtualCrossoverRenderResult? stale = await coordinator.ProcessAsync(oldSnapshot);
 
@@ -492,7 +497,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         long currentRevision = coordinator.CurrentRevision;
         var currentSnapshot = new VirtualCrossoverProcessingSnapshot(
             currentRevision,
-            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, DspChannelChain.Identity)]);
+            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, 48_000, DspChannelChain.Identity)]);
         VirtualCrossoverRenderResult? current = await coordinator.ProcessAsync(currentSnapshot);
 
         Assert.Null(current);
@@ -504,16 +509,16 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     {
         int processCount = 0;
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, _) =>
+            (source, chain, sampleRate, _, _) =>
             {
                 Interlocked.Increment(ref processCount);
-                return source.Apply(chain, sampleRate);
+                return source.Apply(chain, sampleRate, sampleRate);
             });
         var source = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 5, 1.0));
         long firstRevision = coordinator.Invalidate();
         await coordinator.ProcessAsync(new VirtualCrossoverProcessingSnapshot(
             firstRevision,
-            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, DspChannelChain.Identity)]));
+            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, 48_000, DspChannelChain.Identity)]));
         long changedRevision = coordinator.Invalidate();
 
         VirtualCrossoverRenderResult? changed = await coordinator.ProcessAsync(
@@ -522,6 +527,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
                 [new VirtualCrossoverChannelSnapshot(
                     0,
                     source,
+                    48_000,
                     48_000,
                     new DspChannelChain(GainDb: 6))]));
 
@@ -535,23 +541,23 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     {
         int processCount = 0;
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, _) =>
+            (source, chain, sampleRate, _, _) =>
             {
                 Interlocked.Increment(ref processCount);
-                return source.Apply(chain, sampleRate);
+                return source.Apply(chain, sampleRate, sampleRate);
             });
         var left = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0));
         var right = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 11, 1.0));
         long leftRevision = coordinator.Invalidate();
         await coordinator.ProcessAsync(new VirtualCrossoverProcessingSnapshot(
             leftRevision,
-            [new VirtualCrossoverChannelSnapshot(0, left, 48_000, DspChannelChain.Identity)]));
+            [new VirtualCrossoverChannelSnapshot(0, left, 48_000, 48_000, DspChannelChain.Identity)]));
         long rightRevision = coordinator.Invalidate();
 
         VirtualCrossoverRenderResult? changed = await coordinator.ProcessAsync(
             new VirtualCrossoverProcessingSnapshot(
                 rightRevision,
-                [new VirtualCrossoverChannelSnapshot(0, right, 48_000, DspChannelChain.Identity)]));
+                [new VirtualCrossoverChannelSnapshot(0, right, 48_000, 48_000, DspChannelChain.Identity)]));
 
         Assert.NotNull(changed);
         Assert.Equal(2, processCount);
@@ -574,6 +580,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
                     0,
                     source,
                     48_000,
+                    48_000,
                     DspChannelChain.Identity)]));
 
         Assert.NotNull(render);
@@ -593,13 +600,13 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         using var entered = new CountdownEvent(1);
         using var release = new ManualResetEventSlim();
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
-            (source, chain, sampleRate, cancellationToken) =>
+            (source, chain, sampleRate, _, cancellationToken) =>
             {
                 entered.Signal();
                 Assert.True(release.Wait(RendezvousTimeout));
                 return cancellationToken.IsCancellationRequested
                     ? null
-                    : source.Apply(chain, sampleRate);
+                    : source.Apply(chain, sampleRate, sampleRate);
             });
         long liveRevision = coordinator.Invalidate();
         using var midFlight = new CancellationTokenSource();
@@ -657,6 +664,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
                         0,
                         new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 1, 1.0)),
                         48_000,
+                        48_000,
                         DspChannelChain.Identity)]),
                 cancellation.Token));
     }
@@ -700,6 +708,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
                 channelIndex,
                 new ProcessingSlotId(channelIndex, rightSide),
                 new VirtualCrossoverSourceSnapshot(CreateImpulse(32, peakIndex, 1.0)),
+                48_000,
                 48_000,
                 DspChannelChain.Identity)]);
 

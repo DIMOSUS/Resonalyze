@@ -196,7 +196,8 @@ public partial class EqWizardPanel
                     {
                         Peq = BuildEqualizationCurve()
                     },
-                    sampleRate),
+                    sampleRate,
+                    EqProcessorSampleRate),
                 EqWizardPhaseRender.EditedChannelTitle,
                 EqWizardPhaseRender.EditedChannelColor)
         };
@@ -379,7 +380,8 @@ public partial class EqWizardPanel
             context.Neighbours,
             context.Gate,
             context.DetrendMs,
-            source.Measurement!.SampleRate);
+            source.Measurement!.SampleRate,
+            EqProcessorSampleRate);
     }
 
     // Starts a render unless the landed curve already answers for this bank — the same

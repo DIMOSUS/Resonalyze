@@ -532,10 +532,11 @@ public partial class VirtualCrossoverPanel
             channel.Pair.Bypass
                 ? DspChannelChain.Identity
                 : channel.SideSettings(rightSide).ToChain(),
-            // The CHANNEL's rate: the chain is what the user's DSP will run, and it
-            // will run at the project's rate, not at whatever the capture was taken
-            // at. The capture's own rate is already folded into its stored levels.
-            state.SampleRate,
+            // The PROCESSOR's rate: the chain is what the user's DSP will run, and it
+            // runs at the device's rate — not at whatever the capture, or the
+            // measurement beside it, was taken at. The capture's own rate is already
+            // folded into its stored levels.
+            channel.ProcessorSampleRateFor(rightSide),
             Calibration,
             reference.Select(point => point.X).ToList(),
             smoothingCode);

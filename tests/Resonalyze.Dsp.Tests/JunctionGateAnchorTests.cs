@@ -40,6 +40,7 @@ public sealed class JunctionGateAnchorTests
         VirtualCrossoverAnalysis.ApplyChain(
             Taps((0, 1.0)),
             new DspChannelChain(Crossover: crossover),
+            SampleRate,
             SampleRate);
 
     // The share of a response's energy that falls AHEAD of a placement's

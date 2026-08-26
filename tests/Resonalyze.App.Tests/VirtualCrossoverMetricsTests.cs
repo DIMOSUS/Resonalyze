@@ -193,7 +193,7 @@ public sealed class VirtualCrossoverMetricsTests
         var impulse = new Complex[8_192];
         impulse[480] = Complex.One;
         Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
-            impulse, channel.Settings.ToChain(), 48_000);
+            impulse, channel.Settings.ToChain(), 48_000, 48_000);
         return new ProcessedChannel(
             channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir), 48_000,
             OxyColors.White);

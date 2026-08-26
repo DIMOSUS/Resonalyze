@@ -51,6 +51,7 @@ public sealed class CrossoverRankedProposalTests
             20,
             20_000,
             IndependentSlopes: false,
+            SampleRate,
             SampleRate);
 
     [Theory]
@@ -116,6 +117,7 @@ public sealed class CrossoverRankedProposalTests
             20,
             20_000,
             IndependentSlopes: true,
+            SampleRate,
             SampleRate);
 
         IReadOnlyList<RankedCrossoverProposal> ranked =
@@ -167,6 +169,7 @@ public sealed class CrossoverRankedProposalTests
             20,
             20_000,
             IndependentSlopes: true,
+            SampleRate,
             SampleRate);
 
         IReadOnlyList<RankedCrossoverProposal> ranked =
@@ -234,7 +237,7 @@ public sealed class CrossoverRankedProposalTests
         };
 
         IReadOnlyList<SignalPoint> summed = CrossoverAutoSetup.SummedResponseDb(
-            channels, proposals, SampleRate);
+            channels, proposals, SampleRate, SampleRate);
 
         foreach (SignalPoint point in summed)
         {
@@ -385,6 +388,7 @@ public sealed class CrossoverRankedProposalTests
             20,
             20_000,
             IndependentSlopes: false,
+            SampleRate,
             SampleRate);
 
         IReadOnlyList<RankedCrossoverProposal> ranked =
@@ -423,6 +427,7 @@ public sealed class CrossoverRankedProposalTests
             20,
             20_000,
             IndependentSlopes: false,
+            SampleRate,
             SampleRate);
 
         IReadOnlyList<CrossoverProposal> proposals =

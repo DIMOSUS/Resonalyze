@@ -26,4 +26,12 @@ internal sealed class VirtualCrossoverSideAlignmentChannel : IAlignmentChannel
         ? $"{Runtime.Name} (mono)"
         : $"{Runtime.Name} {(RightSide ? "R" : "L")}";
     public int SampleRate => State.SampleRate;
+
+    // The project's processing rate where the panel installed one; this side's
+    // measurement rate otherwise — see
+    // VirtualCrossoverChannel.ProcessorSampleRateProvider.
+    public int ProcessorSampleRate =>
+        Runtime.ProcessorSampleRateProvider?.Invoke() is int rate && rate > 0
+            ? rate
+            : State.SampleRate;
 }

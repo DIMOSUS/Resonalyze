@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -94,6 +94,15 @@ namespace Resonalyze;
 /// Virtual DSP panel's selector, reachable by a plain tab switch, would otherwise walk
 /// around that lock from the other side.
 /// </param>
+/// <param name="ProcessorSampleRateHz">
+/// The rate the project's processor realized the chain at when the handoff was taken.
+/// The bank is FITTED at that rate and comes back to be run at whatever the project
+/// says now, and the DSP processor dialog is one tab switch away — so a bank tuned for
+/// a 96 kHz device must not be installed silently into a project that has since moved
+/// to 48 kHz, where the same numbers are different filters (up to 4 dB apart in the
+/// top octave; see PreparedDspResponse). Only the RATE is guarded: the profile's Q
+/// convention moves printed numbers alone and leaves the tune exactly as fitted.
+/// </param>
 internal sealed record VirtualDspEqReturnToken(
     VirtualCrossoverChannel Channel,
     bool RightSide,
@@ -107,7 +116,8 @@ internal sealed record VirtualDspEqReturnToken(
     PhaseAnalysisSettings GateTemplate,
     double? PinnedGateOffsetMs,
     CalibrationFile? Calibration,
-    LiveCaptureDocument? SpatialAverage);
+    LiveCaptureDocument? SpatialAverage,
+    int ProcessorSampleRateHz);
 
 /// <summary>
 /// Everything one Virtual DSP channel side sends into the EQ Wizard: the curve to
@@ -182,6 +192,7 @@ internal static class VirtualDspEqHandoff
         VirtualCrossoverChannel channel,
         bool rightSide,
         bool withChain,
+        DspProcessorProfile processorProfile,
         PhaseAnalysisSettings gateTemplate,
         double? pinnedGateOffsetMs,
         int? renderAnchorIndex,
@@ -198,6 +209,7 @@ internal static class VirtualDspEqHandoff
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(gateTemplate);
+        ArgumentNullException.ThrowIfNull(processorProfile);
 
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
         VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
@@ -208,6 +220,10 @@ internal static class VirtualDspEqHandoff
         }
 
         int sampleRate = state.SampleRate;
+        // The chain is realized at the PROCESSOR's rate, the record stays on the
+        // measurement's — the preview the wizard redraws must run the same pair, which
+        // is why the profile travels with the source.
+        int processorSampleRate = processorProfile.SampleRateHz;
         Complex[] response;
         int anchorIndex;
         double gateOffsetMs;
@@ -224,7 +240,8 @@ internal static class VirtualDspEqHandoff
             // magnitude-transparent but keep the response in the processed view's
             // time, where the pinned offset and the render anchor point.
             DspChannelChain chain = previewChain;
-            response = state.ProcessingSource.Apply(chain, sampleRate);
+            response = state.ProcessingSource.Apply(
+                chain, sampleRate, processorSampleRate);
             anchorIndex = renderAnchorIndex ?? ProcessedChannels.StartAnchorIndex(
                 response,
                 VirtualCrossoverAnalysis.FindPeakIndex(response),
@@ -314,6 +331,7 @@ internal static class VirtualDspEqHandoff
             SpatialAverage = spatialAverage,
             SpatialAverageOffsetDb = spatialAverageOffsetDb,
             SampleRateHz = sampleRate,
+            ProcessorProfile = processorProfile,
             CurveKind = AnalysisCurveKind.Primary
         };
 
@@ -355,7 +373,8 @@ internal static class VirtualDspEqHandoff
                 // same divergence the calibration guard refuses, and just as invisible
                 // from the wizard: null here means "fitted against the impulse
                 // response", and the two must still agree on the way back.
-                spatialAverage));
+                spatialAverage,
+                processorSampleRate));
     }
 
     /// <summary>
@@ -394,7 +413,8 @@ internal static class VirtualDspEqHandoff
         PhaseAnalysisSettings gateTemplate,
         double? pinnedGateOffsetMs,
         double targetLevelDb,
-        LiveCaptureDocument? spatialAverage)
+        LiveCaptureDocument? spatialAverage,
+        int processorSampleRateHz)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(token);
@@ -412,6 +432,16 @@ internal static class VirtualDspEqHandoff
         // which a session deliberately survives, so the same rule has to hold here or
         // the lock is decorative.
         if (!CalibrationFile.SameCurve(token.Calibration, calibration))
+        {
+            return false;
+        }
+
+        // And the device must still be the one the bank was fitted for. The wizard
+        // realizes the bank at the rate the handoff carried, so a project that changed
+        // processors meanwhile would run those very numbers as different filters —
+        // exactly the divergence the calibration and chain guards exist for, and
+        // reachable by the same plain tab switch (see the token).
+        if (token.ProcessorSampleRateHz != processorSampleRateHz)
         {
             return false;
         }

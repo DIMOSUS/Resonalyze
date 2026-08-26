@@ -152,7 +152,7 @@ public sealed class CrossoverDistortionTests
             new(TweeterCurve, DriverType.Tweeter, null, tweeterDistortion)
         };
         IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
-            channels, CrossoverAutoSetupOptions.Default(SampleRate));
+            channels, CrossoverAutoSetupOptions.Default(SampleRate, SampleRate));
         return proposals[2].HighPassEdge!.Value;
     }
 

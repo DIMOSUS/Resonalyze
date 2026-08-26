@@ -275,6 +275,7 @@ internal sealed class VirtualCrossoverMetrics
                     State = state,
                     Source = source,
                     SampleRate = state.SampleRate,
+                    ProcessorSampleRate = channel.ProcessorSampleRate,
                     Chain = settings.ToChain(),
                     Channel = channel
                 };
@@ -306,6 +307,7 @@ internal sealed class VirtualCrossoverMetrics
                         side.SlotId,
                         side.Source,
                         side.SampleRate,
+                        side.ProcessorSampleRate,
                         side.Chain))));
             if (render == null)
             {
@@ -513,6 +515,7 @@ internal sealed class VirtualCrossoverMetrics
                 State = state,
                 Source = source,
                 SampleRate = state.SampleRate,
+                ProcessorSampleRate = channel.ProcessorSampleRate,
                 Chain = chain,
                 Channel = channel
             });
@@ -531,6 +534,7 @@ internal sealed class VirtualCrossoverMetrics
                     side.SlotId,
                     side.Source,
                     side.SampleRate,
+                    side.ProcessorSampleRate,
                     side.Chain))));
         if (render == null)
         {
@@ -581,6 +585,12 @@ internal sealed class VirtualCrossoverMetrics
         public required VirtualCrossoverChannelState State { get; init; }
         public required VirtualCrossoverSourceSnapshot Source { get; init; }
         public required int SampleRate { get; init; }
+
+        // Snapshotted like everything else here: the user may pick another
+        // processor while a metric rebuild is in flight, and the rate the chain
+        // was realized at has to be the one this job started with.
+        public required int ProcessorSampleRate { get; init; }
+
         public required DspChannelChain Chain { get; init; }
         public required VirtualCrossoverChannel Channel { get; init; }
         public Complex[]? ProcessedIr { get; set; }

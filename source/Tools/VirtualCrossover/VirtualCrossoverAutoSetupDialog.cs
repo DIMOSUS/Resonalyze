@@ -34,6 +34,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private readonly List<ChannelRow> rows = new();
     private readonly List<(CheckBox Box, CrossoverFilterFamily Family)> familyBoxes = new();
     private double sampleRateHz = 48_000;
+    // The rate the target processor realizes its filters at — what the optimizer
+    // must design against. Independent of the measurement rate above, which only
+    // bounds the analysis band.
+    private double processorSampleRateHz = 48_000;
     private bool initialized;
     // The sub-elevation field is pre-filled once, from the first valid proposal's
     // measured elevation (its default and upper limit). Until then options carry a
@@ -70,19 +74,22 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     /// <summary>
     /// Seeds one row per participating channel: the display name, its accent
     /// color, the smoothed raw magnitude curve, and the auto-detected band/type.
-    /// The sample rate is needed because the optimizer evaluates the exact digital
-    /// biquad cascades the DSP runs.
+    /// Both rates are needed: the measurement's bounds the analysis band, and the
+    /// processor's is the one the optimizer evaluates the exact digital biquad
+    /// cascades at — the cascades the DSP will actually run.
     /// </summary>
     private bool optionsPositioned;
 
     public void Init(
         double sampleRateHz,
+        double processorSampleRateHz,
         IReadOnlyList<(string Name, Color Accent, IReadOnlyList<SignalPoint> MagnitudeDb,
             IReadOnlyList<double>? Coherence, IReadOnlyList<SignalPoint>? Distortion,
             DriverBandEstimate Band)> channels,
         IReadOnlyList<Complex[]>? impulseResponses = null)
     {
         this.sampleRateHz = sampleRateHz;
+        this.processorSampleRateHz = processorSampleRateHz;
         this.impulseResponses = impulseResponses;
         // Matches the optimizer's Nyquist ceiling; at 44.1 kHz this keeps the full
         // 20 kHz reachable instead of clamping to ~19.8 kHz.
@@ -269,6 +276,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             (double)maxCrossover.Value,
             independentSlopes.Checked,
             sampleRateHz,
+            processorSampleRateHz,
             subElevationInitialized ? (double)subElevation.Value : null);
 
     private IReadOnlyList<CrossoverProposal>? TryPropose()
@@ -361,7 +369,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         double trim = Math.Pow(2.0, 0.5);
 
         var window = CrossoverAutoSetup
-            .SummedResponseDb(sources, proposals, sampleRateHz)
+            .SummedResponseDb(sources, proposals, sampleRateHz, processorSampleRateHz)
             .Where(point => point.X >= low.LowHz * trim && point.X <= high.HighHz / trim)
             .Select(point => point.Y)
             .ToList();

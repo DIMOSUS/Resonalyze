@@ -24,6 +24,7 @@ public sealed class StereoAlignmentTests
     {
         public string Name { get; } = name;
         public int SampleRate => StereoAlignmentTests.SampleRate;
+        public int ProcessorSampleRate => SampleRate;
         public Complex[] Ir { get; } = ir;
     }
 
@@ -54,6 +55,7 @@ public sealed class StereoAlignmentTests
             channel.Ir,
             new DspChannelChain(
                 DelayMs: over.DelayMs, InvertPolarity: over.InvertPolarity),
+            SampleRate,
             SampleRate);
         return new AlignmentSnapshot(
             channel, processed, VirtualCrossoverAnalysis.FindPeakIndex(processed));
@@ -878,6 +880,7 @@ public sealed class StereoAlignmentTests
                     CrossoverKind.BandPass,
                     new CrossoverEdge(CrossoverFilterFamily.Butterworth, 150, 36),
                     new CrossoverEdge(CrossoverFilterFamily.Butterworth, 100, 36))),
+                SampleRate,
                 SampleRate);
             for (int i = 0; i < ir.Length; i++)
             {

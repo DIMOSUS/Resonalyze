@@ -26,7 +26,7 @@ public sealed class JunctionPhaseAlignmentTests
     {
         var impulse = new Complex[8_192];
         impulse[480] = Complex.One;
-        return VirtualCrossoverAnalysis.ApplyChain(impulse, chain, SampleRate);
+        return VirtualCrossoverAnalysis.ApplyChain(impulse, chain, SampleRate, SampleRate);
     }
 
     private static JunctionPhaseResult AnalyzeJunction(
@@ -216,6 +216,7 @@ public sealed class JunctionPhaseAlignmentTests
                 CrossoverKind.LowPass,
                 LowPassEdge: new CrossoverEdge(
                     CrossoverFilterFamily.LinkwitzRiley, 23_000, 24))),
+            rate,
             rate);
         Complex[] upper = VirtualCrossoverAnalysis.ApplyChain(
             impulse,
@@ -223,6 +224,7 @@ public sealed class JunctionPhaseAlignmentTests
                 CrossoverKind.HighPass,
                 HighPassEdge: new CrossoverEdge(
                     CrossoverFilterFamily.LinkwitzRiley, 23_000, 24))),
+            rate,
             rate);
 
         JunctionPhaseResult? result = JunctionPhaseAlignment.Analyze(
@@ -344,9 +346,9 @@ public sealed class JunctionPhaseAlignmentTests
         var longImpulse = new Complex[200_000];
         longImpulse[480] = Complex.One;
         Complex[] lower = VirtualCrossoverAnalysis.ApplyChain(
-            longImpulse, new DspChannelChain(Crossover: LowPass), SampleRate);
+            longImpulse, new DspChannelChain(Crossover: LowPass), SampleRate, SampleRate);
         Complex[] upper = VirtualCrossoverAnalysis.ApplyChain(
-            longImpulse, new DspChannelChain(Crossover: HighPass), SampleRate);
+            longImpulse, new DspChannelChain(Crossover: HighPass), SampleRate, SampleRate);
 
         JunctionPhaseResult? result = JunctionPhaseAlignment.Analyze(
             lower, upper, SampleRate, CrossoverHz, BandLowHz, BandHighHz);

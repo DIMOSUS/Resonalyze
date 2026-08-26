@@ -30,6 +30,7 @@ public sealed class AutoAlignmentEngineTests
 
         public string Name { get; }
         public int SampleRate => AutoAlignmentEngineTests.SampleRate;
+        public int ProcessorSampleRate => SampleRate;
         public Complex[] InitialIr { get; }
         public Complex[] ReprocessIr { get; }
     }
@@ -41,7 +42,7 @@ public sealed class AutoAlignmentEngineTests
         string name, Complex[] bypassed, DspChannelChain chain)
     {
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            bypassed, chain, SampleRate, out ValidSampleRange processedRange);
+            bypassed, chain, SampleRate, SampleRate, out ValidSampleRange processedRange);
         return new AlignmentSnapshot(
             new TestChannel(name, processed),
             processed,
@@ -62,6 +63,7 @@ public sealed class AutoAlignmentEngineTests
         VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(BasePosition),
             new DspChannelChain(DelayMs: delayMs, InvertPolarity: invert),
+            SampleRate,
             SampleRate);
 
     // A first arrival plus a competing later copy — the shape that splits the
@@ -97,6 +99,7 @@ public sealed class AutoAlignmentEngineTests
                     CrossoverKind.BandPass,
                     new CrossoverEdge(CrossoverFilterFamily.Butterworth, 800, 24),
                     new CrossoverEdge(CrossoverFilterFamily.Butterworth, 80, 24))),
+            SampleRate,
             SampleRate);
         int start = BasePosition + (int)Math.Round(modeMs / 1000.0 * SampleRate);
         // A smooth attack keeps the build-up's onset out of the band's upper
@@ -151,6 +154,7 @@ public sealed class AutoAlignmentEngineTests
                         new DspChannelChain(
                             DelayMs: o.DelayMs,
                             InvertPolarity: o.InvertPolarity),
+                        SampleRate,
                         SampleRate);
                     return new AlignmentSnapshot(
                         channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir));
@@ -492,6 +496,7 @@ public sealed class AutoAlignmentEngineTests
                     CrossoverKind.LowPass,
                     new CrossoverEdge(
                         CrossoverFilterFamily.Butterworth, 180, 36))),
+            SampleRate,
             SampleRate);
         Complex[] high = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(BasePosition),
@@ -502,6 +507,7 @@ public sealed class AutoAlignmentEngineTests
                     CrossoverKind.HighPass,
                     HighPassEdge: new CrossoverEdge(
                         CrossoverFilterFamily.Butterworth, 280, 36))),
+            SampleRate,
             SampleRate);
         for (int i = 0; i < low.Length; i++)
         {
@@ -598,6 +604,7 @@ public sealed class AutoAlignmentEngineTests
                     CrossoverKind.LowPass,
                     new CrossoverEdge(
                         CrossoverFilterFamily.Butterworth, 150, 36))),
+            SampleRate,
             SampleRate);
         Complex[] late = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(BasePosition),
@@ -608,6 +615,7 @@ public sealed class AutoAlignmentEngineTests
                     CrossoverKind.HighPass,
                     HighPassEdge: new CrossoverEdge(
                         CrossoverFilterFamily.Butterworth, 220, 36))),
+            SampleRate,
             SampleRate);
         for (int i = 0; i < ir.Length; i++)
         {
@@ -736,6 +744,7 @@ public sealed class AutoAlignmentEngineTests
     {
         public string Name { get; } = name;
         public int SampleRate => 44_100;
+        public int ProcessorSampleRate => SampleRate;
         public Complex[] Ir { get; } = ir;
     }
 
@@ -1099,6 +1108,7 @@ public sealed class AutoAlignmentEngineTests
                 CrossoverKind.BandPass,
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 24),
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 25, 24))),
+            SampleRate,
             SampleRate);
         int start = BasePosition + (int)Math.Round(buildUpMs / 1000.0 * SampleRate);
         const double AttackSeconds = 0.002;
@@ -1140,6 +1150,7 @@ public sealed class AutoAlignmentEngineTests
                 CrossoverKind.BandPass,
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 400, 24),
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 40, 24))),
+            SampleRate,
             SampleRate);
         int start = BasePosition + (int)Math.Round(buildUpMs / 1000.0 * SampleRate);
         const double AttackSeconds = 0.004;
@@ -1190,7 +1201,7 @@ public sealed class AutoAlignmentEngineTests
             string name, Complex[] bypassed, DspChannelChain chain)
         {
             Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-                bypassed, chain, SampleRate, out ValidSampleRange range);
+                bypassed, chain, SampleRate, SampleRate, out ValidSampleRange range);
             return new AlignmentSnapshot(
                 new TestChannel(name, processed), processed,
                 VirtualCrossoverAnalysis.FindPeakIndex(processed), range,
@@ -1213,6 +1224,7 @@ public sealed class AutoAlignmentEngineTests
                         DelayMs = over.DelayMs,
                         InvertPolarity = over.InvertPolarity
                     },
+                    SampleRate,
                     SampleRate,
                     out ValidSampleRange range);
                 return side with
@@ -1287,7 +1299,7 @@ public sealed class AutoAlignmentEngineTests
         AlignmentSnapshot Snapshot(string name, Complex[] bypassed, DspChannelChain chain)
         {
             Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-                bypassed, chain, SampleRate, out ValidSampleRange range);
+                bypassed, chain, SampleRate, SampleRate, out ValidSampleRange range);
             return new AlignmentSnapshot(
                 new TestChannel(name, processed), processed,
                 VirtualCrossoverAnalysis.FindPeakIndex(processed), range,
@@ -1305,6 +1317,7 @@ public sealed class AutoAlignmentEngineTests
                 Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
                     bypassed,
                     chain with { DelayMs = over.DelayMs, InvertPolarity = over.InvertPolarity },
+                    SampleRate,
                     SampleRate,
                     out ValidSampleRange range);
                 return side with
@@ -1365,6 +1378,7 @@ public sealed class AutoAlignmentEngineTests
                 CrossoverKind.BandPass,
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 24),
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 25, 24))),
+            SampleRate,
             SampleRate);
         int start = BasePosition + (int)Math.Round(modeMs / 1000.0 * SampleRate);
         const double AttackSeconds = 0.002;
@@ -1399,6 +1413,7 @@ public sealed class AutoAlignmentEngineTests
                         DelayMs = over.DelayMs,
                         InvertPolarity = over.InvertPolarity
                     },
+                    SampleRate,
                     SampleRate,
                     out ValidSampleRange range);
                 return side with

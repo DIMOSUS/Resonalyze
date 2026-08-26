@@ -1550,9 +1550,10 @@ Resonalyze fits, plots and exports RBJ filters throughout. Hand a Q of 5.8 at
 **DSP Q** selector states which convention the processor being tuned uses; it
 moves the Q printed on the EQ Wizard's tuning sheets (which name the convention
 they were written for) and nothing else — the fit, the curve on screen and the
-exported profiles stay RBJ. Virtual DSP asks for the convention as it exports,
-pre-selected from this selector, because a crossover sheet is often written for a
-different processor than the one the wizard was last pointed at. The conventions are exactly reconcilable:
+exported profiles stay RBJ. A Virtual DSP handoff brings its project's
+[processor](#dsp-processor) with it and locks both this selector and the sample
+rate to that device for as long as that source is loaded; your own choice is kept
+and comes back with the next source. The conventions are exactly reconcilable:
 
 ```
 Q_symmetric = Q_rbj × 10^( |gain| / 40)     ±3 dB ×1.19   ±12 dB ×2.00   ±15 dB ×2.37
@@ -1593,7 +1594,9 @@ which side the controls edit, **L→R** / **R→L** copy chain settings across s
 and a **Mono** checkbox turns a pair into a single shared driver — the typical
 one-subwoofer car layout — feeding both sides' sums. The setup grows from two up
 to eight pairs, and **+/−** folds a block down to its header. Every channel in a
-project must share one sample rate.
+project must share one sample rate — the rate they were MEASURED at, which is a
+separate question from the rate the processor runs at (see
+[DSP processor](#dsp-processor)).
 
 The source button's menu also carries **Open in analyzers**: it loads that
 side's own measurement into the analysis modes and lands on Frequency Response,
@@ -1924,6 +1927,40 @@ entry of the same name here is selected with a note that the two files are not
 known to agree, and one that matches nothing keeps whatever the selector already
 had rather than replacing a working choice with none.
 
+#### DSP processor
+
+**DSP processor...** names the device the project is designed for, and the choice
+is part of the project (it travels in a saved session). Pick a model — the
+catalog covers the common car processors from AMP, HELIX, Audison, Hertz,
+Mosconi, ESX, miniDSP and JL Audio — and its **processing rate** and
+[**Q convention**](#dsp-q-convention) come with it, locked. Pick **Custom** and
+state both by hand.
+
+The processing rate is the rate every simulated filter is **built** at, and it is
+deliberately independent of the rate the channels were measured at. A digital
+filter's corner is warped by the rate it was designed for, so designing at the
+measurement's rate simulates filters the device never builds — an LR4 low-pass at
+8 kHz designed at 48 kHz sits 1.5 dB below the 96 kHz one at 10 kHz, 4.1 dB at
+12 kHz and 10.3 dB at 15 kHz. Keeping the two apart is what lets a 48 kHz sound
+card tune a 96 kHz processor exactly: a filter invents no frequency its input
+lacks, so what it does to a 48 kHz record is fully described by its response over
+that record's band. The simulation then speaks for everything up to the lower of
+the two Nyquist limits, which the dialog states for the project in front of you.
+
+The rate list offers **Follow measurements** beside the fixed rates, and the two
+are deliberately different answers: following means the project states no rate of
+its own, so replacing its measurements with a set at another rate moves the
+simulation with them; stating 48 kHz keeps 48 kHz whatever the measurements
+become. A project from before the selector — and a new one until you say
+otherwise — opens as **Custom, following**, so nothing that was tuned before
+changes on its own.
+
+Changing the processor re-runs every channel, and it also travels into the EQ
+Wizard: a PEQ handoff carries the project's rate and Q convention, the wizard's
+own two selectors show them locked for as long as that source is loaded, and a
+bank fitted for one processor is refused on the way back if the project has moved
+to another — the same guard the calibration and the chain already have.
+
 - **Auto crossover...** estimates each channel's usable band and driver type
   (subwoofer, woofer, midbass, midrange, tweeter), asks which filter families to
   allow, the crossover-frequency window, and whether the two sides of a junction
@@ -2005,12 +2042,13 @@ had rather than replacing a working choice with none.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
   text): for every side of every pair (a mono pair prints once) the gain, delay in
   ms and mm, polarity, crossover filters, and PEQ bands down to the all-pass. It
-  asks first which [Q convention](#dsp-q-convention) the PEQ columns should be
-  stated in — the processor being tuned here is not necessarily the one the EQ
-  Wizard's **DSP Q** selector was set for, so that selector only pre-selects the
-  answer (as does the previous export in the same session). The chooser carries a
-  crib that follows the selection: what the convention does to a band's width, and
-  which processors are known to read Q that way.
+  states the PEQ columns in the [Q convention](#dsp-q-convention) of the project's
+  [DSP processor](#dsp-processor): a named model answers for itself and the export
+  asks nothing. A **Custom** processor has only what was typed into that dialog, so
+  the export still asks — pre-selected from the profile, or from the previous export
+  in the same session. The chooser carries a crib that follows the selection: what
+  the convention does to a band's width, and which processors are known to read Q
+  that way.
   **Save session... / Load session...** export and import the complete session
   JSON for sharing or archiving.
 

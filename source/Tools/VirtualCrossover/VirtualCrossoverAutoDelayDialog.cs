@@ -1,4 +1,4 @@
-﻿namespace Resonalyze;
+namespace Resonalyze;
 
 /// <summary>
 /// The Auto delay dialog: the steering layout (LHD/RHD), the stereo scene
@@ -158,7 +158,6 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         bool enabled = stereo && checkBoxGains.Checked;
         UiStyle.SetTextEnabledLook(labelNearSideCut, enabled);
         numericNearSideCut.Enabled = enabled;
-        UiStyle.SetTextEnabledLook(labelNearSideCutHint, enabled);
     }
 
     // Once a proposal exists, any input change makes it stale: Apply must
@@ -214,7 +213,6 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         UiStyle.SetTextEnabledLook(checkBoxGains, false, interactive: true);
         UiStyle.SetTextEnabledLook(labelNearSideCut, false);
         numericNearSideCut.Enabled = false;
-        UiStyle.SetTextEnabledLook(labelNearSideCutHint, false);
         SetStatus("Aligning…", StatusNeutral);
         UseWaitCursor = true;
         try

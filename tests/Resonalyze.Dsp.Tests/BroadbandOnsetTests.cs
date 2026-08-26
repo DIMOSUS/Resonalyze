@@ -286,7 +286,7 @@ public sealed class BroadbandOnsetTests
         }
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            raw, new DspChannelChain(GainDb: -3), Rate,
+            raw, new DspChannelChain(GainDb: -3), Rate, Rate,
             out ValidSampleRange validRange);
 
         Assert.Equal(new ValidSampleRange(0, raw.Length), validRange);
@@ -326,7 +326,7 @@ public sealed class BroadbandOnsetTests
         }
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            raw, new DspChannelChain(DelayMs: 25), Rate,
+            raw, new DspChannelChain(DelayMs: 25), Rate, Rate,
             out ValidSampleRange validRange);
 
         int delaySamples = (int)(25.0 / 1_000.0 * Rate);
@@ -368,7 +368,7 @@ public sealed class BroadbandOnsetTests
         }
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            raw, new DspChannelChain(DelayMs: -25), Rate,
+            raw, new DspChannelChain(DelayMs: -25), Rate, Rate,
             out ValidSampleRange validRange);
 
         int delaySamples = (int)(25.0 / 1_000.0 * Rate);
@@ -411,7 +411,7 @@ public sealed class BroadbandOnsetTests
         var chain = new DspChannelChain(
             Peq: new EqualizationCurve([new PeqBand(20, 10, 12)]));
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            raw, chain, Rate, out ValidSampleRange validRange);
+            raw, chain, Rate, Rate, out ValidSampleRange validRange);
 
         Assert.Equal(new ValidSampleRange(0, raw.Length), validRange);
         Assert.True(processed.Length > 2 * raw.Length);

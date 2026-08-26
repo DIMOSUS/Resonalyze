@@ -126,7 +126,7 @@ public enum PolarityEstimate
 
 /// <summary>
 /// The sample range of a processed impulse response that holds MEASURED
-/// content: <see cref="VirtualCrossoverAnalysis.ApplyChain(System.Numerics.Complex[], DspChannelChain, int, out ValidSampleRange)"/>
+/// content: <see cref="VirtualCrossoverAnalysis.ApplyChain(System.Numerics.Complex[], DspChannelChain, int, int, out ValidSampleRange)"/>
 /// shifts the input by the chain delay (manufacturing silence before
 /// <see cref="StartSample"/>) and rounds the FFT length up (manufacturing a
 /// tail from <see cref="EndSample"/> on). Envelope noise floors must be read
@@ -166,16 +166,24 @@ public static class VirtualCrossoverAnalysis
     /// Applies the chain to an impulse response by multiplying its spectrum with
     /// the chain response bin by bin (conjugate-mirrored, so a real input stays
     /// real). The result is the impulse response of measurement + DSP.
+    /// <para>
+    /// <paramref name="sampleRate"/> is the RECORD's rate;
+    /// <paramref name="processorSampleRate"/> is the rate the simulated device
+    /// runs its filters at. They are free to differ — a 48 kHz measurement can
+    /// carry a 96 kHz chain — and only the second one shapes the filters (see
+    /// <see cref="PreparedDspResponse"/>).
+    /// </para>
     /// </summary>
     public static Complex[] ApplyChain(
         Complex[] impulseResponse,
         DspChannelChain chain,
-        int sampleRate) =>
-        ApplyChain(impulseResponse, chain, sampleRate, out _);
+        int sampleRate,
+        int processorSampleRate) =>
+        ApplyChain(impulseResponse, chain, sampleRate, processorSampleRate, out _);
 
     /// <summary>
     /// The <see cref="ValidSampleRange"/> that
-    /// <see cref="ApplyChain(Complex[], DspChannelChain, int, out ValidSampleRange)"/>
+    /// <see cref="ApplyChain(Complex[], DspChannelChain, int, int, out ValidSampleRange)"/>
     /// reports for an input of <paramref name="inputLength"/> samples through
     /// <paramref name="chain"/> into a record of
     /// <paramref name="outputLength"/>: the input shifted by the chain delay.
@@ -212,7 +220,7 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
-    /// <see cref="ApplyChain(Complex[], DspChannelChain, int)"/>, additionally
+    /// <see cref="ApplyChain(Complex[], DspChannelChain, int, int)"/>, additionally
     /// reporting WHERE the measured content sits inside the returned record
     /// (see <see cref="ValidSampleRange"/>): the chain delay manufactures
     /// silence before it, and the FFT sizing manufactures a tail after it —
@@ -224,6 +232,7 @@ public static class VirtualCrossoverAnalysis
         Complex[] impulseResponse,
         DspChannelChain chain,
         int sampleRate,
+        int processorSampleRate,
         out ValidSampleRange validRange)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
@@ -238,17 +247,22 @@ public static class VirtualCrossoverAnalysis
         {
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
+        if (processorSampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(processorSampleRate));
+        }
 
         int delaySamples = (int)Math.Ceiling(
             Math.Max(0.0, chain.DelayMs) / 1_000.0 * sampleRate);
-        PreparedDspResponse preparedChain = PreparedDspResponse.Create(chain, sampleRate);
+        PreparedDspResponse preparedChain =
+            PreparedDspResponse.Create(chain, processorSampleRate);
         int tailPadding = preparedChain.RequiredTailSamples(
-            FilterTailDecayDb, MinFilterTailPadding, MaxFilterTailPadding);
+            FilterTailDecayDb, MinFilterTailPadding, MaxFilterTailPadding, sampleRate);
         int length = DspMath.NextPowerOfTwo(
             impulseResponse.Length + delaySamples + tailPadding);
         validRange = ChainValidRange(
             impulseResponse.Length, chain, sampleRate, length);
-        if (preparedChain.IsTimeDomainScaleOnly)
+        if (preparedChain.CanScaleInTimeDomain(sampleRate))
         {
             return preparedChain.ApplyTimeDomainScale(impulseResponse, length);
         }
@@ -257,7 +271,7 @@ public static class VirtualCrossoverAnalysis
         Array.Copy(impulseResponse, spectrum, impulseResponse.Length);
         Fourier.Forward(spectrum, FourierOptions.Matlab);
 
-        preparedChain.ApplyToSpectrum(spectrum);
+        preparedChain.ApplyToSpectrum(spectrum, sampleRate);
 
         Fourier.Inverse(spectrum, FourierOptions.Matlab);
         return spectrum;

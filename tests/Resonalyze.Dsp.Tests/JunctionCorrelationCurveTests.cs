@@ -208,7 +208,7 @@ public sealed class JunctionCorrelationCurveTests
 
     private static Complex[] Filtered(CrossoverSpec crossover) =>
         VirtualCrossoverAnalysis.ApplyChain(
-            ImpulseAtMs(0), new DspChannelChain(Crossover: crossover), SampleRate);
+            ImpulseAtMs(0), new DspChannelChain(Crossover: crossover), SampleRate, SampleRate);
 
     [Fact]
     public void AlignmentCandidates_ReadTheFlatSumHonestlyByDefault()
@@ -370,10 +370,12 @@ public sealed class JunctionCorrelationCurveTests
                     new DspChannelChain(
                         DelayMs: Math.Max(0.0, point.DelayMs),
                         InvertPolarity: invert),
+                    SampleRate,
                     SampleRate);
                 Complex[] fixedIr = VirtualCrossoverAnalysis.ApplyChain(
                     sub,
                     new DspChannelChain(DelayMs: Math.Max(0.0, -point.DelayMs)),
+                    SampleRate,
                     SampleRate);
                 (double LossDb, double DipDb)? reference =
                     VirtualCrossoverAnalysis.MeasureSumLoss(

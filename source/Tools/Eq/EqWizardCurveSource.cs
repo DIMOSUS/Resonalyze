@@ -209,10 +209,23 @@ internal sealed record EqWizardCurveSource
     public MagnitudeScale Scale { get; init; } = MagnitudeScale.Relative;
 
     /// <summary>
-    /// The rate the curve was measured at, when known. The wizard realizes its biquads at
-    /// this rate; null means the user must state it (a foreign text file).
+    /// The rate the curve was MEASURED at, when known — the grid its impulse response
+    /// and gates live on. Null for a foreign text file, which states no rate.
     /// </summary>
+    /// <remarks>
+    /// This is no longer the rate the wizard realizes its biquads at: a tune is
+    /// designed for a PROCESSOR, and the two rates are independent (see
+    /// <see cref="ProcessorProfile"/> and <see cref="PreparedDspResponse"/>).
+    /// </remarks>
     public int? SampleRateHz { get; init; }
+
+    /// <summary>
+    /// The processor this source is tuned FOR: the rate its filters are realized at and
+    /// how it reads a peaking band's Q. Carried by a Virtual DSP handoff, which knows
+    /// the project's processor; null for every other source, and the wizard then falls
+    /// back to its own selectors.
+    /// </summary>
+    public DspProcessorProfile? ProcessorProfile { get; init; }
 
     /// <summary>What the curve is, when the source declared it.</summary>
     public AnalysisCurveKind? CurveKind { get; init; }

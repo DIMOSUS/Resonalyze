@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
 
@@ -516,6 +516,74 @@ public sealed class VirtualCrossoverProjectFile
         new VirtualCrossoverChannelPairSettings(),
         new VirtualCrossoverChannelPairSettings()
     ];
+
+    // ---------------------------------------------------------- DSP processor
+
+    // The processor this project is designed for, by catalog id (see
+    // DspProcessorCatalog). Additive: a file from before the selector, or one naming a
+    // device this build does not know, opens as Custom and keeps the numbers below —
+    // exactly the simulation that file described.
+    public string? DspProcessorModelId { get; set; }
+
+    // The rate the processor runs its filters at, and the ONLY rate the simulated
+    // biquads are designed for — deliberately independent of the rate the channels
+    // were measured at, so a 48 kHz sound card can carry a 96 kHz processor. Null
+    // means "follow the measurements", the Custom default; a named model ignores it
+    // and answers from the catalog.
+    public int? DspProcessorSampleRateHz { get; set; }
+
+    // How the processor READS the Q of a peaking band. It does not change the
+    // simulation — every band here is an RBJ biquad — only how the numbers are
+    // stated where they leave for the device (the tuning sheets).
+    public PeqQConvention DspProcessorQConvention { get; set; } = PeqQConvention.Rbj;
+
+    /// <summary>
+    /// True while this project states no rate of its own and takes the measurements'
+    /// instead. That is what a file written before the selector says, and what the DSP
+    /// processor dialog's "Follow measurements" entry writes — deliberately distinct
+    /// from a STATED rate that happens to equal the measurements today, which keeps
+    /// its number when the measurements are replaced at another rate. A named model
+    /// never follows: it brings its own.
+    /// </summary>
+    [JsonIgnore]
+    public bool DspProcessorRateFollowsMeasurements =>
+        DspProcessorSampleRateHz == null &&
+        DspProcessorCatalog.Preset(DspProcessorModelId) == null;
+
+    /// <summary>
+    /// The processor this project is designed for, resolved against the rate its
+    /// measurements were taken at: a named model answers from the catalog (so a
+    /// corrected preset corrects every project naming it), a Custom one answers with
+    /// its stored rate, and one that follows answers with the measurements'.
+    /// </summary>
+    public DspProcessorProfile ResolveDspProcessor(int measurementSampleRateHz)
+    {
+        if (measurementSampleRateHz <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(measurementSampleRateHz));
+        }
+
+        return DspProcessorCatalog.Preset(DspProcessorModelId)?.ToProfile() ??
+            DspProcessorProfile.Custom(
+                DspProcessorSampleRateHz ?? measurementSampleRateHz,
+                DspProcessorQConvention);
+    }
+
+    /// <summary>
+    /// Records a processor choice. <paramref name="followsMeasurements"/> stores the
+    /// INTENT rather than the number, which is the one thing the profile itself cannot
+    /// carry — its rate is always resolved (see
+    /// <see cref="DspProcessorRateFollowsMeasurements"/>).
+    /// </summary>
+    public void SetDspProcessor(DspProcessorProfile profile, bool followsMeasurements)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        DspProcessorModelId = profile.ModelId;
+        DspProcessorQConvention = profile.QConvention;
+        DspProcessorSampleRateHz = followsMeasurements && profile.IsCustom
+            ? null
+            : profile.SampleRateHz;
+    }
 
     // The stereo Auto delay scene offset (ms) ON THE WIRE: the magnitude
     // with the steering layout in its SIGN (negative = right-hand drive) —

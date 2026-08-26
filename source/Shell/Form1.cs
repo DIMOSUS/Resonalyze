@@ -174,24 +174,21 @@ namespace Resonalyze
             eqWizardPanel.HistoryService = measurementHistoryService;
             eqWizardPanel.ApplyPersistedSettings(measurementSettings.EqWizard);
             // The Q convention is a property of the DSP being tuned, not of one mode, so
-            // it lives at the top level of the settings. The EQ Wizard owns the selector
-            // and states its own sheets in it; Virtual DSP only pre-selects the question
-            // its export asks, since that sheet is often written for another processor.
+            // it lives at the top level of the settings. It seeds the EQ Wizard's own
+            // selector; a Virtual DSP project names its processor instead and reads the
+            // convention off that (see VirtualCrossoverPanel.ProcessorProfile), and a
+            // handoff carries it into the wizard for as long as that source is loaded.
             eqWizardPanel.TargetDspQConvention = measurementSettings.TargetDspQConvention;
             eqWizardPanel.SettingsChanged += () =>
             {
                 measurementSettings.EqWizard = eqWizardPanel.CaptureSettings();
-                measurementSettings.TargetDspQConvention = eqWizardPanel.TargetDspQConvention;
-                virtualCrossoverPanel.TargetDspQConvention =
-                    eqWizardPanel.TargetDspQConvention;
+                measurementSettings.TargetDspQConvention = eqWizardPanel.ManualQConvention;
                 virtualCrossoverPanel.SetTargetCurve(eqWizardPanel.TargetCurve);
                 ScheduleMeasurementSettingsSave();
             };
             signalGeneratorPanel.PlaybackSettingsProvider = CreateSignalGeneratorPlaybackSettings;
             signalGeneratorPanel.AudioSessionFactory = audioSessionFactory;
             virtualCrossoverPanel.HistoryService = measurementHistoryService;
-            virtualCrossoverPanel.TargetDspQConvention =
-                measurementSettings.TargetDspQConvention;
             RefreshCalibrationConsumers();
             virtualCrossoverPanel.OverlayCaptureRequested = SaveVirtualCrossoverOverlay;
             // One EQ target, two panels. The wizard owns and persists it, so the

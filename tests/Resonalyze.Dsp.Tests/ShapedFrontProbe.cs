@@ -19,6 +19,7 @@ public sealed class ShapedFrontProbe
     {
         public string Name => "probe";
         public int SampleRate => ShapedFrontProbe.SampleRate;
+        public int ProcessorSampleRate => SampleRate;
     }
 
     private static CrossoverEdge Edge(
@@ -58,9 +59,9 @@ public sealed class ShapedFrontProbe
         // the ValidSampleRange ApplyChain reports, so the predictor sees the
         // measured-content length rather than the padded array's.
         Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
-            impulse, source, SampleRate, out ValidSampleRange bypassedRange);
+            impulse, source, SampleRate, SampleRate, out ValidSampleRange bypassedRange);
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            bypassed, chain, SampleRate, out ValidSampleRange processedRange);
+            bypassed, chain, SampleRate, SampleRate, out ValidSampleRange processedRange);
         var snapshot = new AlignmentSnapshot(
             new Channel(),
             processed,
@@ -182,11 +183,11 @@ public sealed class ShapedFrontProbe
         var raw = new Complex[Length];
         raw[Position] = Complex.One;
         Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
-            raw, SourceNamed(sourceName), SampleRate,
+            raw, SourceNamed(sourceName), SampleRate, SampleRate,
             out ValidSampleRange bypassedRange);
         DspChannelChain chain = BandPass(70, 200, 36);
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            bypassed, chain, SampleRate, out ValidSampleRange processedRange);
+            bypassed, chain, SampleRate, SampleRate, out ValidSampleRange processedRange);
 
         int contentLength = bypassedRange.EndSample - bypassedRange.StartSample;
         Assert.True(bypassedRange.IsKnown, "the fixture must carry a known range");
@@ -359,7 +360,7 @@ public sealed class ShapedFrontProbe
         var impulse = new Complex[Length];
         impulse[Position] = Complex.One;
         Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
-            impulse, HighPass(60, 12), SampleRate);
+            impulse, HighPass(60, 12), SampleRate, SampleRate);
         int start = Position + (int)(modeDelayMs / 1_000.0 * SampleRate);
         double peak = bypassed.Max(sample => sample.Magnitude);
         for (int i = start; i < bypassed.Length; i++)
@@ -371,7 +372,7 @@ public sealed class ShapedFrontProbe
         }
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            bypassed, chain, SampleRate, out ValidSampleRange processedRange);
+            bypassed, chain, SampleRate, SampleRate, out ValidSampleRange processedRange);
         return (
             new AlignmentSnapshot(
                 new Channel(), processed,
@@ -448,7 +449,7 @@ public sealed class ShapedFrontProbe
         var impulse = new Complex[Length];
         impulse[Position] = Complex.One;
         Complex[] front = VirtualCrossoverAnalysis.ApplyChain(
-            impulse, SourceNamed(sourceName), SampleRate);
+            impulse, SourceNamed(sourceName), SampleRate, SampleRate);
         Complex[] withMode = (Complex[])front.Clone();
         int start = Position + (int)(0.012 * SampleRate);
         double peak = front.Max(sample => sample.Magnitude);
@@ -461,7 +462,7 @@ public sealed class ShapedFrontProbe
         }
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            withMode, chain, SampleRate);
+            withMode, chain, SampleRate, SampleRate);
         var snapshot = new AlignmentSnapshot(
             new Channel(), processed,
             VirtualCrossoverAnalysis.FindPeakIndex(processed),

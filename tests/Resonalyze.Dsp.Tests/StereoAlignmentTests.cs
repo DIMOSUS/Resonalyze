@@ -1183,7 +1183,8 @@ public sealed class StereoAlignmentTests
             double twrLateMs,
             bool midIsMono = false,
             double baseDelayMs = 1.0,
-            bool withFieldFloor = false)
+            bool withFieldFloor = false,
+            double fieldChannelMs = 0.0)
     {
         var farMid = new TestChannel("R mid", ImpulseAtMs(5.0));
         var farTwr = new TestChannel("R twr", ImpulseAtMs(5.0 + twrLateMs));
@@ -1219,7 +1220,7 @@ public sealed class StereoAlignmentTests
         };
         if (withFieldFloor)
         {
-            alignment[fieldFloor] = new(0.0, false);
+            alignment[fieldFloor] = new(fieldChannelMs, false);
         }
 
         var log = new StringBuilder();
@@ -1273,6 +1274,21 @@ public sealed class StereoAlignmentTests
 
         Assert.InRange(midDelay, 0, 50.0);
         Assert.InRange(twrDelay, 0, 50.0);
+    }
+    [Fact]
+    public void PolishFarSideJunctions_StaysInsideTheSpanFromTheEarlyEndToo()
+    {
+        // The mirror of the case above: here the far channels ARE the field's
+        // earliest, and the rest of the system sits at the far end of the
+        // range. Polishing them earlier widens the spread exactly as polishing
+        // the latest channel later does — normalization rebases on whichever
+        // end moved — so the guard has to read the span, not an absolute
+        // ceiling.
+        (double midDelay, double twrDelay, string _) = RunFarSidePolish(
+            0.02, baseDelayMs: 1.0, withFieldFloor: true, fieldChannelMs: 51.0);
+
+        Assert.InRange(51.0 - midDelay, 0, 50.0);
+        Assert.InRange(51.0 - twrDelay, 0, 50.0);
     }
     [Fact]
     public void PolishFarSideJunctions_NeverMovesAMonoChannel()

@@ -52,10 +52,10 @@ public sealed class AutoAlignmentEngineTests
             bypassed);
     }
 
-    private static Complex[] UnitImpulse(int position)
+    private static Complex[] UnitImpulse(int position, double amplitude = 1.0)
     {
         var ir = new Complex[IrLength];
-        ir[position] = Complex.One;
+        ir[position] = amplitude;
         return ir;
     }
 
@@ -442,9 +442,66 @@ public sealed class AutoAlignmentEngineTests
             expectInverted,
             alignment.GetValueOrDefault(lower).InvertPolarity !=
                 alignment.GetValueOrDefault(upper).InvertPolarity);
-        Assert.Equal(expectInverted, log.ToString().Contains("nulls in phase"));
+        // The force fires either way now — what changes is which answer it
+        // states — so the log is checked for the direction, not for presence.
+        Assert.Contains("by construction", log.ToString());
+        Assert.Contains(
+            expectInverted ? "sums only inverted" : "sums in phase",
+            log.ToString());
     }
 
+    [Fact]
+    public void Compute_MatchedEvenOrderSplit_KeepsInPhaseAgainstTheSumsWishes()
+    {
+        // The in-phase half of the rule, pinned where it can actually be seen.
+        // The tweeter's impulse is NEGATIVE, so the summation search has a
+        // decisive reason to invert it — several dB, not the fractions the
+        // matched-split argument is about. A matched LR24 sums in phase by
+        // construction, so the engine takes that and leaves the flip alone.
+        //
+        // The trade is deliberate and worth stating: a driver genuinely wired
+        // backwards behind a matched even-order split is NOT corrected by Auto
+        // delay, the same way a matched odd-order split's forced flip is not
+        // undone by one. Both are the price of reading a polarity the sum
+        // cannot resolve off the crossover that defines it, and both are fenced
+        // to junctions above a kilohertz under a trusted seed.
+        var log = new StringBuilder();
+        (Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+            IAlignmentChannel lower,
+            IAlignmentChannel upper) = RunFilteredJunction(
+                CrossoverFilterFamily.LinkwitzRiley, 24, upperCornerHz: 2_000,
+                log: log, upperAmplitude: -1.0);
+
+        Assert.Equal(
+            alignment.GetValueOrDefault(lower).InvertPolarity,
+            alignment.GetValueOrDefault(upper).InvertPolarity);
+        Assert.Contains("sums in phase", log.ToString());
+    }
+    [Theory]
+    [InlineData(37)]
+    [InlineData(0)]
+    [InlineData(-37)]
+    public void PlacePairAt_PutsTheUpperChannelThatMuchLaterEitherWay(
+        int slideSamples)
+    {
+        // The coordinate contract a witness that reads "the applied alignment"
+        // depends on: whichever way the candidate points, the pair comes back
+        // with the upper channel exactly slideSamples behind the lower. A
+        // negative candidate is ordinary — the cascade rebases its delays only
+        // at the end — and moving the upper channel earlier would cut its own
+        // front off, so the lower one moves later instead.
+        Complex[] lower = UnitImpulse(BasePosition);
+        Complex[] upper = UnitImpulse(BasePosition);
+
+        (Complex[] placedLower, Complex[] placedUpper) =
+            AutoAlignmentEngine.PlacePairAt(lower, upper, slideSamples);
+
+        int lowerPeak = VirtualCrossoverAnalysis.FindPeakIndex(placedLower);
+        int upperPeak = VirtualCrossoverAnalysis.FindPeakIndex(placedUpper);
+        Assert.Equal(slideSamples, upperPeak - lowerPeak);
+        Assert.Equal(lower.Length, placedLower.Length);
+        Assert.Equal(upper.Length, placedUpper.Length);
+    }
     [Fact]
     public void Compute_StaggeredSplit_LeavesThePolarityToTheSearch()
     {
@@ -459,7 +516,7 @@ public sealed class AutoAlignmentEngineTests
         RunFilteredJunction(
             CrossoverFilterFamily.LinkwitzRiley, 36, upperCornerHz: 2_400, log: log);
 
-        Assert.DoesNotContain("nulls in phase", log.ToString());
+        Assert.DoesNotContain("by construction", log.ToString());
     }
 
     // A synthetic junction made of FILTERS: one impulse per channel, the lower
@@ -471,7 +528,8 @@ public sealed class AutoAlignmentEngineTests
         CrossoverFilterFamily family,
         int slopeDbPerOctave,
         double upperCornerHz,
-        StringBuilder log)
+        StringBuilder log,
+        double upperAmplitude = 1.0)
     {
         const double lowerCornerHz = 2_000;
         var lowPass = new DspChannelChain(Crossover: new CrossoverSpec(
@@ -482,7 +540,8 @@ public sealed class AutoAlignmentEngineTests
             HighPassEdge: new CrossoverEdge(family, upperCornerHz, slopeDbPerOctave)));
 
         AlignmentSnapshot lower = PredictableSnapshot("W", UnitImpulse(BasePosition), lowPass);
-        AlignmentSnapshot upper = PredictableSnapshot("T", UnitImpulse(BasePosition), highPass);
+        AlignmentSnapshot upper = PredictableSnapshot(
+            "T", UnitImpulse(BasePosition, upperAmplitude), highPass);
         var junction = new AlignmentJunction(
             lower, upper, lowerCornerHz, lowerCornerHz / 2, lowerCornerHz * 2);
 

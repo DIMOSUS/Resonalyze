@@ -1655,10 +1655,11 @@ and slope above ~1 kHz, the junction is a single crossover and its summing
 polarity is arithmetic rather than evidence. An odd-order Linkwitz-Riley (LR12,
 LR36) and a Butterworth 12 or 36 put their two halves 180° apart at the corner,
 so that pair only sums with one side flipped, while LR24/LR48 and Butterworth
-24/48 sum in phase. There the polarity is read off the filters and only the
-delay is searched. Two corners that merely meet are left to the search: they
-overlap across a region instead of crossing at a point, and carry no single
-phase relation to read.
+24/48 sum in phase. There the polarity is read off the filters — both answers,
+not only the flip — and only the delay is searched. A split whose filters answer
+neither way is left alone: a Butterworth 18 crosses at 90°, and two corners that
+merely meet overlap across a region instead of crossing at a point, so neither
+states a phase relation to read.
 
 Where two candidates of opposite polarity still score within a fraction of a
 decibel — at a mid/tweeter junction the summation metric frequently cannot tell

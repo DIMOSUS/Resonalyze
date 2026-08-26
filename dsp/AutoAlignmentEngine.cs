@@ -1128,8 +1128,22 @@ public static class AutoAlignmentEngine
     /// crossover (and any PEQ, which does bend phase and belongs here).
     /// </para>
     /// </summary>
-    private static bool ExpectsRelativeInversion(AlignmentJunction pair) =>
-        FilterPolarityPreferenceDb(pair) > ExpectedInversionMarginDb;
+    private static bool? ExpectsRelativeInversion(AlignmentJunction pair)
+    {
+        double preferenceDb = FilterPolarityPreferenceDb(pair);
+        if (double.IsNaN(preferenceDb) ||
+            Math.Abs(preferenceDb) <= ExpectedInversionMarginDb)
+        {
+            // Either the filters do not pose the question (a staggered split,
+            // a channel with no crossover) or they answer it with a shrug
+            // (Butterworth 18's 90°, where neither polarity nulls). Both are
+            // the search's to decide, and must not be confused with a matched
+            // split that genuinely asks for IN PHASE.
+            return null;
+        }
+
+        return preferenceDb > 0;
+    }
 
     /// <summary>
     /// <see cref="ExpectsRelativeInversion"/>'s figure: how much better (dB) the
@@ -2037,18 +2051,28 @@ public static class AutoAlignmentEngine
         // moving up to a period rather than by flipping. Above 1 kHz the
         // crossover dominates its own band, which is where this rule can be
         // believed — and where the owner's LR36 test lives.
-        bool expectsInversion = ExpectsRelativeInversion(pair) &&
-            pair.CrossoverHz >= DirectSeedMinCrossoverHz;
-        if (forcedPolarity == null && expectsInversion && !wideSeed &&
-            secondaryNeighbor == null)
+        bool? filterPolarity = pair.CrossoverHz >= DirectSeedMinCrossoverHz
+            ? ExpectsRelativeInversion(pair)
+            : null;
+        bool expectsInversion = filterPolarity == true;
+        if (forcedPolarity == null && filterPolarity is bool expectedInversion &&
+            !wideSeed && secondaryNeighbor == null)
         {
+            // Both answers are forced, not just the flip: a matched LR24 sums
+            // in phase as decisively as a matched LR36 nulls there, and leaving
+            // the in-phase case to the search would let a comb lobe half a
+            // period away flip a pair whose crossover has already settled the
+            // question. Only the shrug (null) is the search's.
             forcedPolarity =
-                alignment.GetValueOrDefault(neighborChannel).InvertPolarity ^ true;
+                alignment.GetValueOrDefault(neighborChannel).InvertPolarity ^
+                expectedInversion;
             log.AppendLine(
-                $"  the matched {pair.CrossoverHz:0} Hz split nulls in phase — " +
-                $"{channel.Name} takes the opposite polarity to " +
-                $"{neighborChannel.Name} by construction; the search settles the " +
-                "delay alone");
+                $"  the matched {pair.CrossoverHz:0} Hz split sums " +
+                (expectedInversion ? "only inverted" : "in phase") +
+                $" — {channel.Name} takes the " +
+                (expectedInversion ? "opposite" : "same") +
+                $" polarity as {neighborChannel.Name} by construction; the " +
+                "search settles the delay alone");
         }
 
         // Reprocess so the settled neighbors participate with their new delays
@@ -2705,25 +2729,38 @@ public static class AutoAlignmentEngine
                         // The ladder reads a pair AT its applied alignment: its
                         // lag axis spans a few periods around zero, while the
                         // variable channel here is still un-delayed against a
-                        // neighbor carrying its settled delay. So the variable is
-                        // first slid onto the standing candidate — a whole number
-                        // of samples, whose rounding is a fraction of the quarter
-                        // period the vote asks about — and every lag the ladder
-                        // reports is then a correction to THAT placement.
+                        // neighbor carrying its settled delay. So the pair is
+                        // first placed at the standing candidate — a whole
+                        // number of samples, whose rounding is a fraction of the
+                        // quarter period the vote asks about — and every lag the
+                        // ladder reports is then a correction to THAT placement.
+                        // A candidate may be NEGATIVE (the cascade's own delays
+                        // are rebased later, so the search does not stop at
+                        // zero), and a channel cannot be slid earlier: the
+                        // NEIGHBOR is slid later instead, which is the same
+                        // relative placement and the same thing normalization
+                        // would do to the pair afterwards.
                         int slideSamples = (int)Math.Round(
                             chosen.DelayMs * channel.SampleRate / 1000.0);
                         double slideMs = slideSamples * 1000.0 / channel.SampleRate;
+                        (Complex[] placedNeighbor, Complex[] placedVariable) =
+                            PlacePairAt(
+                                neighborIrs[0], variableIr, slideSamples);
+                        (ValidSampleRange neighborRange,
+                            ValidSampleRange variableRange) = PlacePairAt(
+                                primaryNeighborSnapshot.ValidRange,
+                                variableSnapshot.ValidRange,
+                                slideSamples);
                         IReadOnlyList<VirtualCrossoverAnalysis.ArrivalCoherencePoint>
                             ladder = VirtualCrossoverAnalysis.ArrivalCoherenceLadder(
-                                neighborIrs[0],
-                                SlideBySamples(variableIr, slideSamples),
+                                placedNeighbor,
+                                placedVariable,
                                 channel.SampleRate,
                                 bandLowHz,
                                 bandHighHz,
                                 pair.CrossoverHz,
-                                primaryNeighborSnapshot.ValidRange,
-                                SlideBySamples(
-                                    variableSnapshot.ValidRange, slideSamples));
+                                neighborRange,
+                                variableRange);
                         int chosenBands = VirtualCrossoverAnalysis.CountLadderAgreement(
                             ladder, chosen.DelayMs - slideMs, halfPeriodMs / 2.0,
                             DirectCoherenceMinR);
@@ -3023,6 +3060,33 @@ public static class AutoAlignmentEngine
     // way to "advance" a channel that would otherwise need a negative delay.
     // Uniformity is what preserves the alignment, so the scope must cover every
     // channel whose relative timing has already been settled.
+    /// <summary>
+    /// A junction's two responses placed at a candidate's relative timing: the
+    /// upper channel <paramref name="slideSamples"/> later than the lower.
+    /// Neither response can be slid EARLIER without cutting its own front off,
+    /// so a negative placement moves the lower one later instead — the same
+    /// relative timing, and the same thing the cascade's own normalization does
+    /// to a pair that ended up with negative delays.
+    /// <para>
+    /// The distinction matters because a witness reading a pair "at its applied
+    /// alignment" states its findings relative to THIS placement; getting the
+    /// sign wrong leaves the responses where they were while the caller
+    /// believes they moved, and every lag it then reads is offset by the whole
+    /// candidate delay.
+    /// </para>
+    /// </summary>
+    internal static (Complex[] Lower, Complex[] Upper) PlacePairAt(
+        Complex[] lower, Complex[] upper, int slideSamples) =>
+        slideSamples >= 0
+            ? (lower, SlideBySamples(upper, slideSamples))
+            : (SlideBySamples(lower, -slideSamples), upper);
+
+    /// <summary>The same placement applied to the pair's valid ranges.</summary>
+    private static (ValidSampleRange Lower, ValidSampleRange Upper) PlacePairAt(
+        ValidSampleRange lower, ValidSampleRange upper, int slideSamples) =>
+        slideSamples >= 0
+            ? (lower, SlideBySamples(upper, slideSamples))
+            : (SlideBySamples(lower, -slideSamples), upper);
     /// <summary>
     /// A response slid LATER by a whole number of samples, keeping its length:
     /// the cheapest honest way to place an un-delayed channel at a candidate's
@@ -4608,13 +4672,24 @@ public static class AutoAlignmentEngine
                 return total / evaluators.Count;
             }
 
-            // The same span NormalizeAndVerifyFeasibility will judge: it
-            // rebases on the earliest channel of the WHOLE field, so the
-            // ceiling is read there — and re-read per channel, since an
-            // earlier polish may have moved the earliest one.
-            double ceilingMs = fullScope.Min(
-                item => alignment.GetValueOrDefault(item.Channel).DelayMs) +
-                MaxDelayMs;
+            // The span NormalizeAndVerifyFeasibility will judge, held by the
+            // REST of the field: it rebases on the earliest channel and then
+            // measures to the latest, so a trial has to be checked from both
+            // ends. Moving this channel later can outrun the earliest one, and
+            // moving it earlier can outrun the latest — a polish on the field's
+            // own minimum widens the spread just as surely as one on its
+            // maximum. Read per channel, since an earlier polish may already
+            // have moved either end.
+            List<double> othersMs = fullScope
+                .Where(item => item.Channel != channel)
+                .Select(item => alignment.GetValueOrDefault(item.Channel).DelayMs)
+                .ToList();
+            double othersMinMs = othersMs.Count > 0
+                ? othersMs.Min()
+                : double.PositiveInfinity;
+            double othersMaxMs = othersMs.Count > 0
+                ? othersMs.Max()
+                : double.NegativeInfinity;
             double baseline = Score(0);
             double bestDelta = 0;
             double bestScore = baseline;
@@ -4625,16 +4700,18 @@ public static class AutoAlignmentEngine
                 delta <= FarSideJunctionPolishMs + 1e-9;
                 delta += 0.01)
             {
-                if (current.DelayMs + delta < 0 ||
-                    current.DelayMs + delta > ceilingMs)
+                double trialMs = current.DelayMs + delta;
+                if (trialMs < 0 ||
+                    Math.Max(othersMaxMs, trialMs) -
+                        Math.Min(othersMinMs, trialMs) > MaxDelayMs)
                 {
                     // Delays are non-negative and a polish never earns a
                     // uniform shift of the whole field. Nor may it widen the
                     // spread past what the DSP can realize: this is the only
-                    // pass that moves a channel LATER after the cascade has
-                    // settled, so on a system already at the range limit a
-                    // hundredth of a decibel would otherwise turn a valid
-                    // proposal into the feasibility check's refusal.
+                    // pass that moves a channel after the cascade has settled,
+                    // so on a system already at the range limit a hundredth of
+                    // a decibel would otherwise turn a valid proposal into the
+                    // feasibility check's refusal.
                     continue;
                 }
 

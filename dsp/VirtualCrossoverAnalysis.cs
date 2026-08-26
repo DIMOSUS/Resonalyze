@@ -1490,13 +1490,16 @@ public static class VirtualCrossoverAnalysis
     /// clean packet, which would read as nonsense on a coherence axis.
     /// </para>
     /// <para>
-    /// A DIAGNOSTIC, deliberately not an input to the alignment search: on a
-    /// low junction the band windows are long enough for cabin modes to rule
-    /// the correlation (the archived v3 mid junction draws its whole mid-band
-    /// optimum on the mode the Auto delay sagas were fought over), so the
-    /// ladder there honestly reports "this band is not coherent at the
-    /// applied tune" while its lag is NOT a move recommendation. The engine
-    /// keeps its own guarded estimators.
+    /// Chiefly a DIAGNOSTIC: on a low junction the band windows are long
+    /// enough for cabin modes to rule the correlation (the archived v3 mid
+    /// junction draws its whole mid-band optimum on the mode the Auto delay
+    /// sagas were fought over), so the ladder there honestly reports "this
+    /// band is not coherent at the applied tune" while its lag is NOT a move
+    /// recommendation. The engine keeps its own guarded estimators and takes
+    /// no Δt from here; its single use of the ladder is to COUNT how many
+    /// coherent bands stand with a candidate above a kilohertz, where the
+    /// direct-sound correlation can only separate two lobes by a hair (see
+    /// <see cref="CountLadderAgreement"/>).
     /// </para>
     /// </summary>
     public static List<ArrivalCoherencePoint> ArrivalCoherenceLadder(
@@ -1702,6 +1705,41 @@ public static class VirtualCrossoverAnalysis
         return energy;
     }
 
+    /// <summary>
+    /// How many of a ladder's COHERENT bands want the upper channel where a
+    /// candidate delay puts it — within a quarter period of the junction, the
+    /// widest miss that still leaves the two channels adding rather than
+    /// fighting. Bands below <paramref name="minPeakR"/> do not vote: the
+    /// ladder reports a lag for every band it probes, and where the probe found
+    /// no coherence that lag is noise wearing a number.
+    /// <para>
+    /// A count, deliberately, not an average miss: one band far out drags a
+    /// mean across the whole junction, while what a lobe question needs is how
+    /// many independent bands agree. Polarity is not read here and cannot be
+    /// (see <see cref="ArrivalCoherencePoint"/>) — the caller pairs this with
+    /// a witness that carries it.
+    /// </para>
+    /// </summary>
+    internal static int CountLadderAgreement(
+        IReadOnlyList<ArrivalCoherencePoint> ladder,
+        double delayMs,
+        double quarterPeriodMs,
+        double minPeakR)
+    {
+        ArgumentNullException.ThrowIfNull(ladder);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(quarterPeriodMs);
+        int agreeing = 0;
+        foreach (ArrivalCoherencePoint point in ladder)
+        {
+            if (point.PeakR >= minPeakR &&
+                Math.Abs(point.LagMs - delayMs) <= quarterPeriodMs)
+            {
+                agreeing++;
+            }
+        }
+
+        return agreeing;
+    }
     /// <summary>
     /// One probe of <see cref="JunctionLossSweep"/>: the junction's gated
     /// average loss and 1/6-octave dip with the variable channel delayed by

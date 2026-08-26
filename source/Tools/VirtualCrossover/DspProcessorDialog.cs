@@ -255,6 +255,11 @@ internal sealed partial class DspProcessorDialog : Form
             return;
         }
 
+        // The INTENT is part of what is remembered, not just the number: a user who
+        // picked "follow" and then looked at a preset must come back to "follow", and
+        // one who stated a rate must come back to that rate. Restoring the wrong one
+        // silently changes the rate the simulation runs at.
+        customFollowsMeasurements = FollowsMeasurements;
         customSampleRateHz = SelectedSampleRateHz;
         customQConvention = SelectedQConvention;
         UpdateStatus();

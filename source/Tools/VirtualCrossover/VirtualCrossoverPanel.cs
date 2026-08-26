@@ -1149,7 +1149,15 @@ public partial class VirtualCrossoverPanel : UserControl
     // load — so the first resolved side answers for the whole project. Both physical
     // sides are read because the side currently on screen may be the empty one. A project
     // with no source yet has no rate of its own, and the blocks keep their default.
-    private double ProjectSampleRateHz
+    private double ProjectSampleRateHz => MeasuredSampleRateHz ?? DefaultSampleRateHz;
+
+    /// <summary>
+    /// The rate the project's measurements were actually taken at, or null while it
+    /// has none. Kept apart from <see cref="ProjectSampleRateHz"/>, which substitutes
+    /// a default: anything TELLING the user what the project is measured at has to be
+    /// able to say "nothing yet" instead of naming a rate no measurement has.
+    /// </summary>
+    private int? MeasuredSampleRateHz
     {
         get
         {
@@ -1168,7 +1176,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 }
             }
 
-            return DefaultSampleRateHz;
+            return null;
         }
     }
 
@@ -1204,9 +1212,13 @@ public partial class VirtualCrossoverPanel : UserControl
     // keys its cache on that rate, and RedrawAll re-processes every channel through it.
     private void OpenDspProcessorDialog()
     {
-        int measurementRateHz = (int)Math.Round(ProjectSampleRateHz);
+        // The dialog is told what the project REALLY has, zero included: it reports the
+        // band the simulation can speak for, and a project with no measurement must not
+        // be shown a rate it does not hold.
         using var dialog = new DspProcessorDialog(
-            ProcessorProfile, ProcessorRateFollowsMeasurements, measurementRateHz);
+            ProcessorProfile,
+            ProcessorRateFollowsMeasurements,
+            MeasuredSampleRateHz ?? 0);
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
             return;

@@ -72,6 +72,18 @@ public static class AlignmentSelection
     /// "rescues" a mixed pair and pays for the cosmetics with a quarter period
     /// of delay, dragging the tweeter off the onset line its inverted twin
     /// sits on.
+    /// <para>
+    /// <paramref name="expectedRelativeInversion"/> STANDS THE PREFERENCE DOWN
+    /// where the crossover settings say a flipped pair is the designed state: a
+    /// matched odd-order Linkwitz-Riley split (LR12, LR36) or a Butterworth 12
+    /// or 36 puts the two filters 180° apart at the corner, so an inverted
+    /// junction is the crossover working rather than a wiring fault, and the
+    /// premise this margin rests on — "a real flip wins by several dB, an
+    /// impostor by fractions" — does not hold. The preference is withdrawn, not
+    /// reversed: the summation score then decides on its own. Reversing it would
+    /// defend the opposite lobe just as blindly, which measured 0.4 dB worse on
+    /// a real cabin's matched 180 Hz Butterworth 36 junction.
+    /// </para>
     /// </summary>
     public static AlignmentCandidate Select(
         IReadOnlyList<AlignmentCandidate> candidates,
@@ -79,7 +91,8 @@ public static class AlignmentSelection
         double invertPreferenceMarginDb = DefaultInvertPreferenceMarginDb,
         double invertPreferenceReachMs = DefaultInvertPreferenceReachMs,
         double delayTieMarginDb = DefaultDelayTieMarginDb,
-        bool neighborInverted = false)
+        bool neighborInverted = false,
+        bool expectedRelativeInversion = false)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         if (candidates.Count == 0)
@@ -93,7 +106,7 @@ public static class AlignmentSelection
             .Where(item => item.ScoreDb >= candidates[0].ScoreDb - delayTieMarginDb)
             .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
             .First();
-        if (best.InvertPolarity ^ neighborInverted)
+        if (!expectedRelativeInversion && (best.InvertPolarity ^ neighborInverted))
         {
             double bestDistanceMs = Math.Abs(best.DelayMs - baseDeltaMs);
             AlignmentCandidate? bestPure = candidates
@@ -129,7 +142,8 @@ public static class AlignmentSelection
         double invertPreferenceMarginDb = DefaultInvertPreferenceMarginDb,
         double invertPreferenceReachMs = DefaultInvertPreferenceReachMs,
         double delayTieMarginDb = DefaultDelayTieMarginDb,
-        bool neighborInverted = false)
+        bool neighborInverted = false,
+        bool expectedRelativeInversion = false)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         if (candidates.Count == 0)
@@ -141,7 +155,7 @@ public static class AlignmentSelection
             .Where(item => item.ScoreDb >= candidates[0].ScoreDb - delayTieMarginDb)
             .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
             .First();
-        if (best.InvertPolarity == neighborInverted)
+        if (expectedRelativeInversion || best.InvertPolarity == neighborInverted)
         {
             return null;
         }
@@ -231,7 +245,8 @@ public static class AlignmentSelection
         double anchorMs,
         double nearReachMs,
         double lobeHopMarginDb,
-        bool neighborInverted = false)
+        bool neighborInverted = false,
+        bool expectedRelativeInversion = false)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         ArgumentNullException.ThrowIfNull(chosen);
@@ -250,7 +265,8 @@ public static class AlignmentSelection
         }
 
         AlignmentCandidate nearBest = Select(
-            near, anchorMs, neighborInverted: neighborInverted);
+            near, anchorMs, neighborInverted: neighborInverted,
+            expectedRelativeInversion: expectedRelativeInversion);
         return acousticScore(chosen) - acousticScore(nearBest) > lobeHopMarginDb
             ? chosen
             : nearBest;

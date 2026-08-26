@@ -1171,4 +1171,135 @@ public sealed class StereoAlignmentTests
 
         Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.None, tier);
     }
+
+    // ------------------------------------------------- far-side junction polish
+
+    // A bare polish bench: two far channels 1.0 ms of assigned delay each, whose
+    // junction (fc 2500, band 1250-5000) is left SKEWED by the scene-assigned
+    // positions — the shape the scene locks and the arithmetic bridge leave
+    // behind on a real far side. Returns the two delays after the polish.
+    private static (double MidDelayMs, double TwrDelayMs, string Log)
+        RunFarSidePolish(
+            double twrLateMs,
+            bool midIsMono = false,
+            double baseDelayMs = 1.0,
+            bool withFieldFloor = false,
+            double fieldChannelMs = 0.0)
+    {
+        var farMid = new TestChannel("R mid", ImpulseAtMs(5.0));
+        var farTwr = new TestChannel("R twr", ImpulseAtMs(5.0 + twrLateMs));
+        // A stand-in for the rest of the field: it carries no right junction, so
+        // the polish walks past it, but it is what the realizable span is
+        // measured FROM — the earliest channel of the whole system.
+        var fieldFloor = new TestChannel("L ref", ImpulseAtMs(5.0));
+        TestChannel[] all = withFieldFloor
+            ? [farMid, farTwr, fieldFloor]
+            : [farMid, farTwr];
+
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+        List<AlignmentSnapshot> snapshots = all
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        AlignmentJunction pair = Junction(snapshots[0], snapshots[1], 2_500);
+        // The left-role fields are structural dummies: the polish reads only the
+        // right pairs and the mono set.
+        var plan = new StereoAlignmentPlan(
+            snapshots, [pair], snapshots, [pair],
+            midIsMono
+                ? new HashSet<IAlignmentChannel> { farMid }
+                : new HashSet<IAlignmentChannel>(),
+            farMid, farTwr, 1_250, 5_000, SceneOffsetMs: 0);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [farMid] = new(baseDelayMs, false),
+            [farTwr] = new(baseDelayMs, false)
+        };
+        if (withFieldFloor)
+        {
+            alignment[fieldFloor] = new(fieldChannelMs, false);
+        }
+
+        var log = new StringBuilder();
+        AutoAlignmentEngine.PolishFarSideJunctions(
+            plan, snapshots, snapshots, Reprocess, alignment, log,
+            decisions: null);
+        return (alignment[farMid].DelayMs, alignment[farTwr].DelayMs, log.ToString());
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_ClawsBackASmallSceneSkewExactly()
+    {
+        // The scene positions leave the far junction 0.02 ms out of alignment —
+        // inside the polish budget, so the pass closes it completely and the
+        // pair's arrivals meet.
+        (double midDelay, double twrDelay, string log) = RunFarSidePolish(0.02);
+
+        double residualMs = Math.Abs((5.0 + midDelay) - (5.02 + twrDelay));
+        Assert.True(
+            residualMs <= 0.005,
+            $"the junction skew survived the polish ({residualMs:0.000} ms)");
+        Assert.Contains("Far-side polish", log);
+        Assert.Contains("off the scene position", log);
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_NeverSpendsMoreThanTheBudgetPerChannel()
+    {
+        // A 0.10 ms skew: each channel may close at most its own 0.03 ms of it.
+        // The point is the ceiling, not the residual — a polish that chased the
+        // whole skew would be a second alignment pass wearing a polish's name.
+        (double midDelay, double twrDelay, string _) = RunFarSidePolish(0.10);
+
+        Assert.InRange(Math.Abs(midDelay - 1.0), 0, 0.03 + 1e-9);
+        Assert.InRange(Math.Abs(twrDelay - 1.0), 0, 0.03 + 1e-9);
+        // And both spent their budgets TOWARD each other: mid later, twr earlier.
+        Assert.True(midDelay > 1.0, $"mid did not move later ({midDelay:0.000})");
+        Assert.True(twrDelay < 1.0, $"twr did not move earlier ({twrDelay:0.000})");
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_StaysInsideTheRealizableDelaySpan()
+    {
+        // The field already spans the DSP's whole range with the earliest
+        // channel at zero. The polish is the only pass that moves a channel
+        // LATER after the cascade settles, so without a ceiling it would spend
+        // a hundredth of a decibel to make the proposal unrealizable — and the
+        // feasibility check would then refuse the whole run.
+        (double midDelay, double twrDelay, string _) = RunFarSidePolish(
+            0.02, baseDelayMs: 50.0, withFieldFloor: true);
+
+        Assert.InRange(midDelay, 0, 50.0);
+        Assert.InRange(twrDelay, 0, 50.0);
+    }
+    [Fact]
+    public void PolishFarSideJunctions_StaysInsideTheSpanFromTheEarlyEndToo()
+    {
+        // The mirror of the case above: here the far channels ARE the field's
+        // earliest, and the rest of the system sits at the far end of the
+        // range. Polishing them earlier widens the spread exactly as polishing
+        // the latest channel later does — normalization rebases on whichever
+        // end moved — so the guard has to read the span, not an absolute
+        // ceiling.
+        (double midDelay, double twrDelay, string _) = RunFarSidePolish(
+            0.02, baseDelayMs: 1.0, withFieldFloor: true, fieldChannelMs: 51.0);
+
+        Assert.InRange(51.0 - midDelay, 0, 50.0);
+        Assert.InRange(51.0 - twrDelay, 0, 50.0);
+    }
+    [Fact]
+    public void PolishFarSideJunctions_NeverMovesAMonoChannel()
+    {
+        // The mono channel is shared with the reference side — moving it would
+        // re-time the left walk's junctions behind their backs. The polish must
+        // spend the tweeter's budget instead and leave the mono exactly put.
+        (double midDelay, double twrDelay, string _) =
+            RunFarSidePolish(0.02, midIsMono: true);
+
+        Assert.Equal(1.0, midDelay, 3);
+        Assert.InRange(twrDelay, 0.97, 0.99);
+    }
 }

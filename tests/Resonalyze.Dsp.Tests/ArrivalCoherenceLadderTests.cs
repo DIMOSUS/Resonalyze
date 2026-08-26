@@ -20,6 +20,74 @@ public sealed class ArrivalCoherenceLadderTests
     private const double BandLowHz = 750;
     private const double BandHighHz = 3_000;
 
+    private static VirtualCrossoverAnalysis.ArrivalCoherencePoint Band(
+        double frequencyHz, double lagMs, double peakR) =>
+        new(frequencyHz, lagMs, peakR, CurrentR: 0, HalfPeriodMs: 0.5);
+
+    [Fact]
+    public void CountLadderAgreement_CountsTheBandsWithinAQuarterPeriod()
+    {
+        var ladder = new[]
+        {
+            Band(1_000, lagMs: 0.20, peakR: 0.9),
+            Band(1_200, lagMs: 0.30, peakR: 0.9),
+            Band(1_500, lagMs: 0.55, peakR: 0.9),
+            Band(2_000, lagMs: -0.40, peakR: 0.9)
+        };
+
+        // A quarter period of a 1500 Hz junction is 0.167 ms: the first two
+        // bands sit inside it around 0.25 ms, the other two do not.
+        Assert.Equal(
+            2,
+            VirtualCrossoverAnalysis.CountLadderAgreement(
+                ladder, delayMs: 0.25, quarterPeriodMs: 0.167, minPeakR: 0.6));
+    }
+
+    [Fact]
+    public void CountLadderAgreement_LeavesTheIncoherentBandsOutOfTheVote()
+    {
+        var ladder = new[]
+        {
+            Band(1_000, lagMs: 0.25, peakR: 0.9),
+            // Right where the candidate is, and worthless: the ladder reports
+            // a lag for every band it probes, coherent or not.
+            Band(1_200, lagMs: 0.25, peakR: 0.2)
+        };
+
+        Assert.Equal(
+            1,
+            VirtualCrossoverAnalysis.CountLadderAgreement(
+                ladder, delayMs: 0.25, quarterPeriodMs: 0.167, minPeakR: 0.6));
+    }
+
+    [Fact]
+    public void CountLadderAgreement_SeparatesTwoCandidatesAHalfPeriodApart()
+    {
+        // The shape the veto reads: the bands agree on one lobe, and the
+        // opposite-polarity candidate half a period away collects almost none.
+        var ladder = new[]
+        {
+            Band(1_000, lagMs: 0.24, peakR: 0.9),
+            Band(1_200, lagMs: 0.28, peakR: 0.9),
+            Band(1_500, lagMs: 0.31, peakR: 0.9),
+            Band(2_000, lagMs: -0.05, peakR: 0.9)
+        };
+
+        int onTheLobe = VirtualCrossoverAnalysis.CountLadderAgreement(
+            ladder, delayMs: 0.28, quarterPeriodMs: 0.167, minPeakR: 0.6);
+        int halfAPeriodEarly = VirtualCrossoverAnalysis.CountLadderAgreement(
+            ladder, delayMs: -0.05, quarterPeriodMs: 0.167, minPeakR: 0.6);
+        Assert.Equal(3, onTheLobe);
+        Assert.Equal(1, halfAPeriodEarly);
+    }
+
+    [Fact]
+    public void CountLadderAgreement_RefusesAWindowlessQuarterPeriod()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            VirtualCrossoverAnalysis.CountLadderAgreement(
+                [], delayMs: 0, quarterPeriodMs: 0, minPeakR: 0.6));
+    }
     private static Complex[] Impulse(double offsetMs = 0, double amplitude = 1.0)
     {
         var ir = new Complex[IrLength];

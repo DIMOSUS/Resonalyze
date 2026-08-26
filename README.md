@@ -1947,12 +1947,19 @@ lacks, so what it does to a 48 kHz record is fully described by its response ove
 that record's band. The simulation then speaks for everything up to the lower of
 the two Nyquist limits, which the dialog states for the project in front of you.
 
-A project from before the selector — and a new one until you say otherwise —
-opens as **Custom** following its measurements' rate, so nothing that was tuned
-before changes on its own. Changing the processor re-runs every channel, and it
-also travels into the EQ Wizard: a PEQ handoff carries the project's rate and Q
-convention, and the wizard's own two selectors show them locked for as long as
-that source is loaded.
+The rate list offers **Follow measurements** beside the fixed rates, and the two
+are deliberately different answers: following means the project states no rate of
+its own, so replacing its measurements with a set at another rate moves the
+simulation with them; stating 48 kHz keeps 48 kHz whatever the measurements
+become. A project from before the selector — and a new one until you say
+otherwise — opens as **Custom, following**, so nothing that was tuned before
+changes on its own.
+
+Changing the processor re-runs every channel, and it also travels into the EQ
+Wizard: a PEQ handoff carries the project's rate and Q convention, the wizard's
+own two selectors show them locked for as long as that source is loaded, and a
+bank fitted for one processor is refused on the way back if the project has moved
+to another — the same guard the calibration and the chain already have.
 
 - **Auto crossover...** estimates each channel's usable band and driver type
   (subwoofer, woofer, midbass, midrange, tweeter), asks which filter families to

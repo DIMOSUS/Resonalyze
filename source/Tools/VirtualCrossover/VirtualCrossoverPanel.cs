@@ -1186,10 +1186,7 @@ public partial class VirtualCrossoverPanel : UserControl
     /// did before the processor became selectable.
     /// </summary>
     private DspProcessorProfile ProcessorProfile =>
-        DspProcessorCatalog.Preset(project.DspProcessorModelId)?.ToProfile() ??
-        DspProcessorProfile.Custom(
-            project.DspProcessorSampleRateHz ?? (int)Math.Round(ProjectSampleRateHz),
-            project.DspProcessorQConvention);
+        project.ResolveDspProcessor((int)Math.Round(ProjectSampleRateHz));
 
     /// <summary>
     /// The rate every simulated filter in this project is designed at — NOT the rate
@@ -1199,34 +1196,34 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </summary>
     private int ProcessorSampleRateHz => ProcessorProfile.SampleRateHz;
 
+    private bool ProcessorRateFollowsMeasurements =>
+        project.DspProcessorRateFollowsMeasurements;
+
     // Names the device the project is designed for. Its processing rate is what every
     // simulated filter is built at, so a change re-runs the whole tool: the coordinator
     // keys its cache on that rate, and RedrawAll re-processes every channel through it.
     private void OpenDspProcessorDialog()
     {
         int measurementRateHz = (int)Math.Round(ProjectSampleRateHz);
-        using var dialog = new DspProcessorDialog(ProcessorProfile, measurementRateHz);
+        using var dialog = new DspProcessorDialog(
+            ProcessorProfile, ProcessorRateFollowsMeasurements, measurementRateHz);
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
             return;
         }
 
         DspProcessorProfile profile = dialog.Profile;
-        if (profile == ProcessorProfile)
+        // The INTENT is compared, not only the numbers: "follow the measurements" and
+        // "48 kHz" describe the same simulation while the measurements are at 48 kHz,
+        // and they part company the moment those measurements are replaced — so
+        // switching between them has to be stored, not read as a no-op.
+        bool follows = dialog.FollowsMeasurements;
+        if (profile == ProcessorProfile && follows == ProcessorRateFollowsMeasurements)
         {
             return;
         }
 
-        project.DspProcessorModelId = profile.ModelId;
-        project.DspProcessorQConvention = profile.QConvention;
-        // A Custom profile left at the measurements' own rate keeps FOLLOWING them
-        // (null), so a project set up before its measurements — or re-sourced at
-        // another rate later — does not silently keep a rate the user never chose.
-        // Any other answer is a deliberate one and is stored as the number it is.
-        project.DspProcessorSampleRateHz =
-            profile.IsCustom && profile.SampleRateHz == measurementRateHz
-                ? null
-                : profile.SampleRateHz;
+        project.SetDspProcessor(profile, follows);
 
         ScheduleSave();
         RedrawAll();

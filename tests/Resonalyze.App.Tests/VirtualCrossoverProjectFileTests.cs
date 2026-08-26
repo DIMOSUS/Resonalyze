@@ -700,6 +700,56 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void AStatedProcessorRate_SurvivesTheMeasurementsBeingReplaced()
+    {
+        // "Follow the measurements" and "48 kHz" describe the same simulation while
+        // the measurements are at 48 kHz, and they part company the moment those are
+        // replaced — so the two must be stored apart. Stating 48 kHz keeps 48 kHz.
+        var stated = new VirtualCrossoverProjectFile();
+        stated.SetDspProcessor(
+            DspProcessorProfile.Custom(48_000, PeqQConvention.Rbj),
+            followsMeasurements: false);
+
+        Assert.Equal(48_000, stated.DspProcessorSampleRateHz);
+        Assert.False(stated.DspProcessorRateFollowsMeasurements);
+        Assert.Equal(48_000, stated.ResolveDspProcessor(48_000).SampleRateHz);
+        Assert.Equal(48_000, stated.ResolveDspProcessor(96_000).SampleRateHz);
+    }
+
+    [Fact]
+    public void AFollowingProcessorRate_TracksWhateverTheMeasurementsAre()
+    {
+        var following = new VirtualCrossoverProjectFile();
+        following.SetDspProcessor(
+            DspProcessorProfile.Custom(48_000, PeqQConvention.Symmetric),
+            followsMeasurements: true);
+
+        Assert.Null(following.DspProcessorSampleRateHz);
+        Assert.True(following.DspProcessorRateFollowsMeasurements);
+        Assert.Equal(48_000, following.ResolveDspProcessor(48_000).SampleRateHz);
+        Assert.Equal(96_000, following.ResolveDspProcessor(96_000).SampleRateHz);
+        // The convention is the user's either way.
+        Assert.Equal(
+            PeqQConvention.Symmetric,
+            following.ResolveDspProcessor(96_000).QConvention);
+    }
+
+    [Fact]
+    public void ANamedModel_StatesItsOwnRateAndNeverFollows()
+    {
+        var project = new VirtualCrossoverProjectFile();
+        DspProcessorProfile helix =
+            DspProcessorCatalog.Preset("helix-dsp-ultra-s")!.ToProfile();
+
+        // Even asked to follow: a device brings its own rate, and storing "follow"
+        // for it would make the model's own preset a lie the next time it resolves.
+        project.SetDspProcessor(helix, followsMeasurements: true);
+
+        Assert.False(project.DspProcessorRateFollowsMeasurements);
+        Assert.Equal(96_000, project.ResolveDspProcessor(44_100).SampleRateHz);
+    }
+
+    [Fact]
     public void SaveToAndLoadFrom_CarryTheProcessorTheProjectIsDesignedFor()
     {
         // The processor decides the rate every simulated filter is BUILT at, so it is

@@ -85,7 +85,7 @@ namespace Resonalyze
             comboBoxSampleRate.Location = new Point(148, 90);
             comboBoxSampleRate.MinimumSize = new Size(36, 19);
             comboBoxSampleRate.Name = "comboBoxSampleRate";
-            comboBoxSampleRate.Size = new Size(140, 23);
+            comboBoxSampleRate.Size = new Size(230, 23);
             comboBoxSampleRate.TabIndex = 4;
             //
             // labelQConvention
@@ -115,7 +115,7 @@ namespace Resonalyze
             labelStatus.Location = new Point(12, 164);
             labelStatus.MaximumSize = new Size(456, 0);
             labelStatus.Name = "labelStatus";
-            labelStatus.Size = new Size(456, 45);
+            labelStatus.Size = new Size(456, 60);
             labelStatus.TabIndex = 7;
             labelStatus.Text = "status";
             //
@@ -123,7 +123,7 @@ namespace Resonalyze
             //
             labelHint.AutoSize = true;
             labelHint.ForeColor = Color.FromArgb(150, 156, 168);
-            labelHint.Location = new Point(12, 232);
+            labelHint.Location = new Point(12, 248);
             labelHint.MaximumSize = new Size(456, 0);
             labelHint.Name = "labelHint";
             labelHint.Size = new Size(456, 30);
@@ -137,7 +137,7 @@ namespace Resonalyze
             buttonOk.DialogResult = DialogResult.OK;
             buttonOk.FlatStyle = FlatStyle.Popup;
             buttonOk.ForeColor = Color.White;
-            buttonOk.Location = new Point(292, 286);
+            buttonOk.Location = new Point(292, 302);
             buttonOk.Name = "buttonOk";
             buttonOk.Size = new Size(84, 26);
             buttonOk.TabIndex = 9;
@@ -149,7 +149,7 @@ namespace Resonalyze
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
             buttonCancel.ForeColor = Color.White;
-            buttonCancel.Location = new Point(384, 286);
+            buttonCancel.Location = new Point(384, 302);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
             buttonCancel.TabIndex = 10;
@@ -161,7 +161,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(40, 44, 54);
-            ClientSize = new Size(480, 324);
+            ClientSize = new Size(480, 340);
             Controls.Add(labelCaption);
             Controls.Add(labelModel);
             Controls.Add(comboBoxModel);

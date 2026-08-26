@@ -21,21 +21,35 @@ internal sealed partial class DspProcessorDialog : Form
     // The item standing for "no model", so the model list can hold presets alone.
     private static readonly object CustomItem = new();
 
+    // The rate entry meaning "whatever the measurements are", kept apart from the
+    // fixed rates beside it: a project set up before its measurements, or re-sourced
+    // at another rate later, should follow them — while a user who deliberately
+    // states 48 kHz keeps 48 kHz even when the measurements move.
+    private static readonly object FollowItem = new();
+
     private readonly int measurementSampleRateHz;
 
     // The user's own numbers, kept while a preset is selected so switching back to
     // Custom restores what they had rather than the preset they just left.
     private int customSampleRateHz;
     private PeqQConvention customQConvention;
+    private bool customFollowsMeasurements;
     private bool suppressEvents;
 
     /// <param name="profile">The project's current processor.</param>
+    /// <param name="followsMeasurements">
+    /// Whether the project's rate is stored as "follow the measurements" rather than
+    /// as a number. Only a Custom profile can.
+    /// </param>
     /// <param name="measurementSampleRateHz">
     /// The rate the project's measurements were taken at, shown beside the choice so
     /// the band the simulation can speak for is visible. Zero when the project has no
     /// source yet.
     /// </param>
-    public DspProcessorDialog(DspProcessorProfile profile, int measurementSampleRateHz)
+    public DspProcessorDialog(
+        DspProcessorProfile profile,
+        bool followsMeasurements,
+        int measurementSampleRateHz)
     {
         ArgumentNullException.ThrowIfNull(profile);
         InitializeComponent();
@@ -45,6 +59,7 @@ internal sealed partial class DspProcessorDialog : Form
             ? profile.SampleRateHz
             : Fallback(measurementSampleRateHz);
         customQConvention = profile.QConvention;
+        customFollowsMeasurements = followsMeasurements && profile.IsCustom;
 
         AcceptButton = buttonOk;
         CancelButton = buttonCancel;
@@ -58,7 +73,8 @@ internal sealed partial class DspProcessorDialog : Form
         {
             comboBoxModel.SelectedItem =
                 (object?)DspProcessorCatalog.Preset(profile.ModelId) ?? CustomItem;
-            comboBoxSampleRate.SelectedItem = customSampleRateHz;
+            comboBoxSampleRate.SelectedItem =
+                customFollowsMeasurements ? FollowItem : customSampleRateHz;
             comboBoxQConvention.SelectedItem = customQConvention;
         }
         finally
@@ -73,19 +89,40 @@ internal sealed partial class DspProcessorDialog : Form
         ApplySelectedModel();
     }
 
-    /// <summary>The processor the user settled on.</summary>
+    /// <summary>
+    /// The processor the user settled on. Its rate is always a NUMBER — the rate the
+    /// simulation runs at right now — even when <see cref="FollowsMeasurements"/> says
+    /// the project should store the intent rather than the number.
+    /// </summary>
     public DspProcessorProfile Profile =>
         SelectedPreset is { } preset
             ? preset.ToProfile()
             : DspProcessorProfile.Custom(SelectedSampleRateHz, SelectedQConvention);
 
+    /// <summary>
+    /// Whether the rate was left to the measurements rather than stated. A named model
+    /// never does — it brings its own rate.
+    /// </summary>
+    public bool FollowsMeasurements =>
+        SelectedPreset == null && ReferenceEquals(comboBoxSampleRate.SelectedItem, FollowItem);
+
     private DspProcessorPreset? SelectedPreset =>
         comboBoxModel.SelectedItem as DspProcessorPreset;
 
-    private int SelectedSampleRateHz =>
-        comboBoxSampleRate.SelectedItem is int rate && rate > 0
-            ? rate
-            : customSampleRateHz;
+    private int SelectedSampleRateHz
+    {
+        get
+        {
+            if (ReferenceEquals(comboBoxSampleRate.SelectedItem, FollowItem))
+            {
+                return Fallback(measurementSampleRateHz);
+            }
+
+            return comboBoxSampleRate.SelectedItem is int rate && rate > 0
+                ? rate
+                : customSampleRateHz;
+        }
+    }
 
     private PeqQConvention SelectedQConvention =>
         comboBoxQConvention.SelectedItem is PeqQConvention convention
@@ -117,11 +154,18 @@ internal sealed partial class DspProcessorDialog : Form
         comboBoxSampleRate.FormattingEnabled = true;
         comboBoxSampleRate.Format += (_, args) =>
         {
-            if (args.ListItem is int rate)
+            if (ReferenceEquals(args.ListItem, FollowItem))
+            {
+                args.Value = measurementSampleRateHz > 0
+                    ? $"Follow measurements ({measurementSampleRateHz / 1000.0:0.###} kHz)"
+                    : "Follow measurements";
+            }
+            else if (args.ListItem is int rate)
             {
                 args.Value = $"{rate / 1000.0:0.###} kHz";
             }
         };
+        comboBoxSampleRate.Items.Add(FollowItem);
         foreach (int rate in DspProcessorCatalog.SelectableSampleRatesHz)
         {
             comboBoxSampleRate.Items.Add(rate);
@@ -175,7 +219,9 @@ internal sealed partial class DspProcessorDialog : Form
         {
             if (preset == null)
             {
-                comboBoxSampleRate.SelectedItem = customSampleRateHz;
+                comboBoxSampleRate.SelectedItem = customFollowsMeasurements
+                    ? FollowItem
+                    : customSampleRateHz;
                 comboBoxQConvention.SelectedItem = customQConvention;
             }
             else
@@ -230,6 +276,12 @@ internal sealed partial class DspProcessorDialog : Form
             ? "Q is stated as the RBJ cookbook defines it, which is what the bands here are."
             : $"Tuning sheets restate Q as {PeqQConventions.DescribeShort(SelectedQConvention)} " +
               "for this device; the filters themselves do not move.";
-        labelStatus.Text = $"{band}\r\n{convention}";
+        // Two answers can name the same rate today and part company tomorrow, so the
+        // one that is not a number says so.
+        string follow = FollowsMeasurements
+            ? "\r\nThe rate is not stated: it follows the project's measurements, " +
+              "including after they are replaced at another rate."
+            : string.Empty;
+        labelStatus.Text = band + "\r\n" + convention + follow;
     }
 }

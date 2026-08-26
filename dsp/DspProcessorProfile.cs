@@ -118,6 +118,12 @@ public static class DspProcessorCatalog
     // convention is a property of the MODEL rather than of the maker (see
     // PeqQConvention) — JL Audio's TwK reads Classic while its own VXi does not — so
     // every line states its own.
+    //
+    // The numbers are the owner's table, read off the makers' published processing
+    // rates; only AMP Panacea's convention is confirmed by measurement here. The
+    // catalog tests pin what this file SAYS, which is not the same as pinning that a
+    // device really behaves so — a correction to a line is a data fix, and it reaches
+    // every project naming that model (see Resolve).
     private static readonly DspProcessorPreset[] PresetList =
     [
         // AMP Panacea is a Cirrus Logic CS47048C; its Symmetric Q is confirmed by measurement.

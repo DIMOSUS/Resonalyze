@@ -102,13 +102,17 @@ internal sealed class MeasurementPlotContext
             // configured ones: the live settings describe the next sweep, and
             // reading them here would break a loaded file's curve at frequencies
             // belonging to a measurement it never was.
-            LowestMeasuredFrequencyHz = band.LowEdgeHz,
-            HighestMeasuredFrequencyHz = band.HighEdgeHz
+            LowestMeasuredFrequencyHz = MeasuredBand.LowEdgeHz,
+            HighestMeasuredFrequencyHz = MeasuredBand.HighEdgeHz
         };
     }
 
-    /// <summary>What the current result actually measured.</summary>
-    private MeasuredBand band => MeasuredBand.Resolve(
+    /// <summary>
+    /// What the current result actually measured — the band every curve derived from
+    /// it stops at, and the one an overlay captured from it has to carry so it keeps
+    /// stopping there after the measurement is gone.
+    /// </summary>
+    public MeasuredBand MeasuredBand => MeasuredBand.Resolve(
         expSweepMeasurement.MeasurementProtectiveHighPass,
         expSweepMeasurement.AchievedLowFrequencyHz,
         expSweepMeasurement.AchievedHighFrequencyHz,

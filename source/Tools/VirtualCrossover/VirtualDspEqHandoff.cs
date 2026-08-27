@@ -314,7 +314,15 @@ internal static class VirtualDspEqHandoff
                         : "\r\nRaw measurement, windowed by the Virtual DSP gate at its own arrival.") +
                 pointNote +
                 bypassNote,
-            Measurement = new ImpulseMeasurementView(response, anchorIndex, sampleRate),
+            // The band this channel measured travels with the response, or the
+            // wizard would draw its own curve past where the panel's stops: the
+            // chain does not create signal in a range the sweep never excited, nor
+            // below what the protective high-pass took past recovering.
+            Measurement = new ImpulseMeasurementView(response, anchorIndex, sampleRate)
+            {
+                LowestMeasuredFrequencyHz = state.MeasuredBand.LowEdgeHz,
+                HighestMeasuredFrequencyHz = state.MeasuredBand.HighEdgeHz
+            },
             // For an array, the agreement between its positions rather than the
             // impulse response's coherence: both gate boosts, and when the curve being
             // fitted is the average over a listening volume, how far that volume's

@@ -278,7 +278,13 @@ internal sealed class PlotModelFactory
                 (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves),
                 // Compare is only offered at the main measurement's rate (see
                 // TryCreateCompareMeasurement), so one rate covers both sources.
-                expSweepMeasurement.SampleRate > 0 ? expSweepMeasurement.SampleRate : null)
+                expSweepMeasurement.SampleRate > 0 ? expSweepMeasurement.SampleRate : null,
+                PointsCalibration: null,
+                // Each source's OWN band: the compared measurement was swept and
+                // filtered on its own terms, which need not be this one's.
+                Band: tag.Source == CurveSource.Compare
+                    ? getCompareSource?.Invoke()?.Band ?? default
+                    : measurementContext.MeasuredBand)
             : null;
     }
 
@@ -2770,14 +2776,22 @@ internal sealed class PlotModelFactory
             new ImpulseMeasurementView(
                 mainIr,
                 Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, mainIr.Length - 1),
-                expSweepMeasurement.SampleRate),
+                expSweepMeasurement.SampleRate)
+            {
+                LowestMeasuredFrequencyHz = measurementContext.MeasuredBand.LowEdgeHz,
+                HighestMeasuredFrequencyHz = measurementContext.MeasuredBand.HighEdgeHz
+            },
             rawOptions,
             GetCalibration(rawOptions));
         AnalysisCurve compareMagnitude = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(
                 compareIr,
                 Math.Clamp(compare.TransferPeakIndex, 0, compareIr.Length - 1),
-                compare.SampleRate),
+                compare.SampleRate)
+            {
+                LowestMeasuredFrequencyHz = compare.Band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = compare.Band.HighEdgeHz
+            },
             rawOptions,
             GetCalibration(rawOptions));
 
@@ -2787,12 +2801,30 @@ internal sealed class PlotModelFactory
         var points = new List<SignalPoint>(count);
         for (int i = 0; i < count; i++)
         {
-            double magnitudeSumDb = DataHelper.AmplitudeToDecibels(
-                DataHelper.DecibelsToAmplitude(mainMagnitude.Points[i].Y) +
-                DataHelper.DecibelsToAmplitude(compareMagnitude.Points[i].Y));
+            // Skipped, not added: a response that measured nothing here contributes
+            // nothing, and adding its NaN would break a loss reading that is perfectly
+            // good wherever the other one plays alone — the same rule
+            // VirtualCrossoverAnalysis.SumLossCurve follows for a whole set. Where
+            // NEITHER measured anything the sum stays zero and the point is a break,
+            // which is the honest answer to "how much did these two lose".
+            double magnitudeSum = 0.0;
+            bool measured = false;
+            foreach (SignalPoint operand in
+                new[] { mainMagnitude.Points[i], compareMagnitude.Points[i] })
+            {
+                if (double.IsFinite(operand.Y))
+                {
+                    magnitudeSum += DataHelper.DecibelsToAmplitude(operand.Y);
+                    measured = true;
+                }
+            }
+
             points.Add(new SignalPoint(
                 complexCurve.Points[i].X,
-                complexCurve.Points[i].Y - magnitudeSumDb));
+                measured
+                    ? complexCurve.Points[i].Y -
+                        DataHelper.AmplitudeToDecibels(magnitudeSum)
+                    : double.NaN));
         }
 
         double smoothing = smoothingInverseOctaves

@@ -184,6 +184,17 @@ internal sealed record EqWizardCurveSource
     public IReadOnlyList<SignalPoint>? RawSpectrum { get; init; }
 
     /// <summary>
+    /// What the measurement behind <see cref="RawSpectrum"/> measured. The whole range
+    /// by default, which is what an imported text curve and a legacy overlay read as.
+    /// </summary>
+    /// <remarks>
+    /// A raw spectrum is stored unmasked so it can be re-smoothed exactly at any width,
+    /// which means the break has to be re-applied to each finished curve — here as much
+    /// as on the plot the slot came from.
+    /// </remarks>
+    public MeasuredBand RawSpectrumBand { get; init; }
+
+    /// <summary>
     /// The microphone correction frozen at capture time, on the raw curve's output grid.
     /// Empty when the curve was captured without calibration.
     /// </summary>

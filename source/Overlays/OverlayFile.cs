@@ -144,6 +144,22 @@ public sealed class OverlayFile
     // Empty means no calibration or a legacy raw capture.
     public double[] RawCalibrationCorrectionDb { get; set; } = Array.Empty<double>();
 
+    /// <summary>
+    /// The band the measurement behind <see cref="RawSpectrum"/> actually measured;
+    /// zero and zero when it measured everywhere, which is also what a file written
+    /// before these existed reads as.
+    /// </summary>
+    /// <remarks>
+    /// The spectrum is stored unmasked, so the break has to be re-applied every time
+    /// the slot is re-smoothed — and a slot outlives the measurement it came from.
+    /// Additive, so no file version moves: an older build ignores them and draws what
+    /// it drew before.
+    /// </remarks>
+    public double MeasuredLowFrequencyHz { get; set; }
+
+    /// <inheritdoc cref="MeasuredLowFrequencyHz"/>
+    public double MeasuredHighFrequencyHz { get; set; }
+
     // No-raw captures only (a dB SPL RTA or FR, which cannot store a re-smoothable raw
     // spectrum): the microphone correction that was baked into the DRAWN Points, frozen
     // per drawn point (so its length matches Points). It lets a consumer that equalizes

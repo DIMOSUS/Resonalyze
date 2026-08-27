@@ -560,7 +560,10 @@ public partial class EqWizardPanel
             EqProcessorSampleRate,
             source.GateSettings!,
             ResolveChosenCalibration(),
-            SourceSmoothingInverseOctaves);
+            SourceSmoothingInverseOctaves,
+            new MeasuredBand(
+                source.Measurement.LowestMeasuredFrequencyHz,
+                source.Measurement.HighestMeasuredFrequencyHz));
 
     // The curve the current choice corrects with: the one the source arrived pinned
     // to, or the configured entry the choice names (none for Off and for Own, whose
@@ -699,7 +702,8 @@ public partial class EqWizardPanel
         return RawCurveRenderer.Render(
             raw,
             ResolveCurveCalibrationCorrection(source),
-            SourceSmoothingInverseOctaves);
+            SourceSmoothingInverseOctaves,
+            source.RawSpectrumBand);
     }
 
     // The same choice as ResolveCurveCalibrationCorrection, but frozen on the curve's own

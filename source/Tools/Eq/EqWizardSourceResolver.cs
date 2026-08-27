@@ -149,6 +149,8 @@ internal sealed class EqWizardSourceResolver
             DisplayName = file.Title,
             Description = DescribeSlot(file),
             RawSpectrum = raw,
+            RawSpectrumBand = new MeasuredBand(
+                file.MeasuredLowFrequencyHz, file.MeasuredHighFrequencyHz),
             OwnCalibrationCorrectionDb = file.RawCalibrationCorrectionDb.ToArray(),
             Points = points,
             PointsCalibrationCorrectionDb = pointsCorrection,

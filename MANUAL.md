@@ -836,6 +836,12 @@ array project is drawn from that point measurement instead and the panel says ho
 channels that is; below the cabin's first mode a point and an average are the same
 measurement, so a subwoofer loses little by it.
 
+Set **Mic cal** to **Own (as measured)** while you are there. Each array position is
+a different capsule with its own calibration file, and that setting reads every curve
+through the correction its own measurement recorded instead of applying one of yours
+to all of them. Pick a single calibration from the list only when you want to see the
+whole set through one microphone on purpose.
+
 **Took MMM captures instead?** On each channel card, press the **MMM** button and
 select that driver's capture. Do it for both sides — left and right have their own —
 and once for a mono channel, which shares its single capture. The button says where

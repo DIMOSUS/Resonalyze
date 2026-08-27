@@ -30,6 +30,10 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
 {
     private const int PreviewSmoothing = 6;
 
+    private static string DescribeCalibration(LiveCaptureDocument document) =>
+        document.Calibration?.Name
+            ?? (document.CalibrationIsAggregate ? "several (one per position)" : "none");
+
     [ArrayHarnessFact]
     public void EveryArrayReachesTheHybridAndTheWizard()
     {
@@ -48,7 +52,20 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
         foreach (string path in paths)
         {
             string name = Path.GetFileNameWithoutExtension(path);
-            ImpulseResponseFile file = ImpulseResponseFile.LoadAsync(path).GetAwaiter().GetResult();
+            ImpulseResponseFile file;
+            try
+            {
+                file = ImpulseResponseFile.LoadAsync(path).GetAwaiter().GetResult();
+            }
+            catch (InvalidDataException)
+            {
+                // A folder of measurements is also where a Virtual DSP project ends
+                // up, and where a session autosave lands. Not something to fail on:
+                // the harness is pointed at a working directory, not at a curated one.
+                report.AppendLine($"  {name,-14} not a measurement — skipped");
+                continue;
+            }
+
             if (file.ArrayMicrophones is null)
             {
                 report.AppendLine($"  {name,-14} no array — skipped");
@@ -77,7 +94,11 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
             report.AppendLine(
                 $"  {name,-14} {source.ArrayCapture!.Recipe.MicrophoneCount} positions, " +
                 $"band {band.LowEdgeHz,7:0.0}-{(double.IsPositiveInfinity(band.HighEdgeHz) ? double.NaN : band.HighEdgeHz),8:0} Hz, " +
-                $"calibration {source.ArrayCapture.Calibration?.Name ?? "none"}");
+                // "several" is not "none", and the document says only that no ONE
+                // curve describes it — which is what an array of individually
+                // calibrated capsules looks like, and the state a consumer must not
+                // read as uncalibrated.
+                $"calibration {DescribeCalibration(source.ArrayCapture)}");
         }
 
         Assert.True(channels.Count >= 2, "the hybrid needs at least two channels.");

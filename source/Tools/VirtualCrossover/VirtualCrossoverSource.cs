@@ -46,6 +46,14 @@ internal sealed class ResolvedVirtualDspSource
     public MeasuredBand MeasuredBand { get; init; } = MeasuredBand.Everything;
 
     /// <summary>
+    /// The microphone calibration this measurement was read through, as its file
+    /// recorded it. Null when the file names none — every measurement written before
+    /// the format carried one, which is why the panel's own selection is still the
+    /// answer for those.
+    /// </summary>
+    public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; init; }
+
+    /// <summary>
     /// Prepares a source from a measurement snapshot, or returns null when the
     /// snapshot has no loopback transfer IR — the virtual sum only has physical
     /// meaning for loopback-referenced responses — or when it was imported from a
@@ -81,7 +89,8 @@ internal sealed class ResolvedVirtualDspSource
                 snapshot.ProtectiveHighPass,
                 snapshot.AchievedLowFrequencyHz,
                 snapshot.AchievedHighFrequencyHz,
-                snapshot.SampleRate)
+                snapshot.SampleRate),
+            MicrophoneCalibration = snapshot.MicrophoneCalibration
         };
     }
 
@@ -97,6 +106,7 @@ internal sealed class ResolvedVirtualDspSource
         state.ArrayCapture = ArrayCapture;
         state.ArraySpreadDb = ArraySpreadDb;
         state.MeasuredBand = MeasuredBand;
+        state.MicrophoneCalibration = MicrophoneCalibration;
     }
 
     // Computes the channel's harmonic distortion (THD, dB vs the fundamental) from

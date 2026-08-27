@@ -515,7 +515,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator,
-            (impulseResponse, anchorIndex, sampleRate, measuredBand) =>
+            (impulseResponse, anchorIndex, sampleRate, measuredBand, _) =>
             {
                 PhaseAnalysisSettings gate = template with
                 {

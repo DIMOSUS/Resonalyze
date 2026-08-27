@@ -81,6 +81,29 @@ internal static class VirtualCrossoverCalibrationSelection
         string.Equals(calibrationId, SessionId, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The selector id that means "each measurement through the calibration IT
+    /// recorded" rather than one curve for the whole project.
+    /// </summary>
+    /// <remarks>
+    /// A rule and not a curve, which is why it persists as an id with nothing beside
+    /// it — there is no single correction to store, and storing one of them would be
+    /// storing the wrong answer for the other channels. The panel's other selections
+    /// answer "what should everything be read through"; this one answers "what was
+    /// each of them actually read through", and only the files can say.
+    /// <para>
+    /// It exists because the project's one calibration stopped being able to describe
+    /// the measurements: a microphone array records several capsules, each corrected
+    /// by its own file before the positions are averaged, and no single curve names
+    /// that. The same is true, less visibly, of a project whose channels were measured
+    /// on different days with different microphones.
+    /// </para>
+    /// </remarks>
+    public const string OwnId = "own-calibration";
+
+    public static bool IsOwn(string? calibrationId) =>
+        string.Equals(calibrationId, OwnId, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Resolves the selection for a project being bound.
     /// </summary>
     /// <param name="imported">
@@ -103,6 +126,15 @@ internal static class VirtualCrossoverCalibrationSelection
         ArgumentNullException.ThrowIfNull(resolve);
 
         string? id = MicrophoneCalibrationIds.Normalize(calibrationId);
+        // Before anything is matched against a curve: this selection names no curve,
+        // so a stored one beside it (from a project saved under a different rule and
+        // migrated) has nothing to say about it.
+        if (IsOwn(id))
+        {
+            return new VirtualCrossoverCalibrationDecision(
+                OwnId, null, VirtualCrossoverCalibrationNotice.None);
+        }
+
         MicrophoneCalibrationEntry? named = Find(entries, id);
 
         if (calibration is { } embedded)
@@ -194,16 +226,21 @@ internal static class VirtualCrossoverCalibrationSelection
         VirtualCrossoverSessionCalibration? session)
     {
         ArgumentNullException.ThrowIfNull(entries);
-        if (session == null)
+        var all = new List<MicrophoneCalibrationEntry>(entries.Count + 2)
         {
-            return entries;
+            // First, straight after Off: it is the answer that needs no configuring
+            // and cannot be wrong about what was measured. The curves below it are
+            // this machine's opinions about what to read the measurements through.
+            new(OwnId, "Own (as measured)", Available: true, FileName: null)
+        };
+        all.AddRange(entries);
+        if (session != null)
+        {
+            all.Add(new MicrophoneCalibrationEntry(
+                SessionId, session.DisplayName, Available: true, session.FileName));
         }
 
-        var withSession = new List<MicrophoneCalibrationEntry>(entries.Count + 1);
-        withSession.AddRange(entries);
-        withSession.Add(new MicrophoneCalibrationEntry(
-            SessionId, session.DisplayName, Available: true, session.FileName));
-        return withSession;
+        return all;
     }
 
     /// <summary>
@@ -231,6 +268,14 @@ internal static class VirtualCrossoverCalibrationSelection
         if (IsSession(selectedId))
         {
             return (null, session?.ToSettings());
+        }
+
+        // A rule, so the id alone. There is no curve that describes it, and writing
+        // one of the measurements' would make a project reopened elsewhere read every
+        // channel through whichever file happened to be first.
+        if (IsOwn(selectedId))
+        {
+            return (OwnId, null);
         }
 
         string? id = MicrophoneCalibrationIds.Normalize(selectedId);

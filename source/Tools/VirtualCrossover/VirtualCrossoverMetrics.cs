@@ -16,16 +16,31 @@ namespace Resonalyze;
 internal sealed class VirtualCrossoverMetrics
 {
     private readonly VirtualCrossoverProcessingCoordinator coordinator;
-    private readonly Func<Complex[], int, int, MeasuredBand, GatedMagnitude>
+    private readonly Func<Complex[], int, int, MeasuredBand, CalibrationFile?, GatedMagnitude>
         buildMagnitudeCurve;
+
+    // How a curve's microphone correction is chosen. Passed in rather than read from
+    // a field, because under the panel's "Own (as measured)" it is a property of each
+    // MEASUREMENT and not of the project: one channel's file may name a calibration
+    // its neighbour's does not, and a sum of two such channels names neither.
+    private readonly Func<ProcessedChannel, CalibrationFile?> channelCalibration;
+    private readonly Func<IReadOnlyList<ProcessedChannel>, CalibrationFile?> sumCalibration;
 
     public VirtualCrossoverMetrics(
         VirtualCrossoverProcessingCoordinator coordinator,
-        Func<Complex[], int, int, MeasuredBand, GatedMagnitude> buildMagnitudeCurve)
+        Func<Complex[], int, int, MeasuredBand, CalibrationFile?, GatedMagnitude>
+            buildMagnitudeCurve,
+        Func<ProcessedChannel, CalibrationFile?>? channelCalibration = null,
+        Func<IReadOnlyList<ProcessedChannel>, CalibrationFile?>? sumCalibration = null)
     {
         this.coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         this.buildMagnitudeCurve = buildMagnitudeCurve
             ?? throw new ArgumentNullException(nameof(buildMagnitudeCurve));
+        // No correction by default: a caller that does not draw for a user has no
+        // microphone to correct for, and the metric is a comparison between curves
+        // built the same way rather than an absolute reading.
+        this.channelCalibration = channelCalibration ?? (_ => null);
+        this.sumCalibration = sumCalibration ?? (_ => null);
     }
 
     // The magnitude curves, complex sum and summation loss the metric reads,
@@ -73,7 +88,8 @@ internal sealed class VirtualCrossoverMetrics
                 item.ImpulseResponse,
                 anchor,
                 item.SampleRate,
-                item.MeasuredBand))
+                item.MeasuredBand,
+                channelCalibration(item)))
             .ToList();
         Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
             processed.Select(item => item.ImpulseResponse).ToList());
@@ -84,7 +100,8 @@ internal sealed class VirtualCrossoverMetrics
             sum,
             anchor,
             processed[0].SampleRate,
-            ProcessedChannels.UnionOfMeasuredBands(processed))
+            ProcessedChannels.UnionOfMeasuredBands(processed),
+            sumCalibration(processed))
             // The hull covers the ends; this covers a hole between two channels whose
             // sweeps do not overlap, where the summed response is zero from every
             // contributor at once.
@@ -586,7 +603,8 @@ internal sealed class VirtualCrossoverMetrics
                 side.SampleRate,
                 OxyColors.Transparent,
                 side.ProcessedValidRange,
-                side.State.MeasuredBand)).ToList());
+                side.State.MeasuredBand,
+                side.State.MicrophoneCalibrationCurve)).ToList());
     }
 
     // One channel side snapshotted on the UI thread for background processing

@@ -224,20 +224,76 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     }
 
     [Fact]
-    public void EntriesWith_AppendsTheSessionCurveAsItsOwnItem()
+    public void EntriesWith_OffersOwnFirstAndTheSessionCurveLast()
     {
         var session = new VirtualCrossoverSessionCalibration(AuthorsCurve, "90°", "ECM8000_90deg.txt");
 
         IReadOnlyList<MicrophoneCalibrationEntry> entries =
             VirtualCrossoverCalibrationSelection.EntriesWith(Recipient, session);
 
-        Assert.Equal(Recipient.Length + 1, entries.Count);
+        Assert.Equal(Recipient.Length + 2, entries.Count);
+        // First, straight after the combo's own Off: it is the answer that needs no
+        // configuring and cannot be wrong about what was measured. The configured
+        // entries below it are this machine's opinions about what to read the
+        // measurements through.
+        Assert.Equal(VirtualCrossoverCalibrationSelection.OwnId, entries[0].Id);
+        Assert.Equal("Own (as measured)", entries[0].Name);
+        Assert.True(entries[0].Available);
+        Assert.Null(entries[0].FileName);
+
         MicrophoneCalibrationEntry last = entries[^1];
         Assert.Equal(VirtualCrossoverCalibrationSelection.SessionId, last.Id);
         Assert.Equal("90° (from session)", last.Name);
         Assert.True(last.Available);
         Assert.Equal("ECM8000_90deg.txt", last.FileName);
-        Assert.Same(Recipient, VirtualCrossoverCalibrationSelection.EntriesWith(Recipient, null));
+    }
+
+    [Fact]
+    public void EntriesWith_OffersOwnEvenWithoutASessionCurve()
+    {
+        IReadOnlyList<MicrophoneCalibrationEntry> entries =
+            VirtualCrossoverCalibrationSelection.EntriesWith(Recipient, null);
+
+        // It describes the MEASUREMENTS, so it is on offer whether or not the project
+        // brought a curve of its own.
+        Assert.Equal(Recipient.Length + 1, entries.Count);
+        Assert.Equal(VirtualCrossoverCalibrationSelection.OwnId, entries[0].Id);
+        Assert.DoesNotContain(
+            entries,
+            entry => entry.Id == VirtualCrossoverCalibrationSelection.SessionId);
+    }
+
+    [Fact]
+    public void Own_SurvivesABindAndPersistsAsARuleWithNoCurve()
+    {
+        // It names no curve, so a stored one beside it — from a project saved under a
+        // different selection and migrated — has nothing to say about it, and none is
+        // written back. Storing one of the measurements' would make the project read
+        // every channel through whichever file happened to be first.
+        VirtualCrossoverCalibrationDecision decision =
+            VirtualCrossoverCalibrationSelection.Resolve(
+                VirtualCrossoverCalibrationSelection.OwnId,
+                Carried(ForeignCurve),
+                imported: true,
+                Recipient,
+                Resolve,
+                previousSelectedId: "cal-local",
+                previousSession: null);
+
+        Assert.Equal(VirtualCrossoverCalibrationSelection.OwnId, decision.SelectedId);
+        Assert.Null(decision.Session);
+        Assert.Equal(VirtualCrossoverCalibrationNotice.None, decision.Notice);
+
+        (string? id, VirtualCrossoverCalibrationSettings? curve) =
+            VirtualCrossoverCalibrationSelection.Persist(
+                VirtualCrossoverCalibrationSelection.OwnId,
+                null,
+                Recipient,
+                Resolve,
+                storedId: null,
+                stored: null);
+        Assert.Equal(VirtualCrossoverCalibrationSelection.OwnId, id);
+        Assert.Null(curve);
     }
 
     [Fact]

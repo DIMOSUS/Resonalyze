@@ -1473,6 +1473,9 @@ same rule for such a source: it offers **Own (as captured)** and **Off**, both o
 which are exact, and no longer offers a single microphone's file, which would be
 applied to positions that were never read through it.
 
+The Virtual DSP's **Mic cal** selector offers the same answer under the name
+**Own (as measured)**, described in [Virtual DSP](#virtual-dsp).
+
 Two warnings are specific to arrays. The set's spread is judged against **1.5 dB**
 rather than the moving microphone's 3 dB, because an array is levelled by the same
 loopback the impulse responses are — two real seven-position sets read 0.33 dB
@@ -1702,6 +1705,28 @@ Editing a chain recomputes the prediction on a background task, so dragging a
 value stays responsive with several channels loaded. The **Mic cal** selector
 applies one of your configured microphone corrections to the magnitude curves; it
 defaults to Off because the measurements are loopback-referenced.
+
+**Own (as measured)** is the other kind of answer in that list. The configured
+calibrations correct every curve with one of them, which is right when one
+microphone took every channel; Own instead reads each curve through the calibration
+ITS measurement recorded. The file has carried that since measurements became
+portable, and it is a fact of the measurement rather than of the project — which
+makes it the accurate answer for a set a [microphone array](#microphone-array) took,
+where each position is a different capsule with its own file, and for a project whose
+channels were measured on different days with different microphones. A measurement
+whose file names no calibration is read through none: substituting a curve it never
+passed through would be the panel deciding what the measurement means. A project
+written before this existed names no calibration anywhere, so its own selection
+still applies and nothing about it changes.
+
+Under Own the **sum** is the one curve that can be left uncorrected. A correction is
+subtracted from a magnitude, and one subtraction cannot undo two microphones, so a
+sum of channels that disagree about their calibration carries none — and the panel
+says so, because a sum sitting a little away from where its channels put it reads as
+summation loss and is not. Channels that agree — one microphone, one cabin, one
+afternoon, which is the ordinary case — hand their common correction to the sum as
+usual. The EQ Wizard handoff follows the channel, so a tune is fitted through the
+same correction the panel drew it with.
 
 The session stores the calibration it was tuned with as the **curve itself**, not
 as a reference to your calibration list: a calibration describes the microphone

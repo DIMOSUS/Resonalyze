@@ -57,6 +57,39 @@ internal sealed class VirtualCrossoverChannelState
     public LiveCaptureDocument? ArrayCapture { get; set; }
 
     /// <summary>
+    /// The microphone calibration the measurement on this side was READ through,
+    /// as its file recorded it; null when the file names none.
+    /// </summary>
+    /// <remarks>
+    /// The panel corrects with one calibration because one microphone usually took
+    /// every channel — but which one that was is a fact of each measurement, not of
+    /// the project, and the file has carried it since measurements became portable.
+    /// This is what the selector's "Own (as measured)" reads. Kept as the settings
+    /// rather than the curve so the name travels with it: the selector has to be able
+    /// to say what it is applying.
+    /// </remarks>
+    public VirtualCrossoverCalibrationSettings? MicrophoneCalibration
+    {
+        get => microphoneCalibration;
+        set
+        {
+            microphoneCalibration = value;
+            // Converted once. The redraw asks for it per channel per frame, and
+            // rebuilding a three-hundred-point curve on every ask is a cost with
+            // nothing to show for it.
+            microphoneCalibrationCurve = value?.ToCalibrationFile();
+        }
+    }
+
+    /// <summary>
+    /// <see cref="MicrophoneCalibration"/> as the curve the analysis applies.
+    /// </summary>
+    public CalibrationFile? MicrophoneCalibrationCurve => microphoneCalibrationCurve;
+
+    private VirtualCrossoverCalibrationSettings? microphoneCalibration;
+    private CalibrationFile? microphoneCalibrationCurve;
+
+    /// <summary>
     /// How far apart <see cref="ArrayCapture"/>'s microphones sat at each band of the
     /// shared grid, or null when this side carries no array.
     /// </summary>
@@ -142,6 +175,8 @@ internal sealed class VirtualCrossoverChannelState
         // new source must not keep the old driver's curve.
         SpatialAverage = null;
         ArrayCapture = null;
+        // It described the measurement that was here, like the array does.
+        MicrophoneCalibration = null;
         TransferPeakIndex = 0;
         SampleRate = 0;
         TransferCoherence = null;

@@ -669,7 +669,13 @@ public partial class VirtualCrossoverPanel
             // measurement beside it, was taken at. The capture's own rate is already
             // folded into its stored levels.
             channel.ProcessorSampleRateFor(rightSide),
-            Calibration,
+            // This channel's own under "Own (as measured)". For a capture whose
+            // positions shared one file the swap is exact and — since that file is
+            // normally the one the impulse response beside it was read through — it
+            // comes out a no-op; for one whose positions did not, the capture keeps
+            // its own corrections and this is ignored, because no single curve could
+            // replace a mixture (see SpatialAverageHybrid).
+            CalibrationFor(state),
             reference.Select(point => point.X).ToList(),
             smoothingCode);
     }

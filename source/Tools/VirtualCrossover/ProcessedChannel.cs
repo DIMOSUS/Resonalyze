@@ -36,7 +36,11 @@ internal sealed record ProcessedChannel(
     // Snapshotted from the SIDE this response came from, like the rate above: the
     // list can carry the opposite side's responses, and reading it back off the
     // channel would answer for whichever side happens to be active.
-    MeasuredBand MeasuredBand = default);
+    MeasuredBand MeasuredBand = default,
+    // The calibration this side's MEASUREMENT was read through, snapshotted for the
+    // same reason. Null when its file named none, and null on every path that does
+    // not care — the panel's own selection is what those get.
+    CalibrationFile? MicrophoneCalibration = null);
 
 /// <summary>
 /// One gated magnitude curve at the two widths the tool needs, from a single gate

@@ -1164,10 +1164,11 @@ report.
    **polarity** and **gain**. `->` marks a value the proposal changes; `(kept)` one it
    leaves alone. The outlined last column is the **confidence** of the delay decision.
 4. **The notes** — how each decision was reached: which neighbour a channel was timed
-   against, by what margin, and whether the scene offset or a wide seed had a say. The
-   arrow is the reading order that matters: **every `LOW` in the confidence column has
-   its reasoning spelled out here, under that channel's name.**
-5. **The key** — how to read `->` and `(kept)`, restated by the dialog itself.
+   against, by what margin, and whether the scene offset or a wide seed had a say.
+   This is the block the outlined column sends you to: **every `LOW` in the confidence
+   column has its reasoning spelled out here, under that channel's name.**
+5. **The key** — how to read `->` and `(kept)`, restated by the dialog itself. It runs
+   past the bottom of the box; the report scrolls.
 
 Low confidence does not necessarily mean the result is wrong, but it does indicate that
 the acoustic data did not strongly favor one solution over the alternatives — those are

@@ -1,0 +1,7 @@
+{
+  "//": "Copy to screenshots.json beside this file (git-ignored) and point it at your own measurements. Forward slashes work on Windows and need no escaping.",
+  "measurement": "D:/measurements/your-driver.json",
+  "session": "D:/measurements/virtual-dsp-session.json",
+  "//output": "Empty means the repository's own assets/images, found by walking up from the executable.",
+  "output": ""
+}

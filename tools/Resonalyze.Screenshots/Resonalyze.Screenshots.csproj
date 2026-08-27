@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Exe rather than WinExe although it shows windows: the tool reports each shot
+         to a console as it lands, and a run is watched. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Configurations>Debug;Release;Tracy</Configurations>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Resonalyze.Screenshots</AssemblyName>
+    <RootNamespace>Resonalyze.Screenshots</RootNamespace>
+    <!-- Not shipped: nothing packs or publishes this, it only ever runs from a
+         developer's machine. It is in the solution so the BUILD keeps it honest —
+         a renamed panel or control breaks it at compile time instead of silently
+         producing a screenshot of the wrong thing months later. -->
+    <IsPublishable>false</IsPublishable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\source\Resonalyze.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="screenshots.example.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Isolation, and it is not optional: the tool drives a real Form1, which
+         persists what it touches on close. Beside the executable this marker makes
+         ApplicationDataPaths put the settings, history and overlays in the output
+         folder instead of the developer's %LocalAppData%\Resonalyze. -->
+    <None Update="portable.flag">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

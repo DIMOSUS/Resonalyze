@@ -200,6 +200,18 @@ namespace Resonalyze.Options
             comboBoxWaveLoopbackChannel.SelectedIndexChanged += comboBoxWaveLoopbackChannel_SelectedIndexChanged;
             comboBoxWaveInputChannel.SelectedIndexChanged += comboBoxWaveInputChannel_SelectedIndexChanged;
             comboBoxAsioDriver.SelectedIndexChanged += comboBoxAsioDriver_SelectedIndexChanged;
+            // The array button reports what would actually be RECORDED, so moving the
+            // measurement microphone or the loopback onto one of the array's inputs
+            // has to show there: that is the moment a configured position stops being
+            // recordable, and it happens in a different part of this panel.
+            comboBoxWaveInputChannel.SelectedIndexChanged +=
+                (_, _) => UpdateArrayMicrophoneButton();
+            comboBoxWaveLoopbackChannel.SelectedIndexChanged +=
+                (_, _) => UpdateArrayMicrophoneButton();
+            comboBoxAsioInputChannel.SelectedIndexChanged +=
+                (_, _) => UpdateArrayMicrophoneButton();
+            comboBoxAsioLoopbackChannel.SelectedIndexChanged +=
+                (_, _) => UpdateArrayMicrophoneButton();
             buttonAsioInputProbe.Click += buttonAsioInputProbe_Click;
             buttonAsioControlPanel.Click += buttonAsioControlPanel_Click;
             buttonDeviceSettings.Click += buttonDeviceSettings_Click;
@@ -882,11 +894,47 @@ namespace Resonalyze.Options
         private void UpdateArrayMicrophoneButton()
         {
             int count = SelectedArrayMicrophones.Count;
+            int usable = UsableArrayMicrophoneCount();
+            string suffix = usable == count ? string.Empty : $" ({count - usable} unusable)";
             buttonArrayMicrophones.Text = count == 0
                 ? "None..."
                 : count == 1
-                    ? "1 microphone..."
-                    : $"{count} microphones...";
+                    ? $"1 microphone{suffix}..."
+                    : $"{count} microphones{suffix}...";
+        }
+
+        /// <summary>
+        /// How many of the configured array microphones would actually be recorded.
+        /// </summary>
+        /// <remarks>
+        /// The same rule <c>MeasurementSettingsFile.ResolveArrayChannels</c> applies,
+        /// and it has to be the same or the button is a second opinion. It matters
+        /// because that rule DROPS what it cannot record — a settings file has to stay
+        /// startable — so a measurement microphone moved onto an array input after the
+        /// array was configured takes a position out of the set. Reported here rather
+        /// than left to be noticed as a curve that never appeared.
+        /// </remarks>
+        private int UsableArrayMicrophoneCount()
+        {
+            bool asio = SelectedAudioBackend == AudioBackend.Asio;
+            int microphoneChannel = asio
+                ? GetSelectedAsioInputChannelOffset()
+                : GetSelectedWaveInputChannelOffset();
+            int? loopbackChannel = asio
+                ? GetSelectedAsioLoopbackInputChannelOffset()
+                : GetSelectedWaveLoopbackChannelOffset();
+            var taken = new HashSet<int>();
+            foreach (ArrayMicrophoneDefinition microphone in SelectedArrayMicrophones)
+            {
+                if (microphone.ChannelOffset >= 0 &&
+                    microphone.ChannelOffset != microphoneChannel &&
+                    microphone.ChannelOffset != loopbackChannel)
+                {
+                    taken.Add(microphone.ChannelOffset);
+                }
+            }
+
+            return taken.Count;
         }
 
         private void buttonClearCalibration0_Click(object? sender, EventArgs e)

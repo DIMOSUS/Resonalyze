@@ -331,7 +331,16 @@ configured. Each row is one position: which **input** it is on, its own
 **calibration** file, and a **note** naming where it stands (`left forward`,
 `centre`, whatever you will recognize months later). Only inputs that are still
 free are offered, so a microphone cannot be put on the measurement or loopback
-channel by accident.
+channel by accident, and **Add** stays disabled while the editor shows an input
+another microphone already holds — the selected row's own input is offered so its
+calibration can be changed without moving it, and that is not an input a second
+microphone may take.
+
+The array belongs to the backend it was configured on, and the measurement
+microphone or the loopback can be moved onto one of its inputs afterwards, in a
+different part of the panel. Such a position cannot be recorded; it is named
+rather than dropped in silence — the **Array...** button counts it as unusable and
+the dialog says which input the measurement took.
 
 They are channels of the **same device** on purpose. One device means one clock,
 so the array shares the sweep, the loopback, the averaging runs and the quality
@@ -346,6 +355,21 @@ impulse response. The curves are raw so a calibration can be swapped later, and
 the measurement microphone is in the list like any other position: it is a
 microphone in the listening volume, and it is the one every other is levelled
 onto. Nothing about timing changes, because a spatial average is a magnitude.
+
+**Levelled onto** is meant literally: each further microphone is shifted by the
+median difference from the measurement microphone over that driver's working band
+before the positions are averaged. Different capsules at different preamp gains
+differ in sensitivity, and averaging that in would be averaging in the microphones
+rather than the room. The cost is that a genuine broadband level difference between
+two positions is removed along with it — one number per microphone cannot tell the
+two apart. Measured on real seven-position sets the trims run from −1.8 to +2.6 dB,
+and the shape of the average lands within 0.04 to 0.24 dB of a pure power average
+of the same positions.
+
+An average needs **two** positions at the least. If every further microphone failed
+to record, what is left is the measurement microphone alone — that is the point
+response the tools already have, not an average of anything, and it is not offered
+as one.
 
 A microphone that clipped, was unplugged or failed its check drops out of **that
 averaging run only** — the impulse response, the loopback and the measurement
@@ -1432,6 +1456,22 @@ handoff. That fallback is legitimate where a point and an average are the same
 measurement — below the cabin's first mode they are, so a subwoofer loses little —
 and it is refused outright for a moving-microphone set, whose captures are levelled
 by one analyzer session that a lone impulse response is not part of.
+
+Each array microphone's own **calibration** is applied before the positions are
+averaged, so the stored average is already corrected — each capsule through its own
+file. When every position shared one file, the average says which, and the Virtual
+DSP swaps it for the panel's calibration exactly, the way it does for any other
+curve. When the positions carried **different** files — which is the accurate way to
+run an array, since the capsules are individually calibrated — there is no single
+curve to swap: the correction the average declares is exact as a total but belongs
+to no one microphone. The panel's *intent* is honoured instead. Drawn uncalibrated,
+the average comes back raw; drawn calibrated, it keeps its own corrections rather
+than having the measurement microphone's file applied to every position. That is the
+same curve the frequency response and the EQ Wizard's direct source show, so one
+array reads the same everywhere. The wizard's own calibration selector follows the
+same rule for such a source: it offers **Own (as captured)** and **Off**, both of
+which are exact, and no longer offers a single microphone's file, which would be
+applied to positions that were never read through it.
 
 Two warnings are specific to arrays. The set's spread is judged against **1.5 dB**
 rather than the moving microphone's 3 dB, because an array is levelled by the same

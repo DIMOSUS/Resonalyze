@@ -78,7 +78,15 @@ internal static class ArrayCaptureDocument
         SpatialAverageResult placed = SpatialAverage.Average(
             calibrated,
             anchorIndex < 0 ? 0 : anchorIndex);
-        if (placed.TrimsDb.All(trim => trim == null))
+        // Two placed microphones at the least, or this is not a spatial average and
+        // must not present itself as one. One is what is left when every further
+        // microphone failed to record or sat too far off the anchor's band to be
+        // placed — and one microphone is the point measurement the consumers already
+        // have, wearing a title that says a listening volume was covered. Its spread
+        // is NaN everywhere, so nothing downstream could tell the difference either.
+        // Refusing here sends the consumers to the impulse response, which they fall
+        // back to out loud.
+        if (placed.TrimsDb.Count(trim => trim != null) < 2)
         {
             return (null, null);
         }
@@ -102,6 +110,8 @@ internal static class ArrayCaptureDocument
             Calibration = SharedCalibration(microphones),
             CurveDb = placed.AverageDb,
             CalibrationCorrectionDb = CorrectionDb(placed, raw),
+            CalibrationIsAggregate = SharedCalibration(microphones) == null &&
+                microphones.Any(microphone => microphone.Calibration != null),
             GridStartHz = grid[0],
             GridStopHz = grid[^1]
         },

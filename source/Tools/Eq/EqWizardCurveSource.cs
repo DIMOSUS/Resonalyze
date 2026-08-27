@@ -265,6 +265,19 @@ internal sealed record EqWizardCurveSource
         Kind == EqWizardSourceKind.ImpulseResponse || HasOwnCalibration;
 
     /// <summary>
+    /// Whether the correction this curve carries is an AGGREGATE belonging to no
+    /// single microphone: an array whose positions were corrected by different files.
+    /// </summary>
+    /// <remarks>
+    /// "Own" reproduces it and "Off" undoes it, both exactly — the correction is
+    /// measured rather than copied from a file. What cannot be done is putting one
+    /// microphone's curve in its place, so those are the only two answers offered.
+    /// The one that would be wrong looks exactly as right as the two that are, and it
+    /// is wrong by the spread between the files.
+    /// </remarks>
+    public bool CalibrationIsAggregate { get; init; }
+
+    /// <summary>
     /// Whether the curve carries the correction it was captured with, so "own" can
     /// reproduce it — either on the raw grid or frozen onto its own points.
     /// </summary>

@@ -308,6 +308,7 @@ internal sealed class EqWizardSourceResolver
             Description = description,
             Points = points,
             PointsCalibrationCorrectionDb = pointsCorrection,
+            CalibrationIsAggregate = document.CalibrationIsAggregate,
             CapturedSmoothingCode = document.Recipe.SmoothingCode,
             Scale = document.Recipe.MagnitudeScale,
             SampleRateHz = document.Recipe.SampleRateHz > 0
@@ -399,10 +400,14 @@ internal sealed class EqWizardSourceResolver
     /// precision — the mask only ever compares it against one floor — and a
     /// two-valued curve says exactly what is known.
     /// <para>
-    /// NaN where the spread is: fewer than two microphones had anything to say there,
-    /// which is no disagreement rather than perfect agreement. The mask reads a
-    /// non-finite entry as reliable and falls back to its null detection, and where
-    /// the average itself is NaN the fit has already excluded the band.
+    /// A band where fewer than two microphones had anything to say reads 0 — refuse —
+    /// whenever the average itself is a level. There is no disagreement to measure
+    /// there, and that is exactly the point: the confidence this curve carries is a
+    /// second opinion, and a band with only one has none. Handing back the spread's
+    /// NaN would be worse than saying nothing, because the mask reads a non-finite
+    /// entry as PERMISSION — so the one case where the array cannot vouch for a dip
+    /// would be the case where the gate switched itself off. Where the average is NaN
+    /// too, the fit has already excluded the band and this says nothing about it.
     /// </para>
     /// </remarks>
     public static IReadOnlyList<SignalPoint>? BuildAgreementCurve(
@@ -426,7 +431,7 @@ internal sealed class EqWizardSourceResolver
             agreement.Add(new SignalPoint(
                 curve[band].X,
                 !double.IsFinite(spreadDb[band])
-                    ? double.NaN
+                    ? double.IsFinite(curve[band].Y) ? 0.0 : double.NaN
                     : spreadDb[band] > ArraySpreadBoostLimitDb ? 0.0 : 1.0));
         }
 

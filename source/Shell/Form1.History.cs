@@ -287,8 +287,11 @@ public partial class Form1
         // restored measurement keeps the dB SPL axis it was measured on. The stored
         // anchor was matched against its own input, so its capture identity stands
         // in for the result's.
-        expSweepMeasurement.MeasurementSplCalibration = snapshot.SplCalibration;
-        expSweepMeasurement.MeasurementInput = snapshot.SplCalibration?.CaptureIdentity;
+        AdoptRestoredResult(
+            snapshot.SplCalibration,
+            snapshot.MicrophoneCalibration,
+            snapshot.ArrayMicrophones,
+            snapshot.ProtectiveHighPass);
 
         if (snapshot.Session != null)
         {

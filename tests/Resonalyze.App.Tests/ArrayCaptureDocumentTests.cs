@@ -38,6 +38,16 @@ public sealed class ArrayCaptureDocumentTests
             $"flat {correctionDb:0.#}",
             null);
 
+    // The smallest array there is: two positions. Used wherever the subject is
+    // something else entirely — the recipe, the method label, the rules a SET lives
+    // under — so those tests do not quietly depend on a lone microphone being
+    // accepted as a spatial average, which it is not.
+    private static IReadOnlyList<ArrayMicrophoneCurve> Pair(double levelDb) =>
+    [
+        Microphone(levelDb, measurement: true, channel: 0),
+        Microphone(levelDb, channel: 2)
+    ];
+
     private static LiveCaptureDocument Create(
         IReadOnlyList<ArrayMicrophoneCurve> microphones,
         ProtectiveHighPassConfiguration? filter = null)
@@ -55,12 +65,12 @@ public sealed class ArrayCaptureDocumentTests
     [Fact]
     public void TheDocumentSaysWhichMethodMadeIt()
     {
-        LiveCaptureDocument document = Create([Microphone(70.0, measurement: true)]);
+        LiveCaptureDocument document = Create(Pair(70.0));
 
         // The consumers stay blind to the method, but a SET is judged on it: the
         // two families are levelled differently and may not be mixed.
         Assert.Equal(SpatialAverageMethod.MicArray, document.Method);
-        Assert.Equal("Array of 1 microphone", document.Title);
+        Assert.Equal("Array of 2 microphones", document.Title);
     }
 
     [Fact]
@@ -117,7 +127,7 @@ public sealed class ArrayCaptureDocumentTests
     public void TheRecipeCarriesTheProtectiveHighPassAndClaimsNoAnalyzer()
     {
         LiveCaptureDocument document = Create(
-            [Microphone(70.0, measurement: true)],
+            Pair(70.0),
             new ProtectiveHighPassConfiguration(ProtectiveHighPassKind.Butterworth, 2_000, 24));
 
         Assert.Equal(ProtectiveHighPassKind.Butterworth, document.Recipe.ProtectiveHighPassKind);
@@ -155,8 +165,8 @@ public sealed class ArrayCaptureDocumentTests
         // Two channels measured minutes apart, each its own "session". For a moving
         // microphone that would demand an SPL anchor; for an array the loopback each
         // measurement carries has already held their levels together.
-        LiveCaptureDocument first = Create([Microphone(70.0, measurement: true)]);
-        LiveCaptureDocument second = Create([Microphone(64.0, measurement: true)]);
+        LiveCaptureDocument first = Create(Pair(70.0));
+        LiveCaptureDocument second = Create(Pair(64.0));
         Assert.NotEqual(first.CaptureSessionId, second.CaptureSessionId);
         Assert.Null(first.Recipe.SplAnchorOffsetDb);
 
@@ -166,9 +176,9 @@ public sealed class ArrayCaptureDocumentTests
     [Fact]
     public void ASetOfArraysIsRefusedWhenTheProtectiveHighPassDiffers()
     {
-        LiveCaptureDocument plain = Create([Microphone(70.0, measurement: true)]);
+        LiveCaptureDocument plain = Create(Pair(70.0));
         LiveCaptureDocument filtered = Create(
-            [Microphone(70.0, measurement: true)],
+            Pair(70.0),
             new ProtectiveHighPassConfiguration(ProtectiveHighPassKind.Butterworth, 2_000, 24));
 
         // One carries a filter the other had divided out: a tweeter would sit a
@@ -181,7 +191,7 @@ public sealed class ArrayCaptureDocumentTests
     [Fact]
     public void ASetMayNotMixTheTwoMethods()
     {
-        LiveCaptureDocument array = Create([Microphone(70.0, measurement: true)]);
+        LiveCaptureDocument array = Create(Pair(70.0));
         var movingMic = new LiveCaptureDocument
         {
             Method = SpatialAverageMethod.MovingMic,

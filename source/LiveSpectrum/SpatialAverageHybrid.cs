@@ -44,6 +44,18 @@ internal static class SpatialAverageHybrid
     /// interpolation keeps each value on the frequency it was frozen at. Null means
     /// none — which is the right answer when the panel draws uncalibrated, since the
     /// curves beside this one are uncalibrated too.
+    /// <para>
+    /// A capture whose positions were corrected by DIFFERENT files is the exception,
+    /// and it is the accurate case rather than the odd one: individually calibrated
+    /// capsules are what an array is for. There is no single curve that undoes a
+    /// mixed correction and no single curve that could replace it — the aggregate the
+    /// capture declares is exact as a total and is not any one microphone's — so the
+    /// panel's INTENT is honoured instead of its curve. Uncalibrated, and the capture
+    /// comes back raw, which the exact undo does give. Calibrated, and it keeps its
+    /// own corrections, each position through the file it was measured with, which is
+    /// the closest thing to the truth there is and is what the frequency response and
+    /// the wizard's direct source already draw.
+    /// </para>
     /// </param>
     public static List<SignalPoint>? BuildChannelCurve(
         LiveCaptureDocument document,
@@ -61,7 +73,10 @@ internal static class SpatialAverageHybrid
             return null;
         }
 
-        List<SignalPoint> capture = Uncalibrated(document);
+        bool mixed = document.CalibrationIsAggregate;
+        List<SignalPoint> capture = mixed && calibration != null
+            ? document.ToCurvePoints()
+            : Uncalibrated(document);
         var prepared = PreparedDspResponse.Create(chain, chainSampleRateHz);
         var points = new List<SignalPoint>(frequenciesHz.Count);
         foreach (double hz in frequenciesHz)
@@ -101,7 +116,7 @@ internal static class SpatialAverageHybrid
         // handoff. Correcting first and smoothing afterwards smooths the correction
         // too, so a frequency-dependent calibration file made one capture read
         // slightly differently by which route it arrived.
-        if (calibration == null)
+        if (calibration == null || mixed)
         {
             return smoothed;
         }

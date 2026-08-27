@@ -339,6 +339,25 @@ public sealed class LiveCaptureDocument
     public double[] CalibrationCorrectionDb { get; set; } = [];
 
     /// <summary>
+    /// Whether <see cref="CalibrationCorrectionDb"/> is an AGGREGATE belonging to no
+    /// single microphone — an array whose positions were corrected by different files.
+    /// </summary>
+    /// <remarks>
+    /// Undoing it stays exact whatever this says: the correction is MEASURED as the
+    /// difference between the corrected average and the raw one, not copied from a
+    /// file. What this forbids is the step after — putting one curve in its place,
+    /// when there is no one curve the positions shared. A reader that swaps
+    /// calibrations has to ask, because the swap looks equally correct either way and
+    /// is wrong by the spread of the files in one of them.
+    /// <para>
+    /// False for every capture made through a single microphone, which is every
+    /// moving-microphone capture and every matched array. Additive and optional: an
+    /// older file omits it and reads as false, which is what it was.
+    /// </para>
+    /// </remarks>
+    public bool CalibrationIsAggregate { get; set; }
+
+    /// <summary>
     /// The protective high-pass divided back out of <see cref="CurveDb"/>, per drawn
     /// point, in dB — NaN where the filter took the signal below what could be
     /// recovered. Empty when no such filter was configured.

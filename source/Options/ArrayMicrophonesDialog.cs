@@ -58,6 +58,7 @@ internal sealed partial class ArrayMicrophonesDialog : Form
         buttonAdd.Click += (_, _) => Add();
         buttonUpdate.Click += (_, _) => UpdateSelected();
         buttonRemove.Click += (_, _) => RemoveSelected();
+        comboBoxInput.SelectedIndexChanged += (_, _) => UpdateAddAvailability();
         listViewMicrophones.SelectedIndexChanged += (_, _) => LoadSelectionIntoEditor();
         // Column headers are drawn by the system and ignore the control's dark
         // colours; only they are taken over, the rows keep the default drawing.
@@ -76,6 +77,11 @@ internal sealed partial class ArrayMicrophonesDialog : Form
     // The inputs still free: the measurement microphone and the loopback are in
     // use, and one already assigned to another array microphone would enter the
     // spatial average twice and weigh double.
+    //
+    // excludingIndex names the microphone being EDITED, whose own input is free for
+    // it. Pass null for the question a new microphone asks — see
+    // <see cref="UpdateAddAvailability"/>, where the difference between the two is
+    // what stops Add from making a duplicate.
     private List<int> FreeChannels(int? excludingIndex)
     {
         var taken = new HashSet<int> { microphoneChannel };
@@ -106,12 +112,32 @@ internal sealed partial class ArrayMicrophonesDialog : Form
         int index = preferredChannel is int wanted ? free.IndexOf(wanted) : -1;
         comboBoxInput.SelectedIndex = index >= 0 ? index : free.Count > 0 ? 0 : -1;
         comboBoxInput.Enabled = free.Count > 0;
-        buttonAdd.Enabled = free.Count > 0;
+        UpdateAddAvailability();
     }
+
+    /// <summary>
+    /// Whether the editor's current input may be given to a NEW microphone.
+    /// </summary>
+    /// <remarks>
+    /// Not the same question as whether the combo has anything in it, and the
+    /// difference is a duplicate. Adding selects the new row, which puts its OWN
+    /// input back on offer so its calibration can be edited without moving it — and
+    /// a second Add on that offer produced a second microphone on the same input.
+    /// Nothing downstream said so: the settings layer drops a duplicate silently to
+    /// stay able to start on its own file, so the panel went on reporting seven
+    /// microphones while six were recorded.
+    /// </remarks>
+    private void UpdateAddAvailability() =>
+        buttonAdd.Enabled =
+            comboBoxInput.SelectedItem is InputChannelOption { Offset: int channel } &&
+            FreeChannels(excludingIndex: null).Contains(channel);
 
     private void Add()
     {
-        if (comboBoxInput.SelectedItem is not InputChannelOption { Offset: int channel })
+        if (comboBoxInput.SelectedItem is not InputChannelOption { Offset: int channel } ||
+            // The button is disabled in this state; the check stands anyway, because
+            // this is the invariant and the button is only its display.
+            !FreeChannels(excludingIndex: null).Contains(channel))
         {
             return;
         }
@@ -195,7 +221,7 @@ internal sealed partial class ArrayMicrophonesDialog : Form
             {
                 listViewMicrophones.Items.Add(new ListViewItem(
                 [
-                    $"Input {microphone.ChannelOffset + 1}",
+                    DescribeInput(microphone.ChannelOffset),
                     DescribeCalibration(microphone.CalibrationId),
                     microphone.Note ?? string.Empty
                 ]));
@@ -219,12 +245,46 @@ internal sealed partial class ArrayMicrophonesDialog : Form
 
     private void UpdateStatus()
     {
-        int free = FreeChannels(SelectedIndex).Count;
+        // What a NEW microphone could take, not what the selected one may keep: the
+        // status sits under the Add button and is read as an answer to it.
+        int free = FreeChannels(excludingIndex: null).Count;
+        int conflicting = microphones.Count(Conflicts);
+        string conflict = conflicting == 0
+            ? string.Empty
+            : conflicting == 1
+                ? " 1 of them cannot be recorded — see the list."
+                : $" {conflicting} of them cannot be recorded — see the list.";
         labelStatus.Text = availableChannels.Count == 0
             ? $"No inputs to record an array from ({channelSourceHint})."
             : free > 0
-                ? $"{microphones.Count} configured, {free} further input(s) free ({channelSourceHint})."
-                : $"{microphones.Count} configured; every input is in use ({channelSourceHint}).";
+                ? $"{microphones.Count} configured, {free} further input(s) free ({channelSourceHint}).{conflict}"
+                : $"{microphones.Count} configured; every input is in use ({channelSourceHint}).{conflict}";
+    }
+
+    /// <summary>
+    /// Whether this microphone sits on an input the measurement itself has taken.
+    /// </summary>
+    /// <remarks>
+    /// Impossible to configure here, and perfectly possible to arrive at: the array
+    /// is stored per backend and the measurement microphone or the loopback can be
+    /// moved onto one of its inputs afterwards, in a different part of the panel.
+    /// The measurement layer then drops it — one recorded position fewer than the
+    /// button promises — so the collision is named where it can be acted on rather
+    /// than left to be inferred from a curve that never appeared.
+    /// </remarks>
+    private bool Conflicts(ArrayMicrophoneDefinition microphone) =>
+        microphone.ChannelOffset == microphoneChannel ||
+        microphone.ChannelOffset == loopbackChannel;
+
+    private string DescribeInput(int channelOffset)
+    {
+        string input = $"Input {channelOffset + 1}";
+        if (channelOffset == microphoneChannel)
+        {
+            return $"{input} (the measurement microphone)";
+        }
+
+        return channelOffset == loopbackChannel ? $"{input} (the loopback)" : input;
     }
 
     private string DescribeCalibration(string? calibrationId)

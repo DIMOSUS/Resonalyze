@@ -252,6 +252,7 @@ internal sealed class MeasurementHistoryService
             MeterSnapshot = measurement.CurrentLevels,
             ArrayMicrophones = measurement.ArrayMicrophones,
             ProtectiveHighPass = measurement.MeasurementProtectiveHighPass,
+            MicrophoneCalibration = measurement.MeasurementMicrophoneCalibration,
             // Same rule as saving to disk: keep the calibration frozen onto THIS
             // result, and only when it belongs to the input the result ran on — a
             // leftover anchor from another device would be trusted on restore.
@@ -311,6 +312,7 @@ internal sealed class MeasurementHistoryService
             MeterSnapshot = file.GetMeterSnapshot(),
             ArrayMicrophones = file.ArrayMicrophones?.ToCurves() ?? [],
             ProtectiveHighPass = file.ProtectiveHighPass?.ToConfiguration(),
+            MicrophoneCalibration = file.MicrophoneCalibration,
             // The file's anchor was validated against its own input when written.
             SplCalibration = file.SplCalibration,
             Preview = preview,

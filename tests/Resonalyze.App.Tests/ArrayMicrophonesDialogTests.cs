@@ -130,6 +130,44 @@ public sealed class ArrayMicrophonesDialogTests
     });
 
     [Fact]
+    public void AddingTwiceInARowCannotDuplicateTheFirst() => StaTest.Run(() =>
+    {
+        // What a user actually does: Add, Add. The row Add just made is selected,
+        // which puts its own input back on offer so its calibration can be edited
+        // without moving it — and that offer used to be a second Add away from a
+        // duplicate. Nothing downstream would have said so: the settings layer drops
+        // a duplicate silently, to stay able to start on its own file, so the panel
+        // went on promising seven microphones while six were recorded.
+        using ArrayMicrophonesDialog dialog = CreateDialog([], [0, 1, 2, 3]);
+
+        Click(dialog, "buttonAdd");
+        Assert.False(
+            Control<Button>(dialog, "buttonAdd").Enabled,
+            "the selected row's own input is on offer for editing, not for adding");
+
+        Click(dialog, "buttonAdd");
+
+        Assert.Equal([2], dialog.Microphones.Select(microphone => microphone.ChannelOffset));
+    });
+
+    [Fact]
+    public void AnInputTheMeasurementTookIsNamedRatherThanDroppedInSilence() => StaTest.Run(() =>
+    {
+        // Impossible to configure here and perfectly possible to arrive at: the array
+        // is stored per backend, and the measurement microphone can be moved onto one
+        // of its inputs afterwards, elsewhere in the panel. The measurement layer then
+        // drops that position — so the dialog has to name it.
+        using ArrayMicrophonesDialog dialog = CreateDialog(
+            [new ArrayMicrophoneDefinition { ChannelOffset = 0 }],
+            [0, 1, 2, 3]);
+
+        Assert.Contains(
+            "the measurement microphone",
+            Control<ListView>(dialog, "listViewMicrophones").Items[0].SubItems[0].Text);
+        Assert.Contains("cannot be recorded", Control<Label>(dialog, "labelStatus").Text);
+    });
+
+    [Fact]
     public void EveryInputTakenLeavesNothingToAdd() => StaTest.Run(() =>
     {
         // The MME case: two channels, both already the measurement pair.

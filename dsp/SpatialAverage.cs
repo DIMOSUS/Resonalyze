@@ -36,13 +36,22 @@ public sealed record SpatialAverageResult(
 /// <summary>
 /// Averaging a driver's magnitude over several microphone positions.
 /// <para>
-/// The arithmetic is the same one a moving microphone performs, and it is exact
-/// rather than convenient: the average is the root mean square of pressure over
-/// the positions, and a linear filter — a crossover, an EQ band, a whole DSP
-/// chain — factors straight out of it, because <c>⟨|D·H|²⟩ = |D|²·⟨|H|²⟩</c> when
-/// D does not depend on position. That is what lets a spatially averaged curve
-/// carry an analytically predicted chain on top of it and stay a prediction of
-/// what the average would measure.
+/// The average is the root mean square of pressure over the positions, and a
+/// linear filter — a crossover, an EQ band, a whole DSP chain — factors straight
+/// out of it, because <c>⟨|D·H|²⟩ = |D|²·⟨|H|²⟩</c> when D does not depend on
+/// position. That is what lets a spatially averaged curve carry an analytically
+/// predicted chain on top of it and stay a prediction of what the average would
+/// measure.
+/// </para>
+/// <para>
+/// Close to what a moving microphone performs, and NOT identical to it:
+/// <see cref="Average"/> places each microphone on the anchor's level before the
+/// mean, which a moving microphone has no need to do because it is one capsule at
+/// one gain throughout. An array is several capsules, and the trim is what keeps a
+/// sensitivity difference from being averaged in as if it were sound — at the cost
+/// of removing a genuine level difference between positions along with it, since a
+/// single scalar per microphone cannot tell the two apart. See
+/// <see cref="Average"/> for what that costs, measured.
 /// </para>
 /// <para>
 /// Everything here works on levels already integrated onto one shared
@@ -181,6 +190,19 @@ public static class SpatialAverage
     /// moves whenever the set gains or loses a microphone, and the absolute level
     /// of the average would then drift with the composition of the array rather
     /// than stay where the measurement put it.
+    /// <para>
+    /// The trim is applied BEFORE the mean, so this is a power average of levelled
+    /// positions rather than of the field as it stands, and the difference is real:
+    /// two positions at 70 and 76 dB average to 74 dB as pressure and to 70 dB here.
+    /// It is deliberate — the microphones are different capsules and a sensitivity
+    /// difference is not sound — and it was measured before it was kept. Across the
+    /// owner's seven-position sets the trims run from −1.8 to +2.6 dB, and against a
+    /// pure power average of the same positions the answer differs by 0.15 to 1.95 dB
+    /// of LEVEL, which the raw-impulse-response offset re-anchors downstream, and by
+    /// 0.04 to 0.24 dB of SHAPE on average (0.31 to 1.08 dB at the worst single band),
+    /// which is what a tune is fitted to. Positions gathered around one head differ
+    /// far less in broadband level than the arithmetic allows for.
+    /// </para>
     /// </remarks>
     /// <param name="curvesDb">
     /// One level curve per microphone, all on the same grid.

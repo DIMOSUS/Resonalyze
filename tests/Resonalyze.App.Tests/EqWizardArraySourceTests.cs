@@ -43,6 +43,46 @@ public sealed class EqWizardArraySourceTests
         };
     }
 
+    private static VirtualCrossoverCalibrationSettings Calibration(double correctionDb) =>
+        VirtualCrossoverCalibrationSettings.From(
+            CalibrationFile.FromPoints(
+                [
+                    new CalibrationPoint(20.0, correctionDb),
+                    new CalibrationPoint(20_000.0, correctionDb)
+                ],
+                "flat"),
+            $"flat {correctionDb:0.#}",
+            null);
+
+    private static ImpulseResponseFile FileWith(
+        IReadOnlyList<double[]> microphoneLevelsDb,
+        IReadOnlyList<VirtualCrossoverCalibrationSettings?> calibrations)
+    {
+        var microphones = new List<ImpulseResponseFile.ArrayMicrophoneFileEntry>();
+        for (int i = 0; i < microphoneLevelsDb.Count; i++)
+        {
+            microphones.Add(new ImpulseResponseFile.ArrayMicrophoneFileEntry
+            {
+                ChannelOffset = i,
+                IsMeasurementMicrophone = i == 0,
+                AcceptedRunCount = 1,
+                LevelsDb = microphoneLevelsDb[i].ToArray(),
+                Calibration = calibrations[i]
+            });
+        }
+
+        return new ImpulseResponseFile
+        {
+            SampleRate = SampleRate,
+            ArrayMicrophones = new ImpulseResponseFile.ArrayMicrophonesFileEntry
+            {
+                GridStartHz = Grid[0],
+                GridStopHz = Grid[^1],
+                Microphones = microphones
+            }
+        };
+    }
+
     private static double[] Flat(double levelDb) =>
         Enumerable.Repeat(levelDb, Grid.Count).ToArray();
 
@@ -119,16 +159,57 @@ public sealed class EqWizardArraySourceTests
     }
 
     [Fact]
-    public void ALoneMicrophoneReportsNoAgreementRatherThanPerfectAgreement()
+    public void ALoneMicrophoneIsNotOfferedAsASpatialAverage()
     {
-        EqWizardCurveSource source =
-            EqWizardSourceResolver.TryCreateFromArray(FileWith(Flat(70.0)), "m", "d")!;
+        // A "spatial average" of one position is the point measurement the wizard
+        // already has, under a name that claims a listening volume was covered. It
+        // arises for real — every further microphone failing to record leaves the
+        // measurement one behind — and nothing downstream could tell: its spread is
+        // NaN at every band, so the agreement gate has nothing to gate on.
+        Assert.Null(EqWizardSourceResolver.TryCreateFromArray(FileWith(Flat(70.0)), "m", "d"));
+    }
 
-        // One position has no spread — not a spread of zero, which would read as the
-        // positions agreeing and is the one answer that must not be given. The mask
-        // reads a non-finite entry as reliable and falls back to null detection.
+    [Fact]
+    public void ABandOnlyOneMicrophoneMeasuredRefusesABoost()
+    {
+        // The same hole one band wide, which survives the rule above: the array has
+        // two positions, and at this band only one of them has a level. There is no
+        // second opinion here, and a boost fitted to a dip only one microphone saw is
+        // fitted to that microphone. The gate must not read the missing opinion as
+        // permission — which is what a non-finite confidence means to the mask.
+        double[] first = Flat(70.0);
+        double[] second = Flat(70.0);
+        second[5] = double.NaN;
+
+        EqWizardCurveSource source =
+            EqWizardSourceResolver.TryCreateFromArray(FileWith(first, second), "m", "d")!;
+
         Assert.NotNull(source.Coherence);
-        Assert.All(source.Coherence!, point => Assert.False(double.IsFinite(point.Y)));
+        Assert.True(double.IsFinite(source.Points[5].Y), "the average is still a level");
+        Assert.Equal(0.0, source.Coherence![5].Y);
+        Assert.Equal(1.0, source.Coherence[0].Y);
+    }
+
+    [Fact]
+    public void AMixedArrayOffersOnlyTheCalibrationsItCanApplyExactly()
+    {
+        // Own reproduces the aggregate and Off undoes it, both exactly, because it was
+        // MEASURED as the difference between the corrected average and the raw one.
+        // One microphone's file in its place is the answer that cannot be right and
+        // looks identical to the two that are.
+        var mixed = new[] { Calibration(-2.0), Calibration(3.0) };
+        var matched = new[] { Calibration(-2.0), Calibration(-2.0) };
+
+        EqWizardCurveSource source = EqWizardSourceResolver.TryCreateFromArray(
+            FileWith([Flat(70.0), Flat(70.0)], mixed), "m", "d")!;
+        Assert.True(source.CalibrationIsAggregate);
+        Assert.True(source.HasOwnCalibration, "own and off both stay available");
+
+        EqWizardCurveSource shared = EqWizardSourceResolver.TryCreateFromArray(
+            FileWith([Flat(70.0), Flat(70.0)], matched), "m", "d")!;
+        Assert.False(
+            shared.CalibrationIsAggregate,
+            "one shared file is a correction that can be swapped exactly");
     }
 
     [Fact]

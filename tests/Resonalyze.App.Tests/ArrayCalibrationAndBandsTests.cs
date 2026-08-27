@@ -94,10 +94,97 @@ public sealed class ArrayCalibrationAndBandsTests
     }
 
     [Fact]
+    public void AMixedArrayReachesVirtualDspWithItsOwnCorrectionsIntact()
+    {
+        // The accurate case, not the odd one: an array of individually calibrated
+        // capsules is what the feature is for. No single curve undoes a mixed
+        // correction and none could replace it, so the hybrid honours the panel's
+        // INTENT — calibrated, and every position keeps the file it was measured
+        // with; uncalibrated, and the exact undo gives the raw average back. Stripping
+        // the mixture and applying the measurement microphone's file to all of them
+        // put the Virtual DSP a decibel away from the frequency response's answer for
+        // the same array.
+        LiveCaptureDocument document = ArrayCaptureDocument.TryCreate(
+        [
+            Microphone(70.0, measurement: true, channel: 0, Calibration(-2.0)),
+            Microphone(76.0, measurement: false, channel: 2, Calibration(3.0))
+        ],
+            48_000,
+            null)!;
+
+        IReadOnlyList<double> frequencies = [Grid[100], Grid[500], Grid[900]];
+        int[] bands = [100, 500, 900];
+
+        List<SignalPoint> calibrated = SpatialAverageHybrid.BuildChannelCurve(
+            document,
+            DspChannelChain.Identity,
+            48_000,
+            CalibrationFile.FromPoints(
+                [new CalibrationPoint(20.0, 5.0), new CalibrationPoint(20_000.0, 5.0)],
+                "the panel's"),
+            frequencies,
+            smoothingCode: 0)!;
+        for (int i = 0; i < bands.Length; i++)
+        {
+            Assert.Equal(document.CurveDb[bands[i]], calibrated[i].Y, 6);
+        }
+
+        List<SignalPoint> raw = SpatialAverageHybrid.BuildChannelCurve(
+            document,
+            DspChannelChain.Identity,
+            48_000,
+            calibration: null,
+            frequencies,
+            smoothingCode: 0)!;
+        for (int i = 0; i < bands.Length; i++)
+        {
+            Assert.Equal(
+                document.CurveDb[bands[i]] + document.CalibrationCorrectionDb[bands[i]],
+                raw[i].Y,
+                6);
+        }
+    }
+
+    [Fact]
+    public void AMatchedArrayIsStillRebasedOntoThePanelsCalibration()
+    {
+        // The rule above must not swallow the ordinary case. One shared file is a
+        // correction that CAN be undone and replaced exactly, and the hybrid has to
+        // keep doing it — otherwise the array would be the one curve on the plot that
+        // ignores the calibration selector.
+        LiveCaptureDocument document = ArrayCaptureDocument.TryCreate(
+        [
+            Microphone(70.0, measurement: true, channel: 0, Calibration(-2.0)),
+            Microphone(76.0, measurement: false, channel: 2, Calibration(-2.0))
+        ],
+            48_000,
+            null)!;
+
+        List<SignalPoint> curve = SpatialAverageHybrid.BuildChannelCurve(
+            document,
+            DspChannelChain.Identity,
+            48_000,
+            CalibrationFile.FromPoints(
+                [new CalibrationPoint(20.0, 5.0), new CalibrationPoint(20_000.0, 5.0)],
+                "the panel's"),
+            [Grid[500]],
+            smoothingCode: 0)!;
+
+        // Its own −2 dB added back, the panel's +5 dB taken off.
+        Assert.Equal(
+            document.CurveDb[500] + document.CalibrationCorrectionDb[500] - 5.0,
+            curve[0].Y,
+            6);
+    }
+
+    [Fact]
     public void AnUncalibratedArrayDeclaresNoCorrection()
     {
         LiveCaptureDocument document = ArrayCaptureDocument.TryCreate(
-            [Microphone(70.0, measurement: true, channel: 0, calibration: null)],
+        [
+            Microphone(70.0, measurement: true, channel: 0, calibration: null),
+            Microphone(70.0, measurement: false, channel: 2, calibration: null)
+        ],
             48_000,
             null)!;
 
@@ -124,7 +211,8 @@ public sealed class ArrayCalibrationAndBandsTests
                 Microphone(70.0, measurement: true, channel: 0, Calibration(-2.0))
             ],
             ProtectiveHighPass = new ProtectiveHighPassConfiguration(
-                ProtectiveHighPassKind.Butterworth, 1_000, 48)
+                ProtectiveHighPassKind.Butterworth, 1_000, 48),
+            MicrophoneCalibration = Calibration(-2.0)
         };
 
         ImpulseResponseFile file = snapshot.ToImpulseResponseFile();
@@ -133,6 +221,10 @@ public sealed class ArrayCalibrationAndBandsTests
         Assert.Single(file.ArrayMicrophones!.Microphones);
         Assert.NotNull(file.ProtectiveHighPass);
         Assert.Equal(1_000, file.ProtectiveHighPass!.FrequencyHz, 6);
+        // And the microphone correction the response is READ through, which
+        // ImpulseResponseFile.Capture stamps: without it the two ways of writing the
+        // same measurement to disk produce files that mean different things.
+        Assert.NotNull(file.MicrophoneCalibration);
     }
 
     [Fact]

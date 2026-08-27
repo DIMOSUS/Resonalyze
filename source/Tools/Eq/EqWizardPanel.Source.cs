@@ -1201,11 +1201,19 @@ public partial class EqWizardPanel
                 pinned.PinnedCalibrationName ?? "Virtual DSP"));
         }
 
-        foreach (MicrophoneCalibrationEntry entry in calibrationEntries)
+        // A curve whose correction is an aggregate of several microphones' files gets
+        // Own and Off and nothing else. Both of those are exact — the correction was
+        // measured, not copied — while swapping in one microphone's curve would apply
+        // it to positions that were never read through it, and would look no different
+        // on the plot from the two answers that are right.
+        if (loadedSource is not { CalibrationIsAggregate: true })
         {
-            options.Add(new EqWizardCalibrationOption(
-                EqWizardCalibrationChoice.Microphone(entry.Id),
-                entry.Available ? entry.Name : $"{entry.Name} (unavailable)"));
+            foreach (MicrophoneCalibrationEntry entry in calibrationEntries)
+            {
+                options.Add(new EqWizardCalibrationOption(
+                    EqWizardCalibrationChoice.Microphone(entry.Id),
+                    entry.Available ? entry.Name : $"{entry.Name} (unavailable)"));
+            }
         }
 
         if (!calibrationChoice.Own &&

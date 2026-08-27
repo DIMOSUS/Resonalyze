@@ -27,6 +27,19 @@ internal sealed class MeasurementHistorySnapshot
     [System.Text.Json.Serialization.JsonIgnore]
     public ProtectiveHighPassConfiguration? ProtectiveHighPass { get; init; }
 
+    /// <summary>
+    /// The microphone calibration frozen onto the measurement this snapshot holds.
+    /// </summary>
+    /// <remarks>
+    /// Carried for the same reason the file carries it: an impulse response is
+    /// stored raw, so without the curve a recipient draws a different response from
+    /// the author's and nothing says why. Saving an entry to disk goes through
+    /// <see cref="ToImpulseResponseFile"/>, and a file written that way has to be the
+    /// same file <c>ImpulseResponseFile.Capture</c> would have written.
+    /// </remarks>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; init; }
+
     public int SampleRate { get; init; }
     public int Bits { get; init; }
     // Legacy: only set when restoring a pre-band file; the band is stored
@@ -138,7 +151,8 @@ internal sealed class MeasurementHistorySnapshot
                 ArrayMicrophones),
             ProtectiveHighPass = ProtectiveHighPass is { } filter
                 ? ImpulseResponseFile.ProtectiveHighPassFileEntry.From(filter)
-                : null
+                : null,
+            MicrophoneCalibration = MicrophoneCalibration
         };
     }
 

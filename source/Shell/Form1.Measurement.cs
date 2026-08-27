@@ -218,25 +218,33 @@ public partial class Form1
         }
         if (answer == DialogResult.Yes)
         {
-            frequencyResponseOptions.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
-            IReadOnlyList<MicrophoneCalibrationEntry> entries = CalibrationEntries();
-            dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
-                panel => panel.SelectCalibration(
-                    frequencyResponseOptions.CalibrationId,
-                    entries));
+            // Back to the entry the file's calibration displaced, not to the 0° slot:
+            // a user reading through a 90° or a custom curve chose it, and answering
+            // "measure with my own" is not a request to be moved off it.
+            SelectFrequencyResponseCalibration(OwnCalibrationId());
             RefreshCurrentModePlot();
         }
 
         return true;
     }
 
+    // Which of the user's own entries the question offers to go back to.
+    private string? OwnCalibrationId() =>
+        displacedLocalCalibrationId ?? MicrophoneCalibrationIds.ZeroDegrees;
+
     // What "your own calibration" amounts to right now, so the question does not
     // offer a microphone correction the user has not configured.
     private string OwnCalibrationName()
     {
+        string? id = OwnCalibrationId();
+        if (MicrophoneCalibrationIds.IsOff(id))
+        {
+            return "no calibration";
+        }
+
         MicrophoneCalibrationEntry? own = microphoneCalibration
             .GetEntries()
-            .FirstOrDefault(entry => entry.Id == MicrophoneCalibrationIds.ZeroDegrees);
+            .FirstOrDefault(entry => entry.Id == id);
         return own is { Available: true }
             ? $"your own calibration (\"{own.Name}\")"
             : "no calibration";

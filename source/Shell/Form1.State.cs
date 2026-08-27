@@ -44,6 +44,54 @@ public partial class Form1
     }
 
     /// <summary>
+    /// Installs everything that belongs to the RESULT rather than to the next run.
+    /// </summary>
+    /// <remarks>
+    /// Both paths that bring a result in — opening a file and stepping back through
+    /// history — go through here, because they diverged once already. Restoring an
+    /// impulse response goes through Init, which clears ALL of this, so a path that
+    /// forgets a line hands over a measurement that differs from the stored one with
+    /// nothing on screen to say so: no array, and the tools fall back to the one
+    /// point the response came from; no microphone calibration, and a re-save writes
+    /// a file that lost it; no protective high-pass, and the band the filter took
+    /// past recovering stops being masked and draws the analysis window's leakage as
+    /// a driver rolloff.
+    /// <para>
+    /// The SPL anchor's capture identity stands in for the result's input, so
+    /// re-saving validates the anchor against the input it was MEASURED on rather
+    /// than against the app's current device, and keeps it.
+    /// </para>
+    /// </remarks>
+    private void AdoptRestoredResult(
+        SplCalibration? splCalibration,
+        VirtualCrossoverCalibrationSettings? microphoneCalibration,
+        IReadOnlyList<ArrayMicrophoneCurve> arrayMicrophones,
+        ProtectiveHighPassConfiguration? protectiveHighPass)
+    {
+        expSweepMeasurement.MeasurementSplCalibration = splCalibration;
+        expSweepMeasurement.MeasurementMicrophoneCalibration = microphoneCalibration;
+        expSweepMeasurement.ArrayMicrophones = arrayMicrophones;
+        // Including "nothing": the app's own setting describes the next run, not the
+        // response just restored, and "nobody recorded which filter this passed
+        // through" is a different answer from "none".
+        expSweepMeasurement.MeasurementProtectiveHighPass = protectiveHighPass;
+        expSweepMeasurement.MeasurementInput = splCalibration?.CaptureIdentity;
+        AdoptFileCalibration(microphoneCalibration);
+    }
+
+    /// <summary>
+    /// The entry from the user's OWN list that a loaded measurement's calibration
+    /// displaced, so it can be handed back when that calibration goes away.
+    /// </summary>
+    /// <remarks>
+    /// The file's entry exists only while the measurement carrying it is open, and
+    /// the selection pointing at it must not outlive it. Falling back to the 0° slot
+    /// would be a guess at what the user was reading through — it is the only slot
+    /// that is always there, not the only one anybody uses.
+    /// </remarks>
+    private string? displacedLocalCalibrationId;
+
+    /// <summary>
     /// The calibration a selector id names, the loaded measurement's own included.
     /// </summary>
     /// <remarks>

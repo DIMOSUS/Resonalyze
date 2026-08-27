@@ -84,7 +84,11 @@ internal sealed class VirtualCrossoverMetrics
             sum,
             anchor,
             processed[0].SampleRate,
-            ProcessedChannels.UnionOfMeasuredBands(processed));
+            ProcessedChannels.UnionOfMeasuredBands(processed))
+            // The hull covers the ends; this covers a hole between two channels whose
+            // sweeps do not overlap, where the summed response is zero from every
+            // contributor at once.
+            .MeasuredBySomeChannel(processed);
         List<IReadOnlyList<SignalPoint>> operands = magnitudes
             .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
             .ToList();

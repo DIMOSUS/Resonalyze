@@ -56,6 +56,7 @@ internal static class ArrayCaptureDocument
 
         IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
         var calibrated = new List<IReadOnlyList<double>>(microphones.Count);
+        var raw = new List<IReadOnlyList<double>>(microphones.Count);
         int anchorIndex = -1;
         for (int i = 0; i < microphones.Count; i++)
         {
@@ -67,6 +68,7 @@ internal static class ArrayCaptureDocument
             }
 
             calibrated.Add(Calibrate(microphones[i], grid));
+            raw.Add(microphones[i].LevelsDb);
             if (microphones[i].IsMeasurementMicrophone && anchorIndex < 0)
             {
                 anchorIndex = i;
@@ -99,6 +101,7 @@ internal static class ArrayCaptureDocument
             Recipe = BuildRecipe(sampleRateHz, microphones.Count, protectiveHighPass),
             Calibration = SharedCalibration(microphones),
             CurveDb = placed.AverageDb,
+            CalibrationCorrectionDb = CorrectionDb(placed, raw),
             GridStartHz = grid[0],
             GridStopHz = grid[^1]
         },
@@ -133,6 +136,66 @@ internal static class ArrayCaptureDocument
             ProtectiveHighPassFrequencyHz = filter.FrequencyHz,
             ProtectiveHighPassSlopeDbPerOctave = filter.SlopeDbPerOctave
         };
+    }
+
+    /// <summary>
+    /// The microphone correction baked into the average, per band, in the sign
+    /// convention <see cref="LiveCaptureDocument.CalibrationCorrectionDb"/> uses —
+    /// the pipeline SUBTRACTS it, so undoing it means adding it back.
+    /// </summary>
+    /// <remarks>
+    /// Measured rather than copied from a calibration file, and that distinction is
+    /// the whole point. Each microphone is corrected by its OWN curve before the
+    /// averaging, so when they carry different files there is no single correction to
+    /// name — and a document that reports none is read as uncalibrated, which makes
+    /// every consumer apply the panel's calibration on top of one already there. The
+    /// difference between the calibrated average and the raw one IS that correction,
+    /// exactly, for a matched array and a mixed one alike.
+    /// <para>
+    /// On the same trims, deliberately: the placement is a property of the set, and
+    /// re-deriving it from the raw curves would let the two averages differ by more
+    /// than the calibration they are supposed to differ by.
+    /// </para>
+    /// </remarks>
+    private static double[] CorrectionDb(
+        SpatialAverageResult placed,
+        IReadOnlyList<IReadOnlyList<double>> raw)
+    {
+        var rawPlaced = new List<double[]>(raw.Count);
+        for (int microphone = 0; microphone < raw.Count; microphone++)
+        {
+            if (placed.TrimsDb[microphone] is not { } trim)
+            {
+                continue;
+            }
+
+            IReadOnlyList<double> curve = raw[microphone];
+            var shifted = new double[curve.Count];
+            for (int band = 0; band < shifted.Length; band++)
+            {
+                shifted[band] = double.IsFinite(curve[band])
+                    ? curve[band] + trim
+                    : double.NaN;
+            }
+
+            rawPlaced.Add(shifted);
+        }
+
+        double[] rawAverage = SpatialAverage.RmsAverageDb(rawPlaced);
+        var correction = new double[placed.AverageDb.Length];
+        for (int band = 0; band < correction.Length; band++)
+        {
+            double calibratedLevel = placed.AverageDb[band];
+            double rawLevel = rawAverage[band];
+            // Zero rather than NaN where nothing was measured: a correction of zero
+            // is the honest "nothing was subtracted here", and a NaN would spread out
+            // of the gap into whatever undoes it.
+            correction[band] = double.IsFinite(calibratedLevel) && double.IsFinite(rawLevel)
+                ? rawLevel - calibratedLevel
+                : 0.0;
+        }
+
+        return correction;
     }
 
     private static double[] Calibrate(

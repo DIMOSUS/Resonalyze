@@ -4740,7 +4740,8 @@ public partial class VirtualCrossoverPanel : UserControl
             side.SampleRate,
             snapshot.ResolveGateOffsetMs(
                 oppositeSide: true, side.AnchorIndex, side.SampleRate),
-            ProcessedChannels.UnionOfMeasuredBands(side.Channels)).Display;
+            ProcessedChannels.UnionOfMeasuredBands(side.Channels))
+            .MeasuredBySomeChannel(side.Channels).Display;
     }
 
     /// <summary>
@@ -4786,7 +4787,8 @@ public partial class VirtualCrossoverPanel : UserControl
             side.AnchorIndex,
             side.SampleRate,
             gateOffsetMs,
-            ProcessedChannels.UnionOfMeasuredBands(side.Channels));
+            ProcessedChannels.UnionOfMeasuredBands(side.Channels))
+            .MeasuredBySomeChannel(side.Channels);
         var channelMagnitudes = new List<GatedMagnitude>(side.Channels.Count);
         foreach (ProcessedChannel item in side.Channels)
         {
@@ -6070,7 +6072,8 @@ public partial class VirtualCrossoverPanel : UserControl
             sum,
             processed.Min(item => item.PeakIndex),
             processed[0].SampleRate,
-            ProcessedChannels.UnionOfMeasuredBands(processed)).Display;
+            ProcessedChannels.UnionOfMeasuredBands(processed))
+            .MeasuredBySomeChannel(processed).Display;
 
         string title = "vDSP Sum " + string.Join(
             "+",

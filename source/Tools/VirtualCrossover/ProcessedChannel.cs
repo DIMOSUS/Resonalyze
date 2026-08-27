@@ -47,7 +47,33 @@ internal sealed record ProcessedChannel(
 /// <see cref="VirtualCrossoverAnalysis.SumLossCurve"/>. The two are the same
 /// instance when no smoothing is selected.
 /// </summary>
-internal sealed record GatedMagnitude(AnalysisCurve Display, AnalysisCurve Unsmoothed);
+internal sealed record GatedMagnitude(AnalysisCurve Display, AnalysisCurve Unsmoothed)
+{
+    /// <summary>
+    /// The same pair with every frequency no channel measured broken.
+    /// </summary>
+    /// <remarks>
+    /// Both widths, because the unsmoothed half is what the summation loss divides:
+    /// a loss measured against a window's leakage is not a loss.
+    /// </remarks>
+    public GatedMagnitude MeasuredBySomeChannel(
+        IReadOnlyList<ProcessedChannel> channels) =>
+        new(
+            Display with
+            {
+                Points = ProcessedChannels.MeasuredBySomeChannel(Display.Points, channels)
+            },
+            ReferenceEquals(Display, Unsmoothed)
+                ? Display with
+                {
+                    Points = ProcessedChannels.MeasuredBySomeChannel(Display.Points, channels)
+                }
+                : Unsmoothed with
+                {
+                    Points = ProcessedChannels.MeasuredBySomeChannel(
+                        Unsmoothed.Points, channels)
+                });
+}
 
 /// <summary>
 /// One side of the car summed: the complex sum of its participating channels'
@@ -94,12 +120,19 @@ internal sealed record AdjacentPair(
 internal static class ProcessedChannels
 {
     /// <summary>
-    /// The band a SUM of these channels measured: the union of theirs.
+    /// The outer edges of what a SUM of these channels measured.
     /// </summary>
     /// <remarks>
     /// A sum plays wherever any of its channels does. Taking one channel's band — or
     /// the narrowest — would blank a range a woofer measured perfectly well because a
     /// tweeter beside it was filtered, or swept, out of that range.
+    /// <para>
+    /// The HULL, not the union: two channels whose sweeps do not overlap — a woofer
+    /// swept to 500 Hz beside a tweeter swept from 1 kHz — leave a hole between them
+    /// that this interval cannot express. <see cref="MeasuredBySomeChannel"/> answers
+    /// that per frequency, and is what a sum curve is masked by; this stays for the
+    /// callers that only need the ends.
+    /// </para>
     /// </remarks>
     public static MeasuredBand UnionOfMeasuredBands(
         IReadOnlyList<ProcessedChannel> channels)
@@ -118,6 +151,47 @@ internal static class ProcessedChannels
         }
 
         return new MeasuredBand(lowest, highest);
+    }
+
+    /// <summary>
+    /// Breaks a summed curve at every frequency NO channel measured — including one
+    /// that falls between two channels' bands rather than outside both.
+    /// </summary>
+    /// <remarks>
+    /// The interval above cannot hold a hole, and a hole is exactly what disjoint
+    /// sweeps leave: between them the summed impulse response is zero from every
+    /// contributor at once, so the curve there is the analysis window and nothing
+    /// else. Applied to the finished curve, like every other break.
+    /// </remarks>
+    public static IReadOnlyList<SignalPoint> MeasuredBySomeChannel(
+        IReadOnlyList<SignalPoint> curve,
+        IReadOnlyList<ProcessedChannel> channels)
+    {
+        ArgumentNullException.ThrowIfNull(curve);
+        ArgumentNullException.ThrowIfNull(channels);
+        if (channels.Count == 0)
+        {
+            return curve;
+        }
+
+        var masked = new List<SignalPoint>(curve.Count);
+        foreach (SignalPoint point in curve)
+        {
+            bool measured = false;
+            foreach (ProcessedChannel channel in channels)
+            {
+                MeasuredBand band = channel.MeasuredBand;
+                if (point.X >= band.LowEdgeHz && point.X <= band.HighEdgeHz)
+                {
+                    measured = true;
+                    break;
+                }
+            }
+
+            masked.Add(measured ? point : new SignalPoint(point.X, double.NaN));
+        }
+
+        return masked;
     }
 
     // The frequency window the metric and Auto delay operate in: around the

@@ -129,7 +129,16 @@ internal sealed class MeasurementHistorySnapshot
                 MeterSnapshot.Microphone),
             LoopbackLevels = ImpulseResponseFile.CreateLevelSnapshotFileEntry(
                 MeterSnapshot.Loopback),
-            PreviewFrequencyResponse = ImpulseResponseFile.CreatePreviewFileEntry(Preview)
+            PreviewFrequencyResponse = ImpulseResponseFile.CreatePreviewFileEntry(Preview),
+            // The array and the filter it was corrected for, or a measurement opened
+            // from history is a different measurement from the same file opened off
+            // disk: the EQ Wizard would offer only the point response, and the band
+            // it stops at would be read from a filter nobody recorded.
+            ArrayMicrophones = ImpulseResponseFile.ArrayMicrophonesFileEntry.From(
+                ArrayMicrophones),
+            ProtectiveHighPass = ProtectiveHighPass is { } filter
+                ? ImpulseResponseFile.ProtectiveHighPassFileEntry.From(filter)
+                : null
         };
     }
 

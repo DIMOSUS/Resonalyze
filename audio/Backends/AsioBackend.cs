@@ -1,4 +1,4 @@
-namespace Resonalyze.Audio;
+﻿namespace Resonalyze.Audio;
 
 /// <summary>
 /// The ASIO backend. Microphone/loopback are absolute driver input channels;
@@ -38,10 +38,8 @@ public sealed class AsioBackend : IAudioBackend
 
     public async Task WarmUpAsync(AudioSessionRequest request, CancellationToken cancellationToken)
     {
-        int mic = request.Routing.MicrophoneChannel;
-        int? loopback = request.Routing.LoopbackChannel;
-        int firstInputOffset = CaptureChannelLayout.AsioFirstInputOffset(mic, loopback);
-        int inputChannelCount = CaptureChannelLayout.AsioInputChannelCount(mic, loopback);
+        int firstInputOffset = CaptureChannelLayout.AsioFirstInputOffset(request.Routing);
+        int inputChannelCount = CaptureChannelLayout.AsioInputChannelCount(request.Routing);
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         linked.CancelAfter(TimeSpan.FromSeconds(5));

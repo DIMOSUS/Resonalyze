@@ -1,4 +1,4 @@
-using NAudio.Wave;
+﻿using NAudio.Wave;
 
 namespace Resonalyze.Audio.Tests;
 
@@ -35,6 +35,51 @@ public sealed class PcmDuplexSessionTests
         Assert.Equal("TestBackend", result.Diagnostics!.Backend);
         Assert.Equal(48_000, result.Diagnostics.CaptureFormat.SampleRate);
         Assert.Equal(100, result.Diagnostics.RequestedBufferMilliseconds);
+    }
+
+    [Fact]
+    public async Task ArrayMicrophonesAreCapturedAndReportedWhereTheyLanded()
+    {
+        // A six-input interface: the measurement pair on 0/1 and two array
+        // microphones on 4 and 2, in that order.
+        var capture = new PushCaptureDevice(new WaveFormat(48_000, 16, 6));
+        var playback = new PushPlaybackDevice(capture, pushFrames: SweepSamples);
+        await using var session = new PcmDuplexSession(
+            capture,
+            playback,
+            Signal(),
+            new AudioCaptureRouting(0, 1) { ArrayChannels = [4, 2] },
+            expectedCaptureSamples: 4096,
+            backendName: "TestBackend",
+            requestedBufferMilliseconds: 100);
+
+        AudioCaptureResult result = await session.PlayAndCaptureAsync(
+            captureTailSamples: 0, CancellationToken.None);
+
+        Assert.Equal([4, 2], result.ArrayChannels);
+        Assert.Equal(0, result.MicrophoneChannel);
+        Assert.Equal(1, result.LoopbackChannel);
+
+        // The order is the identity of each microphone, so the FIRST array entry
+        // must hold hardware input 4 and the second input 2 — not the other way
+        // round, and not sorted.
+        Assert.Equal(5_000.0 / 32_768.0, result.Channels[4][0], 4);
+        Assert.Equal(3_000.0 / 32_768.0, result.Channels[2][0], 4);
+    }
+
+    [Fact]
+    public async Task WithoutAnArrayNothingIsReported()
+    {
+        var capture = new PushCaptureDevice(new WaveFormat(48_000, 16, 2));
+        var playback = new PushPlaybackDevice(capture, pushFrames: SweepSamples);
+        await using var session = new PcmDuplexSession(
+            capture, playback, Signal(), new AudioCaptureRouting(0, 1),
+            expectedCaptureSamples: 4096, backendName: "TestBackend", requestedBufferMilliseconds: 100);
+
+        AudioCaptureResult result = await session.PlayAndCaptureAsync(
+            captureTailSamples: 0, CancellationToken.None);
+
+        Assert.Empty(result.ArrayChannels);
     }
 
     [Fact]
@@ -130,7 +175,19 @@ public sealed class PcmDuplexSessionTests
         {
             CapturePackets++;
             var bytes = new byte[frames * CaptureFormat.BlockAlign];
-            Array.Fill(bytes, (byte)0x10);
+            // Each hardware channel carries its own constant, so a test can tell
+            // WHICH input a captured channel came from rather than only how many
+            // there were.
+            for (int frame = 0; frame < frames; frame++)
+            {
+                for (int channel = 0; channel < CaptureFormat.Channels; channel++)
+                {
+                    short value = (short)((channel + 1) * 1_000);
+                    int offset = (frame * CaptureFormat.Channels + channel) * 2;
+                    bytes[offset] = (byte)(value & 0xFF);
+                    bytes[offset + 1] = (byte)((value >> 8) & 0xFF);
+                }
+            }
             DataAvailable?.Invoke(new AudioCapturePacket(
                 bytes,
                 bytes.Length,

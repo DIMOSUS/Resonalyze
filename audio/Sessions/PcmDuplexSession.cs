@@ -1,4 +1,4 @@
-namespace Resonalyze.Audio;
+﻿namespace Resonalyze.Audio;
 
 /// <summary>
 /// The shared finite play-and-capture session for the PCM backends (Wave/MME
@@ -109,7 +109,10 @@ internal sealed class PcmDuplexSession : IAudioDuplexSession
             routing.LoopbackChannel,
             StereoSeparationExpected: true,
             anomalies,
-            diagnostics);
+            diagnostics)
+        {
+            ArrayChannels = routing.ArrayChannels
+        };
     }
 
     private void HandleLevels(AudioChannelLevel[] channels)

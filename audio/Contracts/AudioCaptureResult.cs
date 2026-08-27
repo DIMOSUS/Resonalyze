@@ -25,7 +25,14 @@ public sealed record AudioCaptureResult(
     int? LoopbackChannel,
     bool StereoSeparationExpected,
     AudioCaptureAnomalies Anomalies,
-    AudioSessionDiagnostics? Diagnostics);
+    AudioSessionDiagnostics? Diagnostics)
+{
+    /// <summary>
+    /// Where the array microphones landed in <see cref="Channels"/>, in the order
+    /// the routing asked for them; empty when the routing had none.
+    /// </summary>
+    public IReadOnlyList<int> ArrayChannels { get; init; } = [];
+}
 
 /// <summary>
 /// One fixed-length sequence delivered by a streaming capture session, with the

@@ -1,4 +1,4 @@
-namespace Resonalyze.Audio;
+﻿namespace Resonalyze.Audio;
 
 /// <summary>
 /// Continuous play-and-capture over an ASIO driver for live analysis. Waits on
@@ -15,14 +15,10 @@ internal sealed class AsioStreamingSession : IAudioStreamingSession
 
     public AsioStreamingSession(AudioSessionRequest request)
     {
-        int mic = request.Routing.MicrophoneChannel;
-        int? loopback = request.Routing.LoopbackChannel;
-        int firstInputOffset = CaptureChannelLayout.AsioFirstInputOffset(mic, loopback);
-        int inputChannelCount = CaptureChannelLayout.AsioInputChannelCount(mic, loopback);
+        int firstInputOffset = CaptureChannelLayout.AsioFirstInputOffset(request.Routing);
+        int inputChannelCount = CaptureChannelLayout.AsioInputChannelCount(request.Routing);
         sampleRate = request.SampleRate;
-        relativeRouting = new AudioCaptureRouting(
-            mic - firstInputOffset,
-            loopback.HasValue ? loopback.Value - firstInputOffset : null);
+        relativeRouting = CaptureChannelLayout.ToAsioRelative(request.Routing);
         session = new AsioFullDuplexSession(
             request.AsioDriverName ?? string.Empty,
             firstInputOffset,

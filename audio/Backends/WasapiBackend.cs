@@ -1,4 +1,4 @@
-using NAudio.CoreAudioApi;
+﻿using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
 namespace Resonalyze.Audio;
@@ -111,9 +111,8 @@ public sealed class WasapiBackend : IAudioBackend
             throw new InvalidOperationException("Select a WASAPI capture endpoint.");
         string renderEndpointId = request.WasapiRenderEndpointId ??
             throw new InvalidOperationException("Select a WASAPI render endpoint.");
-        int requiredChannels = CaptureChannelLayout.RequiredWaveInputChannelCount(
-            request.Routing.MicrophoneChannel,
-            request.Routing.LoopbackChannel);
+        int requiredChannels =
+            CaptureChannelLayout.RequiredWaveInputChannelCount(request.Routing);
         int renderChannels = request.PlaybackChannel == PlaybackChannel.Mono ? 1 : 2;
 
         WaveFormat? captureFormat = null;
@@ -183,7 +182,9 @@ public sealed class WasapiBackend : IAudioBackend
         {
             throw new InvalidOperationException(
                 $"The WASAPI capture endpoint exposes {capture.ChannelCount} channel(s), " +
-                $"but the selected microphone and loopback routing requires {requiredChannels}.");
+                $"but the selected input routing requires {requiredChannels}. " +
+                "Endpoints that present an interface as stereo pairs cannot reach its " +
+                "further inputs; use ASIO for those.");
         }
     }
 

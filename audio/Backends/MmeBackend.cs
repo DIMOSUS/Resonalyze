@@ -1,4 +1,4 @@
-using NAudio.Wave;
+﻿using NAudio.Wave;
 
 namespace Resonalyze.Audio;
 
@@ -75,9 +75,8 @@ public sealed class MmeBackend : IAudioBackend
 
     private static MmeCaptureDevice CreateCapture(AudioSessionRequest request)
     {
-        int channelCount = CaptureChannelLayout.RequiredWaveInputChannelCount(
-            request.Routing.MicrophoneChannel,
-            request.Routing.LoopbackChannel);
+        int channelCount =
+            CaptureChannelLayout.RequiredWaveInputChannelCount(request.Routing);
         return new MmeCaptureDevice(
             request.WaveInputDeviceNumber,
             new WaveFormat(request.SampleRate, request.BitsPerSample, channelCount));

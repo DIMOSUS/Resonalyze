@@ -178,6 +178,41 @@ public sealed class SpatialAverageHybridTests
         CalibrationFile.FromPoints(
             [new CalibrationPoint(10, db), new CalibrationPoint(30_000, db)]);
 
+    [Fact]
+    public void TheEndPointsSurviveTheirOwnGridBeingBuiltTwoWays()
+    {
+        // A capture stores the grid EqualizationCurve builds — whose first point is
+        // 20.000000000000004 — while the curve beside it is drawn on the grid the
+        // resampler builds, whose first point is exactly 20. The same grid, two
+        // constructions, endpoints a few ULPs apart: the lowest band lands at an
+        // index of -3.3e-14. Read as "outside the capture", that silently dropped
+        // 20 Hz from every hybrid channel, which on a subwoofer is content.
+        LiveCaptureDocument capture = new()
+        {
+            SavedAtUtc = DateTimeOffset.UnixEpoch,
+            Title = "capture",
+            CurveDb = Enumerable.Repeat(-30.0, 1_024).ToArray(),
+            GridStartHz = EqualizationCurve.LogFrequencyGrid(20, 20_000, 1_024)[0],
+            GridStopHz = EqualizationCurve.LogFrequencyGrid(20, 20_000, 1_024)[^1],
+            Recipe = new LiveCaptureRecipe
+            {
+                AnalysisMode = LiveAnalysisMode.Mmm,
+                SampleRateHz = 48_000
+            }
+        };
+
+        List<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
+            capture,
+            DspChannelChain.Identity,
+            48_000,
+            calibration: null,
+            [20.0, 1_000.0, 20_000.0],
+            smoothingCode: 0);
+
+        Assert.NotNull(curve);
+        Assert.All(curve!, point => Assert.Equal(-30.0, point.Y, 6));
+    }
+
     private static LiveCaptureDocument Capture(double db) => new()
     {
         SavedAtUtc = DateTimeOffset.UnixEpoch,

@@ -144,11 +144,21 @@ internal static class SpatialAverageHybrid
     {
         int count = curve.Count;
         double position = document.IndexOf(hz);
-        if (double.IsNaN(position) || position < 0 || position > count - 1)
+        // The SAME tolerance the snap below uses, and for the same reason. The drawn
+        // grid and a capture's own grid are one logarithmic grid built two ways, and
+        // their endpoints differ in the last ULPs: the capture stores 20.000000000000004
+        // and the curve is drawn at exactly 20, which puts the first band at an index
+        // of -3.3e-14. Rejected as "outside", that dropped the lowest band of every
+        // hybrid channel — 20 Hz on a subwoofer, where there is content — for no
+        // reason but arithmetic.
+        const double SnapTolerance = 1e-9;
+        if (double.IsNaN(position) ||
+            position < -SnapTolerance || position > count - 1 + SnapTolerance)
         {
             return double.NaN;
         }
 
+        position = Math.Clamp(position, 0.0, count - 1.0);
         int low = (int)Math.Floor(position);
         int high = Math.Min(low + 1, count - 1);
         double fraction = position - low;
@@ -163,7 +173,6 @@ internal static class SpatialAverageHybrid
         // index it came from, and an exact test would miss the case that matters
         // most. A billionth of an index step is nothing — the step itself is about
         // a hundredth of an octave.
-        const double SnapTolerance = 1e-9;
         if (fraction <= SnapTolerance || high == low)
         {
             return curve[low].Y;

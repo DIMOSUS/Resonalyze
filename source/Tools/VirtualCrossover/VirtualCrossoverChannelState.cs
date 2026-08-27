@@ -57,6 +57,19 @@ internal sealed class VirtualCrossoverChannelState
     public LiveCaptureDocument? ArrayCapture { get; set; }
 
     /// <summary>
+    /// How far apart <see cref="ArrayCapture"/>'s microphones sat at each band of the
+    /// shared grid, or null when this side carries no array.
+    /// </summary>
+    /// <remarks>
+    /// Beside the average rather than inside it, because it answers a different
+    /// question: the average says what the listening volume measures, the spread says
+    /// how much of a claim that is. The EQ Wizard gates its boosts on it — where seven
+    /// positions part by more than 20 dB, filling the dip six of them measured helps
+    /// the seventh and spends everyone's headroom.
+    /// </remarks>
+    public double[]? ArraySpreadDb { get; set; }
+
+    /// <summary>
     /// The lowest frequency this side's response carries a measurement at; zero
     /// when it carries one everywhere.
     /// </summary>

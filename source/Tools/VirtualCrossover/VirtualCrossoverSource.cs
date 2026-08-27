@@ -35,6 +35,11 @@ internal sealed class ResolvedVirtualDspSource
     public LiveCaptureDocument? ArrayCapture { get; init; }
 
     /// <summary>
+    /// The spread between <see cref="ArrayCapture"/>'s microphones, band by band.
+    /// </summary>
+    public double[]? ArraySpreadDb { get; init; }
+
+    /// <summary>
     /// Where this measurement stops carrying a signal, from the protective
     /// high-pass that was divided back out of it.
     /// </summary>
@@ -57,6 +62,11 @@ internal sealed class ResolvedVirtualDspSource
             return null;
         }
 
+        (LiveCaptureDocument? arrayCapture, double[]? arraySpreadDb) =
+            ArrayCaptureDocument.TryCreateWithSpread(
+                snapshot.ArrayMicrophones,
+                snapshot.SampleRate,
+                snapshot.ProtectiveHighPass);
         return new ResolvedVirtualDspSource
         {
             TransferImpulseResponse = transferIr,
@@ -65,10 +75,8 @@ internal sealed class ResolvedVirtualDspSource
             SampleRate = snapshot.SampleRate,
             TransferCoherence = snapshot.TransferCoherence,
             DistortionCurve = ComputeDistortionCurve(snapshot),
-            ArrayCapture = ArrayCaptureDocument.TryCreate(
-                snapshot.ArrayMicrophones,
-                snapshot.SampleRate,
-                snapshot.ProtectiveHighPass),
+            ArrayCapture = arrayCapture,
+            ArraySpreadDb = arraySpreadDb,
             LowestMeasuredFrequencyHz =
                 ProtectiveHighPassConfiguration.LowestMeasuredFrequencyHz(
                     snapshot.ProtectiveHighPass,
@@ -86,6 +94,7 @@ internal sealed class ResolvedVirtualDspSource
         state.TransferCoherence = TransferCoherence;
         state.DistortionCurve = DistortionCurve;
         state.ArrayCapture = ArrayCapture;
+        state.ArraySpreadDb = ArraySpreadDb;
         state.LowestMeasuredFrequencyHz = LowestMeasuredFrequencyHz;
     }
 

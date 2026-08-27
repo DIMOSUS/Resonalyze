@@ -119,9 +119,12 @@ public partial class EqWizardPanel
         menu.Items.Add(slotItem);
 
         menu.Items.Add(
-            "Curve from moving-mic capture…",
+            // Named for what it IS: a moving microphone is one way to produce a
+            // spatial average and a microphone array is another, and this entry
+            // takes either file.
+            "Curve from spatial average…",
             null,
-            (_, _) => LoadCurveFromSpatialAverage());
+            (_, _) => _ = LoadCurveFromSpatialAverageAsync());
         menu.Items.Add("Curve from text file…", null, (_, _) => LoadCurveFromTextFile());
         return menu;
     }
@@ -216,10 +219,62 @@ public partial class EqWizardPanel
             return;
         }
 
-        ApplySource(EqWizardSourceResolver.CreateFromImpulseResponse(
+        ApplyMeasurementSource(
             file,
             System.IO.Path.GetFileNameWithoutExtension(dialog.FileName),
-            $"Impulse response: {dialog.FileName}"));
+            $"Impulse response: {dialog.FileName}",
+            EqWizardSourceResolver.DescribeArray(file, dialog.FileName));
+    }
+
+    /// <summary>
+    /// Applies a measurement as a source, offering its microphone array first when it
+    /// carries one.
+    /// </summary>
+    /// <remarks>
+    /// Asked rather than decided. Equalizing the point measurement while an average of
+    /// the same driver sits unused in the same file is the mistake the array exists to
+    /// prevent, so the array is the default answer — but a user comparing the two is
+    /// doing something legitimate, and silently substituting the curve would also
+    /// change what the panel can do (a spatial average has no impulse response behind
+    /// it, so the gate preview goes away).
+    /// </remarks>
+    private void ApplyMeasurementSource(
+        ImpulseResponseFile file,
+        string displayName,
+        string description,
+        string arrayDescription)
+    {
+        EqWizardCurveSource? array =
+            EqWizardSourceResolver.TryCreateFromArray(file, displayName, arrayDescription);
+        if (array != null && AskToEqualizeArray(file))
+        {
+            ApplySource(array);
+            return;
+        }
+
+        ApplySource(EqWizardSourceResolver.CreateFromImpulseResponse(
+            file, displayName, description));
+    }
+
+    private bool AskToEqualizeArray(ImpulseResponseFile file)
+    {
+        int count = file.ArrayMicrophones?.Microphones.Count ?? 0;
+        string positions = count == 1 ? "1 position" : $"{count} positions";
+        return MessageBox.Show(
+            FindForm(),
+            $"This measurement was recorded with a microphone array of {positions}." +
+                Environment.NewLine + Environment.NewLine +
+                "Equalize the array's average over the listening volume, rather than " +
+                "the response measured at the one position its impulse response came " +
+                "from?" + Environment.NewLine + Environment.NewLine +
+                "The average is the shape a tune belongs on: a single position " +
+                "carries dips that are a property of its own few centimetres. The " +
+                "point measurement keeps the gate preview; the average has no " +
+                "impulse response behind it.",
+            "EQ Wizard",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button1) == DialogResult.Yes;
     }
 
     private async Task LoadIrFromHistoryAsync(Guid entryId, string displayName)
@@ -257,10 +312,12 @@ public partial class EqWizardPanel
             return;
         }
 
-        ApplySource(EqWizardSourceResolver.CreateFromImpulseResponse(
-            snapshot.ToImpulseResponseFile(),
+        ImpulseResponseFile file = snapshot.ToImpulseResponseFile();
+        ApplyMeasurementSource(
+            file,
             displayName,
-            $"History: {displayName}"));
+            $"History: {displayName}",
+            EqWizardSourceResolver.DescribeArray(file, $"History: {displayName}"));
     }
 
     private void LoadCurveFromSlot(int slot)
@@ -286,12 +343,18 @@ public partial class EqWizardPanel
     // A spatial average equalized on its own, with no Virtual DSP set behind it: one
     // driver's magnitude over the listening volume instead of at one microphone
     // position, which is the shape a tune should be fitted to.
-    private void LoadCurveFromSpatialAverage()
+    //
+    // Two files carry one: a moving-microphone capture, and a measurement recorded
+    // with a microphone array. They are the same curve taken two ways, so this reads
+    // whichever it was handed rather than making the user know which menu entry their
+    // file belongs to.
+    private async Task LoadCurveFromSpatialAverageAsync()
     {
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
-            Filter = "Resonalyze moving-mic capture (*.json)|*.json|All files (*.*)|*.*",
+            Filter =
+                "Spatial average (*.json)|*.json|All files (*.*)|*.*",
             Title = "Load spatial average"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -299,32 +362,58 @@ public partial class EqWizardPanel
             return;
         }
 
-        sourceLoadGeneration++;
-        EqWizardCurveSource source;
+        int generation = ++sourceLoadGeneration;
+        EqWizardCurveSource? source;
         try
         {
-            if (!LiveCaptureDocument.TryLoad(dialog.FileName, out LiveCaptureDocument document))
-            {
-                MessageBox.Show(
-                    FindForm(),
-                    "That file is not a Resonalyze capture.",
-                    "EQ Wizard",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-                return;
-            }
-
-            source = EqWizardSourceResolver.CreateFromSpatialAverage(
-                document,
-                EqWizardSourceResolver.DescribeSpatialAverage(document, dialog.FileName));
+            source = await ResolveSpatialAverageAsync(dialog.FileName);
         }
         catch (Exception exception)
         {
-            ShowFileError("The capture could not be loaded.", exception);
+            if (generation == sourceLoadGeneration && !IsDisposed)
+            {
+                ShowFileError("The spatial average could not be loaded.", exception);
+            }
+
+            return;
+        }
+
+        if (generation != sourceLoadGeneration || IsDisposed)
+        {
+            return;
+        }
+
+        if (source == null)
+        {
+            MessageBox.Show(
+                FindForm(),
+                "That file carries no spatial average. Load a moving-microphone " +
+                    "capture, or a measurement recorded with a microphone array.",
+                "EQ Wizard",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
             return;
         }
 
         ApplySource(source);
+    }
+
+    private static async Task<EqWizardCurveSource?> ResolveSpatialAverageAsync(string path)
+    {
+        if (LiveCaptureDocument.TryLoad(path, out LiveCaptureDocument document))
+        {
+            return EqWizardSourceResolver.CreateFromSpatialAverage(
+                document,
+                EqWizardSourceResolver.DescribeSpatialAverage(document, path));
+        }
+
+        // Not a capture, so the other file that carries one: a measurement whose
+        // array was recorded beside its impulse response.
+        ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
+        return EqWizardSourceResolver.TryCreateFromArray(
+            file,
+            System.IO.Path.GetFileNameWithoutExtension(path),
+            EqWizardSourceResolver.DescribeArray(file, path));
     }
 
     private void LoadCurveFromTextFile()

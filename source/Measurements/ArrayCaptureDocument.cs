@@ -30,12 +30,28 @@ internal static class ArrayCaptureDocument
     public static LiveCaptureDocument? TryCreate(
         IReadOnlyList<ArrayMicrophoneCurve> microphones,
         int sampleRateHz,
+        ProtectiveHighPassConfiguration? protectiveHighPass) =>
+        TryCreateWithSpread(microphones, sampleRateHz, protectiveHighPass).Document;
+
+    /// <summary>
+    /// The same average, with the spread between the positions beside it on the same
+    /// grid — how far apart the microphones sat at each band. Null spread whenever
+    /// the document is null.
+    /// </summary>
+    /// <remarks>
+    /// Beside rather than inside: a spatial average document describes a curve, and a
+    /// moving microphone — the other method that produces one — has no per-position
+    /// spread to report. Only a caller that knows it is holding an array asks for it.
+    /// </remarks>
+    public static (LiveCaptureDocument? Document, double[]? SpreadDb) TryCreateWithSpread(
+        IReadOnlyList<ArrayMicrophoneCurve> microphones,
+        int sampleRateHz,
         ProtectiveHighPassConfiguration? protectiveHighPass)
     {
         ArgumentNullException.ThrowIfNull(microphones);
         if (microphones.Count == 0)
         {
-            return null;
+            return (null, null);
         }
 
         IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
@@ -47,7 +63,7 @@ internal static class ArrayCaptureDocument
             {
                 // A curve from a grid this build does not use cannot be placed
                 // beside the others without shifting it in frequency.
-                return null;
+                return (null, null);
             }
 
             calibrated.Add(Calibrate(microphones[i], grid));
@@ -62,10 +78,10 @@ internal static class ArrayCaptureDocument
             anchorIndex < 0 ? 0 : anchorIndex);
         if (placed.TrimsDb.All(trim => trim == null))
         {
-            return null;
+            return (null, null);
         }
 
-        return new LiveCaptureDocument
+        return (new LiveCaptureDocument
         {
             Format = LiveCaptureDocument.CurrentFormat,
             Version = LiveCaptureDocument.CurrentVersion,
@@ -85,7 +101,8 @@ internal static class ArrayCaptureDocument
             CurveDb = placed.AverageDb,
             GridStartHz = grid[0],
             GridStopHz = grid[^1]
-        };
+        },
+        placed.SpreadDb);
     }
 
     /// <remarks>

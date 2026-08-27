@@ -2187,7 +2187,12 @@ public partial class VirtualCrossoverPanel : UserControl
                 SelectedCalibrationName(),
                 projectGeneration,
                 spatialAverage.Capture,
-                spatialAverage.OffsetDb);
+                spatialAverage.OffsetDb,
+                // Exactly the condition the plot drew this channel under: the set is
+                // being read as arrays, and this one had none to read.
+                HybridRequested &&
+                    SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray &&
+                    spatialAverage.Capture == null);
         }
         catch (InvalidOperationException)
         {

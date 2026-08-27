@@ -64,9 +64,19 @@ internal sealed record EqWizardCurveSource
     public IImpulseMeasurement? Measurement { get; init; }
 
     /// <summary>
-    /// Per-frequency coherence (γ²) gating Auto Tune boosts. Present only for a
-    /// loopback-transfer impulse response; imported curves never carry it.
+    /// The per-frequency confidence, from 0 to 1, that Auto Tune gates its boosts on;
+    /// null when the source carries none, which leaves boosting masked by
+    /// null-detection and the fitting band alone.
     /// </summary>
+    /// <remarks>
+    /// Two things measure it, and both answer the same question — is what is drawn
+    /// here repeatable enough to be worth spending a band and amplifier headroom on?
+    /// A loopback-transfer impulse response carries measured coherence (γ²). A
+    /// microphone array carries the AGREEMENT between its positions, which for a
+    /// spatial average is the better witness: an average is a claim about a listening
+    /// volume, and where the positions in that volume disagree wildly it is a claim
+    /// about none of them. An imported curve with neither carries null.
+    /// </remarks>
     public IReadOnlyList<SignalPoint>? Coherence { get; init; }
 
     // --- Virtual DSP channel sources ----------------------------------------------

@@ -205,7 +205,8 @@ internal static class VirtualDspEqHandoff
         string? calibrationName,
         long projectGeneration,
         LiveCaptureDocument? spatialAverage,
-        double spatialAverageOffsetDb)
+        double spatialAverageOffsetDb,
+        bool pointMeasured = false)
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(gateTemplate);
@@ -277,6 +278,15 @@ internal static class VirtualDspEqHandoff
         // the PEQ belongs to — a bank tuned against a crossover-less curve would be
         // wrong for the setup the moment bypass came off — so the handoff keeps
         // building it and says so instead of quietly showing a different curve.
+        // The panel is drawing spatial averages, and this channel has none — the
+        // plot's own badge says so, and the tool that can act on the difference has to
+        // be told too. Decision: a channel drawn from one position carries dips that
+        // belong to that position, and nothing here protects against equalizing them.
+        string pointNote = pointMeasured
+            ? "\r\nThis channel has NO spatial average: the rest of the set is drawn " +
+              "from arrays and this one from its single measurement position. Its " +
+              "dips may belong to those few centimetres rather than to the seat."
+            : string.Empty;
         string bypassNote = withChain && channel.Pair.Bypass
             ? "\r\nThe block is BYPASSED on the plot right now, so the panel is drawing " +
               "its raw response — this curve is the chain the PEQ will live in."
@@ -302,10 +312,18 @@ internal static class VirtualDspEqHandoff
                     : withChain
                         ? "\r\nDSP chain applied (PEQ bypassed), windowed by the Virtual DSP gate."
                         : "\r\nRaw measurement, windowed by the Virtual DSP gate at its own arrival.") +
+                pointNote +
                 bypassNote,
             Measurement = new ImpulseMeasurementView(response, anchorIndex, sampleRate),
-            Coherence = EqWizardSourceResolver.ExtractTransferCoherence(
-                state.TransferCoherence, sampleRate),
+            // For an array, the agreement between its positions rather than the
+            // impulse response's coherence: both gate boosts, and when the curve being
+            // fitted is the average over a listening volume, how far that volume's
+            // positions disagree is the witness that belongs to it.
+            Coherence = spatialAverage is { Method: SpatialAverageMethod.MicArray }
+                ? EqWizardSourceResolver.BuildAgreementCurve(
+                    spatialAverage, state.ArraySpreadDb)
+                : EqWizardSourceResolver.ExtractTransferCoherence(
+                    state.TransferCoherence, sampleRate),
             GateSettings = gateTemplate with { GateOffsetMs = gateOffsetMs },
             PinnedCalibration = calibration,
             PinnedCalibrationName = calibration == null ? null : calibrationName,

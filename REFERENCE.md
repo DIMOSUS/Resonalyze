@@ -967,6 +967,13 @@ negatives toward cancellation. Only the complex side moves as you tune the offse
 and polarity, so the curve rises back toward 0 dB as you bring the sources into
 phase — a direct read-out of the summation loss you are dialing out.
 
+Both stop where **neither** measurement measured. A sum is a record neither of them
+made, so it carries no band of its own and takes the two theirs: where either played
+it is drawn, and below both — under a band sweep's start, or under a protective
+high-pass the compensation could not invert — it breaks. The sum loss already broke
+there; the sum itself used to draw the analysis window's leakage as a rolloff, which
+is the one thing [Where a curve stops](#where-a-curve-stops) exists to prevent.
+
 The captured, calculated, and target settings dialogs preview their result on the
 plot while you edit, and **Cancel** (or `Esc`) restores the previous state.
 Overlay files are separated by analysis mode and restored automatically; all

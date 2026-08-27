@@ -78,6 +78,18 @@ public sealed class LiveCaptureRecipe
 
     public double WindowMainLobeBins { get; set; }
 
+    /// <summary>
+    /// How many microphones the average was taken over, for a microphone array;
+    /// zero for a moving microphone, which has no such number.
+    /// </summary>
+    /// <remarks>
+    /// The method-specific half of the recipe. It changes nothing about the
+    /// arithmetic — the consumers are blind to it — but two channels averaged over
+    /// different arrays are two different questions asked of the listening volume,
+    /// and the panel says so.
+    /// </remarks>
+    public int MicrophoneCount { get; set; }
+
     public int OverlapPercent { get; set; }
     public AveragingSpeed AveragingSpeed { get; set; } = AveragingSpeed.Infinite;
 

@@ -3019,7 +3019,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         using (AppProfiler.Zone("VirtualDSP.UpdateMetric"))
         {
-            UpdateMetric(processed, lossCurve, stereoDeltas);
+            UpdateMetric(processed, lossCurve, stereoDeltas, hybrid);
         }
 
         using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))
@@ -3358,7 +3358,8 @@ public partial class VirtualCrossoverPanel : UserControl
     private void UpdateMetric(
         List<ProcessedChannel> processed,
         List<SignalPoint>? lossCurve,
-        IReadOnlyList<VirtualCrossoverMetric.StereoDelta>? stereoDeltas = null)
+        IReadOnlyList<VirtualCrossoverMetric.StereoDelta>? stereoDeltas = null,
+        HybridMagnitudes? hybrid = null)
     {
         // The read-out lives in the host's right-side panel (where overlays sit in
         // analysis modes), as a compact per-junction column with the full banded
@@ -3396,6 +3397,21 @@ public partial class VirtualCrossoverPanel : UserControl
             detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
                 VirtualCrossoverMetric.FormatStereoDeltasDetail(stereoDeltas);
         }
+        if (hybrid != null)
+        {
+            // The set offset, shown rather than judged. It was a rescue mechanism
+            // for a moving-microphone set — a family with no level of its own, which
+            // it lifted onto the impulse responses' axis by tens of decibels. An
+            // array is referenced to the same loopback those responses are, so the
+            // number is small and it is a HEALTH reading: a large one says the array
+            // read a different input, a different calibration, or another driver.
+            compact += "\r\n\r\n" +
+                $"Spatial average {hybrid.OffsetDb:+0.0;-0.0} dB";
+            detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
+                $"The spatial averages sit {hybrid.OffsetDb:+0.0;-0.0} dB from the " +
+                "impulse responses, and the whole set is drawn shifted by that one " +
+                "figure.";
+        }
 
         MetricChanged?.Invoke(compact, detail);
     }
@@ -3428,6 +3444,19 @@ public partial class VirtualCrossoverPanel : UserControl
                 $"⚠ The spatial averages disagree by {hybrid.SpreadDb:0.0} dB — " +
                     "check the captures.",
                 FormatHybridSpreadDetail(hybrid, processed),
+                GateWarningColor);
+            return;
+        }
+
+        // A set whose channels were averaged over different arrays still hangs
+        // together — the levels are held by the loopback either way — so this warns
+        // rather than refuses. What differs is what "the average" MEANS per channel,
+        // and that is worth knowing before a tune is fitted to it.
+        if (hybrid != null && DescribeArrayCompositionMismatch() is { } mismatch)
+        {
+            ShowWarning(
+                "⚠ The channels were not averaged over the same array.",
+                mismatch,
                 GateWarningColor);
             return;
         }
@@ -3512,14 +3541,95 @@ public partial class VirtualCrossoverPanel : UserControl
             "mode the two measurements agree, so a subwoofer loses little by it.";
     }
 
+    /// <summary>
+    /// Whether this project's arrays were built the same way, and how they differ
+    /// when they were not. Null when they agree, or when the project is not reading
+    /// arrays.
+    /// </summary>
+    /// <remarks>
+    /// Two things make an array a different question: how many positions it sampled,
+    /// and which calibration was read through. Neither breaks the LEVEL — that is
+    /// the loopback's job and it is done per measurement — so neither is a refusal.
+    /// </remarks>
+    private string? DescribeArrayCompositionMismatch()
+    {
+        if (SpatialAverageMode != VirtualCrossoverSpatialAverageMode.MicArray)
+        {
+            return null;
+        }
+
+        var arrays = new List<(string Name, LiveCaptureDocument Document)>();
+        foreach (VirtualCrossoverChannel channel in channels.Where(
+            candidate => candidate.Pair.Enabled))
+        {
+            if (channel.SideState(project.ActiveSideRight).ArrayCapture is { } document)
+            {
+                arrays.Add((channel.Name, document));
+            }
+        }
+
+        if (arrays.Count < 2)
+        {
+            return null;
+        }
+
+        bool countsDiffer = arrays.Any(entry =>
+            entry.Document.Recipe.MicrophoneCount !=
+            arrays[0].Document.Recipe.MicrophoneCount);
+        bool calibrationsDiffer = arrays.Any(entry =>
+            !SameCalibration(entry.Document.Calibration, arrays[0].Document.Calibration));
+        if (!countsDiffer && !calibrationsDiffer)
+        {
+            return null;
+        }
+
+        var lines = new StringBuilder();
+        lines.Append(
+            "A spatial average describes the volume its microphones stood in, so " +
+            "channels averaged over different arrays are answering slightly " +
+            "different questions:\r\n\r\n");
+        foreach ((string name, LiveCaptureDocument document) in arrays)
+        {
+            string calibration = document.Calibration?.Name ?? "no calibration";
+            lines.Append(
+                $"    {name}    {document.Recipe.MicrophoneCount} microphone(s), " +
+                $"{calibration}\r\n");
+        }
+
+        lines.Append(
+            "\r\nThe hybrid still draws: each average is honest about its own " +
+            "driver, and their levels are held by the loopback rather than by the " +
+            "arrays matching. Re-measure only if the odd channel's array sampled a " +
+            "different volume from the rest.");
+        return lines.ToString();
+    }
+
+    private static bool SameCalibration(
+        VirtualCrossoverCalibrationSettings? first,
+        VirtualCrossoverCalibrationSettings? second)
+    {
+        if (first == null || second == null)
+        {
+            return first == null && second == null;
+        }
+
+        return CalibrationFile.SameCurve(
+            first.ToCalibrationFile(),
+            second.ToCalibrationFile());
+    }
+
     private string FormatHybridSpreadDetail(
         HybridMagnitudes hybrid, List<ProcessedChannel> processed)
     {
         var lines = new StringBuilder();
         lines.Append(
-            "Every capture in one set is taken with one analyzer recipe at one input " +
-            "gain, so each channel should sit the same distance from its impulse " +
-            "response. These do not:\r\n\r\n");
+            SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+                ? "Every array is referenced to the same loopback its impulse " +
+                    "response is, so each channel should sit the same distance from " +
+                    "it. These do not:\r\n\r\n"
+                : "Every capture in one set is taken with one analyzer recipe at one " +
+                    "input gain, so each channel should sit the same distance from " +
+                    "its impulse response. These do not:\r\n\r\n");
         // Positional: ChannelOffsetsDb[i] belongs to processed[i], null included. It
         // was packed once, and a single channel with nothing to compare then shifted
         // every figure below it onto the wrong driver's name.
@@ -3534,11 +3644,17 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         lines.Append(
-            "\r\nUsually one capture was taken with a different input gain, a " +
-            "different frame length or window (which moves the noise-slope " +
-            "compensation), or belongs to another session. The hybrid still draws: " +
-            "one offset serves the whole set, so a channel that disagrees is drawn " +
-            "at the level it claims.");
+            SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+                ? "\r\nAn array set should agree closely, so a channel standing " +
+                    "apart usually means its array read a different input, a " +
+                    "different calibration, or a driver that was not the one being " +
+                    "measured. "
+                : "\r\nUsually one capture was taken with a different input gain, a " +
+                    "different frame length or window (which moves the noise-slope " +
+                    "compensation), or belongs to another session. ");
+        lines.Append(
+            "The hybrid still draws: one offset serves the whole set, so a channel " +
+            "that disagrees is drawn at the level it claims.");
         return lines.ToString();
     }
 

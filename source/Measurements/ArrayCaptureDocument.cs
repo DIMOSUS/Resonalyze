@@ -80,7 +80,7 @@ internal static class ArrayCaptureDocument
             // nothing: what a session id guards — that levels were held together by
             // one analyzer run — is guaranteed here by the loopback instead.
             CaptureSessionId = Guid.NewGuid(),
-            Recipe = BuildRecipe(sampleRateHz, protectiveHighPass),
+            Recipe = BuildRecipe(sampleRateHz, microphones.Count, protectiveHighPass),
             Calibration = SharedCalibration(microphones),
             CurveDb = placed.AverageDb,
             GridStartHz = grid[0],
@@ -96,6 +96,7 @@ internal static class ArrayCaptureDocument
     /// </remarks>
     private static LiveCaptureRecipe BuildRecipe(
         int sampleRateHz,
+        int microphoneCount,
         ProtectiveHighPassConfiguration? protectiveHighPass)
     {
         ProtectiveHighPassConfiguration filter =
@@ -104,6 +105,7 @@ internal static class ArrayCaptureDocument
         {
             AnalysisMode = LiveAnalysisMode.TransferFunction,
             SampleRateHz = sampleRateHz,
+            MicrophoneCount = microphoneCount,
             // A swept transfer magnitude, relative to the loopback: it is not an
             // absolute sound pressure level and must not claim to be one.
             MagnitudeScale = MagnitudeScale.Relative,

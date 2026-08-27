@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
@@ -130,6 +130,23 @@ public sealed class ArrayCaptureDocumentTests
         Assert.False(document.Recipe.SlopeCompensation);
         Assert.Equal(0, document.Recipe.SmoothingCode);
         Assert.Equal(48_000, document.Recipe.SampleRateHz);
+    }
+
+    [Fact]
+    public void TheRecipeRecordsHowManyMicrophonesMadeTheAverage()
+    {
+        LiveCaptureDocument document = Create(
+        [
+            Microphone(70.0, measurement: true, channel: 0),
+            Microphone(70.0, channel: 2),
+            Microphone(70.0, channel: 3)
+        ]);
+
+        // Changes nothing about the arithmetic — the consumers are blind to it —
+        // but two channels averaged over different arrays are two different
+        // questions asked of the listening volume, and the panel says so.
+        Assert.Equal(3, document.Recipe.MicrophoneCount);
+        Assert.Equal("Array of 3 microphones", document.Title);
     }
 
     [Fact]

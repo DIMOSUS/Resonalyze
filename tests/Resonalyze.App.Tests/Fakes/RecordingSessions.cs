@@ -1,4 +1,4 @@
-using Resonalyze.Audio;
+﻿using Resonalyze.Audio;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -244,6 +244,59 @@ internal static class SyntheticCapture
         return new AudioCaptureResult(
             [mic, loop], 0, 1, StereoSeparationExpected: true,
             AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
+    /// <summary>
+    /// A measurement pair plus array microphones on channels 2, 3, ... Each
+    /// array scale is that microphone's level relative to the played sweep, so a
+    /// test can state what its transfer level must come out as.
+    /// </summary>
+    public static AudioCaptureResult WithArray(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        params float[] arrayScales) =>
+        WithArray(signal, tailSamples, edge: null, sampleRateHz: 0, arrayScales);
+
+    /// <summary>
+    /// The same, with the protective high-pass in the acoustic path: every
+    /// microphone passes through it and the loopback — taken from the card output,
+    /// ahead of the external DSP — does not.
+    /// </summary>
+    public static AudioCaptureResult WithArray(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        CrossoverEdge? edge,
+        double sampleRateHz,
+        params float[] arrayScales)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        var channels = new List<float[]> { mic, loop };
+        foreach (float scale in arrayScales)
+        {
+            (float[] arrayMic, _) = BuildChannels(signal, tailSamples, scale, 0f);
+            channels.Add(arrayMic);
+        }
+
+        if (edge is { } highPass)
+        {
+            IReadOnlyList<BiquadCoefficients> sections =
+                CrossoverFilter.BuildSections(highPass, highPass: true, sampleRateHz);
+            foreach (BiquadCoefficients section in sections)
+            {
+                ApplySection(mic, section);
+                for (int i = 2; i < channels.Count; i++)
+                {
+                    ApplySection(channels[i], section);
+                }
+            }
+        }
+
+        return new AudioCaptureResult(
+            [.. channels], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null)
+        {
+            ArrayChannels = [.. Enumerable.Range(2, arrayScales.Length)]
+        };
     }
 
     private static (float[] Microphone, float[] Loopback) BuildChannels(

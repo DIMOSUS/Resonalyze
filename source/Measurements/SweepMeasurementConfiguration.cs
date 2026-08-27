@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -113,7 +113,9 @@ public sealed record SweepAudioConfiguration(
     string? WasapiRenderEndpointId = null,
     string? WasapiCaptureEndpointName = null,
     string? WasapiRenderEndpointName = null,
-    int WasapiBufferMilliseconds = 100);
+    int WasapiBufferMilliseconds = 100,
+    IReadOnlyList<int>? WaveArrayInputChannelOffsets = null,
+    IReadOnlyList<int>? AsioArrayInputChannelOffsets = null);
 
 public sealed record SweepAveragingConfiguration(
     int RunCount = 1,

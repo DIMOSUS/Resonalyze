@@ -140,6 +140,18 @@ internal sealed record EqWizardCurveSource
     public LiveCaptureDocument? SpatialAverage { get; init; }
 
     /// <summary>
+    /// How <see cref="SpatialAverage"/> was read by the panel that handed it over.
+    /// </summary>
+    /// <remarks>
+    /// The curve alone could not say it: the panel's selection is Off, Own or a named
+    /// file, and the first two both resolve to no curve. A tune fitted through one of
+    /// them and summed back through another would break the identity the handoff
+    /// exists to keep, and the two differ by the whole capture correction.
+    /// </remarks>
+    public SpatialAverageCalibration SpatialAverageCalibration { get; init; } =
+        SpatialAverageCalibration.Own;
+
+    /// <summary>
     /// The offset that put the whole spatial-average SET on the impulse responses'
     /// axis when the handoff was taken, in dB. It belongs to the set rather than to
     /// this channel, so it travels as the number the panel resolved rather than being

@@ -277,6 +277,23 @@ public partial class VirtualCrossoverPanel : UserControl
         ownCalibrationSelected ? state.MicrophoneCalibrationCurve : Calibration;
 
     /// <summary>
+    /// How a stored spatial average on this side should be read.
+    /// </summary>
+    /// <remarks>
+    /// Under Own it is the CAPTURE's own correction, deliberately not this side's
+    /// measurement file. A moving-microphone pass attached to a channel is a separate
+    /// measurement taken through its own calibration, and an array is several capsules
+    /// each through theirs; reading either through the impulse response beside it
+    /// would be wrong by the whole difference between the two files. The state is not
+    /// consulted at all — the capture knows.
+    /// </remarks>
+    private SpatialAverageCalibration SpatialAverageCalibrationFor(
+        VirtualCrossoverChannelState state) =>
+        ownCalibrationSelected
+            ? SpatialAverageCalibration.Own
+            : SpatialAverageCalibration.Specific(Calibration);
+
+    /// <summary>
     /// The calibration a SUM of these channels is drawn through: theirs, when they
     /// agree, and none when they do not.
     /// </summary>
@@ -2264,6 +2281,10 @@ public partial class VirtualCrossoverPanel : UserControl
                 // back under another would break the handoff's identity.
                 CalibrationFor(channel.SideState(channel.ActiveRight)),
                 CalibrationNameFor(channel.SideState(channel.ActiveRight)),
+                // The MODE too: a capture read as it was measured and one read
+                // through a named file are two different curves, and the wizard has
+                // to reproduce the one the plot drew.
+                SpatialAverageCalibrationFor(channel.SideState(channel.ActiveRight)),
                 projectGeneration,
                 spatialAverage.Capture,
                 spatialAverage.OffsetDb,

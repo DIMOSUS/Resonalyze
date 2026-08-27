@@ -675,7 +675,7 @@ public partial class VirtualCrossoverPanel
             // comes out a no-op; for one whose positions did not, the capture keeps
             // its own corrections and this is ignored, because no single curve could
             // replace a mixture (see SpatialAverageHybrid).
-            CalibrationFor(state),
+            SpatialAverageCalibrationFor(state),
             reference.Select(point => point.X).ToList(),
             smoothingCode);
     }
@@ -722,7 +722,7 @@ public partial class VirtualCrossoverPanel
                         // property of the two measurements, and the threshold the
                         // spread is judged against is calibrated on these very terms
                         // (HybridOffsetDatumMeasurement reads them the same way).
-                        calibration: null,
+                        SpatialAverageCalibration.Off,
                         rawIr.Points.Select(point => point.X).ToList(),
                         smoothingCode: 0)
                     : null;

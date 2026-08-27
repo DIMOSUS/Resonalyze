@@ -1476,6 +1476,16 @@ applied to positions that were never read through it.
 The Virtual DSP's **Mic cal** selector offers the same answer under the name
 **Own (as measured)**, described in [Virtual DSP](#virtual-dsp).
 
+Turning a view's calibration off changes which of two readings is drawn; it never
+re-places the array. Each position's **trim** — how much more sensitive that capsule
+is, measured as the median difference from the measurement microphone over the
+driver's working band — is computed once, on the calibrated curves, where a level
+difference is a level difference rather than a difference between two microphones'
+responses. Deriving a second placement from the raw curves is what the frequency
+response used to do while the Virtual DSP undid the correction on the first one, and
+on a mixed array the two answers parted by three decibels with nothing on either
+plot to say which was which.
+
 Two warnings are specific to arrays. The set's spread is judged against **1.5 dB**
 rather than the moving microphone's 3 dB, because an array is levelled by the same
 loopback the impulse responses are — two real seven-position sets read 0.33 dB
@@ -1727,6 +1737,16 @@ summation loss and is not. Channels that agree — one microphone, one cabin, on
 afternoon, which is the ordinary case — hand their common correction to the sum as
 usual. The EQ Wizard handoff follows the channel, so a tune is fitted through the
 same correction the panel drew it with.
+
+A **spatial average** attached to a channel answers for itself under Own, whichever
+selection the rest of the panel is on. A moving-microphone pass was a measurement of
+its own, taken on its own day through its own file, and an array is several capsules
+each through theirs; reading either through the impulse response beside it would be
+wrong by the whole difference between the two calibrations. Off still undoes what the
+capture carries, exactly, and a named calibration is still swapped in — but only for a
+capture that declares ONE correction. A capture of several capsules has an aggregate
+belonging to no single microphone, so there is nothing a curve could replace, and it
+keeps its own.
 
 The session stores the calibration it was tuned with as the **curve itself**, not
 as a reference to your calibration list: a calibration describes the microphone

@@ -38,30 +38,28 @@ internal static class SpatialAverageHybrid
     /// capture's rate here would draw a prediction of a DSP nobody is building.
     /// </param>
     /// <param name="calibration">
-    /// The correction the result should carry. The capture's own is undone first, on
-    /// the capture's own grid, before anything is interpolated: these corrections are
-    /// additive per frequency, so the swap is exact, and doing it before the
-    /// interpolation keeps each value on the frequency it was frozen at. Null means
-    /// none — which is the right answer when the panel draws uncalibrated, since the
-    /// curves beside this one are uncalibrated too.
-    /// <para>
-    /// A capture whose positions were corrected by DIFFERENT files is the exception,
-    /// and it is the accurate case rather than the odd one: individually calibrated
-    /// capsules are what an array is for. There is no single curve that undoes a
-    /// mixed correction and no single curve that could replace it — the aggregate the
-    /// capture declares is exact as a total and is not any one microphone's — so the
-    /// panel's INTENT is honoured instead of its curve. Uncalibrated, and the capture
-    /// comes back raw, which the exact undo does give. Calibrated, and it keeps its
-    /// own corrections, each position through the file it was measured with, which is
-    /// the closest thing to the truth there is and is what the frequency response and
-    /// the wizard's direct source already draw.
-    /// </para>
+    /// Which correction the result should carry, as a MODE rather than a curve.
+    /// <list type="bullet">
+    /// <item><b>Off</b> — the capture back at the level it was taken. Its own
+    /// correction is undone on its own grid, before anything is interpolated: these
+    /// corrections are additive per frequency, so the undo is exact, and doing it
+    /// first keeps each value on the frequency it was frozen at.</item>
+    /// <item><b>Own</b> — the capture exactly as stored. A moving-microphone pass was
+    /// a measurement of its own through its own file; an array is several capsules
+    /// each through theirs. Either way the answer is the one the capture already
+    /// holds, and nothing beside it has standing to replace it.</item>
+    /// <item><b>Specific</b> — a named curve in place of the capture's own. Defined
+    /// only when the capture declares ONE correction; a capture whose positions
+    /// carried different files has an aggregate that belongs to no single microphone,
+    /// and no curve can be swapped for it. That case falls back to Own, which is the
+    /// nearest thing that is true, rather than to a swap that is not.</item>
+    /// </list>
     /// </param>
     public static List<SignalPoint>? BuildChannelCurve(
         LiveCaptureDocument document,
         DspChannelChain chain,
         int chainSampleRateHz,
-        CalibrationFile? calibration,
+        SpatialAverageCalibration calibration,
         IReadOnlyList<double> frequenciesHz,
         int smoothingCode)
     {
@@ -73,10 +71,14 @@ internal static class SpatialAverageHybrid
             return null;
         }
 
-        bool mixed = document.CalibrationIsAggregate;
-        List<SignalPoint> capture = mixed && calibration != null
-            ? document.ToCurvePoints()
-            : Uncalibrated(document);
+        // A swap the capture cannot support is not performed; it reads as Own.
+        bool swap = calibration.Mode == SpatialAverageCalibrationMode.Specific &&
+            !document.CalibrationIsAggregate;
+        CalibrationFile? curve = swap ? calibration.Curve : null;
+        List<SignalPoint> capture =
+            calibration.Mode == SpatialAverageCalibrationMode.Off || swap
+                ? Uncalibrated(document)
+                : document.ToCurvePoints();
         var prepared = PreparedDspResponse.Create(chain, chainSampleRateHz);
         var points = new List<SignalPoint>(frequenciesHz.Count);
         foreach (double hz in frequenciesHz)
@@ -116,7 +118,7 @@ internal static class SpatialAverageHybrid
         // handoff. Correcting first and smoothing afterwards smooths the correction
         // too, so a frequency-dependent calibration file made one capture read
         // slightly differently by which route it arrived.
-        if (calibration == null || mixed)
+        if (curve == null)
         {
             return smoothed;
         }
@@ -125,7 +127,7 @@ internal static class SpatialAverageHybrid
         {
             smoothed[i] = new SignalPoint(
                 smoothed[i].X,
-                smoothed[i].Y - calibration.GetDecibelCorrection(smoothed[i].X));
+                smoothed[i].Y - curve.GetDecibelCorrection(smoothed[i].X));
         }
 
         return smoothed;

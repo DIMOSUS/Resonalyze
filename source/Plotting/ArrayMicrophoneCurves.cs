@@ -55,6 +55,13 @@ internal static class ArrayMicrophoneCurves
     /// capsule — but whether any of them is corrected at all follows the view, so
     /// turning calibration off means the same thing for these curves as for every
     /// other one on the plot.
+    /// <para>
+    /// It chooses which of two READINGS to draw and never re-places the array: both
+    /// come off one <see cref="ArrayPlacement"/>, computed on the calibrated curves.
+    /// Deriving a second placement from the raw ones — which is what this used to do
+    /// — made the same mixed array read three decibels apart here and in the Virtual
+    /// DSP, each answer looking perfectly reasonable on its own.
+    /// </para>
     /// </param>
     public static ArrayMicrophoneDisplay Build(
         IReadOnlyList<ArrayMicrophoneCurve> microphones,
@@ -62,72 +69,54 @@ internal static class ArrayMicrophoneCurves
         double smoothingInverseOctaves)
     {
         ArgumentNullException.ThrowIfNull(microphones);
-        if (microphones.Count == 0)
+        IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
+        if (ArrayPlacement.Resolve(microphones, grid) is not { } placed)
         {
             return Empty;
         }
 
-        IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
-        var calibrated = new List<double[]>(microphones.Count);
-        int anchorIndex = -1;
-        for (int i = 0; i < microphones.Count; i++)
-        {
-            if (microphones[i].LevelsDb.Length != grid.Count)
-            {
-                // A curve from a grid this build does not use cannot be placed
-                // beside the others; drawing it anyway would shift it in frequency.
-                return Empty;
-            }
-
-            calibrated.Add(Calibrate(microphones[i], grid, useCalibration));
-            if (microphones[i].IsMeasurementMicrophone && anchorIndex < 0)
-            {
-                anchorIndex = i;
-            }
-        }
-
-        // The measurement microphone is the anchor because its level is the one
-        // tied to the SPL calibration and to the impulse response. A set without
-        // it — every microphone of an imported array, say — levels onto its first.
-        SpatialAverageResult placed = SpatialAverage.Average(
-            calibrated.Select(curve => (IReadOnlyList<double>)curve).ToList(),
-            anchorIndex < 0 ? 0 : anchorIndex);
+        IReadOnlyList<double[]?> curves = useCalibration ? placed.CalibratedDb : placed.RawDb;
+        double[] average = useCalibration
+            ? placed.CalibratedAverageDb
+            : placed.RawAverageDb;
+        double[] spreadDb = useCalibration
+            ? placed.CalibratedSpreadDb
+            : placed.RawSpreadDb;
 
         double smoothing = SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
         bool psychoacoustic = SpectrumSmoothing.IsPsychoacoustic(smoothingInverseOctaves);
 
         var drawn = new List<AnalysisCurve>(microphones.Count);
-        int placedCount = 0;
         for (int i = 0; i < microphones.Count; i++)
         {
-            if (placed.TrimmedCurvesDb[i] is not { } curve)
+            if (curves[i] is not { } curve)
             {
                 continue;
             }
 
-            placedCount++;
             drawn.Add(new AnalysisCurve(
                 DescribeMicrophone(microphones[i]),
                 Smooth(grid, curve, smoothing, psychoacoustic),
                 AnalysisCurveKind.ArrayMicrophone));
         }
 
-        if (placedCount == 0)
+        if (drawn.Count == 0)
         {
             return Empty;
         }
 
-        var average = new AnalysisCurve(
-            "Array average",
-            Smooth(grid, placed.AverageDb, smoothing, psychoacoustic),
-            AnalysisCurveKind.ArrayAverage);
-        AnalysisCurve? spread = placedCount < 2
-            ? null
-            : new AnalysisCurve(
-                "Array spread",
-                SmoothSpread(grid, placed.SpreadDb, smoothing, psychoacoustic),
-                AnalysisCurveKind.ArraySpread);
-        return new ArrayMicrophoneDisplay(average, drawn, spread);
+        return new ArrayMicrophoneDisplay(
+            new AnalysisCurve(
+                "Array average",
+                Smooth(grid, average, smoothing, psychoacoustic),
+                AnalysisCurveKind.ArrayAverage),
+            drawn,
+            drawn.Count < 2
+                ? null
+                : new AnalysisCurve(
+                    "Array spread",
+                    SmoothSpread(grid, spreadDb, smoothing, psychoacoustic),
+                    AnalysisCurveKind.ArraySpread));
     }
 
     private static string DescribeMicrophone(ArrayMicrophoneCurve microphone)
@@ -136,31 +125,6 @@ internal static class ArrayMicrophoneCurves
             ? $"Input {microphone.ChannelOffset + 1}"
             : microphone.Note!;
         return microphone.IsMeasurementMicrophone ? $"{where} (measurement)" : where;
-    }
-
-    // The stored curve is uncalibrated, and the pipeline SUBTRACTS a microphone
-    // correction from a level, so applying one here means subtracting it too.
-    private static double[] Calibrate(
-        ArrayMicrophoneCurve microphone,
-        IReadOnlyList<double> grid,
-        bool useCalibration)
-    {
-        double[] levels = microphone.LevelsDb.ToArray();
-        if (!useCalibration || microphone.Calibration is not { } settings)
-        {
-            return levels;
-        }
-
-        CalibrationFile calibration = settings.ToCalibrationFile();
-        for (int band = 0; band < levels.Length; band++)
-        {
-            if (double.IsFinite(levels[band]))
-            {
-                levels[band] -= calibration.GetDecibelCorrection(grid[band]);
-            }
-        }
-
-        return levels;
     }
 
     private static IReadOnlyList<SignalPoint> Smooth(

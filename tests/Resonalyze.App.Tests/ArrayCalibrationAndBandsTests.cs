@@ -119,9 +119,9 @@ public sealed class ArrayCalibrationAndBandsTests
             document,
             DspChannelChain.Identity,
             48_000,
-            CalibrationFile.FromPoints(
+            SpatialAverageCalibration.Specific(CalibrationFile.FromPoints(
                 [new CalibrationPoint(20.0, 5.0), new CalibrationPoint(20_000.0, 5.0)],
-                "the panel's"),
+                "the panel's")),
             frequencies,
             smoothingCode: 0)!;
         for (int i = 0; i < bands.Length; i++)
@@ -133,7 +133,7 @@ public sealed class ArrayCalibrationAndBandsTests
             document,
             DspChannelChain.Identity,
             48_000,
-            calibration: null,
+            SpatialAverageCalibration.Off,
             frequencies,
             smoothingCode: 0)!;
         for (int i = 0; i < bands.Length; i++)
@@ -164,9 +164,9 @@ public sealed class ArrayCalibrationAndBandsTests
             document,
             DspChannelChain.Identity,
             48_000,
-            CalibrationFile.FromPoints(
+            SpatialAverageCalibration.Specific(CalibrationFile.FromPoints(
                 [new CalibrationPoint(20.0, 5.0), new CalibrationPoint(20_000.0, 5.0)],
-                "the panel's"),
+                "the panel's")),
             [Grid[500]],
             smoothingCode: 0)!;
 

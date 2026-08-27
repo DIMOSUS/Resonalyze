@@ -971,6 +971,9 @@ public sealed class VirtualDspEqHandoffTests
             smoothingInverseOctaves: 0,
             calibration,
             calibrationName: calibration == null ? null : "mic-1",
+            // A named curve is what the panel applies unless it is on "Own (as
+            // measured)", which the handoff tests do not exercise.
+            SpatialAverageCalibration.Specific(calibration),
             projectGeneration,
             spatialAverage,
             spatialAverageOffsetDb);

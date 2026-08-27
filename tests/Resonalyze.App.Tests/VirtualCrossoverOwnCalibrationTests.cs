@@ -61,6 +61,7 @@ public sealed class VirtualCrossoverOwnCalibrationTests
                 arguments.Select(argument => argument switch
                 {
                     ProcessedChannel => typeof(ProcessedChannel),
+                    VirtualCrossoverChannelState => typeof(VirtualCrossoverChannelState),
                     _ => typeof(IReadOnlyList<ProcessedChannel>)
                 }).ToArray())!
             .Invoke(panel, arguments)!;
@@ -95,6 +96,33 @@ public sealed class VirtualCrossoverOwnCalibrationTests
         // measurement means.
         Assert.Null(
             Invoke<CalibrationFile?>(Panel(own: true), "CalibrationFor", Channel("left", null)));
+    }
+
+    [Fact]
+    public void ACaptureIsReadAsMeasuredRatherThanThroughTheResponseBesideIt()
+    {
+        // The mapping that was wrong. A stored spatial average — a moving-microphone
+        // pass attached by hand, or an array recorded with the sweep — carries the
+        // correction IT was taken through. Handing the hybrid this side's impulse
+        // response calibration instead reads the capture through a microphone that
+        // did not take it, and the error is the whole difference between the files.
+        var state = new VirtualCrossoverChannelState
+        {
+            MicrophoneCalibration = VirtualCrossoverCalibrationSettings.From(
+                CapsuleA, "the response's", null)
+        };
+
+        Assert.Equal(
+            SpatialAverageCalibration.Own,
+            Invoke<SpatialAverageCalibration>(
+                Panel(own: true), "SpatialAverageCalibrationFor", state));
+
+        // And under a named selection it is that curve, which is what makes the
+        // selector mean anything for a capture that CAN be swapped.
+        Assert.Equal(
+            SpatialAverageCalibration.Specific(PanelCurve),
+            Invoke<SpatialAverageCalibration>(
+                Panel(own: false), "SpatialAverageCalibrationFor", state));
     }
 
     [Fact]

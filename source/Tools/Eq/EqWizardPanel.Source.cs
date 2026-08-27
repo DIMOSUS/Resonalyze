@@ -568,6 +568,22 @@ public partial class EqWizardPanel
     // The curve the current choice corrects with: the one the source arrived pinned
     // to, or the configured entry the choice names (none for Off and for Own, whose
     // correction is read off the curve itself, see ResolveCurveCalibrationCorrection).
+    /// <summary>
+    /// How a stored spatial average should be read, from the choice in force.
+    /// </summary>
+    /// <remarks>
+    /// A capture carries its own correction, so "Own" here means the capture's — the
+    /// moving-microphone pass was a measurement of its own, taken through its own
+    /// file, and reading it through the impulse response beside it would be off by
+    /// the difference between the two.
+    /// </remarks>
+    private SpatialAverageCalibration ResolveSpatialAverageCalibration(
+        EqWizardCurveSource source) =>
+        calibrationChoice.Own ? SpatialAverageCalibration.Own
+        : calibrationChoice.Pinned ? source.SpatialAverageCalibration
+        : calibrationChoice.IsOff ? SpatialAverageCalibration.Off
+        : SpatialAverageCalibration.Specific(ResolveChosenCalibration());
+
     private CalibrationFile? ResolveChosenCalibration() =>
         calibrationChoice.Pinned
             ? loadedSource?.PinnedCalibration
@@ -623,8 +639,9 @@ public partial class EqWizardPanel
             EqProcessorSampleRate,
             // Pinned to the panel's, like every other part of a handoff: a bank fitted
             // under one correction and summed under another would break the identity
-            // the handoff promises.
-            ResolveChosenCalibration(),
+            // the handoff promises — and what the panel drew is a MODE, not only a
+            // curve, so the mode is what travels.
+            ResolveSpatialAverageCalibration(source),
             grid,
             SourceSmoothingInverseOctaves);
         if (curve == null)

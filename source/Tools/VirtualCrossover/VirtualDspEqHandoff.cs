@@ -203,6 +203,7 @@ internal static class VirtualDspEqHandoff
         int smoothingInverseOctaves,
         CalibrationFile? calibration,
         string? calibrationName,
+        SpatialAverageCalibration spatialAverageCalibration,
         long projectGeneration,
         LiveCaptureDocument? spatialAverage,
         double spatialAverageOffsetDb,
@@ -335,6 +336,7 @@ internal static class VirtualDspEqHandoff
             GateSettings = gateTemplate with { GateOffsetMs = gateOffsetMs },
             PinnedCalibration = calibration,
             PinnedCalibrationName = calibration == null ? null : calibrationName,
+            SpatialAverageCalibration = spatialAverageCalibration,
             // The ORIGINAL measurement and the chain around the bank, so the corrected
             // preview is one ApplyChain of the whole chain — the panel's own arithmetic
             // — rather than the bypassed response filtered a second time.

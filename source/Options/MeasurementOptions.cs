@@ -52,6 +52,8 @@ namespace Resonalyze.Options
         private bool initializing;
         private string? microphoneCalibration0DegreesPath;
         private List<MicrophoneCalibrationDefinition> additionalMicrophoneCalibrations = [];
+        private List<ArrayMicrophoneDefinition> waveArrayMicrophones = [];
+        private List<ArrayMicrophoneDefinition> asioArrayMicrophones = [];
         // The SPL calibration anchor and the factory used to capture it. The
         // factory is only present when the form is created for real use (the
         // parameterless designer constructor leaves it null, which disables the
@@ -436,6 +438,12 @@ namespace Resonalyze.Options
             additionalMicrophoneCalibrations = settings.AdditionalMicrophoneCalibrations
                 .Select(definition => definition.Clone())
                 .ToList();
+            waveArrayMicrophones = settings.WaveArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            asioArrayMicrophones = settings.AsioArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
             splCalibration = settings.SplCalibration;
             UpdateCalibrationButtons();
             // The button's own refresh happens in the UpdateAudioBackendControls
@@ -460,6 +468,12 @@ namespace Resonalyze.Options
             settings.MicrophoneCalibration0DegreesPath =
                 NormalizeCalibrationPath(microphoneCalibration0DegreesPath);
             settings.AdditionalMicrophoneCalibrations = additionalMicrophoneCalibrations
+                .Select(definition => definition.Clone())
+                .ToList();
+            settings.WaveArrayMicrophones = waveArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            settings.AsioArrayMicrophones = asioArrayMicrophones
                 .Select(definition => definition.Clone())
                 .ToList();
             settings.SplCalibration = splCalibration;
@@ -746,6 +760,117 @@ namespace Resonalyze.Options
             additionalMicrophoneCalibrations = dialog.Definitions.ToList();
             UpdateCalibrationButtons();
             RaiseCalibrationChanged();
+        }
+
+        private AudioBackend SelectedAudioBackend =>
+            comboBoxAudioBackend.SelectedIndex >= 0
+                ? (AudioBackend)comboBoxAudioBackend.SelectedIndex
+                : AudioBackend.Wave;
+
+        /// <summary>
+        /// The calibrations the array can choose from: this panel's WORKING copy,
+        /// not the applied one, so a calibration added here a moment ago can be
+        /// assigned to an array microphone before anything is applied.
+        /// </summary>
+        private IReadOnlyList<MicrophoneCalibrationEntry> BuildCalibrationEntries()
+        {
+            string? zeroDegreePath = NormalizeCalibrationPath(microphoneCalibration0DegreesPath);
+            var entries = new List<MicrophoneCalibrationEntry>(
+                additionalMicrophoneCalibrations.Count + 1)
+            {
+                new(
+                    MicrophoneCalibrationIds.ZeroDegrees,
+                    "0°",
+                    !string.IsNullOrWhiteSpace(zeroDegreePath))
+            };
+            foreach (MicrophoneCalibrationDefinition definition in additionalMicrophoneCalibrations)
+            {
+                entries.Add(new MicrophoneCalibrationEntry(definition.Id, definition.Name, true));
+            }
+
+            return entries;
+        }
+
+        // The array belongs to the backend it was configured on: a channel
+        // number names a different input on each.
+        private List<ArrayMicrophoneDefinition> SelectedArrayMicrophones =>
+            SelectedAudioBackend == AudioBackend.Asio
+                ? asioArrayMicrophones
+                : waveArrayMicrophones;
+
+        /// <summary>
+        /// Every input the selected backend can record, and where that list comes
+        /// from — the second half matters because "there is no room for an array"
+        /// has more than one cause, and the user can only act on the right one.
+        /// </summary>
+        private (IReadOnlyList<int> Channels, string Source) GetArrayInputChannels()
+        {
+            AudioBackend backend = SelectedAudioBackend;
+            if (backend == AudioBackend.Asio)
+            {
+                return (
+                    asioDriverInfo.InputChannels.Select(channel => channel.Offset).ToArray(),
+                    "ASIO driver inputs");
+            }
+            if (backend.IsWasapi())
+            {
+                int count = comboBoxRecordingDevice.SelectedItem is AudioEndpointDescriptor endpoint
+                    ? endpoint.ChannelCount
+                    : 0;
+                // An interface that presents its inputs to WASAPI as separate
+                // stereo endpoints reports two here, and its further inputs are
+                // genuinely unreachable in one session — through ASIO they are not.
+                return (
+                    Enumerable.Range(0, count).ToArray(),
+                    count > 2
+                        ? "WASAPI endpoint channels"
+                        : "WASAPI endpoint channels; use ASIO to reach an interface's further inputs");
+            }
+
+            return ([0, 1], "MME is limited to two channels");
+        }
+
+        private void buttonArrayMicrophones_Click(object? sender, EventArgs e)
+        {
+            (IReadOnlyList<int> channels, string source) = GetArrayInputChannels();
+            bool asio = SelectedAudioBackend == AudioBackend.Asio;
+            using var dialog = new ArrayMicrophonesDialog(
+                SelectedArrayMicrophones,
+                BuildCalibrationEntries(),
+                channels,
+                asio ? GetSelectedAsioInputChannelOffset() : GetSelectedWaveInputChannelOffset(),
+                asio
+                    ? GetSelectedAsioLoopbackInputChannelOffset()
+                    : GetSelectedWaveLoopbackChannelOffset(),
+                source);
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            List<ArrayMicrophoneDefinition> edited = dialog.Microphones
+                .Select(microphone => microphone.Clone())
+                .ToList();
+            if (asio)
+            {
+                asioArrayMicrophones = edited;
+            }
+            else
+            {
+                waveArrayMicrophones = edited;
+            }
+
+            UpdateArrayMicrophoneButton();
+        }
+
+        private void UpdateArrayMicrophoneButton()
+        {
+            int count = SelectedArrayMicrophones.Count;
+            buttonArrayMicrophones.Text = count == 0
+                ? "None..."
+                : count == 1
+                    ? "1 microphone..."
+                    : $"{count} microphones...";
         }
 
         private void buttonClearCalibration0_Click(object? sender, EventArgs e)
@@ -1346,6 +1471,9 @@ namespace Resonalyze.Options
 
         private void UpdateAudioBackendControls()
         {
+            // The array is per backend, so the button's count changes with the
+            // selection, not only when the array itself is edited.
+            UpdateArrayMicrophoneButton();
             bool useAsio =
                 comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio;
             bool useWasapi = IsSelectedWasapiBackend();

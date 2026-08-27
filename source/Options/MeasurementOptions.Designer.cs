@@ -63,6 +63,8 @@
             buttonClearCalibration0 = new Button();
             labelCalibrationExtra = new Label();
             buttonCalibrationExtra = new Button();
+            labelArrayMicrophones = new Label();
+            buttonArrayMicrophones = new Button();
             labelSplCalibration = new Label();
             buttonSplCalibration = new Button();
             buttonClearSplCalibration = new Button();
@@ -340,7 +342,7 @@
             audioBackendPanel.Controls.Add(label2);
             audioBackendPanel.Controls.Add(comboBoxSampleRate);
             audioBackendPanel.Controls.Add(label1);
-            audioBackendPanel.Location = new Point(8, 329);
+            audioBackendPanel.Location = new Point(8, 361);
             audioBackendPanel.Name = "audioBackendPanel";
             audioBackendPanel.Size = new Size(322, 343);
             audioBackendPanel.TabIndex = 39;
@@ -508,6 +510,28 @@
             buttonClearSplCalibration.Text = "X";
             buttonClearSplCalibration.UseVisualStyleBackColor = true;
             buttonClearSplCalibration.Click += buttonClearSplCalibration_Click;
+            //
+            // labelArrayMicrophones
+            //
+            labelArrayMicrophones.AutoSize = true;
+            labelArrayMicrophones.ForeColor = SystemColors.ControlLight;
+            labelArrayMicrophones.Location = new Point(17, 337);
+            labelArrayMicrophones.Name = "labelArrayMicrophones";
+            labelArrayMicrophones.Size = new Size(110, 15);
+            labelArrayMicrophones.TabIndex = 40;
+            labelArrayMicrophones.Text = "Array microphones";
+            //
+            // buttonArrayMicrophones
+            //
+            buttonArrayMicrophones.FlatStyle = FlatStyle.Popup;
+            buttonArrayMicrophones.ForeColor = Color.White;
+            buttonArrayMicrophones.Location = new Point(154, 332);
+            buttonArrayMicrophones.Name = "buttonArrayMicrophones";
+            buttonArrayMicrophones.Size = new Size(170, 23);
+            buttonArrayMicrophones.TabIndex = 41;
+            buttonArrayMicrophones.Text = "None...";
+            buttonArrayMicrophones.UseVisualStyleBackColor = true;
+            buttonArrayMicrophones.Click += buttonArrayMicrophones_Click;
             // 
             // waveAudioBackendPanel
             //
@@ -530,8 +554,10 @@
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(334, 678);
+            ClientSize = new Size(334, 710);
             Controls.Add(audioBackendPanel);
+            Controls.Add(buttonArrayMicrophones);
+            Controls.Add(labelArrayMicrophones);
             Controls.Add(buttonClearSplCalibration);
             Controls.Add(buttonSplCalibration);
             Controls.Add(labelSplCalibration);
@@ -598,6 +624,8 @@
         private Button buttonClearCalibration0;
         private Label labelCalibrationExtra;
         private Button buttonCalibrationExtra;
+        private Label labelArrayMicrophones;
+        private Button buttonArrayMicrophones;
         private Label labelSplCalibration;
         private Button buttonSplCalibration;
         private Button buttonClearSplCalibration;

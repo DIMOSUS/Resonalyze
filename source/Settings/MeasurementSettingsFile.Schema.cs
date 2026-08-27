@@ -68,7 +68,16 @@ internal sealed partial class MeasurementSettingsFile
         // arranged them.
         public List<MicrophoneCalibrationDefinition> AdditionalMicrophoneCalibrations
         { get; set; } = [];
+        // The array microphones, per backend: a channel number means a different
+        // input on each, so switching backend must not point them at whatever
+        // input happens to share the number.
+        public List<ArrayMicrophoneDefinition> WaveArrayMicrophones { get; set; } = [];
+        public List<ArrayMicrophoneDefinition> AsioArrayMicrophones { get; set; } = [];
         public SplCalibration? SplCalibration { get; set; }
+
+        /// <summary>The array configured for the backend in use.</summary>
+        public List<ArrayMicrophoneDefinition> ArrayMicrophones =>
+            AudioBackend == AudioBackend.Asio ? AsioArrayMicrophones : WaveArrayMicrophones;
 
         /// <summary>
         /// Carries the microphone calibrations over from <paramref name="previous"/>.
@@ -83,6 +92,15 @@ internal sealed partial class MeasurementSettingsFile
             ArgumentNullException.ThrowIfNull(previous);
             MicrophoneCalibration0DegreesPath = previous.MicrophoneCalibration0DegreesPath;
             AdditionalMicrophoneCalibrations = previous.AdditionalMicrophoneCalibrations
+                .Select(definition => definition.Clone())
+                .ToList();
+            // Same reason: the measurement knows which CHANNELS its array was on
+            // but nothing about the calibrations chosen for them or what the user
+            // named the positions, so a capture would drop both.
+            WaveArrayMicrophones = previous.WaveArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            AsioArrayMicrophones = previous.AsioArrayMicrophones
                 .Select(definition => definition.Clone())
                 .ToList();
         }
@@ -170,6 +188,40 @@ internal sealed partial class MeasurementSettingsFile
         /// without committing it — importing a recording resolves the sweep from it
         /// first and only applies it once the analysis has succeeded.
         /// </summary>
+        /// <summary>
+        /// The array channels a stored configuration can actually be run with.
+        /// </summary>
+        /// <remarks>
+        /// A settings FILE is not a dialog: it can hold a channel that collided
+        /// with the measurement inputs after the user moved the microphone or the
+        /// loopback, or a duplicate left by hand-editing, and the measurement
+        /// layer refuses both outright. Refusing here would make the application
+        /// unable to start on its own saved settings, so a stored array is
+        /// filtered instead — the dialog is where a collision is reported, and it
+        /// prevents one being made in the first place.
+        /// </remarks>
+        private static IReadOnlyList<int> ResolveArrayChannels(
+            List<ArrayMicrophoneDefinition> microphones,
+            int microphoneChannel,
+            int? loopbackChannel)
+        {
+            var channels = new List<int>(microphones.Count);
+            foreach (ArrayMicrophoneDefinition microphone in microphones)
+            {
+                if (microphone.ChannelOffset < 0 ||
+                    microphone.ChannelOffset == microphoneChannel ||
+                    microphone.ChannelOffset == loopbackChannel ||
+                    channels.Contains(microphone.ChannelOffset))
+                {
+                    continue;
+                }
+
+                channels.Add(microphone.ChannelOffset);
+            }
+
+            return channels;
+        }
+
         public SweepMeasurementConfiguration BuildConfiguration()
         {
             AudioBackend backend = NormalizeAudioBackend(AudioBackend, AsioDriverName);
@@ -231,7 +283,26 @@ internal sealed partial class MeasurementSettingsFile
                     WasapiRenderEndpointId: renderEndpointId,
                     WasapiCaptureEndpointName: WasapiCaptureEndpointName,
                     WasapiRenderEndpointName: WasapiRenderEndpointName,
-                    WasapiBufferMilliseconds: Clamp(WasapiBufferMilliseconds, 10, 100)),
+                    WasapiBufferMilliseconds: Clamp(WasapiBufferMilliseconds, 10, 100),
+                    WaveArrayInputChannelOffsets: ResolveArrayChannels(
+                        WaveArrayMicrophones,
+                        backend.IsWasapi()
+                            ? Math.Max(0, WaveInputChannelOffset)
+                            : NormalizeWaveChannelOffset(WaveInputChannelOffset),
+                        backend.IsWasapi()
+                            ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
+                            : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset)),
+                    AsioArrayInputChannelOffsets: ResolveArrayChannels(
+                        AsioArrayMicrophones,
+                        NormalizeAsioChannelOffset(
+                            AsioDriverName,
+                            sampleRate,
+                            AsioInputChannelOffset,
+                            input: true),
+                        NormalizeOptionalAsioChannelOffset(
+                            AsioDriverName,
+                            sampleRate,
+                            AsioLoopbackInputChannelOffset))),
                 new SweepAveragingConfiguration(
                     Clamp(AverageRunCount, 1, 64),
                     ConfirmEachAverageRun),

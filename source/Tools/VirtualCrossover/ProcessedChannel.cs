@@ -171,31 +171,12 @@ internal static class ProcessedChannels
         IReadOnlyList<SignalPoint> curve,
         IReadOnlyList<ProcessedChannel> channels)
     {
-        ArgumentNullException.ThrowIfNull(curve);
         ArgumentNullException.ThrowIfNull(channels);
-        if (channels.Count == 0)
-        {
-            return curve;
-        }
-
-        var masked = new List<SignalPoint>(curve.Count);
-        foreach (SignalPoint point in curve)
-        {
-            bool measured = false;
-            foreach (ProcessedChannel channel in channels)
-            {
-                MeasuredBand band = channel.MeasuredBand;
-                if (point.X >= band.LowEdgeHz && point.X <= band.HighEdgeHz)
-                {
-                    measured = true;
-                    break;
-                }
-            }
-
-            masked.Add(measured ? point : new SignalPoint(point.X, double.NaN));
-        }
-
-        return masked;
+        return channels.Count == 0
+            ? curve
+            : MeasuredBand.MaskUnmeasured(
+                curve,
+                channels.Select(channel => channel.MeasuredBand).ToList());
     }
 
     // The frequency window the metric and Auto delay operate in: around the

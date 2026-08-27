@@ -1,3 +1,5 @@
+using Resonalyze.Dsp;
+
 namespace Resonalyze;
 
 /// <summary>
@@ -38,6 +40,51 @@ public readonly record struct MeasuredBand(double LowestHz, double HighestHz)
         HighestHz > 0.0 && double.IsFinite(HighestHz)
             ? HighestHz
             : double.PositiveInfinity;
+
+    /// <summary>Whether this band carries a measurement at that frequency.</summary>
+    public bool Contains(double frequencyHz) =>
+        frequencyHz >= LowEdgeHz && frequencyHz <= HighEdgeHz;
+
+    /// <summary>
+    /// Breaks a curve at every frequency NONE of these bands covers — including one
+    /// that falls BETWEEN two of them rather than outside both.
+    /// </summary>
+    /// <remarks>
+    /// A curve summed from several responses plays wherever any of them measured, so
+    /// the hull of their bands describes its ends and nothing describes a hole in the
+    /// middle: two sweeps that do not overlap leave a range where every contributor is
+    /// zero at once, and a windowed spectrum of that is the analysis window and
+    /// nothing else. Applied to the finished curve, like every other break.
+    /// </remarks>
+    public static IReadOnlyList<SignalPoint> MaskUnmeasured(
+        IReadOnlyList<SignalPoint> curve,
+        IReadOnlyList<MeasuredBand> bands)
+    {
+        ArgumentNullException.ThrowIfNull(curve);
+        ArgumentNullException.ThrowIfNull(bands);
+        if (bands.Count == 0)
+        {
+            return curve;
+        }
+
+        var masked = new List<SignalPoint>(curve.Count);
+        foreach (SignalPoint point in curve)
+        {
+            bool measured = false;
+            foreach (MeasuredBand band in bands)
+            {
+                if (band.Contains(point.X))
+                {
+                    measured = true;
+                    break;
+                }
+            }
+
+            masked.Add(measured ? point : new SignalPoint(point.X, double.NaN));
+        }
+
+        return masked;
+    }
 
     /// <summary>
     /// What a measurement carries, given the protective high-pass divided back out

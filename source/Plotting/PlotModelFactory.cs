@@ -2724,11 +2724,23 @@ internal sealed class PlotModelFactory
                 length - 1));
 
         FrequencyResponseOptions curveOptions = options ?? frequencyResponseOptions;
-        return DataHelper.GetPrimarySpectrum(
+        AnalysisCurve curve = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(sum, peakIndex, expSweepMeasurement.SampleRate),
             curveOptions,
             GetCalibration(curveOptions),
             anchorIndex);
+        // A sum plays wherever EITHER response measured, and nowhere else. The view
+        // above carries no band of its own — it is a record neither measurement made
+        // — so the break has to be applied here, from the two that did: below both
+        // sweeps every contributor is zero at once, and a windowed spectrum of that
+        // draws the analysis window as a rolloff. Exactly the curve this whole idea
+        // exists to keep off the plot, in the one place that was still drawing it.
+        return curve with
+        {
+            Points = MeasuredBand.MaskUnmeasured(
+                curve.Points,
+                [measurementContext.MeasuredBand, compare.Band])
+        };
     }
 
     private static Complex SampleAt(Complex[] source, int index) =>

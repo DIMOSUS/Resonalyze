@@ -728,6 +728,64 @@ public sealed class PlotModelFactoryTests
     }
 
     [Fact]
+    public void ComplexSum_StopsWhereNeitherResponseMeasured()
+    {
+        // The sum is a record neither measurement made, so it carries no band of its
+        // own — and it was therefore the one curve on the plot still drawing the
+        // analysis window's leakage below a band sweep. Both contributors stop at
+        // 500 Hz here; the sum has to stop with them, and go on wherever EITHER of
+        // them plays.
+        // A band sweep on each side, and different ones: the main from 800 Hz up, the
+        // compared one from 500 to 8 kHz. Under 500 neither played.
+        var impulse = new Complex[2048];
+        impulse[64] = Complex.One;
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            lowFrequencyHz: 800,
+            highFrequencyHz: 20_000,
+            sampleRate: 44_100,
+            bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: impulse,
+            sweepDeconvolutionPeakIndex: 64,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: impulse,
+            transferPeakIndex: 64,
+            achievedLowFrequencyHz: 800,
+            achievedHighFrequencyHz: 20_000);
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference",
+                44_100,
+                compareIr,
+                64,
+                Band: new MeasuredBand(500, 8_000)));
+
+        AnalysisCurve? sum = factory.TryBuildComplexSumCurve();
+        Assert.NotNull(sum);
+
+        Assert.All(
+            sum!.Points.Where(point => point.X < 480),
+            point => Assert.True(
+                double.IsNaN(point.Y),
+                $"{point.X:0} Hz is below every contributor and must be a break"));
+        // And it goes on wherever EITHER of them plays: 600 Hz is the compared
+        // measurement's alone, 10 kHz the main's alone.
+        Assert.Contains(
+            sum.Points,
+            point => point.X is > 550 and < 700 && double.IsFinite(point.Y));
+        Assert.Contains(
+            sum.Points,
+            point => point.X is > 9_000 and < 12_000 && double.IsFinite(point.Y));
+    }
+
+    [Fact]
     public void ComplexSum_OfTwoIdenticalTransferResponses_AddsSixDecibels()
     {
         using var measurement = CreateTransferMeasurement();

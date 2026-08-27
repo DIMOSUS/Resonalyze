@@ -76,6 +76,10 @@ internal sealed partial class MeasurementSettingsFile
         public SplCalibration? SplCalibration { get; set; }
 
         /// <summary>The array configured for the backend in use.</summary>
+        // Read-only, so serializing it writes a third copy of one of the two lists
+        // above that nothing can read back — noise in the file, and a reader's
+        // invitation to edit the copy that is ignored.
+        [JsonIgnore]
         public List<ArrayMicrophoneDefinition> ArrayMicrophones =>
             AudioBackend == AudioBackend.Asio ? AsioArrayMicrophones : WaveArrayMicrophones;
 

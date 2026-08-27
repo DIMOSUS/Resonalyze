@@ -692,6 +692,17 @@ namespace Resonalyze.Options
             settings.ProtectiveHighPassFrequencyHz = protectiveHighPass.FrequencyHz;
             settings.ProtectiveHighPassSlopeDbPerOctave =
                 protectiveHighPass.SlopeDbPerOctave;
+            // The array belongs here as much as the sweep does: it is part of the
+            // capture routing, so an edit has to reach the settings on the same
+            // apply that reopens the device with the new channels. Left out, the
+            // panel showed the new count while the file kept the old list and the
+            // next open read it back empty.
+            settings.WaveArrayMicrophones = waveArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            settings.AsioArrayMicrophones = asioArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
         }
 
         // The duration field holds a per-octave pace; expand it to the total sweep
@@ -861,6 +872,11 @@ namespace Resonalyze.Options
             }
 
             UpdateArrayMicrophoneButton();
+            // Every other control on this panel applies on the fly; a dialog is no
+            // different. Without this the edit sat in the field until some unrelated
+            // control happened to raise the event, and closing the panel first threw
+            // it away.
+            RaiseSweepSettingsChanged();
         }
 
         private void UpdateArrayMicrophoneButton()

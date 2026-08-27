@@ -3806,17 +3806,38 @@ public partial class VirtualCrossoverPanel : UserControl
                 : "Every capture in one set is taken with one analyzer recipe at one " +
                     "input gain, so each channel should sit the same distance from " +
                     "its impulse response. These do not:\r\n\r\n");
-        // Positional: ChannelOffsetsDb[i] belongs to processed[i], null included. It
-        // was packed once, and a single channel with nothing to compare then shifted
-        // every figure below it onto the wrong driver's name.
-        for (int i = 0; i < hybrid.ChannelOffsetsDb.Count && i < processed.Count; i++)
+        // The whole SET, muted channels included, because that is what the spread
+        // above was measured over — a list of only the drawn ones could say "these do
+        // not agree" above channels that all do, with the outlier hidden behind a
+        // mute button.
+        if (hybrid.SetDatumsDb.Count > 0)
         {
-            VirtualCrossoverChannel channel = processed[i].Channel;
-            string figure = hybrid.ChannelOffsetsDb[i] is { } offset
-                ? $"{offset:+0.0;-0.0} dB"
-                : "no overlap to compare";
-            lines.Append(
-                $"    {channel.Name} {channel.Settings.DisplayName}    {figure}\r\n");
+            var drawn = processed.Select(item => item.Channel).ToHashSet();
+            foreach (SetDatum entry in hybrid.SetDatumsDb)
+            {
+                string figure = entry.DatumDb is { } datum
+                    ? $"{datum:+0.0;-0.0} dB"
+                    : "no overlap to compare";
+                string muted = drawn.Contains(entry.Channel) ? string.Empty : "  (muted)";
+                lines.Append(
+                    $"    {entry.Channel.Name} {entry.Channel.Settings.DisplayName}" +
+                    $"    {figure}{muted}\r\n");
+            }
+        }
+        else
+        {
+            // Positional: ChannelOffsetsDb[i] belongs to processed[i], null included.
+            // It was packed once, and a single channel with nothing to compare then
+            // shifted every figure below it onto the wrong driver's name.
+            for (int i = 0; i < hybrid.ChannelOffsetsDb.Count && i < processed.Count; i++)
+            {
+                VirtualCrossoverChannel channel = processed[i].Channel;
+                string figure = hybrid.ChannelOffsetsDb[i] is { } offset
+                    ? $"{offset:+0.0;-0.0} dB"
+                    : "no overlap to compare";
+                lines.Append(
+                    $"    {channel.Name} {channel.Settings.DisplayName}    {figure}\r\n");
+            }
         }
 
         lines.Append(
@@ -5819,7 +5840,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 rightSide,
                 magnitudeGate.SmoothingInverseOctaves) is not { } hybrid)
         {
-            // Fewer than two channels, or a set short of a capture: no offset can be
+            // No channels at all, or a set short of a capture: no offset can be
             // resolved, and the honest response is the only one that can be handed
             // over at a height the Target Level still describes.
             return (null, 0.0);

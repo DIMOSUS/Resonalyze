@@ -1506,7 +1506,10 @@ and polarity are absent for the reason they are absent from any magnitude: they
 are pure phase, so a hybrid channel curve is tonal balance alone. One offset for
 the set, never one per channel, because the captures were taken in a single
 analyzer session at a fixed gain: their relative levels are honest measurements,
-and normalizing each channel separately would throw exactly that away.
+and normalizing each channel separately would throw exactly that away. The set is
+every channel of the side that carries a capture — **muting one does not move the
+curves still drawn**, because a mute says which curves to show and not which
+measurements the set is made of.
 
 Both **Sums** follow the channels drawn above them, and they are built as **complex**
 sums: each channel's gated spectrum is rescaled, bin by bin, to the level its spatial

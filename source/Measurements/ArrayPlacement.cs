@@ -107,23 +107,16 @@ internal sealed record ArrayPlacement(
             rawPlaced.Add(uncalibrated);
         }
 
-        var calibratedPlaced = new List<double[]>(microphones.Count);
-        foreach (double[]? curve in placed.TrimmedCurvesDb)
-        {
-            if (curve != null)
-            {
-                calibratedPlaced.Add(curve);
-            }
-        }
-
+        // rawPlaced is never empty: the anchor's own trim is zero rather than null,
+        // so at least one position always places.
         return new ArrayPlacement(
             placed.TrimmedCurvesDb,
             raw,
             placed.TrimsDb,
             placed.AverageDb,
-            rawPlaced.Count == 0 ? placed.AverageDb : SpatialAverage.RmsAverageDb(rawPlaced),
+            SpatialAverage.RmsAverageDb(rawPlaced),
             placed.SpreadDb,
-            rawPlaced.Count == 0 ? placed.SpreadDb : SpatialAverage.SpreadDb(rawPlaced));
+            SpatialAverage.SpreadDb(rawPlaced));
     }
 
     /// <summary>

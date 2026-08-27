@@ -33,6 +33,11 @@ namespace Resonalyze;
 /// names the channel beside its figure, and a packed list silently shifted those
 /// names onto the wrong drivers as soon as one channel had nothing to say.
 /// </param>
+/// <summary>One channel of the set and how far its capture sits from its response.</summary>
+internal readonly record struct SetDatum(
+    VirtualCrossoverChannel Channel,
+    double? DatumDb);
+
 internal sealed record HybridMagnitudes(
     IReadOnlyList<IReadOnlyList<SignalPoint>> Channels,
     IReadOnlyList<IReadOnlyList<SignalPoint>> UnsmoothedChannels,
@@ -78,7 +83,9 @@ internal sealed record HybridMagnitudes(
     {
         get
         {
-            List<double> known = (SetDatumsDb.Count > 0 ? SetDatumsDb : ChannelOffsetsDb)
+            List<double> known = (SetDatumsDb.Count > 0
+                    ? SetDatumsDb.Select(entry => entry.DatumDb)
+                    : ChannelOffsetsDb)
                 .Where(offset => offset.HasValue)
                 .Select(offset => offset!.Value)
                 .ToList();
@@ -98,7 +105,7 @@ internal sealed record HybridMagnitudes(
     /// warning appear and vanish with the mute buttons, and moved every curve on the
     /// plot while it did.
     /// </remarks>
-    public IReadOnlyList<double?> SetDatumsDb { get; init; } = [];
+    public IReadOnlyList<SetDatum> SetDatumsDb { get; init; } = [];
 }
 
 // Attaching a spatially averaged magnitude to a channel, and deciding whether the
@@ -598,7 +605,7 @@ public partial class VirtualCrossoverPanel
         // to be lowered by it: the set's curves are held without the offset and it is
         // added on the way to the plot, so a curve already on the impulse responses'
         // axis must arrive pre-subtracted to land back where it started.
-        (double?[] offsets, double setOffset, IReadOnlyList<double?> setDatums) =
+        (double?[] offsets, double setOffset, IReadOnlyList<SetDatum> setDatums) =
             ResolveRawHybridOffsetsDb(processed, rightSide);
 
         var hybrids = new List<IReadOnlyList<SignalPoint>>(processed.Count);
@@ -716,16 +723,25 @@ public partial class VirtualCrossoverPanel
     /// on which channels happened to be listening.
     /// </para>
     /// </remarks>
-    private (double?[] PerChannel, double SetOffsetDb, IReadOnlyList<double?> SetDatums)
+    private (double?[] PerChannel, double SetOffsetDb, IReadOnlyList<SetDatum> SetDatums)
         ResolveRawHybridOffsetsDb(
             IReadOnlyList<ProcessedChannel> processed,
             bool rightSide)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.HybridOffsets");
         var datums = new Dictionary<VirtualCrossoverChannel, double?>();
+        var setDatums = new List<SetDatum>();
         foreach (VirtualCrossoverChannel channel in AllChannelsWith(processed))
         {
-            datums[channel] = ResolveRawDatumDb(channel, rightSide);
+            double? datum = ResolveRawDatumDb(channel, rightSide);
+            datums[channel] = datum;
+            // A channel with no capture at all is not part of this set and must not
+            // appear in what the warning lists; one WITH a capture it cannot compare
+            // stays, as a named hole.
+            if (channel.SideState(rightSide).SpatialAverageFor(SpatialAverageMode) != null)
+            {
+                setDatums.Add(new SetDatum(channel, datum));
+            }
         }
 
         var perChannel = new double?[processed.Count];
@@ -736,10 +752,9 @@ public partial class VirtualCrossoverPanel
                 : null;
         }
 
-        List<double?> setDatums = datums.Values.ToList();
         List<double> known = setDatums
-            .Where(datum => datum.HasValue)
-            .Select(datum => datum!.Value)
+            .Where(entry => entry.DatumDb.HasValue)
+            .Select(entry => entry.DatumDb!.Value)
             .ToList();
         return (perChannel, known.Count == 0 ? 0.0 : Median(known), setDatums);
     }

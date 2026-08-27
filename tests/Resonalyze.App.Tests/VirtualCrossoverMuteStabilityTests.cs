@@ -132,6 +132,41 @@ public sealed class VirtualCrossoverMuteStabilityTests
     }
 
     [Fact]
+    public void TheSetTheWarningJudgesIsTheWholeSideMutedChannelsIncluded()
+    {
+        // The spread the set warning reports is measured over every channel carrying
+        // a capture, so the list under it has to be the same set. A list of only the
+        // drawn channels could say "these do not agree" above channels that all do,
+        // with the outlier hidden behind a mute button.
+        VirtualCrossoverChannel[] channels =
+        [
+            Channel("A", -30.0),
+            Channel("B", -34.0),
+            Channel("C", -41.0)
+        ];
+        object panel = Panel(channels);
+
+        object result = typeof(VirtualCrossoverPanel)
+            .GetMethod("ResolveRawHybridOffsetsDb", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(panel, [
+                new List<ProcessedChannel>
+                {
+                    new(
+                        channels[2],
+                        channels[2].SideState(false).TransferImpulseResponse!,
+                        64,
+                        SampleRate,
+                        OxyColors.White)
+                },
+                false])!;
+        var set = (IReadOnlyList<SetDatum>)result.GetType().GetField("Item3")!.GetValue(result)!;
+
+        Assert.Equal(3, set.Count);
+        Assert.Equal(["A", "B", "C"], set.Select(entry => entry.Channel.Name));
+        Assert.All(set, entry => Assert.True(entry.DatumDb.HasValue));
+    }
+
+    [Fact]
     public void TheDatumsThemselvesStillDifferPerChannel()
     {
         // The guard above would pass trivially if every channel read the same, so the

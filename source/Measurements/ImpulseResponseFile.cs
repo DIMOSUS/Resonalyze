@@ -989,7 +989,37 @@ public sealed class ImpulseResponseFile
             };
         }
 
-        internal IReadOnlyList<ArrayMicrophoneCurve> ToCurves() =>
+        /// <summary>
+        /// The stored curves, or none when they are not on the grid this build reads.
+        /// </summary>
+        /// <remarks>
+        /// The endpoints travel with the file for exactly this check, and it was the
+        /// one thing missing: a file whose grid ran from somewhere else would have
+        /// been read band for band on this one, shifting every position in FREQUENCY
+        /// with nothing to show for it. The band COUNT is checked further down, where
+        /// the curves are placed; the ends have to be checked here, because by then
+        /// they are gone.
+        /// <para>
+        /// None rather than a refusal to open the file: the impulse response beside
+        /// the array is perfectly readable, and the tools that wanted the array say
+        /// out loud when a channel is drawn from its point measurement instead.
+        /// </para>
+        /// </remarks>
+        internal IReadOnlyList<ArrayMicrophoneCurve> ToCurves()
+        {
+            IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
+            return SameFrequency(GridStartHz, grid[0]) && SameFrequency(GridStopHz, grid[^1])
+                ? BuildCurves()
+                : [];
+        }
+
+        // The two constructions of one logarithmic grid differ in their last ULPs
+        // (20 against 20.000000000000004), so this asks whether they are the same
+        // grid rather than the same double.
+        private static bool SameFrequency(double stored, double expected) =>
+            Math.Abs(stored - expected) <= 1e-6 * expected;
+
+        private IReadOnlyList<ArrayMicrophoneCurve> BuildCurves() =>
             Microphones
                 .Select(microphone => new ArrayMicrophoneCurve(
                     microphone.ChannelOffset,

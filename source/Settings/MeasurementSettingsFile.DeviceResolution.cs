@@ -73,6 +73,30 @@ internal sealed partial class MeasurementSettingsFile
         }
     }
 
+    /// <summary>
+    /// How many input channels a WASAPI capture endpoint exposes, or zero when it
+    /// cannot be asked right now.
+    /// </summary>
+    private static int WasapiCaptureChannelCount(string? captureEndpointId)
+    {
+        if (string.IsNullOrWhiteSpace(captureEndpointId))
+        {
+            return 0;
+        }
+
+        try
+        {
+            using var service = new WindowsAudioEndpointService();
+            return service.GetCaptureEndpoints()
+                .FirstOrDefault(endpoint => endpoint.Id == captureEndpointId)
+                ?.ChannelCount ?? 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     private static int NormalizeWasapiSampleRate(
         AudioBackend backend,
         string? captureEndpointId,

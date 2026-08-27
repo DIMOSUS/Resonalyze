@@ -207,7 +207,8 @@ internal sealed partial class MeasurementSettingsFile
         private static IReadOnlyList<int> ResolveArrayChannels(
             List<ArrayMicrophoneDefinition> microphones,
             int microphoneChannel,
-            int? loopbackChannel)
+            int? loopbackChannel,
+            Func<int, bool> reachable)
         {
             var channels = new List<int>(microphones.Count);
             foreach (ArrayMicrophoneDefinition microphone in microphones)
@@ -215,7 +216,15 @@ internal sealed partial class MeasurementSettingsFile
                 if (microphone.ChannelOffset < 0 ||
                     microphone.ChannelOffset == microphoneChannel ||
                     microphone.ChannelOffset == loopbackChannel ||
-                    channels.Contains(microphone.ChannelOffset))
+                    channels.Contains(microphone.ChannelOffset) ||
+                    // And it has to exist on the device now selected. The array is
+                    // stored per BACKEND, not per interface, so an eight-input card
+                    // swapped for a two-input one leaves inputs 3 to 8 behind — and
+                    // the capture window is opened wide enough to span every array
+                    // channel, so those would be asked of a driver that has no such
+                    // inputs. The measurement microphone and the loopback are already
+                    // normalized against the device; these were not.
+                    !reachable(microphone.ChannelOffset))
                 {
                     continue;
                 }
@@ -224,6 +233,42 @@ internal sealed partial class MeasurementSettingsFile
             }
 
             return channels;
+        }
+
+        /// <summary>
+        /// Whether an input offset exists on the device this configuration selects.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately permissive when the device cannot be asked: a driver that is
+        /// unplugged right now reports nothing, and silently emptying a configured
+        /// array over that would lose the user's setup rather than protect it. The
+        /// session refuses an unreachable channel outright when it tries to open, and
+        /// that refusal is the honest one.
+        /// </remarks>
+        private static Func<int, bool> ReachableInput(
+            AudioBackend backend,
+            string? asioDriverName,
+            int sampleRate,
+            string? captureEndpointId)
+        {
+            if (backend == AudioBackend.Asio)
+            {
+                IReadOnlyList<AsioChannelInfo> inputs = AsioDeviceCatalog
+                    .GetDriverInfo(NormalizeAsioDriverName(asioDriverName), sampleRate)
+                    .InputChannels;
+                return inputs.Count == 0
+                    ? _ => true
+                    : offset => inputs.Any(channel => channel.Offset == offset);
+            }
+
+            if (backend.IsWasapi())
+            {
+                int count = WasapiCaptureChannelCount(captureEndpointId);
+                return count <= 0 ? _ => true : offset => offset < count;
+            }
+
+            // MME opens a stereo record and nothing wider.
+            return offset => offset < 2;
         }
 
         public SweepMeasurementConfiguration BuildConfiguration()
@@ -295,7 +340,8 @@ internal sealed partial class MeasurementSettingsFile
                             : NormalizeWaveChannelOffset(WaveInputChannelOffset),
                         backend.IsWasapi()
                             ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
-                            : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset)),
+                            : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
+                        ReachableInput(backend, AsioDriverName, sampleRate, captureEndpointId)),
                     AsioArrayInputChannelOffsets: ResolveArrayChannels(
                         AsioArrayMicrophones,
                         NormalizeAsioChannelOffset(
@@ -306,7 +352,9 @@ internal sealed partial class MeasurementSettingsFile
                         NormalizeOptionalAsioChannelOffset(
                             AsioDriverName,
                             sampleRate,
-                            AsioLoopbackInputChannelOffset))),
+                            AsioLoopbackInputChannelOffset),
+                        ReachableInput(
+                            AudioBackend.Asio, AsioDriverName, sampleRate, captureEndpointId))),
                 new SweepAveragingConfiguration(
                     Clamp(AverageRunCount, 1, 64),
                     ConfirmEachAverageRun),

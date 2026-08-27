@@ -174,18 +174,26 @@ public sealed class ArrayCaptureDocumentTests
     }
 
     [Fact]
-    public void ASetOfArraysIsRefusedWhenTheProtectiveHighPassDiffers()
+    public void ASetOfArraysAcceptsChannelsFilteredDifferently()
     {
+        // A protective high-pass describes the CHANNEL's own hardware path: a tweeter
+        // has one and a subwoofer does not, which is the ordinary four-way car. Each
+        // array has its own divided back out per position before anything is
+        // averaged, so two channels filtered differently are on the same footing
+        // afterwards — and where the compensation could not reach, the curve carries
+        // NaN and the channel's measured band says so.
+        //
+        // This test used to assert the opposite, with a comment explaining why. The
+        // rule it pinned refused an ordinary set for the one difference that was
+        // physically correct, and the SAME lesson is written a hundred lines above it
+        // for moving-microphone captures, where comparing the filter had already been
+        // tried and reverted.
         LiveCaptureDocument plain = Create(Pair(70.0));
         LiveCaptureDocument filtered = Create(
             Pair(70.0),
             new ProtectiveHighPassConfiguration(ProtectiveHighPassKind.Butterworth, 2_000, 24));
 
-        // One carries a filter the other had divided out: a tweeter would sit a
-        // whole filter slope from a midrange that never had one.
-        LiveCaptureSetVerdict verdict = LiveCaptureDocument.JudgeSet([plain, filtered]);
-        Assert.False(verdict.Coherent);
-        Assert.Contains("protective high-pass", verdict.Reason);
+        Assert.True(LiveCaptureDocument.JudgeSet([plain, filtered]).Coherent);
     }
 
     [Fact]

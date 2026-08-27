@@ -260,6 +260,88 @@ namespace Resonalyze.Dsp
         }
 
         /// <summary>
+        /// The gated magnitude of a SUM of measured channels, at two smoothing widths,
+        /// with each channel contributing only where it measured anything.
+        /// </summary>
+        /// <remarks>
+        /// Summing the impulse responses and gating the total once is the same thing
+        /// arithmetically — one shared window makes the transform linear, so the gated
+        /// sum IS the sum of the gated spectra — but it is not the same thing
+        /// honestly. A channel the sweep never excited below its corner carries an
+        /// exactly zero spectrum there, and the window smears its in-band energy
+        /// across the gap: measured on two brick-walled bands an octave apart, the
+        /// total read 1.4 dB above the only channel that measured at 900 Hz and 2.5 dB
+        /// above it at 990 Hz, falling to nothing an octave away. That is a summation
+        /// GAIN the loudspeakers never produced, drawn exactly where a crossover is
+        /// read most carefully — and the per-channel curves cannot show it, because
+        /// each of them is broken there.
+        /// <para>
+        /// So each channel is gated first, its own unmeasured bins are cleared, and
+        /// the phasors are added. Where NO channel measured the total comes out zero
+        /// rather than as a level; the caller breaks those frequencies, which it must
+        /// do anyway for a hole its channels' band edges cannot express.
+        /// </para>
+        /// </remarks>
+        public static (AnalysisCurve Display, AnalysisCurve Unsmoothed)
+            GetGatedMeasuredMagnitudeSumPair(
+                IReadOnlyList<IImpulseMeasurement> channels,
+                PhaseAnalysisSettings settings,
+                CalibrationFile? calibration,
+                double smoothingInverseOctaves)
+        {
+            ArgumentNullException.ThrowIfNull(channels);
+            if (channels.Count == 0)
+            {
+                AnalysisCurve empty = new(string.Empty, []);
+                return (empty, empty);
+            }
+
+            Complex[]? total = null;
+            int sampleRate = 0;
+            foreach (IImpulseMeasurement measurement in channels)
+            {
+                Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
+                total ??= new Complex[spectrum.Length];
+                sampleRate = measurement.SampleRate;
+                double lowest = measurement.LowestMeasuredFrequencyHz;
+                double highest = measurement.HighestMeasuredFrequencyHz;
+                int usable = Math.Min(total.Length, spectrum.Length);
+                for (int i = 1; i < usable / 2; i++)
+                {
+                    double frequency = i * (sampleRate / (double)spectrum.Length);
+                    if ((lowest > 0.0 && frequency < lowest) ||
+                        (double.IsFinite(highest) && highest > 0.0 && frequency > highest))
+                    {
+                        continue;
+                    }
+
+                    total[i] += spectrum[i];
+                }
+            }
+
+            if (total == null || sampleRate <= 0)
+            {
+                AnalysisCurve empty = new(string.Empty, []);
+                return (empty, empty);
+            }
+
+            var bins = new List<SignalPoint>(total.Length / 2);
+            for (int i = 1; i < total.Length / 2; i++)
+            {
+                bins.Add(new SignalPoint(
+                    i * (sampleRate / (double)total.Length),
+                    AmplitudeToDecibels(total[i].Magnitude)));
+            }
+
+            AnalysisCurve unsmoothed = ResampleGatedMagnitude(bins, calibration, 0);
+            return (
+                smoothingInverseOctaves == 0
+                    ? unsmoothed
+                    : ResampleGatedMagnitude(bins, calibration, smoothingInverseOctaves),
+                unsmoothed);
+        }
+
+        /// <summary>
         /// The summed magnitude of a channel set whose MAGNITUDE is taken from one
         /// measurement and whose PHASE is taken from another: each channel's gated
         /// complex spectrum is rescaled, bin by bin, to the level

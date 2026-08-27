@@ -923,12 +923,17 @@ namespace Resonalyze.Options
             int? loopbackChannel = asio
                 ? GetSelectedAsioLoopbackInputChannelOffset()
                 : GetSelectedWaveLoopbackChannelOffset();
+            // And the inputs this device actually has: the array is stored per
+            // BACKEND, so an interface swapped for a narrower one leaves channels
+            // behind that nothing can record.
+            var reachable = GetArrayInputChannels().Channels.ToHashSet();
             var taken = new HashSet<int>();
             foreach (ArrayMicrophoneDefinition microphone in SelectedArrayMicrophones)
             {
                 if (microphone.ChannelOffset >= 0 &&
                     microphone.ChannelOffset != microphoneChannel &&
-                    microphone.ChannelOffset != loopbackChannel)
+                    microphone.ChannelOffset != loopbackChannel &&
+                    (reachable.Count == 0 || reachable.Contains(microphone.ChannelOffset)))
                 {
                     taken.Add(microphone.ChannelOffset);
                 }

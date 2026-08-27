@@ -471,36 +471,20 @@ public sealed class LiveCaptureDocument
     /// responses are referenced to, so channels measured minutes or days apart are
     /// comparable by construction.
     /// <para>
-    /// What remains is the protective high-pass. It is divided out of both families
-    /// with one model, so two channels compensated for different filters are not one
-    /// set: a tweeter would sit a whole filter slope from a midrange that never had
-    /// one.
+    /// Nothing remains, and the protective high-pass in particular is NOT compared —
+    /// the same rule <see cref="LiveCaptureRecipe.MatchesSetOf"/> states for the other
+    /// family, learned the same way. It describes the CHANNEL's own hardware path, a
+    /// tweeter has one and a subwoofer does not, and each array has its own divided
+    /// back out per position before anything is averaged. Two channels filtered
+    /// differently are on the same footing afterwards; where the compensation could
+    /// not reach, the curve carries NaN and the channel's
+    /// <see cref="MeasuredBand"/> says so. Comparing it refused an ordinary four-way
+    /// set for the one difference that was physically correct.
     /// </para>
     /// </remarks>
     private static LiveCaptureSetVerdict JudgeArraySet(
         IReadOnlyList<LiveCaptureDocument> captures,
-        LiveCaptureDocument first)
-    {
-        foreach (LiveCaptureDocument capture in captures)
-        {
-            if (capture.Recipe.ProtectiveHighPassKind == first.Recipe.ProtectiveHighPassKind &&
-                (capture.Recipe.ProtectiveHighPassKind == ProtectiveHighPassKind.Off ||
-                    (capture.Recipe.ProtectiveHighPassFrequencyHz ==
-                            first.Recipe.ProtectiveHighPassFrequencyHz &&
-                        capture.Recipe.ProtectiveHighPassSlopeDbPerOctave ==
-                            first.Recipe.ProtectiveHighPassSlopeDbPerOctave)))
-            {
-                continue;
-            }
-
-            return LiveCaptureSetVerdict.No(
-                "The channels were measured with different protective high-pass " +
-                "settings, so one carries a filter another had divided out. " +
-                "Re-measure them with the same filter configured.");
-        }
-
-        return LiveCaptureSetVerdict.Ok;
-    }
+        LiveCaptureDocument first) => LiveCaptureSetVerdict.Ok;
 
     public void Save(string path)
     {

@@ -204,7 +204,8 @@ public partial class VirtualCrossoverPanel : UserControl
             processingCoordinator,
             BuildMagnitudeCurve,
             CalibrationFor,
-            CalibrationForSum);
+            CalibrationForSum,
+            BuildMeasuredSumCurve);
         acousticPlot = new VirtualCrossoverAcousticPlot(
             mainPlotView, NoSourcesHint, CurrentAcousticView());
         dspChainPlot = new VirtualCrossoverDspChainPlot(dspPlotView, CurrentDspPlotMode());
@@ -4985,16 +4986,13 @@ public partial class VirtualCrossoverPanel : UserControl
     private AnalysisCurve BuildOppositeMagnitudeCurve(VirtualCrossoverSideSum side)
     {
         MagnitudeGateSnapshot snapshot = magnitudeGate;
-        return BuildGatedMagnitudeCurve(
+        return BuildMeasuredSumCurve(
             snapshot,
-            side.ImpulseResponse,
+            side.Channels,
             side.AnchorIndex,
-            side.SampleRate,
             snapshot.ResolveGateOffsetMs(
                 oppositeSide: true, side.AnchorIndex, side.SampleRate),
-            ProcessedChannels.UnionOfMeasuredBands(side.Channels),
-            CalibrationForSum(side.Channels))
-            .MeasuredBySomeChannel(side.Channels).Display;
+            CalibrationForSum(side.Channels)).Display;
     }
 
     /// <summary>
@@ -5034,15 +5032,9 @@ public partial class VirtualCrossoverPanel : UserControl
         MagnitudeGateSnapshot snapshot = magnitudeGate;
         double gateOffsetMs = snapshot.ResolveGateOffsetMs(
             oppositeSide: true, side.AnchorIndex, side.SampleRate);
-        GatedMagnitude sum = BuildGatedMagnitudeCurve(
-            snapshot,
-            side.ImpulseResponse,
-            side.AnchorIndex,
-            side.SampleRate,
-            gateOffsetMs,
-            ProcessedChannels.UnionOfMeasuredBands(side.Channels),
-            CalibrationForSum(side.Channels))
-            .MeasuredBySomeChannel(side.Channels);
+        GatedMagnitude sum = BuildMeasuredSumCurve(
+            snapshot, side.Channels, side.AnchorIndex, gateOffsetMs,
+            CalibrationForSum(side.Channels));
         var channelMagnitudes = new List<GatedMagnitude>(side.Channels.Count);
         foreach (ProcessedChannel item in side.Channels)
         {
@@ -5146,6 +5138,70 @@ public partial class VirtualCrossoverPanel : UserControl
     // Both widths of one gated build: the smoothed curve the plot draws and the
     // unsmoothed one the summation loss divides (see GatedMagnitude). One gate,
     // one FFT, two resamples — the second resample is the cheap half.
+    /// <summary>
+    /// The gated magnitude of the SUM of these channels, with each contributing only
+    /// where it measured anything.
+    /// </summary>
+    /// <remarks>
+    /// Not the same as gating their summed impulse response, though the arithmetic
+    /// says it is: one shared window makes the transform linear, so the two totals
+    /// agree bin for bin — including on the energy the window smears out of a
+    /// channel's own band into a range that channel never measured. Measured on two
+    /// brick-walled bands an octave apart, that phantom reached 1.4 dB at 900 Hz and
+    /// 2.5 dB at 990 Hz above the only channel that measured there, and nothing on the
+    /// plot could show it: the channel whose leakage it is has its own curve broken
+    /// exactly there, so the summation loss divided a total carrying it by operands
+    /// that did not.
+    /// </remarks>
+    // The metric's own entry point: the active side's placement, resolved here so
+    // the drawn Sum and the metric's cannot be built under different windows.
+    private GatedMagnitude BuildMeasuredSumCurve(
+        IReadOnlyList<ProcessedChannel> channels,
+        int anchorIndex)
+    {
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        return BuildMeasuredSumCurve(
+            snapshot,
+            channels,
+            anchorIndex,
+            snapshot.ResolveGateOffsetMs(
+                oppositeSide: false,
+                anchorIndex,
+                channels.Count > 0 ? channels[0].SampleRate : 0),
+            CalibrationForSum(channels));
+    }
+
+    private GatedMagnitude BuildMeasuredSumCurve(
+        MagnitudeGateSnapshot snapshot,
+        IReadOnlyList<ProcessedChannel> channels,
+        int anchorIndex,
+        double gateOffsetMs,
+        CalibrationFile? calibration)
+    {
+        PhaseAnalysisSettings gate = snapshot.Template with
+        {
+            GateOffsetMs = gateOffsetMs
+        };
+        var views = new List<IImpulseMeasurement>(channels.Count);
+        foreach (ProcessedChannel channel in channels)
+        {
+            views.Add(new ImpulseMeasurementView(
+                channel.ImpulseResponse, anchorIndex, channel.SampleRate)
+            {
+                LowestMeasuredFrequencyHz = channel.MeasuredBand.LowEdgeHz,
+                HighestMeasuredFrequencyHz = channel.MeasuredBand.HighEdgeHz
+            });
+        }
+
+        (AnalysisCurve display, AnalysisCurve unsmoothed) =
+            DataHelper.GetGatedMeasuredMagnitudeSumPair(
+                views, gate, calibration, snapshot.SmoothingInverseOctaves);
+        // Where NO channel measured the total came out zero rather than as a level,
+        // and a hole between two channels' bands is not something their outer edges
+        // can express in the first place.
+        return new GatedMagnitude(display, unsmoothed).MeasuredBySomeChannel(channels);
+    }
+
     private GatedMagnitude BuildGatedMagnitudeCurve(
         MagnitudeGateSnapshot snapshot,
         Complex[] impulseResponse,
@@ -6324,15 +6380,15 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
-            processed.Select(item => item.ImpulseResponse).ToList());
-        AnalysisCurve sumCurve = BuildMagnitudeCurve(
-            sum,
-            processed.Min(item => item.PeakIndex),
-            processed[0].SampleRate,
-            ProcessedChannels.UnionOfMeasuredBands(processed),
-            CalibrationForSum(processed))
-            .MeasuredBySomeChannel(processed).Display;
+        int overlayAnchor = processed.Min(item => item.PeakIndex);
+        MagnitudeGateSnapshot overlayGate = magnitudeGate;
+        AnalysisCurve sumCurve = BuildMeasuredSumCurve(
+            overlayGate,
+            processed,
+            overlayAnchor,
+            overlayGate.ResolveGateOffsetMs(
+                oppositeSide: false, overlayAnchor, processed[0].SampleRate),
+            CalibrationForSum(processed)).Display;
 
         string title = "vDSP Sum " + string.Join(
             "+",

@@ -26,12 +26,20 @@ internal sealed class VirtualCrossoverMetrics
     private readonly Func<ProcessedChannel, CalibrationFile?> channelCalibration;
     private readonly Func<IReadOnlyList<ProcessedChannel>, CalibrationFile?> sumCalibration;
 
+    // The SUM is not the gated total of the summed responses, though the arithmetic
+    // says it is: one shared window makes the transform linear, so that total carries
+    // every channel's window leakage into ranges that channel never measured. Built
+    // by the panel, which owns the gate placement.
+    private readonly Func<IReadOnlyList<ProcessedChannel>, int, GatedMagnitude>?
+        buildSumCurve;
+
     public VirtualCrossoverMetrics(
         VirtualCrossoverProcessingCoordinator coordinator,
         Func<Complex[], int, int, MeasuredBand, CalibrationFile?, GatedMagnitude>
             buildMagnitudeCurve,
         Func<ProcessedChannel, CalibrationFile?>? channelCalibration = null,
-        Func<IReadOnlyList<ProcessedChannel>, CalibrationFile?>? sumCalibration = null)
+        Func<IReadOnlyList<ProcessedChannel>, CalibrationFile?>? sumCalibration = null,
+        Func<IReadOnlyList<ProcessedChannel>, int, GatedMagnitude>? buildSumCurve = null)
     {
         this.coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         this.buildMagnitudeCurve = buildMagnitudeCurve
@@ -41,6 +49,7 @@ internal sealed class VirtualCrossoverMetrics
         // built the same way rather than an absolute reading.
         this.channelCalibration = channelCalibration ?? (_ => null);
         this.sumCalibration = sumCalibration ?? (_ => null);
+        this.buildSumCurve = buildSumCurve;
     }
 
     // The magnitude curves, complex sum and summation loss the metric reads,
@@ -101,21 +110,20 @@ internal sealed class VirtualCrossoverMetrics
             return (magnitudes.Select(curve => curve.Display).ToList(), null, null);
         }
 
-        Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
-            processed.Select(item => item.ImpulseResponse).ToList());
-        // The sum plays wherever ANY of its channels does, so its band is the UNION
-        // of theirs — never one channel's, which would blank a range a woofer
-        // measured perfectly well because a tweeter beside it was filtered out of it.
-        GatedMagnitude sumCurve = buildMagnitudeCurve(
-            sum,
-            anchor,
-            processed[0].SampleRate,
-            ProcessedChannels.UnionOfMeasuredBands(processed),
-            sumCalibration(processed))
-            // The hull covers the ends; this covers a hole between two channels whose
-            // sweeps do not overlap, where the summed response is zero from every
-            // contributor at once.
-            .MeasuredBySomeChannel(processed);
+        // Each channel contributing only where it measured, then added as phasors.
+        // Without a builder — a caller that only wants the metric arithmetic — the
+        // old total stands: the sum plays wherever ANY of its channels does, so its
+        // band is the UNION of theirs, and the per-frequency mask covers a hole
+        // between two channels whose sweeps do not overlap.
+        GatedMagnitude sumCurve = buildSumCurve?.Invoke(processed, anchor)
+            ?? buildMagnitudeCurve(
+                VirtualCrossoverAnalysis.SumImpulseResponses(
+                    processed.Select(item => item.ImpulseResponse).ToList()),
+                anchor,
+                processed[0].SampleRate,
+                ProcessedChannels.UnionOfMeasuredBands(processed),
+                sumCalibration(processed))
+                .MeasuredBySomeChannel(processed);
         List<IReadOnlyList<SignalPoint>> operands = magnitudes
             .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
             .ToList();

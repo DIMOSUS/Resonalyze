@@ -175,7 +175,12 @@ internal sealed class VirtualCrossoverChannelState
         // new source must not keep the old driver's curve.
         SpatialAverage = null;
         ArrayCapture = null;
-        // It described the measurement that was here, like the array does.
+        // They described the measurement that was here, like the array does. Every
+        // one of them is written by ResolvedVirtualDspSource.ApplyTo, so every one of
+        // them has to be cleared here: a slot wiped for a source that then failed to
+        // load would otherwise answer for the previous measurement's band.
+        ArraySpreadDb = null;
+        MeasuredBand = MeasuredBand.Everything;
         MicrophoneCalibration = null;
         TransferPeakIndex = 0;
         SampleRate = 0;

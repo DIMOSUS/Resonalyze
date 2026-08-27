@@ -3432,6 +3432,21 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // Quieter than the two above — nothing is wrong — but it must be said: the
+        // hybrid exists to keep a point measurement's dips away from an equalizer,
+        // and these channels are drawn from exactly that.
+        if (hybrid is { PointMeasuredCount: > 0 } fallbacks)
+        {
+            ShowWarning(
+                fallbacks.PointMeasuredCount == 1
+                    ? "1 channel is drawn from its point measurement."
+                    : $"{fallbacks.PointMeasuredCount} channels are drawn from their " +
+                        "point measurements.",
+                FormatPointMeasuredDetail(fallbacks, processed),
+                InfoWarningColor);
+            return;
+        }
+
         UpdateCrossoverWarning(processed);
     }
 
@@ -3455,7 +3470,47 @@ public partial class VirtualCrossoverPanel : UserControl
     /// set that 5 dB kept over 2.7.
     /// </para>
     /// </remarks>
-    private const double HybridSpreadWarningDb = 3.0;
+    private double HybridSpreadWarningDb =>
+        SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+            ? ArraySpreadWarningDb
+            : MovingMicSpreadWarningDb;
+
+    private const double MovingMicSpreadWarningDb = 3.0;
+
+    /// <summary>
+    /// The same detector, on a family that agrees far more closely.
+    /// </summary>
+    /// <remarks>
+    /// A moving-microphone set is levelled by nothing but one analyzer session at
+    /// one input gain, so 3 dB is the margin a clean set needs. An array is
+    /// levelled by the same loopback the impulse responses are — the two families
+    /// are one measurement — and a real seven-position set measured on two drivers
+    /// read 0.33 dB apart. The threshold keeps a comparable margin over that
+    /// evidence rather than inheriting one calibrated on a looser family, where it
+    /// would let a genuinely broken array through.
+    /// </remarks>
+    private const double ArraySpreadWarningDb = 1.5;
+
+    private static string FormatPointMeasuredDetail(
+        HybridMagnitudes hybrid,
+        IReadOnlyList<ProcessedChannel> processed)
+    {
+        var names = new List<string>();
+        for (int i = 0; i < processed.Count && i < hybrid.PointMeasuredChannels.Count; i++)
+        {
+            if (hybrid.PointMeasuredChannels[i])
+            {
+                names.Add(processed[i].Channel.Name);
+            }
+        }
+
+        return $"Drawn from one microphone: {string.Join(", ", names)}." +
+            "\r\n\r\nThe rest of the set is drawn from its microphone arrays. A " +
+            "channel measured at one point carries dips that belong to that spot " +
+            "rather than to the listening volume, and an equalizer fitted to them " +
+            "is fitted to a place nobody's head occupies. Below the cabin's first " +
+            "mode the two measurements agree, so a subwoofer loses little by it.";
+    }
 
     private string FormatHybridSpreadDetail(
         HybridMagnitudes hybrid, List<ProcessedChannel> processed)
@@ -3498,6 +3553,11 @@ public partial class VirtualCrossoverPanel : UserControl
     // Amber for the gate: it says the view cannot be read yet, not that the
     // tuning is wrong. The crossover spread keeps the red it always had.
     private static readonly Color GateWarningColor = Color.FromArgb(230, 184, 0);
+
+    // A statement of fact rather than a warning — nothing is wrong with a channel
+    // drawn from its point measurement — so it takes a neutral hue instead of the
+    // amber the two real warnings share.
+    private static readonly Color InfoWarningColor = Color.FromArgb(150, 170, 200);
     private static readonly Color CrossoverWarningColor = Color.FromArgb(235, 110, 95);
 
     // The spread of alignment delays, above which the setup is flagged. A driver

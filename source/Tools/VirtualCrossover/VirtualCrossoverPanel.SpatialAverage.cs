@@ -40,6 +40,22 @@ internal sealed record HybridMagnitudes(
     double OffsetDb)
 {
     /// <summary>
+    /// Which channels were drawn from their own point measurement because they had
+    /// no spatial average, in channel order.
+    /// </summary>
+    /// <remarks>
+    /// The hybrid exists to keep a point measurement's dips out of an equalizer's
+    /// way, so a channel drawn from one is the exception the user has to be told
+    /// about. It is legitimate — a subwoofer gains almost nothing from an array,
+    /// because below the cabin's first mode a point and an average are the same
+    /// measurement — but it must never be silent.
+    /// </remarks>
+    public IReadOnlyList<bool> PointMeasuredChannels { get; init; } = [];
+
+    /// <summary>How many channels fell back to their point measurement.</summary>
+    public int PointMeasuredCount => PointMeasuredChannels.Count(fallback => fallback);
+
+    /// <summary>
     /// How far apart the channels are about where the captures sit relative to the
     /// impulse responses — the largest per-channel offset minus the smallest, in dB.
     /// </summary>
@@ -443,16 +459,33 @@ public partial class VirtualCrossoverPanel
         {
             if (state.SpatialAverageFor(SpatialAverageMode) is not { } capture)
             {
+                // An ARRAY set may have gaps. Both families are levelled by the same
+                // loopback the impulse responses are referenced to, so a channel
+                // drawn from its own measurement is on the same axis as the rest —
+                // the objection that makes this all-or-nothing for a moving
+                // microphone (two different references on one axis) does not apply.
+                // What remains is a shape difference, and on the band a channel
+                // without an array usually covers it is small: below the cabin's
+                // first mode a point measurement IS the average.
+                if (SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray)
+                {
+                    continue;
+                }
+
                 return LiveCaptureSetVerdict.No(
-                    SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
-                        ? "Needs a microphone array on every channel that plays. " +
-                            "Re-measure the odd one with the array configured, or " +
-                            "switch the method on the Array button."
-                        : "Needs a spatial average on every channel that plays. " +
-                            "Attach one per channel with the MMM button.");
+                    "Needs a spatial average on every channel that plays. " +
+                    "Attach one per channel with the MMM button.");
             }
 
             captures.Add(capture);
+        }
+
+        if (captures.Count == 0)
+        {
+            return LiveCaptureSetVerdict.No(
+                SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+                    ? "No channel on this side was measured with a microphone array."
+                    : "No channel on this side has a spatial average.");
         }
 
         return LiveCaptureSetVerdict.Ok;
@@ -533,19 +566,43 @@ public partial class VirtualCrossoverPanel
             return null;
         }
 
+        // The datum is read on the two measurements BEFORE any chain, never on the
+        // curves below. Those carry the DSP on both sides and it does NOT cancel: the
+        // impulse response is filtered and then gated while the capture is filtered
+        // analytically, and a gate does not commute with a filter; and the band the
+        // median is taken over is set by the channel's peak, which the crossover
+        // moves. Reading it there made the whole hybrid set drift up and down the
+        // axis while the user tuned — and that offset travels to the EQ Wizard.
+        // Resolved FIRST because a channel falling back to its point measurement has
+        // to be lowered by it: the set's curves are held without the offset and it is
+        // added on the way to the plot, so a curve already on the impulse responses'
+        // axis must arrive pre-subtracted to land back where it started.
+        (double?[] offsets, double setOffset) =
+            ResolveRawHybridOffsetsDb(processed, rightSide);
+
         var hybrids = new List<IReadOnlyList<SignalPoint>>(processed.Count);
         var unsmoothed = new List<IReadOnlyList<SignalPoint>>(processed.Count);
+        var pointMeasured = new bool[processed.Count];
         for (int i = 0; i < processed.Count; i++)
         {
             // Built RAW and smoothed here rather than twice through the chain: the
             // shared builder's own last step is this same smoothing, so smoothing its
             // unsmoothed output reproduces what it would have returned, and the
             // expensive part — the analytic chain over the whole grid — runs once.
-            if (BuildHybridChannelCurve(
-                processed[i].Channel, rightSide, references[i].Points, smoothingCode: 0)
-                is not { } raw)
+            IReadOnlyList<SignalPoint>? raw = BuildHybridChannelCurve(
+                processed[i].Channel, rightSide, references[i].Points, smoothingCode: 0);
+            if (raw == null)
             {
-                return null;
+                if (SpatialAverageMode != VirtualCrossoverSpatialAverageMode.MicArray)
+                {
+                    return null;
+                }
+
+                // This channel has no array. Its own processed magnitude is already
+                // on the impulse responses' axis and is a perfectly good curve — it
+                // is simply a point measurement, which is what the badge says.
+                raw = ShiftedBy(references[i].Points, -setOffset);
+                pointMeasured[i] = true;
             }
 
             unsmoothed.Add(raw);
@@ -557,16 +614,10 @@ public partial class VirtualCrossoverPanel
                     SpectrumSmoothing.IsPsychoacoustic(smoothingCode)));
         }
 
-        // The datum is read on the two measurements BEFORE any chain, never on the
-        // curves above. Those carry the DSP on both sides and it does NOT cancel: the
-        // impulse response is filtered and then gated while the capture is filtered
-        // analytically, and a gate does not commute with a filter; and the band the
-        // median is taken over is set by the channel's peak, which the crossover
-        // moves. Reading it there made the whole hybrid set drift up and down the
-        // axis while the user tuned — and that offset travels to the EQ Wizard.
-        (double?[] offsets, double setOffset) =
-            ResolveRawHybridOffsetsDb(processed, rightSide);
-        return new HybridMagnitudes(hybrids, unsmoothed, offsets, setOffset);
+        return new HybridMagnitudes(hybrids, unsmoothed, offsets, setOffset)
+        {
+            PointMeasuredChannels = pointMeasured
+        };
     }
 
     /// <summary>

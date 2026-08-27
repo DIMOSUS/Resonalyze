@@ -135,9 +135,24 @@ public partial class VirtualCrossoverChannelControl : UserControl
             : resolved ? Color.FromArgb(140, 220, 160) : Color.FromArgb(230, 184, 0);
         string newLine = Environment.NewLine;
         spatialAverageTooltip = !present
-            ? "No spatial average for this channel." + newLine + newLine +
-                "Click to attach a moving-microphone capture. The hybrid view " +
-                "needs one on every channel that plays."
+            ? mode switch
+            {
+                VirtualCrossoverSpatialAverageMode.MicArray =>
+                    "This channel was measured with one microphone, so the hybrid " +
+                    "draws it from that POINT measurement." + newLine + newLine +
+                    "Legitimate where a point and an average are the same thing — " +
+                    "below the cabin's first mode they are — but its dips are this " +
+                    "one spot's, and an equalizer fitted to them is fitted to a " +
+                    "place nobody's head occupies." + newLine + newLine +
+                    "Click to change the method the project reads.",
+                VirtualCrossoverSpatialAverageMode.Off =>
+                    "The project draws no spatial average." + newLine + newLine +
+                    "Click to change the method it reads.",
+                _ =>
+                    "No spatial average for this channel." + newLine + newLine +
+                    "Click to attach a moving-microphone capture. The hybrid view " +
+                    "needs one on every channel that plays."
+            }
             : resolved
             ? $"Spatial average: {title}" +
                 (integratedSeconds is { } seconds

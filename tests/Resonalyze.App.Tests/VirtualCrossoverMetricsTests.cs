@@ -73,13 +73,33 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
-    public void BuildCurves_ReturnsNoMetric_ForFewerThanTwoChannels()
+    public void BuildCurves_StillDrawsTheChannel_WithNoMetricToGoWithIt()
     {
+        // One channel has no metric: its sum is itself and its summation loss is zero
+        // by definition. It still has a CURVE, and withholding that was a bug with a
+        // long reach — everything downstream gates on the magnitudes being present,
+        // so muting every channel but one silently turned off the hybrid view and the
+        // spatial average the EQ Wizard would have been handed.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
 
         (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, List<SignalPoint>? loss) =
             metrics.BuildCurves([Processed("A", Impulse(), 5, 48_000)], 0);
+
+        Assert.NotNull(magnitudes);
+        Assert.Single(magnitudes!);
+        Assert.Null(sum);
+        Assert.Null(loss);
+    }
+
+    [Fact]
+    public void BuildCurves_HasNothingToDrawForAnEmptySet()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, List<SignalPoint>? loss) =
+            metrics.BuildCurves([], 0);
 
         Assert.Null(magnitudes);
         Assert.Null(sum);

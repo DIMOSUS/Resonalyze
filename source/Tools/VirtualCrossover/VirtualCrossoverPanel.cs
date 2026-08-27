@@ -3410,21 +3410,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
             if (item.Channel.Pair.ShowProcessedCurve)
             {
-                AnalysisCurve curve = magnitudes != null
-                    ? magnitudes[i]
-                    : BuildMagnitudeCurve(
-                        item.ImpulseResponse,
-                        // No shared anchor to follow (BuildCurves yields no
-                        // metric below two channels), so the channel opens on
-                        // its own front — the same rule, one channel wide.
-                        ProcessedChannels.StartAnchorIndex(
-                            item.ImpulseResponse,
-                            item.PeakIndex,
-                            item.SampleRate,
-                            item.ValidRange),
-                        item.SampleRate,
-                        item.MeasuredBand,
-                        CalibrationFor(item)).Display;
+                // Non-null wherever this loop runs: the builder withholds the
+                // metric below two channels and the per-channel magnitudes only for
+                // an empty set, which has no iteration to reach here.
+                AnalysisCurve curve = magnitudes![i];
                 IReadOnlyList<SignalPoint> points = hybrid != null
                     ? ShiftedBy(hybrid.Channels[i], hybrid.OffsetDb)
                     : curve.Points;

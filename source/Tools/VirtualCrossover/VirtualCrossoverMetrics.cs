@@ -49,11 +49,16 @@ internal sealed class VirtualCrossoverMetrics
     // carry the display smoothing; the loss is divided out of the UNSMOOTHED
     // pair and smoothed afterwards (see VirtualCrossoverAnalysis.SumLossCurve),
     // which is why the builder hands back both widths.
-    // Fewer than two channels yield no metric.
+    // Fewer than two channels yield no METRIC — a sum of one channel is that
+    // channel, and its summation loss is zero by definition. The per-channel
+    // magnitudes are not a metric: they are what the plot draws, and one channel is
+    // drawn like any other. Withholding them was what made the hybrid view stop
+    // working when every channel but one was muted, in the panel and in the EQ
+    // handoff alike, both of which gate on these being present.
     public (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum, List<SignalPoint>? Loss)
         BuildCurves(List<ProcessedChannel> processed, int smoothingInverseOctaves)
     {
-        if (processed.Count < 2)
+        if (processed.Count == 0)
         {
             return (null, null, null);
         }
@@ -91,6 +96,11 @@ internal sealed class VirtualCrossoverMetrics
                 item.MeasuredBand,
                 channelCalibration(item)))
             .ToList();
+        if (processed.Count < 2)
+        {
+            return (magnitudes.Select(curve => curve.Display).ToList(), null, null);
+        }
+
         Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
             processed.Select(item => item.ImpulseResponse).ToList());
         // The sum plays wherever ANY of its channels does, so its band is the UNION

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp;
@@ -120,6 +120,83 @@ public static class TransferFunction
         IReadOnlyList<TransferFunctionFrame> frames,
         ExcitationBandGate excitationGate)
     {
+        GatedH1Accumulation accumulation = AccumulateGatedH1(frames, excitationGate);
+
+        Complex[] relative = InverseGatedH1(
+            accumulation.CrossSpectrum,
+            accumulation.ReferencePowerSpectrum,
+            accumulation.GateWeights,
+            accumulation.Regularization);
+
+        var impulseResponse = new double[relative.Length];
+        double peakMagnitude = 0;
+        int peakIndex = 0;
+        for (int i = 0; i < impulseResponse.Length; i++)
+        {
+            double value = relative[i].Real;
+            impulseResponse[i] = value;
+            double magnitude = Math.Abs(value);
+            if (magnitude > peakMagnitude)
+            {
+                peakMagnitude = magnitude;
+                peakIndex = i;
+            }
+        }
+
+        return new TransferEstimateResult(
+            impulseResponse,
+            peakIndex,
+            frames.Count >= 2 ? accumulation.Coherence : null);
+    }
+
+    /// <summary>
+    /// The same H1 estimate as <see cref="ComputeAveragedRelativeIr"/>, stopped
+    /// one step earlier: the gated transfer MAGNITUDE on its own bin grid, with
+    /// no inverse transform and no window.
+    /// </summary>
+    /// <remarks>
+    /// This is what a spatial average needs from a microphone. It wants the
+    /// steady-state magnitude — the whole decay, no gate — and taking that from an
+    /// impulse response means an inverse transform followed immediately by a
+    /// forward one over the same full length, which returns exactly this array.
+    /// <para>
+    /// Bins the excitation gate closed come back as zero rather than as a very
+    /// small number, so a caller can tell "the sweep never went here" from "the
+    /// response is low here" — the first is a gap in the measurement and must not
+    /// become a −200 dB point on a curve.
+    /// </para>
+    /// </remarks>
+    public static TransferMagnitudeEstimate ComputeAveragedMagnitude(
+        IReadOnlyList<TransferFunctionFrame> frames,
+        ExcitationBandGate excitationGate)
+    {
+        GatedH1Accumulation accumulation = AccumulateGatedH1(frames, excitationGate);
+
+        int fftLength = accumulation.CrossSpectrum.Length;
+        int binCount = fftLength / 2 + 1;
+        var magnitude = new double[binCount];
+        for (int bin = 0; bin < binCount; bin++)
+        {
+            double weight = accumulation.GateWeights[bin];
+            magnitude[bin] = weight > 0
+                ? weight * accumulation.CrossSpectrum[bin].Magnitude /
+                    (accumulation.ReferencePowerSpectrum[bin] + accumulation.Regularization)
+                : 0.0;
+        }
+
+        return new TransferMagnitudeEstimate(
+            magnitude,
+            frames.Count >= 2 ? accumulation.Coherence : null,
+            fftLength);
+    }
+
+    // The shared core of both estimates: the cross/auto spectra summed over the
+    // frames, the excitation gate built from the reference, and the debiased
+    // coherence carrying that same gate.
+    private static GatedH1Accumulation AccumulateGatedH1(
+        IReadOnlyList<TransferFunctionFrame> frames,
+        ExcitationBandGate excitationGate)
+    {
         ArgumentNullException.ThrowIfNull(frames);
         if (frames.Count == 0)
         {
@@ -180,32 +257,20 @@ public static class TransferFunction
             coherence[bin] *= gateWeights[bin];
         }
 
-        Complex[] relative = InverseGatedH1(
+        return new GatedH1Accumulation(
             crossSpectrum,
             referencePowerSpectrum,
             gateWeights,
-            regularization);
-
-        var impulseResponse = new double[fftLength];
-        double peakMagnitude = 0;
-        int peakIndex = 0;
-        for (int i = 0; i < impulseResponse.Length; i++)
-        {
-            double value = relative[i].Real;
-            impulseResponse[i] = value;
-            double magnitude = Math.Abs(value);
-            if (magnitude > peakMagnitude)
-            {
-                peakMagnitude = magnitude;
-                peakIndex = i;
-            }
-        }
-
-        return new TransferEstimateResult(
-            impulseResponse,
-            peakIndex,
-            frames.Count >= 2 ? coherence : null);
+            regularization,
+            coherence);
     }
+
+    private readonly record struct GatedH1Accumulation(
+        Complex[] CrossSpectrum,
+        double[] ReferencePowerSpectrum,
+        double[] GateWeights,
+        double Regularization,
+        double[] Coherence);
 
     // Forward-transforms one zero-padded frame pair and adds its cross- and
     // auto-spectra to the running sums.
@@ -577,6 +642,21 @@ public static class TransferFunction
 public readonly record struct TransferFunctionFrame(
     IReadOnlyList<double> Reference,
     IReadOnlyList<double> Target);
+
+/// <summary>
+/// The gated transfer magnitude on its own bin grid, with the coherence that
+/// judges it and the transform length the bins are spaced by
+/// (<c>sampleRate / FftLength</c> hertz per bin).
+/// </summary>
+/// <param name="Magnitude">
+/// Linear |H| per bin, index 0..FftLength/2. Zero where the excitation gate is
+/// closed — a bin the sweep never reached, not a quiet one.
+/// </param>
+/// <param name="Coherence">Null for a single frame, which has none to give.</param>
+public readonly record struct TransferMagnitudeEstimate(
+    double[] Magnitude,
+    double[]? Coherence,
+    int FftLength);
 
 public readonly record struct TransferEstimateResult(
     double[] ImpulseResponse,

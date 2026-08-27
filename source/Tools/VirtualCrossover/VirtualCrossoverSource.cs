@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 using Resonalyze.History;
 
@@ -20,6 +20,19 @@ internal sealed class ResolvedVirtualDspSource
     public required int SampleRate { get; init; }
     public double[]? TransferCoherence { get; init; }
     public IReadOnlyList<SignalPoint>? DistortionCurve { get; init; }
+
+    /// <summary>
+    /// The spatial average this measurement carries in itself, when it was recorded
+    /// with a microphone array; null otherwise.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from the attached moving-microphone capture rather than folded
+    /// into one slot: they are two sources of the same quantity, tethered
+    /// differently, and which of them a project uses is the project's choice. A
+    /// channel that has both keeps both, and switching the method does not have to
+    /// re-read anything.
+    /// </remarks>
+    public LiveCaptureDocument? ArrayCapture { get; init; }
 
     /// <summary>
     /// Prepares a source from a measurement snapshot, or returns null when the
@@ -45,7 +58,11 @@ internal sealed class ResolvedVirtualDspSource
                 snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1),
             SampleRate = snapshot.SampleRate,
             TransferCoherence = snapshot.TransferCoherence,
-            DistortionCurve = ComputeDistortionCurve(snapshot)
+            DistortionCurve = ComputeDistortionCurve(snapshot),
+            ArrayCapture = ArrayCaptureDocument.TryCreate(
+                snapshot.ArrayMicrophones,
+                snapshot.SampleRate,
+                snapshot.ProtectiveHighPass)
         };
     }
 
@@ -58,6 +75,7 @@ internal sealed class ResolvedVirtualDspSource
         state.SampleRate = SampleRate;
         state.TransferCoherence = TransferCoherence;
         state.DistortionCurve = DistortionCurve;
+        state.ArrayCapture = ArrayCapture;
     }
 
     // Computes the channel's harmonic distortion (THD, dB vs the fundamental) from

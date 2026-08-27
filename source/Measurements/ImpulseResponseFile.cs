@@ -886,6 +886,10 @@ public sealed class ImpulseResponseFile
         public double FrequencyHz { get; set; } = 2_000.0;
         public int SlopeDbPerOctave { get; set; } = 24;
 
+        /// <summary>The configuration this record stands for.</summary>
+        public ProtectiveHighPassConfiguration ToConfiguration() =>
+            new(Kind, FrequencyHz, SlopeDbPerOctave);
+
         public static ProtectiveHighPassFileEntry From(
             ProtectiveHighPassConfiguration configuration)
         {

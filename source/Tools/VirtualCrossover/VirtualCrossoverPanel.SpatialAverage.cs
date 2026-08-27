@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -81,9 +81,71 @@ internal sealed record HybridMagnitudes(
 // chase.
 public partial class VirtualCrossoverPanel
 {
+    /// <summary>
+    /// Which spatial average this project reads: the stored choice, or — for a
+    /// project that has never made one — the array its measurements brought with
+    /// them, falling back to the attached captures.
+    /// </summary>
+    /// <remarks>
+    /// The array wins the guess because it arrives WITH the measurement: a user who
+    /// recorded one has already said what they wanted, and making them find a menu
+    /// to see it would be asking twice. A project written before arrays existed
+    /// carries attachments and no array, so the same rule leaves it exactly as it
+    /// was.
+    /// </remarks>
+    internal VirtualCrossoverSpatialAverageMode SpatialAverageMode =>
+        project.SpatialAverageMode ?? (HasAnyArrayCapture()
+            ? VirtualCrossoverSpatialAverageMode.MicArray
+            : VirtualCrossoverSpatialAverageMode.MovingMic);
+
+    private bool HasAnyArrayCapture() =>
+        channels.Any(channel =>
+            channel.SideState(false).ArrayCapture != null ||
+            channel.SideState(true).ArrayCapture != null);
+
+    private void SetSpatialAverageMode(VirtualCrossoverSpatialAverageMode mode)
+    {
+        if (SpatialAverageMode == mode && project.SpatialAverageMode == mode)
+        {
+            return;
+        }
+
+        project.SpatialAverageMode = mode;
+        foreach (VirtualCrossoverChannel channel in channels)
+        {
+            RefreshSpatialAverageStatus(channel);
+        }
+
+        RefreshHybridAvailability();
+        ScheduleSave();
+        OnViewChanged();
+    }
+
     private void ShowSpatialAverageMenu(VirtualCrossoverChannel channel)
     {
         var menu = new ContextMenuStrip();
+
+        // The method is the project's, so it is offered on every channel's button
+        // rather than hidden somewhere else: the button is where a user notices the
+        // curve is missing, and it is where they will look for why.
+        foreach ((VirtualCrossoverSpatialAverageMode mode, string label) in new[]
+        {
+            (VirtualCrossoverSpatialAverageMode.MicArray, "Use microphone arrays"),
+            (VirtualCrossoverSpatialAverageMode.MovingMic, "Use attached MMM captures"),
+            (VirtualCrossoverSpatialAverageMode.Off, "No spatial average")
+        })
+        {
+            ToolStripMenuItem item = new(label)
+            {
+                Checked = SpatialAverageMode == mode,
+                CheckOnClick = false
+            };
+            VirtualCrossoverSpatialAverageMode chosen = mode;
+            item.Click += (_, _) => SetSpatialAverageMode(chosen);
+            menu.Items.Add(item);
+        }
+
+        menu.Items.Add(new ToolStripSeparator());
 
         ToolStripMenuItem chooseItem = new("Attach capture...");
         chooseItem.Click += (_, _) => ChooseSpatialAverage(channel);
@@ -173,17 +235,24 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        LiveCaptureDocument? document = channel.SpatialAverage;
+        VirtualCrossoverSpatialAverageMode mode = SpatialAverageMode;
+        LiveCaptureDocument? document =
+            channel.SideState(channel.ActiveRight).SpatialAverageFor(mode);
         // A stored path with no document behind it is the missing case: name it from
         // the path, since the file that carried the title is the file that is gone.
-        string? path = channel.Settings.SpatialAveragePath;
+        // Only in the moving-microphone method — an array is not attached by path,
+        // so there is nothing that could go missing.
+        string? path = mode == VirtualCrossoverSpatialAverageMode.MovingMic
+            ? channel.Settings.SpatialAveragePath
+            : null;
         control.SetSpatialAverage(
             document?.Title
                 ?? (string.IsNullOrWhiteSpace(path)
                     ? null
                     : Path.GetFileNameWithoutExtension(path)),
             document?.Recipe.IntegratedSeconds,
-            resolved: document != null);
+            resolved: document != null,
+            mode);
     }
 
     /// <summary>
@@ -372,14 +441,18 @@ public partial class VirtualCrossoverPanel
 
         foreach (VirtualCrossoverChannelState state in playing)
         {
-            if (state.SpatialAverage == null)
+            if (state.SpatialAverageFor(SpatialAverageMode) is not { } capture)
             {
                 return LiveCaptureSetVerdict.No(
-                    "Needs a spatial average on every channel that plays. Attach " +
-                    "one per channel with the MMM button.");
+                    SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+                        ? "Needs a microphone array on every channel that plays. " +
+                            "Re-measure the odd one with the array configured, or " +
+                            "switch the method on the Array button."
+                        : "Needs a spatial average on every channel that plays. " +
+                            "Attach one per channel with the MMM button.");
             }
 
-            captures.Add(state.SpatialAverage);
+            captures.Add(capture);
         }
 
         return LiveCaptureSetVerdict.Ok;
@@ -518,7 +591,8 @@ public partial class VirtualCrossoverPanel
         // side's sum is built from this too, and reading the shown side's capture there
         // would draw one side's tuning under the other's label.
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
-        if (state.SpatialAverage is not { } document || reference.Count == 0)
+        if (state.SpatialAverageFor(SpatialAverageMode) is not { } document ||
+            reference.Count == 0)
         {
             return null;
         }
@@ -569,7 +643,7 @@ public partial class VirtualCrossoverPanel
                     ? BuildCanonicalRawCurve(ir, state.TransferPeakIndex, state.SampleRate)
                     : null;
             IReadOnlyList<SignalPoint>? rawCapture =
-                rawIr != null && state.SpatialAverage is { } document
+                rawIr != null && state.SpatialAverageFor(SpatialAverageMode) is { } document
                     ? SpatialAverageHybrid.BuildChannelCurve(
                         document,
                         DspChannelChain.Identity,

@@ -5390,7 +5390,9 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </remarks>
     private LiveCaptureDocument? HybridHandoffCapture(
         VirtualCrossoverChannel channel, bool rightSide) =>
-        HybridRequested ? channel.SideState(rightSide).SpatialAverage : null;
+        HybridRequested
+            ? channel.SideState(rightSide).SpatialAverageFor(SpatialAverageMode)
+            : null;
 
     /// <summary>
     /// That capture together with the offset that puts it on the impulse responses'

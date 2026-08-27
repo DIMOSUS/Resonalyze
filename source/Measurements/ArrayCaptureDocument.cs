@@ -1,0 +1,167 @@
+﻿using Resonalyze.Dsp;
+
+namespace Resonalyze;
+
+/// <summary>
+/// Turns a measurement's array of microphones into the spatial-average document
+/// its consumers already understand.
+/// </summary>
+/// <remarks>
+/// The Virtual DSP hybrid and the EQ wizard were built around a
+/// <see cref="LiveCaptureDocument"/> because a moving microphone was the only way
+/// to produce one. Nothing about them is specific to that ritual — a spatial
+/// average is a spatial average — so an array is handed to them in the same
+/// shape rather than through a second path they would each have to learn.
+/// <para>
+/// The stored curves are raw, so the calibration is applied HERE, each microphone
+/// through its own: unlike the frequency-response view, which has a calibration
+/// switch of its own, a consumer reading this document wants the driver's response
+/// and not the microphones' colouring. The document says which calibration was
+/// applied only when every microphone shared one; a mixed array can still be
+/// averaged correctly, but there is no single curve a reader could undo.
+/// </para>
+/// </remarks>
+internal static class ArrayCaptureDocument
+{
+    /// <summary>
+    /// The spatial average of a measurement's array, or null when it has none — or
+    /// when nothing in it could be placed on the anchor's level.
+    /// </summary>
+    public static LiveCaptureDocument? TryCreate(
+        IReadOnlyList<ArrayMicrophoneCurve> microphones,
+        int sampleRateHz,
+        ProtectiveHighPassConfiguration? protectiveHighPass)
+    {
+        ArgumentNullException.ThrowIfNull(microphones);
+        if (microphones.Count == 0)
+        {
+            return null;
+        }
+
+        IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
+        var calibrated = new List<IReadOnlyList<double>>(microphones.Count);
+        int anchorIndex = -1;
+        for (int i = 0; i < microphones.Count; i++)
+        {
+            if (microphones[i].LevelsDb.Length != grid.Count)
+            {
+                // A curve from a grid this build does not use cannot be placed
+                // beside the others without shifting it in frequency.
+                return null;
+            }
+
+            calibrated.Add(Calibrate(microphones[i], grid));
+            if (microphones[i].IsMeasurementMicrophone && anchorIndex < 0)
+            {
+                anchorIndex = i;
+            }
+        }
+
+        SpatialAverageResult placed = SpatialAverage.Average(
+            calibrated,
+            anchorIndex < 0 ? 0 : anchorIndex);
+        if (placed.TrimsDb.All(trim => trim == null))
+        {
+            return null;
+        }
+
+        return new LiveCaptureDocument
+        {
+            Format = LiveCaptureDocument.CurrentFormat,
+            Version = LiveCaptureDocument.CurrentVersion,
+            SavedAtUtc = DateTimeOffset.UtcNow,
+            // Named after what it is rather than after a file: the button shows
+            // this, and "7 microphones" is the thing a user wants to read there.
+            Title = microphones.Count == 1
+                ? "Array of 1 microphone"
+                : $"Array of {microphones.Count} microphones",
+            Method = SpatialAverageMethod.MicArray,
+            // Each measurement is its own session, and for an array that costs
+            // nothing: what a session id guards — that levels were held together by
+            // one analyzer run — is guaranteed here by the loopback instead.
+            CaptureSessionId = Guid.NewGuid(),
+            Recipe = BuildRecipe(sampleRateHz, protectiveHighPass),
+            Calibration = SharedCalibration(microphones),
+            CurveDb = placed.AverageDb,
+            GridStartHz = grid[0],
+            GridStopHz = grid[^1]
+        };
+    }
+
+    /// <remarks>
+    /// The analyzer fields are left at their defaults on purpose: an array has no
+    /// analyzer. Nothing reads them for this method — the set rules for an array
+    /// compare the protective high-pass and nothing else — and inventing plausible
+    /// values would only make the document look like a capture it is not.
+    /// </remarks>
+    private static LiveCaptureRecipe BuildRecipe(
+        int sampleRateHz,
+        ProtectiveHighPassConfiguration? protectiveHighPass)
+    {
+        ProtectiveHighPassConfiguration filter =
+            ProtectiveHighPassConfiguration.Normalize(protectiveHighPass);
+        return new LiveCaptureRecipe
+        {
+            AnalysisMode = LiveAnalysisMode.TransferFunction,
+            SampleRateHz = sampleRateHz,
+            // A swept transfer magnitude, relative to the loopback: it is not an
+            // absolute sound pressure level and must not claim to be one.
+            MagnitudeScale = MagnitudeScale.Relative,
+            SlopeCompensation = false,
+            // Stored unsmoothed, which is what lets a consumer re-smooth it.
+            SmoothingCode = 0,
+            ProtectiveHighPassKind = filter.Kind,
+            ProtectiveHighPassFrequencyHz = filter.FrequencyHz,
+            ProtectiveHighPassSlopeDbPerOctave = filter.SlopeDbPerOctave
+        };
+    }
+
+    private static double[] Calibrate(
+        ArrayMicrophoneCurve microphone,
+        IReadOnlyList<double> grid)
+    {
+        double[] levels = microphone.LevelsDb.ToArray();
+        if (microphone.Calibration is not { } settings)
+        {
+            return levels;
+        }
+
+        CalibrationFile calibration = settings.ToCalibrationFile();
+        for (int band = 0; band < levels.Length; band++)
+        {
+            if (double.IsFinite(levels[band]))
+            {
+                // The pipeline SUBTRACTS a microphone correction from a level.
+                levels[band] -= calibration.GetDecibelCorrection(grid[band]);
+            }
+        }
+
+        return levels;
+    }
+
+    // The calibration the document can name: the one every microphone shared, or
+    // none. A mixed array is averaged correctly all the same — each microphone was
+    // corrected by its own — but no single curve describes what was applied, and
+    // claiming one would let a reader "undo" a correction that was never uniform.
+    private static VirtualCrossoverCalibrationSettings? SharedCalibration(
+        IReadOnlyList<ArrayMicrophoneCurve> microphones)
+    {
+        VirtualCrossoverCalibrationSettings? first = microphones[0].Calibration;
+        if (first == null)
+        {
+            return null;
+        }
+
+        CalibrationFile firstCurve = first.ToCalibrationFile();
+        foreach (ArrayMicrophoneCurve microphone in microphones)
+        {
+            if (microphone.Calibration is not { } settings ||
+                !CalibrationFile.SameCurve(settings.ToCalibrationFile(), firstCurve))
+            {
+                return null;
+            }
+        }
+
+        return first;
+    }
+}

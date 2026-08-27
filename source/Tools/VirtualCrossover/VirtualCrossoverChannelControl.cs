@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
 
@@ -108,11 +108,28 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// having attached one: the hybrid toggle goes away either way, and only the
     /// warning says which of the two happened.
     /// </param>
+    /// <param name="mode">
+    /// Which family the project reads. It names the BUTTON, not just the tooltip:
+    /// a user looking for a missing curve reads the button first, and one that says
+    /// MMM while the project is reading arrays sends them to attach a file they do
+    /// not need.
+    /// </param>
     internal void SetSpatialAverage(
-        string? title, double? integratedSeconds, bool resolved)
+        string? title,
+        double? integratedSeconds,
+        bool resolved,
+        VirtualCrossoverSpatialAverageMode mode)
     {
         bool present = !string.IsNullOrWhiteSpace(title);
-        buttonSpatialAverage.Text = !present ? "MMM" : resolved ? "MMM ✓" : "MMM ⚠";
+        string label = mode switch
+        {
+            VirtualCrossoverSpatialAverageMode.MicArray => "Array",
+            VirtualCrossoverSpatialAverageMode.MovingMic => "MMM",
+            _ => "Avg off"
+        };
+        buttonSpatialAverage.Text = mode == VirtualCrossoverSpatialAverageMode.Off
+            ? label
+            : !present ? label : resolved ? $"{label} ✓" : $"{label} ⚠";
         buttonSpatialAverage.ForeColor = !present
             ? Color.White
             : resolved ? Color.FromArgb(140, 220, 160) : Color.FromArgb(230, 184, 0);

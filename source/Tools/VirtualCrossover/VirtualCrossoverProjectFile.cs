@@ -470,6 +470,29 @@ public sealed class VirtualCrossoverCalibrationSettings
 /// The pair count is user-resizable in the tool, from two up to
 /// <see cref="MaximumChannelCount"/>.
 /// </summary>
+/// <summary>
+/// Which family of spatial average a project reads.
+/// </summary>
+/// <remarks>
+/// A property of the PROJECT and not of a channel. The hybrid levels a whole set
+/// with one scalar, and the two families are tethered differently — a
+/// moving-microphone pass by one analyzer session at one input gain, an array by
+/// the loopback its measurement already carries. A set holding both would need a
+/// per-channel offset, and the per-channel offsets are the spread detector: using
+/// them to draw would leave a set that cannot disagree with itself.
+/// </remarks>
+public enum VirtualCrossoverSpatialAverageMode
+{
+    /// <summary>Draw no spatial average, whatever the channels carry.</summary>
+    Off,
+
+    /// <summary>The moving-microphone captures attached to the channels.</summary>
+    MovingMic,
+
+    /// <summary>The microphone arrays the measurements brought with them.</summary>
+    MicArray
+}
+
 public sealed class VirtualCrossoverProjectFile
 {
     public const string CurrentFormat = "resonalyze-virtual-crossover";
@@ -502,6 +525,21 @@ public sealed class VirtualCrossoverProjectFile
     public string Format { get; set; } = CurrentFormat;
     public int Version { get; set; } = CurrentVersion;
     public DateTimeOffset SavedAtUtc { get; set; }
+
+    /// <summary>
+    /// Which spatial average this project reads, or null when the user has not
+    /// said — which is every project written before the array existed.
+    /// </summary>
+    /// <remarks>
+    /// Null resolves at load time rather than being written on save, and that is
+    /// the point: a project whose measurements carry arrays should read them
+    /// without the user having to find a menu, and one that predates arrays keeps
+    /// reading its attached captures. Once the user picks from the menu the choice
+    /// is stored and stops being guessed. Optional and additive, so the schema
+    /// version does not move.
+    /// </remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public VirtualCrossoverSpatialAverageMode? SpatialAverageMode { get; set; }
 
     // Schema v1 payload, kept only so old files deserialize for migration:
     // Migrate moves these into Pairs (as the left side) and empties the list.

@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.CompilerServices;
 using Resonalyze.Dsp;
 
@@ -113,10 +113,18 @@ public sealed class VirtualCrossoverHybridSideTests
             "BuildHybridChannelCurve",
             BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new InvalidOperationException("BuildHybridChannelCurve is gone.");
-        // An uninitialized panel: the builder reads the channel, the side and the
-        // panel's calibration (null here) and touches nothing a constructor would set,
-        // so this asks the production code the question without a Windows message loop.
+        // An uninitialized panel: the builder reads the channel, the side, the
+        // panel's calibration (null here) and the project's spatial-average method,
+        // so this asks the production code the question without a Windows message
+        // loop. The method is set explicitly rather than left to resolve, which
+        // would reach for the channel list a constructor builds.
         object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
+        typeof(VirtualCrossoverPanel)
+            .GetField("project", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(panel, new VirtualCrossoverProjectFile
+            {
+                SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic
+            });
         object? result = method.Invoke(
             panel, [channel, rightSide, reference, smoothingCode]);
         return Assert.IsAssignableFrom<IReadOnlyList<SignalPoint>>(result);

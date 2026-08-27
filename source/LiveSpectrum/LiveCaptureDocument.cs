@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
 
@@ -18,7 +18,22 @@ namespace Resonalyze;
 public enum SpatialAverageMethod
 {
     /// <summary>One microphone walked through the listening volume.</summary>
-    MovingMic
+    MovingMic,
+
+    /// <summary>
+    /// Several microphones recorded at once, as channels of the measurement's own
+    /// interface, and averaged over their positions.
+    /// </summary>
+    /// <remarks>
+    /// The arithmetic is identical to a moving microphone's and the consumers stay
+    /// blind to which was used — but the two are TETHERED differently, and that is
+    /// why the method is recorded rather than forgotten. A moving-microphone pass
+    /// is a reference-free capture whose level is held by nothing but one analyzer
+    /// session at one input gain; an array rides the measurement's own loopback, so
+    /// its level is fixed by the same reference the impulse responses use. The
+    /// checks a set must pass differ accordingly, and a set may not mix the two.
+    /// </remarks>
+    MicArray
 }
 
 /// <summary>
@@ -362,6 +377,25 @@ public sealed class LiveCaptureDocument
         }
 
         LiveCaptureDocument first = captures[0];
+        // One method per set. The two are not interchangeable here even though
+        // their arithmetic is: a moving-microphone pass is levelled by one scalar
+        // the whole set shares, an array by the loopback each measurement already
+        // carries. Mixing them would need a per-channel offset, and the per-channel
+        // offsets ARE the spread detector — using them to draw would leave a set
+        // that can never disagree with itself and a diagnostic identically zero.
+        if (captures.Any(capture => capture.Method != first.Method))
+        {
+            return LiveCaptureSetVerdict.No(
+                "Some channels carry a moving-microphone pass and some a microphone " +
+                "array. They are levelled differently, so one set cannot hold both — " +
+                "pick one method for the project.");
+        }
+
+        if (first.Method == SpatialAverageMethod.MicArray)
+        {
+            return JudgeArraySet(captures, first);
+        }
+
         foreach (LiveCaptureDocument capture in captures)
         {
             if (capture.Recipe.MatchesSetOf(first.Recipe))
@@ -389,6 +423,52 @@ public sealed class LiveCaptureDocument
             "them carry a dB SPL anchor, so nothing vouches for their levels " +
             "matching. Re-take them in one session, or with an SPL calibration in " +
             "force.");
+    }
+
+    /// <summary>
+    /// What an ARRAY set has to agree on, which is far less than a set of
+    /// moving-microphone passes.
+    /// </summary>
+    /// <remarks>
+    /// Almost every rule a moving-microphone set lives under exists because that
+    /// capture is untethered: the analyzer recipe must match because the slope
+    /// compensation it carries is a curve whose shape depends on the frame length,
+    /// the window and the rate together, and the sessions must match (or every
+    /// capture carry an SPL anchor) because nothing else holds their levels
+    /// together. An array has no analyzer and no recipe to match — it is a swept
+    /// transfer function — and its level is held by the same loopback the impulse
+    /// responses are referenced to, so channels measured minutes or days apart are
+    /// comparable by construction.
+    /// <para>
+    /// What remains is the protective high-pass. It is divided out of both families
+    /// with one model, so two channels compensated for different filters are not one
+    /// set: a tweeter would sit a whole filter slope from a midrange that never had
+    /// one.
+    /// </para>
+    /// </remarks>
+    private static LiveCaptureSetVerdict JudgeArraySet(
+        IReadOnlyList<LiveCaptureDocument> captures,
+        LiveCaptureDocument first)
+    {
+        foreach (LiveCaptureDocument capture in captures)
+        {
+            if (capture.Recipe.ProtectiveHighPassKind == first.Recipe.ProtectiveHighPassKind &&
+                (capture.Recipe.ProtectiveHighPassKind == ProtectiveHighPassKind.Off ||
+                    (capture.Recipe.ProtectiveHighPassFrequencyHz ==
+                            first.Recipe.ProtectiveHighPassFrequencyHz &&
+                        capture.Recipe.ProtectiveHighPassSlopeDbPerOctave ==
+                            first.Recipe.ProtectiveHighPassSlopeDbPerOctave)))
+            {
+                continue;
+            }
+
+            return LiveCaptureSetVerdict.No(
+                "The channels were measured with different protective high-pass " +
+                "settings, so one carries a filter another had divided out. " +
+                "Re-measure them with the same filter configured.");
+        }
+
+        return LiveCaptureSetVerdict.Ok;
     }
 
     public void Save(string path)

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -42,6 +42,32 @@ internal sealed class VirtualCrossoverChannelState
     /// </para>
     /// </remarks>
     public LiveCaptureDocument? SpatialAverage { get; set; }
+
+    /// <summary>
+    /// The spatial average the measurement on this side brought with it — the
+    /// microphone array it was recorded with — or null when it was recorded with
+    /// one microphone.
+    /// </summary>
+    /// <remarks>
+    /// Beside <see cref="SpatialAverage"/> and not instead of it: an attached
+    /// moving-microphone pass is a file the user chose, this one arrives with the
+    /// measurement, and the project decides which it reads. Cleared with the
+    /// measurement, because it IS part of it.
+    /// </remarks>
+    public LiveCaptureDocument? ArrayCapture { get; set; }
+
+    /// <summary>
+    /// The spatial average this side contributes under <paramref name="mode"/>, or
+    /// null when it has none of that family.
+    /// </summary>
+    public LiveCaptureDocument? SpatialAverageFor(
+        VirtualCrossoverSpatialAverageMode mode) =>
+        mode switch
+        {
+            VirtualCrossoverSpatialAverageMode.MicArray => ArrayCapture,
+            VirtualCrossoverSpatialAverageMode.MovingMic => SpatialAverage,
+            _ => null
+        };
     public int TransferPeakIndex { get; set; }
     public int SampleRate { get; set; }
 
@@ -90,6 +116,7 @@ internal sealed class VirtualCrossoverChannelState
         // The average belongs to the measurement that was here; a slot wiped for a
         // new source must not keep the old driver's curve.
         SpatialAverage = null;
+        ArrayCapture = null;
         TransferPeakIndex = 0;
         SampleRate = 0;
         TransferCoherence = null;

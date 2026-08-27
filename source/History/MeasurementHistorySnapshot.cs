@@ -4,6 +4,29 @@ namespace Resonalyze.History;
 
 internal sealed class MeasurementHistorySnapshot
 {
+    /// <summary>
+    /// The measurement's array microphones, when it was recorded with one.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately NOT persisted. History keeps a snapshot per entry and an array
+    /// is a thousand levels per microphone; the curves live in the measurement file
+    /// they were written to, and this carries them only as far as a tool that reads
+    /// a file in this session — which is what the Virtual DSP source path does. An
+    /// entry restored from the history file therefore has no array, and the hybrid
+    /// falls back to that channel's honest impulse response, saying so.
+    /// </remarks>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<ArrayMicrophoneCurve> ArrayMicrophones { get; init; } = [];
+
+    /// <summary>
+    /// The protective high-pass the measurement was corrected for, carried beside
+    /// the array because a set of arrays is judged on it: two channels compensated
+    /// for different filters are not one set. Not persisted, for the same reason
+    /// the array is not — it exists to accompany it.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ProtectiveHighPassConfiguration? ProtectiveHighPass { get; init; }
+
     public int SampleRate { get; init; }
     public int Bits { get; init; }
     // Legacy: only set when restoring a pre-band file; the band is stored

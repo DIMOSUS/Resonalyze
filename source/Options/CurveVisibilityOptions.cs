@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze.Options;
 
@@ -32,6 +32,13 @@ public sealed class CurveVisibilityOptions
 
     // Shared coherence curve, shown in all three modes.
     public bool ShowCoherence { get; set; } = true;
+
+    // The measurement's spatial average and the microphones behind it. Off by
+    // default: most measurements have no array, and the ones that do should show
+    // it because the user asked, not because it was there.
+    public bool ShowArrayAverage { get; set; }
+    public bool ShowArrayMicrophones { get; set; }
+    public bool ShowArraySpread { get; set; }
 
     /// <summary>
     /// The frequency-response curves to compute, translated for the DSP layer.

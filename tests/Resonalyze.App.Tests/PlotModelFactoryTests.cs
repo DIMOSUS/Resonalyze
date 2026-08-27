@@ -454,6 +454,94 @@ public sealed class PlotModelFactoryTests
     }
 
     [Fact]
+    public void FrequencyResponse_ArrayCurvesFollowTheirOwnFlags()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        measurement.ArrayMicrophones = SyntheticArray();
+
+        var off = new CurveVisibilityOptions();
+        Assert.DoesNotContain(
+            "Array average",
+            SeriesTitles(CreateFactory(
+                    measurement, noiseMeasurement, frequencyResponseVisibility: off)
+                .CreateFrequencyResponse(includeCurves: true)));
+
+        var shown = new CurveVisibilityOptions
+        {
+            ShowArrayAverage = true,
+            ShowArrayMicrophones = true,
+            ShowArraySpread = true
+        };
+        IReadOnlyList<string> titles = SeriesTitles(CreateFactory(
+                measurement, noiseMeasurement, frequencyResponseVisibility: shown)
+            .CreateFrequencyResponse(includeCurves: true));
+
+        Assert.Contains("Array average", titles);
+        Assert.Contains("Array spread", titles);
+        Assert.Contains("Input 1 (measurement)", titles);
+        Assert.Contains("left ear", titles);
+    }
+
+    [Fact]
+    public void FrequencyResponse_TheArraySpreadGetsItsOwnAxis()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        measurement.ArrayMicrophones = SyntheticArray();
+        var shown = new CurveVisibilityOptions { ShowArraySpread = true };
+
+        OxyPlot.PlotModel model = CreateFactory(
+                measurement, noiseMeasurement, frequencyResponseVisibility: shown)
+            .CreateFrequencyResponse(includeCurves: true);
+
+        // A dB RANGE is not a level: on the magnitude axis it would either sit on
+        // top of the curves or fall off the bottom, and both invite reading it as
+        // a response.
+        OxyPlot.Series.Series spread = model.Series.Single(
+            series => series.Title == "Array spread");
+        Assert.Equal(
+            "array-spread",
+            ((OxyPlot.Series.LineSeries)spread).YAxisKey);
+        Assert.Contains(model.Axes, axis => axis.Key == "array-spread");
+    }
+
+    [Fact]
+    public void FrequencyResponse_AMeasurementWithoutAnArrayDrawsNone()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var shown = new CurveVisibilityOptions
+        {
+            ShowArrayAverage = true,
+            ShowArrayMicrophones = true,
+            ShowArraySpread = true
+        };
+
+        OxyPlot.PlotModel model = CreateFactory(
+                measurement, noiseMeasurement, frequencyResponseVisibility: shown)
+            .CreateFrequencyResponse(includeCurves: true);
+
+        Assert.DoesNotContain("Array average", SeriesTitles(model));
+        Assert.DoesNotContain(model.Axes, axis => axis.Key == "array-spread");
+    }
+
+    private static IReadOnlyList<ArrayMicrophoneCurve> SyntheticArray()
+    {
+        int bands = SpatialAverage.GridBandCount;
+        return
+        [
+            new ArrayMicrophoneCurve(
+                0, true, Enumerable.Repeat(-6.0, bands).ToArray(), 1, []),
+            new ArrayMicrophoneCurve(
+                2, false, Enumerable.Repeat(-9.0, bands).ToArray(), 1, [])
+            {
+                Note = "left ear"
+            }
+        ];
+    }
+
+    [Fact]
     public void PhaseResponse_AutoDetrendPreservesMainCompareRelativeDelay()
     {
         const int sampleRate = 44_100;

@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -48,6 +48,9 @@ public sealed record CurveTag(
         AnalysisCurveKind.InputSpectrum => "Input Spectrum (RTA)",
         AnalysisCurveKind.ImpulseEnvelope => "Envelope (ETC)",
         AnalysisCurveKind.ImpulseStep => "Step response",
+        AnalysisCurveKind.ArrayAverage => "Array average",
+        AnalysisCurveKind.ArrayMicrophone => "Array microphone",
+        AnalysisCurveKind.ArraySpread => "Array spread",
         _ => mode switch
         {
             Mode.FrequencyResponse => "Magnitude",

@@ -1,4 +1,4 @@
-namespace Resonalyze.Dsp;
+﻿namespace Resonalyze.Dsp;
 
 /// <summary>
 /// Represents a numeric sample without coupling DSP code to a plotting framework.
@@ -36,7 +36,15 @@ public enum AnalysisCurveKind
     // and the running integral of the impulse (step response). Appended for the
     // same reason as the pair above.
     ImpulseEnvelope,
-    ImpulseStep
+    ImpulseStep,
+    // A measurement's spatial average and the microphones behind it, plus the
+    // spread between those microphones. Appended, like every kind before them:
+    // the kind is persisted in overlay files, so the numbers cannot move.
+    ArrayAverage,
+    ArrayMicrophone,
+    // A dB RANGE rather than a level, which is why it is drawn on an axis of its
+    // own and smoothed as a ratio.
+    ArraySpread
 }
 
 /// <summary>

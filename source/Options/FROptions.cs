@@ -58,6 +58,9 @@ namespace Resonalyze.Options
                     calibrationEntries);
                 checkBoxShowPrimary.Checked = visibility.ShowPrimary;
                 checkBoxShowCoherence.Checked = visibility.ShowCoherence;
+                checkBoxShowArrayAverage.Checked = visibility.ShowArrayAverage;
+                checkBoxShowArrayMicrophones.Checked = visibility.ShowArrayMicrophones;
+                checkBoxShowArraySpread.Checked = visibility.ShowArraySpread;
                 checkBoxShowHd2.Checked = visibility.ShowHd2;
                 checkBoxShowHd3.Checked = visibility.ShowHd3;
                 checkBoxShowHd4.Checked = visibility.ShowHd4;
@@ -123,6 +126,9 @@ namespace Resonalyze.Options
                 MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration);
             visibility.ShowPrimary = checkBoxShowPrimary.Checked;
             visibility.ShowCoherence = checkBoxShowCoherence.Checked;
+            visibility.ShowArrayAverage = checkBoxShowArrayAverage.Checked;
+            visibility.ShowArrayMicrophones = checkBoxShowArrayMicrophones.Checked;
+            visibility.ShowArraySpread = checkBoxShowArraySpread.Checked;
             visibility.ShowHd2 = checkBoxShowHd2.Checked;
             visibility.ShowHd3 = checkBoxShowHd3.Checked;
             visibility.ShowHd4 = checkBoxShowHd4.Checked;
@@ -273,6 +279,20 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 checkBoxShowCoherence,
                 "Shows the measurement coherence (\u03B3\u00B2) curve when the IR was captured with 2+ averaged runs.");
+            toolTip.SetToolTip(
+                checkBoxShowArrayAverage,
+                "Shows the spatial average of the microphone array this measurement " +
+                "was recorded with. It is a steady-state curve and does not follow " +
+                "the time window.");
+            toolTip.SetToolTip(
+                checkBoxShowArrayMicrophones,
+                "Shows each array position behind the average, levelled onto the " +
+                "measurement microphone.");
+            toolTip.SetToolTip(
+                checkBoxShowArraySpread,
+                "Shows how far apart the array positions sit at each frequency, on " +
+                "its own axis — where they disagree, a single-point measurement is " +
+                "describing that spot rather than the seat.");
             toolTip.SetToolTip(
                 checkBoxShowHd2,
                 "Shows the 2nd harmonic distortion curve.");

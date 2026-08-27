@@ -1,4 +1,4 @@
-using OxyPlot;
+﻿using OxyPlot;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
 
@@ -67,6 +67,13 @@ internal static class OxyPlotAdapter
             // the step — a different quantity on a different axis — steps out to blue.
             AnalysisCurveKind.ImpulseEnvelope => OxyColor.FromRgb(255, 210, 80),
             AnalysisCurveKind.ImpulseStep => OxyColor.FromRgb(120, 200, 255),
+            // The spatial average is the array's answer, so it takes a strong hue
+            // of its own; the positions behind it are the same family, dimmed,
+            // because they are what it is made of rather than rivals to it. The
+            // spread is neither — a range on its own axis — and steps away.
+            AnalysisCurveKind.ArrayAverage => OxyColor.FromRgb(120, 230, 190),
+            AnalysisCurveKind.ArrayMicrophone => OxyColor.FromRgb(70, 130, 115),
+            AnalysisCurveKind.ArraySpread => OxyColor.FromRgb(200, 140, 220),
             _ => OxyColor.FromRgb(255, 127, 0)
         };
     }

@@ -353,6 +353,9 @@ internal sealed partial class MeasurementSettingsFile
         public LegacyMicrophoneCalibrationMode? CalibrationMode { get; set; }
         public MagnitudeScale MagnitudeScale { get; set; } = MagnitudeScale.Relative;
         public bool ShowCoherence { get; set; } = true;
+        public bool ShowArrayAverage { get; set; }
+        public bool ShowArrayMicrophones { get; set; }
+        public bool ShowArraySpread { get; set; }
         public bool ShowMeasuredPhase { get; set; } = true;
         public bool ShowMinimumPhase { get; set; } = true;
         public bool ShowExcessPhase { get; set; } = true;
@@ -402,6 +405,9 @@ internal sealed partial class MeasurementSettingsFile
                 CalibrationId = options.CalibrationId,
                 MagnitudeScale = options.MagnitudeScale,
                 ShowCoherence = visibility.ShowCoherence,
+                ShowArrayAverage = visibility.ShowArrayAverage,
+                ShowArrayMicrophones = visibility.ShowArrayMicrophones,
+                ShowArraySpread = visibility.ShowArraySpread,
                 ShowMeasuredPhase = visibility.ShowMeasuredPhase,
                 ShowMinimumPhase = visibility.ShowMinimumPhase,
                 ShowExcessPhase = visibility.ShowExcessPhase,
@@ -457,6 +463,9 @@ internal sealed partial class MeasurementSettingsFile
                 ? MagnitudeScale
                 : MagnitudeScale.Relative;
             visibility.ShowCoherence = ShowCoherence;
+            visibility.ShowArrayAverage = ShowArrayAverage;
+            visibility.ShowArrayMicrophones = ShowArrayMicrophones;
+            visibility.ShowArraySpread = ShowArraySpread;
             visibility.ShowMeasuredPhase = ShowMeasuredPhase;
             visibility.ShowMinimumPhase = ShowMinimumPhase;
             visibility.ShowExcessPhase = ShowExcessPhase;

@@ -605,6 +605,8 @@ internal sealed class PlotModelFactory
                     frequencyResponseOptions,
                     frequencyResponseVisibility.ShowCoherence);
 
+                AddArrayMicrophones(model, splOffset);
+
                 AddHiddenHarmonicAnnotation(model, curves);
             }
         }
@@ -2381,6 +2383,112 @@ internal sealed class PlotModelFactory
             options.SmoothingInverseOctaves));
     }
 
+    /// <summary>
+    /// The measurement's spatial average, the positions behind it and the spread
+    /// between them.
+    /// </summary>
+    /// <remarks>
+    /// These curves do not follow the time window. They are steady-state — no gate
+    /// at all — because that is what a spatial average is and what the consumers of
+    /// one need, so moving the gate leaves them where they are while the measured
+    /// magnitude beside them moves. That is honest rather than awkward: the two are
+    /// different measurements of the same driver, and the array's whole point is
+    /// that it is not the one the gate belongs to.
+    /// </remarks>
+    private void AddArrayMicrophones(PlotModel model, double? splOffsetDb)
+    {
+        CurveVisibilityOptions visibility = frequencyResponseVisibility;
+        if (!visibility.ShowArrayAverage &&
+            !visibility.ShowArrayMicrophones &&
+            !visibility.ShowArraySpread)
+        {
+            return;
+        }
+
+        ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
+            expSweepMeasurement.ArrayMicrophones,
+            frequencyResponseOptions.UseCalibration,
+            frequencyResponseOptions.SmoothingInverseOctaves);
+
+        // The array is a transfer magnitude like the measurement's own, so the same
+        // offset puts it on the absolute axis. Without one the level curves are
+        // omitted exactly as the measured magnitude is — a relative shape drawn on
+        // an absolute axis is a lie about how loud the car was.
+        if (splOffsetDb is { } offset)
+        {
+            display = display with
+            {
+                Average = display.Average == null
+                    ? null
+                    : SplConversion.ToSoundPressureLevel([display.Average], offset)[0],
+                Microphones = SplConversion.ToSoundPressureLevel(display.Microphones, offset)
+            };
+        }
+
+        if (visibility.ShowArrayMicrophones)
+        {
+            foreach (AnalysisCurve microphone in display.Microphones)
+            {
+                LineSeries series = AddLineSeries(
+                    model,
+                    microphone,
+                    ArrayTrackerFormat,
+                    Mode.FrequencyResponse,
+                    DecibelAxisKey);
+                // Thin and behind: they are what the average is made of, not
+                // curves competing with it for the eye.
+                series.StrokeThickness = 1;
+            }
+        }
+
+        if (visibility.ShowArrayAverage && display.Average is { } average)
+        {
+            AddLineSeries(
+                model,
+                average,
+                ArrayTrackerFormat,
+                Mode.FrequencyResponse,
+                DecibelAxisKey).StrokeThickness = 2.5;
+        }
+
+        if (visibility.ShowArraySpread && display.Spread is { } spread)
+        {
+            AddArraySpreadAxis(model);
+            AddLineSeries(
+                model,
+                spread,
+                "{0}\n{2:0.# Hz}: {4:0.0} dB",
+                Mode.FrequencyResponse,
+                ArraySpreadAxisKey);
+        }
+    }
+
+    // A range, not a level: its own axis, because on the magnitude axis it would
+    // either sit on top of the curves (relative) or fall off the bottom (SPL), and
+    // both would invite reading it as a response.
+    private static void AddArraySpreadAxis(PlotModel model)
+    {
+        if (model.Axes.Any(axis => axis.Key == ArraySpreadAxisKey))
+        {
+            return;
+        }
+
+        PlotModelStyle.AddAxis(model, new LinearAxis
+        {
+            Key = ArraySpreadAxisKey,
+            Position = AxisPosition.Right,
+            AbsoluteMinimum = 0,
+            AbsoluteMaximum = 60,
+            Minimum = 0,
+            Maximum = 30,
+            MajorGridlineStyle = LineStyle.None,
+            MinorGridlineStyle = LineStyle.None,
+            Title = "Array spread (dB)",
+            IsPanEnabled = false,
+            IsZoomEnabled = false
+        });
+    }
+
     internal static void AddCoherenceAxis(PlotModel model)
     {
         if (model.Axes.Any(axis => axis.Key == CoherenceAxisKey))
@@ -2403,6 +2511,10 @@ internal sealed class PlotModelFactory
             IsZoomEnabled = false
         });
     }
+
+    private const string ArraySpreadAxisKey = "array-spread";
+
+    private const string ArrayTrackerFormat = "{0}\n{2:0.# Hz}: {4:0.0} dB";
 
     private static LineSeries AddLineSeries(
         PlotModel model,

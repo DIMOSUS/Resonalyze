@@ -2409,6 +2409,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 // "Own (as measured)" the panel holds no single one, and comparing the
                 // token against a null would refuse every return.
                 CalibrationFor(token.Channel.SideState(token.RightSide)),
+                // And how a capture on it would be read, which the curve above cannot
+                // say: the two are what decide the magnitude together.
+                SpatialAverageCalibrationFor(token.Channel.SideState(token.RightSide)),
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 (double)numericTargetLevel.Value,
@@ -3577,6 +3580,17 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // Before the sum note below, because it is about a selection the user just
+        // made and part of the plot is not obeying.
+        if (DescribeUnappliedCalibration(processed) is { } unapplied)
+        {
+            ShowWarning(
+                "⚠ The selected calibration does not reach every curve.",
+                unapplied,
+                GateWarningColor);
+            return;
+        }
+
         // Louder than the array note below it, because it is about the SUM: the
         // channels are each corrected and their total is not, so the gap between them
         // is not the summation it looks like.
@@ -3679,6 +3693,56 @@ public partial class VirtualCrossoverPanel : UserControl
     /// and which calibration was read through. Neither breaks the LEVEL — that is
     /// the loopback's job and it is done per measurement — so neither is a refusal.
     /// </remarks>
+    /// <summary>
+    /// What to say when a named calibration cannot be applied to some of the captures
+    /// on the plot. Null when it reaches all of them, and null when none was named.
+    /// </summary>
+    /// <remarks>
+    /// A capture whose positions carried DIFFERENT calibration files declares an
+    /// aggregate correction belonging to no single microphone, so there is nothing a
+    /// named curve could be swapped for; the hybrid keeps the capture's own and says
+    /// nothing on its own. That silence is the problem this covers — the user chose a
+    /// microphone and part of the plot is not reading through it. Choosing is what
+    /// makes it worth saying: nobody needs telling about a state they did not ask for.
+    /// </remarks>
+    private string? DescribeUnappliedCalibration(IReadOnlyList<ProcessedChannel> processed)
+    {
+        if (ownCalibrationSelected || Calibration == null)
+        {
+            return null;
+        }
+
+        var aggregates = new List<string>();
+        foreach (ProcessedChannel item in processed)
+        {
+            LiveCaptureDocument? capture = item.Channel
+                .SideState(project.ActiveSideRight)
+                .SpatialAverageFor(SpatialAverageMode);
+            if (capture is { CalibrationIsAggregate: true })
+            {
+                aggregates.Add($"{item.Channel.Name} {item.Channel.Settings.DisplayName}");
+            }
+        }
+
+        if (aggregates.Count == 0)
+        {
+            return null;
+        }
+
+        return
+            $"{string.Join(", ", aggregates)} " +
+            (aggregates.Count == 1 ? "was" : "were") +
+            " averaged over positions carrying DIFFERENT calibration files, so the " +
+            "correction stored with the average belongs to no single microphone and " +
+            "there is nothing " +
+            $"\"{SelectedCalibrationName() ?? "the selected calibration"}\" could be " +
+            "swapped for. Those curves keep their own corrections — each position " +
+            "through the file it was measured with, which is the closest thing to the " +
+            "truth there is. Everything else on the plot is read through your " +
+            "selection.\r\n\r\nSelect \"Own (as measured)\" to read the whole plot " +
+            "the way each measurement was taken, and the note goes away.";
+    }
+
     /// <summary>
     /// What to say when "Own (as measured)" is selected and the channels do not agree
     /// about the microphone they were measured through. Null when they do, and null

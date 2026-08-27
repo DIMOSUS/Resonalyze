@@ -137,6 +137,56 @@ public sealed class VirtualCrossoverOwnCalibrationTests
     }
 
     [Fact]
+    public void ANamedCalibrationAnAggregateCannotTakeIsSaidOutLoud()
+    {
+        // A capture of several capsules has an aggregate correction belonging to no
+        // single microphone, so a named curve has nothing to be swapped for and the
+        // hybrid keeps the capture's own. That is the right arithmetic and the wrong
+        // silence: the user chose a microphone, and part of the plot is not reading
+        // through it.
+        var project = new VirtualCrossoverProjectFile
+        {
+            SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic
+        };
+        var channel = new VirtualCrossoverChannel("left");
+        channel.SideState(false).SpatialAverage = new LiveCaptureDocument
+        {
+            SavedAtUtc = DateTimeOffset.UnixEpoch,
+            Title = "several capsules",
+            CurveDb = [70.0, 70.0],
+            CalibrationCorrectionDb = [1.0, 1.0],
+            CalibrationIsAggregate = true,
+            GridStartHz = 20,
+            GridStopHz = 20_000,
+            Recipe = new LiveCaptureRecipe { SampleRateHz = 48_000 }
+        };
+
+        object panel = Panel(own: false);
+        SetField(panel, "project", project);
+        // The message names the selection, and the selector is a Designer control an
+        // uninitialized panel does not have.
+        SetField(panel, "comboBoxCalibration", new DarkComboBox());
+        IReadOnlyList<ProcessedChannel> drawn = [Channel("left", CapsuleA) with
+        {
+            Channel = channel
+        }];
+
+        string? notice = Invoke<string?>(panel, "DescribeUnappliedCalibration", drawn);
+        Assert.NotNull(notice);
+        Assert.Contains("belongs to no single microphone", notice!);
+
+        // Nothing to say under Own, which is what the note recommends, and nothing to
+        // say for a capture that CAN take the swap.
+        object own = Panel(own: true);
+        SetField(own, "project", project);
+        SetField(own, "comboBoxCalibration", new DarkComboBox());
+        Assert.Null(Invoke<string?>(own, "DescribeUnappliedCalibration", drawn));
+
+        channel.SideState(false).SpatialAverage!.CalibrationIsAggregate = false;
+        Assert.Null(Invoke<string?>(panel, "DescribeUnappliedCalibration", drawn));
+    }
+
+    [Fact]
     public void ASumOfDisagreeingChannelsKeepsNoneAndSaysSo()
     {
         // One subtraction cannot undo two microphones, so the sum carries none — and

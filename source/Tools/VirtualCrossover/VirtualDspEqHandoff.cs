@@ -117,6 +117,13 @@ internal sealed record VirtualDspEqReturnToken(
     double? PinnedGateOffsetMs,
     CalibrationFile? Calibration,
     LiveCaptureDocument? SpatialAverage,
+    // HOW that capture was read, which the calibration above cannot say. Off, Own
+    // and Specific turn one stored average into three different magnitudes, and two
+    // of those changes leave the panel's own calibration untouched: switching from
+    // Own to the very file the impulse response names, or — for an array whose
+    // measurement microphone carries none — from Own to Off. Without this the bank
+    // would come back onto a curve it was never fitted to, silently.
+    SpatialAverageCalibration SpatialAverageCalibration,
     int ProcessorSampleRateHz);
 
 /// <summary>
@@ -402,6 +409,7 @@ internal static class VirtualDspEqHandoff
                 // from the wizard: null here means "fitted against the impulse
                 // response", and the two must still agree on the way back.
                 spatialAverage,
+                spatialAverageCalibration,
                 processorSampleRate));
     }
 
@@ -438,6 +446,7 @@ internal static class VirtualDspEqHandoff
         EqualizationCurve curve,
         long projectGeneration,
         CalibrationFile? calibration,
+        SpatialAverageCalibration spatialAverageCalibration,
         PhaseAnalysisSettings gateTemplate,
         double? pinnedGateOffsetMs,
         double targetLevelDb,
@@ -490,6 +499,18 @@ internal static class VirtualDspEqHandoff
         // hands over the very document it is drawing from, and a re-attached file is a
         // different capture whether or not its bytes match.
         if (!ReferenceEquals(token.SpatialAverage, spatialAverage))
+        {
+            return false;
+        }
+
+        // And it must still be read the same way. The guard above says the capture is
+        // the same document; this says the panel still turns it into the same curve.
+        // Only where there IS a capture: for a channel drawn from its impulse response
+        // the mode describes nothing, and refusing on it would refuse a tune nothing
+        // had moved. See the token — the two changes this catches both leave the
+        // calibration guard above perfectly satisfied.
+        if (token.SpatialAverage != null &&
+            !token.SpatialAverageCalibration.Matches(spatialAverageCalibration))
         {
             return false;
         }

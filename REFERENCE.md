@@ -1749,7 +1749,16 @@ wrong by the whole difference between the two calibrations. Off still undoes wha
 capture carries, exactly, and a named calibration is still swapped in — but only for a
 capture that declares ONE correction. A capture of several capsules has an aggregate
 belonging to no single microphone, so there is nothing a curve could replace, and it
-keeps its own.
+keeps its own — **and the panel says so**, because choosing a microphone and having
+part of the plot not read through it is not something to leave to be noticed.
+
+A tune carries the reading it was fitted under back with it. Off, Own and a named
+file turn one stored average into three different magnitudes, and two of those
+switches leave the panel's own calibration untouched — moving from Own to the very
+file the impulse response names, or, for an array whose measurement microphone
+carries none, from Own to Off. A bank returning from the EQ Wizard into either is
+refused, as it is for every other change that moves the curve under a tune in
+progress.
 
 The session stores the calibration it was tuned with as the **curve itself**, not
 as a reference to your calibration list: a calibration describes the microphone

@@ -45,4 +45,20 @@ internal readonly record struct SpatialAverageCalibration(
         curve is { HasData: true }
             ? new SpatialAverageCalibration(SpatialAverageCalibrationMode.Specific, curve)
             : Off;
+
+    /// <summary>
+    /// Whether this describes the same reading as <paramref name="other"/>.
+    /// </summary>
+    /// <remarks>
+    /// Not the record's own equality, which compares the curve by REFERENCE: a
+    /// calibration re-read from its file is a different object holding the same
+    /// points, and refusing a returning tune over that would be refusing it for
+    /// nothing. Off, Own and Specific are three different readings of one capture
+    /// whatever curve is beside them, so the mode is compared first and the curve
+    /// only where it is applied.
+    /// </remarks>
+    public bool Matches(SpatialAverageCalibration other) =>
+        Mode == other.Mode &&
+        (Mode != SpatialAverageCalibrationMode.Specific ||
+            CalibrationFile.SameCurve(Curve, other.Curve));
 }

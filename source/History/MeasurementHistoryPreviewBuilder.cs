@@ -28,8 +28,12 @@ internal static class MeasurementHistoryPreviewBuilder
         int sampleRate,
         SweepMeasurementMode measurementMode,
         Complex[]? transferImpulseResponse,
-        int? transferPeakIndex)
+        int? transferPeakIndex,
+        ProtectiveHighPassConfiguration? measurementProtectiveHighPass = null)
     {
+        // Only the transfer branch takes the limit. The sweep deconvolution still
+        // CARRIES the protective high-pass — nothing divided it out — so its low
+        // end is signal the loudspeaker really produced.
         IImpulseMeasurement measurement = measurementMode == SweepMeasurementMode.LoopbackTransfer &&
             transferImpulseResponse is { Length: > 0 } transfer &&
             transferPeakIndex.HasValue
@@ -37,6 +41,12 @@ internal static class MeasurementHistoryPreviewBuilder
                     transfer,
                     transferPeakIndex.Value,
                     sampleRate)
+                {
+                    LowestMeasuredFrequencyHz =
+                        ProtectiveHighPassConfiguration.LowestMeasuredFrequencyHz(
+                            measurementProtectiveHighPass,
+                            sampleRate)
+                }
                 : new ImpulseMeasurementView(
                     sweepDeconvolutionImpulseResponse,
                     sweepPeakIndex,

@@ -62,7 +62,38 @@ namespace Resonalyze.Dsp
                     frequencyResponseOptions.SmoothingInverseOctaves),
                 psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
                     frequencyResponseOptions.SmoothingInverseOctaves));
-            return new AnalysisCurve("Frequency Response", data);
+            return new AnalysisCurve(
+                "Frequency Response",
+                MaskUnmeasuredBands(data, measurement.LowestMeasuredFrequencyHz));
+        }
+
+        /// <summary>
+        /// Breaks a finished curve where the response carries no measurement.
+        /// </summary>
+        /// <remarks>
+        /// AFTER the smoothing, deliberately. Masking the oversampled spectrum that
+        /// feeds it would let the smoothing window straddle the boundary in both
+        /// directions: measured on a 1 kHz / 48 dB per octave corner, 29 bands below
+        /// the limit survived on borrowed passband energy while 9 bands above it
+        /// were lost to the NaN. On the output grid the break lands exactly where
+        /// the filter put it.
+        /// </remarks>
+        private static List<SignalPoint> MaskUnmeasuredBands(
+            List<SignalPoint> data,
+            double lowestMeasuredFrequencyHz)
+        {
+            if (!(lowestMeasuredFrequencyHz > 0.0) ||
+                !double.IsFinite(lowestMeasuredFrequencyHz))
+            {
+                return data;
+            }
+
+            for (int i = 0; i < data.Count && data[i].X < lowestMeasuredFrequencyHz; i++)
+            {
+                data[i] = new SignalPoint(data[i].X, double.NaN);
+            }
+
+            return data;
         }
 
         /// <summary>

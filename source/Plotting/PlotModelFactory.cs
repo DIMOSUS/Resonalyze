@@ -2610,7 +2610,10 @@ internal sealed class PlotModelFactory
 
         int peakIndex = Math.Clamp(compare.TransferPeakIndex, 0, transferIr.Length - 1);
         return (
-            new ImpulseMeasurementView(transferIr, peakIndex, compare.SampleRate),
+            new ImpulseMeasurementView(transferIr, peakIndex, compare.SampleRate)
+            {
+                LowestMeasuredFrequencyHz = compare.LowestMeasuredFrequencyHz
+            },
             compare.DisplayName,
             compare.TransferCoherence,
             compare.SplOffsetDb);

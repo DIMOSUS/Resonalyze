@@ -96,7 +96,17 @@ internal sealed class MeasurementPlotContext
         return new ImpulseMeasurementView(
             transfer.ImpulseResponse,
             transfer.PeakIndex,
-            expSweepMeasurement.SampleRate);
+            expSweepMeasurement.SampleRate)
+        {
+            // From the filter the RESULT carries, never the configured one: the
+            // live setting describes the next sweep, and reading it here would
+            // break a loaded file's curve at a frequency belonging to a filter it
+            // never passed through.
+            LowestMeasuredFrequencyHz =
+                ProtectiveHighPassConfiguration.LowestMeasuredFrequencyHz(
+                    expSweepMeasurement.MeasurementProtectiveHighPass,
+                    expSweepMeasurement.SampleRate)
+        };
     }
 
     /// <summary>

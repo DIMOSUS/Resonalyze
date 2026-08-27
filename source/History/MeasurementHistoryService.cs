@@ -219,7 +219,8 @@ internal sealed class MeasurementHistoryService
             measurement.SampleRate,
             measurement.MeasurementMode,
             transfer,
-            transferResult?.PeakIndex);
+            transferResult?.PeakIndex,
+            measurement.MeasurementProtectiveHighPass);
 
         return new MeasurementHistorySnapshot
         {
@@ -273,7 +274,8 @@ internal sealed class MeasurementHistoryService
                 file.SampleRate,
                 file.MeasurementMode,
                 transfer,
-                file.TransferPeakIndex);
+                file.TransferPeakIndex,
+                file.ProtectiveHighPass?.ToConfiguration());
 
         (double lowHz, double highHz) = file.ResolveSweepBand();
         (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();

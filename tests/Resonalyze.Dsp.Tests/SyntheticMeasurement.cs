@@ -22,5 +22,11 @@ internal sealed class SyntheticMeasurement : IImpulseMeasurement
     public int PeakIndex { get; }
     public int SampleRate { get; }
 
+    /// <summary>
+    /// Where the response stops carrying a measurement; zero unless a test is
+    /// standing in for one whose protective high-pass was divided back out.
+    /// </summary>
+    public double LowestMeasuredFrequencyHz { get; init; }
+
     public double HarmonicIROffset(double harmonic) => harmonicOffset(harmonic);
 }

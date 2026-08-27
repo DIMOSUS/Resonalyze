@@ -39,5 +39,13 @@ internal sealed class ImpulseMeasurementView : IImpulseMeasurement
     public int PeakIndex { get; }
     public int SampleRate { get; }
 
+    /// <summary>
+    /// Where this response stops carrying a measurement, for one whose protective
+    /// high-pass was divided back out. Zero — the default — for every other view,
+    /// including the derived ones: a SUM of two channels plays wherever either of
+    /// them does, so one channel's limit is not the sum's.
+    /// </summary>
+    public double LowestMeasuredFrequencyHz { get; init; }
+
     public double HarmonicIROffset(double harmonic) => harmonicOffset(harmonic);
 }

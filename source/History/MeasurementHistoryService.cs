@@ -220,7 +220,11 @@ internal sealed class MeasurementHistoryService
             measurement.MeasurementMode,
             transfer,
             transferResult?.PeakIndex,
-            measurement.MeasurementProtectiveHighPass);
+            MeasuredBand.Resolve(
+                measurement.MeasurementProtectiveHighPass,
+                measurement.AchievedLowFrequencyHz,
+                measurement.AchievedHighFrequencyHz,
+                measurement.SampleRate));
 
         return new MeasurementHistorySnapshot
         {
@@ -267,6 +271,8 @@ internal sealed class MeasurementHistoryService
     {
         Complex[] sweep = file.GetSweepDeconvolutionImpulseResponse();
         Complex[]? transfer = file.GetTransferImpulseResponse();
+        (double lowHz, double highHz) = file.ResolveSweepBand();
+        (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();
         MeasurementHistoryPreview preview = file.ToPreview() ??
             MeasurementHistoryPreviewBuilder.Build(
                 sweep,
@@ -275,10 +281,12 @@ internal sealed class MeasurementHistoryService
                 file.MeasurementMode,
                 transfer,
                 file.TransferPeakIndex,
-                file.ProtectiveHighPass?.ToConfiguration());
+                MeasuredBand.Resolve(
+                    file.ProtectiveHighPass?.ToConfiguration(),
+                    achievedLowHz,
+                    achievedHighHz,
+                    file.SampleRate));
 
-        (double lowHz, double highHz) = file.ResolveSweepBand();
-        (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();
         return new MeasurementHistorySnapshot
         {
             SampleRate = file.SampleRate,

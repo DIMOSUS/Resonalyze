@@ -28,5 +28,8 @@ internal sealed class SyntheticMeasurement : IImpulseMeasurement
     /// </summary>
     public double LowestMeasuredFrequencyHz { get; init; }
 
+    /// <summary>The other end of the same thing; infinity unless a test sets it.</summary>
+    public double HighestMeasuredFrequencyHz { get; init; } = double.PositiveInfinity;
+
     public double HarmonicIROffset(double harmonic) => harmonicOffset(harmonic);
 }

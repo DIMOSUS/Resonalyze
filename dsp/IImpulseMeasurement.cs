@@ -28,4 +28,15 @@ public interface IImpulseMeasurement
     /// which would be a claim, but at nothing, which is the truth.
     /// </remarks>
     double LowestMeasuredFrequencyHz => 0.0;
+
+    /// <summary>
+    /// The highest frequency this response carries a measurement at. Infinity — the
+    /// default — means the whole band was measured.
+    /// </summary>
+    /// <remarks>
+    /// The other end of <see cref="LowestMeasuredFrequencyHz"/>, and set by the same
+    /// thing at the top: a band sweep that stopped short leaves the response zeroed
+    /// above it, and a windowed spectrum of a zero is the window.
+    /// </remarks>
+    double HighestMeasuredFrequencyHz => double.PositiveInfinity;
 }

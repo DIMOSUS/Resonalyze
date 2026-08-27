@@ -227,7 +227,11 @@ public sealed class ImpulseResponseFile
                     measurement.MeasurementMode,
                     transfer?.ImpulseResponse,
                     transferPeakIndex,
-                    measurement.MeasurementProtectiveHighPass)),
+                    MeasuredBand.Resolve(
+                        measurement.MeasurementProtectiveHighPass,
+                        measurement.AchievedLowFrequencyHz,
+                        measurement.AchievedHighFrequencyHz,
+                        measurement.SampleRate))),
             SweepDeconvolutionRealSamples = sweepRealSamples,
             SweepDeconvolutionImaginarySamples = sweepImaginarySamples,
             TransferRealSamples = transferRealSamples,

@@ -515,7 +515,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator,
-            (impulseResponse, anchorIndex, sampleRate, lowestMeasuredFrequencyHz) =>
+            (impulseResponse, anchorIndex, sampleRate, measuredBand) =>
             {
                 PhaseAnalysisSettings gate = template with
                 {
@@ -528,8 +528,10 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                         {
                             // Passed through rather than ignored: the harness has to
                             // read what the panel reads, and a channel measured
-                            // through a protective high-pass stops where it does.
-                            LowestMeasuredFrequencyHz = lowestMeasuredFrequencyHz
+                            // through a protective high-pass, or with a band sweep,
+                            // stops where those stop it.
+                            LowestMeasuredFrequencyHz = measuredBand.LowEdgeHz,
+                            HighestMeasuredFrequencyHz = measuredBand.HighEdgeHz
                         },
                         gate,
                         calibration: null,

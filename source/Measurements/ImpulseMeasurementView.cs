@@ -47,5 +47,11 @@ internal sealed class ImpulseMeasurementView : IImpulseMeasurement
     /// </summary>
     public double LowestMeasuredFrequencyHz { get; init; }
 
+    /// <summary>
+    /// Where this response stops carrying a measurement at the top — a sweep that
+    /// ended below the audible band. Infinity for every other view.
+    /// </summary>
+    public double HighestMeasuredFrequencyHz { get; init; } = double.PositiveInfinity;
+
     public double HarmonicIROffset(double harmonic) => harmonicOffset(harmonic);
 }

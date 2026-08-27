@@ -36,7 +36,7 @@ internal sealed record ProcessedChannel(
     // Snapshotted from the SIDE this response came from, like the rate above: the
     // list can carry the opposite side's responses, and reading it back off the
     // channel would answer for whichever side happens to be active.
-    double LowestMeasuredFrequencyHz = 0.0);
+    MeasuredBand MeasuredBand = default);
 
 /// <summary>
 /// One gated magnitude curve at the two widths the tool needs, from a single gate
@@ -93,6 +93,33 @@ internal sealed record AdjacentPair(
 /// </summary>
 internal static class ProcessedChannels
 {
+    /// <summary>
+    /// The band a SUM of these channels measured: the union of theirs.
+    /// </summary>
+    /// <remarks>
+    /// A sum plays wherever any of its channels does. Taking one channel's band — or
+    /// the narrowest — would blank a range a woofer measured perfectly well because a
+    /// tweeter beside it was filtered, or swept, out of that range.
+    /// </remarks>
+    public static MeasuredBand UnionOfMeasuredBands(
+        IReadOnlyList<ProcessedChannel> channels)
+    {
+        if (channels.Count == 0)
+        {
+            return MeasuredBand.Everything;
+        }
+
+        double lowest = double.PositiveInfinity;
+        double highest = 0.0;
+        foreach (ProcessedChannel channel in channels)
+        {
+            lowest = Math.Min(lowest, channel.MeasuredBand.LowEdgeHz);
+            highest = Math.Max(highest, channel.MeasuredBand.HighEdgeHz);
+        }
+
+        return new MeasuredBand(lowest, highest);
+    }
+
     // The frequency window the metric and Auto delay operate in: around the
     // corner frequencies the channels actually use (one octave to each side),
     // or a broad midband default when no crossover is configured yet.

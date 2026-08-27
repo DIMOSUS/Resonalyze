@@ -40,10 +40,10 @@ internal sealed class ResolvedVirtualDspSource
     public double[]? ArraySpreadDb { get; init; }
 
     /// <summary>
-    /// Where this measurement stops carrying a signal, from the protective
-    /// high-pass that was divided back out of it.
+    /// What this measurement actually measured, from the protective high-pass
+    /// divided back out of it and the band its sweep swept.
     /// </summary>
-    public double LowestMeasuredFrequencyHz { get; init; }
+    public MeasuredBand MeasuredBand { get; init; } = MeasuredBand.Everything;
 
     /// <summary>
     /// Prepares a source from a measurement snapshot, or returns null when the
@@ -77,10 +77,11 @@ internal sealed class ResolvedVirtualDspSource
             DistortionCurve = ComputeDistortionCurve(snapshot),
             ArrayCapture = arrayCapture,
             ArraySpreadDb = arraySpreadDb,
-            LowestMeasuredFrequencyHz =
-                ProtectiveHighPassConfiguration.LowestMeasuredFrequencyHz(
-                    snapshot.ProtectiveHighPass,
-                    snapshot.SampleRate)
+            MeasuredBand = MeasuredBand.Resolve(
+                snapshot.ProtectiveHighPass,
+                snapshot.AchievedLowFrequencyHz,
+                snapshot.AchievedHighFrequencyHz,
+                snapshot.SampleRate)
         };
     }
 
@@ -95,7 +96,7 @@ internal sealed class ResolvedVirtualDspSource
         state.DistortionCurve = DistortionCurve;
         state.ArrayCapture = ArrayCapture;
         state.ArraySpreadDb = ArraySpreadDb;
-        state.LowestMeasuredFrequencyHz = LowestMeasuredFrequencyHz;
+        state.MeasuredBand = MeasuredBand;
     }
 
     // Computes the channel's harmonic distortion (THD, dB vs the fundamental) from

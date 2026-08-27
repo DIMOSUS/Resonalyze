@@ -352,7 +352,7 @@ public partial class VirtualCrossoverPanel
         Complex[] impulseResponse,
         int peakIndex,
         int sampleRate,
-        double lowestMeasuredFrequencyHz)
+        MeasuredBand band)
     {
         int anchorIndex = ProcessedChannels.StartAnchorIndex(
             impulseResponse, peakIndex, sampleRate);
@@ -363,7 +363,8 @@ public partial class VirtualCrossoverPanel
         return DataHelper.GetGatedPrimarySpectrumPair(
             new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate)
             {
-                LowestMeasuredFrequencyHz = lowestMeasuredFrequencyHz
+                LowestMeasuredFrequencyHz = band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = band.HighEdgeHz
             },
             gate,
             calibration: null,
@@ -701,7 +702,7 @@ public partial class VirtualCrossoverPanel
                         ir,
                         state.TransferPeakIndex,
                         state.SampleRate,
-                        state.LowestMeasuredFrequencyHz)
+                        state.MeasuredBand)
                     : null;
             IReadOnlyList<SignalPoint>? rawCapture =
                 rawIr != null && state.SpatialAverageFor(SpatialAverageMode) is { } document

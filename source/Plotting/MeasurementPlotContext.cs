@@ -98,16 +98,21 @@ internal sealed class MeasurementPlotContext
             transfer.PeakIndex,
             expSweepMeasurement.SampleRate)
         {
-            // From the filter the RESULT carries, never the configured one: the
-            // live setting describes the next sweep, and reading it here would
-            // break a loaded file's curve at a frequency belonging to a filter it
-            // never passed through.
-            LowestMeasuredFrequencyHz =
-                ProtectiveHighPassConfiguration.LowestMeasuredFrequencyHz(
-                    expSweepMeasurement.MeasurementProtectiveHighPass,
-                    expSweepMeasurement.SampleRate)
+            // From the filter and the sweep the RESULT carries, never the
+            // configured ones: the live settings describe the next sweep, and
+            // reading them here would break a loaded file's curve at frequencies
+            // belonging to a measurement it never was.
+            LowestMeasuredFrequencyHz = band.LowEdgeHz,
+            HighestMeasuredFrequencyHz = band.HighEdgeHz
         };
     }
+
+    /// <summary>What the current result actually measured.</summary>
+    private MeasuredBand band => MeasuredBand.Resolve(
+        expSweepMeasurement.MeasurementProtectiveHighPass,
+        expSweepMeasurement.AchievedLowFrequencyHz,
+        expSweepMeasurement.AchievedHighFrequencyHz,
+        expSweepMeasurement.SampleRate);
 
     /// <summary>
     /// The uncalibrated oversampled primary spectrum an overlay stores so it can

@@ -70,17 +70,16 @@ internal sealed class VirtualCrossoverChannelState
     public double[]? ArraySpreadDb { get; set; }
 
     /// <summary>
-    /// The lowest frequency this side's response carries a measurement at; zero
-    /// when it carries one everywhere.
+    /// What this side's response actually measured; the whole range by default.
     /// </summary>
     /// <remarks>
-    /// Non-zero only where a protective high-pass was divided back out. Below it
-    /// the compensation zeroed the response's bins, and a gated spectrum of that
-    /// draws the analysis window's leakage — smooth, plausible, and none of it
-    /// measured. Curves stop there; sums do not, because a sum plays wherever any
-    /// of its channels does.
+    /// Narrowed where a protective high-pass was divided back out, and where the
+    /// sweep behind it never reached. Either way the response is zeroed there, and a
+    /// gated spectrum of a zero draws the analysis window's leakage — smooth,
+    /// plausible, and none of it measured. Curves stop at these edges; sums do not,
+    /// because a sum plays wherever any of its channels does.
     /// </remarks>
-    public double LowestMeasuredFrequencyHz { get; set; }
+    public MeasuredBand MeasuredBand { get; set; } = MeasuredBand.Everything;
 
     /// <summary>
     /// The spatial average this side contributes under <paramref name="mode"/>, or

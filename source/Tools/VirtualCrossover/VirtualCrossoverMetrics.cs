@@ -16,11 +16,12 @@ namespace Resonalyze;
 internal sealed class VirtualCrossoverMetrics
 {
     private readonly VirtualCrossoverProcessingCoordinator coordinator;
-    private readonly Func<Complex[], int, int, double, GatedMagnitude> buildMagnitudeCurve;
+    private readonly Func<Complex[], int, int, MeasuredBand, GatedMagnitude>
+        buildMagnitudeCurve;
 
     public VirtualCrossoverMetrics(
         VirtualCrossoverProcessingCoordinator coordinator,
-        Func<Complex[], int, int, double, GatedMagnitude> buildMagnitudeCurve)
+        Func<Complex[], int, int, MeasuredBand, GatedMagnitude> buildMagnitudeCurve)
     {
         this.coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         this.buildMagnitudeCurve = buildMagnitudeCurve
@@ -72,17 +73,18 @@ internal sealed class VirtualCrossoverMetrics
                 item.ImpulseResponse,
                 anchor,
                 item.SampleRate,
-                item.LowestMeasuredFrequencyHz))
+                item.MeasuredBand))
             .ToList();
         Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
             processed.Select(item => item.ImpulseResponse).ToList());
-        // The sum plays wherever ANY of its channels does, so it stops only where
-        // the least-filtered one does — never where the most-filtered one does.
+        // The sum plays wherever ANY of its channels does, so its band is the UNION
+        // of theirs — never one channel's, which would blank a range a woofer
+        // measured perfectly well because a tweeter beside it was filtered out of it.
         GatedMagnitude sumCurve = buildMagnitudeCurve(
             sum,
             anchor,
             processed[0].SampleRate,
-            processed.Min(item => item.LowestMeasuredFrequencyHz));
+            ProcessedChannels.UnionOfMeasuredBands(processed));
         List<IReadOnlyList<SignalPoint>> operands = magnitudes
             .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
             .ToList();
@@ -580,7 +582,7 @@ internal sealed class VirtualCrossoverMetrics
                 side.SampleRate,
                 OxyColors.Transparent,
                 side.ProcessedValidRange,
-                side.State.LowestMeasuredFrequencyHz)).ToList());
+                side.State.MeasuredBand)).ToList());
     }
 
     // One channel side snapshotted on the UI thread for background processing

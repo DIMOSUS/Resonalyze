@@ -156,6 +156,48 @@ public sealed class ProtectiveHighPassMaskTests
     }
 
     [Fact]
+    public void ACurveAlsoBreaksAboveWhereTheResponseStops()
+    {
+        // The same rule at the top, which a sweep that ended early needs: above it
+        // the response is zeroed and the curve is the analysis window again.
+        var edge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 48);
+        IImpulseMeasurement measurement = CompensatedMeasurement(edge, limit: 0.0);
+        var bounded = new SyntheticMeasurement(
+            measurement.ImpulseResponse!, measurement.SampleRate, measurement.PeakIndex)
+        {
+            HighestMeasuredFrequencyHz = 5_000.0
+        };
+
+        AnalysisCurve curve = DataHelper.GetPrimarySpectrum(
+            bounded, new FrequencyResponseOptions(), calibration: null);
+
+        Assert.All(
+            curve.Points,
+            point => Assert.Equal(point.X <= 5_000.0, double.IsFinite(point.Y)));
+    }
+
+    [Fact]
+    public void BothEndsBreakTogetherWhenBothAreSet()
+    {
+        var edge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 48);
+        IImpulseMeasurement measurement = CompensatedMeasurement(edge, limit: 0.0);
+        var bounded = new SyntheticMeasurement(
+            measurement.ImpulseResponse!, measurement.SampleRate, measurement.PeakIndex)
+        {
+            LowestMeasuredFrequencyHz = 800.0,
+            HighestMeasuredFrequencyHz = 5_000.0
+        };
+
+        AnalysisCurve curve = DataHelper.GetPrimarySpectrum(
+            bounded, new FrequencyResponseOptions(), calibration: null);
+
+        Assert.All(
+            curve.Points,
+            point => Assert.Equal(
+                point.X >= 800.0 && point.X <= 5_000.0, double.IsFinite(point.Y)));
+    }
+
+    [Fact]
     public void AResponseThatMeasuredEverythingIsLeftAlone()
     {
         var edge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 48);

@@ -55,8 +55,10 @@ internal sealed class CompareSelection
             // different loopback levels unless they share a session.
             selection.Snapshot.SplOffsetDb,
             selection.Snapshot.TimingReference,
-            ProtectiveHighPassConfiguration.LowestMeasuredFrequencyHz(
+            MeasuredBand.Resolve(
                 selection.Snapshot.ProtectiveHighPass,
+                selection.Snapshot.AchievedLowFrequencyHz,
+                selection.Snapshot.AchievedHighFrequencyHz,
                 selection.Snapshot.SampleRate));
     }
 
@@ -94,7 +96,6 @@ public readonly record struct CompareAnalysisSource(
     double[]? TransferCoherence = null,
     double? SplOffsetDb = null,
     TimingReference TimingReference = TimingReference.SynchronizedLoopback,
-    // Where ITS protective high-pass stopped it carrying a measurement — the
-    // compared response was corrected for its own filter, which need not be the
-    // main measurement's.
-    double LowestMeasuredFrequencyHz = 0.0);
+    // What IT measured — its own protective high-pass and its own sweep band,
+    // neither of which need be the main measurement's.
+    MeasuredBand Band = default);

@@ -224,17 +224,21 @@ internal sealed class EqWizardSourceResolver
             transfer is { Length: > 0 } &&
             file.TransferPeakIndex is not null;
 
-        // The transfer response had the protective high-pass divided out and stops
-        // where that became unrecoverable; the sweep deconvolution still carries the
-        // filter, so its low end is signal and stays.
+        // The transfer response is zeroed outside what was measured — past the
+        // protective high-pass, and outside the sweep's own band — while the sweep
+        // deconvolution carries the filter and its own normalization, so its edges
+        // are signal and stay.
+        MeasuredBand band = MeasuredBand.Resolve(
+            file.ProtectiveHighPass?.ToConfiguration(),
+            file.AchievedLowFrequencyHz,
+            file.AchievedHighFrequencyHz,
+            file.SampleRate);
         IImpulseMeasurement measurement = useTransfer
             ? new ImpulseMeasurementView(
                 transfer!, file.TransferPeakIndex!.Value, file.SampleRate)
             {
-                LowestMeasuredFrequencyHz =
-                    ProtectiveHighPassConfiguration.LowestMeasuredFrequencyHz(
-                        file.ProtectiveHighPass?.ToConfiguration(),
-                        file.SampleRate)
+                LowestMeasuredFrequencyHz = band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = band.HighEdgeHz
             }
             : new ImpulseMeasurementView(
                 file.GetSweepDeconvolutionImpulseResponse(),

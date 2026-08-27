@@ -2612,7 +2612,8 @@ internal sealed class PlotModelFactory
         return (
             new ImpulseMeasurementView(transferIr, peakIndex, compare.SampleRate)
             {
-                LowestMeasuredFrequencyHz = compare.LowestMeasuredFrequencyHz
+                LowestMeasuredFrequencyHz = compare.Band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = compare.Band.HighEdgeHz
             },
             compare.DisplayName,
             compare.TransferCoherence,

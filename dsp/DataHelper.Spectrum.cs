@@ -64,7 +64,10 @@ namespace Resonalyze.Dsp
                     frequencyResponseOptions.SmoothingInverseOctaves));
             return new AnalysisCurve(
                 "Frequency Response",
-                MaskUnmeasuredBands(data, measurement.LowestMeasuredFrequencyHz));
+                MaskUnmeasuredBands(
+                    data,
+                    measurement.LowestMeasuredFrequencyHz,
+                    measurement.HighestMeasuredFrequencyHz));
         }
 
         /// <summary>
@@ -80,28 +83,40 @@ namespace Resonalyze.Dsp
         /// </remarks>
         private static AnalysisCurve Masked(
             AnalysisCurve curve,
-            double lowestMeasuredFrequencyHz) =>
-            !(lowestMeasuredFrequencyHz > 0.0)
+            double lowestMeasuredFrequencyHz,
+            double highestMeasuredFrequencyHz) =>
+            !(lowestMeasuredFrequencyHz > 0.0) &&
+                double.IsPositiveInfinity(highestMeasuredFrequencyHz)
                 ? curve
                 : curve with
                 {
                     Points = MaskUnmeasuredBands(
-                        [.. curve.Points], lowestMeasuredFrequencyHz)
+                        [.. curve.Points],
+                        lowestMeasuredFrequencyHz,
+                        highestMeasuredFrequencyHz)
                 };
 
         private static List<SignalPoint> MaskUnmeasuredBands(
             List<SignalPoint> data,
-            double lowestMeasuredFrequencyHz)
+            double lowestMeasuredFrequencyHz,
+            double highestMeasuredFrequencyHz)
         {
-            if (!(lowestMeasuredFrequencyHz > 0.0) ||
-                !double.IsFinite(lowestMeasuredFrequencyHz))
+            bool maskBelow = lowestMeasuredFrequencyHz > 0.0 &&
+                double.IsFinite(lowestMeasuredFrequencyHz);
+            bool maskAbove = highestMeasuredFrequencyHz > 0.0 &&
+                double.IsFinite(highestMeasuredFrequencyHz);
+            if (!maskBelow && !maskAbove)
             {
                 return data;
             }
 
-            for (int i = 0; i < data.Count && data[i].X < lowestMeasuredFrequencyHz; i++)
+            for (int i = 0; i < data.Count; i++)
             {
-                data[i] = new SignalPoint(data[i].X, double.NaN);
+                if ((maskBelow && data[i].X < lowestMeasuredFrequencyHz) ||
+                    (maskAbove && data[i].X > highestMeasuredFrequencyHz))
+                {
+                    data[i] = new SignalPoint(data[i].X, double.NaN);
+                }
             }
 
             return data;
@@ -206,7 +221,8 @@ namespace Resonalyze.Dsp
                     GatedMagnitudePoints(spectrum, measurement.SampleRate),
                     calibration,
                     smoothingInverseOctaves),
-                measurement.LowestMeasuredFrequencyHz);
+                measurement.LowestMeasuredFrequencyHz,
+                measurement.HighestMeasuredFrequencyHz);
         }
 
         /// <summary>
@@ -226,18 +242,20 @@ namespace Resonalyze.Dsp
         {
             Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
             List<SignalPoint> bins = GatedMagnitudePoints(spectrum, measurement.SampleRate);
-            double limit = measurement.LowestMeasuredFrequencyHz;
+            double lowest = measurement.LowestMeasuredFrequencyHz;
+            double highest = measurement.HighestMeasuredFrequencyHz;
             // BOTH widths, including the one the summation loss divides: a channel
             // that measured nothing must contribute nothing there, and the loss is
             // told to skip what is not a number rather than to add it.
             AnalysisCurve unsmoothed = Masked(
-                ResampleGatedMagnitude(bins, calibration, 0), limit);
+                ResampleGatedMagnitude(bins, calibration, 0), lowest, highest);
             return (
                 smoothingInverseOctaves == 0
                     ? unsmoothed
                     : Masked(
                         ResampleGatedMagnitude(bins, calibration, smoothingInverseOctaves),
-                        limit),
+                        lowest,
+                        highest),
                 unsmoothed);
         }
 

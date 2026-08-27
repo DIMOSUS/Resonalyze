@@ -1,4 +1,4 @@
-using OxyPlot;
+﻿using OxyPlot;
 using OxyPlot.Axes;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
@@ -71,7 +71,34 @@ public partial class Form1
             measurementSettings.Measurement = preservedMeasurementSettings;
         }
 
+        DropFileCalibrationFromSettings();
+
         ScheduleMeasurementSettingsSave();
+    }
+
+    /// <summary>
+    /// Keeps the loaded measurement's calibration out of the settings file.
+    /// </summary>
+    /// <remarks>
+    /// It names a curve that belongs to whatever measurement is open, so a stored
+    /// selection pointing at it would resolve to nothing on the next start — and
+    /// an unresolvable calibration id does not read as "no calibration", it reads
+    /// as a calibration the application has lost.
+    /// </remarks>
+    private void DropFileCalibrationFromSettings()
+    {
+        foreach (MeasurementSettingsFile.FrequencyResponseSettings section in new[]
+        {
+            measurementSettings.FrequencyResponse,
+            measurementSettings.PhaseResponse,
+            measurementSettings.GroupDelay
+        })
+        {
+            if (FileCalibrationSelection.IsFile(section.CalibrationId))
+            {
+                section.CalibrationId = null;
+            }
+        }
     }
 
     private void ScheduleMeasurementSettingsSave()

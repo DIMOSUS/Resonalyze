@@ -1,4 +1,4 @@
-using System.Windows.Forms;
+﻿using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.History;
 
@@ -34,7 +34,7 @@ public partial class Form1
         PlotModelFactory createdPlotModelFactory = new(
             expSweepMeasurement,
             noiseMeasurement,
-            microphoneCalibration.Get,
+            ResolveCalibration,
             new PlotPresentationOptions(
                 FrequencyResponse: frequencyResponseOptions,
                 PhaseResponse: phaseResponseOptions,
@@ -170,11 +170,17 @@ public partial class Form1
     {
         microphoneCalibration.InvalidateCache();
         IReadOnlyList<MicrophoneCalibrationEntry> entries = microphoneCalibration.GetEntries();
+        // Only the analysis selectors are offered the loaded measurement's own
+        // curve. The Virtual DSP and wizard panels carry their own calibration
+        // story (a session's, a handoff's), and a third source in those lists
+        // would be one more thing meaning "not from your list" beside two that
+        // already do.
+        IReadOnlyList<MicrophoneCalibrationEntry> analysisEntries = CalibrationEntries();
         virtualCrossoverPanel?.ConfigureCalibration(
             microphoneCalibration.Get, entries, AddSessionCalibration);
         eqWizardPanel?.ConfigureCalibration(microphoneCalibration.Get, entries);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
-            panel => panel.RefreshCalibrationEntries(entries));
+            panel => panel.RefreshCalibrationEntries(analysisEntries));
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
             panel => panel.RefreshCalibrationEntries(entries));
     }

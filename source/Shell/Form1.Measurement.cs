@@ -1,5 +1,7 @@
-using System.Windows.Forms;
+﻿using System.Windows.Forms;
 using Resonalyze.Options;
+
+using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -155,6 +157,11 @@ public partial class Form1
                 return;
             }
 
+            if (!ConfirmCalibrationBeforeRun())
+            {
+                return;
+            }
+
             await startupAudioWarmup.WaitAsync();
             if (expSweepMeasurement.InProgress)
             {
@@ -170,6 +177,69 @@ public partial class Form1
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }
+    }
+
+    /// <summary>
+    /// Asks before a new measurement is taken while the view reads through the
+    /// calibration a LOADED measurement brought with it.
+    /// </summary>
+    /// <remarks>
+    /// The run would otherwise be stamped with someone else's microphone
+    /// correction, and silently: a calibration adopted to read a foreign file says
+    /// nothing about the capsule about to record. Neither silent answer is right —
+    /// dropping the selection would change the view under the user mid-session,
+    /// keeping it would mislabel their own measurement — so the question is asked
+    /// out loud, once, at the only moment it matters.
+    /// </remarks>
+    private bool ConfirmCalibrationBeforeRun()
+    {
+        if (!FileCalibrationSelection.IsFile(frequencyResponseOptions.CalibrationId) ||
+            expSweepMeasurement.MeasurementMicrophoneCalibration is not { } loaded)
+        {
+            return true;
+        }
+
+        string ownName = OwnCalibrationName();
+        DialogResult answer = MessageBox.Show(
+            this,
+            $"The frequency response is being read through \"{FileCalibrationSelection.DisplayName(loaded)}\", " +
+            "a calibration that came from the measurement you loaded rather than from your own list.\r\n\r\n" +
+            "A measurement you are about to take belongs to YOUR microphone.\r\n\r\n" +
+            $"Yes — measure with {ownName}\r\n" +
+            "No — measure through the loaded file's calibration\r\n" +
+            "Cancel — do not measure",
+            "Measuring with a calibration from a file",
+            MessageBoxButtons.YesNoCancel,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button1);
+        if (answer == DialogResult.Cancel)
+        {
+            return false;
+        }
+        if (answer == DialogResult.Yes)
+        {
+            frequencyResponseOptions.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
+            IReadOnlyList<MicrophoneCalibrationEntry> entries = CalibrationEntries();
+            dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
+                panel => panel.SelectCalibration(
+                    frequencyResponseOptions.CalibrationId,
+                    entries));
+            RefreshCurrentModePlot();
+        }
+
+        return true;
+    }
+
+    // What "your own calibration" amounts to right now, so the question does not
+    // offer a microphone correction the user has not configured.
+    private string OwnCalibrationName()
+    {
+        MicrophoneCalibrationEntry? own = microphoneCalibration
+            .GetEntries()
+            .FirstOrDefault(entry => entry.Id == MicrophoneCalibrationIds.ZeroDegrees);
+        return own is { Available: true }
+            ? $"your own calibration (\"{own.Name}\")"
+            : "no calibration";
     }
 
     // The Live Spectrum mirror of ResetSplViewOnlyDisplayForRun below: an analyzer

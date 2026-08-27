@@ -233,6 +233,34 @@ public partial class Form1
         ApplyImpulseResponseFile(file, path);
     }
 
+    /// <summary>
+    /// Reads the loaded measurement through the calibration it was measured with.
+    /// </summary>
+    /// <remarks>
+    /// The selection is left alone when a local calibration already holds the same
+    /// curve — your own file on your own machine — so the ordinary case shows no
+    /// change at all. It moves only when the file's curve is one this machine does
+    /// not have, which is exactly when leaving it alone would draw someone else's
+    /// measurement through your microphone's correction and say nothing.
+    /// </remarks>
+    private void AdoptFileCalibration(VirtualCrossoverCalibrationSettings? calibration)
+    {
+        string? chosen = FileCalibrationSelection.Choose(
+            calibration,
+            frequencyResponseOptions.CalibrationId,
+            microphoneCalibration.GetEntries(),
+            microphoneCalibration.Get);
+        if (chosen == null)
+        {
+            return;
+        }
+
+        frequencyResponseOptions.CalibrationId = chosen;
+        IReadOnlyList<MicrophoneCalibrationEntry> entries = CalibrationEntries();
+        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
+            panel => panel.SelectCalibration(chosen, entries));
+    }
+
     // The install half, split from the read so a caller that must not land a stale
     // result can check its own guard between the two — reading a large file takes
     // long enough for a newer request to overtake it.
@@ -266,6 +294,14 @@ public partial class Form1
         // validates the anchor against the input it was measured on — not the
         // app's current device — and keeps it.
         expSweepMeasurement.MeasurementSplCalibration = file.SplCalibration;
+        // The same reasoning for the microphone calibration and the array: they
+        // describe the result that was loaded, not the next run. The impulse
+        // response is raw, so without the calibration a recipient would draw a
+        // different curve from the author's and nothing would say why.
+        expSweepMeasurement.MeasurementMicrophoneCalibration = file.MicrophoneCalibration;
+        expSweepMeasurement.ArrayMicrophones =
+            file.ArrayMicrophones?.ToCurves() ?? [];
+        AdoptFileCalibration(file.MicrophoneCalibration);
         // Whatever the file knows about the protective high-pass travels with it,
         // including "nothing": the app's own setting describes the next run, not the
         // response just loaded.

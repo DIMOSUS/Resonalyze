@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -85,9 +85,20 @@ namespace Resonalyze.Options
         /// </summary>
         internal void RefreshCalibrationEntries(
             IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
+            SelectCalibration(
+                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration),
+                calibrationEntries);
+
+        /// <summary>
+        /// Shows a calibration the panel did not choose itself — the one a loaded
+        /// measurement carries.
+        /// </summary>
+        internal void SelectCalibration(
+            string? calibrationId,
+            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
             MicrophoneCalibrationComboHelper.Configure(
                 comboCalibration,
-                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration),
+                calibrationId,
                 calibrationEntries);
 
         public void SetOptions(

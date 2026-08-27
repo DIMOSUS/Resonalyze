@@ -78,13 +78,27 @@ internal sealed record HybridMagnitudes(
     {
         get
         {
-            List<double> known = ChannelOffsetsDb
+            List<double> known = (SetDatumsDb.Count > 0 ? SetDatumsDb : ChannelOffsetsDb)
                 .Where(offset => offset.HasValue)
                 .Select(offset => offset!.Value)
                 .ToList();
             return known.Count < 2 ? 0.0 : known.Max() - known.Min();
         }
     }
+
+    /// <summary>
+    /// Every channel's datum on this side, muted ones included — what
+    /// <see cref="OffsetDb"/> is the median of and <see cref="SpreadDb"/> the range
+    /// of. Empty for a caller that supplied none, which then falls back to the drawn
+    /// channels.
+    /// </summary>
+    /// <remarks>
+    /// The set is the measurements, not the selection of them a user happens to be
+    /// listening to. Judging its coherence on the drawn channels alone made the
+    /// warning appear and vanish with the mute buttons, and moved every curve on the
+    /// plot while it did.
+    /// </remarks>
+    public IReadOnlyList<double?> SetDatumsDb { get; init; } = [];
 }
 
 // Attaching a spatially averaged magnitude to a channel, and deciding whether the
@@ -584,7 +598,7 @@ public partial class VirtualCrossoverPanel
         // to be lowered by it: the set's curves are held without the offset and it is
         // added on the way to the plot, so a curve already on the impulse responses'
         // axis must arrive pre-subtracted to land back where it started.
-        (double?[] offsets, double setOffset) =
+        (double?[] offsets, double setOffset, IReadOnlyList<double?> setDatums) =
             ResolveRawHybridOffsetsDb(processed, rightSide);
 
         var hybrids = new List<IReadOnlyList<SignalPoint>>(processed.Count);
@@ -623,7 +637,8 @@ public partial class VirtualCrossoverPanel
 
         return new HybridMagnitudes(hybrids, unsmoothed, offsets, setOffset)
         {
-            PointMeasuredChannels = pointMeasured
+            PointMeasuredChannels = pointMeasured,
+            SetDatumsDb = setDatums
         };
     }
 
@@ -681,8 +696,8 @@ public partial class VirtualCrossoverPanel
     }
 
     /// <summary>
-    /// Each channel's datum and the set's, read on the RAW pair: the capture with no
-    /// chain against the channel's bypass response. A property of the two
+    /// Each drawn channel's datum, and the SET's, read on the RAW pair: the capture
+    /// with no chain against the channel's bypass response. A property of the two
     /// measurements, so nothing the user tunes can move it.
     /// </summary>
     /// <remarks>
@@ -690,51 +705,99 @@ public partial class VirtualCrossoverPanel
     /// redraw, which only has it when the Raw view is switched on. One gated build
     /// per channel while the hybrid is drawn; the alternative — reading the datum off
     /// the processed curves — is what this exists to stop.
+    /// <para>
+    /// The set's offset is the median over EVERY channel of this side that carries a
+    /// capture, muted or not, and that distinction is the whole reason this takes the
+    /// channel list rather than only the drawn ones. A mute says which curves to
+    /// draw; it does not say which measurements the set is made of. Taking the median
+    /// over the drawn ones alone moved every remaining curve each time one was muted
+    /// — a quarter of a decibel per channel on the owner's cabins, in the arrays and
+    /// the moving-microphone captures alike — so a level read off the plot depended
+    /// on which channels happened to be listening.
+    /// </para>
     /// </remarks>
-    private (double?[] PerChannel, double SetOffsetDb) ResolveRawHybridOffsetsDb(
-        IReadOnlyList<ProcessedChannel> processed,
-        bool rightSide)
+    private (double?[] PerChannel, double SetOffsetDb, IReadOnlyList<double?> SetDatums)
+        ResolveRawHybridOffsetsDb(
+            IReadOnlyList<ProcessedChannel> processed,
+            bool rightSide)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.HybridOffsets");
-        var captures = new List<IReadOnlyList<SignalPoint>>(processed.Count);
-        var references = new List<AnalysisCurve>(processed.Count);
-        for (int i = 0; i < processed.Count; i++)
+        var datums = new Dictionary<VirtualCrossoverChannel, double?>();
+        foreach (VirtualCrossoverChannel channel in AllChannelsWith(processed))
         {
-            VirtualCrossoverChannelState state =
-                processed[i].Channel.SideState(rightSide);
-            AnalysisCurve? rawIr = state.TransferImpulseResponse is { } ir &&
-                state.SampleRate > 0
-                    ? BuildCanonicalRawCurve(
-                        ir,
-                        state.TransferPeakIndex,
-                        state.SampleRate,
-                        state.MeasuredBand)
-                    : null;
-            IReadOnlyList<SignalPoint>? rawCapture =
-                rawIr != null && state.SpatialAverageFor(SpatialAverageMode) is { } document
-                    ? SpatialAverageHybrid.BuildChannelCurve(
-                        document,
-                        DspChannelChain.Identity,
-                        state.SampleRate,
-                        // Canonical, not what the plot happens to be showing:
-                        // identity chain, no calibration, no display smoothing. A
-                        // datum that moved with the smoothing selector would not be a
-                        // property of the two measurements, and the threshold the
-                        // spread is judged against is calibrated on these very terms
-                        // (HybridOffsetDatumMeasurement reads them the same way).
-                        SpatialAverageCalibration.Off,
-                        rawIr.Points.Select(point => point.X).ToList(),
-                        smoothingCode: 0)
-                    : null;
-
-            // A channel that cannot produce the raw pair contributes no datum. Its
-            // hole stays in place; it never falls back to the processed curves, which
-            // would put one channel's offset on a different footing from the rest.
-            captures.Add(rawCapture ?? []);
-            references.Add(rawIr ?? new AnalysisCurve("raw", []));
+            datums[channel] = ResolveRawDatumDb(channel, rightSide);
         }
 
-        return ResolveHybridOffsetsDb(captures, references);
+        var perChannel = new double?[processed.Count];
+        for (int i = 0; i < processed.Count; i++)
+        {
+            perChannel[i] = datums.TryGetValue(processed[i].Channel, out double? datum)
+                ? datum
+                : null;
+        }
+
+        List<double?> setDatums = datums.Values.ToList();
+        List<double> known = setDatums
+            .Where(datum => datum.HasValue)
+            .Select(datum => datum!.Value)
+            .ToList();
+        return (perChannel, known.Count == 0 ? 0.0 : Median(known), setDatums);
+    }
+
+    // Every channel that could contribute a datum: the panel's own list, plus any
+    // drawn channel it does not hold (a harness builds those directly).
+    private IEnumerable<VirtualCrossoverChannel> AllChannelsWith(
+        IReadOnlyList<ProcessedChannel> processed)
+    {
+        var seen = new HashSet<VirtualCrossoverChannel>();
+        foreach (VirtualCrossoverChannel channel in channels ?? [])
+        {
+            if (seen.Add(channel))
+            {
+                yield return channel;
+            }
+        }
+
+        foreach (ProcessedChannel item in processed)
+        {
+            if (seen.Add(item.Channel))
+            {
+                yield return item.Channel;
+            }
+        }
+    }
+
+    // One channel side's datum, or null when it cannot produce the raw pair. Such a
+    // channel contributes nothing rather than falling back to the processed curves,
+    // which would put its offset on a different footing from the rest.
+    private double? ResolveRawDatumDb(VirtualCrossoverChannel channel, bool rightSide)
+    {
+        VirtualCrossoverChannelState state = channel.SideState(rightSide);
+        if (state.TransferImpulseResponse is not { } ir || state.SampleRate <= 0)
+        {
+            return null;
+        }
+
+        AnalysisCurve rawIr = BuildCanonicalRawCurve(
+            ir, state.TransferPeakIndex, state.SampleRate, state.MeasuredBand);
+        if (state.SpatialAverageFor(SpatialAverageMode) is not { } document)
+        {
+            return null;
+        }
+
+        IReadOnlyList<SignalPoint>? rawCapture = SpatialAverageHybrid.BuildChannelCurve(
+            document,
+            DspChannelChain.Identity,
+            state.SampleRate,
+            // Canonical, not what the plot happens to be showing: identity chain, no
+            // calibration, no display smoothing. A datum that moved with the
+            // smoothing selector would not be a property of the two measurements, and
+            // the threshold the spread is judged against is calibrated on these very
+            // terms (HybridOffsetDatumMeasurement reads them the same way).
+            SpatialAverageCalibration.Off,
+            rawIr.Points.Select(point => point.X).ToList(),
+            smoothingCode: 0);
+        return rawCapture == null ? null : ResolveChannelOffsetDb(rawCapture, rawIr.Points);
     }
 
     // The set's common offset, applied on the way to the plot.

@@ -78,6 +78,17 @@ namespace Resonalyze.Dsp
         /// were lost to the NaN. On the output grid the break lands exactly where
         /// the filter put it.
         /// </remarks>
+        private static AnalysisCurve Masked(
+            AnalysisCurve curve,
+            double lowestMeasuredFrequencyHz) =>
+            !(lowestMeasuredFrequencyHz > 0.0)
+                ? curve
+                : curve with
+                {
+                    Points = MaskUnmeasuredBands(
+                        [.. curve.Points], lowestMeasuredFrequencyHz)
+                };
+
         private static List<SignalPoint> MaskUnmeasuredBands(
             List<SignalPoint> data,
             double lowestMeasuredFrequencyHz)
@@ -190,10 +201,12 @@ namespace Resonalyze.Dsp
             double smoothingInverseOctaves)
         {
             Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
-            return ResampleGatedMagnitude(
-                GatedMagnitudePoints(spectrum, measurement.SampleRate),
-                calibration,
-                smoothingInverseOctaves);
+            return Masked(
+                ResampleGatedMagnitude(
+                    GatedMagnitudePoints(spectrum, measurement.SampleRate),
+                    calibration,
+                    smoothingInverseOctaves),
+                measurement.LowestMeasuredFrequencyHz);
         }
 
         /// <summary>
@@ -213,11 +226,18 @@ namespace Resonalyze.Dsp
         {
             Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
             List<SignalPoint> bins = GatedMagnitudePoints(spectrum, measurement.SampleRate);
-            AnalysisCurve unsmoothed = ResampleGatedMagnitude(bins, calibration, 0);
+            double limit = measurement.LowestMeasuredFrequencyHz;
+            // BOTH widths, including the one the summation loss divides: a channel
+            // that measured nothing must contribute nothing there, and the loss is
+            // told to skip what is not a number rather than to add it.
+            AnalysisCurve unsmoothed = Masked(
+                ResampleGatedMagnitude(bins, calibration, 0), limit);
             return (
                 smoothingInverseOctaves == 0
                     ? unsmoothed
-                    : ResampleGatedMagnitude(bins, calibration, smoothingInverseOctaves),
+                    : Masked(
+                        ResampleGatedMagnitude(bins, calibration, smoothingInverseOctaves),
+                        limit),
                 unsmoothed);
         }
 

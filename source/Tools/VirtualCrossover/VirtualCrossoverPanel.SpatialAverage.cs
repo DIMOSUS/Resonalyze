@@ -349,7 +349,10 @@ public partial class VirtualCrossoverPanel
     /// keeps the panel's figure identical to the one the threshold was calibrated on.
     /// </remarks>
     private AnalysisCurve BuildCanonicalRawCurve(
-        Complex[] impulseResponse, int peakIndex, int sampleRate)
+        Complex[] impulseResponse,
+        int peakIndex,
+        int sampleRate,
+        double lowestMeasuredFrequencyHz)
     {
         int anchorIndex = ProcessedChannels.StartAnchorIndex(
             impulseResponse, peakIndex, sampleRate);
@@ -358,7 +361,10 @@ public partial class VirtualCrossoverPanel
             GateOffsetMs = anchorIndex * 1_000.0 / sampleRate
         };
         return DataHelper.GetGatedPrimarySpectrumPair(
-            new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate),
+            new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate)
+            {
+                LowestMeasuredFrequencyHz = lowestMeasuredFrequencyHz
+            },
             gate,
             calibration: null,
             smoothingInverseOctaves: 0).Unsmoothed;
@@ -691,7 +697,11 @@ public partial class VirtualCrossoverPanel
                 processed[i].Channel.SideState(rightSide);
             AnalysisCurve? rawIr = state.TransferImpulseResponse is { } ir &&
                 state.SampleRate > 0
-                    ? BuildCanonicalRawCurve(ir, state.TransferPeakIndex, state.SampleRate)
+                    ? BuildCanonicalRawCurve(
+                        ir,
+                        state.TransferPeakIndex,
+                        state.SampleRate,
+                        state.LowestMeasuredFrequencyHz)
                     : null;
             IReadOnlyList<SignalPoint>? rawCapture =
                 rawIr != null && state.SpatialAverageFor(SpatialAverageMode) is { } document

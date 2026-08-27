@@ -660,6 +660,54 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void SumLossCurve_ReadsAChannelThatMeasuredNothingAsContributingNothing()
+    {
+        // A tweeter whose protective high-pass was divided out carries NaN below the
+        // point that became unrecoverable — it measured nothing there, and the
+        // woofer beside it carries the whole sum. Added rather than skipped, that
+        // NaN would travel into the magnitude sum and break a loss reading that is
+        // perfectly good.
+        var woofer = new List<SignalPoint>
+        {
+            new(200, 0.0), new(500, 0.0), new(2_000, 0.0)
+        };
+        var tweeter = new List<SignalPoint>
+        {
+            new(200, double.NaN), new(500, double.NaN), new(2_000, 0.0)
+        };
+        var sum = new List<SignalPoint>
+        {
+            new(200, 0.0), new(500, 0.0), new(2_000, 6.0206)
+        };
+
+        List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
+            sum, [woofer, tweeter]);
+
+        // Below the tweeter's limit the sum IS the woofer, so nothing is lost.
+        Assert.Equal(0.0, loss[0].Y, 3);
+        Assert.Equal(0.0, loss[1].Y, 3);
+        // Where both play, the arithmetic is untouched: two equal channels summing
+        // coherently lose nothing against their magnitude sum.
+        Assert.Equal(0.0, loss[2].Y, 3);
+    }
+
+    [Fact]
+    public void SumLossCurve_BreaksWhereNoChannelMeasuredAnything()
+    {
+        var first = new List<SignalPoint> { new(200, double.NaN), new(2_000, 0.0) };
+        var second = new List<SignalPoint> { new(200, double.NaN), new(2_000, 0.0) };
+        var sum = new List<SignalPoint> { new(200, -20.0), new(2_000, 6.0206) };
+
+        List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
+            sum, [first, second]);
+
+        // Whatever the summed response shows there is the analysis window's leakage,
+        // and a loss measured against nothing is not a number.
+        Assert.False(double.IsFinite(loss[0].Y));
+        Assert.Equal(0.0, loss[1].Y, 3);
+    }
+
+    [Fact]
     public void SumLossCurve_SmoothsTheRatio_NotTheOperands()
     {
         // An ideal complementary crossover at 70 Hz: the two amplitudes are in

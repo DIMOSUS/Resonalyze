@@ -2865,7 +2865,9 @@ public partial class VirtualCrossoverPanel : UserControl
         // threads where it actually runs.
         long revision = processingCoordinator.CurrentRevision;
         var snapshots = new List<VirtualCrossoverChannelSnapshot>();
-        var bindings = new Dictionary<int, (VirtualCrossoverChannel Channel, OxyColor Color)>();
+        var bindings = new Dictionary<
+            int,
+            (VirtualCrossoverChannel Channel, OxyColor Color, double LowestMeasuredHz)>();
         using (AppProfiler.Zone("VirtualDSP.SnapshotChannels"))
         {
             for (int i = 0; i < channels.Count; i++)
@@ -2890,7 +2892,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     state.SampleRate,
                     ProcessorSampleRateHz,
                     chain));
-                bindings.Add(i, (channel, ChannelColors[i]));
+                bindings.Add(i, (channel, ChannelColors[i], state.LowestMeasuredFrequencyHz));
             }
         }
 
@@ -2905,14 +2907,16 @@ public partial class VirtualCrossoverPanel : UserControl
         var processed = new List<ProcessedChannel>(render.Channels.Count);
         foreach (VirtualCrossoverProcessedChannel result in render.Channels)
         {
-            (VirtualCrossoverChannel channel, OxyColor color) = bindings[result.Id];
+            (VirtualCrossoverChannel channel, OxyColor color, double lowestHz) =
+                bindings[result.Id];
             processed.Add(new ProcessedChannel(
                 channel,
                 result.ImpulseResponse,
                 result.PeakIndex,
                 result.SampleRate,
                 color,
-                result.ValidRange));
+                result.ValidRange,
+                lowestHz));
         }
         return new ProcessedRender(render.Revision, processed);
     }
@@ -3274,7 +3278,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 AnalysisCurve raw = BuildRawMagnitudeCurve(
                     item.Channel.TransferImpulseResponse!,
                     item.Channel.TransferPeakIndex,
-                    item.Channel.SampleRate);
+                    item.Channel.SampleRate,
+                    item.LowestMeasuredFrequencyHz);
                 curves.Add(new AcousticCurve(
                     $"{item.Channel.Name} raw",
                     raw.Points,
@@ -3297,7 +3302,8 @@ public partial class VirtualCrossoverPanel : UserControl
                             item.PeakIndex,
                             item.SampleRate,
                             item.ValidRange),
-                        item.SampleRate).Display;
+                        item.SampleRate,
+                        item.LowestMeasuredFrequencyHz).Display;
                 IReadOnlyList<SignalPoint> points = hybrid != null
                     ? ShiftedBy(hybrid.Channels[i], hybrid.OffsetDb)
                     : curve.Points;
@@ -4701,7 +4707,8 @@ public partial class VirtualCrossoverPanel : UserControl
     private GatedMagnitude BuildMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
-        int sampleRate)
+        int sampleRate,
+        double lowestMeasuredFrequencyHz)
     {
         MagnitudeGateSnapshot snapshot = magnitudeGate;
         return BuildGatedMagnitudeCurve(
@@ -4709,8 +4716,24 @@ public partial class VirtualCrossoverPanel : UserControl
             impulseResponse,
             peakIndex,
             sampleRate,
-            snapshot.ResolveGateOffsetMs(oppositeSide: false, peakIndex, sampleRate));
+            snapshot.ResolveGateOffsetMs(oppositeSide: false, peakIndex, sampleRate),
+            lowestMeasuredFrequencyHz);
     }
+
+    /// <summary>
+    /// Where a SUM of these channels stops carrying a measurement: the lowest limit
+    /// among them, and zero as soon as one of them measured everything.
+    /// </summary>
+    /// <remarks>
+    /// A sum plays wherever any of its channels does. Taking the highest limit — or
+    /// any one channel's — would blank a band a woofer measured perfectly well just
+    /// because a tweeter beside it was filtered out of that band.
+    /// </remarks>
+    private static double LowestMeasuredFrequencyHz(
+        IReadOnlyList<ProcessedChannel> channels) =>
+        channels.Count == 0
+            ? 0.0
+            : channels.Min(channel => channel.LowestMeasuredFrequencyHz);
 
     // The opposite side's sum window: its OWN pinned offset (or its own
     // earliest-arrival anchor when unpinned) — never the active side's pin,
@@ -4724,7 +4747,8 @@ public partial class VirtualCrossoverPanel : UserControl
             side.AnchorIndex,
             side.SampleRate,
             snapshot.ResolveGateOffsetMs(
-                oppositeSide: true, side.AnchorIndex, side.SampleRate)).Display;
+                oppositeSide: true, side.AnchorIndex, side.SampleRate),
+            LowestMeasuredFrequencyHz(side.Channels)).Display;
     }
 
     /// <summary>
@@ -4769,7 +4793,8 @@ public partial class VirtualCrossoverPanel : UserControl
             side.ImpulseResponse,
             side.AnchorIndex,
             side.SampleRate,
-            gateOffsetMs);
+            gateOffsetMs,
+            LowestMeasuredFrequencyHz(side.Channels));
         var channelMagnitudes = new List<GatedMagnitude>(side.Channels.Count);
         foreach (ProcessedChannel item in side.Channels)
         {
@@ -4778,7 +4803,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 item.ImpulseResponse,
                 side.AnchorIndex,
                 item.SampleRate,
-                gateOffsetMs));
+                gateOffsetMs,
+                item.LowestMeasuredFrequencyHz));
         }
 
         HybridMagnitudes? hybrid = BuildHybridMagnitudes(
@@ -4852,7 +4878,8 @@ public partial class VirtualCrossoverPanel : UserControl
     private AnalysisCurve BuildRawMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
-        int sampleRate)
+        int sampleRate,
+        double lowestMeasuredFrequencyHz)
     {
         int anchorIndex = ProcessedChannels.StartAnchorIndex(
             impulseResponse, peakIndex, sampleRate);
@@ -4861,7 +4888,8 @@ public partial class VirtualCrossoverPanel : UserControl
             impulseResponse,
             anchorIndex,
             sampleRate,
-            anchorIndex * 1_000.0 / sampleRate).Display;
+            anchorIndex * 1_000.0 / sampleRate,
+            lowestMeasuredFrequencyHz).Display;
     }
 
     // Both widths of one gated build: the smoothed curve the plot draws and the
@@ -4872,7 +4900,8 @@ public partial class VirtualCrossoverPanel : UserControl
         Complex[] impulseResponse,
         int peakIndex,
         int sampleRate,
-        double gateOffsetMs)
+        double gateOffsetMs,
+        double lowestMeasuredFrequencyHz)
     {
         PhaseAnalysisSettings gate = snapshot.Template with
         {
@@ -4880,7 +4909,10 @@ public partial class VirtualCrossoverPanel : UserControl
         };
         (AnalysisCurve display, AnalysisCurve unsmoothed) =
             DataHelper.GetGatedPrimarySpectrumPair(
-                new ImpulseMeasurementView(impulseResponse, peakIndex, sampleRate),
+                new ImpulseMeasurementView(impulseResponse, peakIndex, sampleRate)
+                {
+                    LowestMeasuredFrequencyHz = lowestMeasuredFrequencyHz
+                },
                 gate,
                 Calibration,
                 snapshot.SmoothingInverseOctaves);
@@ -6044,7 +6076,8 @@ public partial class VirtualCrossoverPanel : UserControl
         AnalysisCurve sumCurve = BuildMagnitudeCurve(
             sum,
             processed.Min(item => item.PeakIndex),
-            processed[0].SampleRate).Display;
+            processed[0].SampleRate,
+            LowestMeasuredFrequencyHz(processed)).Display;
 
         string title = "vDSP Sum " + string.Join(
             "+",
@@ -6202,7 +6235,15 @@ public partial class VirtualCrossoverPanel : UserControl
                     new ImpulseMeasurementView(
                         channel.TransferImpulseResponse!,
                         channel.TransferPeakIndex,
-                        channel.SampleRate),
+                        channel.SampleRate)
+                    {
+                        // Or the band read would run down the analysis window's
+                        // leakage and put a driver's low corner an octave under
+                        // where its signal actually stopped.
+                        LowestMeasuredFrequencyHz = channel
+                            .SideState(project.ActiveSideRight)
+                            .LowestMeasuredFrequencyHz
+                    },
                     wizardOptions,
                     Calibration);
                 // When the source carried per-bin coherence, resample it onto the

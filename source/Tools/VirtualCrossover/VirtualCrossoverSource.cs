@@ -35,6 +35,12 @@ internal sealed class ResolvedVirtualDspSource
     public LiveCaptureDocument? ArrayCapture { get; init; }
 
     /// <summary>
+    /// Where this measurement stops carrying a signal, from the protective
+    /// high-pass that was divided back out of it.
+    /// </summary>
+    public double LowestMeasuredFrequencyHz { get; init; }
+
+    /// <summary>
     /// Prepares a source from a measurement snapshot, or returns null when the
     /// snapshot has no loopback transfer IR — the virtual sum only has physical
     /// meaning for loopback-referenced responses — or when it was imported from a
@@ -62,7 +68,11 @@ internal sealed class ResolvedVirtualDspSource
             ArrayCapture = ArrayCaptureDocument.TryCreate(
                 snapshot.ArrayMicrophones,
                 snapshot.SampleRate,
-                snapshot.ProtectiveHighPass)
+                snapshot.ProtectiveHighPass),
+            LowestMeasuredFrequencyHz =
+                ProtectiveHighPassConfiguration.LowestMeasuredFrequencyHz(
+                    snapshot.ProtectiveHighPass,
+                    snapshot.SampleRate)
         };
     }
 
@@ -76,6 +86,7 @@ internal sealed class ResolvedVirtualDspSource
         state.TransferCoherence = TransferCoherence;
         state.DistortionCurve = DistortionCurve;
         state.ArrayCapture = ArrayCapture;
+        state.LowestMeasuredFrequencyHz = LowestMeasuredFrequencyHz;
     }
 
     // Computes the channel's harmonic distortion (THD, dB vs the fundamental) from

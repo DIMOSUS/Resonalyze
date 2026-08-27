@@ -32,7 +32,11 @@ internal sealed record ProcessedChannel(
     int PeakIndex,
     int SampleRate,
     OxyColor Color,
-    ValidSampleRange ValidRange = default);
+    ValidSampleRange ValidRange = default,
+    // Snapshotted from the SIDE this response came from, like the rate above: the
+    // list can carry the opposite side's responses, and reading it back off the
+    // channel would answer for whichever side happens to be active.
+    double LowestMeasuredFrequencyHz = 0.0);
 
 /// <summary>
 /// One gated magnitude curve at the two widths the tool needs, from a single gate

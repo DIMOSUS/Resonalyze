@@ -57,6 +57,19 @@ internal sealed class VirtualCrossoverChannelState
     public LiveCaptureDocument? ArrayCapture { get; set; }
 
     /// <summary>
+    /// The lowest frequency this side's response carries a measurement at; zero
+    /// when it carries one everywhere.
+    /// </summary>
+    /// <remarks>
+    /// Non-zero only where a protective high-pass was divided back out. Below it
+    /// the compensation zeroed the response's bins, and a gated spectrum of that
+    /// draws the analysis window's leakage — smooth, plausible, and none of it
+    /// measured. Curves stop there; sums do not, because a sum plays wherever any
+    /// of its channels does.
+    /// </remarks>
+    public double LowestMeasuredFrequencyHz { get; set; }
+
+    /// <summary>
     /// The spatial average this side contributes under <paramref name="mode"/>, or
     /// null when it has none of that family.
     /// </summary>

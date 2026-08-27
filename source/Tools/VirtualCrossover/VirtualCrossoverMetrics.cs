@@ -16,11 +16,11 @@ namespace Resonalyze;
 internal sealed class VirtualCrossoverMetrics
 {
     private readonly VirtualCrossoverProcessingCoordinator coordinator;
-    private readonly Func<Complex[], int, int, GatedMagnitude> buildMagnitudeCurve;
+    private readonly Func<Complex[], int, int, double, GatedMagnitude> buildMagnitudeCurve;
 
     public VirtualCrossoverMetrics(
         VirtualCrossoverProcessingCoordinator coordinator,
-        Func<Complex[], int, int, GatedMagnitude> buildMagnitudeCurve)
+        Func<Complex[], int, int, double, GatedMagnitude> buildMagnitudeCurve)
     {
         this.coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         this.buildMagnitudeCurve = buildMagnitudeCurve
@@ -69,12 +69,20 @@ internal sealed class VirtualCrossoverMetrics
             .AsParallel()
             .AsOrdered()
             .Select(item => buildMagnitudeCurve(
-                item.ImpulseResponse, anchor, item.SampleRate))
+                item.ImpulseResponse,
+                anchor,
+                item.SampleRate,
+                item.LowestMeasuredFrequencyHz))
             .ToList();
         Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
             processed.Select(item => item.ImpulseResponse).ToList());
+        // The sum plays wherever ANY of its channels does, so it stops only where
+        // the least-filtered one does — never where the most-filtered one does.
         GatedMagnitude sumCurve = buildMagnitudeCurve(
-            sum, anchor, processed[0].SampleRate);
+            sum,
+            anchor,
+            processed[0].SampleRate,
+            processed.Min(item => item.LowestMeasuredFrequencyHz));
         List<IReadOnlyList<SignalPoint>> operands = magnitudes
             .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
             .ToList();
@@ -571,7 +579,8 @@ internal sealed class VirtualCrossoverMetrics
                 side.ProcessedPeak,
                 side.SampleRate,
                 OxyColors.Transparent,
-                side.ProcessedValidRange)).ToList());
+                side.ProcessedValidRange,
+                side.State.LowestMeasuredFrequencyHz)).ToList());
     }
 
     // One channel side snapshotted on the UI thread for background processing

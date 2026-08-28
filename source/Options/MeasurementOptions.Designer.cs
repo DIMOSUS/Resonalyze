@@ -62,6 +62,8 @@
             buttonClearCalibration0 = new Button();
             labelCalibrationExtra = new Label();
             buttonCalibrationExtra = new Button();
+            labelMicrophoneCalibration = new Label();
+            comboBoxMicrophoneCalibration = new DarkComboBox();
             labelArrayMicrophones = new Label();
             buttonArrayMicrophones = new Button();
             labelSplCalibration = new Label();
@@ -341,7 +343,7 @@
             audioBackendPanel.Controls.Add(label2);
             audioBackendPanel.Controls.Add(comboBoxSampleRate);
             audioBackendPanel.Controls.Add(label1);
-            audioBackendPanel.Location = new Point(8, 336);
+            audioBackendPanel.Location = new Point(8, 361);
             audioBackendPanel.Name = "audioBackendPanel";
             audioBackendPanel.Size = new Size(322, 343);
             audioBackendPanel.TabIndex = 39;
@@ -498,24 +500,44 @@
             buttonClearSplCalibration.UseVisualStyleBackColor = true;
             buttonClearSplCalibration.Click += buttonClearSplCalibration_Click;
             //
+            // labelMicrophoneCalibration
+            //
+            labelMicrophoneCalibration.AutoSize = true;
+            labelMicrophoneCalibration.ForeColor = SystemColors.ControlLight;
+            labelMicrophoneCalibration.Location = new Point(17, 312);
+            labelMicrophoneCalibration.Name = "labelMicrophoneCalibration";
+            labelMicrophoneCalibration.Size = new Size(104, 15);
+            labelMicrophoneCalibration.TabIndex = 40;
+            labelMicrophoneCalibration.Text = "Measure through";
+            //
+            // comboBoxMicrophoneCalibration
+            //
+            comboBoxMicrophoneCalibration.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboBoxMicrophoneCalibration.FormattingEnabled = true;
+            comboBoxMicrophoneCalibration.Location = new Point(154, 307);
+            comboBoxMicrophoneCalibration.Name = "comboBoxMicrophoneCalibration";
+            comboBoxMicrophoneCalibration.Size = new Size(170, 23);
+            comboBoxMicrophoneCalibration.TabIndex = 41;
+            comboBoxMicrophoneCalibration.SelectedIndexChanged += comboBoxMicrophoneCalibration_SelectedIndexChanged;
+            //
             // labelArrayMicrophones
             //
             labelArrayMicrophones.AutoSize = true;
             labelArrayMicrophones.ForeColor = SystemColors.ControlLight;
-            labelArrayMicrophones.Location = new Point(17, 312);
+            labelArrayMicrophones.Location = new Point(17, 337);
             labelArrayMicrophones.Name = "labelArrayMicrophones";
             labelArrayMicrophones.Size = new Size(110, 15);
-            labelArrayMicrophones.TabIndex = 40;
+            labelArrayMicrophones.TabIndex = 42;
             labelArrayMicrophones.Text = "Array microphones";
             //
             // buttonArrayMicrophones
             //
             buttonArrayMicrophones.FlatStyle = FlatStyle.Popup;
             buttonArrayMicrophones.ForeColor = Color.White;
-            buttonArrayMicrophones.Location = new Point(154, 307);
+            buttonArrayMicrophones.Location = new Point(154, 332);
             buttonArrayMicrophones.Name = "buttonArrayMicrophones";
             buttonArrayMicrophones.Size = new Size(170, 23);
-            buttonArrayMicrophones.TabIndex = 41;
+            buttonArrayMicrophones.TabIndex = 43;
             buttonArrayMicrophones.Text = "None...";
             buttonArrayMicrophones.UseVisualStyleBackColor = true;
             buttonArrayMicrophones.Click += buttonArrayMicrophones_Click;
@@ -541,10 +563,12 @@
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(334, 685);
+            ClientSize = new Size(334, 710);
             Controls.Add(audioBackendPanel);
             Controls.Add(buttonArrayMicrophones);
             Controls.Add(labelArrayMicrophones);
+            Controls.Add(comboBoxMicrophoneCalibration);
+            Controls.Add(labelMicrophoneCalibration);
             Controls.Add(buttonClearSplCalibration);
             Controls.Add(buttonSplCalibration);
             Controls.Add(labelSplCalibration);
@@ -609,6 +633,8 @@
         private Button buttonClearCalibration0;
         private Label labelCalibrationExtra;
         private Button buttonCalibrationExtra;
+        private Label labelMicrophoneCalibration;
+        private DarkComboBox comboBoxMicrophoneCalibration;
         private Label labelArrayMicrophones;
         private Button buttonArrayMicrophones;
         private Label labelSplCalibration;

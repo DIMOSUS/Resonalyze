@@ -56,6 +56,15 @@ internal sealed partial class MeasurementSettingsFile
         public double ProtectiveHighPassFrequencyHz { get; set; } = 2_000.0;
         public int ProtectiveHighPassSlopeDbPerOctave { get; set; } = 24;
         public string? MicrophoneCalibration0DegreesPath { get; set; }
+        // Which calibration the measurement microphone is read through, by id in
+        // AdditionalMicrophoneCalibrations or the 0° slot; null is uncalibrated.
+        // It belongs to the RIG, beside the array microphones' own choices, because
+        // it is what a run freezes into its file — a decision about the capsule that
+        // is about to record, not about how a chart is drawn. It used to live in the
+        // Frequency Response view, where selecting it after the sweeps stamped every
+        // file with the calibration that happened to be showing before them.
+        public string? MicrophoneCalibrationId { get; set; } =
+            MicrophoneCalibrationIds.ZeroDegrees;
         // Legacy field (schema <= 10, when 90° was a second fixed slot), kept
         // ONLY so old files deserialize into the migration, which turns the file
         // into a named entry of AdditionalMicrophoneCalibrations; always null
@@ -114,6 +123,7 @@ internal sealed partial class MeasurementSettingsFile
         {
             ArgumentNullException.ThrowIfNull(previous);
             MicrophoneCalibration0DegreesPath = previous.MicrophoneCalibration0DegreesPath;
+            MicrophoneCalibrationId = previous.MicrophoneCalibrationId;
             AdditionalMicrophoneCalibrations = previous.AdditionalMicrophoneCalibrations
                 .Select(definition => definition.Clone())
                 .ToList();

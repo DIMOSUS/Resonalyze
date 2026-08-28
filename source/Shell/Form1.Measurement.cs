@@ -167,11 +167,6 @@ public partial class Form1
                 return;
             }
 
-            if (!ConfirmCalibrationBeforeRun())
-            {
-                return;
-            }
-
             await startupAudioWarmup.WaitAsync();
             if (expSweepMeasurement.InProgress)
             {
@@ -187,77 +182,6 @@ public partial class Form1
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }
-    }
-
-    /// <summary>
-    /// Asks before a new measurement is taken while the view reads through the
-    /// calibration a LOADED measurement brought with it.
-    /// </summary>
-    /// <remarks>
-    /// The run would otherwise be stamped with someone else's microphone
-    /// correction, and silently: a calibration adopted to read a foreign file says
-    /// nothing about the capsule about to record. Neither silent answer is right —
-    /// dropping the selection would change the view under the user mid-session,
-    /// keeping it would mislabel their own measurement — so the question is asked
-    /// out loud, once, at the only moment it matters.
-    /// </remarks>
-    private bool ConfirmCalibrationBeforeRun()
-    {
-        if (!FileCalibrationSelection.IsFile(frequencyResponseOptions.CalibrationId) ||
-            expSweepMeasurement.MeasurementMicrophoneCalibration is not { } loaded)
-        {
-            return true;
-        }
-
-        string ownName = OwnCalibrationName();
-        DialogResult answer = MessageBox.Show(
-            this,
-            $"The frequency response is being read through \"{FileCalibrationSelection.DisplayName(loaded)}\", " +
-            "a calibration that came from the measurement you loaded rather than from your own list.\r\n\r\n" +
-            "A measurement you are about to take belongs to YOUR microphone.\r\n\r\n" +
-            $"Yes — measure with {ownName}\r\n" +
-            "No — measure through the loaded file's calibration\r\n" +
-            "Cancel — do not measure",
-            "Measuring with a calibration from a file",
-            MessageBoxButtons.YesNoCancel,
-            MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button1);
-        if (answer == DialogResult.Cancel)
-        {
-            return false;
-        }
-        if (answer == DialogResult.Yes)
-        {
-            // Back to the entry the file's calibration displaced, not to the 0° slot:
-            // a user reading through a 90° or a custom curve chose it, and answering
-            // "measure with my own" is not a request to be moved off it.
-            SelectFrequencyResponseCalibration(OwnCalibrationId());
-            RefreshCurrentModePlot();
-        }
-
-        return true;
-    }
-
-    // Which of the user's own entries the question offers to go back to.
-    private string? OwnCalibrationId() =>
-        displacedLocalCalibrationId ?? MicrophoneCalibrationIds.ZeroDegrees;
-
-    // What "your own calibration" amounts to right now, so the question does not
-    // offer a microphone correction the user has not configured.
-    private string OwnCalibrationName()
-    {
-        string? id = OwnCalibrationId();
-        if (MicrophoneCalibrationIds.IsOff(id))
-        {
-            return "no calibration";
-        }
-
-        MicrophoneCalibrationEntry? own = microphoneCalibration
-            .GetEntries()
-            .FirstOrDefault(entry => entry.Id == id);
-        return own is { Available: true }
-            ? $"your own calibration (\"{own.Name}\")"
-            : "no calibration";
     }
 
     // The Live Spectrum mirror of ResetSplViewOnlyDisplayForRun below: an analyzer
@@ -468,6 +392,9 @@ public partial class Form1
         AudioSessionRequest requestBefore =
             CreateAudioWarmupRequest(measurementSettings.Measurement);
         dialog.ApplySweepSettings(measurementSettings.Measurement);
+        // The microphone the rig records through is the one a live capture is
+        // corrected by, so the edit reaches the analyzer on the same apply.
+        RefreshCalibrationConsumers();
         // Captures the other option groups and keeps the measurement settings
         // just edited (they are not read back from expSweepMeasurement here).
         SaveMeasurementSettings();

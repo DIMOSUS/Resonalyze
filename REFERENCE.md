@@ -2119,6 +2119,14 @@ are read leniently in the common plain-text formats (`.txt`, `.cal`, `.frd`,
 `.csv`): `frequency level` pairs, with comments, headers, a decimal comma,
 various delimiters, and extra columns all handled.
 
+**Measure through** — the row under them — names which of those calibrations the
+measurement microphone is read through, and a run FREEZES that curve into the file
+it writes. It belongs to the rig, beside the array microphones' own choices, for
+the same reason theirs do: it describes the capsule about to record. It used to be
+read off the Frequency Response view at run start, where choosing a calibration
+after the sweeps labelled none of them and one adopted to read someone else's file
+labelled all of them with a stranger's microphone.
+
 Beside it, **More calibrations → Manage...** holds any number of further
 calibrations, each with a name of your choosing:
 
@@ -2144,12 +2152,18 @@ replacing the 0° file updates every angle derived from it. Entries are edited o
 a working copy and applied when the dialog is accepted; angle entries can only
 be derived from file-backed ones, so an estimate is never built on an estimate.
 
-The views that read a magnitude — **Frequency Response**, **Live Spectrum**, the
-**EQ Wizard** and **Virtual DSP** — each pick one of them (or **Off**) in their
-own selector; Phase and Group Delay read timing rather than level and apply no
-correction at all. A selection whose file went missing, or whose entry was
-deleted, stays selected and is marked rather than being silently rewritten to
-Off. A Virtual DSP session carries its calibration curve inside it and can add
+Which selector answers for which curve follows from what each one is. **Record
+Settings** answers for the microphone, so the sweeps and the live captures taken on
+that rig are stamped and corrected by its choice — the **Live Spectrum** panel shows
+it, greyed, rather than offering a second one. **Frequency Response** answers for the
+VIEW: a loaded measurement is read through the calibration it carries, and this
+selector is where that can be overridden for a file that carries none of its own, or
+compared against another curve; it never reaches a stamp. The **EQ Wizard** and
+**Virtual DSP** keep their own, because a project is a set of measurements rather
+than one, and Virtual DSP's list adds **Own (as measured)** for exactly that (see
+[Virtual DSP](#virtual-dsp)). Phase and Group Delay read timing rather than level and
+apply no correction at all. A selection whose file went missing, or whose entry was
+deleted, stays selected and is marked rather than being silently rewritten to Off. A Virtual DSP session carries its calibration curve inside it and can add
 that curve to this list when loaded elsewhere (see [Virtual DSP](#virtual-dsp));
 such files are kept in the application data folder under `calibrations`. For a
 source checkout, a legacy `source/calibration.txt` beside the executable is

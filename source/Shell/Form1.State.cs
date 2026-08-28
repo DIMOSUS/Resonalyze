@@ -32,8 +32,14 @@ public partial class Form1
         // so unless the file carries the curve, a recipient draws a different
         // response from the author's and nothing says why. Pushed here, the one
         // chokepoint every run passes; the measurement freezes it at run start.
+        //
+        // From Record Settings, beside the array microphones' own choices, and NOT
+        // from the Frequency Response view: a view is where a chart is read, and
+        // taking the stamp from it meant a calibration selected after the sweeps
+        // labelled none of them, while one adopted to read someone else's file
+        // labelled all of them with a stranger's microphone.
         expSweepMeasurement.MicrophoneCalibration =
-            FreezeCalibration(frequencyResponseOptions.CalibrationId);
+            FreezeCalibration(measurementSettings.Measurement.MicrophoneCalibrationId);
         expSweepMeasurement.ArrayMicrophoneMetadata =
             measurementSettings.Measurement.ArrayMicrophones
                 .Select(microphone => new ArrayMicrophoneMetadata(

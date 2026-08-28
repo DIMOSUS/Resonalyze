@@ -7,7 +7,7 @@ namespace Resonalyze;
 
 internal sealed partial class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 11;
+    private const int CurrentSchemaVersion = 12;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -109,6 +109,13 @@ internal sealed partial class MeasurementSettingsFile
                 settings.MigrateLegacyMicrophoneCalibrations();
             }
 
+            // Version 12 moved the measurement microphone's calibration out of the
+            // Frequency Response view and into the rig.
+            if (settings.SchemaVersion < 12)
+            {
+                settings.MigrateMicrophoneCalibrationHome();
+            }
+
             settings.SchemaVersion = CurrentSchemaVersion;
             settings.MigrateLegacyDualDeviceLoopback();
             settings.NormalizeMicrophoneCalibrations();
@@ -143,10 +150,8 @@ internal sealed partial class MeasurementSettingsFile
     // always defaulted to no correction.
     private MeasurementSettingsFile WithFirstRunCalibrationDefaults()
     {
+        Measurement.MicrophoneCalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
         FrequencyResponse.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
-        PhaseResponse.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
-        GroupDelay.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
-        LiveSpectrum.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
         return this;
     }
 
@@ -265,6 +270,27 @@ internal sealed partial class MeasurementSettingsFile
         LiveSpectrum.UseCalibration = null;
     }
 
+    /// <summary>
+    /// Moves the measurement microphone's calibration from the Frequency Response
+    /// view to the measurement's own settings, and takes the duplicates with it.
+    /// </summary>
+    /// <remarks>
+    /// The FR selection is the honest source: it is the one a run used to freeze into
+    /// its file, so carrying it over keeps every future sweep stamped exactly as the
+    /// last one was. Phase and Group Delay had selections of their own, and a
+    /// magnitude correction cannot differ by which tab is open — they follow the
+    /// Frequency Response view now, so their stored ids go. Live Spectrum's went with
+    /// them: a live capture is taken on the same rig, through the same capsule, as the
+    /// sweeps beside it.
+    /// </remarks>
+    private void MigrateMicrophoneCalibrationHome()
+    {
+        Measurement.MicrophoneCalibrationId = FrequencyResponse.CalibrationId;
+        PhaseResponse.CalibrationId = null;
+        GroupDelay.CalibrationId = null;
+        LiveSpectrum.CalibrationId = null;
+    }
+
     private static string? MigrateSelection(
         string? calibrationId,
         LegacyMicrophoneCalibrationMode? legacyMode,
@@ -380,6 +406,9 @@ internal sealed partial class MeasurementSettingsFile
         Waterfall.ApplyTo(waterfall, WaterfallMode.Fourier);
         BurstDecay.ApplyTo(burstDecay, WaterfallMode.BurstDecay);
         LiveSpectrum.ApplyTo(liveSpectrum);
+        // A live capture is taken on the rig, so it is corrected by the rig's own
+        // microphone calibration rather than by a selection of its own.
+        liveSpectrum.CalibrationId = Measurement.MicrophoneCalibrationId;
         TimeAlignment.ApplyTo(timeAlignment, measurement.SampleRate);
     }
 
@@ -404,9 +433,18 @@ internal sealed partial class MeasurementSettingsFile
         FrequencyResponse = FrequencyResponseSettings.Capture(frequencyResponse, frequencyResponseVisibility);
         PhaseResponse = FrequencyResponseSettings.Capture(phaseResponse, phaseResponseVisibility);
         GroupDelay = FrequencyResponseSettings.Capture(groupDelay, groupDelayVisibility);
+        // Not stored for these two: phase and group delay read timing rather than
+        // level and apply no correction at all, so an id there was state nothing
+        // could act on — and it drifted, sitting on 0° while the Frequency Response
+        // view moved to another curve and stamped the files with it.
+        PhaseResponse.CalibrationId = null;
+        GroupDelay.CalibrationId = null;
         ImpulseResponse = ImpulseResponseSettings.Capture(impulseResponse);
         Waterfall = WaterfallSettings.Capture(waterfall);
         BurstDecay = WaterfallSettings.Capture(burstDecay);
         LiveSpectrum = LiveSpectrumSettings.Capture(liveSpectrum);
+        // Same: the rig's calibration is the live capture's, and it is stored once,
+        // in the measurement's own settings.
+        LiveSpectrum.CalibrationId = null;
         TimeAlignment = TimeAlignmentSettings.Capture(timeAlignment);
     }}

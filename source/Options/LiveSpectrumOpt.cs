@@ -185,6 +185,11 @@ namespace Resonalyze.Options
                 comboCalibration,
                 options.CalibrationId,
                 calibrationEntries);
+            // A read-out, not a choice: a live capture is taken on the rig, through the
+            // capsule Record Settings names, and a second selection here would let the
+            // MMM pass and the sweeps beside it disagree about which microphone was
+            // used — a difference nothing downstream could see.
+            comboCalibration.Enabled = false;
         }
 
         /// <summary>
@@ -193,10 +198,11 @@ namespace Resonalyze.Options
         /// panel is open.
         /// </summary>
         internal void RefreshCalibrationEntries(
+            string? calibrationId,
             IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
             MicrophoneCalibrationComboHelper.Configure(
                 comboCalibration,
-                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration),
+                calibrationId,
                 calibrationEntries);
 
         /// <summary>
@@ -358,8 +364,6 @@ namespace Resonalyze.Options
                 : signalTypeComboBox.SelectedItem is NoiseColorOption noiseColorOption
                     ? noiseColorOption.NoiseColor
                     : NoiseColor.PinkPeriodic;
-            options.CalibrationId =
-                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration);
             options.SequenceLength =
                 sequenceLengthComboBox.SelectedItem is SequenceLengthOption lengthOption
                     ? lengthOption.Length

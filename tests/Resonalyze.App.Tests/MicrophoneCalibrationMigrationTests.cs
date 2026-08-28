@@ -52,8 +52,16 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
         Assert.Null(settings.Measurement.MicrophoneCalibration90DegreesPath);
 
         Assert.Equal(entry.Id, settings.FrequencyResponse.CalibrationId);
-        Assert.Equal(entry.Id, settings.LiveSpectrum.CalibrationId);
         Assert.Equal(entry.Id, settings.EqWizard.CalibrationId);
+        // Schema 12 moved the measurement microphone's own selection to the rig, and
+        // it is taken from the view that used to stamp the files, so the next sweep
+        // is labelled exactly as the last one was.
+        Assert.Equal(entry.Id, settings.Measurement.MicrophoneCalibrationId);
+        // The copies that could drift from it are gone: the live capture follows the
+        // rig, phase and group delay follow the Frequency Response view.
+        Assert.Null(settings.LiveSpectrum.CalibrationId);
+        Assert.Null(settings.PhaseResponse.CalibrationId);
+        Assert.Null(settings.GroupDelay.CalibrationId);
     }
 
     [Fact]
@@ -132,22 +140,62 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
 
         Assert.Equal(
             MicrophoneCalibrationIds.ZeroDegrees,
+            settings.Measurement.MicrophoneCalibrationId);
+        Assert.Equal(
+            MicrophoneCalibrationIds.ZeroDegrees,
             settings.FrequencyResponse.CalibrationId);
-        Assert.Equal(
-            MicrophoneCalibrationIds.ZeroDegrees,
-            settings.PhaseResponse.CalibrationId);
-        Assert.Equal(
-            MicrophoneCalibrationIds.ZeroDegrees,
-            settings.GroupDelay.CalibrationId);
-        Assert.Equal(
-            MicrophoneCalibrationIds.ZeroDegrees,
-            settings.LiveSpectrum.CalibrationId);
         // The EQ Wizard always defaulted to no correction.
         Assert.Null(settings.EqWizard.CalibrationId);
 
         var options = new FrequencyResponseOptions();
         settings.FrequencyResponse.ApplyTo(options, new CurveVisibilityOptions());
         Assert.Equal(MicrophoneCalibrationIds.ZeroDegrees, options.CalibrationId);
+    }
+
+    /// <summary>
+    /// The rig's calibration reaches the live analyzer, and the ids phase and group
+    /// delay used to store go: those views read timing rather than level and apply
+    /// no correction, so an id there was state nothing could act on.
+    /// </summary>
+    [Fact]
+    public void TheLiveAnalyzerFollowsTheRigAndTheDeadSelectionsGo()
+    {
+        MeasurementSettingsFile settings = Load(WriteSettings("""
+            {
+              "SchemaVersion": 11,
+              "Measurement": { },
+              "FrequencyResponse": { "CalibrationId": "cal-90" },
+              "PhaseResponse": { "CalibrationId": "0deg" },
+              "GroupDelay": { "CalibrationId": "0deg" },
+              "LiveSpectrum": { "CalibrationId": "0deg" }
+            }
+            """));
+
+        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        FrequencyResponseOptions frequencyResponse = new();
+        FrequencyResponseOptions phase = new();
+        FrequencyResponseOptions groupDelay = new();
+        LiveSpectrumOptions live = new();
+        settings.ApplyTo(
+            measurement,
+            frequencyResponse, new CurveVisibilityOptions(),
+            phase, new CurveVisibilityOptions(),
+            groupDelay, new CurveVisibilityOptions(),
+            new ImpulseResponseOptions(),
+            new WaterfallGenerateOptions(),
+            new WaterfallGenerateOptions(),
+            live,
+            new TimeAlignmentOptions());
+
+        Assert.Equal("cal-90", frequencyResponse.CalibrationId);
+        // The rig's, which the migration took from the view that stamped the files —
+        // and the live capture is corrected by the rig now, not by a copy of its own.
+        Assert.Equal("cal-90", settings.Measurement.MicrophoneCalibrationId);
+        Assert.Equal("cal-90", live.CalibrationId);
+        Assert.Null(settings.PhaseResponse.CalibrationId);
+        Assert.Null(settings.GroupDelay.CalibrationId);
+        Assert.Null(phase.CalibrationId);
+        Assert.Null(groupDelay.CalibrationId);
     }
 
     [Fact]

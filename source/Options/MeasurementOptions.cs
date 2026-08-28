@@ -52,6 +52,10 @@ namespace Resonalyze.Options
         private bool initializing;
         private string? microphoneCalibration0DegreesPath;
         private List<MicrophoneCalibrationDefinition> additionalMicrophoneCalibrations = [];
+        // Which calibration the measurement microphone is read through. It is the
+        // rig's answer, not a view's: the run freezes it into the file, and the array
+        // microphones' own choices sit two rows below it in the same panel.
+        private string? microphoneCalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
         private List<ArrayMicrophoneDefinition> waveArrayMicrophones = [];
         private List<ArrayMicrophoneDefinition> asioArrayMicrophones = [];
         // The device each array was configured on. Null until the array is next
@@ -453,6 +457,8 @@ namespace Resonalyze.Options
             additionalMicrophoneCalibrations = settings.AdditionalMicrophoneCalibrations
                 .Select(definition => definition.Clone())
                 .ToList();
+            microphoneCalibrationId = settings.MicrophoneCalibrationId;
+            RefreshMicrophoneCalibrationCombo();
             waveArrayMicrophones = settings.WaveArrayMicrophones
                 .Select(definition => definition.Clone())
                 .ToList();
@@ -484,6 +490,7 @@ namespace Resonalyze.Options
         {
             settings.MicrophoneCalibration0DegreesPath =
                 NormalizeCalibrationPath(microphoneCalibration0DegreesPath);
+            settings.MicrophoneCalibrationId = microphoneCalibrationId;
             settings.AdditionalMicrophoneCalibrations = additionalMicrophoneCalibrations
                 .Select(definition => definition.Clone())
                 .ToList();
@@ -732,6 +739,9 @@ namespace Resonalyze.Options
                 .ToList();
             settings.WaveArrayDeviceId = waveArrayDeviceId;
             settings.AsioArrayDeviceId = asioArrayDeviceId;
+            // Same reason as the array: it is part of what the next run records, so it
+            // has to reach the settings on the edit rather than on the panel's close.
+            settings.MicrophoneCalibrationId = microphoneCalibrationId;
         }
 
         // The duration field holds a per-octave pace; expand it to the total sweep
@@ -913,6 +923,39 @@ namespace Resonalyze.Options
             }
 
             return ([0, 1], ArrayInputSources.Describe(backend, 2));
+        }
+
+        private void comboBoxMicrophoneCalibration_SelectedIndexChanged(
+            object? sender, EventArgs e)
+        {
+            if (initializing)
+            {
+                return;
+            }
+
+            microphoneCalibrationId =
+                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(
+                    comboBoxMicrophoneCalibration);
+            RaiseSweepSettingsChanged();
+        }
+
+        /// <summary>
+        /// Rebuilds the measurement microphone's calibration list from this panel's
+        /// WORKING copy, so a calibration added a moment ago can be chosen before
+        /// anything is applied — the same rule the array dialog follows.
+        /// </summary>
+        private void RefreshMicrophoneCalibrationCombo()
+        {
+            bool wasInitializing = initializing;
+            initializing = true;
+            MicrophoneCalibrationComboHelper.Configure(
+                comboBoxMicrophoneCalibration,
+                microphoneCalibrationId,
+                BuildCalibrationEntries());
+            microphoneCalibrationId =
+                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(
+                    comboBoxMicrophoneCalibration);
+            initializing = wasInitializing;
         }
 
         private void buttonArrayMicrophones_Click(object? sender, EventArgs e)
@@ -1198,8 +1241,18 @@ namespace Resonalyze.Options
             deviceToolTip.SetToolTip(
                 buttonCalibrationExtra,
                 "Further calibration files, and curves estimated from one of them for " +
-                "an angle of incidence. Every analysis mode can then be corrected with " +
-                "any of them.");
+                "an angle of incidence. The measurement microphone and every array " +
+                "microphone are read through one of them.");
+            deviceToolTip.SetToolTip(
+                comboBoxMicrophoneCalibration,
+                "The calibration the measurement microphone is read through." +
+                Environment.NewLine + Environment.NewLine +
+                "A run FREEZES it into the file it writes, so it describes the capsule " +
+                "about to record — set it before measuring, not after. The analysis " +
+                "views then read a measurement through the curve it was recorded " +
+                "with, and Virtual DSP offers it as \"Own (as measured)\".");
+            // The library changed under it: a file cleared, an entry added or renamed.
+            RefreshMicrophoneCalibrationCombo();
         }
 
         private void UpdateCalibrationButton(

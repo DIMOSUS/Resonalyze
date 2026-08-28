@@ -100,6 +100,51 @@ public sealed class MeasurementOptionsArrayTests
         Assert.Equal(5, asio.ChannelOffset);
     }
 
+    /// <summary>
+    /// The measurement microphone's calibration is the rig's answer now, so it makes
+    /// the same trip the array does: through the panel and out on the live apply.
+    /// </summary>
+    /// <remarks>
+    /// It used to be read off the Frequency Response view at run start, which meant a
+    /// calibration chosen after the sweeps labelled none of them and one adopted to
+    /// read a foreign file labelled all of them with a stranger's microphone.
+    /// </remarks>
+    [Fact]
+    public void TheLiveApplyCarriesTheMeasurementCalibration()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        using var panel = new MeasurementOptions();
+        MeasurementSettingsFile.SweepMeasurementSettings settings = SettingsWithArray();
+        settings.MicrophoneCalibrationId = "cal-1";
+        panel.Init(measurement, settings);
+
+        var applied = new MeasurementSettingsFile.SweepMeasurementSettings();
+        panel.ApplySweepSettings(applied);
+
+        Assert.Equal("cal-1", applied.MicrophoneCalibrationId);
+    }
+
+    /// <summary>
+    /// A selection naming a calibration the list no longer holds is KEPT, the way
+    /// every other selector in the application keeps one: it is shown as deleted
+    /// rather than quietly rewritten to Off, which the next apply would persist as
+    /// the user's own choice.
+    /// </summary>
+    [Fact]
+    public void ADeletedCalibrationKeepsItsPlaceRatherThanBecomingOff()
+    {
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        using var panel = new MeasurementOptions();
+        MeasurementSettingsFile.SweepMeasurementSettings settings = SettingsWithArray();
+        settings.MicrophoneCalibrationId = "cal-that-went-away";
+        panel.Init(measurement, settings);
+
+        var applied = new MeasurementSettingsFile.SweepMeasurementSettings();
+        panel.ApplySweepSettings(applied);
+
+        Assert.Equal("cal-that-went-away", applied.MicrophoneCalibrationId);
+    }
+
     [Fact]
     public void TheAppliedArrayIsACopy()
     {

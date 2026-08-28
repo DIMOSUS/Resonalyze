@@ -237,11 +237,14 @@ The panel is grouped the way the decisions are:
 2. **Averaging** — **Measurements** is how many sweeps are averaged into one result. Two
    is enough for a quick look; four or more is preferable, and it is what produces a
    usable coherence curve.
-3. **Calibration** — the microphone's own correction file. Load the **90°** one here,
-   because that is the orientation [Section 3](#microphone-position) mounts the capsule
-   in. SPL calibration is optional and not needed for this workflow. **Array
-   microphones** is the last row of the group and optional as well: it configures the
-   further microphones described under
+3. **Calibration** — where the microphone is declared, and it has to be right **before**
+   the first sweep: a run freezes the chosen curve into every file it writes. **Mic
+   calibration 0°** takes the microphone's on-axis file, **More calibrations →
+   Manage...** takes any others (load your **90°** file here), and **Measure through**
+   selects the one this rig records with — the 90° one, because that is the orientation
+   [Section 3](#microphone-position) mounts the capsule in. SPL calibration is optional
+   and not needed for this workflow. **Array microphones**, the last row, is optional
+   too: it configures the further microphones described under
    [a spatial average for the EQ](#optional-a-spatial-average-for-the-eq), and its
    button reads *None...* until you set some up.
 4. **Format** — **Sample Rate** (outlined) is the measurement rate, and since the
@@ -350,7 +353,9 @@ accuracy may suffer.
 
 ### Measure and save every driver
 
-Mute every DSP output except the driver being measured.
+Mute every DSP output except the driver being measured. Nothing may stand between the
+drivers and the microphone, so run the sweep from the back seat or from outside the
+car — never from the driver's seat the microphone is standing in.
 
 When everything is ready, press **Start** on the main Resonalyze panel. The sweep will
 play several times according to the **Measurements** setting, and Resonalyze will
@@ -390,38 +395,42 @@ centimetres and they move with it. Equalizing them corrects a location rather th
 loudspeaker, and spends amplifier headroom doing it. Your head is not a point, and it
 does not stay still.
 
-![A single-point response against a moving-microphone average of the same driver, with their difference below](assets/images/manual/mmm-vs-single-point.png)
+![A raw single-point response against a moving-microphone average of the same driver, with their difference above](assets/images/manual/mmm-vs-single-point.png)
 
-*The thin trace is one microphone position; the smooth one is a moving-microphone
-average of the same driver. Below them is the difference. Everything the two disagree
-about above ~700 Hz is a property of where the microphone happened to sit.*
+*Orange: one position, unsmoothed. Violet: a moving-microphone average of the same
+midrange. Green: their difference, down to **−28 dB**.*
 
-There are two ways to get that average, and both are optional — everything in this
-guide works without one — but either makes the EQ stage noticeably more honest.
+**Most of that disappears under smoothing**, because most of it is narrow — which is
+exactly what **psychoacoustic smoothing** discounts, and that is the width
+[Section 6](#set-the-display-correctly) has you read a single-point tune at anyway.
+
+![The same pair with psychoacoustic smoothing on the point response](assets/images/manual/mmm-vs-smoothed-point.png)
+
+*The same measurement, smoothed: the difference is a median of **1.3 dB** and stays
+inside 3 dB across four fifths of the band.*
+
+So one microphone is enough for a basic tune, and everything in this guide works from
+one. An average is what makes it accurate: it removes the position's dips physically
+instead of hiding them behind a window, and it says where it is confident and where it
+is not — which is what the EQ stage in [Section 8](#8-peq--equalization) is fitted to.
+
+There are two ways to get one.
 
 **If you have spare inputs and spare microphones**, set up a
 [microphone array](REFERENCE.md#microphone-array) before you measure: **Record
-Settings → Array microphones**, whose button reads *None...* until it holds something.
-Each row is one further microphone — the **input** it sits on, its own **calibration**,
-and a **Position** note saying where it stands (`left forward`, `centre`, whatever you
-will recognize months later). The measurement microphone counts as a position too, and
-is the one every other is levelled onto, so the seven positions these were developed
-against are six rows plus it; one row is the least an average can be built from. Place
-them around the head area — those seven sat within about 30 cm of the listening
-position, left and right of it and forward of it.
+Settings → Array microphones**, one row per further microphone — its input, its
+calibration, and a note saying where it stands. Place them around the head area; the
+seven positions these were developed against sat within about 30 cm of the listening
+position, left and right of it and forward of it. The measurement microphone is the
+seventh of those seven and the one every other is levelled onto, so six rows are what
+you configure, and one row is the least an average can be built from.
 
-The calibration is picked from the same list the measurement microphone chooses from,
-and only from it: a capsule's own file has to be in that list before it can be assigned,
-through **More calibrations → Manage... → Add file...** in Record Settings. That list is
-the panel's working copy, so one added there can be given to a microphone straight away,
-without applying or reopening anything.
+A capsule's calibration has to be in Record Settings' own list before it can be
+assigned — **More calibrations → Manage... → Add file...** — because the array chooses
+from that list and nowhere else. It is the panel's working copy, so one added there can
+be given to a microphone straight away.
 
-![The Array microphones list: six further inputs, each with its calibration and the position it stands in](assets/images/manual/array-microphones.png)
-
-*The set this guide's array figures come from: six further microphones on inputs 3 to 8,
-each read through its own capsule's calibration, with the measurement one on input 2 as
-the seventh position. The line under the editor says how many inputs are still free and
-where that count comes from.*
+![The Array microphones list: one row per further microphone](assets/images/manual/array-microphones.png)
 
 In practice this means **ASIO**. The array is further inputs of the same interface, and
 MME reaches two channels in all, while a WASAPI endpoint usually presents an interface's
@@ -456,6 +465,11 @@ Then, one driver at a time, **with the DSP still in the same bypassed state you
 measured in** (only the protective high-pass left in place) and at **the same levels**:
 
 - mute every output except the driver being captured;
+- **sit in the back and keep the path from every driver to the capsule clear** — your
+  own body included, and nobody in the front seats. Hold the microphone into the
+  driver's head area from behind: a torso between an A-pillar tweeter and the capsule
+  is a shadow, and unlike a reflection it does not average out — every position you
+  walk the microphone through has the same body in front of it;
 - take the microphone off its stand and hold it with the **capsule pointing up**, the
   same orientation it was mounted in;
 - press **Start**, and move it in **slow, smooth circles around the driver's head
@@ -553,27 +567,6 @@ sensible. A wildly incorrect delay, weak impulse, clipping, or a broken loopback
 reference is much easier to fix now than after the complete virtual system has been
 built.
 
-Another very useful view is **Group Delay**. Open its settings panel to choose which
-curves are displayed and adjust the IR gate and smoothing if necessary. Pay particular
-attention to **Excess Group Delay**.
-
-![Group Delay: the measured curve against its minimum-phase and excess twins, with coherence](assets/images/gd.png)
-
-Excess Group Delay shows where the measured response departs from the minimum-phase
-behavior implied by its magnitude response. Strong anomalies can be caused by
-reflections, resonances, interference, or other delayed energy.
-
-Read them as a warning, not a verdict: Excess Group Delay should not be interpreted in
-isolation, and it becomes unreliable wherever the response level or the coherence is
-poor.
-
-In the example above, strong peaks are visible around **700 Hz, 1 kHz and 5 kHz**.
-
-This is useful information for later EQ work. If a deep frequency-response dip
-coincides with a strong **Excess Group Delay** anomaly, boosting it with PEQ is usually
-a bad idea. EQ can change the magnitude response, but it cannot remove the delayed
-component or destructive interference that caused the dip.
-
 For now, do not correct anything. At this stage, we only need to answer two questions:
 
 > **Is the measurement trustworthy?**
@@ -664,8 +657,12 @@ is refused on the way back if the project has since moved to another.
 
 ### Set the display correctly
 
-Under the main graph, select the **90° microphone calibration**, since the microphone
-was pointed upward during the measurements.
+Set **Mic cal** to **Own (as measured)**. Each measurement carries the calibration it
+was recorded through — the one you set in
+[Record Settings](#4-measuring-the-drivers) before the sweeps — and this reads every
+channel through its own rather than applying one curve to all of them. Pick a single
+calibration from the list only when you want to see the whole set through one
+microphone on purpose.
 
 For most tuning work, also select **Psychoacoustic smoothing**. As in REW, it visually
 de-emphasizes narrow high-Q peaks and dips while preserving broader features that are
@@ -688,8 +685,9 @@ Each channel has a virtual processing chain where Resonalyze can apply:
 - delay;
 - polarity;
 - HPF and LPF;
-- PEQ;
-- all-pass filters.
+- PEQ — bells and shelves, and the phase-only **all-pass** bands, which live in the
+  bank as band types rather than as a stage of their own, the way Audiotec-style
+  hardware holds them in its EQ slot table.
 
 These operations are applied to the **actual measured impulse response** of the
 installed driver, not to an idealized response curve. This preserves its real
@@ -722,8 +720,8 @@ of the whole system**, including the resulting phase and group delay.
 
 At this stage, do not start tuning yet. First verify that every measurement is loaded
 into the correct channel and side, that the Virtual DSP structure matches the real
-processor, that the right **DSP processor** is named, and that **90° calibration +
-Psychoacoustic smoothing** are selected.
+processor, that the right **DSP processor** is named, and that **Mic cal: Own (as
+measured)** and **Psychoacoustic smoothing** are selected.
 
 Once the virtual system is assembled correctly, we can move on to the first real tuning
 step: crossover design.
@@ -876,11 +874,10 @@ array project is drawn from that point measurement instead and the panel says ho
 channels that is; below the cabin's first mode a point and an average are the same
 measurement, so a subwoofer loses little by it.
 
-Set **Mic cal** to **Own (as measured)** while you are there. Each array position is
-a different capsule with its own calibration file, and that setting reads every curve
-through the correction its own measurement recorded instead of applying one of yours
-to all of them. Pick a single calibration from the list only when you want to see the
-whole set through one microphone on purpose.
+**Mic cal** should be on **Own (as measured)**, as
+[Section 6](#set-the-display-correctly) set it — with an array it matters doubly, since
+each position is a different capsule with its own file and no single curve of yours
+describes the set.
 
 **Took MMM captures instead?** On each channel card, press the **MMM** button and
 select that driver's capture. Do it for both sides — left and right have their own —
@@ -1028,9 +1025,10 @@ bumps and dips are worth attention, especially near a crossover region: flatteni
 does more than tidy the magnitude response — it also improves the associated phase
 behavior, which can make the following alignment stage considerably easier.
 
-Do not chase every narrow notch. As discussed earlier, a dip accompanied by strong
-**Excess Group Delay** or obvious cancellation is usually not something PEQ can truly
-repair.
+Do not chase every narrow notch. A dip made by delayed energy or plain cancellation is
+not something PEQ can repair: the filter changes the magnitude, not what caused the
+dip. (**Group Delay** mode is where such a dip can be told apart from a driver's own —
+see [REFERENCE.md](REFERENCE.md#phase-and-group-delay).)
 
 ### Preamp and manual cleanup
 
@@ -1040,8 +1038,10 @@ preamp is part of the bank: it travels back to Virtual DSP with the filters and 
 on the tuning sheet.
 
 Auto Tune is only a starting point. You can remove unnecessary PEQ bands by
-drag-and-drop, adjust them manually, or add additional **PK / shelf filters** with the
-+ buttons.
+drag-and-drop, adjust them manually, or add bands with the **+** buttons: **PK** and
+the two shelves, and **AP1 / AP2**, the first- and second-order all-pass bands
+[Section 9](#9-delay-and-phase-alignment) uses to bend phase without touching
+magnitude.
 
 ### Return the result
 
@@ -1222,6 +1222,10 @@ harder.
 After several seconds — or tens of seconds on a larger system — Resonalyze produces a
 report.
 
+**Most of the time you can read the summary, press Apply and move on.** The report is
+there for the rows it is not sure about, and it says which those are. What follows is
+how to read it when you want to.
+
 ![The Auto delay proposal: per-channel delay, polarity, gain and confidence, with the reasoning below](assets/images/manual/auto-delay.png)
 
 1. **The run's settings** — the steering-wheel side, the scene **Offset** from the
@@ -1255,11 +1259,13 @@ Once the proposal is applied, inspect **Sum Loss** again. Ideally, the values at
 junction should now be close to 0 dB — meaning the drivers are adding constructively
 instead of cancelling each other.
 
-All-pass filters are optional. Use one only when the magnitude response is already
-satisfactory but delay and polarity alone cannot maintain good phase matching across
-the crossover region. Judge the result by improved acoustic summation across the
-junction, not by a prettier phase value at a single frequency. Because an all-pass
-filter changes phase and group delay, run **Auto delay...** again after adding or
+All-pass filters are optional. They are bands of the channel's PEQ bank — **AP1** and
+**AP2** in the EQ Wizard — not a separate stage, so they travel with the bank and
+appear on the tuning sheet among the filters. Use one only when the magnitude response
+is already satisfactory but delay and polarity alone cannot maintain good phase
+matching across the crossover region. Judge the result by improved acoustic summation
+across the junction, not by a prettier phase value at a single frequency. Because an
+all-pass changes phase and group delay, run **Auto delay...** again after adding or
 changing one.
 
 ### Fine tuning and export
@@ -1286,8 +1292,8 @@ improves.
 
 Revisiting EQ is cheap now as well: **Load / Edit… → Edit in EQ Wizard** on any channel
 reopens it against its current chain. If you change a crossover, re-check that
-channel's PEQ. After changing crossover, PEQ, or all-pass filtering, run **Auto
-delay...** again because the processed phase relationship has changed.
+channel's PEQ. After changing a crossover or a bank — an all-pass band included — run
+**Auto delay...** again, because the processed phase relationship has changed.
 
 When you are satisfied, press **Export...** and generate the final **PDF tuning sheet**.
 It lists the crossover settings, gains, delays, polarities, and PEQ needed to reproduce

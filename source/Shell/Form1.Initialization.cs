@@ -181,8 +181,13 @@ public partial class Form1
         eqWizardPanel?.ConfigureCalibration(microphoneCalibration.Get, entries);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshCalibrationEntries(analysisEntries));
+        // The live panel shows the RIG's calibration and does not choose it, so it is
+        // told which one to show rather than asked which it had.
+        liveSpectrumOptions.CalibrationId =
+            measurementSettings.Measurement.MicrophoneCalibrationId;
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
-            panel => panel.RefreshCalibrationEntries(entries));
+            panel => panel.RefreshCalibrationEntries(
+                liveSpectrumOptions.CalibrationId, entries));
     }
 
     // Adds a calibration curve a Virtual DSP session carried in to the configured

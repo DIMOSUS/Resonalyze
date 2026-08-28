@@ -3840,7 +3840,7 @@ public partial class VirtualCrossoverPanel : UserControl
             entry.Document.Recipe.MicrophoneCount !=
             arrays[0].Document.Recipe.MicrophoneCount);
         bool calibrationsDiffer = arrays.Any(entry =>
-            !SameCalibration(entry.Document.Calibration, arrays[0].Document.Calibration));
+            !SameArrayCorrection(entry.Document, arrays[0].Document));
         if (!countsDiffer && !calibrationsDiffer)
         {
             return null;
@@ -3875,6 +3875,57 @@ public partial class VirtualCrossoverPanel : UserControl
             "leaves every stored property identical. Captures from one sitting " +
             "are one volume; captures from different days may not be.");
         return lines.ToString();
+    }
+
+    /// <summary>
+    /// Whether two arrays were corrected the same way — including when neither can
+    /// name a single curve for it.
+    /// </summary>
+    /// <remarks>
+    /// An array whose positions carried DIFFERENT calibration files declares no
+    /// calibration at all: there is no one curve a reader could undo, which is what
+    /// <c>CalibrationIsAggregate</c> says instead. Comparing only the named curve
+    /// therefore made two such arrays agree with each other and with an array that
+    /// was never calibrated — three different corrections, all reading null, all
+    /// declared identical. What an aggregate CAN be compared on is the correction it
+    /// actually declares, band for band.
+    /// </remarks>
+    private static bool SameArrayCorrection(
+        LiveCaptureDocument first,
+        LiveCaptureDocument second)
+    {
+        if (first.CalibrationIsAggregate != second.CalibrationIsAggregate)
+        {
+            return false;
+        }
+        if (!first.CalibrationIsAggregate)
+        {
+            return SameCalibration(first.Calibration, second.Calibration);
+        }
+
+        double[]? a = first.CalibrationCorrectionDb;
+        double[]? b = second.CalibrationCorrectionDb;
+        if (a == null || b == null)
+        {
+            return a == b;
+        }
+        if (a.Length != b.Length)
+        {
+            return false;
+        }
+
+        for (int band = 0; band < a.Length; band++)
+        {
+            // A hundredth of a decibel: two aggregates that agree that closely are one
+            // correction written twice, and anything a user could act on is orders
+            // above it.
+            if (Math.Abs(a[band] - b[band]) > 0.01)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool SameCalibration(

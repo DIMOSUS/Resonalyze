@@ -1705,12 +1705,23 @@ namespace Resonalyze
                 judged.Add((string.Empty, microphone));
             }
 
-            foreach (int channel in captured.ArrayChannels)
+            // The capture's channel indices are relative to the first channel the
+            // session opened, which for ASIO is not the hardware input the user
+            // configured: a rig on inputs 6, 8 and 9 arrives here as 1, 3 and 4. The
+            // SAMPLES are matched correctly either way, but a refusal that sends
+            // someone to check input 4 when the fault is on input 9 is a refusal that
+            // costs an afternoon. The i-th capture channel is the i-th CONFIGURED
+            // microphone (see BuildArrayCaptures), so the configured offset is what
+            // gets named.
+            IReadOnlyList<int> configured = ArrayInputChannelOffsets;
+            for (int position = 0; position < captured.ArrayChannels.Count; position++)
             {
+                int channel = captured.ArrayChannels[position];
                 float[] samples = (uint)channel < (uint)channels.Length
                     ? channels[channel]
                     : [];
-                string where = $"array microphone on input {channel + 1}";
+                int named = position < configured.Count ? configured[position] : channel;
+                string where = $"array microphone on input {named + 1}";
                 if (samples.Length == 0)
                 {
                     issues.Add($"{where}: the channel was not captured.");

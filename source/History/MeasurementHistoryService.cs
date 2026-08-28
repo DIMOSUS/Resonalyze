@@ -308,6 +308,7 @@ internal sealed class MeasurementHistoryService
             AchievedHighFrequencyHz = achievedHighHz,
             MeasuredLowFrequencyHz = measuredLowHz,
             MeasuredHighFrequencyHz = measuredHighHz,
+            MeasuredAtUtc = file.SavedAtUtc,
             Octaves = file.Octaves,
             SweepDurationSeconds = file.SweepDurationSeconds,
             PlayChannel = file.PlayChannel,

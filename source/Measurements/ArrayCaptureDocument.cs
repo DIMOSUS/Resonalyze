@@ -32,8 +32,10 @@ internal static class ArrayCaptureDocument
     public static LiveCaptureDocument? TryCreate(
         IReadOnlyList<ArrayMicrophoneCurve> microphones,
         int sampleRateHz,
-        ProtectiveHighPassConfiguration? protectiveHighPass) =>
-        TryCreateWithSpread(microphones, sampleRateHz, protectiveHighPass).Document;
+        ProtectiveHighPassConfiguration? protectiveHighPass,
+        DateTimeOffset? measuredAtUtc = null) =>
+        TryCreateWithSpread(microphones, sampleRateHz, protectiveHighPass, measuredAtUtc)
+            .Document;
 
     /// <summary>
     /// The same average, with the spread between the positions beside it on the same
@@ -45,10 +47,18 @@ internal static class ArrayCaptureDocument
     /// moving microphone — the other method that produces one — has no per-position
     /// spread to report. Only a caller that knows it is holding an array asks for it.
     /// </remarks>
+    /// <param name="measuredAtUtc">
+    /// When the measurement behind these curves was taken. Null for one being taken
+    /// right now, which is the only case where the clock is the answer: for a
+    /// measurement read back from a file, stamping the moment it was OPENED would put
+    /// today's date on a set recorded weeks apart — and the date is exactly what the
+    /// composition warning offers as evidence that two channels came from one sitting.
+    /// </param>
     public static (LiveCaptureDocument? Document, double[]? SpreadDb) TryCreateWithSpread(
         IReadOnlyList<ArrayMicrophoneCurve> microphones,
         int sampleRateHz,
-        ProtectiveHighPassConfiguration? protectiveHighPass)
+        ProtectiveHighPassConfiguration? protectiveHighPass,
+        DateTimeOffset? measuredAtUtc = null)
     {
         ArgumentNullException.ThrowIfNull(microphones);
         IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
@@ -74,7 +84,7 @@ internal static class ArrayCaptureDocument
         {
             Format = LiveCaptureDocument.CurrentFormat,
             Version = LiveCaptureDocument.CurrentVersion,
-            SavedAtUtc = DateTimeOffset.UtcNow,
+            SavedAtUtc = measuredAtUtc ?? DateTimeOffset.UtcNow,
             // Named after what it is rather than after a file: the button shows
             // this, and "7 microphones" is the thing a user wants to read there.
             Title = microphones.Count == 1

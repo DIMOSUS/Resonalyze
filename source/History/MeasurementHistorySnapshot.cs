@@ -55,6 +55,19 @@ internal sealed class MeasurementHistorySnapshot
     // amplitude, narrower than the achieved one by the guard bands the fades live in.
     public double MeasuredLowFrequencyHz { get; init; }
     public double MeasuredHighFrequencyHz { get; init; }
+
+    /// <summary>
+    /// When the measurement was taken, as far as anything knows: the file's own stamp
+    /// for one that was loaded, and the moment of capture for one that was just run.
+    /// </summary>
+    /// <remarks>
+    /// It travels because a spatial average built from this measurement is shown WITH
+    /// its date — nothing records where an array's microphones stood, so when they
+    /// stood there is the only evidence a user has that two channels came from one
+    /// sitting. Stamping the moment the file was opened instead would answer that
+    /// question with today's date every time, which is worse than not answering it.
+    /// </remarks>
+    public DateTimeOffset MeasuredAtUtc { get; init; } = DateTimeOffset.UtcNow;
     public double SweepDurationSeconds { get; init; }
 
     /// <summary>The band that was requested.</summary>

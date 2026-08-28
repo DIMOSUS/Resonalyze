@@ -378,7 +378,8 @@ internal sealed class EqWizardSourceResolver
             ArrayCaptureDocument.TryCreateWithSpread(
                 entry.ToCurves(),
                 file.SampleRate,
-                file.ProtectiveHighPass?.ToConfiguration());
+                file.ProtectiveHighPass?.ToConfiguration(),
+                file.SavedAtUtc);
         if (document == null)
         {
             return null;

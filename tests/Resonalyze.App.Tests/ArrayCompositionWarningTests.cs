@@ -17,7 +17,9 @@ namespace Resonalyze.App.Tests;
 /// </remarks>
 public sealed class ArrayCompositionWarningTests
 {
-    private static LiveCaptureDocument Array(int microphones) =>
+    private static LiveCaptureDocument Array(
+        int microphones,
+        double[]? aggregateCorrectionDb = null) =>
         new()
         {
             SavedAtUtc = DateTimeOffset.UnixEpoch,
@@ -26,6 +28,8 @@ public sealed class ArrayCompositionWarningTests
             CurveDb = [0.0, 0.0],
             GridStartHz = 20,
             GridStopHz = 20_000,
+            CalibrationIsAggregate = aggregateCorrectionDb != null,
+            CalibrationCorrectionDb = aggregateCorrectionDb ?? [],
             Recipe = new LiveCaptureRecipe
             {
                 SampleRateHz = 48_000,
@@ -89,6 +93,40 @@ public sealed class ArrayCompositionWarningTests
         Assert.Contains("A L    7 microphone(s)", mismatch);
         Assert.Contains("A R    5 microphone(s)", mismatch);
         Assert.Contains("B R    5 microphone(s)", mismatch);
+    }
+
+    [Fact]
+    public void TwoDIFFERENTAggregateCorrectionsAreReported()
+    {
+        // An array whose positions carried different calibration files declares no
+        // calibration at all — there is no one curve a reader could undo. Comparing
+        // only the named curve made two such arrays agree with each other, and with an
+        // array that was never calibrated at all: three different corrections, every
+        // one reading null, all declared identical. What an aggregate can be compared
+        // on is the correction it actually declares.
+        var a = new VirtualCrossoverChannel("A");
+        a.SideState(rightSide: false).ArrayCapture = Array(7, [0.0, 1.5]);
+        a.SideState(rightSide: true).ArrayCapture = Array(7, [0.0, 1.5]);
+        var b = new VirtualCrossoverChannel("B");
+        b.SideState(rightSide: false).ArrayCapture = Array(7, [0.0, -2.0]);
+        b.SideState(rightSide: true).ArrayCapture = Array(7, [0.0, -2.0]);
+
+        Assert.NotNull(Describe(a, b));
+
+        // The same aggregate on both is one correction written twice.
+        b.SideState(rightSide: false).ArrayCapture = Array(7, [0.0, 1.5]);
+        b.SideState(rightSide: true).ArrayCapture = Array(7, [0.0, 1.5]);
+        Assert.Null(Describe(a, b));
+    }
+
+    [Fact]
+    public void AnAggregateIsNotTheSameAsNoCalibrationAtAll()
+    {
+        var mixed = new VirtualCrossoverChannel("A");
+        mixed.SideState(rightSide: false).ArrayCapture = Array(7, [0.0, 1.5]);
+        mixed.SideState(rightSide: true).ArrayCapture = Array(7, [0.0, 1.5]);
+
+        Assert.NotNull(Describe(mixed, Channel("B", 7, 7)));
     }
 
     [Fact]

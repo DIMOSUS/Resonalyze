@@ -74,7 +74,8 @@ internal sealed class ResolvedVirtualDspSource
             ArrayCaptureDocument.TryCreateWithSpread(
                 snapshot.ArrayMicrophones,
                 snapshot.SampleRate,
-                snapshot.ProtectiveHighPass);
+                snapshot.ProtectiveHighPass,
+                snapshot.MeasuredAtUtc);
         return new ResolvedVirtualDspSource
         {
             TransferImpulseResponse = transferIr,

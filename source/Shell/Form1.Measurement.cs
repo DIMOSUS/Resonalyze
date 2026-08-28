@@ -460,11 +460,26 @@ public partial class Form1
         }
     }
 
-    private void buttonRecordOpt_Click(object sender, EventArgs e)
+    private async void buttonRecordOpt_Click(object sender, EventArgs e)
     {
         if (dockedMeasurementSettingsHost.IsOpen)
         {
             dockedMeasurementSettingsHost.Close();
+            return;
+        }
+
+        // The panel OPENS the audio device: with ASIO its sample-rate list is read
+        // straight out of a driver probe, and a driver already open answers with the
+        // rate it is open at and nothing else. Every other place that touches the
+        // device waits for the startup warm-up first (see the record button and the
+        // live spectrum toggle); this one did not, so the first open after launch
+        // could land on a busy driver and offer one rate. Reopening the panel then
+        // fixed it, which is exactly what a timing collision looks like.
+        //
+        // Free once the warm-up has finished, which is every open but the first.
+        await startupAudioWarmup.WaitAsync();
+        if (IsDisposed || dockedMeasurementSettingsHost.IsOpen)
+        {
             return;
         }
 
@@ -495,6 +510,13 @@ public partial class Form1
                             CreateAudioWarmupRequest(measurementSettings.Measurement),
                             CancellationToken.None);
                     }
+
+                    // The panel stays on screen after Apply, and the device it is
+                    // describing has just been reconfigured under it. Its picture of
+                    // the driver is a snapshot, so without this a rate change leaves
+                    // the status amber against a driver that is now running at exactly
+                    // that rate, and the only cure is reopening the panel.
+                    dialog.RefreshAudioDeviceView();
                 }
                 catch (InvalidOperationException exception)
                 {

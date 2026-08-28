@@ -2435,6 +2435,40 @@ namespace Resonalyze.Options
             UpdateAudioBackendControls();
         }
 
+        /// <summary>
+        /// Re-reads the audio device after the host has applied these settings to it.
+        /// </summary>
+        /// <remarks>
+        /// The panel's picture of the driver is a snapshot, taken when the panel opened
+        /// or when a control changed — and Apply reconfigures the device UNDER it while
+        /// it stays on screen. So a rate change probed the driver while it was still
+        /// open at the old rate, got "not supported", painted the status amber, and
+        /// kept it there: the driver was reinitialised at the new rate a moment later
+        /// and nothing asked it again. Reopening the panel was the only way to get a
+        /// straight answer, which is the tell that the view had gone stale rather than
+        /// the device being wrong.
+        /// </remarks>
+        internal void RefreshAudioDeviceView()
+        {
+            if (initializing || IsDisposed)
+            {
+                return;
+            }
+
+            int preferredSampleRate = GetSelectedSampleRate();
+            if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
+            {
+                RefreshAsioDriverInfo(
+                    preferredSampleRate,
+                    GetSelectedAsioInputChannelOffset(),
+                    GetSelectedAsioOutputChannelOffset(),
+                    GetSelectedAsioLoopbackInputChannelOffset());
+            }
+
+            RefreshSampleRateOptions(preferredSampleRate);
+            UpdateAudioBackendControls();
+        }
+
         private void RefreshSampleRateOptions(int preferredSampleRate)
         {
             SampleRateResolution resolution = SampleRateOptions.Resolve(

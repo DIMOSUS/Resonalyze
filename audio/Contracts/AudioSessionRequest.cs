@@ -65,6 +65,38 @@ public sealed record AudioCaptureRouting(
         }
     }
 
+    /// <summary>
+    /// Value equality over the channel list, which the generated one does not give.
+    /// </summary>
+    /// <remarks>
+    /// A record compares its FIELDS, and this one holds an array: two routings naming
+    /// the same channels held two different arrays and compared unequal. The empty
+    /// case hid it — `[]` is a singleton, so a routing without an array compared equal
+    /// and everything downstream looked right — while a routing WITH one never
+    /// did. The caller that suffers is the settings panel's live apply, which asks
+    /// whether the audio request actually changed before reopening the device: with an
+    /// array configured the answer was always yes, so every edit anywhere on the panel
+    /// paid for a device warm-up nothing had asked for.
+    /// </remarks>
+    public bool Equals(AudioCaptureRouting? other) =>
+        other is not null &&
+        MicrophoneChannel == other.MicrophoneChannel &&
+        LoopbackChannel == other.LoopbackChannel &&
+        ArrayChannels.SequenceEqual(other.ArrayChannels);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(MicrophoneChannel);
+        hash.Add(LoopbackChannel);
+        foreach (int channel in ArrayChannels)
+        {
+            hash.Add(channel);
+        }
+
+        return hash.ToHashCode();
+    }
+
     private int[] Validate(IReadOnlyList<int>? channels)
     {
         if (channels == null || channels.Count == 0)

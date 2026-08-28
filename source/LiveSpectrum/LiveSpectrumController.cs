@@ -259,15 +259,20 @@ internal sealed class LiveSpectrumController : IDisposable
 
     // The display transform behind the peak-hold envelope at the last drawn frame.
     // peakHoldPoints holds FINISHED display values, so any change to how a level maps
-    // to the display — the scale, the RTA-only shaping, the smoothing band width, the
-    // microphone-correction mode, or the SPL offset (e.g. a re-calibration to a new
-    // offset) — makes the old envelope incompatible; it must be dropped, not max-ed
-    // against the new values.
+    // to the display — the scale, the RTA-only shaping, the smoothing band width or the
+    // SPL offset (e.g. a re-calibration to a new offset) — makes the old envelope
+    // incompatible; it must be dropped, not max-ed against the new values.
+    //
+    // The microphone calibration is NOT here, and neither is the protective high-pass:
+    // both are frozen on the accumulation when its run begins, and both are written
+    // immediately after SuspendPeakHold, so neither can change while an envelope
+    // exists. Keying on the RIG's calibration instead — which is what this did while
+    // the live options still owned that choice — dropped a perfectly valid envelope
+    // whenever the next run's microphone was chosen mid-hold.
     private readonly record struct PeakHoldDisplayKey(
         MagnitudeScale Scale,
         bool RtaOnly,
         int SmoothingInverseOctaves,
-        string? CalibrationId,
         double? SplOffsetDb,
         NoiseSpectralModel? TiltModel);
 
@@ -280,7 +285,6 @@ internal sealed class LiveSpectrumController : IDisposable
         // option would call two different display transforms the same and max a
         // 1/6-octave envelope against unsmoothed band levels.
         plotModelFactory.EffectiveLiveSmoothingCode,
-        liveSpectrumOptions.CalibrationId,
         // The offset only shapes the display in SPL; in relative it is irrelevant.
         RenderingSpl ? plotModelFactory.LiveSplOffsetDb : null,
         // Null (off) and a flat model (white noise, band-law-only compensation)

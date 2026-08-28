@@ -1576,6 +1576,9 @@ namespace Resonalyze
             // average of six positions where seven were set up is a different
             // measurement wearing the same name. A sweep is cheap; a spatial average
             // built on a position that was never there is not.
+            ExcitationBandGate arrayGate = captured.ArrayChannels.Count > 0
+                ? BuildExcitationGate(sweep)
+                : ExcitationBandGate.FullBand;
             foreach (int channel in captured.ArrayChannels)
             {
                 float[] samples = (uint)channel < (uint)channels.Length
@@ -1588,10 +1591,28 @@ namespace Resonalyze
                     continue;
                 }
 
+                int before = issues.Count;
                 foreach (string issue in SweepRunQualityCheck.AssessArrayMicrophone(
                     samples, sweep.SweepSamples))
                 {
                     issues.Add($"{where}: {issue}.");
+                }
+
+                // ...and whether what it recorded is a RESPONSE, which the level
+                // checks cannot ask. Only when they passed: a clipped or silent
+                // channel has already failed, and dividing it would add a second
+                // sentence about the same fault.
+                if (issues.Count == before &&
+                    loopback != null &&
+                    ArrayMicrophoneAnalysis.DescribeIncredibleRun(
+                        new RecordedSamplesView(loopback),
+                        new RecordedSamplesView(samples),
+                        arrayGate,
+                        SampleRate) is { } shape)
+                {
+                    issues.Add(
+                        $"{where}: it recorded a signal, but it did not divide into a " +
+                        $"credible response ({shape})");
                 }
             }
 

@@ -198,6 +198,51 @@ public sealed class ArrayMicrophoneTests
     }
 
     [Fact]
+    public async Task AnArrayMicrophoneThatIsWrongOnONERunRejectsThatRun()
+    {
+        // The intermittent fault, and the one an averaged verdict cannot see. Four
+        // runs, and the array microphone records noise on the third capture only —
+        // it is not silent, not clipped and not short, so every level check passes.
+        //
+        // Averaged over four frames it hides, and the noise is deliberately quiet
+        // (0.005 against the sweep's 0.4) so that it does: three good runs still put
+        // an arrival in the H1 total, the averaged shape stays compact, and a verdict
+        // taken at the end says yes. Measured with only that verdict in place, this
+        // measurement succeeds with four accepted runs and nothing reported.
+        //
+        // What the bad run does is not add noise to the curve. Its reference power
+        // stays in the denominator of ΣGxy/ΣGxx while contributing nothing to the
+        // numerator, so the position comes out scaled by 3/4 — exactly −2.50 dB,
+        // measured, and INDEPENDENT of how quiet the noise was. That is why the
+        // averaged backstop cannot be the whole rule: what it can see depends on the
+        // noise level, and what the error costs does not.
+        //
+        // So the verdict belongs where the level checks are, on the RUN — which is
+        // also what this measurement's own rule says out loud.
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal,
+                (capture, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.WithArrayMicrophoneNoisyOnThisCapture(
+                        s, tail, noisy: capture == 3, peak: 0.005))));
+        using ExpSweepMeasurement measurement = CreateSweep(
+            factory, runs: 4, arrayChannels: [2]);
+
+        // The retry is clean, so the measurement still gets its four runs — which is
+        // the point: the rule costs a sweep, not the measurement.
+        Assert.True(await measurement.RunAsync());
+        SweepRunQualityReport report = Assert.IsType<SweepRunQualityReport>(
+            measurement.QualityReport);
+        Assert.Equal(4, report.AcceptedRuns);
+        SweepRunRejection rejection = Assert.Single(report.Rejections);
+        Assert.Equal(3, rejection.Run);
+        Assert.False(rejection.Retried);
+        string issue = Assert.Single(rejection.Issues);
+        Assert.Contains("array microphone on input 3", issue);
+        Assert.Contains("credible response", issue);
+    }
+
+    [Fact]
     public async Task AFaultOnTheMEASUREMENTMicrophoneKeepsItsOwnDiagnosis()
     {
         // The array's credibility verdict is cruder than the measurement's own: it

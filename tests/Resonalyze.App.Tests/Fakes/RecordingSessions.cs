@@ -274,6 +274,37 @@ internal static class SyntheticCapture
     }
 
     /// <summary>
+    /// The array microphone recorded the sweep on some captures and noise on others:
+    /// an intermittent fault, which is the case a per-RUN rule exists for.
+    /// </summary>
+    /// <remarks>
+    /// Averaged, a bad run hides. Three good runs still put an arrival in the H1
+    /// total, so its shape stays compact and a verdict taken on the average passes —
+    /// while the bad run's reference power sits in the denominator all the same and
+    /// pulls that position's level down. It has to be caught where the level checks
+    /// are caught: on the run.
+    /// </remarks>
+    public static AudioCaptureResult WithArrayMicrophoneNoisyOnThisCapture(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        bool noisy,
+        double peak = 0.05)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        (float[] array, _) = BuildChannels(signal, tailSamples, 0.4f, 0.25f);
+        return new AudioCaptureResult(
+            [mic, loop, noisy ? Noise(mic.Length, peak) : array],
+            MicrophoneChannel: 0,
+            LoopbackChannel: 1,
+            StereoSeparationExpected: false,
+            AudioCaptureAnomalies.None,
+            Diagnostics: null)
+        {
+            ArrayChannels = [2]
+        };
+    }
+
+    /// <summary>
     /// The mirror image: the MEASUREMENT microphone carries noise while the array
     /// microphone beside it recorded the sweep properly.
     /// </summary>

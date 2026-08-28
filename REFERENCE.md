@@ -380,10 +380,19 @@ to record, what is left is the measurement microphone alone — that is the poin
 response the tools already have, not an average of anything, and it is not offered
 as one.
 
-A microphone that clipped, was unplugged or failed its check **fails the run**,
-exactly as the measurement microphone does: the run is retried once, and a run that
-fails twice does not enter the average. If every run fails, so does the measurement,
-and the error names the input and the reason.
+A microphone that clipped, was unplugged, or recorded something that is not a
+response **fails the run**, exactly as the measurement microphone does: the run is
+retried once, and a run that fails twice does not enter the average. If every run
+fails, so does the measurement, and the error names the input and the reason.
+
+The last of those is judged on the run rather than on the finished average, and the
+difference is not cosmetic. A microphone that recorded noise on one run of four
+hides in the average — the other three still put an arrival in it, so its shape
+stays perfectly credible — while that run's reference power stays in the estimate's
+denominator and contributes nothing to its numerator. The position comes out scaled
+by the fraction of runs that were good: exactly 2.5 dB down for one bad run in four,
+whatever the noise level was. What a shape check can see depends on how loud the
+fault is; what the fault costs does not.
 
 That is stricter than it sounds and it is deliberate. The array keeps only the CURVE
 each position produced, so a position that lost its runs is simply absent from the

@@ -195,6 +195,11 @@ close.
   peak from `runs × capture` to one capture. That is a rework of the transfer
   core the ordinary single-microphone path shares, with its own field
   validation, so it wants its own PR rather than a tail on the array work.
+  It would pay for itself twice over: the per-run credibility verdict each
+  array microphone now faces costs its own H1 and inverse transform, measured
+  at **529 ms** per microphone per run on a 96 kHz / 20 s capture (~3.7 s a run
+  for seven positions). Accumulating as the runs arrive makes that verdict a
+  read of work already done, rather than a second pass over the same frames.
 - [ ] **Run an averaged ASIO measurement on real hardware** (ideally a slow
   driver). Averaged sweeps keep one open ASIO session across runs; every software
   lifecycle guard around that — callback pools, capture epochs, in-flight block

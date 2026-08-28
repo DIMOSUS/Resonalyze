@@ -181,6 +181,26 @@ internal static class ArrayMicrophoneAnalysis
         int sampleRate,
         int channelOffset)
     {
+        if (DescribeIncredibleResponse(transfer, sampleRate) is not { } shape)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"The array microphone on input {channelOffset + 1} recorded a signal, but " +
+            $"it did not divide into a credible response: {shape}. It is live and " +
+            "wrong rather than absent — a hissing preamp, the wrong socket, or a " +
+            "failed capsule — and averaging it in would give a channel that measured " +
+            "nothing a full share of the result. Check that input, then measure again.");
+    }
+
+    /// <summary>
+    /// Why this transfer response is not one, or null when it is. The single
+    /// definition of the verdict, so the RUN check and the averaged backstop cannot
+    /// come to different answers about the same microphone.
+    /// </summary>
+    public static string? DescribeIncredibleResponse(Complex[]? transfer, int sampleRate)
+    {
         // FAIL-CLOSED, like the measurement microphone's: a shape that cannot be
         // measured at all is a refusal, not a pass.
         TransferIrCompactness? compactness = transfer is null
@@ -190,19 +210,38 @@ internal static class ArrayMicrophoneAnalysis
             double.IsFinite(measured.InsideOutsideDb) &&
             measured.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb)
         {
-            return;
+            return null;
         }
 
-        string shape = compactness is { } value && double.IsFinite(value.InsideOutsideDb)
+        return compactness is { } value && double.IsFinite(value.InsideOutsideDb)
             ? FormattableString.Invariant(
                 $"the energy around its peak is only {value.InsideOutsideDb:0.0} dB above the rest of the capture (a real measurement reads 29-49 dB)")
             : "its shape could not be measured at all";
-        throw new InvalidOperationException(
-            $"The array microphone on input {channelOffset + 1} recorded a signal, but " +
-            $"it did not divide into a credible response: {shape}. It is live and " +
-            "wrong rather than absent — a hissing preamp, the wrong socket, or a " +
-            "failed capsule — and averaging it in would give a channel that measured " +
-            "nothing a full share of the result. Check that input, then measure again.");
+    }
+
+    /// <summary>
+    /// The same verdict for ONE run's capture of one microphone, as a run issue
+    /// rather than a refusal.
+    /// </summary>
+    /// <remarks>
+    /// The level checks are per run and this has to be too, or the two halves of one
+    /// rule disagree: a microphone that recorded noise on one run of four is diluted
+    /// by the H1 average — the good runs still put an arrival in the total, so the
+    /// averaged shape stays compact and the backstop passes — while the bad run's
+    /// reference power still sits in the denominator and pulls that position's level
+    /// down. A quiet, plausible error on one position of seven, which is exactly what
+    /// a run-level rule exists to keep out.
+    /// </remarks>
+    public static string? DescribeIncredibleRun(
+        IReadOnlyList<double> reference,
+        IReadOnlyList<double> target,
+        ExcitationBandGate excitationGate,
+        int sampleRate)
+    {
+        (_, Complex[]? transfer) = TransferFunction.ComputeAveragedMagnitudeAndIr(
+            [new TransferFunctionFrame(reference, target)],
+            excitationGate);
+        return DescribeIncredibleResponse(transfer, sampleRate);
     }
 
     /// <summary>

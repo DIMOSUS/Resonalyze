@@ -24,10 +24,19 @@ public sealed record AudioInputLevels(
     /// when the routing has none.
     /// </summary>
     /// <remarks>
-    /// Metered for the same reason the microphone is, and more urgently: a
-    /// measurement keeps its recording, but an array microphone keeps only the
-    /// curve it produced. A clipped array channel is therefore unrecoverable
-    /// after the fact, so its level has to be visible BEFORE the sweep runs.
+    /// Resolved and handed up, and NOT yet shown anywhere: the input meter draws the
+    /// microphone and the loopback. Said plainly because the comment here used to
+    /// claim the opposite — that a clipped array channel is unrecoverable so its level
+    /// "has to be visible before the sweep runs" — beside code no view reads, and the
+    /// session that raises these levels lives only for the duration of the sweep, so
+    /// "before" was never on offer either.
+    /// <para>
+    /// What actually guards it is stricter than a meter: a run that compromised ANY
+    /// array microphone is rejected, retried, and — if it keeps failing — takes the
+    /// measurement down with it, naming the input. Nothing can quietly average one
+    /// position fewer than the user set up, so these levels are a convenience waiting
+    /// for a meter rather than a safeguard something depends on.
+    /// </para>
     /// </remarks>
     public IReadOnlyList<AudioChannelLevel> Array { get; init; } = [];
 }

@@ -2013,7 +2013,8 @@ public sealed class PlotModelFactoryTests
         CurveVisibilityOptions? groupDelayVisibility = null,
         FrequencyResponseOptions? frequencyResponseOptions = null,
         LiveSpectrumOptions? liveSpectrumOptions = null,
-        CalibrationFile? calibration = null)
+        CalibrationFile? calibration = null,
+        Func<string?, CalibrationFile?>? calibrationsById = null)
     {
         string calibrationPath = Path.Combine(
             Path.GetTempPath(),
@@ -2022,7 +2023,9 @@ public sealed class PlotModelFactoryTests
         return new PlotModelFactory(
             measurement,
             noiseMeasurement,
-            mode => calibration ?? new CalibrationFile(calibrationPath),
+            id => calibrationsById != null
+                ? calibrationsById(id)
+                : calibration ?? new CalibrationFile(calibrationPath),
             new PlotPresentationOptions(
                 FrequencyResponse: frequencyResponseOptions ?? new FrequencyResponseOptions(),
                 PhaseResponse: phaseResponseOptions ?? new FrequencyResponseOptions(),
@@ -2366,6 +2369,68 @@ public sealed class PlotModelFactoryTests
         double at8K = PointNear(plain, 8000.0).Y;
         // Uncompensated white climbs ~3.01 dB per octave on the band axis.
         Assert.Equal(2.0 * 10.0 * Math.Log10(2.0), at8K - at2K, precision: 1);
+    }
+
+    /// <summary>
+    /// A capture is drawn and saved through the microphone calibration frozen on it
+    /// when its run began — never the rig's current one.
+    /// </summary>
+    /// <remarks>
+    /// The bins are rendered again on every redraw and once more on Save, so reading
+    /// the live selection let this happen: walk with calibration A, change **Measure
+    /// through** to B before saving (an edit that does not restart the analyzer when
+    /// the audio session is unchanged), and the stored curve was recomputed through B
+    /// while the file claimed to have been taken with it. Silent corruption of a
+    /// measurement, and the saved file did not even match what was on screen.
+    /// </remarks>
+    [Fact]
+    public void AnMmmCaptureKeepsTheMicrophoneItsRunWasTakenThrough()
+    {
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        var options = new LiveSpectrumOptions
+        {
+            AnalysisMode = LiveAnalysisMode.Mmm,
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel,
+            NoiseColor = NoiseColor.PinkPeriodic,
+            CompensateNoiseTilt = true,
+            SmoothingInverseOctaves = 0,
+            CalibrationId = "cal-a"
+        };
+        CalibrationFile a = CalibrationFile.FromPoints(
+            [new CalibrationPoint(20, 6.0), new CalibrationPoint(20_000, 6.0)]);
+        CalibrationFile b = CalibrationFile.FromPoints(
+            [new CalibrationPoint(20, -6.0), new CalibrationPoint(20_000, -6.0)]);
+        // The factory resolves whichever id it is handed; the rig moves below.
+        PlotModelFactory factory = CreateFactory(
+            measurement,
+            noise,
+            liveSpectrumOptions: options,
+            calibrationsById: id => id == "cal-a" ? a : b);
+        var magnitude = new double[(noise.SequenceLength / 2) + 1];
+        Array.Fill(magnitude, 0.1);
+
+        // The run begins through A, and freezes it the way the controller does.
+        noise.SetCaptureMicrophoneCalibration(
+            new CapturedMicrophoneCalibration("cal-a", "90° capsule 2", a));
+        LiveCaptureDocument? taken = factory.BuildLiveCaptureDocument(
+            magnitude, frameCount: 8, title: "walked through A");
+        Assert.NotNull(taken);
+        double[] curveThroughA = taken.CurveDb;
+
+        // The rig moves to B between the walk and the Save.
+        options.CalibrationId = "cal-b";
+
+        LiveCaptureDocument? saved = factory.BuildLiveCaptureDocument(
+            magnitude, frameCount: 8, title: "saved after the rig moved");
+        Assert.NotNull(saved);
+        // The NAME its author was shown, not the generated id behind it: a saved
+        // capture is read by whoever opens it, and "cal-<guid>" tells them nothing.
+        Assert.Equal("90° capsule 2", saved.Calibration?.Name);
+        Assert.Equal(curveThroughA, saved.CurveDb);
+        Assert.All(
+            saved.CalibrationCorrectionDb,
+            correction => Assert.Equal(6.0, correction, precision: 6));
     }
 
     /// <summary>

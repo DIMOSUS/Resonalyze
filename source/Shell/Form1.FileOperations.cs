@@ -227,51 +227,6 @@ public partial class Form1
         ApplyImpulseResponseFile(file, path);
     }
 
-    /// <summary>
-    /// Reads the loaded measurement through the calibration it was measured with.
-    /// </summary>
-    /// <remarks>
-    /// The selection is left alone when a local calibration already holds the same
-    /// curve — your own file on your own machine — so the ordinary case shows no
-    /// change at all. It moves only when the file's curve is one this machine does
-    /// not have, which is exactly when leaving it alone would draw someone else's
-    /// measurement through your microphone's correction and say nothing.
-    /// </remarks>
-    private void AdoptFileCalibration(VirtualCrossoverCalibrationSettings? calibration)
-    {
-        if (!FileCalibrationSelection.IsFile(frequencyResponseOptions.CalibrationId))
-        {
-            // The user is reading through one of their own; remember which, because
-            // the entry about to displace it belongs to a file and will not outlive
-            // it.
-            displacedLocalCalibrationId = frequencyResponseOptions.CalibrationId;
-        }
-        else if (calibration == null)
-        {
-            // The selection names a curve that no longer exists: the measurement it
-            // came with has been replaced by one carrying none. Leaving it alone
-            // looks harmless and is not — the id resolves to nothing, so the view
-            // quietly drops the correction, the question before a run does not fire
-            // because there is no loaded calibration to ask about, and the next
-            // sweep is stamped as measured through no calibration at all.
-            SelectFrequencyResponseCalibration(
-                displacedLocalCalibrationId ?? MicrophoneCalibrationIds.ZeroDegrees);
-            return;
-        }
-
-        string? chosen = FileCalibrationSelection.Choose(
-            calibration,
-            frequencyResponseOptions.CalibrationId,
-            microphoneCalibration.GetEntries(),
-            microphoneCalibration.Get);
-        if (chosen == null)
-        {
-            return;
-        }
-
-        SelectFrequencyResponseCalibration(chosen);
-    }
-
     private void SelectFrequencyResponseCalibration(string? calibrationId)
     {
         frequencyResponseOptions.CalibrationId = calibrationId;

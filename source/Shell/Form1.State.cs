@@ -32,8 +32,14 @@ public partial class Form1
         // so unless the file carries the curve, a recipient draws a different
         // response from the author's and nothing says why. Pushed here, the one
         // chokepoint every run passes; the measurement freezes it at run start.
+        //
+        // From Record Settings, beside the array microphones' own choices, and NOT
+        // from the Frequency Response view: a view is where a chart is read, and
+        // taking the stamp from it meant a calibration selected after the sweeps
+        // labelled none of them, while one adopted to read someone else's file
+        // labelled all of them with a stranger's microphone.
         expSweepMeasurement.MicrophoneCalibration =
-            FreezeCalibration(frequencyResponseOptions.CalibrationId);
+            FreezeCalibration(measurementSettings.Measurement.MicrophoneCalibrationId);
         expSweepMeasurement.ArrayMicrophoneMetadata =
             measurementSettings.Measurement.ArrayMicrophones
                 .Select(microphone => new ArrayMicrophoneMetadata(
@@ -76,43 +82,50 @@ public partial class Form1
         // through" is a different answer from "none".
         expSweepMeasurement.MeasurementProtectiveHighPass = protectiveHighPass;
         expSweepMeasurement.MeasurementInput = splCalibration?.CaptureIdentity;
-        AdoptFileCalibration(microphoneCalibration);
+        // For the history path, which restores a result without going through
+        // ApplyLoadedImpulseResponseState; the file path selects it there and lands
+        // here first, so the second call is a no-op on an already-correct selection.
+        SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
     }
 
     /// <summary>
-    /// The entry from the user's OWN list that a loaded measurement's calibration
-    /// displaced, so it can be handed back when that calibration goes away.
-    /// </summary>
-    /// <remarks>
-    /// The file's entry exists only while the measurement carrying it is open, and
-    /// the selection pointing at it must not outlive it. Falling back to the 0° slot
-    /// would be a guess at what the user was reading through — it is the only slot
-    /// that is always there, not the only one anybody uses.
-    /// </remarks>
-    private string? displacedLocalCalibrationId;
-
-    /// <summary>
-    /// The calibration a selector id names, the loaded measurement's own included.
+    /// The calibration a selector id names, the open measurement's own included.
     /// </summary>
     /// <remarks>
     /// Every consumer resolves through here rather than through the calibration
-    /// service directly, because the file's curve is not in the service's list —
-    /// it belongs to whatever measurement is open, not to this machine.
+    /// service directly, because the measurement's own curve is not in that list —
+    /// it belongs to whatever is open, not to this machine.
     /// </remarks>
     private CalibrationFile? ResolveCalibration(string? calibrationId) =>
-        FileCalibrationSelection.IsFile(calibrationId)
+        MicrophoneCalibrationIds.IsOwn(calibrationId)
             ? expSweepMeasurement.MeasurementMicrophoneCalibration?.ToCalibrationFile()
             : microphoneCalibration.Get(calibrationId);
 
     /// <summary>
-    /// The selector list, with the loaded measurement's calibration appended when
-    /// no local entry already holds that curve.
+    /// The analysis selectors' list: the measurement's own calibration first, then
+    /// the configured ones.
     /// </summary>
+    /// <remarks>
+    /// <see cref="MicrophoneCalibrationIds.Own"/> is an entry rather than a special
+    /// case so it can be selected, persisted and named like any other — and it is
+    /// marked unavailable when the open measurement carries no calibration, which is
+    /// how the selector says "there is nothing to read this through" instead of
+    /// silently correcting with nothing.
+    /// </remarks>
     private IReadOnlyList<MicrophoneCalibrationEntry> CalibrationEntries() =>
-        FileCalibrationSelection.EntriesWith(
-            microphoneCalibration.GetEntries(),
-            expSweepMeasurement.MeasurementMicrophoneCalibration,
-            microphoneCalibration.Get);
+    [
+        new MicrophoneCalibrationEntry(
+            MicrophoneCalibrationIds.Own,
+            "Own (as measured)",
+            expSweepMeasurement.MeasurementMicrophoneCalibration != null),
+        .. microphoneCalibration.GetEntries()
+    ];
+
+    /// <summary>
+    /// Points the analysis views at a calibration and tells the open settings panel.
+    /// </summary>
+    private void SelectAnalysisCalibration(string? calibrationId) =>
+        SelectFrequencyResponseCalibration(calibrationId);
 
     /// <summary>
     /// One calibration as a portable CURVE: the name and file name are what the
@@ -130,13 +143,6 @@ public partial class Form1
         if (curve == null)
         {
             return null;
-        }
-
-        if (FileCalibrationSelection.IsFile(calibrationId))
-        {
-            // Deliberately kept: the user was asked before the run started and
-            // chose to measure through the loaded file's curve.
-            return expSweepMeasurement.MeasurementMicrophoneCalibration;
         }
 
         MicrophoneCalibrationEntry? entry = microphoneCalibration
@@ -173,6 +179,12 @@ public partial class Form1
 
     private void ApplyLoadedImpulseResponseState(string? filePath)
     {
+        // Everything that arrives from disk lands here — a Resonalyze file, a REW
+        // export, a recorded WAV — and every one of them is a new measurement to be
+        // read through its own calibration. The imports matter most: they carry NONE,
+        // so a view left on one of the user's own curves would correct an imported
+        // response with a microphone that had nothing to do with it, silently.
+        SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
         ApplyMeasurementConfigurationToControllers();
         SetImpulseResponseSourceFile(filePath);
         if (!string.IsNullOrWhiteSpace(filePath))

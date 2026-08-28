@@ -61,6 +61,7 @@ public partial class Form1
             UpdateRecordButtonForCurrentMode,
             UpdatePlotLabelsPanel,
             liveSpectrumOptions,
+            DescribeCalibrationForCapture,
             () => closingInProgress);
         ModeController createdModeController = new(
             ChangeModeAsync,
@@ -181,8 +182,70 @@ public partial class Form1
         eqWizardPanel?.ConfigureCalibration(microphoneCalibration.Get, entries);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshCalibrationEntries(analysisEntries));
+        // The live panel shows the RIG's calibration and does not choose it, so it is
+        // told which one to show rather than asked which it had.
+        // The rig's choice describes the NEXT run. A capture already taken — running,
+        // held, or waiting to be saved — keeps the calibration frozen on it when it
+        // began, so nothing here reaches back into it: no re-render, and no peak hold
+        // dropped for a change that cannot touch the curve it holds.
+        string? rigCalibrationId =
+            measurementSettings.Measurement.MicrophoneCalibrationId;
+        liveSpectrumOptions.CalibrationId = rigCalibrationId;
+        RefreshLiveCalibrationReadout();
+    }
+
+    /// <summary>
+    /// Tells the live panel what the plot in front of it is corrected through.
+    /// </summary>
+    /// <remarks>
+    /// The controller answers for the curve on screen — a loaded capture by the name
+    /// stored in it, a running or held one by the calibration frozen when its run
+    /// began — and only an empty plot falls through to the rig, which is what the NEXT
+    /// run will use. Pushed from here rather than read by the panel because the panel
+    /// is opened, refreshed and re-opened at moments it does not choose.
+    /// </remarks>
+    private void RefreshLiveCalibrationReadout() =>
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
-            panel => panel.RefreshCalibrationEntries(entries));
+            panel => panel.ShowCalibration(DescribeLiveCalibration()));
+
+    private string DescribeLiveCalibration()
+    {
+        // The name a capture carries is already the one a reader was shown when it was
+        // taken — its own if it came from a file, this machine's if the capture is
+        // still here — so it is displayed as written rather than looked up again.
+        // Only an empty plot falls through to the rig, whose id has to be named.
+        if (liveSpectrumController.DisplayedCalibrationName is not { } name)
+        {
+            return NameCalibration(
+                measurementSettings.Measurement.MicrophoneCalibrationId);
+        }
+
+        return string.IsNullOrWhiteSpace(name) ? "Off" : name;
+    }
+
+    /// <summary>
+    /// Everything a run has to freeze about the microphone it is taken through: the
+    /// curve that corrects it, the name a reader will be shown, and the id behind it.
+    /// </summary>
+    private CapturedMicrophoneCalibration DescribeCalibrationForCapture(
+        string? calibrationId) =>
+        ResolveCalibration(calibrationId) is { } curve
+            ? new CapturedMicrophoneCalibration(
+                calibrationId, NameCalibration(calibrationId), curve)
+            : CapturedMicrophoneCalibration.None;
+
+    private string NameCalibration(string? calibrationId)
+    {
+        if (MicrophoneCalibrationIds.IsOff(calibrationId))
+        {
+            return "Off";
+        }
+
+        MicrophoneCalibrationEntry? entry = microphoneCalibration
+            .GetEntries()
+            .FirstOrDefault(candidate => string.Equals(
+                candidate.Id, calibrationId, StringComparison.OrdinalIgnoreCase));
+        return entry?.Name ?? "Deleted calibration";
     }
 
     // Adds a calibration curve a Virtual DSP session carried in to the configured
@@ -259,6 +322,13 @@ public partial class Form1
                 plotModelFactory.SetImpulseResponseFileName(null);
                 SetImpulseResponseAvailability(true);
                 sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
+                // A new measurement is read through the microphone that took it. The
+                // view is moved even when it was on one of the user's own entries:
+                // the run has just frozen a calibration into the result, and leaving
+                // the plot on a different one draws the response through a microphone
+                // it never passed — silently, and with the selector still naming the
+                // curve it was left on.
+                SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
             }
             else
             {

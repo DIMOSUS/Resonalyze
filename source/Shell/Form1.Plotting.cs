@@ -248,6 +248,10 @@ public partial class Form1
         }
 
         buttonRecord.Text = liveSpectrumController.InProgress ? "Stop" : "Start";
+        // The same moments change what the plot is corrected through: a run that
+        // starts freezes a calibration onto its accumulation, and one that is
+        // discarded hands the answer back to the rig.
+        RefreshLiveCalibrationReadout();
         // The controller calls this on every start/stop/completion — exactly when a
         // live curve appears or settles, i.e. when an uncalibrated dB SPL choice
         // becomes (or stops being) a real conflict. Follow it on the open panel, so

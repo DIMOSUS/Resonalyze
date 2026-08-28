@@ -181,10 +181,9 @@ namespace Resonalyze.Options
                 options.AnalysisMode == LiveAnalysisMode.TransferFunction;
             UpdateModeDependentControls();
 
-            MicrophoneCalibrationComboHelper.Configure(
-                comboCalibration,
-                options.CalibrationId,
-                calibrationEntries);
+            // A placeholder until the shell says what the plot is corrected through;
+            // it calls ShowCalibration immediately after Init.
+            ShowCalibration(string.Empty);
         }
 
         /// <summary>
@@ -192,12 +191,25 @@ namespace Resonalyze.Options
         /// host calls this when the configured calibrations change while the
         /// panel is open.
         /// </summary>
-        internal void RefreshCalibrationEntries(
-            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
-            MicrophoneCalibrationComboHelper.Configure(
-                comboCalibration,
-                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration),
-                calibrationEntries);
+        /// <summary>
+        /// Shows what the plot is corrected through, as a read-out.
+        /// </summary>
+        /// <remarks>
+        /// Not a selection, and not even an entry from a list: a loaded capture names
+        /// a calibration that belongs to whoever took it and need not exist on this
+        /// machine, and a held accumulation names the one frozen on it — neither is a
+        /// choice this panel may offer. A second selection here would let an MMM pass
+        /// and the sweeps beside it disagree about which microphone was used, which is
+        /// a difference nothing downstream could see. The box is disabled on every
+        /// call, because it is rebuilt on every call.
+        /// </remarks>
+        internal void ShowCalibration(string text)
+        {
+            comboCalibration.Items.Clear();
+            comboCalibration.Items.Add(text ?? string.Empty);
+            comboCalibration.SelectedIndex = 0;
+            comboCalibration.Enabled = false;
+        }
 
         /// <summary>
         /// Recolours the dB SPL and Transfer choices, in both directions, without
@@ -358,8 +370,6 @@ namespace Resonalyze.Options
                 : signalTypeComboBox.SelectedItem is NoiseColorOption noiseColorOption
                     ? noiseColorOption.NoiseColor
                     : NoiseColor.PinkPeriodic;
-            options.CalibrationId =
-                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration);
             options.SequenceLength =
                 sequenceLengthComboBox.SelectedItem is SequenceLengthOption lengthOption
                     ? lengthOption.Length

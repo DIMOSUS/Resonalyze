@@ -117,6 +117,31 @@ public sealed class LiveSpectrumOptLayoutTests
         });
     }
 
+    /// <summary>
+    /// The calibration box is a read-out: it shows what the plot is corrected
+    /// through and never offers a choice, however often it is rebuilt.
+    /// </summary>
+    /// <remarks>
+    /// It held entries once, and <see cref="MicrophoneCalibrationComboHelper.Configure"/>
+    /// enables the box whenever it holds more than one — so disabling it at
+    /// construction lasted exactly until a calibration was added or removed, and a
+    /// selection made in it changed nothing and then snapped back.
+    /// </remarks>
+    [Fact]
+    public void TheCalibrationReadOutStaysReadOnlyWhenTheListIsRebuilt() =>
+        StaTest.Run(() =>
+        {
+            using LiveSpectrumOpt panel = CreatePanel();
+            var combo = (DarkComboBox)Find(panel, "comboCalibration");
+            Assert.False(combo.Enabled);
+
+            panel.ShowCalibration("90° capsule 2");
+
+            Assert.False(combo.Enabled);
+            Assert.Equal("90° capsule 2", combo.SelectedItem);
+            Assert.Single(combo.Items);
+        });
+
     private static LiveSpectrumOpt CreatePanel(LiveSpectrumOptions? options = null)
     {
         var panel = new LiveSpectrumOpt();

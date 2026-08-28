@@ -366,9 +366,10 @@ as the impulse response.
 What the measurement stores is each microphone's **level curve** on a shared
 logarithmic grid, uncalibrated, with its calibration frozen beside it — not its
 impulse response. The curves are raw so a calibration can be swapped later, and
-the measurement microphone is in the list like any other position: it is a
-microphone in the listening volume, and it is the one every other is levelled
-onto. Nothing about timing changes, because a spatial average is a magnitude.
+the measurement microphone is among those STORED curves like any other position —
+it is a microphone in the listening volume, and the one every other is levelled onto
+— though it is never a row in the dialog: it is on an input the list does not offer,
+and it joins the set on its own when the sweep runs. Nothing about timing changes, because a spatial average is a magnitude.
 
 **Levelled onto** is meant literally: each further microphone is shifted by the
 median difference from the measurement microphone over that driver's working band
@@ -580,6 +581,20 @@ the channel's chain onto the capture itself, so a capture taken *through* a chai
 gets that chain applied a second time: the crossover corner doubles its slope and
 every filter counts twice. Nothing downstream can detect this. The curve stays
 smooth and entirely plausible, which is what makes it worth stating here.
+
+The **Sequence Length** is the one setting MMM leaves open, and the maximum is the
+answer: the excitation is one frame-length period of pink noise, so the longest frame
+holds the most bass and gives the finest grid — 65536 at 48 kHz is a 0.73 Hz bin
+spacing and a 1.4 s frame, against 23.4 Hz at the 2048 default. The sets this was
+developed against were taken there.
+
+**A capture belongs to the state its run began in.** The protective high-pass and
+the microphone calibration are both frozen on the accumulation when Start is pressed,
+and everything drawn or saved from it reads those, never the rig's current setting.
+The bins are rendered again on every redraw and once more on Save, so a calibration
+edited between the walk and the Save would otherwise recompute the walk through a
+microphone it never passed through — and the file would name that microphone as the
+one it was taken with. A changed rig describes the NEXT run.
 
 If a **protective high-pass** is configured (Measurement Options), MMM divides it
 back out of its curve. That filter sits in your own DSP, ahead of the loudspeaker,
@@ -2119,6 +2134,14 @@ are read leniently in the common plain-text formats (`.txt`, `.cal`, `.frd`,
 `.csv`): `frequency level` pairs, with comments, headers, a decimal comma,
 various delimiters, and extra columns all handled.
 
+**Measure through** — the row under them — names which of those calibrations the
+measurement microphone is read through, and a run FREEZES that curve into the file
+it writes. It belongs to the rig, beside the array microphones' own choices, for
+the same reason theirs do: it describes the capsule about to record. It used to be
+read off the Frequency Response view at run start, where choosing a calibration
+after the sweeps labelled none of them and one adopted to read someone else's file
+labelled all of them with a stranger's microphone.
+
 Beside it, **More calibrations → Manage...** holds any number of further
 calibrations, each with a name of your choosing:
 
@@ -2144,12 +2167,23 @@ replacing the 0° file updates every angle derived from it. Entries are edited o
 a working copy and applied when the dialog is accepted; angle entries can only
 be derived from file-backed ones, so an estimate is never built on an estimate.
 
-The views that read a magnitude — **Frequency Response**, **Live Spectrum**, the
-**EQ Wizard** and **Virtual DSP** — each pick one of them (or **Off**) in their
-own selector; Phase and Group Delay read timing rather than level and apply no
-correction at all. A selection whose file went missing, or whose entry was
-deleted, stays selected and is marked rather than being silently rewritten to
-Off. A Virtual DSP session carries its calibration curve inside it and can add
+Which selector answers for which curve follows from what each one is. **Record
+Settings** answers for the microphone, so the sweeps and the live captures taken on
+that rig are stamped and corrected by its choice — the **Live Spectrum** panel shows
+it, greyed, rather than offering a second one. **Frequency Response** answers for the
+VIEW, and its list opens on **Own (as measured)** — the calibration frozen into the
+measurement on screen, whatever that was. Every new measurement selects it: a finished
+sweep, an opened file, a history entry stepped back to. Anything else in the list is an
+override, for a measurement that carries no calibration of its own or to compare one
+microphone's correction against another's; none of it ever reaches a stamp. Own is
+marked unavailable while the open measurement carries no calibration, because
+"corrected by nothing" and "corrected by the microphone that measured it" must not look
+the same. The **EQ Wizard** and
+**Virtual DSP** keep their own, because a project is a set of measurements rather
+than one, and Virtual DSP's list adds **Own (as measured)** for exactly that (see
+[Virtual DSP](#virtual-dsp)). Phase and Group Delay read timing rather than level and
+apply no correction at all. A selection whose file went missing, or whose entry was
+deleted, stays selected and is marked rather than being silently rewritten to Off. A Virtual DSP session carries its calibration curve inside it and can add
 that curve to this list when loaded elsewhere (see [Virtual DSP](#virtual-dsp));
 such files are kept in the application data folder under `calibrations`. For a
 source checkout, a legacy `source/calibration.txt` beside the executable is

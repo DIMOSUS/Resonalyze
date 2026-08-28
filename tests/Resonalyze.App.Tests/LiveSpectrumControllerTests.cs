@@ -120,8 +120,14 @@ public sealed class LiveSpectrumControllerTests
         SetField(controller, "measurement", noise);
         SetField(controller, "plotView", new OxyPlot.WindowsForms.PlotView());
         SetField(controller, "lastSnapshot", snapshot);
+        // Discarding hands the plot back to the rig, so the controller tells the
+        // shell — which this half-built object has to stand in for.
+        int notified = 0;
+        SetField(controller, "updateRecordButton", new Action(() => notified++));
 
         controller.DiscardCapturedData();
+
+        Assert.Equal(1, notified);
 
         Assert.Null(noise.GetAccumulatedSpectrumSnapshot());
         Assert.Null(typeof(LiveSpectrumController)

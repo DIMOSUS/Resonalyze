@@ -115,6 +115,48 @@ namespace Resonalyze
             CaptureProtectiveHighPass =
                 ProtectiveHighPassConfiguration.Normalize(protectiveHighPass);
 
+        /// <summary>
+        /// The microphone calibration this accumulation was taken through, as a CURVE
+        /// rather than as an id, with the id beside it only to name it in a saved
+        /// capture.
+        /// </summary>
+        /// <remarks>
+        /// Frozen for the same reason as <see cref="CaptureProtectiveHighPass"/>, and
+        /// it is the same failure without it: the bins are rendered again when the
+        /// capture is drawn and again when it is saved, so a calibration read live
+        /// would let a rig setting changed between the walk and the Save recompute the
+        /// walk — and stamp the file with a microphone it was not taken through. The
+        /// resolved curve is held, not the id, so replacing or editing the calibration
+        /// file behind that id cannot reach a capture already taken either.
+        /// </remarks>
+        public CalibrationFile? CaptureMicrophoneCalibration { get; private set; }
+
+        /// <summary>How the calibration list named that curve when the run began.</summary>
+        /// <remarks>
+        /// The NAME, not the id, because both readers of it are people: the panel's
+        /// read-out and the name a saved capture carries to whoever opens it next.
+        /// An id is generated for every entry beyond the 0° slot, so storing that put
+        /// <c>cal-8db411cb42994fe4a16b63c7444fd798</c> in front of a reader who chose
+        /// "90° capsule 2". The id rides along for matching, where machines rather
+        /// than people compare.
+        /// </remarks>
+        public string CaptureMicrophoneCalibrationName { get; private set; } = string.Empty;
+
+        /// <summary>The id that name came from, for a consumer that matches rather than reads.</summary>
+        public string? CaptureMicrophoneCalibrationId { get; private set; }
+
+        /// <summary>
+        /// Freezes the microphone calibration for the run about to start, beside the
+        /// protective high-pass and at the same moment.
+        /// </summary>
+        public void SetCaptureMicrophoneCalibration(CapturedMicrophoneCalibration calibration)
+        {
+            ArgumentNullException.ThrowIfNull(calibration);
+            CaptureMicrophoneCalibrationId = calibration.Id;
+            CaptureMicrophoneCalibrationName = calibration.Name;
+            CaptureMicrophoneCalibration = calibration.Curve;
+        }
+
         public int AveragedFrameCount
         {
             get

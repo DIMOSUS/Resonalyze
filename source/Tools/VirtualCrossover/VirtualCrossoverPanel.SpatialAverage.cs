@@ -143,9 +143,16 @@ public partial class VirtualCrossoverPanel
     /// without an array quietly fell back to its point response. The user changed
     /// one channel's source and the source of every channel's levels changed.
     /// <para>
-    /// Attachments win when both are present, for the same reason: they can only
-    /// have been put there deliberately, and by a build that had no arrays to offer.
-    /// A project with nothing attached at all is left unstored, so the first
+    /// What is stored is whatever the fallback ALREADY says, so a project that opens
+    /// today opens the same way tomorrow. Freezing is the whole fix: by the time a
+    /// new measurement can arrive the mode is stored, so it cannot move the project
+    /// under the user. Preferring one family over the other on top of that was a
+    /// second rule doing no extra work, and it changed what a session holding BOTH an
+    /// array and attachments displayed — which is a live session of the owner's, and
+    /// a surprise is exactly what this is supposed to prevent.
+    /// </para>
+    /// <para>
+    /// A project with nothing to guess from is left unstored, so the first
     /// measurement to arrive still gets to decide — an array arrives WITH the
     /// measurement, and asking a user who just recorded one to find a menu would be
     /// asking twice.
@@ -166,9 +173,7 @@ public partial class VirtualCrossoverPanel
             return false;
         }
 
-        project.SpatialAverageMode = attachments
-            ? VirtualCrossoverSpatialAverageMode.MovingMic
-            : VirtualCrossoverSpatialAverageMode.MicArray;
+        project.SpatialAverageMode = SpatialAverageMode;
         return true;
     }
 

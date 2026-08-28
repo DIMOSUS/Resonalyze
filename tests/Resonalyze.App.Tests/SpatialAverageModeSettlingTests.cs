@@ -102,6 +102,23 @@ public sealed class SpatialAverageModeSettlingTests
     }
 
     [Fact]
+    public void AProjectHOLDINGBothKeepsWhatItAlreadyShowed()
+    {
+        // The field case, and the reason freezing must not also re-decide. This
+        // session carries array captures with its measurements AND moving-microphone
+        // files attached beside them for comparison, and it has always opened on the
+        // arrays. Settling has one job — stop the answer moving — so it stores the
+        // answer that was already being shown, not a different one.
+        var project = new VirtualCrossoverProjectFile();
+        VirtualCrossoverChannel both = Attached("A");
+        both.SideState(rightSide: false).ArrayCapture = Capture(SpatialAverageMethod.MicArray);
+
+        Assert.Equal(
+            VirtualCrossoverSpatialAverageMode.MicArray,
+            Settle(project, both, WithArray("B")));
+    }
+
+    [Fact]
     public void AnEmptyProjectStoresNothingYet()
     {
         // Settling on an empty project would freeze a guess made from no evidence,

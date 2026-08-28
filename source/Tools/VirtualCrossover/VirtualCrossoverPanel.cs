@@ -621,8 +621,17 @@ public partial class VirtualCrossoverPanel : UserControl
 
         // After the sources, because an array arrives with one: a project that has
         // never chosen a method chooses here, once, from everything it actually has.
+        // The channel buttons were drawn while each source landed, which is BEFORE
+        // this — so they have to be told, or a button reads one method while the menu
+        // and the curves read the other.
         if (SettleSpatialAverageMode())
         {
+            foreach (VirtualCrossoverChannel channel in channels)
+            {
+                RefreshSpatialAverageStatus(channel);
+            }
+
+            RefreshHybridAvailability();
             ScheduleSave();
         }
 

@@ -1492,13 +1492,14 @@ average, so nothing has to be attached: the button reads **Array** and its menu
 chooses which average the project reads — the arrays the measurements carry, the
 moving-microphone captures attached by hand, or none at all. The choice is the
 project's, not the channel's, because a set drawn two ways is not one set. It is
-also made **once**: a project that has never chosen takes the method its first
-spatial average implies and keeps it, attachments winning over arrays where both
-are present. Deciding it live from what the project currently holds meant a session
-written before arrays existed would flip its whole method the moment one new
-measurement carrying an array was loaded — the attachments then went unread, and
-every channel without an array quietly fell back to its point response. Use the menu
-to change it; nothing else does. A
+also made **once**: a project that has never chosen keeps whatever it opened as, and
+that answer is then stored. Deciding it live from what the project currently holds
+meant a session written before arrays existed would flip its whole method the moment
+one new measurement carrying an array was loaded — the attachments then went unread,
+and every channel without an array quietly fell back to its point response. Freezing
+is the whole of the fix, so a project that carries BOTH an array and attached
+captures keeps showing what it always showed. Use the menu to change it; nothing else
+does. A
 channel with no array in an array project is drawn from its own point measurement
 instead, and says so: the plot notes how many channels that is, the channel's own
 tooltip explains what it costs, and the note travels to the EQ Wizard with the

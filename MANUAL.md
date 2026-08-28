@@ -410,9 +410,12 @@ exactly what **psychoacoustic smoothing** discounts, and that is the width
 inside 3 dB across four fifths of the band.*
 
 So one microphone is enough for a basic tune, and everything in this guide works from
-one. An average is what makes it accurate: it removes the position's dips physically
-instead of hiding them behind a window, and it says where it is confident and where it
-is not — which is what the EQ stage in [Section 8](#8-peq--equalization) is fitted to.
+one. An average makes the basis more representative: a dip that belongs to one spot
+contributes a fraction of the result rather than all of it, instead of being hidden
+behind a smoothing window. A microphone array adds what a moving microphone cannot —
+the positions' own **spread**, which says where they agreed and where the average
+speaks for less than the volume it covers. Either way, that curve is what the EQ stage
+in [Section 8](#8-peq--equalization) is fitted to.
 
 There are two ways to get one.
 
@@ -441,23 +444,21 @@ be given to a microphone straight away.
 
 ![The Array microphones list: one row per further microphone](assets/images/manual/array-microphones.png)
 
-In practice this means **ASIO**. The array is further inputs of the same interface, and
-MME reaches two channels in all, while a WASAPI endpoint usually presents an interface's
-inputs as stereo pairs — the line under the editor names which of the three it counted
-the free inputs from.
+**The microphones must be inputs of the same interface as the measurement one** — that
+is what keeps them on the same clock and the same loopback, and it is not negotiable.
+In practice it also means **ASIO**: the line under the editor says how many inputs it
+found and where it looked, and on the other backends the answer is usually two.
 
 Then measure exactly as described above and the average comes with the sweep: nothing
 to capture twice, nothing to keep at the same gain afterwards, and the positions' own
-disagreement is stored beside the average so you can see where it is a claim and where
-it is not. A position that clips or goes silent fails the whole sweep rather than
-quietly dropping out of it, so what you get is either the array you set up or an error
-naming the input. **The microphones must be on the same interface as the measurement
-one** — that is what keeps them on the same clock and the same loopback, and it is not
-negotiable. The array is also remembered for the **device** it was configured on, since
-an input number means something different on another one: select a different capture
-device and the button says how many microphones are configured *and which device for*,
-and none of them are recorded until you open the list and confirm it with **OK**, which
-re-binds them to the device selected now.
+disagreement is stored beside the average. A position that clips or goes silent fails
+the whole sweep rather than quietly dropping out of it, so what you get is either the
+array you set up or an error naming the input.
+
+One trap worth knowing: an array belongs to the capture **device** it was configured
+on. Select a different one and the button says which device the microphones are for,
+and none of them are recorded until you open the list and confirm it with **OK** — see
+[REFERENCE.md](REFERENCE.md#microphone-array) for why an input number cannot travel.
 
 **If you have one microphone**, take a second pass over the same drivers using the
 **moving-microphone method** (MMM), which averages the response over the volume
@@ -482,8 +483,8 @@ measured in** (only the protective high-pass left in place) and at **the same le
 - take the microphone off its stand and hold it with the **capsule pointing up**, the
   same orientation it was mounted in;
 - press **Start**, and move it in **slow, smooth circles around the driver's head
-  area**, roughly at the radius of a head. Unhurried: a sudden movement is not
-  averaged, it is smeared;
+  area**, roughly at the radius of a head — slowly and evenly, so the volume is
+  sampled evenly;
 - let it integrate for **30 seconds or more** — the read-out shows how long it has been
   accumulating;
 - press **Save** and store the capture as its own file.
@@ -648,21 +649,16 @@ and **Q convention** come with it, locked, because both are facts about the devi
 ![The same dialog with a catalog model selected](assets/images/manual/dsp-processor-model.png)
 
 If your processor is not in the list, pick **Custom** and state both by hand. The rate
-list also offers **Follow measurements**, which is deliberately a different answer from
-naming a rate: following means the project states no rate of its own, so replacing its
-measurements with a set recorded at another rate moves the simulation with them, while
-stating 48 kHz keeps 48 kHz whatever the measurements become. A new project — and any
-project saved before this selector existed — opens as **Custom, following**, so nothing
-that was tuned before changes on its own.
+list also offers **Follow measurements**, which means the project states no rate of its
+own and the filters are designed at whatever the measurements were recorded at — take
+it only when you do not know your processor's rate. A new project opens on it, so this
+is a choice you have to make rather than one already made for you.
 
-The dialog reports what the choice buys you: the rate the filters are designed at, the
-rate the measurements keep, and the frequency the simulation is trustworthy up to
-(the lower of the two Nyquist limits).
-
-This choice travels. Changing it re-runs every channel, and it also reaches the EQ
-Wizard: a PEQ handoff carries the project's rate and Q convention, the wizard shows
-them locked for as long as that source is loaded, and a bank fitted for one processor
-is refused on the way back if the project has since moved to another.
+Under the fields the dialog states what the choice buys: the rate the filters are
+designed at, the rate the measurements keep, and how high the simulation is
+trustworthy. It then travels with the project — into the EQ Wizard, and into the
+tuning sheet's Q column — which
+[REFERENCE.md](REFERENCE.md#dsp-processor) describes in full.
 
 ### Set the display correctly
 
@@ -694,9 +690,8 @@ Each channel has a virtual processing chain where Resonalyze can apply:
 - delay;
 - polarity;
 - HPF and LPF;
-- PEQ — bells and shelves, and the phase-only **all-pass** bands, which live in the
-  bank as band types rather than as a stage of their own, the way Audiotec-style
-  hardware holds them in its EQ slot table.
+- PEQ — bells, shelves, and the phase-only **all-pass** bands, which live in the bank
+  as band types rather than as a stage of their own.
 
 These operations are applied to the **actual measured impulse response** of the
 installed driver, not to an idealized response curve. This preserves its real
@@ -910,10 +905,10 @@ the same scale as before.
 ![The same channels with Hybrid off (top) and on (bottom)](assets/images/manual/hybrid-before-after.png)
 
 **Turn smoothing off while you are in this mode.** Smoothing exists to keep you from
-chasing narrow, position-dependent wiggles — and a spatial average has already removed
-those, physically, by averaging over the volume instead of hiding them behind a wide
-window. What is left in an MMM curve is broad and real, and worth seeing at full
-resolution. It also keeps the reading honest near a crossover: a fractional-octave
+chasing narrow, position-dependent wiggles — and a spatial average has already averaged
+those down, over the volume, instead of hiding them behind a wide window. What is left
+in an MMM curve is mostly broad and real, and worth seeing at full resolution. It also
+keeps the reading honest near a crossover: a fractional-octave
 window straddling a steep skirt pulls that channel's level up toward its own passband,
 which is exactly where you are judging the fit.
 

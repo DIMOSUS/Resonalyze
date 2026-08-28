@@ -329,7 +329,8 @@ public partial class VirtualCrossoverPanel
                     : Path.GetFileNameWithoutExtension(path)),
             document?.Recipe.IntegratedSeconds,
             resolved: document != null,
-            mode);
+            mode,
+            document?.SavedAtUtc);
     }
 
     /// <summary>

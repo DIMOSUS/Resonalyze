@@ -82,6 +82,15 @@ internal sealed partial class MeasurementSettingsFile
         //
         // Null means "configured before this was stamped", which is not a mismatch
         // and must not throw the setup away; the next edit stamps it.
+        //
+        // WASAPI stamps the endpoint id. ASIO stamps the DRIVER NAME, because that is
+        // all ASIO exposes — there is no endpoint identity behind it. For a vendor
+        // driver bound to its own interface that is an identity; for a wrapper
+        // (ASIO4ALL, FlexASIO, an aggregate) the same name can front different
+        // hardware, and an array carried across that swap passes this check. Adding
+        // the driver's channel count was considered and rejected: some drivers report
+        // different counts at different sample rates, so it would invalidate working
+        // setups to catch a case it would only sometimes catch.
         public string? WaveArrayDeviceId { get; set; }
         public string? AsioArrayDeviceId { get; set; }
         public SplCalibration? SplCalibration { get; set; }

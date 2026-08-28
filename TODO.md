@@ -188,6 +188,24 @@ close.
   check that was left out. File-format work, and it should carry the placement
   itself (where the rig was) rather than an opaque id, so a session opened later
   says something a human can read.
+  Two things bound how much this is worth. It is NOT specific to arrays: a
+  moving-microphone capture records no placement either, and never has, so the array
+  inherits the gap rather than introducing it. And what the app can do without
+  inventing a fact, it now does — every capture's measurement DATE is shown on the
+  channel's average button and in the composition warning, because two captures from
+  one sitting are one volume and two from different days may not be, and that date is
+  the only evidence of it which exists.
+- [ ] **ASIO device identity is the driver NAME and nothing else.** That is all ASIO
+  exposes: there is no endpoint id, so the array's device stamp cannot be finer. For
+  a vendor driver bound to its own interface the name is an identity; for a wrapper
+  (ASIO4ALL, FlexASIO, a multi-device aggregate) it is not — the same name can front
+  different hardware, and an array carried across that swap passes the stamp and
+  points at inputs nobody chose, the very case the stamp exists to stop. Adding the
+  driver's channel COUNT was considered and rejected: some drivers report different
+  counts at different sample rates, so it would invalidate working setups to catch a
+  case it would only sometimes catch. Wants either a probe that says something about
+  the hardware behind the wrapper, or an explicit "this array belongs to this rig"
+  the user confirms.
 - [ ] ★ **An averaged measurement holds every run's raw capture in memory,
   and an array multiplies that by the number of positions.**
   `SweepAverageAccumulator` keeps a `TransferFunctionFrame` per microphone per
@@ -197,17 +215,21 @@ close.
   until the last run has been analysed. Retained ≈
   `(2 + microphones) × samples × 4` bytes per run: **0.28 GiB** at 96 kHz / 20 s /
   7 microphones / 4 runs, **1.46 GiB** at 48 kHz / 100 s / 8 microphones / 8 runs,
-  0.02 GiB for a modest 48 kHz / 10 s / 3 microphones / 2 runs. The fix is to
-  accumulate H1 as the runs arrive — `Gxy`, `Gxx`, `Gyy` per microphone, sized by
-  the transform and not by the take, no frames retained — which also drops the
-  peak from `runs × capture` to one capture. That is a rework of the transfer
-  core the ordinary single-microphone path shares, with its own field
-  validation, so it wants its own PR rather than a tail on the array work.
-  It would pay for itself twice over: the per-run credibility verdict each
-  array microphone now faces costs its own H1 and inverse transform, measured
-  at **529 ms** per microphone per run on a 96 kHz / 20 s capture (~3.7 s a run
-  for seven positions). Accumulating as the runs arrive makes that verdict a
-  read of work already done, rather than a second pass over the same frames.
+  0.02 GiB for a modest 48 kHz / 10 s / 3 microphones / 2 runs.
+  **Streaming `Gxy/Gxx/Gyy` is NOT the fix for the memory** — that was this item's
+  first answer and the arithmetic refutes it. A running accumulation is sized by the
+  TRANSFORM, and the transform is the next power of two above twice the capture:
+  4 194 304 bins for a 96 kHz / 20 s take, at 16 + 8 + 8 bytes a bin, is **134 MiB
+  per microphone** and does not shrink with the run count. Eight of those is 1.07 GiB
+  against today's 0.28, and on the 48 kHz / 100 s case it is ~4.8 GiB against 1.46.
+  Streaming only wins past about **18 runs**, where `runs × capture × 4` finally
+  overtakes `2.2 × capture × 32`. It IS the fix for the duplicated CPU — the per-run
+  credibility verdict costs its own H1 and inverse transform, measured at **529 ms**
+  per microphone per run at 96 kHz / 20 s (~4.2 s a run for seven positions plus the
+  measurement microphone), and every one of those frames is transformed again for the
+  final result. So the two halves of this item pull in opposite directions and want
+  separate answers: bounded, run-count-independent state on one side, and not paying
+  twice for the same transform on the other.
 - [ ] **Run an averaged ASIO measurement on real hardware** (ideally a slow
   driver). Averaged sweeps keep one open ASIO session across runs; every software
   lifecycle guard around that — callback pools, capture epochs, in-flight block

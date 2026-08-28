@@ -3850,7 +3850,8 @@ public partial class VirtualCrossoverPanel : UserControl
                     : "no calibration");
             lines.Append(
                 $"    {name}    {document.Recipe.MicrophoneCount} microphone(s), " +
-                $"{calibration}{(drawn ? string.Empty : "  (muted)")}\r\n");
+                $"{calibration}, measured {document.SavedAtUtc.ToLocalTime():g}" +
+                $"{(drawn ? string.Empty : "  (muted)")}\r\n");
         }
 
         lines.Append(
@@ -3859,7 +3860,11 @@ public partial class VirtualCrossoverPanel : UserControl
             "arrays matching. Re-measure only if the odd capture's array sampled a " +
             "different volume from the rest — and read an L/R comparison carefully " +
             "when the two SIDES are what differ, because then the sides are not being " +
-            "asked the same question.");
+            "asked the same question.\r\n\r\nThe dates are there because " +
+            "nothing records WHERE the microphones stood, and nothing can derive " +
+            "it: a rig lifted and set down somewhere else between two channels " +
+            "leaves every stored property identical. Captures from one sitting " +
+            "are one volume; captures from different days may not be.");
         return lines.ToString();
     }
 

@@ -114,11 +114,19 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// MMM while the project is reading arrays sends them to attach a file they do
     /// not need.
     /// </param>
+    /// <param name="measuredAtUtc">
+    /// When the capture was taken. Shown because nothing in the file records WHERE
+    /// its microphones stood, and the app cannot derive it: a rig lifted and set down
+    /// somewhere else between two channels leaves every stored property identical.
+    /// The date is the one fact that lets a user notice they are looking at two
+    /// sittings, so it belongs where they judge the set rather than in the file only.
+    /// </param>
     internal void SetSpatialAverage(
         string? title,
         double? integratedSeconds,
         bool resolved,
-        VirtualCrossoverSpatialAverageMode mode)
+        VirtualCrossoverSpatialAverageMode mode,
+        DateTimeOffset? measuredAtUtc = null)
     {
         bool present = !string.IsNullOrWhiteSpace(title);
         string label = mode switch
@@ -157,6 +165,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
             ? $"Spatial average: {title}" +
                 (integratedSeconds is { } seconds
                     ? $"{newLine}{seconds:0} s integrated"
+                    : string.Empty) +
+                (measuredAtUtc is { } measured
+                    ? $"{newLine}measured {measured.ToLocalTime():g}"
                     : string.Empty) +
                 newLine + newLine +
                 "Click to replace it, or to detach it."

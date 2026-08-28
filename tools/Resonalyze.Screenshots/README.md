@@ -67,6 +67,12 @@ remove that file.
 - The manual figures that came from the forum article: the microphone photo, the MMM
   captures, the hybrid pair, and the open PEQ menu — a context menu is a window of
   its own that neither capture path reaches.
+- **`manual/record-settings`** — the same panel as `measurement-options`, but composed
+  beside the shell's transport column with the six numbered callouts drawn on. The
+  panel half has to be shot by hand for the reason `measurement-options` is asked for
+  by name: this tool runs in portable mode with its own empty settings, so it would
+  photograph a panel of defaults rather than a configured rig. The transport half is
+  cropped from the shell shot; the callouts follow the panel's own group geometry.
 
 These are committed artifacts. Re-take them by hand when they go stale.
 

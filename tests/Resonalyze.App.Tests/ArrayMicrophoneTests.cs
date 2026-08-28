@@ -198,6 +198,29 @@ public sealed class ArrayMicrophoneTests
     }
 
     [Fact]
+    public async Task AFaultOnTheMEASUREMENTMicrophoneKeepsItsOwnDiagnosis()
+    {
+        // The array's credibility verdict is cruder than the measurement's own: it
+        // knows a response has no shape, while RequireCredibleTransferIr also knows
+        // that a quiet loopback means bleed instead of the wire, and which channel's
+        // distortion is the culprit. The measurement microphone is a position in the
+        // array too, so a check written for the array can reach it first — and then
+        // an unusable REFERENCE is reported as a fault on an input that is working.
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal,
+                (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.WithNoisyMeasurementMicrophone(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory, arrayChannels: [2]);
+
+        Assert.False(await measurement.RunAsync());
+        Assert.NotNull(measurement.LastError);
+        string message = measurement.LastError!.Message;
+        Assert.Contains("The transfer function did not form a credible impulse", message);
+        Assert.DoesNotContain("array microphone", message);
+    }
+
+    [Fact]
     public async Task AnArrayMicrophoneThatIsLiveButWrongFailsTheMeasurement()
     {
         // The dangerous one, because every level check passes: an unused preamp

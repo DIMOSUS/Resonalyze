@@ -1502,10 +1502,16 @@ plot to say which was which.
 Two warnings are specific to arrays. The set's spread is judged against **1.5 dB**
 rather than the moving microphone's 3 dB, because an array is levelled by the same
 loopback the impulse responses are — two real seven-position sets read 0.33 dB
-apart. And a set whose channels were averaged over **different arrays** (a different
+apart. And a project whose captures were averaged over **different arrays** (a different
 number of positions, or a different calibration) still draws, since the loopback
 holds their levels either way, but says so: what differs is what "the average"
-means per channel, and that is worth knowing before a tune is fitted to it.
+means per capture, and that is worth knowing before a tune is fitted to it. It is
+read over every array in the project rather than the ones on screen — muted
+channels and the side you are not looking at included — because what a set is made
+of is a property of the measurements. The cross-side case is the reason: a left
+averaged over seven positions and a right over five are each perfectly consistent
+with themselves, and the dashed opposite-side sum would then draw two different
+listening volumes against each other as though the difference were the car.
 
 Per channel the hybrid curve is the stored average with that channel's own DSP
 chain added as its **analytic** magnitude, and the whole set lifted onto the

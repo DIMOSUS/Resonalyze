@@ -3799,17 +3799,42 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        // Every channel carrying an array, muted ones included — the same set the
-        // offset and the spread are judged over. What a set is MADE OF is a property
-        // of the measurements; a mute says which curves to draw, and a composition
-        // warning that came and went with the mute buttons would be describing the
-        // buttons.
+        // Every array in the PROJECT: both sides, muted channels included. What a set
+        // is MADE OF is a property of the measurements, and a mute or the side button
+        // says which curves to draw — a composition warning that came and went with
+        // those buttons would be describing the buttons.
+        //
+        // Both sides, because the cross-side case is the one that matters most and is
+        // invisible from either side alone: a left averaged over seven positions and a
+        // right over five are each internally consistent, and the dashed opposite sum
+        // then compares two different listening volumes as though the difference were
+        // the car. Nothing else catches it — an array set is levelled by the loopback
+        // each measurement already carries, so LiveCaptureDocument's array set rule has
+        // (rightly) nothing to object to. This objection is not about levelling.
         var arrays = new List<(string Name, LiveCaptureDocument Document, bool Drawn)>();
         foreach (VirtualCrossoverChannel channel in channels)
         {
-            if (channel.SideState(project.ActiveSideRight).ArrayCapture is { } document)
+            AddSide(rightSide: false);
+            if (!channel.Pair.Mono)
             {
-                arrays.Add((channel.Name, document, channel.Pair.Enabled));
+                // A mono pair answers both sides from one slot; listing it twice would
+                // report a difference between a measurement and itself.
+                AddSide(rightSide: true);
+            }
+
+            void AddSide(bool rightSide)
+            {
+                if (channel.SideState(rightSide).ArrayCapture is not { } document)
+                {
+                    return;
+                }
+
+                arrays.Add((
+                    channel.Pair.Mono
+                        ? channel.Name
+                        : $"{channel.Name} {(rightSide ? "R" : "L")}",
+                    document,
+                    channel.Pair.Enabled));
             }
         }
 
@@ -3831,7 +3856,7 @@ public partial class VirtualCrossoverPanel : UserControl
         var lines = new StringBuilder();
         lines.Append(
             "A spatial average describes the volume its microphones stood in, so " +
-            "channels averaged over different arrays are answering slightly " +
+            "captures averaged over different arrays are answering slightly " +
             "different questions:\r\n\r\n");
         foreach ((string name, LiveCaptureDocument document, bool drawn) in arrays)
         {
@@ -3847,8 +3872,10 @@ public partial class VirtualCrossoverPanel : UserControl
         lines.Append(
             "\r\nThe hybrid still draws: each average is honest about its own " +
             "driver, and their levels are held by the loopback rather than by the " +
-            "arrays matching. Re-measure only if the odd channel's array sampled a " +
-            "different volume from the rest.");
+            "arrays matching. Re-measure only if the odd capture's array sampled a " +
+            "different volume from the rest — and read an L/R comparison carefully " +
+            "when the two SIDES are what differ, because then the sides are not being " +
+            "asked the same question.");
         return lines.ToString();
     }
 

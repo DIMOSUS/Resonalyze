@@ -261,17 +261,8 @@ internal static class SyntheticCapture
         double peak = 0.05)
     {
         (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
-        var noise = new float[mic.Length];
-        // Deterministic, so the verdict is the same on every run and on every machine.
-        uint state = 0x9E3779B9;
-        for (int i = 0; i < noise.Length; i++)
-        {
-            state = state * 1664525u + 1013904223u;
-            noise[i] = (float)(((state >> 8) / (double)0x00FFFFFF - 0.5) * 2.0 * peak);
-        }
-
         return new AudioCaptureResult(
-            [mic, loop, noise],
+            [mic, loop, Noise(mic.Length, peak)],
             MicrophoneChannel: 0,
             LoopbackChannel: 1,
             StereoSeparationExpected: false,
@@ -280,6 +271,48 @@ internal static class SyntheticCapture
         {
             ArrayChannels = [2]
         };
+    }
+
+    /// <summary>
+    /// The mirror image: the MEASUREMENT microphone carries noise while the array
+    /// microphone beside it recorded the sweep properly.
+    /// </summary>
+    /// <remarks>
+    /// The fault is the measurement's own, and the measurement has a diagnosis for
+    /// it that names the loopback level and the distorting channel. This exists to
+    /// pin that the array's cruder verdict does not get there first and blame an
+    /// input that is working.
+    /// </remarks>
+    public static AudioCaptureResult WithNoisyMeasurementMicrophone(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        double peak = 0.05)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        return new AudioCaptureResult(
+            [Noise(mic.Length, peak), loop, mic],
+            MicrophoneChannel: 0,
+            LoopbackChannel: 1,
+            StereoSeparationExpected: false,
+            AudioCaptureAnomalies.None,
+            Diagnostics: null)
+        {
+            ArrayChannels = [2]
+        };
+    }
+
+    // Deterministic, so a verdict about it is the same on every run and machine.
+    private static float[] Noise(int length, double peak)
+    {
+        var noise = new float[length];
+        uint state = 0x9E3779B9;
+        for (int i = 0; i < length; i++)
+        {
+            state = state * 1664525u + 1013904223u;
+            noise[i] = (float)(((state >> 8) / (double)0x00FFFFFF - 0.5) * 2.0 * peak);
+        }
+
+        return noise;
     }
 
     /// <summary>

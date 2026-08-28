@@ -21,8 +21,7 @@ public sealed class ArrayCaptureDocumentTests
             channel,
             measurement,
             Enumerable.Repeat(levelDb, Grid.Count).ToArray(),
-            AcceptedRuns: 1,
-            Issues: [])
+            AcceptedRuns: 1)
         {
             Calibration = calibration
         };
@@ -218,7 +217,7 @@ public sealed class ArrayCaptureDocumentTests
     public void ACurveFromAnotherGridIsRefusedRatherThanShifted()
     {
         Assert.Null(ArrayCaptureDocument.TryCreate(
-            [new ArrayMicrophoneCurve(0, true, new double[16], 1, [])],
+            [new ArrayMicrophoneCurve(0, true, new double[16], 1)],
             48_000,
             null));
     }

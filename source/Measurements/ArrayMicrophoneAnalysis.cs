@@ -26,18 +26,16 @@ namespace Resonalyze;
 /// own calibration switch still means something for these.
 /// </param>
 /// <param name="AcceptedRuns">
-/// How many of the measurement's averaging runs this microphone contributed. A
-/// microphone that failed a run is missing from that run only.
-/// </param>
-/// <param name="Issues">
-/// Why runs were dropped, if any — the text the end-of-measurement notice shows.
+/// How many of the measurement's averaging runs this microphone contributed. Every
+/// microphone in one measurement contributes the same number: a position that was
+/// compromised fails the RUN rather than dropping out of it, so an array never holds
+/// a position that sat part of the average out.
 /// </param>
 internal sealed record ArrayMicrophoneCurve(
     int ChannelOffset,
     bool IsMeasurementMicrophone,
     double[] LevelsDb,
-    int AcceptedRuns,
-    IReadOnlyList<string> Issues)
+    int AcceptedRuns)
 {
     /// <summary>What the user called this position, if anything.</summary>
     public string? Note { get; init; }
@@ -89,18 +87,45 @@ internal sealed record ArrayMicrophoneMetadata(
 internal static class ArrayMicrophoneAnalysis
 {
     /// <summary>
-    /// The steady-state level curve for one microphone's accepted runs.
+    /// The steady-state level curve for the MEASUREMENT microphone's accepted runs.
+    /// </summary>
+    /// <remarks>
+    /// No credibility verdict here, deliberately. These are the measurement's own
+    /// frames, and they are judged by <c>RequireCredibleTransferIr</c> once the
+    /// average is built — which knows things this cannot: that a quiet loopback means
+    /// bleed instead of the wire, and which channel's distortion is the culprit.
+    /// Refusing here would preempt that diagnosis with a worse one, and one that
+    /// blames an array microphone for the reference's fault.
+    /// </remarks>
+    public static double[] BuildMeasurementCurve(
+        IReadOnlyList<TransferFunctionFrame> frames,
+        ExcitationBandGate excitationGate,
+        int sampleRate,
+        ProtectiveHighPassConfiguration? protectiveHighPass) =>
+        BuildCurve(frames, excitationGate, sampleRate, protectiveHighPass, arrayInput: null);
+
+    /// <summary>
+    /// The steady-state level curve for one ADDITIONAL array microphone's accepted
+    /// runs, refused when it did not divide into a credible response.
     /// </summary>
     /// <param name="channelOffset">
     /// Which input this is, for the refusal to name. A verdict that says "one of the
     /// array microphones" sends the user to unplug seven of them in turn.
     /// </param>
-    public static double[] BuildCurve(
+    public static double[] BuildArrayCurve(
         IReadOnlyList<TransferFunctionFrame> frames,
         ExcitationBandGate excitationGate,
         int sampleRate,
         ProtectiveHighPassConfiguration? protectiveHighPass,
-        int channelOffset = 0)
+        int channelOffset) =>
+        BuildCurve(frames, excitationGate, sampleRate, protectiveHighPass, channelOffset);
+
+    private static double[] BuildCurve(
+        IReadOnlyList<TransferFunctionFrame> frames,
+        ExcitationBandGate excitationGate,
+        int sampleRate,
+        ProtectiveHighPassConfiguration? protectiveHighPass,
+        int? arrayInput)
     {
         ArgumentNullException.ThrowIfNull(frames);
         if (frames.Count == 0)
@@ -114,9 +139,18 @@ internal static class ArrayMicrophoneAnalysis
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
 
+        // The impulse response is asked for only when something will read it, so the
+        // measurement microphone does not pay an inverse transform for a verdict it
+        // is not subject to.
         (TransferMagnitudeEstimate estimate, Complex[]? transfer) =
-            TransferFunction.ComputeAveragedMagnitudeAndIr(frames, excitationGate);
-        RequireCredible(transfer, sampleRate, channelOffset);
+            TransferFunction.ComputeAveragedMagnitudeAndIr(
+                frames,
+                excitationGate,
+                wantImpulseResponse: arrayInput.HasValue);
+        if (arrayInput is { } channelOffset)
+        {
+            RequireCredible(transfer, sampleRate, channelOffset);
+        }
         double[] levels = SpatialAverage.FromTransferMagnitude(
             estimate.Magnitude,
             (double)sampleRate / estimate.FftLength);
@@ -124,8 +158,9 @@ internal static class ArrayMicrophoneAnalysis
     }
 
     /// <summary>
-    /// Refuses a microphone whose transfer response has no shape — the same verdict,
-    /// on the same threshold, the measurement microphone's own response is held to.
+    /// Refuses an ARRAY microphone whose transfer response has no shape — the same
+    /// verdict, on the same threshold, the measurement microphone's own response is
+    /// held to by <c>RequireCredibleTransferIr</c>.
     /// </summary>
     /// <remarks>
     /// The level checks a run applies catch a channel that is silent, clipped or

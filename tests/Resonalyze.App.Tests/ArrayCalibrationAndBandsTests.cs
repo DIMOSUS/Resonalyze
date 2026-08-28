@@ -32,8 +32,7 @@ public sealed class ArrayCalibrationAndBandsTests
             channel,
             measurement,
             Enumerable.Repeat(levelDb, Grid.Count).ToArray(),
-            AcceptedRuns: 1,
-            Issues: [])
+            AcceptedRuns: 1)
         {
             Calibration = calibration
         };

@@ -48,8 +48,7 @@ public sealed class ArrayMicrophoneCurvesTests
             channel,
             measurement,
             Enumerable.Repeat(levelDb, Grid.Count).ToArray(),
-            AcceptedRuns: 1,
-            Issues: [])
+            AcceptedRuns: 1)
         {
             Note = note,
             Calibration = calibration
@@ -151,8 +150,8 @@ public sealed class ArrayMicrophoneCurvesTests
 
         ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
             [
-                new ArrayMicrophoneCurve(0, true, rough, 1, []),
-                new ArrayMicrophoneCurve(2, false, flat, 1, [])
+                new ArrayMicrophoneCurve(0, true, rough, 1),
+                new ArrayMicrophoneCurve(2, false, flat, 1)
             ],
             useCalibration: false,
             SpectrumSmoothing.PsychoacousticCode);
@@ -193,8 +192,8 @@ public sealed class ArrayMicrophoneCurvesTests
 
         ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
             [
-                new ArrayMicrophoneCurve(0, true, hot, 1, []),
-                new ArrayMicrophoneCurve(2, false, cold, 1, [])
+                new ArrayMicrophoneCurve(0, true, hot, 1),
+                new ArrayMicrophoneCurve(2, false, cold, 1)
             ],
             useCalibration: false,
             NoSmoothing);
@@ -229,7 +228,7 @@ public sealed class ArrayMicrophoneCurvesTests
         // this build does not use would shift every level in frequency while still
         // looking like an ordinary response.
         ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
-            [new ArrayMicrophoneCurve(0, true, new double[16], 1, [])],
+            [new ArrayMicrophoneCurve(0, true, new double[16], 1)],
             useCalibration: false,
             NoSmoothing);
 
@@ -245,7 +244,7 @@ public sealed class ArrayMicrophoneCurvesTests
         ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
             [
                 Microphone(70.0, measurement: true, channel: 0),
-                new ArrayMicrophoneCurve(2, false, dead, 1, [])
+                new ArrayMicrophoneCurve(2, false, dead, 1)
             ],
             useCalibration: false,
             NoSmoothing);

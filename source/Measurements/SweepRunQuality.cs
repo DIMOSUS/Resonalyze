@@ -73,11 +73,14 @@ internal static class SweepRunQualityCheck
     /// per microphone.
     /// </summary>
     /// <remarks>
-    /// A failure here does NOT reject the run. The array is a passenger: the
-    /// measurement microphone, the loopback and the impulse response are all
-    /// unaffected by a clipped microphone three seats away, and throwing the run
-    /// out would let one badly placed array microphone destroy a measurement that
-    /// is otherwise perfect. The microphone drops out of that run instead.
+    /// A failure here REJECTS THE RUN, the same as one on the measurement
+    /// microphone: the caller folds what this returns into the run's own issues.
+    /// This used to drop the offending microphone from that run and keep the rest,
+    /// which bought a measurement that looks complete and is not — the array keeps
+    /// only the curve each position produced, so a position that lost its runs is
+    /// simply absent, and an average of six positions where seven were set up is a
+    /// different measurement wearing the same name. A sweep is cheap; a spatial
+    /// average built over a listening volume the user did not choose is not.
     /// </remarks>
     public static IReadOnlyList<string> AssessArrayMicrophone(
         float[] samples,

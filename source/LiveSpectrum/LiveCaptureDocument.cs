@@ -481,6 +481,16 @@ public sealed class LiveCaptureDocument
     /// <see cref="MeasuredBand"/> says so. Comparing it refused an ordinary four-way
     /// set for the one difference that was physically correct.
     /// </para>
+    /// <para>
+    /// What the arrays were MADE OF is not judged here either, and that is a separate
+    /// decision rather than the same one. Two channels averaged over seven positions
+    /// and five describe slightly different listening volumes, which is worth knowing
+    /// — but it does not stop one offset from levelling them, which is the only
+    /// question this verdict answers, and refusing to draw would withhold the view
+    /// that shows the difference. Virtual DSP warns about composition instead, over
+    /// every array in the project rather than one side's, so the cross-side case (a
+    /// left of seven against a right of five) is caught as well.
+    /// </para>
     /// </remarks>
     private static LiveCaptureSetVerdict JudgeArraySet(
         IReadOnlyList<LiveCaptureDocument> captures,

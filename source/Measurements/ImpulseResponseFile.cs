@@ -1025,8 +1025,7 @@ public sealed class ImpulseResponseFile
                     microphone.ChannelOffset,
                     microphone.IsMeasurementMicrophone,
                     microphone.LevelsDb.ToArray(),
-                    microphone.AcceptedRunCount,
-                    [])
+                    microphone.AcceptedRunCount)
                 {
                     Note = microphone.Note,
                     Calibration = microphone.Calibration

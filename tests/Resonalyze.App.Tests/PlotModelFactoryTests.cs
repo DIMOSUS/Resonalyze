@@ -532,9 +532,9 @@ public sealed class PlotModelFactoryTests
         return
         [
             new ArrayMicrophoneCurve(
-                0, true, Enumerable.Repeat(-6.0, bands).ToArray(), 1, []),
+                0, true, Enumerable.Repeat(-6.0, bands).ToArray(), 1),
             new ArrayMicrophoneCurve(
-                2, false, Enumerable.Repeat(-9.0, bands).ToArray(), 1, [])
+                2, false, Enumerable.Repeat(-9.0, bands).ToArray(), 1)
             {
                 Note = "left ear"
             }

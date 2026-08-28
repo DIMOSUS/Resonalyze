@@ -2371,13 +2371,12 @@ namespace Resonalyze
                     new(
                         microphoneChannelOffset,
                         IsMeasurementMicrophone: true,
-                        ArrayMicrophoneAnalysis.BuildCurve(
+                        ArrayMicrophoneAnalysis.BuildMeasurementCurve(
                             transferFrames,
                             excitationGate,
                             sampleRate,
                             protectiveHighPass),
-                        transferFrames.Count,
-                        [])
+                        transferFrames.Count)
                 };
                 for (int microphone = 0; microphone < arrayChannelOffsets.Count; microphone++)
                 {
@@ -2390,14 +2389,13 @@ namespace Resonalyze
                     microphones.Add(new ArrayMicrophoneCurve(
                         arrayChannelOffsets[microphone],
                         IsMeasurementMicrophone: false,
-                        ArrayMicrophoneAnalysis.BuildCurve(
+                        ArrayMicrophoneAnalysis.BuildArrayCurve(
                             frames,
                             excitationGate,
                             sampleRate,
                             protectiveHighPass,
                             arrayChannelOffsets[microphone]),
-                        frames.Count,
-                        []));
+                        frames.Count));
                 }
 
                 return microphones;

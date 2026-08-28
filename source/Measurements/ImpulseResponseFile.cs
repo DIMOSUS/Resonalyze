@@ -46,6 +46,12 @@ public sealed class ImpulseResponseFile
     // band-based generator; absent files fall back through ResolveAchievedSweepBand.
     public double AchievedLowFrequencyHz { get; set; }
     public double AchievedHighFrequencyHz { get; set; }
+    // The band the sweep excited at FULL amplitude, which is what the measurement may
+    // be READ over; the achieved pair above is what it reaches, guard bands included,
+    // and the harmonic geometry needs that one. Zero in a file written before this was
+    // recorded, where the reader falls back to the achieved band.
+    public double MeasuredLowFrequencyHz { get; set; }
+    public double MeasuredHighFrequencyHz { get; set; }
     public double SweepDurationSeconds { get; set; }
     public PlaybackChannel PlayChannel { get; set; }
     public SweepMeasurementMode MeasurementMode { get; set; } =
@@ -191,6 +197,8 @@ public sealed class ImpulseResponseFile
             HighFrequencyHz = measurement.HighFrequencyHz,
             AchievedLowFrequencyHz = measurement.AchievedLowFrequencyHz,
             AchievedHighFrequencyHz = measurement.AchievedHighFrequencyHz,
+            MeasuredLowFrequencyHz = measurement.MeasuredLowFrequencyHz,
+            MeasuredHighFrequencyHz = measurement.MeasuredHighFrequencyHz,
             // The sweep that produced this IR, which for a re-saved measurement is
             // longer than the one rebuilt on load if it outran the generation cap.
             SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
@@ -229,8 +237,8 @@ public sealed class ImpulseResponseFile
                     transferPeakIndex,
                     MeasuredBand.Resolve(
                         measurement.MeasurementProtectiveHighPass,
-                        measurement.AchievedLowFrequencyHz,
-                        measurement.AchievedHighFrequencyHz,
+                        measurement.MeasuredLowFrequencyHz,
+                        measurement.MeasuredHighFrequencyHz,
                         measurement.SampleRate))),
             SweepDeconvolutionRealSamples = sweepRealSamples,
             SweepDeconvolutionImaginarySamples = sweepImaginarySamples,

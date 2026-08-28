@@ -57,8 +57,8 @@ internal sealed class CompareSelection
             selection.Snapshot.TimingReference,
             MeasuredBand.Resolve(
                 selection.Snapshot.ProtectiveHighPass,
-                selection.Snapshot.AchievedLowFrequencyHz,
-                selection.Snapshot.AchievedHighFrequencyHz,
+                selection.Snapshot.MeasuredLowFrequencyHz,
+                selection.Snapshot.MeasuredHighFrequencyHz,
                 selection.Snapshot.SampleRate));
     }
 

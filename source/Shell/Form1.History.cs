@@ -280,7 +280,9 @@ public partial class Form1
             snapshot.AcceptedAverageRunCount,
             achievedLowHz,
             achievedHighHz,
-            snapshot.TimingReference);
+            snapshot.TimingReference,
+            snapshot.MeasuredLowFrequencyHz,
+            snapshot.MeasuredHighFrequencyHz);
         expSweepMeasurement.RestoreLevelSnapshot(snapshot.MeterSnapshot);
         // Restore the anchor with the levels, exactly as opening the file would
         // (Form1.FileOperations): both halves of K travel with the entry, so a

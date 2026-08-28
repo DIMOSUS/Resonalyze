@@ -96,23 +96,33 @@ public readonly record struct MeasuredBand(double LowestHz, double HighestHz)
     /// curve at a frequency belonging to a filter it may never have seen. An absent
     /// or nonsensical sweep band is read the same way.
     /// </remarks>
+    /// <param name="measuredLowHz">
+    /// The band the sweep excited at FULL amplitude, NOT the band it reached. The
+    /// generator widens the request by half an octave each side and puts its fades in
+    /// those guard bands; inside them H1 is still unbiased — the taper cancels in
+    /// Gxy/Gxx — but its signal-to-noise falls away, and the estimate's validity
+    /// weight attenuates it to match. Measured on a 500-5000 Hz sweep that weight
+    /// reads −13.0 dB at 400 Hz, −2.7 at 450 and −10.3 at 6300: calling the guard
+    /// band measured would publish the estimator's own roll-off as the driver's
+    /// response, on a perfect system, with nothing on the plot to say otherwise.
+    /// </param>
     public static MeasuredBand Resolve(
         ProtectiveHighPassConfiguration? measurementFilter,
-        double achievedLowHz,
-        double achievedHighHz,
+        double measuredLowHz,
+        double measuredHighHz,
         int sampleRate)
     {
         double lowest = ProtectiveHighPassConfiguration.LowestMeasuredFrequencyHz(
             measurementFilter, sampleRate);
         double highest = double.PositiveInfinity;
-        if (achievedLowHz > 0 && achievedHighHz > achievedLowHz &&
-            double.IsFinite(achievedLowHz) && double.IsFinite(achievedHighHz))
+        if (measuredLowHz > 0 && measuredHighHz > measuredLowHz &&
+            double.IsFinite(measuredLowHz) && double.IsFinite(measuredHighHz))
         {
             // The wider of the two limits below, because both are true at once: a
             // tweeter measured with a band sweep AND a protective high-pass is silent
             // wherever either of them says so.
-            lowest = Math.Max(lowest, achievedLowHz);
-            highest = achievedHighHz;
+            lowest = Math.Max(lowest, measuredLowHz);
+            highest = measuredHighHz;
         }
 
         return new MeasuredBand(lowest, highest);

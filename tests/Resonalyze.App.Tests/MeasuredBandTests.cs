@@ -101,19 +101,42 @@ public sealed class MeasuredBandTests
     [Fact]
     public void ASweepThatNeverReachedLowNarrowsTheBandOnItsOwn()
     {
-        // The owner's tweeters: a band sweep from 800 Hz that actually swept from
-        // 565, with no protective high-pass anywhere. Below that nothing was played
-        // at all, the excitation gate zeroed those bins, and a windowed spectrum of
-        // a zero is the window — 495 of 1024 points drawn as a rolloff from -60 dB
-        // down to -96, none of it measured.
+        // The owner's tweeters: a band sweep asked for from 800 Hz, with no
+        // protective high-pass anywhere. Below that nothing was played at full
+        // amplitude, and below 565 nothing was played at all — the excitation gate
+        // zeroed those bins, and a windowed spectrum of a zero is the window: 495 of
+        // 1024 points drawn as a rolloff from -60 dB down to -96, none of it measured.
         MeasuredBand band = MeasuredBand.Resolve(
             measurementFilter: null,
-            achievedLowHz: 565,
-            achievedHighHz: 28_299,
+            measuredLowHz: 800,
+            measuredHighHz: 20_000,
             SampleRate);
 
-        Assert.Equal(565, band.LowEdgeHz, 6);
-        Assert.Equal(28_299, band.HighEdgeHz, 6);
+        Assert.Equal(800, band.LowEdgeHz, 6);
+        Assert.Equal(20_000, band.HighEdgeHz, 6);
+    }
+
+    [Fact]
+    public void TheGuardBandIsNotMeasured()
+    {
+        // What the sweep REACHED is wider than what it excited at full amplitude, by
+        // half an octave each side — the generator puts its fades out there so the
+        // envelope is flat across the band that was asked for. Inside a guard band H1
+        // is still unbiased, because the taper cancels in Gxy/Gxx, but its
+        // signal-to-noise falls away and the estimate's validity weight attenuates it
+        // to match: on a 500-5000 Hz sweep that weight reads −13.0 dB at 400 Hz, −2.7
+        // at 450 and −10.3 at 6300.
+        //
+        // So the band a measurement may be READ over is the full-amplitude one. Handed
+        // the guard edges instead, this would publish the estimator's own roll-off as
+        // the driver's response, on a perfect system, with nothing to say otherwise.
+        MeasuredBand honest = MeasuredBand.Resolve(
+            measurementFilter: null, measuredLowHz: 500, measuredHighHz: 5_000, SampleRate);
+        Assert.Equal(500, honest.LowEdgeHz, 6);
+        Assert.Equal(5_000, honest.HighEdgeHz, 6);
+        Assert.False(honest.Contains(400));
+        Assert.False(honest.Contains(6_300));
+        Assert.True(honest.Contains(1_000));
     }
 
     [Fact]

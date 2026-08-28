@@ -1883,7 +1883,13 @@ public sealed class PlotModelFactoryTests
             sweepDeconvolutionPeakIndex: peakSample,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: transferImpulse,
-            transferPeakIndex: peakSample);
+            transferPeakIndex: peakSample,
+            // Stated, not inherited from a regenerated sweep: these fixtures are about
+            // what the curves DO over the whole analysis grid, and a one-second sweep
+            // of ten octaves reaches full amplitude well inside it, which would mask
+            // the very points under test.
+            achievedLowFrequencyHz: 20,
+            achievedHighFrequencyHz: 20_000);
         return measurement;
     }
 

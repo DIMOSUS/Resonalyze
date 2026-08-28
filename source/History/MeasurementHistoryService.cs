@@ -222,8 +222,8 @@ internal sealed class MeasurementHistoryService
             transferResult?.PeakIndex,
             MeasuredBand.Resolve(
                 measurement.MeasurementProtectiveHighPass,
-                measurement.AchievedLowFrequencyHz,
-                measurement.AchievedHighFrequencyHz,
+                measurement.MeasuredLowFrequencyHz,
+                measurement.MeasuredHighFrequencyHz,
                 measurement.SampleRate));
 
         return new MeasurementHistorySnapshot
@@ -234,6 +234,8 @@ internal sealed class MeasurementHistoryService
             HighFrequencyHz = measurement.HighFrequencyHz,
             AchievedLowFrequencyHz = measurement.AchievedLowFrequencyHz,
             AchievedHighFrequencyHz = measurement.AchievedHighFrequencyHz,
+            MeasuredLowFrequencyHz = measurement.MeasuredLowFrequencyHz,
+            MeasuredHighFrequencyHz = measurement.MeasuredHighFrequencyHz,
             SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
@@ -274,6 +276,14 @@ internal sealed class MeasurementHistoryService
         Complex[]? transfer = file.GetTransferImpulseResponse();
         (double lowHz, double highHz) = file.ResolveSweepBand();
         (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();
+        // A file written before the full-amplitude edges were recorded falls back to
+        // the achieved band — what it has always been read over.
+        double measuredLowHz = file.MeasuredLowFrequencyHz > 0
+            ? file.MeasuredLowFrequencyHz
+            : achievedLowHz;
+        double measuredHighHz = file.MeasuredHighFrequencyHz > measuredLowHz
+            ? file.MeasuredHighFrequencyHz
+            : achievedHighHz;
         MeasurementHistoryPreview preview = file.ToPreview() ??
             MeasurementHistoryPreviewBuilder.Build(
                 sweep,
@@ -284,8 +294,8 @@ internal sealed class MeasurementHistoryService
                 file.TransferPeakIndex,
                 MeasuredBand.Resolve(
                     file.ProtectiveHighPass?.ToConfiguration(),
-                    achievedLowHz,
-                    achievedHighHz,
+                    measuredLowHz,
+                    measuredHighHz,
                     file.SampleRate));
 
         return new MeasurementHistorySnapshot
@@ -296,6 +306,8 @@ internal sealed class MeasurementHistoryService
             HighFrequencyHz = highHz,
             AchievedLowFrequencyHz = achievedLowHz,
             AchievedHighFrequencyHz = achievedHighHz,
+            MeasuredLowFrequencyHz = measuredLowHz,
+            MeasuredHighFrequencyHz = measuredHighHz,
             Octaves = file.Octaves,
             SweepDurationSeconds = file.SweepDurationSeconds,
             PlayChannel = file.PlayChannel,

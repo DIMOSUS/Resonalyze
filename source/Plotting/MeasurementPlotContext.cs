@@ -114,8 +114,8 @@ internal sealed class MeasurementPlotContext
     /// </summary>
     public MeasuredBand MeasuredBand => MeasuredBand.Resolve(
         expSweepMeasurement.MeasurementProtectiveHighPass,
-        expSweepMeasurement.AchievedLowFrequencyHz,
-        expSweepMeasurement.AchievedHighFrequencyHz,
+        expSweepMeasurement.MeasuredLowFrequencyHz,
+        expSweepMeasurement.MeasuredHighFrequencyHz,
         expSweepMeasurement.SampleRate);
 
     /// <summary>

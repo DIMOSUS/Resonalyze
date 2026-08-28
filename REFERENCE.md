@@ -400,6 +400,18 @@ to record, what is left is the measurement microphone alone — that is the poin
 response the tools already have, not an average of anything, and it is not offered
 as one.
 
+What a measurement may be **read over** is the band the sweep excited at FULL
+amplitude, which is narrower than the band it reached. The generator widens the
+request by half an octave each side and puts its fades in those guard bands, so the
+envelope is flat across what was asked for. Inside a guard band the estimate is still
+unbiased — the taper cancels in the ratio H1 divides — but its signal-to-noise falls
+away, and the validity weight the estimate carries attenuates it to match: on a
+500–5000 Hz sweep that weight reads −13.0 dB at 400 Hz, −2.7 at 450 and −10.3 at
+6300. Drawing the guard band would publish the estimator's own roll-off as the
+driver's response, on a perfect system, with nothing to say it was not real. Files
+written before the full-amplitude edges were recorded fall back to the band they
+reached, which is what they have always been read over.
+
 A microphone that clipped, was unplugged, or recorded something that is not a
 response **fails the run**, exactly as the measurement microphone does: the run is
 retried once, and a run that fails twice does not enter the average. If every run

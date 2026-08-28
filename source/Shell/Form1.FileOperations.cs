@@ -310,7 +310,9 @@ public partial class Form1
             file.AcceptedAverageRunCount,
             achievedLowHz,
             achievedHighHz,
-            file.TimingReference);
+            file.TimingReference,
+            file.MeasuredLowFrequencyHz,
+            file.MeasuredHighFrequencyHz);
         expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
         AdoptRestoredResult(
             file.SplCalibration,

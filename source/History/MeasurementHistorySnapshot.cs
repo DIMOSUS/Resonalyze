@@ -51,6 +51,10 @@ internal sealed class MeasurementHistorySnapshot
     // geometry reads this; see ImpulseResponseFile.ResolveAchievedSweepBand.
     public double AchievedLowFrequencyHz { get; init; }
     public double AchievedHighFrequencyHz { get; init; }
+    // What the measurement may be READ over: the band the sweep excited at full
+    // amplitude, narrower than the achieved one by the guard bands the fades live in.
+    public double MeasuredLowFrequencyHz { get; init; }
+    public double MeasuredHighFrequencyHz { get; init; }
     public double SweepDurationSeconds { get; init; }
 
     /// <summary>The band that was requested.</summary>
@@ -116,6 +120,8 @@ internal sealed class MeasurementHistorySnapshot
             HighFrequencyHz = HighFrequencyHz,
             AchievedLowFrequencyHz = AchievedLowFrequencyHz,
             AchievedHighFrequencyHz = AchievedHighFrequencyHz,
+            MeasuredLowFrequencyHz = MeasuredLowFrequencyHz,
+            MeasuredHighFrequencyHz = MeasuredHighFrequencyHz,
             Octaves = Octaves,
             SweepDurationSeconds = SweepDurationSeconds,
             PlayChannel = PlayChannel,

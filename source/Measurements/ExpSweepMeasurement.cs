@@ -101,6 +101,24 @@ namespace Resonalyze
         // generator uses today cannot express.
         public double AchievedLowFrequencyHz { get; private set; }
         public double AchievedHighFrequencyHz { get; private set; }
+
+        /// <summary>
+        /// The band the sweep excited at FULL amplitude — what the measurement can
+        /// honestly be read over, as opposed to what it reaches.
+        /// </summary>
+        /// <remarks>
+        /// The generator widens the requested band by half an octave each side and
+        /// puts the fades in those guard bands, so the envelope is flat across what
+        /// was asked for. Inside a guard band the excitation is still there and H1 is
+        /// still unbiased — the taper cancels in Gxy/Gxx — but its signal-to-noise
+        /// falls away, and the validity weight the estimate carries attenuates it to
+        /// match: measured on a 500-5000 Hz sweep the weight reads -13.0 dB at 400 Hz,
+        /// -2.7 at 450 and -10.3 at 6300. Presenting that as the driver's response
+        /// would draw the estimator's own roll-off as a measurement, on a perfect
+        /// system, with nothing to say it was not real.
+        /// </remarks>
+        public double MeasuredLowFrequencyHz { get; private set; }
+        public double MeasuredHighFrequencyHz { get; private set; }
         // Length of that same sweep. Also recorded rather than read back off the
         // rebuilt one, which caps its generation at MaxDurationSeconds and would
         // otherwise halve the harmonic offsets of a restored 200-second sweep.
@@ -356,6 +374,8 @@ namespace Resonalyze
                 signal.SampleRate);
             AchievedLowFrequencyHz = Sweep.LowFrequencyHz;
             AchievedHighFrequencyHz = Sweep.HighFrequencyHz;
+            MeasuredLowFrequencyHz = Sweep.Spec.FullAmplitudeLowFrequencyHz;
+            MeasuredHighFrequencyHz = Sweep.Spec.FullAmplitudeHighFrequencyHz;
             AchievedSweepSampleCount = Sweep.SweepSamples;
         }
 
@@ -531,7 +551,9 @@ namespace Resonalyze
             int acceptedAverageRunCount = 1,
             double achievedLowFrequencyHz = 0.0,
             double achievedHighFrequencyHz = 0.0,
-            TimingReference timingReference = TimingReference.SynchronizedLoopback)
+            TimingReference timingReference = TimingReference.SynchronizedLoopback,
+            double measuredLowFrequencyHz = 0.0,
+            double measuredHighFrequencyHz = 0.0)
         {
             ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(sweepDeconvolutionImpulseResponse);
@@ -628,6 +650,16 @@ namespace Resonalyze
             {
                 AchievedLowFrequencyHz = achievedLowFrequencyHz;
                 AchievedHighFrequencyHz = achievedHighFrequencyHz;
+                // A file written before the full-amplitude edges were recorded says
+                // nothing about them, and the regenerated sweep's are the wrong
+                // answer for a stored geometry. Fall back to the achieved band — what
+                // such a file has always been read over.
+                MeasuredLowFrequencyHz = measuredLowFrequencyHz > 0
+                    ? measuredLowFrequencyHz
+                    : achievedLowFrequencyHz;
+                MeasuredHighFrequencyHz = measuredHighFrequencyHz > MeasuredLowFrequencyHz
+                    ? measuredHighFrequencyHz
+                    : achievedHighFrequencyHz;
             }
             int storedSampleCount = (int)Math.Round(sweepDurationSeconds * sampleRate);
             if (storedSampleCount > 0)

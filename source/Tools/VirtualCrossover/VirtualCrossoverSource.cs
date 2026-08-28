@@ -87,8 +87,8 @@ internal sealed class ResolvedVirtualDspSource
             ArraySpreadDb = arraySpreadDb,
             MeasuredBand = MeasuredBand.Resolve(
                 snapshot.ProtectiveHighPass,
-                snapshot.AchievedLowFrequencyHz,
-                snapshot.AchievedHighFrequencyHz,
+                snapshot.MeasuredLowFrequencyHz,
+                snapshot.MeasuredHighFrequencyHz,
                 snapshot.SampleRate),
             MicrophoneCalibration = snapshot.MicrophoneCalibration
         };

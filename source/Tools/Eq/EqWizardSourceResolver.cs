@@ -232,8 +232,12 @@ internal sealed class EqWizardSourceResolver
         // are signal and stay.
         MeasuredBand band = MeasuredBand.Resolve(
             file.ProtectiveHighPass?.ToConfiguration(),
-            file.AchievedLowFrequencyHz,
-            file.AchievedHighFrequencyHz,
+            file.MeasuredLowFrequencyHz > 0
+                ? file.MeasuredLowFrequencyHz
+                : file.AchievedLowFrequencyHz,
+            file.MeasuredHighFrequencyHz > file.MeasuredLowFrequencyHz
+                ? file.MeasuredHighFrequencyHz
+                : file.AchievedHighFrequencyHz,
             file.SampleRate);
         IImpulseMeasurement measurement = useTransfer
             ? new ImpulseMeasurementView(

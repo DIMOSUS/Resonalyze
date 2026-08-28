@@ -130,12 +130,6 @@ public partial class Form1
             await liveSpectrumController.AbortAsync();
         }
 
-        if (expSweepMeasurement.WaitingForAverageConfirmation)
-        {
-            expSweepMeasurement.ContinueAverageRun();
-            return;
-        }
-
         if (expSweepMeasurement.InProgress)
         {
             await expSweepMeasurement.AbortAsync();

@@ -1503,6 +1503,7 @@ public partial class EqWizardPanel
             numericGainMin.Value = numericGainMin.ClampValue(settings.GainMinDb);
             numericGainMax.Value = numericGainMax.ClampValue(settings.GainMaxDb);
             checkBoxCutsOnly.Checked = settings.CutsOnly;
+            checkBoxEqCurve.Checked = settings.ShowEqCurve;
             SetSourceSmoothing(settings.SourceSmoothingInverseOctaves);
             ApplyPersistedBank(settings);
 
@@ -1547,7 +1548,8 @@ public partial class EqWizardPanel
         SourceSmoothingInverseOctaves = SourceSmoothingInverseOctaves,
         CalibrationId = preferredIrCalibrationId,
         ManualSampleRateHz = manualSampleRateHz,
-        CutsOnly = checkBoxCutsOnly.Checked
+        CutsOnly = checkBoxCutsOnly.Checked,
+        ShowEqCurve = checkBoxEqCurve.Checked
     };
 
     private void RaiseSettingsChanged()

@@ -683,6 +683,13 @@ to another entry and back restores the whole working context, not just the
 impulse response. Only a small rolling set of unsaved in-memory snapshots is
 retained.
 
+The list itself holds at most **30** entries. Past that the oldest `FILE` row is
+dropped — the file stays on disk untouched and opening it again brings the row
+back, with only the working state it had remembered lost. A `RAM` row is never
+dropped to make room for one: it is the measurement rather than a pointer to it,
+and it exists nowhere else. A store that arrives over depth, written before this
+was capped, is cut when it loads.
+
 ## Compare
 
 The **Compare** button overlays a second measurement on top of the current one,
@@ -1106,9 +1113,22 @@ frequency.
 The plot shows, on shared frequency/dB axes: **Source** (with optional extra
 smoothing), **Target**, **Source + EQ**, the **EQ** filter response itself (on
 its own right-hand dB axis), and a shaded **error fill**. Click a band card to
-overlay that band's contribution as a dashed curve. Each card carries its
+overlay that band's contribution as a dashed curve, with a dotted vertical guide
+at its frequency in the same colour. The curve says what the filter does and the
+guide says where it sits, which the curve is bad at: a low-Q bell is a shape an
+octave wide whose summit the eye places by guesswork, and a shelf or an all-pass
+has no summit to place at all. Both follow the card as it is edited, and the
+guide is drawn in the **Phase** view as well. Each card carries its
 **frequency**, **Q**, and **gain**, and the panel adds a **Target Level**, a
 **Gain** (preamp), a **Bands** count, source **Smoothing**, and **Bypass**.
+
+**EQ curve** draws the bank's own response — the white trace, in dB here and in
+degrees under **Phase**. Turning it off leaves the plot to the measurement and
+the target, which is what a crowded fit is read on; the filters keep working
+either way, and **Source + EQ** still carries them. The right-hand axis goes
+with the curve when nothing else is left on it: in the magnitude view it carries
+that curve alone, while in **Phase** every measured trace is on it and it stays.
+The choice is remembered between sessions.
 
 Every **frequency** field here — a card's own, and the **From** / **To** of the
 fit range — steps logarithmically: one wheel notch, spin-button click or arrow
@@ -2070,7 +2090,9 @@ various delimiters, and extra columns all handled.
 Beside it, **More calibrations → Manage...** holds any number of further
 calibrations, each with a name of your choosing:
 
-- a **file** — a second microphone, a different capsule, another chain;
+- a **file** — a second microphone, a different capsule, another chain. It
+  lands with the file's own name filled in and the row already open for renaming:
+  type over that suggestion, or keep it with Enter. **Rename** reopens it later;
 - an **angle** — a curve *estimated* for an angle of incidence between 0° and
   90°, derived from the 0° file (or from another file entry) plus the geometry
   of your microphone: the outer diameter of its front and whether the protection

@@ -354,6 +354,18 @@ public partial class EqWizardPanel
         }
     }
 
+    // Same rule for the right-hand axis, asked of the series rather than of the
+    // view: in magnitude it carries the EQ curve alone, so turning that curve off
+    // empties it, while in phase every measured curve is on it and it stays.
+    private void SetEqAxisVisible(bool visible)
+    {
+        if (plotWizard.Model?.Axes.FirstOrDefault(axis => axis.Key == EqGainAxisKey)
+            is { } eqAxis)
+        {
+            eqAxis.IsAxisVisible = visible;
+        }
+    }
+
     private void InvalidatePhaseCurves()
     {
         phaseOrchestrator.Invalidate();

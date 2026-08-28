@@ -1,3 +1,4 @@
+using System.Numerics;
 using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
@@ -103,6 +104,124 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
         Assert.Same(file.SplCalibration, snapshot.SplCalibration);
         Assert.Equal(108.0, snapshot.SplOffsetDb!.Value, tolerance: 1e-9);
         Assert.Same(file.SplCalibration, snapshot.ToImpulseResponseFile().SplCalibration);
+    }
+
+    [Fact]
+    public async Task TheListIsCappedAtItsMaximumDepth_OldestFirst()
+    {
+        MeasurementHistoryService service = CreateService();
+        var added = new List<Guid>();
+        for (int index = 0; index < MeasurementHistoryService.MaxHistoryEntries + 3; index++)
+        {
+            string path = await CreateImpulseResponseFileAsync($"m{index}.json");
+            added.Add(service.AddOrUpdateLoadedFile(
+                path,
+                await ImpulseResponseFile.LoadAsync(path),
+                new MeasurementSessionSnapshot()));
+        }
+
+        Assert.Equal(MeasurementHistoryService.MaxHistoryEntries, service.Entries.Count);
+        // The three that fell off are the three opened first, and the newest is
+        // still at the top: the cap cuts the tail, it does not reorder the list.
+        Assert.Null(service.FindById(added[0]));
+        Assert.Null(service.FindById(added[1]));
+        Assert.Null(service.FindById(added[2]));
+        Assert.NotNull(service.FindById(added[3]));
+        Assert.Equal(added[^1], service.Entries[0].Id);
+    }
+
+    [Fact]
+    public async Task OverDepth_AnUnsavedEntryOutlivesAnOlderSavedOne()
+    {
+        MeasurementHistoryService service = CreateService();
+        string firstPath = await CreateImpulseResponseFileAsync("first.json");
+        Guid oldestSaved = service.AddOrUpdateLoadedFile(
+            firstPath,
+            await ImpulseResponseFile.LoadAsync(firstPath),
+            new MeasurementSessionSnapshot());
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        Guid unsaved = service.AddMeasurement(measurement, new MeasurementSessionSnapshot());
+        for (int index = 0; index < MeasurementHistoryService.MaxHistoryEntries - 1; index++)
+        {
+            string path = await CreateImpulseResponseFileAsync($"filler{index}.json");
+            service.AddOrUpdateLoadedFile(
+                path,
+                await ImpulseResponseFile.LoadAsync(path),
+                new MeasurementSessionSnapshot());
+        }
+
+        Assert.Equal(MeasurementHistoryService.MaxHistoryEntries, service.Entries.Count);
+        // The unsaved row is older than every filler and would have gone first on a
+        // plain tail cut. It is the measurement itself — the saved row it displaced
+        // is a pointer to a file still on disk.
+        Assert.NotNull(service.FindById(unsaved));
+        Assert.Null(service.FindById(oldestSaved));
+    }
+
+    [Fact]
+    public void AStoreOverDepthIsCutWhenItLoads_AndTheCutReachesDisk()
+    {
+        string storePath = Path.Combine(directory, "measurement-history.json");
+        new MeasurementHistoryPersistence(storePath).Save(OverDepthEntries());
+
+        var service = new MeasurementHistoryService(new MeasurementHistoryPersistence(storePath));
+
+        Assert.Equal(MeasurementHistoryService.MaxHistoryEntries, service.Entries.Count);
+        // Rewritten on load, not at the next mutation: a session that only reads
+        // the history never saves it, and the cut would not survive the launch.
+        Assert.Equal(
+            MeasurementHistoryService.MaxHistoryEntries,
+            new MeasurementHistoryPersistence(storePath).Load().Count);
+    }
+
+    [Fact]
+    public void AStoreThatCannotBeRewrittenStillOpens()
+    {
+        string storePath = Path.Combine(directory, "measurement-history.json");
+        new MeasurementHistoryPersistence(storePath).Save(OverDepthEntries());
+        // The trim's write fails on this exactly as it would against a store held
+        // by another instance or marked read-only by the user's backup tool.
+        File.SetAttributes(storePath, FileAttributes.ReadOnly);
+        try
+        {
+            // The list is cut in memory whatever the disk does; the launch is not
+            // the place to report that the cut could not be persisted, and the next
+            // launch tries again.
+            var service = new MeasurementHistoryService(
+                new MeasurementHistoryPersistence(storePath));
+
+            Assert.Equal(MeasurementHistoryService.MaxHistoryEntries, service.Entries.Count);
+            Assert.Equal(
+                MeasurementHistoryService.MaxHistoryEntries + 5,
+                new MeasurementHistoryPersistence(storePath).Load().Count);
+        }
+        finally
+        {
+            File.SetAttributes(storePath, FileAttributes.Normal);
+        }
+    }
+
+    private List<MeasurementHistoryEntry> OverDepthEntries()
+    {
+        var stored = new List<MeasurementHistoryEntry>();
+        for (int index = 0; index < MeasurementHistoryService.MaxHistoryEntries + 5; index++)
+        {
+            string path = Path.Combine(directory, $"stored{index}.json");
+            File.WriteAllText(path, "{}");
+            stored.Add(MeasurementHistoryPersistenceTests.CreateEntry(path));
+        }
+
+        return stored;
+    }
+
+    private static ExpSweepMeasurement CreateMeasurement()
+    {
+        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            20, 20_000, 48_000, 24, 1.0, PlaybackChannel.Mono,
+            [Complex.Zero, Complex.One, Complex.Zero],
+            sweepDeconvolutionPeakIndex: 1);
+        return measurement;
     }
 
     private MeasurementHistoryService CreateService() =>

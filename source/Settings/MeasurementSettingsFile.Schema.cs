@@ -52,7 +52,6 @@ internal sealed partial class MeasurementSettingsFile
         // Two runs by default: averaging is what the Measurements control offers
         // (its minimum is 2), and a lone sweep gives nothing to average away.
         public int AverageRunCount { get; set; } = 2;
-        public bool ConfirmEachAverageRun { get; set; }
         public ProtectiveHighPassKind ProtectiveHighPassKind { get; set; }
         public double ProtectiveHighPassFrequencyHz { get; set; } = 2_000.0;
         public int ProtectiveHighPassSlopeDbPerOctave { get; set; } = 24;
@@ -194,7 +193,6 @@ internal sealed partial class MeasurementSettingsFile
                 AsioLoopbackInputChannelOffset = measurement.AsioLoopbackInputChannelOffset,
                 AsioOutputChannelOffset = measurement.AsioOutputChannelOffset,
                 AverageRunCount = measurement.AverageRunCount,
-                ConfirmEachAverageRun = measurement.ConfirmEachAverageRun,
                 ProtectiveHighPassKind = measurement.ProtectiveHighPass.Kind,
                 ProtectiveHighPassFrequencyHz = measurement.ProtectiveHighPass.FrequencyHz,
                 ProtectiveHighPassSlopeDbPerOctave =
@@ -408,9 +406,7 @@ internal sealed partial class MeasurementSettingsFile
                         ReachableInput(
                             AudioBackend.Asio, AsioDriverName, sampleRate, captureEndpointId),
                         ArrayMatchesDevice(AsioArrayDeviceId, AsioDriverName))),
-                new SweepAveragingConfiguration(
-                    Clamp(AverageRunCount, 1, 64),
-                    ConfirmEachAverageRun),
+                new SweepAveragingConfiguration(Clamp(AverageRunCount, 1, 64)),
                 ToProtectiveHighPass());
         }
 
@@ -699,6 +695,12 @@ internal sealed partial class MeasurementSettingsFile
         // Auto Tune only cuts, never boosts. The safe default for a car tune; see
         // EqAutoTuner.Options.CutsOnlyMode.
         public bool CutsOnly { get; set; } = true;
+
+        // Whether the bank's own response is drawn on the plot's right-hand axis.
+        // A view preference, persisted the way the Impulse view persists which of
+        // its curves are shown: a user who cleared the plot of it does not want it
+        // back on the next launch.
+        public bool ShowEqCurve { get; set; } = true;
     }
 
     internal sealed class ImpulseResponseSettings

@@ -312,12 +312,7 @@ public partial class Form1
     {
         TryBeginInvokeOnUiThread(() =>
         {
-            buttonRecord.Text = progress.State switch
-            {
-                SweepAverageProgressState.WaitingForConfirmation =>
-                    $"Next run ({progress.CurrentRun + 1}/{progress.TotalRuns})",
-                _ => $"Running {progress.CurrentRun}/{progress.TotalRuns}..."
-            };
+            buttonRecord.Text = $"Running {progress.CurrentRun}/{progress.TotalRuns}...";
         });
     }
 

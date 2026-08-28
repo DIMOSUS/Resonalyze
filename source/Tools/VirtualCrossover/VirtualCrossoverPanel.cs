@@ -204,7 +204,6 @@ public partial class VirtualCrossoverPanel : UserControl
             processingCoordinator,
             BuildMagnitudeCurve,
             CalibrationFor,
-            CalibrationForSum,
             BuildMeasuredSumCurve);
         acousticPlot = new VirtualCrossoverAcousticPlot(
             mainPlotView, NoSourcesHint, CurrentAcousticView());
@@ -293,37 +292,6 @@ public partial class VirtualCrossoverPanel : UserControl
         ownCalibrationSelected
             ? SpatialAverageCalibration.Own
             : SpatialAverageCalibration.Specific(Calibration);
-
-    /// <summary>
-    /// The calibration a SUM of these channels is drawn through: theirs, when they
-    /// agree, and none when they do not.
-    /// </summary>
-    /// <remarks>
-    /// A correction is subtracted from the summed magnitude, and one subtraction
-    /// cannot undo two microphones. Channels measured through different capsules
-    /// therefore have no single answer here, and none is the answer that adds nothing
-    /// false. The panel says so out loud, because a sum quietly drawn uncorrected
-    /// beside corrected channels is exactly the kind of plausible curve this tool
-    /// must not produce.
-    /// </remarks>
-    private CalibrationFile? CalibrationForSum(IReadOnlyList<ProcessedChannel> channels)
-    {
-        if (!ownCalibrationSelected)
-        {
-            return Calibration;
-        }
-
-        CalibrationFile? first = channels.Count > 0 ? channels[0].MicrophoneCalibration : null;
-        foreach (ProcessedChannel channel in channels)
-        {
-            if (!CalibrationFile.SameCurve(channel.MicrophoneCalibration, first))
-            {
-                return null;
-            }
-        }
-
-        return first;
-    }
 
     // Resolves a calibration by id; supplied by the host form, which owns the
     // configured calibrations. Null until the host wires it.
@@ -650,6 +618,13 @@ public partial class VirtualCrossoverPanel : UserControl
             (channel, rightSide) =>
                 ResolveSourceAsync(channel, rightSide, showErrors: false),
             UpdateSourceButton);
+
+        // After the sources, because an array arrives with one: a project that has
+        // never chosen a method chooses here, once, from everything it actually has.
+        if (SettleSpatialAverageMode())
+        {
+            ScheduleSave();
+        }
 
         UpdateSideRadioTexts();
         // The final redraw is issued by ApplyProjectAsync after the loading
@@ -1958,6 +1933,9 @@ public partial class VirtualCrossoverPanel : UserControl
         VirtualCrossoverSourceReference reference)
     {
         reference.ApplyTo(settings);
+        // A measurement can bring an array with it, and for a project that has never
+        // chosen a method this is the moment it does.
+        SettleSpatialAverageMode();
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
         ScheduleSave();
@@ -3592,9 +3570,9 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // Louder than the array note below it, because it is about the SUM: the
-        // channels are each corrected and their total is not, so the gap between them
-        // is not the summation it looks like.
+        // Louder than the array note below it: the plot is reading more than one
+        // microphone, and a difference between two channels then holds the difference
+        // between their capsules too.
         if (DescribeOwnCalibrationMismatch(processed) is { } corrections)
         {
             ShowWarning(
@@ -3750,11 +3728,14 @@ public partial class VirtualCrossoverPanel : UserControl
     /// under every other selection, where one curve corrects everything by definition.
     /// </summary>
     /// <remarks>
-    /// A correction is subtracted from a magnitude, and one subtraction cannot undo
-    /// two microphones — so the SUM of such a set is drawn with none, while every
-    /// channel in it is drawn with its own. Nothing on the plot shows that: the sum
-    /// simply sits a little away from where the channels put it, which reads as
-    /// summation loss and is not.
+    /// A statement about the DATA, not a defect any more. The sum used to be drawn
+    /// through no correction here, because one subtraction cannot undo two
+    /// microphones — and the gap that left between it and the channels read as
+    /// summation loss and fed the loss read-outs. Each channel now carries its own
+    /// correction INTO the sum (see <see cref="BuildMeasuredSumCurve"/>), which is
+    /// what the physics asks for: the pressure is HᵢCᵢ and the total is Σ HᵢCᵢ. What
+    /// remains is worth saying once — the plot is reading more than one microphone —
+    /// without telling the user to fix something that is no longer broken.
     /// </remarks>
     private string? DescribeOwnCalibrationMismatch(IReadOnlyList<ProcessedChannel> processed)
     {
@@ -3783,10 +3764,13 @@ public partial class VirtualCrossoverPanel : UserControl
             $"{Describe(processed[0].MicrophoneCalibration)}, and " +
             $"{string.Join(", ", differing)} through something else. Each channel is " +
             "drawn through its own correction, which is what \"Own (as measured)\" " +
-            "means — but their SUM is drawn through none, because one correction " +
-            "cannot undo two microphones. Pick one calibration above to make the sum " +
-            "comparable again, at the cost of reading every channel through a " +
-            "microphone that did not measure it.";
+            "means, and the sum carries each channel's correction with it — so the " +
+            "sum and the summation loss are honest. What they are not is one " +
+            "instrument: the curves are being compared across microphones, and a " +
+            "difference between two channels holds the difference between their " +
+            "capsules as well. Pick one calibration above to read the whole plot " +
+            "through a single microphone, at the cost of reading every channel " +
+            "through one that did not measure it.";
 
         static string Describe(CalibrationFile? calibration) =>
             calibration is { HasData: true } ? "a calibration" : "no calibration";
@@ -5025,8 +5009,7 @@ public partial class VirtualCrossoverPanel : UserControl
             side.Channels,
             side.AnchorIndex,
             snapshot.ResolveGateOffsetMs(
-                oppositeSide: true, side.AnchorIndex, side.SampleRate),
-            CalibrationForSum(side.Channels)).Display;
+                oppositeSide: true, side.AnchorIndex, side.SampleRate)).Display;
     }
 
     /// <summary>
@@ -5067,8 +5050,7 @@ public partial class VirtualCrossoverPanel : UserControl
         double gateOffsetMs = snapshot.ResolveGateOffsetMs(
             oppositeSide: true, side.AnchorIndex, side.SampleRate);
         GatedMagnitude sum = BuildMeasuredSumCurve(
-            snapshot, side.Channels, side.AnchorIndex, gateOffsetMs,
-            CalibrationForSum(side.Channels));
+            snapshot, side.Channels, side.AnchorIndex, gateOffsetMs);
         var channelMagnitudes = new List<GatedMagnitude>(side.Channels.Count);
         foreach (ProcessedChannel item in side.Channels)
         {
@@ -5201,22 +5183,31 @@ public partial class VirtualCrossoverPanel : UserControl
             snapshot.ResolveGateOffsetMs(
                 oppositeSide: false,
                 anchorIndex,
-                channels.Count > 0 ? channels[0].SampleRate : 0),
-            CalibrationForSum(channels));
+                channels.Count > 0 ? channels[0].SampleRate : 0));
     }
 
+    /// <remarks>
+    /// Each channel brings its OWN correction, which is what the channel curves are
+    /// drawn through. Under one microphone they are one curve and the sum applies it
+    /// once at the end, exactly as before; under "Own (as measured)" with channels
+    /// measured through different microphones they are not, and the correction has to
+    /// go inside the sum — the pressure is HᵢCᵢ and the total is Σ HᵢCᵢ. One
+    /// correction outside the sum cannot undo two microphones, and leaving it out
+    /// drew a raw total beside corrected channels: a gap that reads as summation loss,
+    /// feeds the average and minimum loss read-outs, and is not loss at all.
+    /// </remarks>
     private GatedMagnitude BuildMeasuredSumCurve(
         MagnitudeGateSnapshot snapshot,
         IReadOnlyList<ProcessedChannel> channels,
         int anchorIndex,
-        double gateOffsetMs,
-        CalibrationFile? calibration)
+        double gateOffsetMs)
     {
         PhaseAnalysisSettings gate = snapshot.Template with
         {
             GateOffsetMs = gateOffsetMs
         };
         var views = new List<IImpulseMeasurement>(channels.Count);
+        var calibrations = new List<CalibrationFile?>(channels.Count);
         foreach (ProcessedChannel channel in channels)
         {
             views.Add(new ImpulseMeasurementView(
@@ -5225,11 +5216,12 @@ public partial class VirtualCrossoverPanel : UserControl
                 LowestMeasuredFrequencyHz = channel.MeasuredBand.LowEdgeHz,
                 HighestMeasuredFrequencyHz = channel.MeasuredBand.HighEdgeHz
             });
+            calibrations.Add(CalibrationFor(channel));
         }
 
         (AnalysisCurve display, AnalysisCurve unsmoothed) =
             DataHelper.GetGatedMeasuredMagnitudeSumPair(
-                views, gate, calibration, snapshot.SmoothingInverseOctaves);
+                views, gate, calibrations, snapshot.SmoothingInverseOctaves);
         // Where NO channel measured the total came out zero rather than as a level,
         // and a hole between two channels' bands is not something their outer edges
         // can express in the first place.
@@ -6421,8 +6413,7 @@ public partial class VirtualCrossoverPanel : UserControl
             processed,
             overlayAnchor,
             overlayGate.ResolveGateOffsetMs(
-                oppositeSide: false, overlayAnchor, processed[0].SampleRate),
-            CalibrationForSum(processed)).Display;
+                oppositeSide: false, overlayAnchor, processed[0].SampleRate)).Display;
 
         string title = "vDSP Sum " + string.Join(
             "+",

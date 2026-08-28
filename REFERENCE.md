@@ -336,9 +336,18 @@ another microphone already holds — the selected row's own input is offered so 
 calibration can be changed without moving it, and that is not an input a second
 microphone may take.
 
-The array belongs to the backend it was configured on, and the measurement
-microphone or the loopback can be moved onto one of its inputs afterwards, in a
-different part of the panel. Such a position cannot be recorded; it is named
+The array belongs to the **device** it was configured on, not just to the backend.
+A channel number names a different input on each backend, and two interfaces with
+eight inputs each agree about every number and about nothing else — so an array
+carried across them would keep its calibrations and its notes while pointing at
+inputs nobody chose, and the measurement would succeed with curves that look
+entirely ordinary. Select a different capture device and the button says how many
+microphones are configured **and which device for**; nothing is recorded until you
+open the list and confirm it, which re-binds the array to the device selected now.
+Nothing is thrown away in the meantime.
+
+The measurement microphone or the loopback can be moved onto one of the array's
+inputs afterwards, in a different part of the panel. Such a position cannot be recorded; it is named
 rather than dropped in silence — the **Array...** button counts it as unusable and
 the dialog says which input the measurement took.
 
@@ -1461,7 +1470,14 @@ A measurement recorded with a [microphone array](#microphone-array) brings its o
 average, so nothing has to be attached: the button reads **Array** and its menu
 chooses which average the project reads — the arrays the measurements carry, the
 moving-microphone captures attached by hand, or none at all. The choice is the
-project's, not the channel's, because a set drawn two ways is not one set. A
+project's, not the channel's, because a set drawn two ways is not one set. It is
+also made **once**: a project that has never chosen takes the method its first
+spatial average implies and keeps it, attachments winning over arrays where both
+are present. Deciding it live from what the project currently holds meant a session
+written before arrays existed would flip its whole method the moment one new
+measurement carrying an array was loaded — the attachments then went unread, and
+every channel without an array quietly fell back to its point response. Use the menu
+to change it; nothing else does. A
 channel with no array in an array project is drawn from its own point measurement
 instead, and says so: the plot notes how many channels that is, the channel's own
 tooltip explains what it costs, and the note travels to the EQ Wizard with the
@@ -1751,14 +1767,20 @@ passed through would be the panel deciding what the measurement means. A project
 written before this existed names no calibration anywhere, so its own selection
 still applies and nothing about it changes.
 
-Under Own the **sum** is the one curve that can be left uncorrected. A correction is
-subtracted from a magnitude, and one subtraction cannot undo two microphones, so a
-sum of channels that disagree about their calibration carries none — and the panel
-says so, because a sum sitting a little away from where its channels put it reads as
-summation loss and is not. Channels that agree — one microphone, one cabin, one
-afternoon, which is the ordinary case — hand their common correction to the sum as
-usual. The EQ Wizard handoff follows the channel, so a tune is fitted through the
-same correction the panel drew it with.
+Under Own the **sum** carries each channel's own correction INTO it. What a
+microphone measured is the response times its calibration, so the total is the sum
+of the corrected channels — Σ HᵢCᵢ, not one correction applied to a raw total. The
+two are the same thing when one microphone measured everything, and there the
+correction is still applied once at the end, where the channel curves apply theirs,
+so the summation loss that divides one by the other cancels it exactly. They are not
+the same thing when the channels were measured through different microphones: one
+subtraction cannot undo two, and the sum was left raw beside corrected channels. The
+gap read as summation loss, and fed the average and minimum loss read-outs a tune is
+fitted against. The panel still notes a set measured through more than one
+microphone — the curves are being compared across instruments, so a difference
+between two channels holds the difference between their capsules as well — but the
+sum and the loss are now honest. The EQ Wizard handoff follows the channel, so a tune
+is fitted through the same correction the panel drew it with.
 
 A **spatial average** attached to a channel answers for itself under Own, whichever
 selection the rest of the panel is on. A moving-microphone pass was a measurement of

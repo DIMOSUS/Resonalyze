@@ -24,7 +24,6 @@ internal sealed class VirtualCrossoverMetrics
     // MEASUREMENT and not of the project: one channel's file may name a calibration
     // its neighbour's does not, and a sum of two such channels names neither.
     private readonly Func<ProcessedChannel, CalibrationFile?> channelCalibration;
-    private readonly Func<IReadOnlyList<ProcessedChannel>, CalibrationFile?> sumCalibration;
 
     // The SUM is not the gated total of the summed responses, though the arithmetic
     // says it is: one shared window makes the transform linear, so that total carries
@@ -38,7 +37,6 @@ internal sealed class VirtualCrossoverMetrics
         Func<Complex[], int, int, MeasuredBand, CalibrationFile?, GatedMagnitude>
             buildMagnitudeCurve,
         Func<ProcessedChannel, CalibrationFile?>? channelCalibration = null,
-        Func<IReadOnlyList<ProcessedChannel>, CalibrationFile?>? sumCalibration = null,
         Func<IReadOnlyList<ProcessedChannel>, int, GatedMagnitude>? buildSumCurve = null)
     {
         this.coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
@@ -48,7 +46,6 @@ internal sealed class VirtualCrossoverMetrics
         // microphone to correct for, and the metric is a comparison between curves
         // built the same way rather than an absolute reading.
         this.channelCalibration = channelCalibration ?? (_ => null);
-        this.sumCalibration = sumCalibration ?? (_ => null);
         this.buildSumCurve = buildSumCurve;
     }
 
@@ -110,11 +107,14 @@ internal sealed class VirtualCrossoverMetrics
             return (magnitudes.Select(curve => curve.Display).ToList(), null, null);
         }
 
-        // Each channel contributing only where it measured, then added as phasors.
-        // Without a builder — a caller that only wants the metric arithmetic — the
-        // old total stands: the sum plays wherever ANY of its channels does, so its
-        // band is the UNION of theirs, and the per-frequency mask covers a hole
-        // between two channels whose sweeps do not overlap.
+        // Each channel contributing only where it measured, then added as phasors,
+        // each through its OWN microphone correction. Without a builder — a caller
+        // that only wants the metric arithmetic — the old total stands: the sum plays
+        // wherever ANY of its channels does, so its band is the UNION of theirs, and
+        // the per-frequency mask covers a hole between two channels whose sweeps do
+        // not overlap. That fallback sums impulse responses in the time domain, so it
+        // has nowhere to put a per-channel correction and takes none; it is not a
+        // path the panel uses.
         GatedMagnitude sumCurve = buildSumCurve?.Invoke(processed, anchor)
             ?? buildMagnitudeCurve(
                 VirtualCrossoverAnalysis.SumImpulseResponses(
@@ -122,7 +122,7 @@ internal sealed class VirtualCrossoverMetrics
                 anchor,
                 processed[0].SampleRate,
                 ProcessedChannels.UnionOfMeasuredBands(processed),
-                sumCalibration(processed))
+                null)
                 .MeasuredBySomeChannel(processed);
         List<IReadOnlyList<SignalPoint>> operands = magnitudes
             .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)

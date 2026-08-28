@@ -16,10 +16,13 @@ namespace Resonalyze.App.Tests;
 /// to: a project whose channels were measured on different days with different
 /// microphones had the same problem, less visibly.
 /// <para>
-/// What the panel must not do is quietly average the difference away. A SUM is one
-/// magnitude, and one correction subtracted from it cannot undo two microphones —
-/// so channels that disagree leave their sum uncorrected, and that is said out loud
-/// rather than left to look like summation loss.
+/// What the panel must not do is quietly average the difference away. A SUM used to
+/// be one magnitude with one correction subtracted from it, which cannot undo two
+/// microphones — so a set that disagreed was summed RAW beside corrected channels,
+/// and the gap between them read as summation loss. Each channel now carries its own
+/// correction INTO the sum (pinned in <c>MeasuredSumTests</c>, where the arithmetic
+/// is); what is left to say here is that the plot is reading more than one
+/// microphone.
 /// </para>
 /// </remarks>
 public sealed class VirtualCrossoverOwnCalibrationTests
@@ -126,17 +129,6 @@ public sealed class VirtualCrossoverOwnCalibrationTests
     }
 
     [Fact]
-    public void ASumOfAgreeingChannelsKeepsTheirCalibration()
-    {
-        IReadOnlyList<ProcessedChannel> channels =
-            [Channel("left", CapsuleA), Channel("right", CapsuleA)];
-
-        Assert.Same(
-            CapsuleA,
-            Invoke<CalibrationFile?>(Panel(own: true), "CalibrationForSum", channels));
-    }
-
-    [Fact]
     public void ANamedCalibrationAnAggregateCannotTakeIsSaidOutLoud()
     {
         // A capture of several capsules has an aggregate correction belonging to no
@@ -187,20 +179,20 @@ public sealed class VirtualCrossoverOwnCalibrationTests
     }
 
     [Fact]
-    public void ASumOfDisagreeingChannelsKeepsNoneAndSaysSo()
+    public void ChannelsMeasuredThroughDifferentMicrophonesAreSaidOutLoud()
     {
-        // One subtraction cannot undo two microphones, so the sum carries none — and
-        // silence here would read as summation loss, which is exactly what it is not.
+        // The sum is honest now, and the note says what is still true: the curves are
+        // being compared across microphones, so a difference between two channels
+        // holds the difference between their capsules as well.
         IReadOnlyList<ProcessedChannel> channels =
             [Channel("left", CapsuleA), Channel("right", CapsuleB)];
         object panel = Panel(own: true);
 
-        Assert.Null(Invoke<CalibrationFile?>(panel, "CalibrationForSum", channels));
-
         string? notice = Invoke<string?>(panel, "DescribeOwnCalibrationMismatch", channels);
         Assert.NotNull(notice);
         Assert.Contains("right", notice!);
-        Assert.Contains("their SUM is drawn through none", notice);
+        Assert.Contains("the sum carries each channel's correction with it", notice);
+        Assert.DoesNotContain("drawn through none", notice);
 
         // Nothing to say when they agree, and nothing to say under a selection that
         // corrects everything with one curve by definition.

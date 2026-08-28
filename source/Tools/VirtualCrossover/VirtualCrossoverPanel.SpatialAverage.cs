@@ -120,20 +120,57 @@ public partial class VirtualCrossoverPanel
 {
     /// <summary>
     /// Which spatial average this project reads: the stored choice, or — for a
-    /// project that has never made one — the array its measurements brought with
-    /// them, falling back to the attached captures.
+    /// project that has nothing stored and nothing attached yet — a fallback that
+    /// <see cref="SettleSpatialAverageMode"/> replaces with a stored choice the
+    /// moment the project has anything to guess from.
     /// </summary>
-    /// <remarks>
-    /// The array wins the guess because it arrives WITH the measurement: a user who
-    /// recorded one has already said what they wanted, and making them find a menu
-    /// to see it would be asking twice. A project written before arrays existed
-    /// carries attachments and no array, so the same rule leaves it exactly as it
-    /// was.
-    /// </remarks>
     internal VirtualCrossoverSpatialAverageMode SpatialAverageMode =>
         project.SpatialAverageMode ?? (HasAnyArrayCapture()
             ? VirtualCrossoverSpatialAverageMode.MicArray
             : VirtualCrossoverSpatialAverageMode.MovingMic);
+
+    /// <summary>
+    /// Stores the guessed method the first time the project has any spatial average
+    /// to guess from. True when it wrote one, so the caller can persist.
+    /// </summary>
+    /// <remarks>
+    /// The guess has to be made ONCE and kept, because it is the answer to "where do
+    /// the levels come from" for the whole project — and computing it live made it
+    /// change under a project that never chose. A session written before arrays
+    /// existed carries attachments and no stored mode; loading a single new
+    /// measurement that happens to carry an array flipped the whole project to the
+    /// array method, at which point the attachments went unread and every channel
+    /// without an array quietly fell back to its point response. The user changed
+    /// one channel's source and the source of every channel's levels changed.
+    /// <para>
+    /// Attachments win when both are present, for the same reason: they can only
+    /// have been put there deliberately, and by a build that had no arrays to offer.
+    /// A project with nothing attached at all is left unstored, so the first
+    /// measurement to arrive still gets to decide — an array arrives WITH the
+    /// measurement, and asking a user who just recorded one to find a menu would be
+    /// asking twice.
+    /// </para>
+    /// </remarks>
+    private bool SettleSpatialAverageMode()
+    {
+        if (project.SpatialAverageMode != null)
+        {
+            return false;
+        }
+
+        bool attachments = channels.Any(channel =>
+            channel.SideState(false).SpatialAverage != null ||
+            channel.SideState(true).SpatialAverage != null);
+        if (!attachments && !HasAnyArrayCapture())
+        {
+            return false;
+        }
+
+        project.SpatialAverageMode = attachments
+            ? VirtualCrossoverSpatialAverageMode.MovingMic
+            : VirtualCrossoverSpatialAverageMode.MicArray;
+        return true;
+    }
 
     private bool HasAnyArrayCapture() =>
         channels.Any(channel =>
@@ -257,6 +294,9 @@ public partial class VirtualCrossoverPanel
 
     private void OnSpatialAverageChanged(VirtualCrossoverChannel channel)
     {
+        // The first attachment is what a project with no stored method is waiting
+        // for; from here the method is the project's own and cannot drift.
+        SettleSpatialAverageMode();
         RefreshSpatialAverageStatus(channel);
         RefreshHybridAvailability();
         // The attachment is session state, so it travels with the session — the whole

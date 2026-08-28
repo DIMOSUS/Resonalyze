@@ -281,30 +281,60 @@ namespace Resonalyze.Dsp
         /// rather than as a level; the caller breaks those frequencies, which it must
         /// do anyway for a hole its channels' band edges cannot express.
         /// </para>
+        /// <para>
+        /// <paramref name="calibrations"/> is one correction per channel, because the
+        /// pressure a microphone measured is the response TIMES its calibration and
+        /// the sum is taken over the pressures: Σ HᵢCᵢ, not C·ΣHᵢ. The two agree
+        /// exactly when one microphone measured everything, which is the ordinary
+        /// case, and that case still applies the correction once at the end — where
+        /// the per-channel curves apply theirs, so the summation loss that divides one
+        /// by the other cancels it exactly. They part when the channels were measured
+        /// through DIFFERENT microphones, and there the correction has to go inside
+        /// the sum: a single one cannot undo two microphones, and leaving it out drew
+        /// a raw total beside corrected channels, whose difference reads as summation
+        /// loss and is not.
+        /// </para>
         /// </remarks>
         public static (AnalysisCurve Display, AnalysisCurve Unsmoothed)
             GetGatedMeasuredMagnitudeSumPair(
                 IReadOnlyList<IImpulseMeasurement> channels,
                 PhaseAnalysisSettings settings,
-                CalibrationFile? calibration,
+                IReadOnlyList<CalibrationFile?> calibrations,
                 double smoothingInverseOctaves)
         {
             ArgumentNullException.ThrowIfNull(channels);
+            ArgumentNullException.ThrowIfNull(calibrations);
+            if (channels.Count != calibrations.Count)
+            {
+                throw new ArgumentException(
+                    "Every channel needs its own calibration entry.",
+                    nameof(calibrations));
+            }
             if (channels.Count == 0)
             {
                 AnalysisCurve empty = new(string.Empty, []);
                 return (empty, empty);
             }
 
+            // One microphone measured everything: keep the correction out of the sum
+            // and let the resample apply it, exactly as before and exactly as the
+            // channel curves do.
+            bool shared = calibrations.All(
+                entry => CalibrationFile.SameCurve(entry, calibrations[0]));
+            CalibrationFile? calibration = shared ? calibrations[0] : null;
+
             Complex[]? total = null;
             int sampleRate = 0;
-            foreach (IImpulseMeasurement measurement in channels)
+            for (int channel = 0; channel < channels.Count; channel++)
             {
+                IImpulseMeasurement measurement = channels[channel];
                 Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
                 total ??= new Complex[spectrum.Length];
                 sampleRate = measurement.SampleRate;
                 double lowest = measurement.LowestMeasuredFrequencyHz;
                 double highest = measurement.HighestMeasuredFrequencyHz;
+                // Null in the shared case, where the resample applies it instead.
+                CalibrationFile? own = shared ? null : calibrations[channel];
                 int usable = Math.Min(total.Length, spectrum.Length);
                 for (int i = 1; i < usable / 2; i++)
                 {
@@ -315,7 +345,10 @@ namespace Resonalyze.Dsp
                         continue;
                     }
 
-                    total[i] += spectrum[i];
+                    total[i] += own == null
+                        ? spectrum[i]
+                        : spectrum[i] * DecibelsToAmplitude(
+                            -own.GetDecibelCorrection(frequency));
                 }
             }
 

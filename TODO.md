@@ -167,6 +167,19 @@ close.
 
 ## Measurement orchestrators
 
+- [ ] **Nothing records where an array STOOD.** A set of measurements is judged
+  compatible on what the arrays were made of — the number of positions and their
+  calibrations — and that cannot see the case worth seeing: the same seven
+  microphones, the same files, the rig lifted and set down somewhere else between
+  two channels. Both measurements are then honest averages of different listening
+  volumes, and every check passes. Raised in review with a persisted
+  `ArrayLayoutId` as the cure, shared by a series and renewed when the rig moves.
+  The obstacle is that nothing in the app can DERIVE it: moving the array does not
+  change its configuration, so the id can only come from the user saying so, which
+  makes this a new concept in the record settings and the file format rather than a
+  check that was left out. File-format work, and it should carry the placement
+  itself (where the rig was) rather than an opaque id, so a session opened later
+  says something a human can read.
 - [ ] ★ **An averaged measurement holds every run's raw capture in memory,
   and an array multiplies that by the number of positions.**
   `SweepAverageAccumulator` keeps a `TransferFunctionFrame` per microphone per

@@ -54,6 +54,10 @@ namespace Resonalyze.Options
         private List<MicrophoneCalibrationDefinition> additionalMicrophoneCalibrations = [];
         private List<ArrayMicrophoneDefinition> waveArrayMicrophones = [];
         private List<ArrayMicrophoneDefinition> asioArrayMicrophones = [];
+        // The device each array was configured on. Null until the array is next
+        // edited; see MeasurementSettingsFile.ArrayMatchesDevice.
+        private string? waveArrayDeviceId;
+        private string? asioArrayDeviceId;
         // The SPL calibration anchor and the factory used to capture it. The
         // factory is only present when the form is created for real use (the
         // parameterless designer constructor leaves it null, which disables the
@@ -456,6 +460,8 @@ namespace Resonalyze.Options
             asioArrayMicrophones = settings.AsioArrayMicrophones
                 .Select(definition => definition.Clone())
                 .ToList();
+            waveArrayDeviceId = settings.WaveArrayDeviceId;
+            asioArrayDeviceId = settings.AsioArrayDeviceId;
             splCalibration = settings.SplCalibration;
             UpdateCalibrationButtons();
             // The button's own refresh happens in the UpdateAudioBackendControls
@@ -488,6 +494,8 @@ namespace Resonalyze.Options
             settings.AsioArrayMicrophones = asioArrayMicrophones
                 .Select(definition => definition.Clone())
                 .ToList();
+            settings.WaveArrayDeviceId = waveArrayDeviceId;
+            settings.AsioArrayDeviceId = asioArrayDeviceId;
             settings.SplCalibration = splCalibration;
 
             int sampleRate = GetSelectedSampleRate();
@@ -727,6 +735,8 @@ namespace Resonalyze.Options
             settings.AsioArrayMicrophones = asioArrayMicrophones
                 .Select(definition => definition.Clone())
                 .ToList();
+            settings.WaveArrayDeviceId = waveArrayDeviceId;
+            settings.AsioArrayDeviceId = asioArrayDeviceId;
         }
 
         // The duration field holds a per-octave pace; expand it to the total sweep
@@ -833,6 +843,55 @@ namespace Resonalyze.Options
                 ? asioArrayMicrophones
                 : waveArrayMicrophones;
 
+        // ...and to the DEVICE, which the backend does not narrow down. Two
+        // interfaces with eight inputs each agree about every channel NUMBER and
+        // about nothing else, so an array carried across them keeps its
+        // calibrations and its notes while pointing at inputs nobody chose.
+        private string? SelectedArrayDeviceId =>
+            SelectedAudioBackend == AudioBackend.Asio
+                ? asioArrayDeviceId
+                : waveArrayDeviceId;
+
+        // What the array would be stamped with if it were configured right now.
+        private string? CurrentCaptureDeviceId =>
+            SelectedAudioBackend == AudioBackend.Asio
+                ? (comboBoxAsioDriver.SelectedItem as AsioDeviceInfo)?.DriverName
+                : (comboBoxRecordingDevice.SelectedItem as AudioEndpointDescriptor)?.Id
+                    ?? preferredWasapiCaptureEndpointId;
+
+        // The same verdict the settings reach, so the panel is not a second opinion.
+        private bool SelectedArrayMatchesDevice =>
+            MeasurementSettingsFile.SweepMeasurementSettings.ArrayMatchesDevice(
+                SelectedArrayDeviceId,
+                CurrentCaptureDeviceId);
+
+        // The name to show for the device an array was configured on, when it is not
+        // this one. An ASIO stamp IS the driver name; a WASAPI stamp is an endpoint
+        // id, which is unreadable, so the list is asked for its name.
+        private string DescribeArrayDevice()
+        {
+            string? id = SelectedArrayDeviceId;
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return "another device";
+            }
+            if (SelectedAudioBackend == AudioBackend.Asio)
+            {
+                return id;
+            }
+
+            foreach (object? item in comboBoxRecordingDevice.Items)
+            {
+                if (item is AudioEndpointDescriptor endpoint &&
+                    string.Equals(endpoint.Id, id, StringComparison.Ordinal))
+                {
+                    return endpoint.DisplayName;
+                }
+            }
+
+            return "another device";
+        }
+
         /// <summary>
         /// Every input the selected backend can record, and where that list comes
         /// from — the second half matters because "there is no room for an array"
@@ -886,13 +945,17 @@ namespace Resonalyze.Options
             List<ArrayMicrophoneDefinition> edited = dialog.Microphones
                 .Select(microphone => microphone.Clone())
                 .ToList();
+            // Confirming the dialog is the confirmation: whatever the list said
+            // before, these inputs are now meant for the device selected now.
             if (asio)
             {
                 asioArrayMicrophones = edited;
+                asioArrayDeviceId = CurrentCaptureDeviceId;
             }
             else
             {
                 waveArrayMicrophones = edited;
+                waveArrayDeviceId = CurrentCaptureDeviceId;
             }
 
             UpdateArrayMicrophoneButton();
@@ -906,6 +969,16 @@ namespace Resonalyze.Options
         private void UpdateArrayMicrophoneButton()
         {
             int count = SelectedArrayMicrophones.Count;
+            if (count > 0 && !SelectedArrayMatchesDevice)
+            {
+                // Not a count, because none of them would be recorded. Naming the
+                // device it belongs to is the whole message: the inputs are still
+                // there, so nothing else on this panel would look wrong.
+                buttonArrayMicrophones.Text =
+                    $"{count} on {DescribeArrayDevice()}...";
+                return;
+            }
+
             int usable = UsableArrayMicrophoneCount();
             string suffix = usable == count ? string.Empty : $" ({count - usable} unusable)";
             buttonArrayMicrophones.Text = count == 0
@@ -927,7 +1000,7 @@ namespace Resonalyze.Options
         /// than left to be noticed as a curve that never appeared.
         /// </remarks>
         private int UsableArrayMicrophoneCount() =>
-            SelectedReachableArrayChannels().Count;
+            SelectedArrayMatchesDevice ? SelectedReachableArrayChannels().Count : 0;
 
         private void buttonClearCalibration0_Click(object? sender, EventArgs e)
         {

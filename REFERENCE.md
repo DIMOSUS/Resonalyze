@@ -371,9 +371,29 @@ before the positions are averaged. Different capsules at different preamp gains
 differ in sensitivity, and averaging that in would be averaging in the microphones
 rather than the room. The cost is that a genuine broadband level difference between
 two positions is removed along with it — one number per microphone cannot tell the
-two apart. Measured on real seven-position sets the trims run from −1.8 to +2.6 dB,
-and the shape of the average lands within 0.04 to 0.24 dB of a pure power average
-of the same positions.
+two apart. Measured on the owner's two real seven-position sets — a midrange and a
+tweeter, each with a moving-microphone pass of the same driver beside it — the trims
+run from −1.4 to +1.6 dB, and what they cost is small: against a pure power average
+of the same positions the trimmed one differs by 0.2 to 0.4 dB of LEVEL, which the
+impulse response's own offset re-anchors downstream, and by 0.14 to 0.32 dB rms of
+SHAPE (0.36 to 1.01 dB at the worst single band), which is what a tune is fitted to.
+
+**How close it gets to a moving microphone** was measured on those same two sets,
+against a pass of the same driver taken in the same session. Band by band the array
+average lands within a median of 0.77 dB (midrange) and 1.00 dB (tweeter) of the
+pass, 1.38 and 1.54 dB rms. That scatter is the sampling error of seven positions
+and nothing else: their deviations are independent above 200 Hz — the mean
+correlation between any two measures −0.11 to −0.13, against the −0.167 exact
+independence gives for seven — so no spatial structure is left between them to
+exploit. It comes down with the width it is read at: 0.74 and 0.67 dB rms at 1/6
+octave, 0.63 and 0.49 at 1/3, with 12% and 3% of the band beyond a decibel. Below
+that only more positions help, and the error falls as the square root of their
+number.
+
+The **power** mean is what earns those figures. Averaging the same positions in
+decibels instead — a geometric mean of pressure — sits 1.18 dB (midrange) and
+1.59 dB (tweeter) BELOW the moving microphone, because a set of positions half of
+which are in a null reads far under the energy actually present.
 
 An average needs **two** positions at the least. If every further microphone failed
 to record, what is left is the measurement microphone alone — that is the point

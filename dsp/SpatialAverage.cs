@@ -195,11 +195,11 @@ public static class SpatialAverage
     /// positions rather than of the field as it stands, and the difference is real:
     /// two positions at 70 and 76 dB average to 74 dB as pressure and to 70 dB here.
     /// It is deliberate — the microphones are different capsules and a sensitivity
-    /// difference is not sound — and it was measured before it was kept. Across the
-    /// owner's seven-position sets the trims run from −1.8 to +2.6 dB, and against a
-    /// pure power average of the same positions the answer differs by 0.15 to 1.95 dB
-    /// of LEVEL, which the raw-impulse-response offset re-anchors downstream, and by
-    /// 0.04 to 0.24 dB of SHAPE on average (0.31 to 1.08 dB at the worst single band),
+    /// difference is not sound — and it was measured before it was kept. On the
+    /// owner's two real seven-position sets the trims run from −1.4 to +1.6 dB, and
+    /// against a pure power average of the same positions the answer differs by 0.2 to
+    /// 0.4 dB of LEVEL, which the raw-impulse-response offset re-anchors downstream,
+    /// and by 0.14 to 0.32 dB rms of SHAPE (0.36 to 1.01 dB at the worst single band),
     /// which is what a tune is fitted to. Positions gathered around one head differ
     /// far less in broadband level than the arithmetic allows for.
     /// </para>

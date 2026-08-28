@@ -167,6 +167,20 @@ close.
 
 ## Measurement orchestrators
 
+- [✗] **A bad run stops the measurement, transient stream faults included —
+  DECIDED, do not resurrect.** There used to be one automatic retry per rejected
+  run; it was removed in this PR because the field answer is that it never
+  recovered anything — what the checks catch is a gain set wrong, a cable in the
+  wrong socket, a channel that is not there, all of which the next sweep
+  reproduces exactly. Review then pointed out, correctly, that the same list also
+  carries `CaptureDiscontinuity`, `CaptureTimestampError` and `RenderUnderrun`,
+  which are transient by nature: one WASAPI underrun on the last of four runs
+  now costs the three good ones. The owner weighed that and kept it (2026-08-28):
+  losing a measurement and re-running it beats publishing an average nobody can
+  vouch for, and splitting the list into fatal and retryable buys back machinery
+  for a fault that is rare. Nothing is published either way — an average of three
+  runs where four were asked for is a different measurement wearing the same name.
+
 - [ ] **Array input levels reach the audio layer and stop there.** The capture
   session reports a level per array channel and `AudioLevelResolver` fills them in
   (an absent one meters as −∞ dBFS, not as full scale), but `InputLevelMapping.Map`

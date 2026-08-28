@@ -183,11 +183,25 @@ public partial class Form1
             panel => panel.RefreshCalibrationEntries(analysisEntries));
         // The live panel shows the RIG's calibration and does not choose it, so it is
         // told which one to show rather than asked which it had.
-        liveSpectrumOptions.CalibrationId =
-            measurementSettings.Measurement.MicrophoneCalibrationId;
+        string? rigCalibrationId = MicrophoneCalibrationIds.Normalize(
+            measurementSettings.Measurement.MicrophoneCalibrationId);
+        bool calibrationMoved = !string.Equals(
+            MicrophoneCalibrationIds.Normalize(liveSpectrumOptions.CalibrationId),
+            rigCalibrationId,
+            StringComparison.OrdinalIgnoreCase);
+        liveSpectrumOptions.CalibrationId = rigCalibrationId;
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
-            panel => panel.RefreshCalibrationEntries(
-                liveSpectrumOptions.CalibrationId, entries));
+            panel => panel.RefreshCalibrationEntries(rigCalibrationId, entries));
+        // A curve already drawn was corrected by the old one, and a running peak hold
+        // would go on merging the two. The analyzer is told wherever the rig's choice
+        // was edited — Record Settings applies it live and again on Apply — rather
+        // than only where the live panel used to own the selection. Guarded on the
+        // value actually moving, so a calibration list edited for other reasons does
+        // not drop a peak hold that is still valid.
+        if (calibrationMoved)
+        {
+            liveSpectrumController.RefreshCalibration();
+        }
     }
 
     // Adds a calibration curve a Virtual DSP session carried in to the configured

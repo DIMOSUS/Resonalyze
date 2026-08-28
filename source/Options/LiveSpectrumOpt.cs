@@ -181,15 +181,7 @@ namespace Resonalyze.Options
                 options.AnalysisMode == LiveAnalysisMode.TransferFunction;
             UpdateModeDependentControls();
 
-            MicrophoneCalibrationComboHelper.Configure(
-                comboCalibration,
-                options.CalibrationId,
-                calibrationEntries);
-            // A read-out, not a choice: a live capture is taken on the rig, through the
-            // capsule Record Settings names, and a second selection here would let the
-            // MMM pass and the sweeps beside it disagree about which microphone was
-            // used — a difference nothing downstream could see.
-            comboCalibration.Enabled = false;
+            ShowRigCalibration(options.CalibrationId, calibrationEntries);
         }
 
         /// <summary>
@@ -200,10 +192,32 @@ namespace Resonalyze.Options
         internal void RefreshCalibrationEntries(
             string? calibrationId,
             IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
+            ShowRigCalibration(calibrationId, calibrationEntries);
+
+        /// <summary>
+        /// Shows the rig's calibration without offering it as a choice.
+        /// </summary>
+        /// <remarks>
+        /// A read-out: a live capture is taken on the rig, through the capsule Record
+        /// Settings names, and a second selection here would let an MMM pass and the
+        /// sweeps beside it disagree about which microphone was used — a difference
+        /// nothing downstream could see. It has to be disabled after EVERY rebuild of
+        /// the list, because <see cref="MicrophoneCalibrationComboHelper.Configure"/>
+        /// enables the box whenever it holds more than one entry: leaving it to the
+        /// panel's construction alone made the field editable again the moment a
+        /// calibration was added or removed, and a selection made in it would have
+        /// changed nothing and then snapped back.
+        /// </remarks>
+        private void ShowRigCalibration(
+            string? calibrationId,
+            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries)
+        {
             MicrophoneCalibrationComboHelper.Configure(
                 comboCalibration,
                 calibrationId,
                 calibrationEntries);
+            comboCalibration.Enabled = false;
+        }
 
         /// <summary>
         /// Recolours the dB SPL and Transfer choices, in both directions, without

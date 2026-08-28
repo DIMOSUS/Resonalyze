@@ -117,6 +117,38 @@ public sealed class LiveSpectrumOptLayoutTests
         });
     }
 
+    /// <summary>
+    /// The calibration box shows the rig's choice and never offers one of its own —
+    /// including after the calibration list is rebuilt under an open panel.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="MicrophoneCalibrationComboHelper.Configure"/> enables the box
+    /// whenever it holds more than one entry, so disabling it once at construction
+    /// lasted exactly until a calibration was added or removed: the read-out became
+    /// editable, and a selection made in it would have changed nothing and then
+    /// snapped back to the rig's value on the next refresh.
+    /// </remarks>
+    [Fact]
+    public void TheCalibrationReadOutStaysReadOnlyWhenTheListIsRebuilt() =>
+        StaTest.Run(() =>
+        {
+            using LiveSpectrumOpt panel = CreatePanel();
+            var combo = (DarkComboBox)Find(panel, "comboCalibration");
+            Assert.False(combo.Enabled);
+
+            panel.RefreshCalibrationEntries(
+                "cal-1",
+                [
+                    new MicrophoneCalibrationEntry("0deg", "0°", Available: true),
+                    new MicrophoneCalibrationEntry("cal-1", "90°", Available: true)
+                ]);
+
+            Assert.False(combo.Enabled);
+            Assert.Equal(
+                "cal-1",
+                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(combo));
+        });
+
     private static LiveSpectrumOpt CreatePanel(LiveSpectrumOptions? options = null)
     {
         var panel = new LiveSpectrumOpt();

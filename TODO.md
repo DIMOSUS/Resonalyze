@@ -167,6 +167,14 @@ close.
 
 ## Measurement orchestrators
 
+- [ ] **Array input levels reach the audio layer and stop there.** The capture
+  session reports a level per array channel and `AudioLevelResolver` fills them in
+  (an absent one meters as −∞ dBFS, not as full scale), but `InputLevelMapping.Map`
+  passes only the measurement microphone and the loopback to the UI, so a meter for
+  the array positions is data that exists and is never shown. Not a correctness
+  gap — nothing claims it is a safeguard, and a compromised position fails its run
+  either way — but it is the one thing that would let a user see a bad position
+  BEFORE spending four sweeps on it.
 - [ ] **Nothing records where an array STOOD.** A set of measurements is judged
   compatible on what the arrays were made of — the number of positions and their
   calibrations — and that cannot see the case worth seeing: the same seven

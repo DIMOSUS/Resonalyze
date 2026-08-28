@@ -305,6 +305,26 @@ internal static class SyntheticCapture
     }
 
     /// <summary>
+    /// The same intermittent fault on the MEASUREMENT microphone, which carries the
+    /// level every other channel is compared against.
+    /// </summary>
+    public static AudioCaptureResult WithMeasurementMicrophoneNoisyOnThisCapture(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        bool noisy,
+        double peak = 0.005)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        return new AudioCaptureResult(
+            [noisy ? Noise(mic.Length, peak) : mic, loop],
+            MicrophoneChannel: 0,
+            LoopbackChannel: 1,
+            StereoSeparationExpected: false,
+            AudioCaptureAnomalies.None,
+            Diagnostics: null);
+    }
+
+    /// <summary>
     /// The mirror image: the MEASUREMENT microphone carries noise while the array
     /// microphone beside it recorded the sweep properly.
     /// </summary>

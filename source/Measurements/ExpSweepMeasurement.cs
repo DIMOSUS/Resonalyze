@@ -1293,6 +1293,10 @@ namespace Resonalyze
                     ActiveMicrophoneChannelOffset,
                     ArrayInputChannelOffsets);
                 var rejections = new List<SweepRunRejection>();
+                // Only while NOTHING has been accepted: the moment a run lands, the
+                // averaged verdict is the one that will speak and these are dead
+                // weight. A measurement that never accepts one ends here anyway.
+                var rejectedCaptures = new List<AudioCaptureResult>();
                 int requestedRuns = AverageRunCount;
                 for (int run = 1; run <= requestedRuns; run++)
                 {
@@ -1305,6 +1309,10 @@ namespace Resonalyze
                     IReadOnlyList<string> issues = AssessRunQuality(captured, sweep);
                     if (issues.Count > 0)
                     {
+                        if (accumulator.AcceptedRuns == 0)
+                        {
+                            rejectedCaptures.Add(captured);
+                        }
                         // One automatic retry per bad run; a second failure skips
                         // the run so it cannot contaminate the average.
                         rejections.Add(new SweepRunRejection(run, Retried: false, issues));
@@ -1318,12 +1326,17 @@ namespace Resonalyze
                         if (issues.Count > 0)
                         {
                             rejections.Add(new SweepRunRejection(run, Retried: true, issues));
+                            if (accumulator.AcceptedRuns == 0)
+                            {
+                                rejectedCaptures.Add(captured);
+                            }
                             captured = null;
                         }
                     }
                     if (captured != null)
                     {
                         accumulator.Add(AnalyzeCapturedRun(captured, sweep));
+                        rejectedCaptures.Clear();
                     }
 
                     if (ConfirmEachAverageRun && run < requestedRuns)
@@ -1342,6 +1355,15 @@ namespace Resonalyze
                     rejections);
                 if (accumulator.AcceptedRuns == 0)
                 {
+                    // A whole measurement that failed on SHAPE is the bad-loopback
+                    // case, and the diagnosis for it knows things a run issue cannot:
+                    // that a quiet loopback means bleed instead of the wire, and which
+                    // channel's distortion is the culprit. Now that a run can be
+                    // rejected for shape, that diagnosis would otherwise be lost
+                    // exactly where it is most wanted — so one rejected capture is
+                    // analysed for it, at a point where nothing else is going to
+                    // happen anyway.
+                    DiagnoseTotalFailure(rejectedCaptures, sweep, rejections);
                     throw new InvalidOperationException(
                         "Every sweep run failed the capture quality checks: " +
                         string.Join(
@@ -1537,6 +1559,62 @@ namespace Resonalyze
             RaiseLevels(snapshot);
         }
 
+        /// <summary>
+        /// Replaces the generic "every run failed" refusal with the transfer
+        /// function's own diagnosis, when the failures were about its SHAPE.
+        /// </summary>
+        /// <remarks>
+        /// Throws that diagnosis rather than returning it: the caller's own throw is
+        /// the fallback for everything this cannot improve on — a capture that will
+        /// not analyse at all, or runs rejected for plain level faults, where the
+        /// generic sentence is already the honest one.
+        /// </remarks>
+        private void DiagnoseTotalFailure(
+            IReadOnlyList<AudioCaptureResult> captures,
+            ExponentialSineSweep sweep,
+            IReadOnlyList<SweepRunRejection> rejections)
+        {
+            if (captures.Count == 0 ||
+                !rejections.Any(rejection => rejection.Issues.Any(
+                    issue => issue.Contains("credible response", StringComparison.Ordinal))))
+            {
+                return;
+            }
+
+            SweepAverageResult result;
+            try
+            {
+                var accumulator = new SweepAverageAccumulator(
+                    BuildExcitationGate(sweep),
+                    SampleRate,
+                    ProtectiveHighPass,
+                    ActiveMicrophoneChannelOffset,
+                    // No array microphones: this exists to explain the MEASUREMENT
+                    // pair's shape, and building array curves would refuse on the
+                    // very fault being explained.
+                    []);
+                // EVERY rejected capture, because the diagnosis counts runs: which
+                // channel is distorting, in how many of them, and the levels of the
+                // worst. Those are the same runs that would have been accumulated
+                // before a run could be rejected for its shape.
+                foreach (AudioCaptureResult capture in captures)
+                {
+                    accumulator.Add(
+                        AnalyzeCapturedRun(capture, sweep, raiseIntermediateLevels: false));
+                }
+
+                result = accumulator.BuildResult();
+            }
+            catch (Exception)
+            {
+                // The capture cannot be analysed at all, which the caller's own
+                // refusal already describes as well as anything could.
+                return;
+            }
+
+            RequireCredibleTransferIr(result);
+        }
+
         private IReadOnlyList<string> AssessRunQuality(
             AudioCaptureResult captured,
             ExponentialSineSweep sweep)
@@ -1576,9 +1654,29 @@ namespace Resonalyze
             // average of six positions where seven were set up is a different
             // measurement wearing the same name. A sweep is cheap; a spatial average
             // built on a position that was never there is not.
-            ExcitationBandGate arrayGate = captured.ArrayChannels.Count > 0
-                ? BuildExcitationGate(sweep)
-                : ExcitationBandGate.FullBand;
+            ExcitationBandGate gate = BuildExcitationGate(sweep);
+            // The measurement microphone faces the same question as every array
+            // microphone, for the same reason and with the same arithmetic. A run that
+            // recorded noise instead of the sweep passes every level check, hides in
+            // the H1 average — the good runs still put an arrival in the total — and
+            // scales the whole measurement by the fraction of runs that were good:
+            // -2.50 dB for one bad run in four, whatever the noise level was. On this
+            // channel that lands on the level every other channel is compared against.
+            if (issues.Count == 0 && loopback != null)
+            {
+                if (ArrayMicrophoneAnalysis.DescribeIncredibleRun(
+                    new RecordedSamplesView(loopback),
+                    new RecordedSamplesView(microphone),
+                    gate,
+                    SampleRate,
+                    AverageRunCount) is { } shape)
+                {
+                    issues.Add(
+                        "the microphone recorded a signal, but it did not divide into " +
+                        $"a credible response ({shape})");
+                }
+            }
+
             foreach (int channel in captured.ArrayChannels)
             {
                 float[] samples = (uint)channel < (uint)channels.Length
@@ -1607,12 +1705,13 @@ namespace Resonalyze
                     ArrayMicrophoneAnalysis.DescribeIncredibleRun(
                         new RecordedSamplesView(loopback),
                         new RecordedSamplesView(samples),
-                        arrayGate,
-                        SampleRate) is { } shape)
+                        gate,
+                        SampleRate,
+                        AverageRunCount) is { } arrayShape)
                 {
                     issues.Add(
                         $"{where}: it recorded a signal, but it did not divide into a " +
-                        $"credible response ({shape})");
+                        $"credible response ({arrayShape})");
                 }
             }
 

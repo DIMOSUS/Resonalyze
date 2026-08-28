@@ -392,7 +392,19 @@ stays perfectly credible — while that run's reference power stays in the estim
 denominator and contributes nothing to its numerator. The position comes out scaled
 by the fraction of runs that were good: exactly 2.5 dB down for one bad run in four,
 whatever the noise level was. What a shape check can see depends on how loud the
-fault is; what the fault costs does not.
+fault is; what the fault costs does not. The **measurement** microphone is judged the
+same way and for the same reason — there the 2.5 dB lands on the level every other
+channel is compared against.
+
+One run is held to a lower bar than the average, by a derived amount. Averaging N
+runs leaves the arrival alone and divides the uncorrelated part of everything around
+it by N, so an average of N runs each reading R lands between R and R + 10·log₁₀N —
+at R when what surrounds the arrival is the room's own decay, at the top of the range
+when it is noise. Judging one run against the averaged floor would refuse runs whose
+average would have passed, and the margin is not generous: across the archived cabins
+genuine records read 27.7 dB at worst against a floor of 22, and four runs of
+averaging can account for 6 dB of that by themselves. What the lower bar gives away
+costs nothing against the fault it looks for, which divides into noise at about 0 dB.
 
 That is stricter than it sounds and it is deliberate. The array keeps only the CURVE
 each position produced, so a position that lost its runs is simply absent from the

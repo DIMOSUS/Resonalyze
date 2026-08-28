@@ -199,7 +199,10 @@ internal static class ArrayMicrophoneAnalysis
     /// definition of the verdict, so the RUN check and the averaged backstop cannot
     /// come to different answers about the same microphone.
     /// </summary>
-    public static string? DescribeIncredibleResponse(Complex[]? transfer, int sampleRate)
+    public static string? DescribeIncredibleResponse(
+        Complex[]? transfer,
+        int sampleRate,
+        double floorDb = TransferIrDiagnostics.MinimumCompactnessDb)
     {
         // FAIL-CLOSED, like the measurement microphone's: a shape that cannot be
         // measured at all is a refusal, not a pass.
@@ -208,7 +211,7 @@ internal static class ArrayMicrophoneAnalysis
             : TransferIrDiagnostics.MeasureCompactness(transfer, sampleRate);
         if (compactness is { } measured &&
             double.IsFinite(measured.InsideOutsideDb) &&
-            measured.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb)
+            measured.InsideOutsideDb >= floorDb)
         {
             return null;
         }
@@ -231,18 +234,39 @@ internal static class ArrayMicrophoneAnalysis
     /// reference power still sits in the denominator and pulls that position's level
     /// down. A quiet, plausible error on one position of seven, which is exactly what
     /// a run-level rule exists to keep out.
+    /// <para>
+    /// The floor it is judged against is LOWER than the averaged one, and by a derived
+    /// amount rather than a chosen one. Averaging N runs leaves the coherent arrival
+    /// alone and divides the uncorrelated part of everything else by N, so the average
+    /// of N runs each reading R reads somewhere in [R, R + 10·log₁₀N] — exactly R when
+    /// what surrounds the arrival is the room's own decay, R + 10·log₁₀N when it is
+    /// noise. Judging a single run against the averaged floor would therefore refuse
+    /// runs whose average would have passed. Measured on the archived cabins, genuine
+    /// records read 27.7 dB and up against a floor of 22 — under 6 dB of margin, which
+    /// four runs of averaging can account for on its own. The run floor gives that
+    /// margin back, and still leaves the fault it is looking for far below: gated
+    /// uncorrelated noise reads about 0 dB.
+    /// </para>
     /// </remarks>
     public static string? DescribeIncredibleRun(
         IReadOnlyList<double> reference,
         IReadOnlyList<double> target,
         ExcitationBandGate excitationGate,
-        int sampleRate)
+        int sampleRate,
+        int averagedRuns)
     {
         (_, Complex[]? transfer) = TransferFunction.ComputeAveragedMagnitudeAndIr(
             [new TransferFunctionFrame(reference, target)],
             excitationGate);
-        return DescribeIncredibleResponse(transfer, sampleRate);
+        return DescribeIncredibleResponse(transfer, sampleRate, RunFloorDb(averagedRuns));
     }
+
+    /// <summary>
+    /// The compactness floor one run of an N-run average is held to.
+    /// </summary>
+    public static double RunFloorDb(int averagedRuns) =>
+        TransferIrDiagnostics.MinimumCompactnessDb -
+        10.0 * Math.Log10(Math.Max(1, averagedRuns));
 
     /// <summary>
     /// Divides the protective high-pass back out of a level curve.

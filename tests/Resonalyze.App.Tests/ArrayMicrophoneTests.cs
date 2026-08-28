@@ -243,6 +243,66 @@ public sealed class ArrayMicrophoneTests
     }
 
     [Fact]
+    public void TheRunFloorGivesBackExactlyWhatAveragingWouldHaveAdded()
+    {
+        // Not a chosen number. Averaging N runs leaves the coherent arrival alone and
+        // divides the uncorrelated part of everything around it by N, so an average of
+        // N runs each reading R lands in [R, R + 10·log₁₀N] — at R when what surrounds
+        // the arrival is the room's own decay, at the top when it is noise. A single
+        // run judged against the AVERAGED floor would therefore refuse runs whose
+        // average would have passed.
+        //
+        // It matters because the margin is not generous: measured over the archived
+        // cabins (80 channel measurements) genuine records read 27.7 dB at worst
+        // against a floor of 22, and four runs of averaging can account for 6 of that
+        // on its own. What the run floor gives away costs nothing against the fault it
+        // looks for, which reads about 0 dB.
+        Assert.Equal(
+            TransferIrDiagnostics.MinimumCompactnessDb,
+            ArrayMicrophoneAnalysis.RunFloorDb(1),
+            9);
+        Assert.Equal(
+            TransferIrDiagnostics.MinimumCompactnessDb - 10.0 * Math.Log10(4),
+            ArrayMicrophoneAnalysis.RunFloorDb(4),
+            9);
+        // Never stricter than the verdict it defers to, whatever it is handed.
+        foreach (int runs in new[] { 0, 1, 2, 4, 8, 64 })
+        {
+            Assert.True(
+                ArrayMicrophoneAnalysis.RunFloorDb(runs) <=
+                    TransferIrDiagnostics.MinimumCompactnessDb);
+        }
+    }
+
+    [Fact]
+    public async Task TheMEASUREMENTMicrophoneIsJudgedOnTheRunToo()
+    {
+        // The same rule, on the channel it matters most for. A measurement that came
+        // out 2.5 dB low because one run of four recorded noise is not obviously
+        // wrong anywhere: the impulse response looks exactly as it should, and the
+        // number it is out by is the number every other channel is levelled against.
+        //
+        // No array here at all — this is the ordinary measurement pair.
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal,
+                (capture, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.WithMeasurementMicrophoneNoisyOnThisCapture(
+                        s, tail, noisy: capture == 3))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 4);
+
+        Assert.True(await measurement.RunAsync());
+        SweepRunQualityReport report = Assert.IsType<SweepRunQualityReport>(
+            measurement.QualityReport);
+        Assert.Equal(4, report.AcceptedRuns);
+        SweepRunRejection rejection = Assert.Single(report.Rejections);
+        Assert.Equal(3, rejection.Run);
+        string issue = Assert.Single(rejection.Issues);
+        Assert.Contains("the microphone recorded a signal", issue);
+        Assert.Contains("credible response", issue);
+    }
+
+    [Fact]
     public async Task AFaultOnTheMEASUREMENTMicrophoneKeepsItsOwnDiagnosis()
     {
         // The array's credibility verdict is cruder than the measurement's own: it

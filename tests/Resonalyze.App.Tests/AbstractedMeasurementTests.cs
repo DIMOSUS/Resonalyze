@@ -269,11 +269,14 @@ public sealed class AbstractedMeasurementTests
     [Fact]
     public async Task DistortionDiagnosisCountsTheAffectedRuns()
     {
-        // A mixed average: one run's loopback was overdriven, the other's
-        // microphone recorded noise. Both are real failure modes and the second
-        // is what sinks the average here — the message must still say how much
-        // of the average the distortion actually accounts for rather than
-        // implying every run carried it.
+        // A mixed set: one capture's loopback was overdriven, the rest recorded
+        // noise. Both are real failure modes, and the message must still say how much
+        // of what it read the distortion accounts for rather than implying every run
+        // carried it.
+        //
+        // Four captures for two runs: neither divides into a response, so each run is
+        // rejected on its shape and retried once. The fixture answers by capture, so
+        // the retries take the noise branch — which is what the count then reports.
         var factory = new FakeAudioSessionFactory(
             duplexFactory: (_, signal) => new RecordingDuplexSession(
                 signal, (attempt, s, tail, _) => Task.FromResult(attempt == 1
@@ -287,14 +290,15 @@ public sealed class AbstractedMeasurementTests
         Assert.NotNull(measurement.LastError);
         string message = measurement.LastError!.Message;
         Assert.Contains("LOOPBACK REFERENCE is distorting", message);
-        Assert.Contains("on 1 of the 2 averaged runs", message);
+        Assert.Contains("on 1 of the 4 averaged runs", message);
     }
 
     // A run whose loopback reading could not be taken is not a clean run, and
-    // the verdict must not be stretched over it: run 1's loopback is
-    // overdriven, run 2's is poisoned by a non-finite sample — accepted by
-    // every level check, judged by nothing. The message has to scope the
-    // verdict to the runs it actually read.
+    // the verdict must not be stretched over it: the first capture's loopback is
+    // overdriven, the rest are poisoned by a non-finite sample — accepted by
+    // every level check, judged by nothing. The message has to scope the verdict
+    // to the runs it actually READ, which is one of the four captures the two
+    // rejected-and-retried runs produced.
     [Fact]
     public async Task DistortionDiagnosisSeparatesJudgedRunsFromAveragedOnes()
     {
@@ -311,7 +315,7 @@ public sealed class AbstractedMeasurementTests
         Assert.NotNull(measurement.LastError);
         string message = measurement.LastError!.Message;
         Assert.Contains("LOOPBACK REFERENCE is distorting", message);
-        Assert.Contains("on 1 of the 1 judged runs (2 were averaged)", message);
+        Assert.Contains("on 1 of the 1 judged runs (4 were averaged)", message);
     }
 
     // The loopback diagnosis deconvolution is skipped above a size bound — it
@@ -444,7 +448,7 @@ public sealed class AbstractedMeasurementTests
         bool success = await measurement.RunAsync();
 
         Assert.False(success);
-        Assert.Contains("on 2 of the 2 averaged runs", measurement.LastError!.Message);
+        Assert.Contains("on 4 of the 4 averaged runs", measurement.LastError!.Message);
     }
 
     // The mirror image: a clean reference and a distorting acoustic path must

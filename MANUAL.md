@@ -430,8 +430,10 @@ these were developed against sat within about 30 cm of the listening position, l
 and right of it and forward of it. Then measure exactly as described above and the
 average comes with the sweep: nothing to capture twice, nothing to keep at the same
 gain afterwards, and the positions' own disagreement is stored beside the average so
-you can see where it is a claim and where it is not. **The microphones must be on
-the same interface as the measurement one** — that is what keeps them on the same
+you can see where it is a claim and where it is not. A position that clips or goes
+silent fails the whole sweep rather than quietly dropping out of it, so what you get
+is either the array you set up or an error naming the input. **The microphones must
+be on the same interface as the measurement one** — that is what keeps them on the same
 clock and the same loopback, and it is not negotiable.
 
 **If you have one microphone**, take a second pass over the same drivers using the

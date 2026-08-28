@@ -155,37 +155,55 @@ public sealed class ArrayMicrophoneTests
     }
 
     [Fact]
-    public async Task AFailedMicrophoneDropsFromThatRunAndNotFromTheMeasurement()
+    public async Task AClippedArrayMicrophoneFailsTheRunAndTheRetryCarriesIt()
     {
-        int run = 0;
+        // The owner's rule: a run that compromised ANY microphone of the array is not
+        // a run this measurement can use. It used to drop that position from that run
+        // and keep going, which buys a measurement that looks complete and is not —
+        // the array keeps only the curve each position produced, so a position that
+        // lost its runs is simply absent from the average, and an average of one
+        // position where two were set up is a different measurement wearing the same
+        // name.
+        int attempt = 0;
         var factory = new FakeAudioSessionFactory(
             duplexFactory: (_, signal) => new RecordingDuplexSession(
                 signal,
                 (_, s, tail, _) =>
                 {
-                    run++;
-                    // Driven past full scale in the first run only: the sweep
-                    // itself peaks at 0.5, so 2.5 puts the channel over.
+                    attempt++;
+                    // Driven past full scale on the first attempt only: the sweep
+                    // itself peaks at 0.5, so 2.5 puts the channel over. The retry
+                    // is clean, so the run is accepted after it.
                     return Task.FromResult(SyntheticCapture.WithArray(
-                        s, tail, run == 1 ? 2.5f : 0.125f));
+                        s, tail, attempt == 1 ? 2.5f : 0.125f));
                 }));
         using ExpSweepMeasurement measurement = CreateSweep(
             factory, runs: 2, arrayChannels: [2]);
 
-        bool success = await measurement.RunAsync();
+        Assert.True(await measurement.RunAsync(), measurement.LastError?.ToString());
 
-        Assert.True(success, measurement.LastError?.ToString());
-        // The run itself stands: the impulse response owes nothing to an array
-        // microphone three seats away.
+        // Both runs entered the average, because the bad attempt was retried — the
+        // ordinary path for any bad run, which is the point: the array is judged
+        // exactly as the measurement microphone is.
         Assert.Equal(2, measurement.AcceptedAverageRunCount);
-        Assert.Equal(2, measurement.ArrayMicrophones[0].AcceptedRuns);
-        Assert.Equal(1, measurement.ArrayMicrophones[1].AcceptedRuns);
-        Assert.Contains("clipped", string.Join(" ", measurement.ArrayMicrophones[1].Issues));
+        Assert.Equal(2, measurement.ArrayMicrophones[1].AcceptedRuns);
+
+        SweepRunQualityReport? report = measurement.QualityReport;
+        Assert.NotNull(report);
+        Assert.True(report!.IsDegraded);
+        string described = report.Describe();
+        Assert.Contains("array microphone on input 3", described);
+        Assert.Contains("clipped", described);
+        Assert.Contains("the retry was accepted", described);
     }
 
     [Fact]
-    public async Task AMicrophoneThatNeverWorkedIsLeftOutAndSaidSoOutLoud()
+    public async Task AnArrayMicrophoneThatNeverWorkedFailsTheMeasurement()
     {
+        // Every attempt has a silent array microphone, so every run is rejected and
+        // the measurement fails — loudly, naming the input. The alternative was a
+        // successful measurement whose spatial average quietly had one position
+        // fewer than the user set up.
         var factory = new FakeAudioSessionFactory(
             duplexFactory: (_, signal) => new RecordingDuplexSession(
                 signal,
@@ -194,41 +212,11 @@ public sealed class ArrayMicrophoneTests
         using ExpSweepMeasurement measurement = CreateSweep(
             factory, arrayChannels: [2, 3]);
 
-        Assert.True(await measurement.RunAsync(), measurement.LastError?.ToString());
-
-        // Two microphones survive: the measurement one and the working array one.
-        Assert.Equal(2, measurement.ArrayMicrophones.Count);
-        Assert.DoesNotContain(
-            measurement.ArrayMicrophones,
-            microphone => microphone.ChannelOffset == 3);
-
-        // Silently averaging one position fewer than the user set up is exactly
-        // what the notice exists to prevent.
-        SweepRunQualityReport? report = measurement.QualityReport;
-        Assert.NotNull(report);
-        Assert.True(report!.IsDegraded);
-        SweepArrayMicrophoneOutcome outcome = Assert.Single(report!.ArrayMicrophones);
-        Assert.Equal(3, outcome.ChannelOffset);
-        Assert.Equal(0, outcome.AcceptedRuns);
-        Assert.Contains("input 4", report!.Describe());
-        Assert.Contains("left out of the spatial average", report.Describe());
-    }
-
-    [Fact]
-    public async Task ACleanArrayKeepsTheNoticeQuiet()
-    {
-        var factory = new FakeAudioSessionFactory(
-            duplexFactory: (_, signal) => new RecordingDuplexSession(
-                signal,
-                (_, s, tail, _) => Task.FromResult(SyntheticCapture.WithArray(s, tail, 0.125f))));
-        using ExpSweepMeasurement measurement = CreateSweep(factory, arrayChannels: [2]);
-
-        Assert.True(await measurement.RunAsync(), measurement.LastError?.ToString());
-
-        SweepRunQualityReport? report = measurement.QualityReport;
-        Assert.NotNull(report);
-        Assert.Empty(report!.ArrayMicrophones);
-        Assert.False(report!.IsDegraded);
+        Assert.False(await measurement.RunAsync());
+        Assert.NotNull(measurement.LastError);
+        string message = measurement.LastError!.Message;
+        Assert.Contains("array microphone on input 4", message);
+        Assert.Contains("silent", message);
     }
 
     [Fact]

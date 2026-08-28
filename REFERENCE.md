@@ -371,10 +371,16 @@ to record, what is left is the measurement microphone alone — that is the poin
 response the tools already have, not an average of anything, and it is not offered
 as one.
 
-A microphone that clipped, was unplugged or failed its check drops out of **that
-averaging run only** — the impulse response, the loopback and the measurement
-microphone owe nothing to a microphone three seats away — and the notice at the
-end of the measurement names it and says why.
+A microphone that clipped, was unplugged or failed its check **fails the run**,
+exactly as the measurement microphone does: the run is retried once, and a run that
+fails twice does not enter the average. If every run fails, so does the measurement,
+and the error names the input and the reason.
+
+That is stricter than it sounds and it is deliberate. The array keeps only the CURVE
+each position produced, so a position that lost its runs is simply absent from the
+average — and an average of six positions where seven were set up is a different
+measurement wearing the same name, with nothing on the curve to show it. A sweep is
+cheap; a spatial average built on a position that was never there is not.
 
 ### MME Compatibility
 

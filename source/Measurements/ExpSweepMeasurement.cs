@@ -1339,10 +1339,7 @@ namespace Resonalyze
                 QualityReport = new SweepRunQualityReport(
                     requestedRuns,
                     accumulator.AcceptedRuns,
-                    rejections)
-                {
-                    ArrayMicrophones = accumulator.BuildArrayOutcomes()
-                };
+                    rejections);
                 if (accumulator.AcceptedRuns == 0)
                 {
                     throw new InvalidOperationException(
@@ -1568,6 +1565,36 @@ namespace Resonalyze
             {
                 issues.Add("WASAPI reported a render buffer underrun.");
             }
+
+            // Every array microphone, judged exactly as the measurement one is: a run
+            // that compromised any of them is not a run this measurement can use.
+            //
+            // The alternative — drop that microphone from that run and keep the rest —
+            // is what this used to do, and it buys a measurement that looks complete
+            // and is not: the array keeps only the curve each position produced, so a
+            // position that lost its runs is simply absent from the average, and the
+            // average of six positions where seven were set up is a different
+            // measurement wearing the same name. A sweep is cheap; a spatial average
+            // built on a position that was never there is not.
+            foreach (int channel in captured.ArrayChannels)
+            {
+                float[] samples = (uint)channel < (uint)channels.Length
+                    ? channels[channel]
+                    : [];
+                string where = $"array microphone on input {channel + 1}";
+                if (samples.Length == 0)
+                {
+                    issues.Add($"{where}: the channel was not captured.");
+                    continue;
+                }
+
+                foreach (string issue in SweepRunQualityCheck.AssessArrayMicrophone(
+                    samples, sweep.SweepSamples))
+                {
+                    issues.Add($"{where}: {issue}.");
+                }
+            }
+
             return issues;
         }
 
@@ -1660,73 +1687,57 @@ namespace Resonalyze
                 finalLevels,
                 microphoneDistortion,
                 loopbackDistortion,
-                BuildArrayCaptures(captured, sampleChannels, sweep));
+                BuildArrayCaptures(captured, sampleChannels));
         }
 
         /// <summary>
-        /// Each array microphone's frame for this run, positionally — index i is
-        /// the i-th configured microphone whether or not it produced anything.
+        /// One accepted run's array frames, positionally — index i is the i-th
+        /// configured microphone.
         /// </summary>
         /// <remarks>
-        /// A microphone that clipped, was unplugged or was never captured drops
-        /// out of THIS run and no other. The run itself is not rejected: the
-        /// impulse response, the loopback and the measurement microphone owe
-        /// nothing to a microphone three seats away, and one badly placed array
-        /// channel must not be able to destroy an otherwise perfect measurement.
+        /// No verdicts here any more. A run reaches this only after
+        /// <see cref="AssessRunQuality"/> found every array microphone sound, because
+        /// a compromised position now fails the RUN rather than dropping quietly out
+        /// of it: the array keeps only the curve each position produced, so a position
+        /// that lost its runs is simply absent from the average, and an average of six
+        /// positions where seven were set up is a different measurement wearing the
+        /// same name.
+        /// <para>
+        /// No loopback, no array: an array microphone is read as a transfer function
+        /// against the loopback, and a measurement without one has nothing to
+        /// reference it to. That is refused for the whole measurement long before
+        /// here.
+        /// </para>
         /// </remarks>
-        private static IReadOnlyList<ArrayRunCapture> BuildArrayCaptures(
+        private static IReadOnlyList<TransferFunctionFrame?> BuildArrayCaptures(
             AudioCaptureResult captured,
-            float[][] sampleChannels,
-            ExponentialSineSweep sweep)
+            float[][] sampleChannels)
         {
             if (captured.ArrayChannels.Count == 0)
             {
                 return [];
             }
 
-            var captures = new ArrayRunCapture[captured.ArrayChannels.Count];
-            for (int microphone = 0; microphone < captures.Length; microphone++)
+            var frames = new TransferFunctionFrame?[captured.ArrayChannels.Count];
+            if (captured.LoopbackChannel is not int loopbackIndex ||
+                (uint)loopbackIndex >= (uint)sampleChannels.Length)
             {
-                int channel = captured.ArrayChannels[microphone];
-                float[] samples = (uint)channel < (uint)sampleChannels.Length
-                    ? sampleChannels[channel]
-                    : [];
-                if (samples.Length == 0)
-                {
-                    captures[microphone] = new ArrayRunCapture(
-                        null,
-                        ["the channel was not captured"]);
-                    continue;
-                }
-
-                IReadOnlyList<string> issues = SweepRunQualityCheck.AssessArrayMicrophone(
-                    samples,
-                    sweep.SweepSamples);
-                // No loopback, no array: an array microphone is read as a transfer
-                // function against the same reference the measurement microphone
-                // uses, which is what keeps the two in one measurement family.
-                if (captured.LoopbackChannel is not int loopbackIndex ||
-                    (uint)loopbackIndex >= (uint)sampleChannels.Length)
-                {
-                    captures[microphone] = new ArrayRunCapture(
-                        null,
-                        ["the measurement has no loopback reference"]);
-                    continue;
-                }
-                if (issues.Count > 0)
-                {
-                    captures[microphone] = new ArrayRunCapture(null, issues);
-                    continue;
-                }
-
-                captures[microphone] = new ArrayRunCapture(
-                    new TransferFunctionFrame(
-                        new RecordedSamplesView(sampleChannels[loopbackIndex]),
-                        new RecordedSamplesView(samples)),
-                    []);
+                return frames;
             }
 
-            return captures;
+            for (int microphone = 0; microphone < frames.Length; microphone++)
+            {
+                int channel = captured.ArrayChannels[microphone];
+                if ((uint)channel < (uint)sampleChannels.Length &&
+                    sampleChannels[channel].Length > 0)
+                {
+                    frames[microphone] = new TransferFunctionFrame(
+                        new RecordedSamplesView(sampleChannels[loopbackIndex]),
+                        new RecordedSamplesView(sampleChannels[channel]));
+                }
+            }
+
+            return frames;
         }
 
         /// <summary>
@@ -2042,9 +2053,6 @@ namespace Resonalyze
         /// What one array microphone produced in one run: the frame to average,
         /// or the reasons it produced nothing.
         /// </summary>
-        private readonly record struct ArrayRunCapture(
-            TransferFunctionFrame? Frame,
-            IReadOnlyList<string> Issues);
 
         private sealed record SweepRunAnalysis(
             Complex[] SweepImpulseResponse,
@@ -2056,7 +2064,7 @@ namespace Resonalyze
             InputLevelMeterSnapshot Levels,
             EssHarmonicEnergy? MicrophoneDistortion,
             EssHarmonicEnergy? LoopbackDistortion,
-            IReadOnlyList<ArrayRunCapture> ArrayCaptures);
+            IReadOnlyList<TransferFunctionFrame?> ArrayCaptures);
 
         /// <summary>What one run's harmonic reading amounts to for the tally.</summary>
         internal enum DistortionVerdict
@@ -2201,7 +2209,6 @@ namespace Resonalyze
             private readonly int microphoneChannelOffset;
             private readonly IReadOnlyList<int> arrayChannelOffsets;
             private readonly List<TransferFunctionFrame>[] arrayFrames;
-            private readonly List<string>[] arrayIssues;
             private readonly List<TransferFunctionFrame> transferFrames = new();
             private readonly ChannelLevelAccumulator microphoneLevels = new(fullScaleReference: false);
             private readonly ChannelLevelAccumulator loopbackLevels = new(fullScaleReference: true);
@@ -2226,11 +2233,9 @@ namespace Resonalyze
                 this.microphoneChannelOffset = microphoneChannelOffset;
                 this.arrayChannelOffsets = arrayChannelOffsets;
                 arrayFrames = new List<TransferFunctionFrame>[arrayChannelOffsets.Count];
-                arrayIssues = new List<string>[arrayChannelOffsets.Count];
                 for (int microphone = 0; microphone < arrayChannelOffsets.Count; microphone++)
                 {
                     arrayFrames[microphone] = new List<TransferFunctionFrame>();
-                    arrayIssues[microphone] = new List<string>();
                 }
             }
 
@@ -2278,21 +2283,9 @@ namespace Resonalyze
                     microphone < arrayFrames.Length && microphone < run.ArrayCaptures.Count;
                     microphone++)
                 {
-                    ArrayRunCapture capture = run.ArrayCaptures[microphone];
-                    if (capture.Frame is TransferFunctionFrame arrayFrame)
+                    if (run.ArrayCaptures[microphone] is TransferFunctionFrame arrayFrame)
                     {
                         arrayFrames[microphone].Add(arrayFrame);
-                        continue;
-                    }
-
-                    // One reason per microphone, however many runs repeat it: the
-                    // notice names what went wrong, not how many times.
-                    foreach (string issue in capture.Issues)
-                    {
-                        if (!arrayIssues[microphone].Contains(issue))
-                        {
-                            arrayIssues[microphone].Add(issue);
-                        }
                     }
                 }
 
@@ -2403,31 +2396,10 @@ namespace Resonalyze
                             sampleRate,
                             protectiveHighPass),
                         frames.Count,
-                        arrayIssues[microphone]));
+                        []));
                 }
 
                 return microphones;
-            }
-
-            // Only the microphones with something to report: a clean array says
-            // nothing and the end-of-measurement notice stays quiet.
-            public IReadOnlyList<SweepArrayMicrophoneOutcome> BuildArrayOutcomes()
-            {
-                var outcomes = new List<SweepArrayMicrophoneOutcome>();
-                for (int microphone = 0; microphone < arrayChannelOffsets.Count; microphone++)
-                {
-                    if (arrayIssues[microphone].Count == 0)
-                    {
-                        continue;
-                    }
-
-                    outcomes.Add(new SweepArrayMicrophoneOutcome(
-                        arrayChannelOffsets[microphone],
-                        arrayFrames[microphone].Count,
-                        arrayIssues[microphone]));
-                }
-
-                return outcomes;
             }
         }
 

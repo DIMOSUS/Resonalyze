@@ -127,32 +127,30 @@ internal sealed record SweepRunRejection(
 /// <summary>
 /// Outcome of the per-run acceptance over a whole averaged measurement.
 /// </summary>
-/// <summary>
-/// How one array microphone fared across the measurement's runs.
-/// </summary>
-internal sealed record SweepArrayMicrophoneOutcome(
-    int ChannelOffset,
-    int AcceptedRuns,
-    IReadOnlyList<string> Issues);
-
 internal sealed record SweepRunQualityReport(
     int RequestedRuns,
     int AcceptedRuns,
     IReadOnlyList<SweepRunRejection> Rejections)
 {
     /// <summary>
-    /// The array microphones' outcomes, empty when no array was recorded. Only
-    /// microphones that lost at least one run appear.
+    /// Whether the end-of-measurement notice has anything to say.
     /// </summary>
-    public IReadOnlyList<SweepArrayMicrophoneOutcome> ArrayMicrophones { get; init; } = [];
-
-    /// <summary>
-    /// Whether the end-of-measurement notice has anything to say. An array
-    /// microphone that lost runs counts: its curve is the only thing kept of it,
-    /// so "one microphone measured nothing" has to be said out loud or the
-    /// spatial average silently averages fewer positions than the user set up.
-    /// </summary>
-    public bool IsDegraded => AcceptedRuns < RequestedRuns || ArrayMicrophones.Count > 0;
+    /// <remarks>
+    /// An array microphone needs no clause of its own here. A run that compromised
+    /// one is rejected like any other bad run, so it shows up as a run that did not
+    /// enter the average, with the input named among its reasons — the array cannot
+    /// quietly end up with fewer positions than the user set up, because a
+    /// measurement that would have is not a measurement at all.
+    /// <para>
+    /// A REJECTION counts even when the retry then succeeded, which it did not before.
+    /// <see cref="Describe"/> has always had a line for that case — "first attempt
+    /// rejected; the retry was accepted" — and it could never be reached, because
+    /// every run had entered the average and the gate above asked only about that. A
+    /// channel that clipped once and passed on the second try is exactly the thing a
+    /// user wants to hear about while the microphone is still where they put it.
+    /// </para>
+    /// </remarks>
+    public bool IsDegraded => AcceptedRuns < RequestedRuns || Rejections.Count > 0;
 
     /// <summary>
     /// User-facing summary for the end-of-measurement notice. A run whose
@@ -181,17 +179,6 @@ internal sealed record SweepRunQualityReport(
                     $"{JoinIssues(attempt)}; retry: {JoinIssues(retry)})"
                 : $"Run {run.Key}: first attempt rejected ({JoinIssues(attempt)}); " +
                     "the retry was accepted");
-        }
-
-        foreach (SweepArrayMicrophoneOutcome microphone in ArrayMicrophones)
-        {
-            text.Append(CRLF);
-            text.Append(microphone.AcceptedRuns == 0
-                ? $"Array microphone on input {microphone.ChannelOffset + 1}: left out of " +
-                    $"the spatial average ({string.Join(", ", microphone.Issues)})"
-                : $"Array microphone on input {microphone.ChannelOffset + 1}: used " +
-                    $"{microphone.AcceptedRuns} of {AcceptedRuns} runs " +
-                    $"({string.Join(", ", microphone.Issues)})");
         }
 
         return text.ToString();

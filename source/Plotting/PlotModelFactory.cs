@@ -487,14 +487,15 @@ internal sealed class PlotModelFactory
             TiltCompensationDb = applied.TiltDb,
             CalibrationCorrectionDb = applied.CalibrationDb,
             ProtectiveHighPassCorrectionDb = applied.ProtectiveHighPassDb,
-            // The CURVE travels, named by the id the live options selected it with —
-            // a calibration file's own name is not something CalibrationFile keeps,
-            // and the id is the only handle this layer has. The points are what the
-            // consumer needs; the name is a hint, exactly as in a Virtual DSP session.
+            // The CURVE travels, under the name its author was shown when the capture
+            // was taken — frozen beside it, because an id is generated for every entry
+            // past the 0° slot and whoever opens this file would be reading a GUID.
+            // The points are what the consumer needs; the name is a hint, exactly as
+            // in a Virtual DSP session.
             Calibration = calibration != null
                 ? VirtualCrossoverCalibrationSettings.From(
                     calibration,
-                    noiseMeasurement.CaptureMicrophoneCalibrationId ?? string.Empty,
+                    noiseMeasurement.CaptureMicrophoneCalibrationName,
                     fileName: null)
                 : null,
             Recipe = new LiveCaptureRecipe

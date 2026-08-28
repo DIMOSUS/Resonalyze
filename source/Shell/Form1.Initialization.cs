@@ -61,7 +61,7 @@ public partial class Form1
             UpdateRecordButtonForCurrentMode,
             UpdatePlotLabelsPanel,
             liveSpectrumOptions,
-            ResolveCalibration,
+            DescribeCalibrationForCapture,
             () => closingInProgress);
         ModeController createdModeController = new(
             ChangeModeAsync,
@@ -210,18 +210,29 @@ public partial class Form1
 
     private string DescribeLiveCalibration()
     {
-        if (liveSpectrumController.DisplayedCalibration is not { } displayed)
+        // The name a capture carries is already the one a reader was shown when it was
+        // taken — its own if it came from a file, this machine's if the capture is
+        // still here — so it is displayed as written rather than looked up again.
+        // Only an empty plot falls through to the rig, whose id has to be named.
+        if (liveSpectrumController.DisplayedCalibrationName is not { } name)
         {
             return NameCalibration(
                 measurementSettings.Measurement.MicrophoneCalibrationId);
         }
 
-        // A loaded capture's calibration is a name from another machine's list, so it
-        // is shown as it was written rather than looked up here and lost.
-        return displayed.FromLoadedFile
-            ? string.IsNullOrWhiteSpace(displayed.Value) ? "Off" : displayed.Value
-            : NameCalibration(displayed.Value);
+        return string.IsNullOrWhiteSpace(name) ? "Off" : name;
     }
+
+    /// <summary>
+    /// Everything a run has to freeze about the microphone it is taken through: the
+    /// curve that corrects it, the name a reader will be shown, and the id behind it.
+    /// </summary>
+    private CapturedMicrophoneCalibration DescribeCalibrationForCapture(
+        string? calibrationId) =>
+        ResolveCalibration(calibrationId) is { } curve
+            ? new CapturedMicrophoneCalibration(
+                calibrationId, NameCalibration(calibrationId), curve)
+            : CapturedMicrophoneCalibration.None;
 
     private string NameCalibration(string? calibrationId)
     {

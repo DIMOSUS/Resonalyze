@@ -2411,7 +2411,8 @@ public sealed class PlotModelFactoryTests
         Array.Fill(magnitude, 0.1);
 
         // The run begins through A, and freezes it the way the controller does.
-        noise.SetCaptureMicrophoneCalibration("cal-a", a);
+        noise.SetCaptureMicrophoneCalibration(
+            new CapturedMicrophoneCalibration("cal-a", "90° capsule 2", a));
         LiveCaptureDocument? taken = factory.BuildLiveCaptureDocument(
             magnitude, frameCount: 8, title: "walked through A");
         Assert.NotNull(taken);
@@ -2423,7 +2424,9 @@ public sealed class PlotModelFactoryTests
         LiveCaptureDocument? saved = factory.BuildLiveCaptureDocument(
             magnitude, frameCount: 8, title: "saved after the rig moved");
         Assert.NotNull(saved);
-        Assert.Equal("cal-a", saved.Calibration?.Name);
+        // The NAME its author was shown, not the generated id behind it: a saved
+        // capture is read by whoever opens it, and "cal-<guid>" tells them nothing.
+        Assert.Equal("90° capsule 2", saved.Calibration?.Name);
         Assert.Equal(curveThroughA, saved.CurveDb);
         Assert.All(
             saved.CalibrationCorrectionDb,

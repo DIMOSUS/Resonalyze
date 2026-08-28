@@ -25,7 +25,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly LiveSpectrumOptions liveSpectrumOptions;
     // Turns the selected calibration id into the curve itself, so a run can freeze
     // what it is taken through rather than a name that may point elsewhere later.
-    private readonly Func<string?, CalibrationFile?> resolveCalibration;
+    private readonly Func<string?, CapturedMicrophoneCalibration> resolveCalibration;
     // Same guard the sweep path has (Form1.ShowMeasurementError): no modal
     // error dialog while the owner is tearing down.
     private readonly Func<bool> suppressErrorDialogs;
@@ -97,7 +97,7 @@ internal sealed class LiveSpectrumController : IDisposable
         Action updateRecordButton,
         Action updatePlotLabels,
         LiveSpectrumOptions liveSpectrumOptions,
-        Func<string?, CalibrationFile?> resolveCalibration,
+        Func<string?, CapturedMicrophoneCalibration> resolveCalibration,
         Func<bool> suppressErrorDialogs)
     {
         this.owner = owner;
@@ -148,12 +148,11 @@ internal sealed class LiveSpectrumController : IDisposable
     /// plot has nothing to answer for. Without this the read-out showed the rig — the
     /// microphone the NEXT run will use — beside a curve taken with another one.
     /// </remarks>
-    public LiveDisplayCalibration? DisplayedCalibration =>
+    public string? DisplayedCalibrationName =>
         loadedCapture is { } document
-            ? new LiveDisplayCalibration(document.Calibration?.Name, FromLoadedFile: true)
+            ? document.Calibration?.Name ?? string.Empty
             : HasDisplayableCurve
-                ? new LiveDisplayCalibration(
-                    measurement.CaptureMicrophoneCalibrationId, FromLoadedFile: false)
+                ? measurement.CaptureMicrophoneCalibrationName
                 : null;
 
     /// <summary>
@@ -289,14 +288,6 @@ internal sealed class LiveSpectrumController : IDisposable
     // exists. Keying on the RIG's calibration instead — which is what this did while
     // the live options still owned that choice — dropped a perfectly valid envelope
     // whenever the next run's microphone was chosen mid-hold.
-    /// <summary>
-    /// The correction behind the curve on screen: a NAME when it came out of a loaded
-    /// capture, an id from this machine's list when it was taken here.
-    /// </summary>
-    internal readonly record struct LiveDisplayCalibration(
-        string? Value,
-        bool FromLoadedFile);
-
     private readonly record struct PeakHoldDisplayKey(
         MagnitudeScale Scale,
         bool RtaOnly,
@@ -500,6 +491,9 @@ internal sealed class LiveSpectrumController : IDisposable
         // parameters, and its recipe no longer describes what this analyzer would do.
         loadedCapture = null;
         ForgetLastCurve();
+        // The plot just changed hands — there is nothing on it now, so what it is
+        // corrected through is the rig's answer again, and Save has nothing to write.
+        updateRecordButton();
     }
 
     /// <summary>
@@ -637,7 +631,6 @@ internal sealed class LiveSpectrumController : IDisposable
         // would otherwise recompute the walk — and the file would name a microphone it
         // was never taken through.
         measurement.SetCaptureMicrophoneCalibration(
-            liveSpectrumOptions.CalibrationId,
             resolveCalibration(liveSpectrumOptions.CalibrationId));
         _ = measurement.RunAsync();
         timer.Start();

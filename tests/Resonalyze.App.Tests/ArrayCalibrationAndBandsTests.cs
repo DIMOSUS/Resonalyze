@@ -264,4 +264,57 @@ public sealed class ArrayCalibrationAndBandsTests
             OxyPlot.OxyColors.White,
             default,
             band);
+
+    [Fact]
+    public void APositionThatCouldNotBePlacedDoesNotVoteOnTheCalibration()
+    {
+        // Six positions through one file and a seventh that never overlapped the
+        // anchor's working band. The seventh is absent from the curve — that is what
+        // PlacedCount is for — so its calibration is absent from the correction too.
+        // Letting it vote declared a swappable correction an aggregate, and Virtual
+        // DSP then refuses to swap what it could have swapped exactly.
+        IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
+        var shared = VirtualCrossoverCalibrationSettings.From(
+            CalibrationFile.FromPoints(
+                [new CalibrationPoint(20.0, 0.0), new CalibrationPoint(20_000.0, 0.0)],
+                "shared"),
+            "shared",
+            null);
+        var odd = VirtualCrossoverCalibrationSettings.From(
+            CalibrationFile.FromPoints(
+                [new CalibrationPoint(20.0, 3.0), new CalibrationPoint(20_000.0, 3.0)],
+                "odd"),
+            "odd",
+            null);
+
+        var microphones = new List<ArrayMicrophoneCurve>();
+        for (int i = 0; i < 6; i++)
+        {
+            microphones.Add(new ArrayMicrophoneCurve(
+                i,
+                IsMeasurementMicrophone: i == 0,
+                Enumerable.Repeat(-30.0, grid.Count).ToArray(),
+                AcceptedRuns: 1)
+            {
+                Calibration = shared
+            });
+        }
+
+        // Nothing but NaN: no band overlaps the anchor, so it cannot be placed.
+        microphones.Add(new ArrayMicrophoneCurve(
+            6,
+            IsMeasurementMicrophone: false,
+            Enumerable.Repeat(double.NaN, grid.Count).ToArray(),
+            AcceptedRuns: 1)
+        {
+            Calibration = odd
+        });
+
+        LiveCaptureDocument document = ArrayCaptureDocument.TryCreate(
+            microphones, 48_000, null)!;
+
+        Assert.Equal(6, document.Recipe.MicrophoneCount);
+        Assert.False(document.CalibrationIsAggregate);
+        Assert.Equal("shared", document.Calibration?.Name);
+    }
 }

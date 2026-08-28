@@ -388,7 +388,6 @@ namespace Resonalyze
                 signal.SampleRate);
             AchievedLowFrequencyHz = Sweep.LowFrequencyHz;
             AchievedHighFrequencyHz = Sweep.HighFrequencyHz;
-            MeasuredAtUtc = DateTimeOffset.UtcNow;
             MeasuredLowFrequencyHz = Sweep.Spec.FullAmplitudeLowFrequencyHz;
             MeasuredHighFrequencyHz = Sweep.Spec.FullAmplitudeHighFrequencyHz;
             AchievedSweepSampleCount = Sweep.SweepSamples;
@@ -1308,6 +1307,11 @@ namespace Resonalyze
 
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
+            // When the sweep RUNS, not when the measurement was configured. One
+            // configuration serves every press of Record, so stamping it at Init gave
+            // every result the same time — and the composition warning reads this date
+            // to let a user notice that two channels came from different sittings.
+            MeasuredAtUtc = DateTimeOffset.UtcNow;
             ExponentialSineSweep sweep = Sweep!;
             bool success = false;
             IAudioDuplexSession? session = null;

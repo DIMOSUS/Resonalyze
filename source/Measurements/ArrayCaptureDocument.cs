@@ -80,6 +80,15 @@ internal static class ArrayCaptureDocument
             return (null, null);
         }
 
+        var placedMicrophones = new List<ArrayMicrophoneCurve>(placed.PlacedCount);
+        for (int i = 0; i < microphones.Count; i++)
+        {
+            if (placed.TrimsDb[i] != null)
+            {
+                placedMicrophones.Add(microphones[i]);
+            }
+        }
+
         return (new LiveCaptureDocument
         {
             Format = LiveCaptureDocument.CurrentFormat,
@@ -103,10 +112,16 @@ internal static class ArrayCaptureDocument
             // one analyzer run — is guaranteed here by the loopback instead.
             CaptureSessionId = Guid.NewGuid(),
             Recipe = BuildRecipe(sampleRateHz, placed.PlacedCount, protectiveHighPass),
-            Calibration = ArrayPlacement.SharedCalibration(microphones),
+            // The PLACED positions, like the count above. A position that could not
+            // be levelled onto the anchor is not in the curve, so its calibration is
+            // not in the correction either — and letting it vote made a set of six
+            // that shared one file declare itself an aggregate because a seventh that
+            // contributed nothing carried a different one. Virtual DSP would then
+            // refuse to swap a correction that IS swappable.
+            Calibration = ArrayPlacement.SharedCalibration(placedMicrophones),
             CurveDb = placed.CalibratedAverageDb,
             CalibrationCorrectionDb = placed.CorrectionDb(),
-            CalibrationIsAggregate = ArrayPlacement.IsMixed(microphones),
+            CalibrationIsAggregate = ArrayPlacement.IsMixed(placedMicrophones),
             GridStartHz = grid[0],
             GridStopHz = grid[^1]
         },

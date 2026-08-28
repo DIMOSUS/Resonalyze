@@ -239,6 +239,29 @@ public sealed class ArrayMicrophoneTests
     }
 
     [Fact]
+    public void TheRunCheckIsSkippedWhereItsTransformWouldNotFit()
+    {
+        // The verdict costs an H1 padded to twice the capture, and its scratch is
+        // FFT-sized. The app accepts rates to 384 kHz and sweeps to 100 s, which reach
+        // 2^24 and 2^27 bins: gigabytes to answer a yes-or-no question, at the moment
+        // a measurement is running. So it lives under the ceiling the loopback's own
+        // diagnosis already lives under, and above it the level checks stand alone.
+        //
+        // A field sweep is nowhere near: 20 s at 96 kHz is 1.92 M samples, and the
+        // bound is reached just past 2 M.
+        Assert.True(ExpSweepMeasurement.RunCredibilityDiagnosisFits(1_920_000));
+        Assert.True(ExpSweepMeasurement.RunCredibilityDiagnosisFits(
+            (1 << 21)));
+        Assert.False(ExpSweepMeasurement.RunCredibilityDiagnosisFits(
+            (1 << 21) + 1));
+        // 384 kHz over 100 seconds, the far end of what the app accepts.
+        Assert.False(ExpSweepMeasurement.RunCredibilityDiagnosisFits(38_400_000));
+        // And an absurd one reads as "does not fit" rather than overflowing.
+        Assert.False(ExpSweepMeasurement.RunCredibilityDiagnosisFits(int.MaxValue));
+        Assert.False(ExpSweepMeasurement.RunCredibilityDiagnosisFits(0));
+    }
+
+    [Fact]
     public void TheRunFloorGivesBackExactlyWhatAveragingWouldHaveAdded()
     {
         // Not a chosen number. Averaging N runs leaves the coherent arrival alone and

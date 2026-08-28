@@ -379,7 +379,9 @@ internal sealed class EqWizardSourceResolver
                 entry.ToCurves(),
                 file.SampleRate,
                 file.ProtectiveHighPass?.ToConfiguration(),
-                file.SavedAtUtc);
+                file.MeasuredAtUtc > DateTimeOffset.UnixEpoch
+                    ? file.MeasuredAtUtc
+                    : file.SavedAtUtc);
         if (document == null)
         {
             return null;

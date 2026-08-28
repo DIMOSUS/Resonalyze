@@ -236,6 +236,7 @@ internal sealed class MeasurementHistoryService
             AchievedHighFrequencyHz = measurement.AchievedHighFrequencyHz,
             MeasuredLowFrequencyHz = measurement.MeasuredLowFrequencyHz,
             MeasuredHighFrequencyHz = measurement.MeasuredHighFrequencyHz,
+            MeasuredAtUtc = measurement.MeasuredAtUtc,
             SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
@@ -308,7 +309,9 @@ internal sealed class MeasurementHistoryService
             AchievedHighFrequencyHz = achievedHighHz,
             MeasuredLowFrequencyHz = measuredLowHz,
             MeasuredHighFrequencyHz = measuredHighHz,
-            MeasuredAtUtc = file.SavedAtUtc,
+            MeasuredAtUtc = file.MeasuredAtUtc > DateTimeOffset.UnixEpoch
+                ? file.MeasuredAtUtc
+                : file.SavedAtUtc,
             Octaves = file.Octaves,
             SweepDurationSeconds = file.SweepDurationSeconds,
             PlayChannel = file.PlayChannel,

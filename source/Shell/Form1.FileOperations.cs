@@ -312,7 +312,10 @@ public partial class Form1
             achievedHighHz,
             file.TimingReference,
             file.MeasuredLowFrequencyHz,
-            file.MeasuredHighFrequencyHz);
+            file.MeasuredHighFrequencyHz,
+            file.MeasuredAtUtc > DateTimeOffset.UnixEpoch
+                ? file.MeasuredAtUtc
+                : file.SavedAtUtc);
         expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
         AdoptRestoredResult(
             file.SplCalibration,

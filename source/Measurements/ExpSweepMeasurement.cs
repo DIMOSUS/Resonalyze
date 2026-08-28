@@ -119,6 +119,20 @@ namespace Resonalyze
         /// </remarks>
         public double MeasuredLowFrequencyHz { get; private set; }
         public double MeasuredHighFrequencyHz { get; private set; }
+
+        /// <summary>
+        /// When this result was MEASURED, which is not when its file was written.
+        /// </summary>
+        /// <remarks>
+        /// A spatial average built from it is shown with this date, because nothing
+        /// records where an array's microphones stood and when they stood there is the
+        /// only evidence a user has that two channels came from one sitting. Taking it
+        /// from the file's own save stamp instead survives a load but not a re-save:
+        /// open Monday's measurement and Friday's on Saturday, save each once, and
+        /// both read Saturday — the warning then says the two came from one session,
+        /// which is exactly the claim it exists to let a user check.
+        /// </remarks>
+        public DateTimeOffset MeasuredAtUtc { get; private set; } = DateTimeOffset.UtcNow;
         // Length of that same sweep. Also recorded rather than read back off the
         // rebuilt one, which caps its generation at MaxDurationSeconds and would
         // otherwise halve the harmonic offsets of a restored 200-second sweep.
@@ -374,6 +388,7 @@ namespace Resonalyze
                 signal.SampleRate);
             AchievedLowFrequencyHz = Sweep.LowFrequencyHz;
             AchievedHighFrequencyHz = Sweep.HighFrequencyHz;
+            MeasuredAtUtc = DateTimeOffset.UtcNow;
             MeasuredLowFrequencyHz = Sweep.Spec.FullAmplitudeLowFrequencyHz;
             MeasuredHighFrequencyHz = Sweep.Spec.FullAmplitudeHighFrequencyHz;
             AchievedSweepSampleCount = Sweep.SweepSamples;
@@ -553,7 +568,8 @@ namespace Resonalyze
             double achievedHighFrequencyHz = 0.0,
             TimingReference timingReference = TimingReference.SynchronizedLoopback,
             double measuredLowFrequencyHz = 0.0,
-            double measuredHighFrequencyHz = 0.0)
+            double measuredHighFrequencyHz = 0.0,
+            DateTimeOffset? measuredAtUtc = null)
         {
             ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(sweepDeconvolutionImpulseResponse);
@@ -645,6 +661,10 @@ namespace Resonalyze
             // came from the original one. The length matters as much as the band:
             // generation is capped at MaxDurationSeconds while a stored sweep may
             // be minutes long, and the harmonic offsets scale with it.
+            // Restored, never re-stamped: a file re-saved today was still measured
+            // whenever it was measured. Null only for a source that carries no time of
+            // its own, where the clock is the best answer there is.
+            MeasuredAtUtc = measuredAtUtc ?? DateTimeOffset.UtcNow;
             if (achievedLowFrequencyHz > 0 &&
                 achievedHighFrequencyHz > achievedLowFrequencyHz)
             {
@@ -1752,6 +1772,20 @@ namespace Resonalyze
                 return;
             }
 
+            // The same ceiling the loopback's own diagnosis lives under, and for the
+            // same reason. This transform is 2 x NextPowerOfTwo(samples), and the
+            // scratch around it is FFT-sized: at 2^22 bins that is already a few
+            // hundred megabytes per run, and the rates and durations the app accepts
+            // reach 2^24 (384 kHz, 20 s) and 2^27 (384 kHz, 100 s), where it would ask
+            // for gigabytes to answer a yes-or-no question. Above the bound the run
+            // check is skipped and the level checks stand alone; the AVERAGED verdict
+            // still runs, because its transform is the one the measurement needed
+            // anyway and only the inverse is added to it.
+            if (!RunCredibilityDiagnosisFits(loopback.Length))
+            {
+                return;
+            }
+
             TransferIrCompactness?[] shapes = TransferFunction.MeasureSingleFrameCompactness(
                 new RecordedSamplesView(loopback),
                 judged.Select(entry =>
@@ -1981,6 +2015,22 @@ namespace Resonalyze
         // and the microphone reading (which reuses the measurement's own
         // deconvolution and is never skipped).
         internal const int MaxLoopbackDiagnosisFftLength = 1 << 22;
+
+        /// <summary>
+        /// Whether the per-run credibility check's transform stays under the same
+        /// ceiling the loopback's diagnosis lives under. Its H1 pads to twice the
+        /// capture, so this is the length that matters rather than a convolution's.
+        /// </summary>
+        internal static bool RunCredibilityDiagnosisFits(int recordedSamples)
+        {
+            // In long, so an absurd configuration reads as "does not fit" rather than
+            // overflowing into an exception that would fail the measurement for the
+            // sake of its own optional check.
+            long padded = (long)recordedSamples * 2;
+            return recordedSamples > 0 &&
+                padded <= MaxLoopbackDiagnosisFftLength &&
+                DspMath.NextPowerOfTwo((int)padded) <= MaxLoopbackDiagnosisFftLength;
+        }
 
         internal static bool LoopbackDiagnosisFits(
             int recordedSamples,

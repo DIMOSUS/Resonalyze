@@ -257,12 +257,29 @@ public static class TransferIrDiagnostics
         int sampleRate)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
-        var samples = new double[impulseResponse.Count];
-        for (int i = 0; i < samples.Length; i++)
+        // A view, not a copy. The measure reads each sample once, and materialising
+        // the real parts asked for a second array the size of the response — 34 MB at
+        // the transform length a 96 kHz twenty-second take reaches, for nothing.
+        return MeasureCompactness(new RealPartsView(impulseResponse), sampleRate);
+    }
+
+    private sealed class RealPartsView(IReadOnlyList<Complex> source)
+        : IReadOnlyList<double>
+    {
+        public int Count => source.Count;
+
+        public double this[int index] => source[index].Real;
+
+        public IEnumerator<double> GetEnumerator()
         {
-            samples[i] = impulseResponse[i].Real;
+            for (int i = 0; i < source.Count; i++)
+            {
+                yield return source[i].Real;
+            }
         }
-        return MeasureCompactness(samples, sampleRate);
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
+            GetEnumerator();
     }
 
     /// <summary>

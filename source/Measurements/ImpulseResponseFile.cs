@@ -52,6 +52,10 @@ public sealed class ImpulseResponseFile
     // recorded, where the reader falls back to the achieved band.
     public double MeasuredLowFrequencyHz { get; set; }
     public double MeasuredHighFrequencyHz { get; set; }
+    // When the measurement was taken, as opposed to when this file was written.
+    // SavedAtUtc is re-stamped by every save; this is not. Default for a file written
+    // before it existed, where the reader falls back to the save stamp.
+    public DateTimeOffset MeasuredAtUtc { get; set; }
     public double SweepDurationSeconds { get; set; }
     public PlaybackChannel PlayChannel { get; set; }
     public SweepMeasurementMode MeasurementMode { get; set; } =
@@ -199,6 +203,7 @@ public sealed class ImpulseResponseFile
             AchievedHighFrequencyHz = measurement.AchievedHighFrequencyHz,
             MeasuredLowFrequencyHz = measurement.MeasuredLowFrequencyHz,
             MeasuredHighFrequencyHz = measurement.MeasuredHighFrequencyHz,
+            MeasuredAtUtc = measurement.MeasuredAtUtc,
             // The sweep that produced this IR, which for a re-saved measurement is
             // longer than the one rebuilt on load if it outran the generation cap.
             SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,

@@ -5,6 +5,83 @@ namespace Resonalyze.Dsp.Tests;
 
 public sealed class TransferFunctionTests
 {
+    [Fact]
+    public void ComputeSingleFrameIrs_MatchesJudgingEachTargetOnItsOwn()
+    {
+        // The whole justification for the batched call is that it changes the cost and
+        // not the answer: one loopback transformed once instead of once per
+        // microphone, which is a third of the arithmetic for eight of them. The gate
+        // and the regularization are functions of the reference alone, so the results
+        // must be identical to the bit — not merely close.
+        var random = new Random(20260828);
+        int length = 4096;
+        var reference = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            reference[i] = random.NextDouble() - 0.5;
+        }
+
+        // Three microphones of one run: a delayed and scaled copy, a quieter one at a
+        // different delay, and a channel carrying something unrelated.
+        var targets = new List<IReadOnlyList<double>>();
+        foreach ((int delay, double scale) in new[] { (37, 0.7), (91, 0.25) })
+        {
+            var target = new double[length];
+            for (int i = delay; i < length; i++)
+            {
+                target[i] = reference[i - delay] * scale;
+            }
+
+            targets.Add(target);
+        }
+
+        var noise = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            noise[i] = (random.NextDouble() - 0.5) * 0.05;
+        }
+
+        targets.Add(noise);
+
+        Complex[]?[] batched = TransferFunction.ComputeSingleFrameIrs(
+            reference, targets, ExcitationBandGate.FullBand);
+
+        Assert.Equal(targets.Count, batched.Length);
+        for (int i = 0; i < targets.Count; i++)
+        {
+            (_, Complex[]? alone) = TransferFunction.ComputeAveragedMagnitudeAndIr(
+                [new TransferFunctionFrame(reference, targets[i])],
+                ExcitationBandGate.FullBand);
+            Complex[] expected = Assert.IsType<Complex[]>(alone);
+            Complex[] actual = Assert.IsType<Complex[]>(batched[i]);
+            Assert.Equal(expected.Length, actual.Length);
+            for (int bin = 0; bin < expected.Length; bin++)
+            {
+                Assert.Equal(expected[bin].Real, actual[bin].Real, 12);
+                Assert.Equal(expected[bin].Imaginary, actual[bin].Imaginary, 12);
+            }
+        }
+    }
+
+    [Fact]
+    public void ComputeSingleFrameIrs_LeavesAnUnusableTargetNull()
+    {
+        var reference = new double[512];
+        for (int i = 0; i < reference.Length; i++)
+        {
+            reference[i] = Math.Sin(i * 0.11);
+        }
+
+        Complex[]?[] results = TransferFunction.ComputeSingleFrameIrs(
+            reference,
+            [new double[512], new double[16], []],
+            ExcitationBandGate.FullBand);
+
+        Assert.NotNull(results[0]);
+        Assert.Null(results[1]);
+        Assert.Null(results[2]);
+    }
+
     [Theory]
     [InlineData(50.35)]
     [InlineData(128.6)]

@@ -223,13 +223,14 @@ close.
   per microphone** and does not shrink with the run count. Eight of those is 1.07 GiB
   against today's 0.28, and on the 48 kHz / 100 s case it is ~4.8 GiB against 1.46.
   Streaming only wins past about **18 runs**, where `runs × capture × 4` finally
-  overtakes `2.2 × capture × 32`. It IS the fix for the duplicated CPU — the per-run
-  credibility verdict costs its own H1 and inverse transform, measured at **529 ms**
-  per microphone per run at 96 kHz / 20 s (~4.2 s a run for seven positions plus the
-  measurement microphone), and every one of those frames is transformed again for the
-  final result. So the two halves of this item pull in opposite directions and want
-  separate answers: bounded, run-count-independent state on one side, and not paying
-  twice for the same transform on the other.
+  overtakes `2.2 × capture × 32`. It IS the fix for the duplicated CPU — every frame the
+  per-run credibility verdict transforms is transformed again for the final result —
+  but that half is now half-solved without it: the per-run verdict transforms the
+  loopback ONCE for all of a run's microphones instead of once each, measured at
+  3993 → 2093 ms for eight channels of a 96 kHz / 20 s take. What remains is the
+  second pass at the end, and buying that back costs the memory above. So the two
+  halves of this item pull in opposite directions and want separate answers: bounded,
+  run-count-independent state on one side, and not paying twice on the other.
 - [ ] **Run an averaged ASIO measurement on real hardware** (ideally a slow
   driver). Averaged sweeps keep one open ASIO session across runs; every software
   lifecycle guard around that — callback pools, capture epochs, in-flight block

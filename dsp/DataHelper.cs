@@ -20,6 +20,17 @@ namespace Resonalyze.Dsp
         /// </summary>
         public const string ZeroDegrees = "0deg";
 
+        /// <summary>
+        /// The calibration the MEASUREMENT was recorded through, whatever that was:
+        /// the curve frozen into it when its run began. It is what an analysis view
+        /// starts on, so a response is read through the microphone that took it
+        /// rather than through whichever curve the view happened to be left on.
+        /// </summary>
+        public const string Own = "own";
+
+        public static bool IsOwn(string? calibrationId) =>
+            string.Equals(calibrationId, Own, StringComparison.OrdinalIgnoreCase);
+
         public static bool IsOff(string? calibrationId) =>
             string.IsNullOrEmpty(calibrationId);
 

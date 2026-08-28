@@ -2165,9 +2165,14 @@ Which selector answers for which curve follows from what each one is. **Record
 Settings** answers for the microphone, so the sweeps and the live captures taken on
 that rig are stamped and corrected by its choice — the **Live Spectrum** panel shows
 it, greyed, rather than offering a second one. **Frequency Response** answers for the
-VIEW: a loaded measurement is read through the calibration it carries, and this
-selector is where that can be overridden for a file that carries none of its own, or
-compared against another curve; it never reaches a stamp. The **EQ Wizard** and
+VIEW, and its list opens on **Own (as measured)** — the calibration frozen into the
+measurement on screen, whatever that was. Every new measurement selects it: a finished
+sweep, an opened file, a history entry stepped back to. Anything else in the list is an
+override, for a measurement that carries no calibration of its own or to compare one
+microphone's correction against another's; none of it ever reaches a stamp. Own is
+marked unavailable while the open measurement carries no calibration, because
+"corrected by nothing" and "corrected by the microphone that measured it" must not look
+the same. The **EQ Wizard** and
 **Virtual DSP** keep their own, because a project is a set of measurements rather
 than one, and Virtual DSP's list adds **Own (as measured)** for exactly that (see
 [Virtual DSP](#virtual-dsp)). Phase and Group Delay read timing rather than level and

@@ -191,8 +191,14 @@ public partial class Form1
         string? rigCalibrationId =
             measurementSettings.Measurement.MicrophoneCalibrationId;
         liveSpectrumOptions.CalibrationId = rigCalibrationId;
+        // The panel's read-out answers for the curve ON SCREEN while there is one —
+        // which is the capture's frozen calibration, not the rig's — and only falls
+        // back to the rig when there is nothing drawn for it to describe.
+        string? liveDisplayCalibrationId = liveSpectrumController.HasDisplayableCurve
+            ? noiseMeasurement.CaptureMicrophoneCalibrationId
+            : rigCalibrationId;
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
-            panel => panel.RefreshCalibrationEntries(rigCalibrationId, entries));
+            panel => panel.RefreshCalibrationEntries(liveDisplayCalibrationId, entries));
     }
 
     // Adds a calibration curve a Virtual DSP session carried in to the configured
@@ -269,6 +275,13 @@ public partial class Form1
                 plotModelFactory.SetImpulseResponseFileName(null);
                 SetImpulseResponseAvailability(true);
                 sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
+                // A new measurement is read through the microphone that took it. The
+                // view is moved even when it was on one of the user's own entries:
+                // the run has just frozen a calibration into the result, and leaving
+                // the plot on a different one draws the response through a microphone
+                // it never passed — silently, and with the selector still naming the
+                // curve it was left on.
+                SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
             }
             else
             {

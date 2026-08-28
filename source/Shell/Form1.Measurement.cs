@@ -271,6 +271,12 @@ public partial class Form1
     // edit, and losing it because Apply was not pressed is the whole bug here.
     private async void PersistCalibration(MeasurementOptions.CalibrationSelection selection)
     {
+        // Which half of this changed decides what the live analyzer has to be told.
+        // A microphone curve cannot reach a capture already taken — its calibration
+        // is frozen on the accumulation — while the SPL anchor shapes the display
+        // itself, so only the anchor may drop a peak hold.
+        bool splAnchorMoved = !ReferenceEquals(
+            measurementSettings.Measurement.SplCalibration, selection.SplCalibration);
         measurementSettings.Measurement.MicrophoneCalibration0DegreesPath =
             selection.MicrophoneCalibration0DegreesPath;
         measurementSettings.Measurement.AdditionalMicrophoneCalibrations =
@@ -299,12 +305,17 @@ public partial class Form1
 
         try
         {
-            // Refresh Live Spectrum for the calibration change in EVERY mode — drop
-            // its now-stale peak hold — not only while it is the visible mode; it
-            // rebuilds its own model only when visible, so any other mode still
-            // refreshes below. The capture and its signal are untouched: they
-            // follow the analysis mode, which a calibration cannot change.
-            liveSpectrumController.RefreshCalibration();
+            // The SPL anchor changes what a level maps to on screen, so the held
+            // envelope stops being comparable and the analyzer is refreshed in EVERY
+            // mode — it rebuilds its own model only when visible, so any other mode
+            // still refreshes below. A microphone curve does not get this: the
+            // capture carries the one it was taken through, and dropping a valid
+            // peak hold for a change that cannot touch its curve is exactly what the
+            // freeze was introduced to stop.
+            if (splAnchorMoved)
+            {
+                liveSpectrumController.RefreshCalibration();
+            }
 
             if (CurrentMode != Mode.LiveSpectrum)
             {

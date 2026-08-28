@@ -153,6 +153,38 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
     }
 
     /// <summary>
+    /// The analysis views start on the measurement's OWN calibration, and that
+    /// selection is an ordinary persisted id like any other.
+    /// </summary>
+    /// <remarks>
+    /// It replaced a sentinel that could not be stored — the loaded measurement's
+    /// curve was offered as a pseudo-entry and stripped again before saving, because
+    /// an id naming a file's curve resolves to nothing on the next start. "Own" names
+    /// a RULE rather than a curve, so it survives a restart and means the same thing
+    /// against whatever measurement is open then.
+    /// </remarks>
+    [Fact]
+    public void TheOwnSelectionSurvivesASaveAndLoad()
+    {
+        string path = WriteSettings("""
+            {
+              "SchemaVersion": 12,
+              "Measurement": { "MicrophoneCalibrationId": "0deg" },
+              "FrequencyResponse": { "CalibrationId": "own" }
+            }
+            """);
+
+        MeasurementSettingsFile settings = Load(path);
+
+        Assert.Equal(MicrophoneCalibrationIds.Own, settings.FrequencyResponse.CalibrationId);
+        Assert.True(MicrophoneCalibrationIds.IsOwn(settings.FrequencyResponse.CalibrationId));
+
+        var options = new FrequencyResponseOptions();
+        settings.FrequencyResponse.ApplyTo(options, new CurveVisibilityOptions());
+        Assert.Equal(MicrophoneCalibrationIds.Own, options.CalibrationId);
+    }
+
+    /// <summary>
     /// The rig's calibration reaches the live analyzer, and the ids phase and group
     /// delay used to store go: those views read timing rather than level and apply
     /// no correction, so an id there was state nothing could act on.

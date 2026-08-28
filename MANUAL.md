@@ -238,7 +238,8 @@ The panel is grouped the way the decisions are:
    is enough for a quick look; four or more is preferable, and it is what produces a
    usable coherence curve.
 3. **Calibration** — where the microphone is declared, and it has to be right **before**
-   the first sweep: a run freezes the chosen curve into every file it writes. **Mic
+   the first sweep: a run freezes the chosen curve into its result, and **Save** writes
+   that frozen curve into the file. **Mic
    calibration 0°** takes the microphone's on-axis file, **More calibrations →
    Manage...** takes any others (load your **90°** file here), and **Measure through**
    selects the one this rig records with — the 90° one, because that is the orientation
@@ -353,9 +354,10 @@ accuracy may suffer.
 
 ### Measure and save every driver
 
-Mute every DSP output except the driver being measured. Nothing may stand between the
-drivers and the microphone, so run the sweep from the back seat or from outside the
-car — never from the driver's seat the microphone is standing in.
+Mute every DSP output except the driver being measured. Keep people and anything else
+that is not part of the car out of the path from the drivers to the microphone: run the
+sweep from the back seat or from outside, never from the driver's seat the microphone
+is standing in.
 
 When everything is ready, press **Start** on the main Resonalyze panel. The sweep will
 play several times according to the **Measurements** setting, and Resonalyze will
@@ -475,11 +477,11 @@ Then, one driver at a time, **with the DSP still in the same bypassed state you
 measured in** (only the protective high-pass left in place) and at **the same levels**:
 
 - mute every output except the driver being captured;
-- **sit in the back and keep the path from every driver to the capsule clear** — your
-  own body included, and nobody in the front seats. Hold the microphone into the
-  driver's head area from behind: a torso between an A-pillar tweeter and the capsule
-  is a shadow, and unlike a reflection it does not average out — every position you
-  walk the microphone through has the same body in front of it;
+- **sit in the back and keep yourself out of the path** from every driver to the
+  capsule, with nobody in the front seats. Hold the microphone into the driver's head
+  area from behind: a torso between an A-pillar tweeter and the capsule is a shadow,
+  and unlike a reflection it does not average out — every position you walk the
+  microphone through has the same body in front of it;
 - take the microphone off its stand and hold it with the **capsule pointing up**, the
   same orientation it was mounted in;
 - press **Start**, and move it in **slow, smooth circles around the driver's head
@@ -514,6 +516,12 @@ Load a saved measurement with the **Load** button on the main panel and select i
 Each analysis mode also has its own **settings button**, which opens an additional
 panel with mode-specific controls. Depending on the view, this includes smoothing,
 impulse-response gating, displayed curves, and other analysis parameters.
+
+Its **Calibration** selector opens on **Own (as measured)**: the curve the measurement
+in front of you was recorded through. Every new measurement puts it back there — a
+finished sweep, an opened file, a history entry stepped back to — so if it says anything
+else, someone chose it, and you are reading this response through a microphone that did
+not take it.
 
 Start with **Frequency Response** and check:
 
@@ -1031,8 +1039,9 @@ behavior, which can make the following alignment stage considerably easier.
 
 Do not chase every narrow notch. A dip made by delayed energy or plain cancellation is
 not something PEQ can repair: the filter changes the magnitude, not what caused the
-dip. (**Group Delay** mode is where such a dip can be told apart from a driver's own —
-see [REFERENCE.md](REFERENCE.md#phase-and-group-delay).)
+dip. (**Group Delay** mode can help tell such a dip apart from a driver's own — as
+evidence rather than proof, and only where the level and the coherence there are worth
+reading; see [REFERENCE.md](REFERENCE.md#phase-and-group-delay).)
 
 ### Preamp and manual cleanup
 

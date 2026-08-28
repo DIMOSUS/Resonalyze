@@ -346,7 +346,11 @@
             audioBackendPanel.Location = new Point(8, 361);
             audioBackendPanel.Name = "audioBackendPanel";
             audioBackendPanel.Size = new Size(322, 343);
-            audioBackendPanel.TabIndex = 39;
+            // After the calibration and array rows it sits below on the panel: the
+            // backend group has been ahead of them in the tab order since the array
+            // row was added, so a Tab from the SPL button jumped down past both and
+            // came back up for them.
+            audioBackendPanel.TabIndex = 44;
             //
             // button1
             //

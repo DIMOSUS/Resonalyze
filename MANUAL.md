@@ -468,8 +468,18 @@ your head actually occupies.
 
 Switch Live Spectrum to **MMM** mode. It pins the settings such an average is only
 valid under — periodic pink noise, infinite averaging, band-power dB SPL, noise-slope
-compensation on, smoothing off — so there is nothing to configure and nothing to get
-wrong. An SPL calibration is **not** required.
+compensation on, smoothing off, and with periodic noise the window and overlap follow —
+so most of that panel stops being a decision. An SPL calibration is **not** required.
+
+**Sequence Length** is the one that stays yours, and it wants to be long. The
+excitation is one frame-length period of pink noise on a loop, so the frame sets both
+the lowest frequency the noise really contains and the resolution the average is built
+at: 2048 samples at 48 kHz resolve about 47 Hz, 65536 about 1.5 Hz — and a spatial
+average read down to 30 Hz through the first of those is mostly interpolation. The
+captures behind this guide were taken at **65536 at 48 kHz**, 1.4 s per frame, which
+makes the 30 seconds below about twenty frames. Use the same length for every capture
+in a set: Virtual DSP compares their recipes and says so when one was taken
+differently.
 
 ![Live Spectrum in MMM mode, mid-capture](assets/images/manual/mmm-capture.png)
 

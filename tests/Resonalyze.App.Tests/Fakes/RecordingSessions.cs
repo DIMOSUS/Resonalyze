@@ -1,4 +1,4 @@
-using Resonalyze.Audio;
+﻿using Resonalyze.Audio;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -244,6 +244,179 @@ internal static class SyntheticCapture
         return new AudioCaptureResult(
             [mic, loop], 0, 1, StereoSeparationExpected: true,
             AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
+    /// <summary>
+    /// A measurement pair plus ONE array microphone carrying noise instead of the
+    /// sweep: an unused preamp hissing, the wrong socket, a failed capsule.
+    /// </summary>
+    /// <remarks>
+    /// The point is that it passes every level check there is — it is neither silent
+    /// nor clipped nor short, and it sits at an entirely ordinary level. What it does
+    /// not do is divide into a response.
+    /// </remarks>
+    public static AudioCaptureResult WithNoisyArrayMicrophone(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        double peak = 0.05)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        return new AudioCaptureResult(
+            [mic, loop, Noise(mic.Length, peak)],
+            MicrophoneChannel: 0,
+            LoopbackChannel: 1,
+            StereoSeparationExpected: false,
+            AudioCaptureAnomalies.None,
+            Diagnostics: null)
+        {
+            ArrayChannels = [2]
+        };
+    }
+
+    /// <summary>
+    /// The array microphone recorded the sweep on some captures and noise on others:
+    /// an intermittent fault, which is the case a per-RUN rule exists for.
+    /// </summary>
+    /// <remarks>
+    /// Averaged, a bad run hides. Three good runs still put an arrival in the H1
+    /// total, so its shape stays compact and a verdict taken on the average passes —
+    /// while the bad run's reference power sits in the denominator all the same and
+    /// pulls that position's level down. It has to be caught where the level checks
+    /// are caught: on the run.
+    /// </remarks>
+    public static AudioCaptureResult WithArrayMicrophoneNoisyOnThisCapture(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        bool noisy,
+        double peak = 0.05)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        (float[] array, _) = BuildChannels(signal, tailSamples, 0.4f, 0.25f);
+        return new AudioCaptureResult(
+            [mic, loop, noisy ? Noise(mic.Length, peak) : array],
+            MicrophoneChannel: 0,
+            LoopbackChannel: 1,
+            StereoSeparationExpected: false,
+            AudioCaptureAnomalies.None,
+            Diagnostics: null)
+        {
+            ArrayChannels = [2]
+        };
+    }
+
+    /// <summary>
+    /// The same intermittent fault on the MEASUREMENT microphone, which carries the
+    /// level every other channel is compared against.
+    /// </summary>
+    public static AudioCaptureResult WithMeasurementMicrophoneNoisyOnThisCapture(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        bool noisy,
+        double peak = 0.005)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        return new AudioCaptureResult(
+            [noisy ? Noise(mic.Length, peak) : mic, loop],
+            MicrophoneChannel: 0,
+            LoopbackChannel: 1,
+            StereoSeparationExpected: false,
+            AudioCaptureAnomalies.None,
+            Diagnostics: null);
+    }
+
+    /// <summary>
+    /// The mirror image: the MEASUREMENT microphone carries noise while the array
+    /// microphone beside it recorded the sweep properly.
+    /// </summary>
+    /// <remarks>
+    /// The fault is the measurement's own, and the measurement has a diagnosis for
+    /// it that names the loopback level and the distorting channel. This exists to
+    /// pin that the array's cruder verdict does not get there first and blame an
+    /// input that is working.
+    /// </remarks>
+    public static AudioCaptureResult WithNoisyMeasurementMicrophone(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        double peak = 0.05)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        return new AudioCaptureResult(
+            [Noise(mic.Length, peak), loop, mic],
+            MicrophoneChannel: 0,
+            LoopbackChannel: 1,
+            StereoSeparationExpected: false,
+            AudioCaptureAnomalies.None,
+            Diagnostics: null)
+        {
+            ArrayChannels = [2]
+        };
+    }
+
+    // Deterministic, so a verdict about it is the same on every run and machine.
+    private static float[] Noise(int length, double peak)
+    {
+        var noise = new float[length];
+        uint state = 0x9E3779B9;
+        for (int i = 0; i < length; i++)
+        {
+            state = state * 1664525u + 1013904223u;
+            noise[i] = (float)(((state >> 8) / (double)0x00FFFFFF - 0.5) * 2.0 * peak);
+        }
+
+        return noise;
+    }
+
+    /// <summary>
+    /// A measurement pair plus array microphones on channels 2, 3, ... Each
+    /// array scale is that microphone's level relative to the played sweep, so a
+    /// test can state what its transfer level must come out as.
+    /// </summary>
+    public static AudioCaptureResult WithArray(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        params float[] arrayScales) =>
+        WithArray(signal, tailSamples, edge: null, sampleRateHz: 0, arrayScales);
+
+    /// <summary>
+    /// The same, with the protective high-pass in the acoustic path: every
+    /// microphone passes through it and the loopback — taken from the card output,
+    /// ahead of the external DSP — does not.
+    /// </summary>
+    public static AudioCaptureResult WithArray(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        CrossoverEdge? edge,
+        double sampleRateHz,
+        params float[] arrayScales)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        var channels = new List<float[]> { mic, loop };
+        foreach (float scale in arrayScales)
+        {
+            (float[] arrayMic, _) = BuildChannels(signal, tailSamples, scale, 0f);
+            channels.Add(arrayMic);
+        }
+
+        if (edge is { } highPass)
+        {
+            IReadOnlyList<BiquadCoefficients> sections =
+                CrossoverFilter.BuildSections(highPass, highPass: true, sampleRateHz);
+            foreach (BiquadCoefficients section in sections)
+            {
+                ApplySection(mic, section);
+                for (int i = 2; i < channels.Count; i++)
+                {
+                    ApplySection(channels[i], section);
+                }
+            }
+        }
+
+        return new AudioCaptureResult(
+            [.. channels], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null)
+        {
+            ArrayChannels = [.. Enumerable.Range(2, arrayScales.Length)]
+        };
     }
 
     private static (float[] Microphone, float[] Loopback) BuildChannels(

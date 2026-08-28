@@ -16,15 +16,37 @@ namespace Resonalyze;
 internal sealed class VirtualCrossoverMetrics
 {
     private readonly VirtualCrossoverProcessingCoordinator coordinator;
-    private readonly Func<Complex[], int, int, GatedMagnitude> buildMagnitudeCurve;
+    private readonly Func<Complex[], int, int, MeasuredBand, CalibrationFile?, GatedMagnitude>
+        buildMagnitudeCurve;
+
+    // How a curve's microphone correction is chosen. Passed in rather than read from
+    // a field, because under the panel's "Own (as measured)" it is a property of each
+    // MEASUREMENT and not of the project: one channel's file may name a calibration
+    // its neighbour's does not, and a sum of two such channels names neither.
+    private readonly Func<ProcessedChannel, CalibrationFile?> channelCalibration;
+
+    // The SUM is not the gated total of the summed responses, though the arithmetic
+    // says it is: one shared window makes the transform linear, so that total carries
+    // every channel's window leakage into ranges that channel never measured. Built
+    // by the panel, which owns the gate placement.
+    private readonly Func<IReadOnlyList<ProcessedChannel>, int, GatedMagnitude>?
+        buildSumCurve;
 
     public VirtualCrossoverMetrics(
         VirtualCrossoverProcessingCoordinator coordinator,
-        Func<Complex[], int, int, GatedMagnitude> buildMagnitudeCurve)
+        Func<Complex[], int, int, MeasuredBand, CalibrationFile?, GatedMagnitude>
+            buildMagnitudeCurve,
+        Func<ProcessedChannel, CalibrationFile?>? channelCalibration = null,
+        Func<IReadOnlyList<ProcessedChannel>, int, GatedMagnitude>? buildSumCurve = null)
     {
         this.coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         this.buildMagnitudeCurve = buildMagnitudeCurve
             ?? throw new ArgumentNullException(nameof(buildMagnitudeCurve));
+        // No correction by default: a caller that does not draw for a user has no
+        // microphone to correct for, and the metric is a comparison between curves
+        // built the same way rather than an absolute reading.
+        this.channelCalibration = channelCalibration ?? (_ => null);
+        this.buildSumCurve = buildSumCurve;
     }
 
     // The magnitude curves, complex sum and summation loss the metric reads,
@@ -33,11 +55,16 @@ internal sealed class VirtualCrossoverMetrics
     // carry the display smoothing; the loss is divided out of the UNSMOOTHED
     // pair and smoothed afterwards (see VirtualCrossoverAnalysis.SumLossCurve),
     // which is why the builder hands back both widths.
-    // Fewer than two channels yield no metric.
+    // Fewer than two channels yield no METRIC — a sum of one channel is that
+    // channel, and its summation loss is zero by definition. The per-channel
+    // magnitudes are not a metric: they are what the plot draws, and one channel is
+    // drawn like any other. Withholding them was what made the hybrid view stop
+    // working when every channel but one was muted, in the panel and in the EQ
+    // handoff alike, both of which gate on these being present.
     public (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum, List<SignalPoint>? Loss)
         BuildCurves(List<ProcessedChannel> processed, int smoothingInverseOctaves)
     {
-        if (processed.Count < 2)
+        if (processed.Count == 0)
         {
             return (null, null, null);
         }
@@ -69,12 +96,34 @@ internal sealed class VirtualCrossoverMetrics
             .AsParallel()
             .AsOrdered()
             .Select(item => buildMagnitudeCurve(
-                item.ImpulseResponse, anchor, item.SampleRate))
+                item.ImpulseResponse,
+                anchor,
+                item.SampleRate,
+                item.MeasuredBand,
+                channelCalibration(item)))
             .ToList();
-        Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
-            processed.Select(item => item.ImpulseResponse).ToList());
-        GatedMagnitude sumCurve = buildMagnitudeCurve(
-            sum, anchor, processed[0].SampleRate);
+        if (processed.Count < 2)
+        {
+            return (magnitudes.Select(curve => curve.Display).ToList(), null, null);
+        }
+
+        // Each channel contributing only where it measured, then added as phasors,
+        // each through its OWN microphone correction. Without a builder — a caller
+        // that only wants the metric arithmetic — the old total stands: the sum plays
+        // wherever ANY of its channels does, so its band is the UNION of theirs, and
+        // the per-frequency mask covers a hole between two channels whose sweeps do
+        // not overlap. That fallback sums impulse responses in the time domain, so it
+        // has nowhere to put a per-channel correction and takes none; it is not a
+        // path the panel uses.
+        GatedMagnitude sumCurve = buildSumCurve?.Invoke(processed, anchor)
+            ?? buildMagnitudeCurve(
+                VirtualCrossoverAnalysis.SumImpulseResponses(
+                    processed.Select(item => item.ImpulseResponse).ToList()),
+                anchor,
+                processed[0].SampleRate,
+                ProcessedChannels.UnionOfMeasuredBands(processed),
+                null)
+                .MeasuredBySomeChannel(processed);
         List<IReadOnlyList<SignalPoint>> operands = magnitudes
             .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
             .ToList();
@@ -571,7 +620,9 @@ internal sealed class VirtualCrossoverMetrics
                 side.ProcessedPeak,
                 side.SampleRate,
                 OxyColors.Transparent,
-                side.ProcessedValidRange)).ToList());
+                side.ProcessedValidRange,
+                side.State.MeasuredBand,
+                side.State.MicrophoneCalibrationCurve)).ToList());
     }
 
     // One channel side snapshotted on the UI thread for background processing

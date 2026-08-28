@@ -200,7 +200,11 @@ public partial class VirtualCrossoverPanel : UserControl
         checkBoxShowLoss.ForeColor = Color.FromArgb(LossColor.R, LossColor.G, LossColor.B);
         targetToggleColor = checkBoxShowTarget.ForeColor;
 
-        metrics = new VirtualCrossoverMetrics(processingCoordinator, BuildMagnitudeCurve);
+        metrics = new VirtualCrossoverMetrics(
+            processingCoordinator,
+            BuildMagnitudeCurve,
+            CalibrationFor,
+            BuildMeasuredSumCurve);
         acousticPlot = new VirtualCrossoverAcousticPlot(
             mainPlotView, NoSourcesHint, CurrentAcousticView());
         dspChainPlot = new VirtualCrossoverDspChainPlot(dspPlotView, CurrentDspPlotMode());
@@ -249,6 +253,45 @@ public partial class VirtualCrossoverPanel : UserControl
     /// calibration is off or unavailable.
     /// </summary>
     private CalibrationFile? Calibration { get; set; }
+
+    /// <summary>
+    /// True while the selector is on "Own (as measured)": each curve is drawn
+    /// through the calibration ITS measurement recorded, and
+    /// <see cref="Calibration"/> describes nothing.
+    /// </summary>
+    private bool ownCalibrationSelected;
+
+    /// <summary>
+    /// The calibration one channel's curves are drawn through.
+    /// </summary>
+    /// <remarks>
+    /// Null under Own for a measurement whose file names no calibration — which is
+    /// the honest answer rather than a fallback to the panel's: the file says it was
+    /// read through none, and substituting a curve it never passed would be the panel
+    /// deciding what a measurement means.
+    /// </remarks>
+    private CalibrationFile? CalibrationFor(ProcessedChannel channel) =>
+        ownCalibrationSelected ? channel.MicrophoneCalibration : Calibration;
+
+    private CalibrationFile? CalibrationFor(VirtualCrossoverChannelState state) =>
+        ownCalibrationSelected ? state.MicrophoneCalibrationCurve : Calibration;
+
+    /// <summary>
+    /// How a stored spatial average on this side should be read.
+    /// </summary>
+    /// <remarks>
+    /// Under Own it is the CAPTURE's own correction, deliberately not this side's
+    /// measurement file. A moving-microphone pass attached to a channel is a separate
+    /// measurement taken through its own calibration, and an array is several capsules
+    /// each through theirs; reading either through the impulse response beside it
+    /// would be wrong by the whole difference between the two files. The state is not
+    /// consulted at all — the capture knows.
+    /// </remarks>
+    private SpatialAverageCalibration SpatialAverageCalibrationFor(
+        VirtualCrossoverChannelState state) =>
+        ownCalibrationSelected
+            ? SpatialAverageCalibration.Own
+            : SpatialAverageCalibration.Specific(Calibration);
 
     // Resolves a calibration by id; supplied by the host form, which owns the
     // configured calibrations. Null until the host wires it.
@@ -576,6 +619,22 @@ public partial class VirtualCrossoverPanel : UserControl
                 ResolveSourceAsync(channel, rightSide, showErrors: false),
             UpdateSourceButton);
 
+        // After the sources, because an array arrives with one: a project that has
+        // never chosen a method chooses here, once, from everything it actually has.
+        // The channel buttons were drawn while each source landed, which is BEFORE
+        // this — so they have to be told, or a button reads one method while the menu
+        // and the curves read the other.
+        if (SettleSpatialAverageMode())
+        {
+            foreach (VirtualCrossoverChannel channel in channels)
+            {
+                RefreshSpatialAverageStatus(channel);
+            }
+
+            RefreshHybridAvailability();
+            ScheduleSave();
+        }
+
         UpdateSideRadioTexts();
         // The final redraw is issued by ApplyProjectAsync after the loading
         // state clears, so it draws the real plot instead of the loading note.
@@ -784,9 +843,16 @@ public partial class VirtualCrossoverPanel : UserControl
             ? sessionCalibration?.Curve
             : calibrationResolver?.Invoke(calibrationId);
 
-    private void ResolveCalibration() =>
-        Calibration = ResolveSelectedCalibration(
-            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration));
+    private void ResolveCalibration()
+    {
+        string? selected =
+            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
+        ownCalibrationSelected = VirtualCrossoverCalibrationSelection.IsOwn(selected);
+        // Deliberately left null under Own rather than pointed at one of the
+        // measurements: a single field cannot hold a per-channel answer, and a caller
+        // that read it would silently get whichever channel happened to be first.
+        Calibration = ownCalibrationSelected ? null : ResolveSelectedCalibration(selected);
+    }
 
     // Writes the selector's selection into the project in its persisted form: the
     // curve the session is tuned with, plus the id of the configured entry it came
@@ -844,6 +910,18 @@ public partial class VirtualCrossoverPanel : UserControl
                     string.Equals(entry.Id, id, StringComparison.OrdinalIgnoreCase))
                 ?.Name
             : null;
+
+    /// <summary>
+    /// What ONE channel is rendered through, named for the tools the panel hands over
+    /// to. Under "Own (as measured)" that is the file's own calibration, and the name
+    /// has to follow the curve — the wizard's selector shows this while disabled, and
+    /// a label naming the selector rather than the curve would say "Own" over a
+    /// correction the user cannot see.
+    /// </summary>
+    private string? CalibrationNameFor(VirtualCrossoverChannelState state) =>
+        ownCalibrationSelected
+            ? state.MicrophoneCalibration?.Name
+            : SelectedCalibrationName();
 
     // ----------------------------------------------------------------- wiring
 
@@ -1864,6 +1942,9 @@ public partial class VirtualCrossoverPanel : UserControl
         VirtualCrossoverSourceReference reference)
     {
         reference.ApplyTo(settings);
+        // A measurement can bring an array with it, and for a project that has never
+        // chosen a method this is the moment it does.
+        SettleSpatialAverageMode();
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
         ScheduleSave();
@@ -2183,11 +2264,23 @@ public partial class VirtualCrossoverPanel : UserControl
                 (double)numericTargetLevel.Minimum,
                 (double)numericTargetLevel.Maximum,
                 snapshot.SmoothingInverseOctaves,
-                Calibration,
-                SelectedCalibrationName(),
+                // The channel's own under "Own (as measured)": the wizard pins what the
+                // panel RENDERED with, and a tune fitted under one correction and summed
+                // back under another would break the handoff's identity.
+                CalibrationFor(channel.SideState(channel.ActiveRight)),
+                CalibrationNameFor(channel.SideState(channel.ActiveRight)),
+                // The MODE too: a capture read as it was measured and one read
+                // through a named file are two different curves, and the wizard has
+                // to reproduce the one the plot drew.
+                SpatialAverageCalibrationFor(channel.SideState(channel.ActiveRight)),
                 projectGeneration,
                 spatialAverage.Capture,
-                spatialAverage.OffsetDb);
+                spatialAverage.OffsetDb,
+                // Exactly the condition the plot drew this channel under: the set is
+                // being read as arrays, and this one had none to read.
+                HybridRequested &&
+                    SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray &&
+                    spatialAverage.Capture == null);
         }
         catch (InvalidOperationException)
         {
@@ -2300,7 +2393,13 @@ public partial class VirtualCrossoverPanel : UserControl
                 token,
                 curve,
                 projectGeneration,
-                Calibration,
+                // The correction THIS channel side would be rendered through now. Under
+                // "Own (as measured)" the panel holds no single one, and comparing the
+                // token against a null would refuse every return.
+                CalibrationFor(token.Channel.SideState(token.RightSide)),
+                // And how a capture on it would be read, which the curve above cannot
+                // say: the two are what decide the magnitude together.
+                SpatialAverageCalibrationFor(token.Channel.SideState(token.RightSide)),
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 (double)numericTargetLevel.Value,
@@ -2865,7 +2964,12 @@ public partial class VirtualCrossoverPanel : UserControl
         // threads where it actually runs.
         long revision = processingCoordinator.CurrentRevision;
         var snapshots = new List<VirtualCrossoverChannelSnapshot>();
-        var bindings = new Dictionary<int, (VirtualCrossoverChannel Channel, OxyColor Color)>();
+        var bindings = new Dictionary<
+            int,
+            (VirtualCrossoverChannel Channel,
+                OxyColor Color,
+                MeasuredBand Band,
+                CalibrationFile? OwnCalibration)>();
         using (AppProfiler.Zone("VirtualDSP.SnapshotChannels"))
         {
             for (int i = 0; i < channels.Count; i++)
@@ -2890,7 +2994,12 @@ public partial class VirtualCrossoverPanel : UserControl
                     state.SampleRate,
                     ProcessorSampleRateHz,
                     chain));
-                bindings.Add(i, (channel, ChannelColors[i]));
+                bindings.Add(
+                    i,
+                    (channel,
+                        ChannelColors[i],
+                        state.MeasuredBand,
+                        state.MicrophoneCalibrationCurve));
             }
         }
 
@@ -2905,14 +3014,19 @@ public partial class VirtualCrossoverPanel : UserControl
         var processed = new List<ProcessedChannel>(render.Channels.Count);
         foreach (VirtualCrossoverProcessedChannel result in render.Channels)
         {
-            (VirtualCrossoverChannel channel, OxyColor color) = bindings[result.Id];
+            (VirtualCrossoverChannel channel,
+                OxyColor color,
+                MeasuredBand band,
+                CalibrationFile? ownCalibration) = bindings[result.Id];
             processed.Add(new ProcessedChannel(
                 channel,
                 result.ImpulseResponse,
                 result.PeakIndex,
                 result.SampleRate,
                 color,
-                result.ValidRange));
+                result.ValidRange,
+                band,
+                ownCalibration));
         }
         return new ProcessedRender(render.Revision, processed);
     }
@@ -3019,7 +3133,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         using (AppProfiler.Zone("VirtualDSP.UpdateMetric"))
         {
-            UpdateMetric(processed, lossCurve, stereoDeltas);
+            UpdateMetric(processed, lossCurve, stereoDeltas, hybrid);
         }
 
         using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))
@@ -3274,7 +3388,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 AnalysisCurve raw = BuildRawMagnitudeCurve(
                     item.Channel.TransferImpulseResponse!,
                     item.Channel.TransferPeakIndex,
-                    item.Channel.SampleRate);
+                    item.Channel.SampleRate,
+                    item.MeasuredBand,
+                    CalibrationFor(item));
                 curves.Add(new AcousticCurve(
                     $"{item.Channel.Name} raw",
                     raw.Points,
@@ -3285,19 +3401,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
             if (item.Channel.Pair.ShowProcessedCurve)
             {
-                AnalysisCurve curve = magnitudes != null
-                    ? magnitudes[i]
-                    : BuildMagnitudeCurve(
-                        item.ImpulseResponse,
-                        // No shared anchor to follow (BuildCurves yields no
-                        // metric below two channels), so the channel opens on
-                        // its own front — the same rule, one channel wide.
-                        ProcessedChannels.StartAnchorIndex(
-                            item.ImpulseResponse,
-                            item.PeakIndex,
-                            item.SampleRate,
-                            item.ValidRange),
-                        item.SampleRate).Display;
+                // Non-null wherever this loop runs: the builder withholds the
+                // metric below two channels and the per-channel magnitudes only for
+                // an empty set, which has no iteration to reach here.
+                AnalysisCurve curve = magnitudes![i];
                 IReadOnlyList<SignalPoint> points = hybrid != null
                     ? ShiftedBy(hybrid.Channels[i], hybrid.OffsetDb)
                     : curve.Points;
@@ -3358,7 +3465,8 @@ public partial class VirtualCrossoverPanel : UserControl
     private void UpdateMetric(
         List<ProcessedChannel> processed,
         List<SignalPoint>? lossCurve,
-        IReadOnlyList<VirtualCrossoverMetric.StereoDelta>? stereoDeltas = null)
+        IReadOnlyList<VirtualCrossoverMetric.StereoDelta>? stereoDeltas = null,
+        HybridMagnitudes? hybrid = null)
     {
         // The read-out lives in the host's right-side panel (where overlays sit in
         // analysis modes), as a compact per-junction column with the full banded
@@ -3396,6 +3504,21 @@ public partial class VirtualCrossoverPanel : UserControl
             detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
                 VirtualCrossoverMetric.FormatStereoDeltasDetail(stereoDeltas);
         }
+        if (hybrid != null)
+        {
+            // The set offset, shown rather than judged. It was a rescue mechanism
+            // for a moving-microphone set — a family with no level of its own, which
+            // it lifted onto the impulse responses' axis by tens of decibels. An
+            // array is referenced to the same loopback those responses are, so the
+            // number is small and it is a HEALTH reading: a large one says the array
+            // read a different input, a different calibration, or another driver.
+            compact += "\r\n\r\n" +
+                $"Spatial average {hybrid.OffsetDb:+0.0;-0.0} dB";
+            detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
+                $"The spatial averages sit {hybrid.OffsetDb:+0.0;-0.0} dB from the " +
+                "impulse responses, and the whole set is drawn shifted by that one " +
+                "figure.";
+        }
 
         MetricChanged?.Invoke(compact, detail);
     }
@@ -3432,6 +3555,57 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // A set whose channels were averaged over different arrays still hangs
+        // together — the levels are held by the loopback either way — so this warns
+        // rather than refuses. What differs is what "the average" MEANS per channel,
+        // and that is worth knowing before a tune is fitted to it.
+        if (hybrid != null && DescribeArrayCompositionMismatch() is { } mismatch)
+        {
+            ShowWarning(
+                "⚠ The channels were not averaged over the same array.",
+                mismatch,
+                GateWarningColor);
+            return;
+        }
+
+        // Before the sum note below, because it is about a selection the user just
+        // made and part of the plot is not obeying.
+        if (DescribeUnappliedCalibration(processed) is { } unapplied)
+        {
+            ShowWarning(
+                "⚠ The selected calibration does not reach every curve.",
+                unapplied,
+                GateWarningColor);
+            return;
+        }
+
+        // Louder than the array note below it: the plot is reading more than one
+        // microphone, and a difference between two channels then holds the difference
+        // between their capsules too.
+        if (DescribeOwnCalibrationMismatch(processed) is { } corrections)
+        {
+            ShowWarning(
+                "⚠ The channels were not measured through one calibration.",
+                corrections,
+                GateWarningColor);
+            return;
+        }
+
+        // Quieter than the two above — nothing is wrong — but it must be said: the
+        // hybrid exists to keep a point measurement's dips away from an equalizer,
+        // and these channels are drawn from exactly that.
+        if (hybrid is { PointMeasuredCount: > 0 } fallbacks)
+        {
+            ShowWarning(
+                fallbacks.PointMeasuredCount == 1
+                    ? "1 channel is drawn from its point measurement."
+                    : $"{fallbacks.PointMeasuredCount} channels are drawn from their " +
+                        "point measurements.",
+                FormatPointMeasuredDetail(fallbacks, processed),
+                InfoWarningColor);
+            return;
+        }
+
         UpdateCrossoverWarning(processed);
     }
 
@@ -3455,35 +3629,377 @@ public partial class VirtualCrossoverPanel : UserControl
     /// set that 5 dB kept over 2.7.
     /// </para>
     /// </remarks>
-    private const double HybridSpreadWarningDb = 3.0;
+    private double HybridSpreadWarningDb =>
+        SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+            ? ArraySpreadWarningDb
+            : MovingMicSpreadWarningDb;
+
+    private const double MovingMicSpreadWarningDb = 3.0;
+
+    /// <summary>
+    /// The same detector, on a family that agrees far more closely.
+    /// </summary>
+    /// <remarks>
+    /// A moving-microphone set is levelled by nothing but one analyzer session at
+    /// one input gain, so 3 dB is the margin a clean set needs. An array is
+    /// levelled by the same loopback the impulse responses are — the two families
+    /// are one measurement — and a real seven-position set measured on two drivers
+    /// read 0.33 dB apart. The threshold keeps a comparable margin over that
+    /// evidence rather than inheriting one calibrated on a looser family, where it
+    /// would let a genuinely broken array through.
+    /// </remarks>
+    private const double ArraySpreadWarningDb = 1.5;
+
+    private static string FormatPointMeasuredDetail(
+        HybridMagnitudes hybrid,
+        IReadOnlyList<ProcessedChannel> processed)
+    {
+        var names = new List<string>();
+        for (int i = 0; i < processed.Count && i < hybrid.PointMeasuredChannels.Count; i++)
+        {
+            if (hybrid.PointMeasuredChannels[i])
+            {
+                names.Add(processed[i].Channel.Name);
+            }
+        }
+
+        return $"Drawn from one microphone: {string.Join(", ", names)}." +
+            "\r\n\r\nThe rest of the set is drawn from its microphone arrays. A " +
+            "channel measured at one point carries dips that belong to that spot " +
+            "rather than to the listening volume, and an equalizer fitted to them " +
+            "is fitted to a place nobody's head occupies. Below the cabin's first " +
+            "mode the two measurements agree, so a subwoofer loses little by it.";
+    }
+
+    /// <summary>
+    /// Whether this project's arrays were built the same way, and how they differ
+    /// when they were not. Null when they agree, or when the project is not reading
+    /// arrays.
+    /// </summary>
+    /// <remarks>
+    /// Two things make an array a different question: how many positions it sampled,
+    /// and which calibration was read through. Neither breaks the LEVEL — that is
+    /// the loopback's job and it is done per measurement — so neither is a refusal.
+    /// </remarks>
+    /// <summary>
+    /// What to say when a named calibration cannot be applied to some of the captures
+    /// on the plot. Null when it reaches all of them, and null when none was named.
+    /// </summary>
+    /// <remarks>
+    /// A capture whose positions carried DIFFERENT calibration files declares an
+    /// aggregate correction belonging to no single microphone, so there is nothing a
+    /// named curve could be swapped for; the hybrid keeps the capture's own and says
+    /// nothing on its own. That silence is the problem this covers — the user chose a
+    /// microphone and part of the plot is not reading through it. Choosing is what
+    /// makes it worth saying: nobody needs telling about a state they did not ask for.
+    /// </remarks>
+    private string? DescribeUnappliedCalibration(IReadOnlyList<ProcessedChannel> processed)
+    {
+        if (ownCalibrationSelected || Calibration == null)
+        {
+            return null;
+        }
+
+        var aggregates = new List<string>();
+        foreach (ProcessedChannel item in processed)
+        {
+            LiveCaptureDocument? capture = item.Channel
+                .SideState(project.ActiveSideRight)
+                .SpatialAverageFor(SpatialAverageMode);
+            if (capture is { CalibrationIsAggregate: true })
+            {
+                aggregates.Add($"{item.Channel.Name} {item.Channel.Settings.DisplayName}");
+            }
+        }
+
+        if (aggregates.Count == 0)
+        {
+            return null;
+        }
+
+        return
+            $"{string.Join(", ", aggregates)} " +
+            (aggregates.Count == 1 ? "was" : "were") +
+            " averaged over positions carrying DIFFERENT calibration files, so the " +
+            "correction stored with the average belongs to no single microphone and " +
+            "there is nothing " +
+            $"\"{SelectedCalibrationName() ?? "the selected calibration"}\" could be " +
+            "swapped for. Those curves keep their own corrections — each position " +
+            "through the file it was measured with, which is the closest thing to the " +
+            "truth there is. Everything else on the plot is read through your " +
+            "selection.\r\n\r\nSelect \"Own (as measured)\" to read the whole plot " +
+            "the way each measurement was taken, and the note goes away.";
+    }
+
+    /// <summary>
+    /// What to say when "Own (as measured)" is selected and the channels do not agree
+    /// about the microphone they were measured through. Null when they do, and null
+    /// under every other selection, where one curve corrects everything by definition.
+    /// </summary>
+    /// <remarks>
+    /// A statement about the DATA, not a defect any more. The sum used to be drawn
+    /// through no correction here, because one subtraction cannot undo two
+    /// microphones — and the gap that left between it and the channels read as
+    /// summation loss and fed the loss read-outs. Each channel now carries its own
+    /// correction INTO the sum (see <see cref="BuildMeasuredSumCurve"/>), which is
+    /// what the physics asks for: the pressure is HᵢCᵢ and the total is Σ HᵢCᵢ. What
+    /// remains is worth saying once — the plot is reading more than one microphone —
+    /// without telling the user to fix something that is no longer broken.
+    /// </remarks>
+    private string? DescribeOwnCalibrationMismatch(IReadOnlyList<ProcessedChannel> processed)
+    {
+        if (!ownCalibrationSelected || processed.Count < 2)
+        {
+            return null;
+        }
+
+        CalibrationFile? first = processed[0].MicrophoneCalibration;
+        var differing = new List<string>();
+        foreach (ProcessedChannel channel in processed)
+        {
+            if (!CalibrationFile.SameCurve(channel.MicrophoneCalibration, first))
+            {
+                differing.Add(channel.Channel.Name);
+            }
+        }
+
+        if (differing.Count == 0)
+        {
+            return null;
+        }
+
+        return
+            $"{processed[0].Channel.Name} was measured through " +
+            $"{Describe(processed[0].MicrophoneCalibration)}, and " +
+            $"{string.Join(", ", differing)} through something else. Each channel is " +
+            "drawn through its own correction, which is what \"Own (as measured)\" " +
+            "means, and the sum carries each channel's correction with it — so the " +
+            "sum and the summation loss are honest. What they are not is one " +
+            "instrument: the curves are being compared across microphones, and a " +
+            "difference between two channels holds the difference between their " +
+            "capsules as well. Pick one calibration above to read the whole plot " +
+            "through a single microphone, at the cost of reading every channel " +
+            "through one that did not measure it.";
+
+        static string Describe(CalibrationFile? calibration) =>
+            calibration is { HasData: true } ? "a calibration" : "no calibration";
+    }
+
+    private string? DescribeArrayCompositionMismatch()
+    {
+        if (SpatialAverageMode != VirtualCrossoverSpatialAverageMode.MicArray)
+        {
+            return null;
+        }
+
+        // Every array in the PROJECT: both sides, muted channels included. What a set
+        // is MADE OF is a property of the measurements, and a mute or the side button
+        // says which curves to draw — a composition warning that came and went with
+        // those buttons would be describing the buttons.
+        //
+        // Both sides, because the cross-side case is the one that matters most and is
+        // invisible from either side alone: a left averaged over seven positions and a
+        // right over five are each internally consistent, and the dashed opposite sum
+        // then compares two different listening volumes as though the difference were
+        // the car. Nothing else catches it — an array set is levelled by the loopback
+        // each measurement already carries, so LiveCaptureDocument's array set rule has
+        // (rightly) nothing to object to. This objection is not about levelling.
+        var arrays = new List<(string Name, LiveCaptureDocument Document, bool Drawn)>();
+        foreach (VirtualCrossoverChannel channel in channels)
+        {
+            AddSide(rightSide: false);
+            if (!channel.Pair.Mono)
+            {
+                // A mono pair answers both sides from one slot; listing it twice would
+                // report a difference between a measurement and itself.
+                AddSide(rightSide: true);
+            }
+
+            void AddSide(bool rightSide)
+            {
+                if (channel.SideState(rightSide).ArrayCapture is not { } document)
+                {
+                    return;
+                }
+
+                arrays.Add((
+                    channel.Pair.Mono
+                        ? channel.Name
+                        : $"{channel.Name} {(rightSide ? "R" : "L")}",
+                    document,
+                    channel.Pair.Enabled));
+            }
+        }
+
+        if (arrays.Count < 2)
+        {
+            return null;
+        }
+
+        bool countsDiffer = arrays.Any(entry =>
+            entry.Document.Recipe.MicrophoneCount !=
+            arrays[0].Document.Recipe.MicrophoneCount);
+        bool calibrationsDiffer = arrays.Any(entry =>
+            !SameArrayCorrection(entry.Document, arrays[0].Document));
+        if (!countsDiffer && !calibrationsDiffer)
+        {
+            return null;
+        }
+
+        var lines = new StringBuilder();
+        lines.Append(
+            "A spatial average describes the volume its microphones stood in, so " +
+            "captures averaged over different arrays are answering slightly " +
+            "different questions:\r\n\r\n");
+        foreach ((string name, LiveCaptureDocument document, bool drawn) in arrays)
+        {
+            string calibration = document.Calibration?.Name
+                ?? (document.CalibrationIsAggregate
+                    ? "several calibrations, one per position"
+                    : "no calibration");
+            lines.Append(
+                $"    {name}    {document.Recipe.MicrophoneCount} microphone(s), " +
+                $"{calibration}, measured {document.SavedAtUtc.ToLocalTime():g}" +
+                $"{(drawn ? string.Empty : "  (muted)")}\r\n");
+        }
+
+        lines.Append(
+            "\r\nThe hybrid still draws: each average is honest about its own " +
+            "driver, and their levels are held by the loopback rather than by the " +
+            "arrays matching. Re-measure only if the odd capture's array sampled a " +
+            "different volume from the rest — and read an L/R comparison carefully " +
+            "when the two SIDES are what differ, because then the sides are not being " +
+            "asked the same question.\r\n\r\nThe dates are there because " +
+            "nothing records WHERE the microphones stood, and nothing can derive " +
+            "it: a rig lifted and set down somewhere else between two channels " +
+            "leaves every stored property identical. Captures from one sitting " +
+            "are one volume; captures from different days may not be.");
+        return lines.ToString();
+    }
+
+    /// <summary>
+    /// Whether two arrays were corrected the same way — including when neither can
+    /// name a single curve for it.
+    /// </summary>
+    /// <remarks>
+    /// An array whose positions carried DIFFERENT calibration files declares no
+    /// calibration at all: there is no one curve a reader could undo, which is what
+    /// <c>CalibrationIsAggregate</c> says instead. Comparing only the named curve
+    /// therefore made two such arrays agree with each other and with an array that
+    /// was never calibrated — three different corrections, all reading null, all
+    /// declared identical. What an aggregate CAN be compared on is the correction it
+    /// actually declares, band for band.
+    /// </remarks>
+    private static bool SameArrayCorrection(
+        LiveCaptureDocument first,
+        LiveCaptureDocument second)
+    {
+        if (first.CalibrationIsAggregate != second.CalibrationIsAggregate)
+        {
+            return false;
+        }
+        if (!first.CalibrationIsAggregate)
+        {
+            return SameCalibration(first.Calibration, second.Calibration);
+        }
+
+        double[]? a = first.CalibrationCorrectionDb;
+        double[]? b = second.CalibrationCorrectionDb;
+        if (a == null || b == null)
+        {
+            return a == b;
+        }
+        if (a.Length != b.Length)
+        {
+            return false;
+        }
+
+        for (int band = 0; band < a.Length; band++)
+        {
+            // A hundredth of a decibel: two aggregates that agree that closely are one
+            // correction written twice, and anything a user could act on is orders
+            // above it.
+            if (Math.Abs(a[band] - b[band]) > 0.01)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool SameCalibration(
+        VirtualCrossoverCalibrationSettings? first,
+        VirtualCrossoverCalibrationSettings? second)
+    {
+        if (first == null || second == null)
+        {
+            return first == null && second == null;
+        }
+
+        return CalibrationFile.SameCurve(
+            first.ToCalibrationFile(),
+            second.ToCalibrationFile());
+    }
 
     private string FormatHybridSpreadDetail(
         HybridMagnitudes hybrid, List<ProcessedChannel> processed)
     {
         var lines = new StringBuilder();
         lines.Append(
-            "Every capture in one set is taken with one analyzer recipe at one input " +
-            "gain, so each channel should sit the same distance from its impulse " +
-            "response. These do not:\r\n\r\n");
-        // Positional: ChannelOffsetsDb[i] belongs to processed[i], null included. It
-        // was packed once, and a single channel with nothing to compare then shifted
-        // every figure below it onto the wrong driver's name.
-        for (int i = 0; i < hybrid.ChannelOffsetsDb.Count && i < processed.Count; i++)
+            SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+                ? "Every array is referenced to the same loopback its impulse " +
+                    "response is, so each channel should sit the same distance from " +
+                    "it. These do not:\r\n\r\n"
+                : "Every capture in one set is taken with one analyzer recipe at one " +
+                    "input gain, so each channel should sit the same distance from " +
+                    "its impulse response. These do not:\r\n\r\n");
+        // The whole SET, muted channels included, because that is what the spread
+        // above was measured over — a list of only the drawn ones could say "these do
+        // not agree" above channels that all do, with the outlier hidden behind a
+        // mute button.
+        if (hybrid.SetDatumsDb.Count > 0)
         {
-            VirtualCrossoverChannel channel = processed[i].Channel;
-            string figure = hybrid.ChannelOffsetsDb[i] is { } offset
-                ? $"{offset:+0.0;-0.0} dB"
-                : "no overlap to compare";
-            lines.Append(
-                $"    {channel.Name} {channel.Settings.DisplayName}    {figure}\r\n");
+            var drawn = processed.Select(item => item.Channel).ToHashSet();
+            foreach (SetDatum entry in hybrid.SetDatumsDb)
+            {
+                string figure = entry.DatumDb is { } datum
+                    ? $"{datum:+0.0;-0.0} dB"
+                    : "no overlap to compare";
+                string muted = drawn.Contains(entry.Channel) ? string.Empty : "  (muted)";
+                lines.Append(
+                    $"    {entry.Channel.Name} {entry.Channel.Settings.DisplayName}" +
+                    $"    {figure}{muted}\r\n");
+            }
+        }
+        else
+        {
+            // Positional: ChannelOffsetsDb[i] belongs to processed[i], null included.
+            // It was packed once, and a single channel with nothing to compare then
+            // shifted every figure below it onto the wrong driver's name.
+            for (int i = 0; i < hybrid.ChannelOffsetsDb.Count && i < processed.Count; i++)
+            {
+                VirtualCrossoverChannel channel = processed[i].Channel;
+                string figure = hybrid.ChannelOffsetsDb[i] is { } offset
+                    ? $"{offset:+0.0;-0.0} dB"
+                    : "no overlap to compare";
+                lines.Append(
+                    $"    {channel.Name} {channel.Settings.DisplayName}    {figure}\r\n");
+            }
         }
 
         lines.Append(
-            "\r\nUsually one capture was taken with a different input gain, a " +
-            "different frame length or window (which moves the noise-slope " +
-            "compensation), or belongs to another session. The hybrid still draws: " +
-            "one offset serves the whole set, so a channel that disagrees is drawn " +
-            "at the level it claims.");
+            SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+                ? "\r\nAn array set should agree closely, so a channel standing " +
+                    "apart usually means its array read a different input, a " +
+                    "different calibration, or a driver that was not the one being " +
+                    "measured. "
+                : "\r\nUsually one capture was taken with a different input gain, a " +
+                    "different frame length or window (which moves the noise-slope " +
+                    "compensation), or belongs to another session. ");
+        lines.Append(
+            "The hybrid still draws: one offset serves the whole set, so a channel " +
+            "that disagrees is drawn at the level it claims.");
         return lines.ToString();
     }
 
@@ -3498,6 +4014,11 @@ public partial class VirtualCrossoverPanel : UserControl
     // Amber for the gate: it says the view cannot be read yet, not that the
     // tuning is wrong. The crossover spread keeps the red it always had.
     private static readonly Color GateWarningColor = Color.FromArgb(230, 184, 0);
+
+    // A statement of fact rather than a warning — nothing is wrong with a channel
+    // drawn from its point measurement — so it takes a neutral hue instead of the
+    // amber the two real warnings share.
+    private static readonly Color InfoWarningColor = Color.FromArgb(150, 170, 200);
     private static readonly Color CrossoverWarningColor = Color.FromArgb(235, 110, 95);
 
     // The spread of alignment delays, above which the setup is flagged. A driver
@@ -4525,7 +5046,9 @@ public partial class VirtualCrossoverPanel : UserControl
     private GatedMagnitude BuildMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
-        int sampleRate)
+        int sampleRate,
+        MeasuredBand band,
+        CalibrationFile? calibration)
     {
         MagnitudeGateSnapshot snapshot = magnitudeGate;
         return BuildGatedMagnitudeCurve(
@@ -4533,8 +5056,12 @@ public partial class VirtualCrossoverPanel : UserControl
             impulseResponse,
             peakIndex,
             sampleRate,
-            snapshot.ResolveGateOffsetMs(oppositeSide: false, peakIndex, sampleRate));
+            snapshot.ResolveGateOffsetMs(oppositeSide: false, peakIndex, sampleRate),
+            band,
+            calibration);
     }
+
+
 
     // The opposite side's sum window: its OWN pinned offset (or its own
     // earliest-arrival anchor when unpinned) — never the active side's pin,
@@ -4542,11 +5069,10 @@ public partial class VirtualCrossoverPanel : UserControl
     private AnalysisCurve BuildOppositeMagnitudeCurve(VirtualCrossoverSideSum side)
     {
         MagnitudeGateSnapshot snapshot = magnitudeGate;
-        return BuildGatedMagnitudeCurve(
+        return BuildMeasuredSumCurve(
             snapshot,
-            side.ImpulseResponse,
+            side.Channels,
             side.AnchorIndex,
-            side.SampleRate,
             snapshot.ResolveGateOffsetMs(
                 oppositeSide: true, side.AnchorIndex, side.SampleRate)).Display;
     }
@@ -4588,12 +5114,8 @@ public partial class VirtualCrossoverPanel : UserControl
         MagnitudeGateSnapshot snapshot = magnitudeGate;
         double gateOffsetMs = snapshot.ResolveGateOffsetMs(
             oppositeSide: true, side.AnchorIndex, side.SampleRate);
-        GatedMagnitude sum = BuildGatedMagnitudeCurve(
-            snapshot,
-            side.ImpulseResponse,
-            side.AnchorIndex,
-            side.SampleRate,
-            gateOffsetMs);
+        GatedMagnitude sum = BuildMeasuredSumCurve(
+            snapshot, side.Channels, side.AnchorIndex, gateOffsetMs);
         var channelMagnitudes = new List<GatedMagnitude>(side.Channels.Count);
         foreach (ProcessedChannel item in side.Channels)
         {
@@ -4602,7 +5124,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 item.ImpulseResponse,
                 side.AnchorIndex,
                 item.SampleRate,
-                gateOffsetMs));
+                gateOffsetMs,
+                item.MeasuredBand,
+                CalibrationFor(item)));
         }
 
         HybridMagnitudes? hybrid = BuildHybridMagnitudes(
@@ -4676,7 +5200,9 @@ public partial class VirtualCrossoverPanel : UserControl
     private AnalysisCurve BuildRawMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
-        int sampleRate)
+        int sampleRate,
+        MeasuredBand band,
+        CalibrationFile? calibration)
     {
         int anchorIndex = ProcessedChannels.StartAnchorIndex(
             impulseResponse, peakIndex, sampleRate);
@@ -4685,18 +5211,96 @@ public partial class VirtualCrossoverPanel : UserControl
             impulseResponse,
             anchorIndex,
             sampleRate,
-            anchorIndex * 1_000.0 / sampleRate).Display;
+            anchorIndex * 1_000.0 / sampleRate,
+            band,
+            calibration).Display;
     }
 
     // Both widths of one gated build: the smoothed curve the plot draws and the
     // unsmoothed one the summation loss divides (see GatedMagnitude). One gate,
     // one FFT, two resamples — the second resample is the cheap half.
+    /// <summary>
+    /// The gated magnitude of the SUM of these channels, with each contributing only
+    /// where it measured anything.
+    /// </summary>
+    /// <remarks>
+    /// Not the same as gating their summed impulse response, though the arithmetic
+    /// says it is: one shared window makes the transform linear, so the two totals
+    /// agree bin for bin — including on the energy the window smears out of a
+    /// channel's own band into a range that channel never measured. Measured on two
+    /// brick-walled bands an octave apart, that phantom reached 1.4 dB at 900 Hz and
+    /// 2.5 dB at 990 Hz above the only channel that measured there, and nothing on the
+    /// plot could show it: the channel whose leakage it is has its own curve broken
+    /// exactly there, so the summation loss divided a total carrying it by operands
+    /// that did not.
+    /// </remarks>
+    // The metric's own entry point: the active side's placement, resolved here so
+    // the drawn Sum and the metric's cannot be built under different windows.
+    private GatedMagnitude BuildMeasuredSumCurve(
+        IReadOnlyList<ProcessedChannel> channels,
+        int anchorIndex)
+    {
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        return BuildMeasuredSumCurve(
+            snapshot,
+            channels,
+            anchorIndex,
+            snapshot.ResolveGateOffsetMs(
+                oppositeSide: false,
+                anchorIndex,
+                channels.Count > 0 ? channels[0].SampleRate : 0));
+    }
+
+    /// <remarks>
+    /// Each channel brings its OWN correction, which is what the channel curves are
+    /// drawn through. Under one microphone they are one curve and the sum applies it
+    /// once at the end, exactly as before; under "Own (as measured)" with channels
+    /// measured through different microphones they are not, and the correction has to
+    /// go inside the sum — the pressure is HᵢCᵢ and the total is Σ HᵢCᵢ. One
+    /// correction outside the sum cannot undo two microphones, and leaving it out
+    /// drew a raw total beside corrected channels: a gap that reads as summation loss,
+    /// feeds the average and minimum loss read-outs, and is not loss at all.
+    /// </remarks>
+    private GatedMagnitude BuildMeasuredSumCurve(
+        MagnitudeGateSnapshot snapshot,
+        IReadOnlyList<ProcessedChannel> channels,
+        int anchorIndex,
+        double gateOffsetMs)
+    {
+        PhaseAnalysisSettings gate = snapshot.Template with
+        {
+            GateOffsetMs = gateOffsetMs
+        };
+        var views = new List<IImpulseMeasurement>(channels.Count);
+        var calibrations = new List<CalibrationFile?>(channels.Count);
+        foreach (ProcessedChannel channel in channels)
+        {
+            views.Add(new ImpulseMeasurementView(
+                channel.ImpulseResponse, anchorIndex, channel.SampleRate)
+            {
+                LowestMeasuredFrequencyHz = channel.MeasuredBand.LowEdgeHz,
+                HighestMeasuredFrequencyHz = channel.MeasuredBand.HighEdgeHz
+            });
+            calibrations.Add(CalibrationFor(channel));
+        }
+
+        (AnalysisCurve display, AnalysisCurve unsmoothed) =
+            DataHelper.GetGatedMeasuredMagnitudeSumPair(
+                views, gate, calibrations, snapshot.SmoothingInverseOctaves);
+        // Where NO channel measured the total came out zero rather than as a level,
+        // and a hole between two channels' bands is not something their outer edges
+        // can express in the first place.
+        return new GatedMagnitude(display, unsmoothed).MeasuredBySomeChannel(channels);
+    }
+
     private GatedMagnitude BuildGatedMagnitudeCurve(
         MagnitudeGateSnapshot snapshot,
         Complex[] impulseResponse,
         int peakIndex,
         int sampleRate,
-        double gateOffsetMs)
+        double gateOffsetMs,
+        MeasuredBand band,
+        CalibrationFile? calibration)
     {
         PhaseAnalysisSettings gate = snapshot.Template with
         {
@@ -4704,9 +5308,13 @@ public partial class VirtualCrossoverPanel : UserControl
         };
         (AnalysisCurve display, AnalysisCurve unsmoothed) =
             DataHelper.GetGatedPrimarySpectrumPair(
-                new ImpulseMeasurementView(impulseResponse, peakIndex, sampleRate),
+                new ImpulseMeasurementView(impulseResponse, peakIndex, sampleRate)
+                {
+                    LowestMeasuredFrequencyHz = band.LowEdgeHz,
+                    HighestMeasuredFrequencyHz = band.HighEdgeHz
+                },
                 gate,
-                Calibration,
+                calibration,
                 snapshot.SmoothingInverseOctaves);
         return new GatedMagnitude(display, unsmoothed);
     }
@@ -5390,7 +5998,9 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </remarks>
     private LiveCaptureDocument? HybridHandoffCapture(
         VirtualCrossoverChannel channel, bool rightSide) =>
-        HybridRequested ? channel.SideState(rightSide).SpatialAverage : null;
+        HybridRequested
+            ? channel.SideState(rightSide).SpatialAverageFor(SpatialAverageMode)
+            : null;
 
     /// <summary>
     /// That capture together with the offset that puts it on the impulse responses'
@@ -5441,7 +6051,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 rightSide,
                 magnitudeGate.SmoothingInverseOctaves) is not { } hybrid)
         {
-            // Fewer than two channels, or a set short of a capture: no offset can be
+            // No channels at all, or a set short of a capture: no offset can be
             // resolved, and the honest response is the only one that can be handed
             // over at a height the Target Level still describes.
             return (null, 0.0);
@@ -5861,12 +6471,14 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
-            processed.Select(item => item.ImpulseResponse).ToList());
-        AnalysisCurve sumCurve = BuildMagnitudeCurve(
-            sum,
-            processed.Min(item => item.PeakIndex),
-            processed[0].SampleRate).Display;
+        int overlayAnchor = processed.Min(item => item.PeakIndex);
+        MagnitudeGateSnapshot overlayGate = magnitudeGate;
+        AnalysisCurve sumCurve = BuildMeasuredSumCurve(
+            overlayGate,
+            processed,
+            overlayAnchor,
+            overlayGate.ResolveGateOffsetMs(
+                oppositeSide: false, overlayAnchor, processed[0].SampleRate)).Display;
 
         string title = "vDSP Sum " + string.Join(
             "+",
@@ -6024,9 +6636,18 @@ public partial class VirtualCrossoverPanel : UserControl
                     new ImpulseMeasurementView(
                         channel.TransferImpulseResponse!,
                         channel.TransferPeakIndex,
-                        channel.SampleRate),
+                        channel.SampleRate)
+                    {
+                        // Or the band read would run down the analysis window's
+                        // leakage and put a driver's low corner an octave under
+                        // where its signal actually stopped.
+                        LowestMeasuredFrequencyHz = channel
+                            .SideState(project.ActiveSideRight).MeasuredBand.LowEdgeHz,
+                        HighestMeasuredFrequencyHz = channel
+                            .SideState(project.ActiveSideRight).MeasuredBand.HighEdgeHz
+                    },
                     wizardOptions,
-                    Calibration);
+                    CalibrationFor(channel.SideState(project.ActiveSideRight)));
                 // When the source carried per-bin coherence, resample it onto the
                 // magnitude curve's log grid so the band read discounts the
                 // frequencies the measurement did not trust.

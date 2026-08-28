@@ -31,7 +31,12 @@ public readonly record struct RawCurveCapture(
     IReadOnlyList<double> CalibrationCorrectionDb,
     int SmoothingCode,
     int? SampleRateHz = null,
-    CalibrationFile? PointsCalibration = null);
+    CalibrationFile? PointsCalibration = null,
+    // What the measurement behind this curve actually measured. The stored spectrum is
+    // taken BEFORE the mask — deliberately, because masking it would let a smoothing
+    // window straddle the boundary in both directions at every later width — so the
+    // band has to travel with it and be applied to each finished re-smoothing.
+    MeasuredBand Band = default);
 
 internal static class RawCurveRenderer
 {
@@ -87,10 +92,20 @@ internal static class RawCurveRenderer
         return correction;
     }
 
+    /// <param name="band">
+    /// What the measurement behind <paramref name="spectrum"/> actually measured.
+    /// The spectrum is stored UNMASKED on purpose — masking it would let a smoothing
+    /// window straddle the boundary in both directions, and the break would then
+    /// slide with whichever width it is drawn at — so it is applied here, to the
+    /// finished curve, where it lands exactly where the filter and the sweep put it.
+    /// The default is the whole range, which is what a legacy file, an imported text
+    /// curve and a live RTA capture all read as.
+    /// </param>
     public static List<SignalPoint> Render(
         IReadOnlyList<SignalPoint> spectrum,
         IReadOnlyList<double> calibrationCorrectionDb,
-        int smoothing)
+        int smoothing,
+        MeasuredBand band = default)
     {
         List<SignalPoint> input = spectrum as List<SignalPoint> ?? spectrum.ToList();
         List<SignalPoint> result = DataHelper.LogarithmicResample(
@@ -105,7 +120,7 @@ internal static class RawCurveRenderer
 
         if (calibrationCorrectionDb.Count == 0)
         {
-            return result;
+            return Mask(result, band);
         }
         if (calibrationCorrectionDb.Count != result.Count)
         {
@@ -122,7 +137,29 @@ internal static class RawCurveRenderer
                 point.Y - calibrationCorrectionDb[i]);
         }
 
-        return result;
+        return Mask(result, band);
+    }
+
+    // Last, after the smoothing and the calibration alike: a break is not a level and
+    // must not be corrected, smoothed, or allowed into a neighbour's mean.
+    private static List<SignalPoint> Mask(List<SignalPoint> curve, MeasuredBand band)
+    {
+        double low = band.LowEdgeHz;
+        double high = band.HighEdgeHz;
+        if (!(low > 0.0) && double.IsPositiveInfinity(high))
+        {
+            return curve;
+        }
+
+        for (int i = 0; i < curve.Count; i++)
+        {
+            if (curve[i].X < low || curve[i].X > high)
+            {
+                curve[i] = new SignalPoint(curve[i].X, double.NaN);
+            }
+        }
+
+        return curve;
     }
 }
 
@@ -685,6 +722,12 @@ public sealed class Overlay
     // Frozen microphone correction at the 1024 output frequencies. It remains
     // separate because the primary FR smooths first and calibrates afterwards.
     private double[] rawCalibrationCorrectionDb = Array.Empty<double>();
+    // What the measurement behind the raw spectrum actually measured. The spectrum
+    // is stored unmasked so a later re-smoothing at any width is exact, which means
+    // the break has to be re-applied to every finished curve — and a slot outlives
+    // the measurement, so it has to carry the band itself. Default is the whole
+    // range, which is what every legacy file and every non-FR capture reads as.
+    private MeasuredBand capturedMeasuredBand;
     // No-raw captures only (dB SPL): the correction baked into sourcePoints, frozen per
     // point. Empty when the capture has a raw form or never described itself. Only
     // consumers outside the plot read it — the drawn curve already includes it.
@@ -1662,13 +1705,17 @@ public sealed class Overlay
         // The rate describes the measurement, not the raw form, so it survives a capture
         // that falls back to the drawn curve (an SPL trace, an operation, a legacy mode).
         int? sampleRateHz = raw?.SampleRateHz;
+        // Only a capture with a raw form carries one; everything else — imported text,
+        // an operation, a legacy mode — measured no band and keeps the whole range.
+        MeasuredBand measuredBand = raw?.Band ?? default;
         if (raw is { } rawCapture && rawCapture.Spectrum.Count >= 2)
         {
             // Keep the oversampled spectrum for exact re-smoothing, and derive the
             // display-resolution raw curve (Off) for export / operations / legacy.
             spectrum = rawCapture.Spectrum as List<SignalPoint> ?? rawCapture.Spectrum.ToList();
             calibrationCorrectionDb = rawCapture.CalibrationCorrectionDb.ToArray();
-            points = SmoothRawSpectrum(spectrum, calibrationCorrectionDb, 0);
+            points = SmoothRawSpectrum(
+                spectrum, calibrationCorrectionDb, 0, measuredBand);
             // The correction travels on the raw grid; the drawn points need no copy of it.
             pointsCorrectionDb = Array.Empty<double>();
             seedSmoothing = rawCapture.SmoothingCode;
@@ -1709,6 +1756,7 @@ public sealed class Overlay
         sourcePoints = points;
         rawSpectrumPoints = spectrum;
         rawCalibrationCorrectionDb = calibrationCorrectionDb;
+        capturedMeasuredBand = measuredBand;
         pointsCalibrationCorrectionDb = pointsCorrectionDb;
         capturedSmoothingCode = bakedSmoothing;
         capturedSampleRateHz = sampleRateHz ?? impulse?.SampleRateHz;
@@ -1812,6 +1860,7 @@ public sealed class Overlay
         // file states neither the calibration behind it nor the smoothing already in it.
         rawSpectrumPoints = null;
         rawCalibrationCorrectionDb = Array.Empty<double>();
+        capturedMeasuredBand = default;
         pointsCalibrationCorrectionDb = Array.Empty<double>();
         capturedSmoothingCode = null;
         capturedSampleRateHz = imported.Metadata.SampleRateHz;
@@ -1902,6 +1951,7 @@ public sealed class Overlay
         capturedCurveKind = null;
         rawSpectrumPoints = null;
         rawCalibrationCorrectionDb = Array.Empty<double>();
+        capturedMeasuredBand = default;
         pointsCalibrationCorrectionDb = Array.Empty<double>();
         capturedSmoothingCode = null;
     }
@@ -2468,6 +2518,8 @@ public sealed class Overlay
                 ? file.RawSpectrum.Select(point => new SignalPoint(point.X, point.Y)).ToList()
                 : null;
             rawCalibrationCorrectionDb = file.RawCalibrationCorrectionDb.ToArray();
+            capturedMeasuredBand = new MeasuredBand(
+                file.MeasuredLowFrequencyHz, file.MeasuredHighFrequencyHz);
             pointsCalibrationCorrectionDb = file.PointsCalibrationCorrectionDb.ToArray();
             capturedSmoothingCode = file.CapturedSmoothingCode;
             capturedSampleRateHz = file.SampleRateHz;
@@ -2581,6 +2633,8 @@ public sealed class Overlay
                 ? rawSpectrumPoints.Select(point => new OverlayPoint(point.X, point.Y)).ToArray()
                 : Array.Empty<OverlayPoint>();
             file.RawCalibrationCorrectionDb = rawCalibrationCorrectionDb.ToArray();
+            file.MeasuredLowFrequencyHz = capturedMeasuredBand.LowestHz;
+            file.MeasuredHighFrequencyHz = capturedMeasuredBand.HighestHz;
             file.PointsCalibrationCorrectionDb = pointsCalibrationCorrectionDb.ToArray();
             file.CapturedSmoothingCode = capturedSmoothingCode;
             file.SampleRateHz = capturedSampleRateHz;
@@ -2882,7 +2936,8 @@ public sealed class Overlay
             DataPoint[] exact = SmoothRawSpectrum(
                 rawSpectrumPoints,
                 rawCalibrationCorrectionDb,
-                smoothing);
+                smoothing,
+                capturedMeasuredBand);
             if (exact.Length < 2)
             {
                 return null;
@@ -2912,15 +2967,28 @@ public sealed class Overlay
 
     // Re-smooths the stored uncalibrated spectrum, then subtracts the correction
     // frozen at capture, in the same order as the primary frequency-response path.
+    /// <summary>
+    /// One re-smoothing of a stored raw spectrum, broken where the measurement behind
+    /// it never measured anything.
+    /// </summary>
+    /// <remarks>
+    /// AFTER the smoothing, the same rule the live curve follows: masking the stored
+    /// spectrum instead would let a smoothing window straddle the boundary in both
+    /// directions, and the break would then slide with whichever width the slot is
+    /// drawn at. On the output grid it lands where the filter and the sweep put it,
+    /// at every width.
+    /// </remarks>
     private static DataPoint[] SmoothRawSpectrum(
         List<SignalPoint> spectrum,
         IReadOnlyList<double> calibrationCorrectionDb,
-        int smoothing)
+        int smoothing,
+        MeasuredBand band)
     {
         List<SignalPoint> resampled = RawCurveRenderer.Render(
             spectrum,
             calibrationCorrectionDb,
-            smoothing);
+            smoothing,
+            band);
         var result = new DataPoint[resampled.Count];
         for (int i = 0; i < result.Length; i++)
         {
@@ -2969,6 +3037,7 @@ public sealed class Overlay
         capturedCurveKind = null;
         rawSpectrumPoints = null;
         rawCalibrationCorrectionDb = Array.Empty<double>();
+        capturedMeasuredBand = default;
         pointsCalibrationCorrectionDb = Array.Empty<double>();
         capturedSmoothingCode = null;
         capturedSampleRateHz = null;

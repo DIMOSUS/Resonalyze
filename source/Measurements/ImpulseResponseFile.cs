@@ -1,6 +1,7 @@
 ﻿using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Resonalyze.Dsp;
 using Resonalyze.History;
 
 namespace Resonalyze;
@@ -16,6 +17,13 @@ public sealed class ImpulseResponseFile
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         AllowTrailingCommas = true,
+        // An array microphone's curve carries NaN where the sweep never reached —
+        // a load-bearing value, not a defect: the band was not measured, and the
+        // one thing it must not become is a very low level an equalizer would try
+        // to fill. The same setting the live-capture format uses for the same
+        // reason; it only affects non-finite values, so every ordinary number is
+        // written exactly as before.
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
         ReadCommentHandling = JsonCommentHandling.Skip,
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -38,6 +46,16 @@ public sealed class ImpulseResponseFile
     // band-based generator; absent files fall back through ResolveAchievedSweepBand.
     public double AchievedLowFrequencyHz { get; set; }
     public double AchievedHighFrequencyHz { get; set; }
+    // The band the sweep excited at FULL amplitude, which is what the measurement may
+    // be READ over; the achieved pair above is what it reaches, guard bands included,
+    // and the harmonic geometry needs that one. Zero in a file written before this was
+    // recorded, where the reader falls back to the achieved band.
+    public double MeasuredLowFrequencyHz { get; set; }
+    public double MeasuredHighFrequencyHz { get; set; }
+    // When the measurement was taken, as opposed to when this file was written.
+    // SavedAtUtc is re-stamped by every save; this is not. Default for a file written
+    // before it existed, where the reader falls back to the save stamp.
+    public DateTimeOffset MeasuredAtUtc { get; set; }
     public double SweepDurationSeconds { get; set; }
     public PlaybackChannel PlayChannel { get; set; }
     public SweepMeasurementMode MeasurementMode { get; set; } =
@@ -94,6 +112,34 @@ public sealed class ImpulseResponseFile
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PreviewFrequencyResponseFileEntry? PreviewFrequencyResponse { get; set; }
+
+    /// <summary>
+    /// The microphone calibration in force when this response was measured, as a
+    /// CURVE rather than as the name of a file only this machine has.
+    /// </summary>
+    /// <remarks>
+    /// A measurement is not portable without it. The impulse response is raw — no
+    /// calibration is ever baked into one — so a recipient who does not have the
+    /// author's calibration file sees a different curve from the author's, and
+    /// nothing in the file used to say so. Carried the same way a Virtual DSP
+    /// session carries its own (see <c>VirtualCrossoverCalibrationSettings</c>):
+    /// the curve is the truth and the name is a hint, because two machines' lists
+    /// mint their own ids.
+    /// <para>
+    /// Additive and optional, like <see cref="ProtectiveHighPass"/>, and for the
+    /// same reason: bumping the version would make every file this build writes
+    /// unreadable to older ones over metadata they would ignore.
+    /// </para>
+    /// </remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; set; }
+
+    /// <summary>
+    /// The spatially averaged microphones recorded alongside this measurement,
+    /// or null when it was made with one microphone.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ArrayMicrophonesFileEntry? ArrayMicrophones { get; set; }
 
     public double[] SweepDeconvolutionRealSamples { get; set; } = Array.Empty<double>();
 
@@ -155,6 +201,9 @@ public sealed class ImpulseResponseFile
             HighFrequencyHz = measurement.HighFrequencyHz,
             AchievedLowFrequencyHz = measurement.AchievedLowFrequencyHz,
             AchievedHighFrequencyHz = measurement.AchievedHighFrequencyHz,
+            MeasuredLowFrequencyHz = measurement.MeasuredLowFrequencyHz,
+            MeasuredHighFrequencyHz = measurement.MeasuredHighFrequencyHz,
+            MeasuredAtUtc = measurement.MeasuredAtUtc,
             // The sweep that produced this IR, which for a re-saved measurement is
             // longer than the one rebuilt on load if it outran the generation cap.
             SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
@@ -181,6 +230,8 @@ public sealed class ImpulseResponseFile
             TransferPeakIndex = transferPeakIndex,
             MicrophoneLevels = microphoneLevels,
             LoopbackLevels = loopbackLevels,
+            MicrophoneCalibration = measurement.MeasurementMicrophoneCalibration,
+            ArrayMicrophones = ArrayMicrophonesFileEntry.From(measurement.ArrayMicrophones),
             PreviewFrequencyResponse = CreatePreviewFileEntry(
                 MeasurementHistoryPreviewBuilder.Build(
                     sweepImpulseResponse,
@@ -188,7 +239,12 @@ public sealed class ImpulseResponseFile
                     measurement.SampleRate,
                     measurement.MeasurementMode,
                     transfer?.ImpulseResponse,
-                    transferPeakIndex)),
+                    transferPeakIndex,
+                    MeasuredBand.Resolve(
+                        measurement.MeasurementProtectiveHighPass,
+                        measurement.MeasuredLowFrequencyHz,
+                        measurement.MeasuredHighFrequencyHz,
+                        measurement.SampleRate))),
             SweepDeconvolutionRealSamples = sweepRealSamples,
             SweepDeconvolutionImaginarySamples = sweepImaginarySamples,
             TransferRealSamples = transferRealSamples,
@@ -526,6 +582,8 @@ public sealed class ImpulseResponseFile
         ValidateLevelEntry(MicrophoneLevels, nameof(MicrophoneLevels));
         ValidateLevelEntry(LoopbackLevels, nameof(LoopbackLevels));
         ValidatePreview(PreviewFrequencyResponse);
+        MicrophoneCalibration?.Validate();
+        ValidateArrayMicrophones(ArrayMicrophones);
         ValidateAudioSession(AudioSession);
         SplCalibration?.Validate();
     }
@@ -738,6 +796,54 @@ public sealed class ImpulseResponseFile
         }
     }
 
+    private static void ValidateArrayMicrophones(ArrayMicrophonesFileEntry? array)
+    {
+        if (array == null)
+        {
+            return;
+        }
+        if (!double.IsFinite(array.GridStartHz) ||
+            !double.IsFinite(array.GridStopHz) ||
+            array.GridStartHz <= 0 ||
+            array.GridStopHz <= array.GridStartHz)
+        {
+            throw new InvalidDataException("The array microphone grid is invalid.");
+        }
+        if (array.Microphones.Count == 0)
+        {
+            throw new InvalidDataException("The array microphone set is empty.");
+        }
+
+        foreach (ArrayMicrophoneFileEntry microphone in array.Microphones)
+        {
+            if (microphone.ChannelOffset < 0)
+            {
+                throw new InvalidDataException("An array microphone channel is negative.");
+            }
+            if (microphone.LevelsDb.Length < 2)
+            {
+                throw new InvalidDataException("An array microphone curve is too short.");
+            }
+            if (microphone.AcceptedRunCount < 0)
+            {
+                throw new InvalidDataException(
+                    "An array microphone accepted-run count is negative.");
+            }
+            // A gap is a legitimate value here — it is how a band the sweep never
+            // reached is recorded — so only an infinity is refused.
+            foreach (double level in microphone.LevelsDb)
+            {
+                if (double.IsInfinity(level))
+                {
+                    throw new InvalidDataException(
+                        "An array microphone curve contains an infinite level.");
+                }
+            }
+
+            microphone.Calibration?.Validate();
+        }
+    }
+
     private static void ValidatePreview(PreviewFrequencyResponseFileEntry? preview)
     {
         if (preview == null)
@@ -798,6 +904,10 @@ public sealed class ImpulseResponseFile
         public double FrequencyHz { get; set; } = 2_000.0;
         public int SlopeDbPerOctave { get; set; } = 24;
 
+        /// <summary>The configuration this record stands for.</summary>
+        public ProtectiveHighPassConfiguration ToConfiguration() =>
+            new(Kind, FrequencyHz, SlopeDbPerOctave);
+
         public static ProtectiveHighPassFileEntry From(
             ProtectiveHighPassConfiguration configuration)
         {
@@ -809,6 +919,131 @@ public sealed class ImpulseResponseFile
                 SlopeDbPerOctave = configuration.SlopeDbPerOctave
             };
         }
+    }
+
+    /// <summary>
+    /// One microphone's contribution to this measurement's spatial average.
+    /// </summary>
+    /// <param name="LevelsDb">
+    /// The steady-state transfer level on the grid, RAW: the protective high-pass
+    /// is divided out, the microphone calibration is NOT applied. Storing it
+    /// uncalibrated is what lets a reader change the calibration, and what lets
+    /// the frequency-response view's own calibration switch mean something for
+    /// these curves too.
+    /// </param>
+    public sealed class ArrayMicrophoneFileEntry
+    {
+        public int ChannelOffset { get; set; }
+
+        /// <summary>
+        /// Whether this is the microphone that also produced the impulse response
+        /// — the one the others are levelled onto.
+        /// </summary>
+        public bool IsMeasurementMicrophone { get; set; }
+
+        /// <summary>What the user called the position, if anything.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Note { get; set; }
+
+        /// <summary>How many of the measurement's runs this microphone survived.</summary>
+        public int AcceptedRunCount { get; set; }
+
+        public double[] LevelsDb { get; set; } = Array.Empty<double>();
+
+        /// <summary>
+        /// This microphone's own calibration curve, or null when it was recorded
+        /// uncalibrated. Per microphone because an array is not required to be one
+        /// model of capsule.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public VirtualCrossoverCalibrationSettings? Calibration { get; set; }
+    }
+
+    /// <summary>
+    /// The measurement's spatial-average microphones and the grid their curves
+    /// live on.
+    /// </summary>
+    /// <remarks>
+    /// The grid is stored rather than assumed even though it is a constant today.
+    /// A stored curve outlives the code that wrote it, and a grid that silently
+    /// changed under a reader would shift every level in frequency while still
+    /// looking like a perfectly ordinary response.
+    /// </remarks>
+    public sealed class ArrayMicrophonesFileEntry
+    {
+        public double GridStartHz { get; set; }
+        public double GridStopHz { get; set; }
+        public List<ArrayMicrophoneFileEntry> Microphones { get; set; } = [];
+
+        internal static ArrayMicrophonesFileEntry? From(
+            IReadOnlyList<ArrayMicrophoneCurve> microphones)
+        {
+            if (microphones.Count == 0)
+            {
+                return null;
+            }
+
+            IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
+            return new ArrayMicrophonesFileEntry
+            {
+                GridStartHz = grid[0],
+                GridStopHz = grid[^1],
+                Microphones = microphones
+                    .Select(microphone => new ArrayMicrophoneFileEntry
+                    {
+                        ChannelOffset = microphone.ChannelOffset,
+                        IsMeasurementMicrophone = microphone.IsMeasurementMicrophone,
+                        Note = microphone.Note,
+                        AcceptedRunCount = microphone.AcceptedRuns,
+                        LevelsDb = microphone.LevelsDb.ToArray(),
+                        Calibration = microphone.Calibration
+                    })
+                    .ToList()
+            };
+        }
+
+        /// <summary>
+        /// The stored curves, or none when they are not on the grid this build reads.
+        /// </summary>
+        /// <remarks>
+        /// The endpoints travel with the file for exactly this check, and it was the
+        /// one thing missing: a file whose grid ran from somewhere else would have
+        /// been read band for band on this one, shifting every position in FREQUENCY
+        /// with nothing to show for it. The band COUNT is checked further down, where
+        /// the curves are placed; the ends have to be checked here, because by then
+        /// they are gone.
+        /// <para>
+        /// None rather than a refusal to open the file: the impulse response beside
+        /// the array is perfectly readable, and the tools that wanted the array say
+        /// out loud when a channel is drawn from its point measurement instead.
+        /// </para>
+        /// </remarks>
+        internal IReadOnlyList<ArrayMicrophoneCurve> ToCurves()
+        {
+            IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
+            return SameFrequency(GridStartHz, grid[0]) && SameFrequency(GridStopHz, grid[^1])
+                ? BuildCurves()
+                : [];
+        }
+
+        // The two constructions of one logarithmic grid differ in their last ULPs
+        // (20 against 20.000000000000004), so this asks whether they are the same
+        // grid rather than the same double.
+        private static bool SameFrequency(double stored, double expected) =>
+            Math.Abs(stored - expected) <= 1e-6 * expected;
+
+        private IReadOnlyList<ArrayMicrophoneCurve> BuildCurves() =>
+            Microphones
+                .Select(microphone => new ArrayMicrophoneCurve(
+                    microphone.ChannelOffset,
+                    microphone.IsMeasurementMicrophone,
+                    microphone.LevelsDb.ToArray(),
+                    microphone.AcceptedRunCount)
+                {
+                    Note = microphone.Note,
+                    Calibration = microphone.Calibration
+                })
+                .ToList();
     }
 
     public sealed class AudioSessionFileEntry

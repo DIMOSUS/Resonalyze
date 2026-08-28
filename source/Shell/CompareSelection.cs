@@ -54,7 +54,12 @@ internal sealed class CompareSelection
             // Its OWN K, not the main measurement's: the two were captured at
             // different loopback levels unless they share a session.
             selection.Snapshot.SplOffsetDb,
-            selection.Snapshot.TimingReference);
+            selection.Snapshot.TimingReference,
+            MeasuredBand.Resolve(
+                selection.Snapshot.ProtectiveHighPass,
+                selection.Snapshot.MeasuredLowFrequencyHz,
+                selection.Snapshot.MeasuredHighFrequencyHz,
+                selection.Snapshot.SampleRate));
     }
 
     // Time Alignment compares one arrival against another, so a measurement
@@ -90,4 +95,7 @@ public readonly record struct CompareAnalysisSource(
     int TransferPeakIndex,
     double[]? TransferCoherence = null,
     double? SplOffsetDb = null,
-    TimingReference TimingReference = TimingReference.SynchronizedLoopback);
+    TimingReference TimingReference = TimingReference.SynchronizedLoopback,
+    // What IT measured — its own protective high-pass and its own sweep band,
+    // neither of which need be the main measurement's.
+    MeasuredBand Band = default);

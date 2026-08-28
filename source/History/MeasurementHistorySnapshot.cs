@@ -4,6 +4,42 @@ namespace Resonalyze.History;
 
 internal sealed class MeasurementHistorySnapshot
 {
+    /// <summary>
+    /// The measurement's array microphones, when it was recorded with one.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately NOT persisted. History keeps a snapshot per entry and an array
+    /// is a thousand levels per microphone; the curves live in the measurement file
+    /// they were written to, and this carries them only as far as a tool that reads
+    /// a file in this session — which is what the Virtual DSP source path does. An
+    /// entry restored from the history file therefore has no array, and the hybrid
+    /// falls back to that channel's honest impulse response, saying so.
+    /// </remarks>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<ArrayMicrophoneCurve> ArrayMicrophones { get; init; } = [];
+
+    /// <summary>
+    /// The protective high-pass the measurement was corrected for, carried beside
+    /// the array because a set of arrays is judged on it: two channels compensated
+    /// for different filters are not one set. Not persisted, for the same reason
+    /// the array is not — it exists to accompany it.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ProtectiveHighPassConfiguration? ProtectiveHighPass { get; init; }
+
+    /// <summary>
+    /// The microphone calibration frozen onto the measurement this snapshot holds.
+    /// </summary>
+    /// <remarks>
+    /// Carried for the same reason the file carries it: an impulse response is
+    /// stored raw, so without the curve a recipient draws a different response from
+    /// the author's and nothing says why. Saving an entry to disk goes through
+    /// <see cref="ToImpulseResponseFile"/>, and a file written that way has to be the
+    /// same file <c>ImpulseResponseFile.Capture</c> would have written.
+    /// </remarks>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; init; }
+
     public int SampleRate { get; init; }
     public int Bits { get; init; }
     // Legacy: only set when restoring a pre-band file; the band is stored
@@ -15,6 +51,23 @@ internal sealed class MeasurementHistorySnapshot
     // geometry reads this; see ImpulseResponseFile.ResolveAchievedSweepBand.
     public double AchievedLowFrequencyHz { get; init; }
     public double AchievedHighFrequencyHz { get; init; }
+    // What the measurement may be READ over: the band the sweep excited at full
+    // amplitude, narrower than the achieved one by the guard bands the fades live in.
+    public double MeasuredLowFrequencyHz { get; init; }
+    public double MeasuredHighFrequencyHz { get; init; }
+
+    /// <summary>
+    /// When the measurement was taken, as far as anything knows: the file's own stamp
+    /// for one that was loaded, and the moment of capture for one that was just run.
+    /// </summary>
+    /// <remarks>
+    /// It travels because a spatial average built from this measurement is shown WITH
+    /// its date — nothing records where an array's microphones stood, so when they
+    /// stood there is the only evidence a user has that two channels came from one
+    /// sitting. Stamping the moment the file was opened instead would answer that
+    /// question with today's date every time, which is worse than not answering it.
+    /// </remarks>
+    public DateTimeOffset MeasuredAtUtc { get; init; } = DateTimeOffset.UtcNow;
     public double SweepDurationSeconds { get; init; }
 
     /// <summary>The band that was requested.</summary>
@@ -80,6 +133,8 @@ internal sealed class MeasurementHistorySnapshot
             HighFrequencyHz = HighFrequencyHz,
             AchievedLowFrequencyHz = AchievedLowFrequencyHz,
             AchievedHighFrequencyHz = AchievedHighFrequencyHz,
+            MeasuredLowFrequencyHz = MeasuredLowFrequencyHz,
+            MeasuredHighFrequencyHz = MeasuredHighFrequencyHz,
             Octaves = Octaves,
             SweepDurationSeconds = SweepDurationSeconds,
             PlayChannel = PlayChannel,
@@ -106,7 +161,17 @@ internal sealed class MeasurementHistorySnapshot
                 MeterSnapshot.Microphone),
             LoopbackLevels = ImpulseResponseFile.CreateLevelSnapshotFileEntry(
                 MeterSnapshot.Loopback),
-            PreviewFrequencyResponse = ImpulseResponseFile.CreatePreviewFileEntry(Preview)
+            PreviewFrequencyResponse = ImpulseResponseFile.CreatePreviewFileEntry(Preview),
+            // The array and the filter it was corrected for, or a measurement opened
+            // from history is a different measurement from the same file opened off
+            // disk: the EQ Wizard would offer only the point response, and the band
+            // it stops at would be read from a filter nobody recorded.
+            ArrayMicrophones = ImpulseResponseFile.ArrayMicrophonesFileEntry.From(
+                ArrayMicrophones),
+            ProtectiveHighPass = ProtectiveHighPass is { } filter
+                ? ImpulseResponseFile.ProtectiveHighPassFileEntry.From(filter)
+                : null,
+            MicrophoneCalibration = MicrophoneCalibration
         };
     }
 

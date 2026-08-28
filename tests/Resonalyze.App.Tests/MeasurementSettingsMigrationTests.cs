@@ -89,6 +89,35 @@ public sealed class MeasurementSettingsMigrationTests
     }
 
     [Fact]
+    public void MeasurementTime_SurvivesASaveAndIsNotRestamped()
+    {
+        // SavedAtUtc is re-stamped by every save; the measurement's own time is not.
+        // It matters because a spatial average is shown WITH this date, and nothing
+        // records where an array's microphones stood — when they stood there is the
+        // only evidence a user has that two channels came from one sitting. Open
+        // Monday's measurement and Friday's on Saturday, save each once, and a save
+        // stamp says both came from Saturday.
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        var measured = new DateTimeOffset(2026, 3, 4, 9, 30, 0, TimeSpan.Zero);
+        measurement.RestoreImpulseResponse(
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
+            sampleRate: 48_000,
+            bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: new System.Numerics.Complex[1024],
+            sweepDeconvolutionPeakIndex: 0,
+            measuredAtUtc: measured);
+
+        Assert.Equal(measured, measurement.MeasuredAtUtc);
+
+        ImpulseResponseFile saved = ImpulseResponseFile.Capture(measurement);
+        Assert.Equal(measured, saved.MeasuredAtUtc);
+        Assert.NotEqual(measured, saved.SavedAtUtc);
+    }
+
+    [Fact]
     public void ProtectiveHighPass_RoundTripsThroughCapturedSettings()
     {
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());

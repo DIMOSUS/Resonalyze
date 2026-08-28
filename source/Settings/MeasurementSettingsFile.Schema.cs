@@ -68,7 +68,40 @@ internal sealed partial class MeasurementSettingsFile
         // arranged them.
         public List<MicrophoneCalibrationDefinition> AdditionalMicrophoneCalibrations
         { get; set; } = [];
+        // The array microphones, per backend: a channel number means a different
+        // input on each, so switching backend must not point them at whatever
+        // input happens to share the number.
+        public List<ArrayMicrophoneDefinition> WaveArrayMicrophones { get; set; } = [];
+        public List<ArrayMicrophoneDefinition> AsioArrayMicrophones { get; set; } = [];
+        // ...and the DEVICE each was configured on, because per-backend is not
+        // enough. Two interfaces with eight inputs each present the same channel
+        // NUMBERS, so swapping one for the other leaves every position reachable,
+        // every calibration attached, every note intact — and every microphone
+        // pointed at a different physical input. Nothing downstream could notice:
+        // the measurement succeeds and the curves look entirely ordinary.
+        //
+        // Null means "configured before this was stamped", which is not a mismatch
+        // and must not throw the setup away; the next edit stamps it.
+        //
+        // WASAPI stamps the endpoint id. ASIO stamps the DRIVER NAME, because that is
+        // all ASIO exposes — there is no endpoint identity behind it. For a vendor
+        // driver bound to its own interface that is an identity; for a wrapper
+        // (ASIO4ALL, FlexASIO, an aggregate) the same name can front different
+        // hardware, and an array carried across that swap passes this check. Adding
+        // the driver's channel count was considered and rejected: some drivers report
+        // different counts at different sample rates, so it would invalidate working
+        // setups to catch a case it would only sometimes catch.
+        public string? WaveArrayDeviceId { get; set; }
+        public string? AsioArrayDeviceId { get; set; }
         public SplCalibration? SplCalibration { get; set; }
+
+        /// <summary>The array configured for the backend in use.</summary>
+        // Read-only, so serializing it writes a third copy of one of the two lists
+        // above that nothing can read back — noise in the file, and a reader's
+        // invitation to edit the copy that is ignored.
+        [JsonIgnore]
+        public List<ArrayMicrophoneDefinition> ArrayMicrophones =>
+            AudioBackend == AudioBackend.Asio ? AsioArrayMicrophones : WaveArrayMicrophones;
 
         /// <summary>
         /// Carries the microphone calibrations over from <paramref name="previous"/>.
@@ -85,6 +118,19 @@ internal sealed partial class MeasurementSettingsFile
             AdditionalMicrophoneCalibrations = previous.AdditionalMicrophoneCalibrations
                 .Select(definition => definition.Clone())
                 .ToList();
+            // Same reason: the measurement knows which CHANNELS its array was on
+            // but nothing about the calibrations chosen for them or what the user
+            // named the positions, so a capture would drop both.
+            WaveArrayMicrophones = previous.WaveArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            AsioArrayMicrophones = previous.AsioArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            // With the device each was configured on: carrying the positions over
+            // without it would launder a stale array into a fresh-looking one.
+            WaveArrayDeviceId = previous.WaveArrayDeviceId;
+            AsioArrayDeviceId = previous.AsioArrayDeviceId;
         }
 
         // A loopback reference channel is mandatory: every analysis mode is derived from the
@@ -170,6 +216,108 @@ internal sealed partial class MeasurementSettingsFile
         /// without committing it — importing a recording resolves the sweep from it
         /// first and only applies it once the analysis has succeeded.
         /// </summary>
+        /// <summary>
+        /// The array channels a stored configuration can actually be run with.
+        /// </summary>
+        /// <remarks>
+        /// A settings FILE is not a dialog: it can hold a channel that collided
+        /// with the measurement inputs after the user moved the microphone or the
+        /// loopback, or a duplicate left by hand-editing, and the measurement
+        /// layer refuses both outright. Refusing here would make the application
+        /// unable to start on its own saved settings, so a stored array is
+        /// filtered instead — the dialog is where a collision is reported, and it
+        /// prevents one being made in the first place.
+        /// </remarks>
+        /// <summary>
+        /// Whether an array configured on <paramref name="configuredOn"/> may be used
+        /// with the device now selected.
+        /// </summary>
+        /// <remarks>
+        /// An unstamped array is accepted: it was configured before the stamp
+        /// existed, and refusing what cannot be checked would throw away a setup to
+        /// protect it. Everything else must match exactly — this is an identity, not
+        /// a name to be interpreted.
+        /// </remarks>
+        internal static bool ArrayMatchesDevice(string? configuredOn, string? deviceId) =>
+            string.IsNullOrWhiteSpace(configuredOn) ||
+            string.Equals(configuredOn, deviceId, StringComparison.Ordinal);
+
+        private static IReadOnlyList<int> ResolveArrayChannels(
+            List<ArrayMicrophoneDefinition> microphones,
+            int microphoneChannel,
+            int? loopbackChannel,
+            Func<int, bool> reachable,
+            bool deviceMatches)
+        {
+            // The device the array was configured on is gone, so its channel NUMBERS
+            // name inputs nobody chose. Reachability cannot catch this: two eight-input
+            // interfaces agree about every number and about nothing else.
+            if (!deviceMatches)
+            {
+                return [];
+            }
+
+            var channels = new List<int>(microphones.Count);
+            foreach (ArrayMicrophoneDefinition microphone in microphones)
+            {
+                if (microphone.ChannelOffset < 0 ||
+                    microphone.ChannelOffset == microphoneChannel ||
+                    microphone.ChannelOffset == loopbackChannel ||
+                    channels.Contains(microphone.ChannelOffset) ||
+                    // And it has to exist on the device now selected. The array is
+                    // stored per BACKEND, not per interface, so an eight-input card
+                    // swapped for a two-input one leaves inputs 3 to 8 behind — and
+                    // the capture window is opened wide enough to span every array
+                    // channel, so those would be asked of a driver that has no such
+                    // inputs. The measurement microphone and the loopback are already
+                    // normalized against the device; these were not.
+                    !reachable(microphone.ChannelOffset))
+                {
+                    continue;
+                }
+
+                channels.Add(microphone.ChannelOffset);
+            }
+
+            return channels;
+        }
+
+        /// <summary>
+        /// Whether an input offset exists on the device this configuration selects.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately permissive when the device cannot be asked: a driver that is
+        /// unplugged right now reports nothing, and silently emptying a configured
+        /// array over that would lose the user's setup rather than protect it. The
+        /// session refuses an unreachable channel outright when it tries to open, and
+        /// that refusal is the honest one.
+        /// </remarks>
+        private static Func<int, bool> ReachableInput(
+            AudioBackend backend,
+            string? asioDriverName,
+            int sampleRate,
+            string? captureEndpointId)
+        {
+            if (backend == AudioBackend.Asio)
+            {
+                IReadOnlyList<AsioChannelInfo> inputs = AsioDeviceCatalog
+                    .GetDriverInfo(NormalizeAsioDriverName(asioDriverName), sampleRate)
+                    .InputChannels;
+                return inputs.Count == 0
+                    ? _ => true
+                    : offset => inputs.Any(channel => channel.Offset == offset);
+            }
+
+            if (backend.IsWasapi())
+            {
+                int count = WasapiCaptureChannelCount(captureEndpointId);
+                return count <= 0 ? _ => true : offset => offset < count;
+            }
+
+            // MME opens a stereo record and nothing wider.
+            return offset => offset < 2;
+        }
+
         public SweepMeasurementConfiguration BuildConfiguration()
         {
             AudioBackend backend = NormalizeAudioBackend(AudioBackend, AsioDriverName);
@@ -231,7 +379,35 @@ internal sealed partial class MeasurementSettingsFile
                     WasapiRenderEndpointId: renderEndpointId,
                     WasapiCaptureEndpointName: WasapiCaptureEndpointName,
                     WasapiRenderEndpointName: WasapiRenderEndpointName,
-                    WasapiBufferMilliseconds: Clamp(WasapiBufferMilliseconds, 10, 100)),
+                    WasapiBufferMilliseconds: Clamp(WasapiBufferMilliseconds, 10, 100),
+                    WaveArrayInputChannelOffsets: ResolveArrayChannels(
+                        WaveArrayMicrophones,
+                        backend.IsWasapi()
+                            ? Math.Max(0, WaveInputChannelOffset)
+                            : NormalizeWaveChannelOffset(WaveInputChannelOffset),
+                        backend.IsWasapi()
+                            ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
+                            : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
+                        ReachableInput(backend, AsioDriverName, sampleRate, captureEndpointId),
+                        // The RAW selection, not the resolved one: the question is
+                        // whether the user has since chosen a different device, and
+                        // it must answer the same whether that device is plugged in
+                        // right now — the same permissiveness ReachableInput keeps.
+                        ArrayMatchesDevice(WaveArrayDeviceId, WasapiCaptureEndpointId)),
+                    AsioArrayInputChannelOffsets: ResolveArrayChannels(
+                        AsioArrayMicrophones,
+                        NormalizeAsioChannelOffset(
+                            AsioDriverName,
+                            sampleRate,
+                            AsioInputChannelOffset,
+                            input: true),
+                        NormalizeOptionalAsioChannelOffset(
+                            AsioDriverName,
+                            sampleRate,
+                            AsioLoopbackInputChannelOffset),
+                        ReachableInput(
+                            AudioBackend.Asio, AsioDriverName, sampleRate, captureEndpointId),
+                        ArrayMatchesDevice(AsioArrayDeviceId, AsioDriverName))),
                 new SweepAveragingConfiguration(
                     Clamp(AverageRunCount, 1, 64),
                     ConfirmEachAverageRun),
@@ -282,6 +458,9 @@ internal sealed partial class MeasurementSettingsFile
         public LegacyMicrophoneCalibrationMode? CalibrationMode { get; set; }
         public MagnitudeScale MagnitudeScale { get; set; } = MagnitudeScale.Relative;
         public bool ShowCoherence { get; set; } = true;
+        public bool ShowArrayAverage { get; set; }
+        public bool ShowArrayMicrophones { get; set; }
+        public bool ShowArraySpread { get; set; }
         public bool ShowMeasuredPhase { get; set; } = true;
         public bool ShowMinimumPhase { get; set; } = true;
         public bool ShowExcessPhase { get; set; } = true;
@@ -331,6 +510,9 @@ internal sealed partial class MeasurementSettingsFile
                 CalibrationId = options.CalibrationId,
                 MagnitudeScale = options.MagnitudeScale,
                 ShowCoherence = visibility.ShowCoherence,
+                ShowArrayAverage = visibility.ShowArrayAverage,
+                ShowArrayMicrophones = visibility.ShowArrayMicrophones,
+                ShowArraySpread = visibility.ShowArraySpread,
                 ShowMeasuredPhase = visibility.ShowMeasuredPhase,
                 ShowMinimumPhase = visibility.ShowMinimumPhase,
                 ShowExcessPhase = visibility.ShowExcessPhase,
@@ -386,6 +568,9 @@ internal sealed partial class MeasurementSettingsFile
                 ? MagnitudeScale
                 : MagnitudeScale.Relative;
             visibility.ShowCoherence = ShowCoherence;
+            visibility.ShowArrayAverage = ShowArrayAverage;
+            visibility.ShowArrayMicrophones = ShowArrayMicrophones;
+            visibility.ShowArraySpread = ShowArraySpread;
             visibility.ShowMeasuredPhase = ShowMeasuredPhase;
             visibility.ShowMinimumPhase = ShowMinimumPhase;
             visibility.ShowExcessPhase = ShowExcessPhase;

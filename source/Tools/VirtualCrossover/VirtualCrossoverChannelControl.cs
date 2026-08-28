@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
 
@@ -108,23 +108,66 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// having attached one: the hybrid toggle goes away either way, and only the
     /// warning says which of the two happened.
     /// </param>
+    /// <param name="mode">
+    /// Which family the project reads. It names the BUTTON, not just the tooltip:
+    /// a user looking for a missing curve reads the button first, and one that says
+    /// MMM while the project is reading arrays sends them to attach a file they do
+    /// not need.
+    /// </param>
+    /// <param name="measuredAtUtc">
+    /// When the capture was taken. Shown because nothing in the file records WHERE
+    /// its microphones stood, and the app cannot derive it: a rig lifted and set down
+    /// somewhere else between two channels leaves every stored property identical.
+    /// The date is the one fact that lets a user notice they are looking at two
+    /// sittings, so it belongs where they judge the set rather than in the file only.
+    /// </param>
     internal void SetSpatialAverage(
-        string? title, double? integratedSeconds, bool resolved)
+        string? title,
+        double? integratedSeconds,
+        bool resolved,
+        VirtualCrossoverSpatialAverageMode mode,
+        DateTimeOffset? measuredAtUtc = null)
     {
         bool present = !string.IsNullOrWhiteSpace(title);
-        buttonSpatialAverage.Text = !present ? "MMM" : resolved ? "MMM ✓" : "MMM ⚠";
+        string label = mode switch
+        {
+            VirtualCrossoverSpatialAverageMode.MicArray => "Array",
+            VirtualCrossoverSpatialAverageMode.MovingMic => "MMM",
+            _ => "Avg off"
+        };
+        buttonSpatialAverage.Text = mode == VirtualCrossoverSpatialAverageMode.Off
+            ? label
+            : !present ? label : resolved ? $"{label} ✓" : $"{label} ⚠";
         buttonSpatialAverage.ForeColor = !present
             ? Color.White
             : resolved ? Color.FromArgb(140, 220, 160) : Color.FromArgb(230, 184, 0);
         string newLine = Environment.NewLine;
         spatialAverageTooltip = !present
-            ? "No spatial average for this channel." + newLine + newLine +
-                "Click to attach a moving-microphone capture. The hybrid view " +
-                "needs one on every channel that plays."
+            ? mode switch
+            {
+                VirtualCrossoverSpatialAverageMode.MicArray =>
+                    "This channel was measured with one microphone, so the hybrid " +
+                    "draws it from that POINT measurement." + newLine + newLine +
+                    "Legitimate where a point and an average are the same thing — " +
+                    "below the cabin's first mode they are — but its dips are this " +
+                    "one spot's, and an equalizer fitted to them is fitted to a " +
+                    "place nobody's head occupies." + newLine + newLine +
+                    "Click to change the method the project reads.",
+                VirtualCrossoverSpatialAverageMode.Off =>
+                    "The project draws no spatial average." + newLine + newLine +
+                    "Click to change the method it reads.",
+                _ =>
+                    "No spatial average for this channel." + newLine + newLine +
+                    "Click to attach a moving-microphone capture. The hybrid view " +
+                    "needs one on every channel that plays."
+            }
             : resolved
             ? $"Spatial average: {title}" +
                 (integratedSeconds is { } seconds
                     ? $"{newLine}{seconds:0} s integrated"
+                    : string.Empty) +
+                (measuredAtUtc is { } measured
+                    ? $"{newLine}measured {measured.ToLocalTime():g}"
                     : string.Empty) +
                 newLine + newLine +
                 "Click to replace it, or to detach it."

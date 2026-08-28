@@ -91,6 +91,41 @@ public sealed class EqAutoTunerTests
     }
 
     [Fact]
+    public void Tune_ReadsAnUnmeasuredBandAsUnknown_NotAsSilence()
+    {
+        // A tweeter measured through a protective high-pass carries NaN below the
+        // point that became unrecoverable: nothing was measured there, and the
+        // response the compensation left behind is a zero. Read as a level, that
+        // zero is a 40 dB hole the tuner would try to fill — the single most
+        // damaging thing an equalizer can be asked to do.
+        IReadOnlyList<SignalPoint> source = Grid(
+            f => f < 560 ? double.NaN : 0.0);
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve curve = EqAutoTuner.Tune(source, target);
+
+        Assert.Empty(curve.Bands);
+        Assert.Equal(0.0, curve.PreampDb, 6);
+    }
+
+    [Fact]
+    public void Tune_StillCorrectsWhatWasMeasured_BesideAnUnmeasuredBand()
+    {
+        // The unknown band must not cost the tuner the rest of the curve.
+        var bump = new PeqBand(4_000, 2.0, 6.0);
+        IReadOnlyList<SignalPoint> source = Grid(
+            f => f < 560 ? double.NaN : 0.0);
+        IReadOnlyList<SignalPoint> target = Grid(f => bump.MagnitudeDbAt(f));
+
+        EqualizationCurve curve = EqAutoTuner.Tune(source, target);
+
+        Assert.NotEmpty(curve.Bands);
+        Assert.True(
+            Math.Abs(curve.MagnitudeDbAt(4_000) - 6.0) < 0.5,
+            $"the measured bump was corrected by {curve.MagnitudeDbAt(4_000):0.00} dB");
+    }
+
+    [Fact]
     public void Tune_ConstantLevelDifference_UsesPreampAndNoBands()
     {
         IReadOnlyList<SignalPoint> source = Grid(_ => -40);

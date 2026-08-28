@@ -17,6 +17,8 @@ read-out refuses rather than guesses, what a number was measured against.
 - [Audio Backends](#audio-backends)
   - [Sweep band and duration](#sweep-band-and-duration)
   - [Protective high-pass](#protective-high-pass)
+  - [Where a curve stops](#where-a-curve-stops)
+  - [Microphone array](#microphone-array)
   - [MME Compatibility](#mme-compatibility)
   - [ASIO](#asio)
   - [WASAPI Shared and Exclusive](#wasapi-shared-and-exclusive)
@@ -124,7 +126,17 @@ window has focus and switches automatically when you change modes. Settings appl
 on the fly, redrawing the analysis while preserving the visible plot range. Each
 curve-based view groups its plotted curves under a **Curves:** heading with one
 checkbox per curve — Primary / HD2–HD4 / THD+N in Frequency Response, or
-measured / minimum / excess in Phase. Numeric and dropdown settings carry a small
+measured / minimum / excess in Phase. A measurement carrying a
+[microphone array](#microphone-array) adds three more in Frequency Response, all
+off by default: **Array average** (the spatial average itself), **Array
+microphones** (each position on its own, thin), and **Array spread** — how far
+apart the positions sat at each frequency, on its own right-hand 0–30 dB axis.
+Read the spread as the confidence of the average: near zero the positions agreed
+and one microphone would have said the same thing, while 20 dB means the dip one
+of them measured is a property of that seat centimetre and nothing an equalizer
+should be asked to fill. These curves are read from what the file stored, so they
+do not follow the impulse window — a spatial average is a steady-state curve and
+has no gate. Numeric and dropdown settings carry a small
 **R** button that resets them to the built-in default, the plot keeps the range
 you zoomed to (see [Graph Zoom and Limits](#graph-zoom-and-limits)), and the
 Frequency Response, Phase, Group Delay, Waterfall and Burst panels include a
@@ -275,6 +287,166 @@ happily time a driver on boosted noise.
 Leave it `Off` when there is no protection in the chain, or when the loopback is
 taken *after* the DSP — the reference already contains the filter then, and the
 division has removed it before this setting could.
+
+### Where a curve stops
+
+Two things can leave a measurement with **no signal at all** in part of the range,
+and both leave the transfer response exactly zero there rather than quiet:
+
+- the protective high-pass above, past the point where 40 dB of boost could no
+  longer bring the driver back, and
+- the **sweep band** itself: a sweep from 800 Hz never excited anything below it,
+  so the excitation gate zeroes those bins.
+
+A windowed spectrum of a zero is not zero — it is the analysis window. On a real
+tweeter swept from 565 Hz the frequency-response curve read −60 dB at 560 Hz and
+−96 dB at 50 Hz, drawn as a smooth and entirely plausible roll-off across 495 of
+its 1024 points, none of it measured. So **the curve breaks instead**: outside
+what the measurement measured there is a gap, not a line.
+
+The break is applied to the finished curve, so it lands exactly where the filter
+and the sweep put it and does not move when you change the smoothing width. It
+covers the frequency-response magnitude, the [Compare](#compare) curve, the
+history thumbnail, a captured [overlay](#plot-overlays) (including one re-smoothed
+long after the measurement is gone), the [Virtual DSP](#virtual-dsp) channel
+curves and both of the [EQ Wizard](#eq-wizard)'s. Auto Tune places no band in a
+gap, and no boost either — there is nothing there to correct.
+
+Two things deliberately do **not** break. A **sum** stops only where the least
+restricted of its channels does, because it plays wherever any of them plays. And
+the **sweep deconvolution** — the response harmonic distortion is derived from —
+still carries the filter and is normalized by the excitation rather than gated
+against a loopback, so its edges are signal the loudspeaker really produced.
+
+### Microphone array
+
+A measurement can record **further microphones alongside the measurement one**,
+for the sole purpose of averaging the response over the volume a head occupies.
+It answers the same question the [moving-microphone method](#live-spectrum) does
+— one driver as the listening area hears it, rather than as one point does — in
+one sweep instead of a second pass.
+
+**Array...** in Record Settings opens the list and says how many microphones are
+configured. Each row is one position: which **input** it is on, its own
+**calibration** file, and a **note** naming where it stands (`left forward`,
+`centre`, whatever you will recognize months later). Only inputs that are still
+free are offered, so a microphone cannot be put on the measurement or loopback
+channel by accident, and **Add** stays disabled while the editor shows an input
+another microphone already holds — the selected row's own input is offered so its
+calibration can be changed without moving it, and that is not an input a second
+microphone may take.
+
+The array belongs to the **device** it was configured on, not just to the backend.
+A channel number names a different input on each backend, and two interfaces with
+eight inputs each agree about every number and about nothing else — so an array
+carried across them would keep its calibrations and its notes while pointing at
+inputs nobody chose, and the measurement would succeed with curves that look
+entirely ordinary. Select a different capture device and the button says how many
+microphones are configured **and which device for**; nothing is recorded until you
+open the list and confirm it, which re-binds the array to the device selected now.
+Nothing is thrown away in the meantime.
+
+The measurement microphone or the loopback can be moved onto one of the array's
+inputs afterwards, in a different part of the panel. Such a position cannot be recorded; it is named
+rather than dropped in silence — the **Array...** button counts it as unusable and
+the dialog says which input the measurement took.
+
+They are channels of the **same device** on purpose. One device means one clock,
+so the array shares the sweep, the loopback, the averaging runs and the quality
+verdict of the measurement microphone — and being sample-synchronous with the
+loopback is what lets each microphone be read as an honest transfer function
+rather than a bare deconvolution, which is what keeps the array on the same axis
+as the impulse response.
+
+What the measurement stores is each microphone's **level curve** on a shared
+logarithmic grid, uncalibrated, with its calibration frozen beside it — not its
+impulse response. The curves are raw so a calibration can be swapped later, and
+the measurement microphone is in the list like any other position: it is a
+microphone in the listening volume, and it is the one every other is levelled
+onto. Nothing about timing changes, because a spatial average is a magnitude.
+
+**Levelled onto** is meant literally: each further microphone is shifted by the
+median difference from the measurement microphone over that driver's working band
+before the positions are averaged. Different capsules at different preamp gains
+differ in sensitivity, and averaging that in would be averaging in the microphones
+rather than the room. The cost is that a genuine broadband level difference between
+two positions is removed along with it — one number per microphone cannot tell the
+two apart. Measured on the owner's two real seven-position sets — a midrange and a
+tweeter, each with a moving-microphone pass of the same driver beside it — the trims
+run from −1.4 to +1.6 dB, and what they cost is small: against a pure power average
+of the same positions the trimmed one differs by 0.2 to 0.4 dB of LEVEL, which the
+impulse response's own offset re-anchors downstream, and by 0.14 to 0.32 dB rms of
+SHAPE (0.36 to 1.01 dB at the worst single band), which is what a tune is fitted to.
+
+**How close it gets to a moving microphone** was measured on those same two sets,
+against a pass of the same driver taken in the same session. Band by band the array
+average lands within a median of 0.77 dB (midrange) and 1.00 dB (tweeter) of the
+pass, 1.38 and 1.54 dB rms. That scatter is the sampling error of seven positions
+and nothing else: their deviations are independent above 200 Hz — the mean
+correlation between any two measures −0.11 to −0.13, against the −0.167 exact
+independence gives for seven — so no spatial structure is left between them to
+exploit. It comes down with the width it is read at: 0.74 and 0.67 dB rms at 1/6
+octave, 0.63 and 0.49 at 1/3, with 12% and 3% of the band beyond a decibel. Below
+that only more positions help, and the error falls as the square root of their
+number.
+
+The **power** mean is what earns those figures. Averaging the same positions in
+decibels instead — a geometric mean of pressure — sits 1.18 dB (midrange) and
+1.59 dB (tweeter) BELOW the moving microphone, because a set of positions half of
+which are in a null reads far under the energy actually present.
+
+An average needs **two** positions at the least. If every further microphone failed
+to record, what is left is the measurement microphone alone — that is the point
+response the tools already have, not an average of anything, and it is not offered
+as one.
+
+What a measurement may be **read over** is the band the sweep excited at FULL
+amplitude, which is narrower than the band it reached. The generator widens the
+request by half an octave each side and puts its fades in those guard bands, so the
+envelope is flat across what was asked for. Inside a guard band the estimate is still
+unbiased — the taper cancels in the ratio H1 divides — but its signal-to-noise falls
+away, and the validity weight the estimate carries attenuates it to match: on a
+500–5000 Hz sweep that weight reads −13.0 dB at 400 Hz, −2.7 at 450 and −10.3 at
+6300. Drawing the guard band would publish the estimator's own roll-off as the
+driver's response, on a perfect system, with nothing to say it was not real. Files
+written before the full-amplitude edges were recorded fall back to the band they
+reached, which is what they have always been read over.
+
+A microphone that clipped, was unplugged, or recorded something that is not a
+response **fails the run**, exactly as the measurement microphone does: the run is
+stops the measurement, and the error names the input and the reason. There is no
+retry: one used to run automatically, and the field answer is that it never recovered
+anything — what these checks catch is a gain set wrong, a cable in the wrong socket,
+a channel that is not there, and the next sweep reproduces all of them exactly.
+Nothing is published either, not even the runs that had already passed: an average of
+two runs where four were asked for is a different measurement wearing the same name.
+
+The last of those is judged on the run rather than on the finished average, and the
+difference is not cosmetic. A microphone that recorded noise on one run of four
+hides in the average — the other three still put an arrival in it, so its shape
+stays perfectly credible — while that run's reference power stays in the estimate's
+denominator and contributes nothing to its numerator. The position comes out scaled
+by the fraction of runs that were good: exactly 2.5 dB down for one bad run in four,
+whatever the noise level was. What a shape check can see depends on how loud the
+fault is; what the fault costs does not. The **measurement** microphone is judged the
+same way and for the same reason — there the 2.5 dB lands on the level every other
+channel is compared against.
+
+One run is held to a lower bar than the average, by a derived amount. Averaging N
+runs leaves the arrival alone and divides the uncorrelated part of everything around
+it by N, so an average of N runs each reading R lands between R and R + 10·log₁₀N —
+at R when what surrounds the arrival is the room's own decay, at the top of the range
+when it is noise. Judging one run against the averaged floor would refuse runs whose
+average would have passed, and the margin is not generous: across the archived cabins
+genuine records read 27.7 dB at worst against a floor of 22, and four runs of
+averaging can account for 6 dB of that by themselves. What the lower bar gives away
+costs nothing against the fault it looks for, which divides into noise at about 0 dB.
+
+That is stricter than it sounds and it is deliberate. The array keeps only the CURVE
+each position produced, so a position that lost its runs is simply absent from the
+average — and an average of six positions where seven were set up is a different
+measurement wearing the same name, with nothing on the curve to show it. A sweep is
+cheap; a spatial average built on a position that was never there is not.
 
 ### MME Compatibility
 
@@ -867,6 +1039,13 @@ negatives toward cancellation. Only the complex side moves as you tune the offse
 and polarity, so the curve rises back toward 0 dB as you bring the sources into
 phase — a direct read-out of the summation loss you are dialing out.
 
+Both stop where **neither** measurement measured. A sum is a record neither of them
+made, so it carries no band of its own and takes the two theirs: where either played
+it is drawn, and below both — under a band sweep's start, or under a protective
+high-pass the compensation could not invert — it breaks. The sum loss already broke
+there; the sum itself used to draw the analysis window's leakage as a rolloff, which
+is the one thing [Where a curve stops](#where-a-curve-stops) exists to prevent.
+
 The captured, calculated, and target settings dialogs preview their result on the
 plot while you edit, and **Cancel** (or `Esc`) restores the previous state.
 Overlay files are separated by analysis mode and restored automatically; all
@@ -889,15 +1068,34 @@ disturbs your overlay slots.
 
 The **Source…** button picks the curve to tune, and it does not have to be an
 impulse response: an **impulse response from file or history**, a **curve from a
-moving-mic capture** (what [MMM mode](#live-spectrum) saves), a **curve from an
-overlay slot** (a snapshot, with no live link back), or a **curve from a text
-file**. The case this was built for is a **spatially averaged magnitude in
-dB SPL** — one driver as the listening volume hears it rather than as one
-microphone position does, which is the shape a tune should be fitted to. Such a
-curve has no impulse response and no coherence behind it, and its datum is
-absolute rather than relative; where its protective high-pass took the signal
-below what could be recovered it says so, and Auto Tune places no band there
-instead of fitting a level that was never measured. Only measured responses can
+spatial average**, a **curve from an overlay slot** (a snapshot, with no live link
+back), or a **curve from a text file**. The case this was built for is a
+**spatially averaged magnitude** — one driver as the listening volume hears it
+rather than as one microphone position does, which is the shape a tune should be
+fitted to.
+
+Two files carry such a curve and the entry takes either, because they are the same
+curve produced two ways: a [moving-microphone capture](#live-spectrum) (what MMM
+mode saves), or a measurement recorded with a [microphone array](#microphone-array).
+Loading a measurement **as an impulse response** when it carries an array asks
+which of the two to equalize, with the average as the default answer — equalizing
+the point measurement while an average of the same driver sits unused in the same
+file is the mistake the whole feature exists to prevent. It asks rather than
+substitutes, because comparing the two is legitimate and because the average has
+no impulse response behind it, so the gate preview goes with it.
+
+Such a curve has no impulse response behind it and its datum is absolute rather
+than relative; where its protective high-pass took the signal below what could be
+recovered, or its sweep never reached, it says so, and Auto Tune places no band
+there instead of fitting a level that was never measured (see
+[Where a curve stops](#where-a-curve-stops)). A **moving-microphone** capture
+carries no confidence curve either, so boosts are gated by null detection and the
+fit range alone. An **array** does carry one: how far its microphones disagreed at
+each frequency. Positions in a car part by 11 to 12 dB across the whole band as a
+matter of course, so that is not what the gate is for — past **20 dB** the average
+is carried by whichever position happened to be loudest, and filling the dip the
+others measured helps one seat centimetre while spending everyone's headroom. Auto
+Tune centres no boost there. Only measured responses can
 enter: a harmonic, THD, phase, deviation, EQ-correction, target or calculated
 curve is refused, and imported curves carry their own **Calibration** choice,
 because a curve captured through a calibrated RTA must not be calibrated a second
@@ -1325,6 +1523,80 @@ the **Hybrid** checkbox under the plot swaps the magnitude view over to it. The
 button's own text says where each channel stands: `MMM` for none, `MMM ✓` for one
 attached, `MMM ⚠` for one the session still refers to but could not read.
 
+A measurement recorded with a [microphone array](#microphone-array) brings its own
+average, so nothing has to be attached: the button reads **Array** and its menu
+chooses which average the project reads — the arrays the measurements carry, the
+moving-microphone captures attached by hand, or none at all. The choice is the
+project's, not the channel's, because a set drawn two ways is not one set. It is
+also made **once**: a project that has never chosen keeps whatever it opened as, and
+that answer is then stored. Deciding it live from what the project currently holds
+meant a session written before arrays existed would flip its whole method the moment
+one new measurement carrying an array was loaded — the attachments then went unread,
+and every channel without an array quietly fell back to its point response. Freezing
+is the whole of the fix, so a project that carries BOTH an array and attached
+captures keeps showing what it always showed. Use the menu to change it; nothing else
+does. A
+channel with no array in an array project is drawn from its own point measurement
+instead, and says so: the plot notes how many channels that is, the channel's own
+tooltip explains what it costs, and the note travels to the EQ Wizard with the
+handoff. That fallback is legitimate where a point and an average are the same
+measurement — below the cabin's first mode they are, so a subwoofer loses little —
+and it is refused outright for a moving-microphone set, whose captures are levelled
+by one analyzer session that a lone impulse response is not part of.
+
+What such a channel gives up is narrower than it sounds. Automatic equalization gates
+its boosts two ways that have nothing to do with arrays: below a coherence floor, and
+anywhere the magnitude climbs 6 dB on both sides within a quarter octave — which is
+precisely the narrow interference null a single position invents. What the array's
+own witness adds is BROAD disagreement between positions, which that detector cannot
+see by construction. Measured on two real seven-position sets, a single position
+departs from the average of seven by at most 4.9 dB at 1/6 octave (midrange, 400 to
+700 Hz; a tweeter reaches 3.4 dB) — under the 6 dB the null detector needs, so that
+much is boostable, and 0.13 dB rms below 250 Hz, where the fallback is exact.
+
+Each array microphone's own **calibration** is applied before the positions are
+averaged, so the stored average is already corrected — each capsule through its own
+file. When every position shared one file, the average says which, and the Virtual
+DSP swaps it for the panel's calibration exactly, the way it does for any other
+curve. When the positions carried **different** files — which is the accurate way to
+run an array, since the capsules are individually calibrated — there is no single
+curve to swap: the correction the average declares is exact as a total but belongs
+to no one microphone. The panel's *intent* is honoured instead. Drawn uncalibrated,
+the average comes back raw; drawn calibrated, it keeps its own corrections rather
+than having the measurement microphone's file applied to every position. That is the
+same curve the frequency response and the EQ Wizard's direct source show, so one
+array reads the same everywhere. The wizard's own calibration selector follows the
+same rule for such a source: it offers **Own (as captured)** and **Off**, both of
+which are exact, and no longer offers a single microphone's file, which would be
+applied to positions that were never read through it.
+
+The Virtual DSP's **Mic cal** selector offers the same answer under the name
+**Own (as measured)**, described in [Virtual DSP](#virtual-dsp).
+
+Turning a view's calibration off changes which of two readings is drawn; it never
+re-places the array. Each position's **trim** — how much more sensitive that capsule
+is, measured as the median difference from the measurement microphone over the
+driver's working band — is computed once, on the calibrated curves, where a level
+difference is a level difference rather than a difference between two microphones'
+responses. Deriving a second placement from the raw curves is what the frequency
+response used to do while the Virtual DSP undid the correction on the first one, and
+on a mixed array the two answers parted by three decibels with nothing on either
+plot to say which was which.
+
+Two warnings are specific to arrays. The set's spread is judged against **1.5 dB**
+rather than the moving microphone's 3 dB, because an array is levelled by the same
+loopback the impulse responses are — two real seven-position sets read 0.33 dB
+apart. And a project whose captures were averaged over **different arrays** (a different
+number of positions, or a different calibration) still draws, since the loopback
+holds their levels either way, but says so: what differs is what "the average"
+means per capture, and that is worth knowing before a tune is fitted to it. It is
+read over every array in the project rather than the ones on screen — muted
+channels and the side you are not looking at included — because what a set is made
+of is a property of the measurements. The cross-side case is the reason: a left
+averaged over seven positions and a right over five are each perfectly consistent
+with themselves, and the dashed opposite-side sum would then draw two different
+listening volumes against each other as though the difference were the car.
+
 Per channel the hybrid curve is the stored average with that channel's own DSP
 chain added as its **analytic** magnitude, and the whole set lifted onto the
 impulse responses' axis by **one** common offset. That is exact, not a
@@ -1337,7 +1609,10 @@ and polarity are absent for the reason they are absent from any magnitude: they
 are pure phase, so a hybrid channel curve is tonal balance alone. One offset for
 the set, never one per channel, because the captures were taken in a single
 analyzer session at a fixed gain: their relative levels are honest measurements,
-and normalizing each channel separately would throw exactly that away.
+and normalizing each channel separately would throw exactly that away. The set is
+every channel of the side that carries a capture — **muting one does not move the
+curves still drawn**, because a mute says which curves to show and not which
+measurements the set is made of.
 
 Both **Sums** follow the channels drawn above them, and they are built as **complex**
 sums: each channel's gated spectrum is rescaled, bin by bin, to the level its spatial
@@ -1546,6 +1821,53 @@ Editing a chain recomputes the prediction on a background task, so dragging a
 value stays responsive with several channels loaded. The **Mic cal** selector
 applies one of your configured microphone corrections to the magnitude curves; it
 defaults to Off because the measurements are loopback-referenced.
+
+**Own (as measured)** is the other kind of answer in that list. The configured
+calibrations correct every curve with one of them, which is right when one
+microphone took every channel; Own instead reads each curve through the calibration
+ITS measurement recorded. The file has carried that since measurements became
+portable, and it is a fact of the measurement rather than of the project — which
+makes it the accurate answer for a set a [microphone array](#microphone-array) took,
+where each position is a different capsule with its own file, and for a project whose
+channels were measured on different days with different microphones. A measurement
+whose file names no calibration is read through none: substituting a curve it never
+passed through would be the panel deciding what the measurement means. A project
+written before this existed names no calibration anywhere, so its own selection
+still applies and nothing about it changes.
+
+Under Own the **sum** carries each channel's own correction INTO it. What a
+microphone measured is the response times its calibration, so the total is the sum
+of the corrected channels — Σ HᵢCᵢ, not one correction applied to a raw total. The
+two are the same thing when one microphone measured everything, and there the
+correction is still applied once at the end, where the channel curves apply theirs,
+so the summation loss that divides one by the other cancels it exactly. They are not
+the same thing when the channels were measured through different microphones: one
+subtraction cannot undo two, and the sum was left raw beside corrected channels. The
+gap read as summation loss, and fed the average and minimum loss read-outs a tune is
+fitted against. The panel still notes a set measured through more than one
+microphone — the curves are being compared across instruments, so a difference
+between two channels holds the difference between their capsules as well — but the
+sum and the loss are now honest. The EQ Wizard handoff follows the channel, so a tune
+is fitted through the same correction the panel drew it with.
+
+A **spatial average** attached to a channel answers for itself under Own, whichever
+selection the rest of the panel is on. A moving-microphone pass was a measurement of
+its own, taken on its own day through its own file, and an array is several capsules
+each through theirs; reading either through the impulse response beside it would be
+wrong by the whole difference between the two calibrations. Off still undoes what the
+capture carries, exactly, and a named calibration is still swapped in — but only for a
+capture that declares ONE correction. A capture of several capsules has an aggregate
+belonging to no single microphone, so there is nothing a curve could replace, and it
+keeps its own — **and the panel says so**, because choosing a microphone and having
+part of the plot not read through it is not something to leave to be noticed.
+
+A tune carries the reading it was fitted under back with it. Off, Own and a named
+file turn one stored average into three different magnitudes, and two of those
+switches leave the panel's own calibration untouched — moving from Own to the very
+file the impulse response names, or, for an array whose measurement microphone
+carries none, from Own to Off. A bank returning from the EQ Wizard into either is
+refused, as it is for every other change that moves the curve under a tune in
+progress.
 
 The session stores the calibration it was tuned with as the **curve itself**, not
 as a reference to your calibration list: a calibration describes the microphone

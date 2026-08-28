@@ -167,6 +167,84 @@ close.
 
 ## Measurement orchestrators
 
+- [✗] **A bad run stops the measurement, transient stream faults included —
+  DECIDED, do not resurrect.** There used to be one automatic retry per rejected
+  run; it was removed in this PR because the field answer is that it never
+  recovered anything — what the checks catch is a gain set wrong, a cable in the
+  wrong socket, a channel that is not there, all of which the next sweep
+  reproduces exactly. Review then pointed out, correctly, that the same list also
+  carries `CaptureDiscontinuity`, `CaptureTimestampError` and `RenderUnderrun`,
+  which are transient by nature: one WASAPI underrun on the last of four runs
+  now costs the three good ones. The owner weighed that and kept it (2026-08-28):
+  losing a measurement and re-running it beats publishing an average nobody can
+  vouch for, and splitting the list into fatal and retryable buys back machinery
+  for a fault that is rare. Nothing is published either way — an average of three
+  runs where four were asked for is a different measurement wearing the same name.
+
+- [ ] **Array input levels reach the audio layer and stop there.** The capture
+  session reports a level per array channel and `AudioLevelResolver` fills them in
+  (an absent one meters as −∞ dBFS, not as full scale), but `InputLevelMapping.Map`
+  passes only the measurement microphone and the loopback to the UI, so a meter for
+  the array positions is data that exists and is never shown. Not a correctness
+  gap — nothing claims it is a safeguard, and a compromised position fails its run
+  either way — but it is the one thing that would let a user see a bad position
+  BEFORE spending four sweeps on it.
+- [ ] **Nothing records where an array STOOD.** A set of measurements is judged
+  compatible on what the arrays were made of — the number of positions and their
+  calibrations — and that cannot see the case worth seeing: the same seven
+  microphones, the same files, the rig lifted and set down somewhere else between
+  two channels. Both measurements are then honest averages of different listening
+  volumes, and every check passes. Raised in review with a persisted
+  `ArrayLayoutId` as the cure, shared by a series and renewed when the rig moves.
+  The obstacle is that nothing in the app can DERIVE it: moving the array does not
+  change its configuration, so the id can only come from the user saying so, which
+  makes this a new concept in the record settings and the file format rather than a
+  check that was left out. File-format work, and it should carry the placement
+  itself (where the rig was) rather than an opaque id, so a session opened later
+  says something a human can read.
+  Two things bound how much this is worth. It is NOT specific to arrays: a
+  moving-microphone capture records no placement either, and never has, so the array
+  inherits the gap rather than introducing it. And what the app can do without
+  inventing a fact, it now does — every capture's measurement DATE is shown on the
+  channel's average button and in the composition warning, because two captures from
+  one sitting are one volume and two from different days may not be, and that date is
+  the only evidence of it which exists.
+- [ ] **ASIO device identity is the driver NAME and nothing else.** That is all ASIO
+  exposes: there is no endpoint id, so the array's device stamp cannot be finer. For
+  a vendor driver bound to its own interface the name is an identity; for a wrapper
+  (ASIO4ALL, FlexASIO, a multi-device aggregate) it is not — the same name can front
+  different hardware, and an array carried across that swap passes the stamp and
+  points at inputs nobody chose, the very case the stamp exists to stop. Adding the
+  driver's channel COUNT was considered and rejected: some drivers report different
+  counts at different sample rates, so it would invalidate working setups to catch a
+  case it would only sometimes catch. Wants either a probe that says something about
+  the hardware behind the wrapper, or an explicit "this array belongs to this rig"
+  the user confirms.
+- [ ] ★ **An averaged measurement holds every run's raw capture in memory,
+  and an array multiplies that by the number of positions.**
+  `SweepAverageAccumulator` keeps a `TransferFunctionFrame` per microphone per
+  accepted run, and a frame is a *view* over the recorded `float[]` rather than a
+  reduction of it — so the whole capture of every array microphone, of the
+  measurement microphone and of the loopback (shared within a run) stays live
+  until the last run has been analysed. Retained ≈
+  `(2 + microphones) × samples × 4` bytes per run: **0.28 GiB** at 96 kHz / 20 s /
+  7 microphones / 4 runs, **1.46 GiB** at 48 kHz / 100 s / 8 microphones / 8 runs,
+  0.02 GiB for a modest 48 kHz / 10 s / 3 microphones / 2 runs.
+  **Streaming `Gxy/Gxx/Gyy` is NOT the fix for the memory** — that was this item's
+  first answer and the arithmetic refutes it. A running accumulation is sized by the
+  TRANSFORM, and the transform is the next power of two above twice the capture:
+  4 194 304 bins for a 96 kHz / 20 s take, at 16 + 8 + 8 bytes a bin, is **134 MiB
+  per microphone** and does not shrink with the run count. Eight of those is 1.07 GiB
+  against today's 0.28, and on the 48 kHz / 100 s case it is ~4.8 GiB against 1.46.
+  Streaming only wins past about **18 runs**, where `runs × capture × 4` finally
+  overtakes `2.2 × capture × 32`. It IS the fix for the duplicated CPU — every frame the
+  per-run credibility verdict transforms is transformed again for the final result —
+  but that half is now half-solved without it: the per-run verdict transforms the
+  loopback ONCE for all of a run's microphones instead of once each, measured at
+  3993 → 2093 ms for eight channels of a 96 kHz / 20 s take. What remains is the
+  second pass at the end, and buying that back costs the memory above. So the two
+  halves of this item pull in opposite directions and want separate answers: bounded,
+  run-count-independent state on one side, and not paying twice on the other.
 - [ ] **Run an averaged ASIO measurement on real hardware** (ideally a slow
   driver). Averaged sweeps keep one open ASIO session across runs; every software
   lifecycle guard around that — callback pools, capture epochs, in-flight block

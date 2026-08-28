@@ -64,9 +64,19 @@ internal sealed record EqWizardCurveSource
     public IImpulseMeasurement? Measurement { get; init; }
 
     /// <summary>
-    /// Per-frequency coherence (γ²) gating Auto Tune boosts. Present only for a
-    /// loopback-transfer impulse response; imported curves never carry it.
+    /// The per-frequency confidence, from 0 to 1, that Auto Tune gates its boosts on;
+    /// null when the source carries none, which leaves boosting masked by
+    /// null-detection and the fitting band alone.
     /// </summary>
+    /// <remarks>
+    /// Two things measure it, and both answer the same question — is what is drawn
+    /// here repeatable enough to be worth spending a band and amplifier headroom on?
+    /// A loopback-transfer impulse response carries measured coherence (γ²). A
+    /// microphone array carries the AGREEMENT between its positions, which for a
+    /// spatial average is the better witness: an average is a claim about a listening
+    /// volume, and where the positions in that volume disagree wildly it is a claim
+    /// about none of them. An imported curve with neither carries null.
+    /// </remarks>
     public IReadOnlyList<SignalPoint>? Coherence { get; init; }
 
     // --- Virtual DSP channel sources ----------------------------------------------
@@ -130,6 +140,18 @@ internal sealed record EqWizardCurveSource
     public LiveCaptureDocument? SpatialAverage { get; init; }
 
     /// <summary>
+    /// How <see cref="SpatialAverage"/> was read by the panel that handed it over.
+    /// </summary>
+    /// <remarks>
+    /// The curve alone could not say it: the panel's selection is Off, Own or a named
+    /// file, and the first two both resolve to no curve. A tune fitted through one of
+    /// them and summed back through another would break the identity the handoff
+    /// exists to keep, and the two differ by the whole capture correction.
+    /// </remarks>
+    public SpatialAverageCalibration SpatialAverageCalibration { get; init; } =
+        SpatialAverageCalibration.Own;
+
+    /// <summary>
     /// The offset that put the whole spatial-average SET on the impulse responses'
     /// axis when the handoff was taken, in dB. It belongs to the set rather than to
     /// this channel, so it travels as the number the panel resolved rather than being
@@ -172,6 +194,17 @@ internal sealed record EqWizardCurveSource
     /// import, a calculated or legacy slot) — then only <see cref="Points"/> exist.
     /// </summary>
     public IReadOnlyList<SignalPoint>? RawSpectrum { get; init; }
+
+    /// <summary>
+    /// What the measurement behind <see cref="RawSpectrum"/> measured. The whole range
+    /// by default, which is what an imported text curve and a legacy overlay read as.
+    /// </summary>
+    /// <remarks>
+    /// A raw spectrum is stored unmasked so it can be re-smoothed exactly at any width,
+    /// which means the break has to be re-applied to each finished curve — here as much
+    /// as on the plot the slot came from.
+    /// </remarks>
+    public MeasuredBand RawSpectrumBand { get; init; }
 
     /// <summary>
     /// The microphone correction frozen at capture time, on the raw curve's output grid.
@@ -242,6 +275,19 @@ internal sealed record EqWizardCurveSource
     /// </summary>
     public bool SupportsCalibration =>
         Kind == EqWizardSourceKind.ImpulseResponse || HasOwnCalibration;
+
+    /// <summary>
+    /// Whether the correction this curve carries is an AGGREGATE belonging to no
+    /// single microphone: an array whose positions were corrected by different files.
+    /// </summary>
+    /// <remarks>
+    /// "Own" reproduces it and "Off" undoes it, both exactly — the correction is
+    /// measured rather than copied from a file. What cannot be done is putting one
+    /// microphone's curve in its place, so those are the only two answers offered.
+    /// The one that would be wrong looks exactly as right as the two that are, and it
+    /// is wrong by the spread between the files.
+    /// </remarks>
+    public bool CalibrationIsAggregate { get; init; }
 
     /// <summary>
     /// Whether the curve carries the correction it was captured with, so "own" can

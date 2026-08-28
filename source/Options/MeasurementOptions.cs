@@ -52,6 +52,12 @@ namespace Resonalyze.Options
         private bool initializing;
         private string? microphoneCalibration0DegreesPath;
         private List<MicrophoneCalibrationDefinition> additionalMicrophoneCalibrations = [];
+        private List<ArrayMicrophoneDefinition> waveArrayMicrophones = [];
+        private List<ArrayMicrophoneDefinition> asioArrayMicrophones = [];
+        // The device each array was configured on. Null until the array is next
+        // edited; see MeasurementSettingsFile.ArrayMatchesDevice.
+        private string? waveArrayDeviceId;
+        private string? asioArrayDeviceId;
         // The SPL calibration anchor and the factory used to capture it. The
         // factory is only present when the form is created for real use (the
         // parameterless designer constructor leaves it null, which disables the
@@ -198,6 +204,18 @@ namespace Resonalyze.Options
             comboBoxWaveLoopbackChannel.SelectedIndexChanged += comboBoxWaveLoopbackChannel_SelectedIndexChanged;
             comboBoxWaveInputChannel.SelectedIndexChanged += comboBoxWaveInputChannel_SelectedIndexChanged;
             comboBoxAsioDriver.SelectedIndexChanged += comboBoxAsioDriver_SelectedIndexChanged;
+            // The array button reports what would actually be RECORDED, so moving the
+            // measurement microphone or the loopback onto one of the array's inputs
+            // has to show there: that is the moment a configured position stops being
+            // recordable, and it happens in a different part of this panel.
+            comboBoxWaveInputChannel.SelectedIndexChanged +=
+                (_, _) => UpdateArrayMicrophoneButton();
+            comboBoxWaveLoopbackChannel.SelectedIndexChanged +=
+                (_, _) => UpdateArrayMicrophoneButton();
+            comboBoxAsioInputChannel.SelectedIndexChanged +=
+                (_, _) => UpdateArrayMicrophoneButton();
+            comboBoxAsioLoopbackChannel.SelectedIndexChanged +=
+                (_, _) => UpdateArrayMicrophoneButton();
             buttonAsioInputProbe.Click += buttonAsioInputProbe_Click;
             buttonAsioControlPanel.Click += buttonAsioControlPanel_Click;
             buttonDeviceSettings.Click += buttonDeviceSettings_Click;
@@ -436,6 +454,14 @@ namespace Resonalyze.Options
             additionalMicrophoneCalibrations = settings.AdditionalMicrophoneCalibrations
                 .Select(definition => definition.Clone())
                 .ToList();
+            waveArrayMicrophones = settings.WaveArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            asioArrayMicrophones = settings.AsioArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            waveArrayDeviceId = settings.WaveArrayDeviceId;
+            asioArrayDeviceId = settings.AsioArrayDeviceId;
             splCalibration = settings.SplCalibration;
             UpdateCalibrationButtons();
             // The button's own refresh happens in the UpdateAudioBackendControls
@@ -462,6 +488,14 @@ namespace Resonalyze.Options
             settings.AdditionalMicrophoneCalibrations = additionalMicrophoneCalibrations
                 .Select(definition => definition.Clone())
                 .ToList();
+            settings.WaveArrayMicrophones = waveArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            settings.AsioArrayMicrophones = asioArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            settings.WaveArrayDeviceId = waveArrayDeviceId;
+            settings.AsioArrayDeviceId = asioArrayDeviceId;
             settings.SplCalibration = splCalibration;
 
             int sampleRate = GetSelectedSampleRate();
@@ -619,7 +653,19 @@ namespace Resonalyze.Options
                         comboBoxPlaybackDevice.SelectedItem is AudioEndpointDescriptor renderInfo
                             ? renderInfo.DisplayName
                             : preferredWasapiRenderEndpointName,
-                    WasapiBufferMilliseconds: settings.WasapiBufferMilliseconds),
+                    WasapiBufferMilliseconds: settings.WasapiBufferMilliseconds,
+                    // The array too, or applying this panel hands the measurement a
+                    // configuration that differs from the one the settings file builds
+                    // for the next run — the array simply absent from it. Harmless
+                    // today only because a run re-applies from the settings; a
+                    // configuration that is quietly not the one being measured with is
+                    // the shape of a defect, not a state to leave standing.
+                    WaveArrayInputChannelOffsets: audioBackend == AudioBackend.Asio
+                        ? []
+                        : SelectedReachableArrayChannels(),
+                    AsioArrayInputChannelOffsets: audioBackend == AudioBackend.Asio
+                        ? SelectedReachableArrayChannels()
+                        : []),
                 new SweepAveragingConfiguration(
                     averageRunCount,
                     confirmEachAverageRun),
@@ -678,6 +724,19 @@ namespace Resonalyze.Options
             settings.ProtectiveHighPassFrequencyHz = protectiveHighPass.FrequencyHz;
             settings.ProtectiveHighPassSlopeDbPerOctave =
                 protectiveHighPass.SlopeDbPerOctave;
+            // The array belongs here as much as the sweep does: it is part of the
+            // capture routing, so an edit has to reach the settings on the same
+            // apply that reopens the device with the new channels. Left out, the
+            // panel showed the new count while the file kept the old list and the
+            // next open read it back empty.
+            settings.WaveArrayMicrophones = waveArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            settings.AsioArrayMicrophones = asioArrayMicrophones
+                .Select(definition => definition.Clone())
+                .ToList();
+            settings.WaveArrayDeviceId = waveArrayDeviceId;
+            settings.AsioArrayDeviceId = asioArrayDeviceId;
         }
 
         // The duration field holds a per-octave pace; expand it to the total sweep
@@ -747,6 +806,201 @@ namespace Resonalyze.Options
             UpdateCalibrationButtons();
             RaiseCalibrationChanged();
         }
+
+        private AudioBackend SelectedAudioBackend =>
+            comboBoxAudioBackend.SelectedIndex >= 0
+                ? (AudioBackend)comboBoxAudioBackend.SelectedIndex
+                : AudioBackend.Wave;
+
+        /// <summary>
+        /// The calibrations the array can choose from: this panel's WORKING copy,
+        /// not the applied one, so a calibration added here a moment ago can be
+        /// assigned to an array microphone before anything is applied.
+        /// </summary>
+        private IReadOnlyList<MicrophoneCalibrationEntry> BuildCalibrationEntries()
+        {
+            string? zeroDegreePath = NormalizeCalibrationPath(microphoneCalibration0DegreesPath);
+            var entries = new List<MicrophoneCalibrationEntry>(
+                additionalMicrophoneCalibrations.Count + 1)
+            {
+                new(
+                    MicrophoneCalibrationIds.ZeroDegrees,
+                    "0°",
+                    !string.IsNullOrWhiteSpace(zeroDegreePath))
+            };
+            foreach (MicrophoneCalibrationDefinition definition in additionalMicrophoneCalibrations)
+            {
+                entries.Add(new MicrophoneCalibrationEntry(definition.Id, definition.Name, true));
+            }
+
+            return entries;
+        }
+
+        // The array belongs to the backend it was configured on: a channel
+        // number names a different input on each.
+        private List<ArrayMicrophoneDefinition> SelectedArrayMicrophones =>
+            SelectedAudioBackend == AudioBackend.Asio
+                ? asioArrayMicrophones
+                : waveArrayMicrophones;
+
+        // ...and to the DEVICE, which the backend does not narrow down. Two
+        // interfaces with eight inputs each agree about every channel NUMBER and
+        // about nothing else, so an array carried across them keeps its
+        // calibrations and its notes while pointing at inputs nobody chose.
+        private string? SelectedArrayDeviceId =>
+            SelectedAudioBackend == AudioBackend.Asio
+                ? asioArrayDeviceId
+                : waveArrayDeviceId;
+
+        // What the array would be stamped with if it were configured right now.
+        private string? CurrentCaptureDeviceId =>
+            SelectedAudioBackend == AudioBackend.Asio
+                ? (comboBoxAsioDriver.SelectedItem as AsioDeviceInfo)?.DriverName
+                : (comboBoxRecordingDevice.SelectedItem as AudioEndpointDescriptor)?.Id
+                    ?? preferredWasapiCaptureEndpointId;
+
+        // The same verdict the settings reach, so the panel is not a second opinion.
+        private bool SelectedArrayMatchesDevice =>
+            MeasurementSettingsFile.SweepMeasurementSettings.ArrayMatchesDevice(
+                SelectedArrayDeviceId,
+                CurrentCaptureDeviceId);
+
+        // The name to show for the device an array was configured on, when it is not
+        // this one. An ASIO stamp IS the driver name; a WASAPI stamp is an endpoint
+        // id, which is unreadable, so the list is asked for its name.
+        private string DescribeArrayDevice()
+        {
+            string? id = SelectedArrayDeviceId;
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return "another device";
+            }
+            if (SelectedAudioBackend == AudioBackend.Asio)
+            {
+                return id;
+            }
+
+            foreach (object? item in comboBoxRecordingDevice.Items)
+            {
+                if (item is AudioEndpointDescriptor endpoint &&
+                    string.Equals(endpoint.Id, id, StringComparison.Ordinal))
+                {
+                    return endpoint.DisplayName;
+                }
+            }
+
+            return "another device";
+        }
+
+        /// <summary>
+        /// Every input the selected backend can record, and where that list comes
+        /// from — the second half matters because "there is no room for an array"
+        /// has more than one cause, and the user can only act on the right one.
+        /// </summary>
+        private (IReadOnlyList<int> Channels, string Source) GetArrayInputChannels()
+        {
+            AudioBackend backend = SelectedAudioBackend;
+            if (backend == AudioBackend.Asio)
+            {
+                return (
+                    asioDriverInfo.InputChannels.Select(channel => channel.Offset).ToArray(),
+                    "ASIO driver inputs");
+            }
+            if (backend.IsWasapi())
+            {
+                int count = comboBoxRecordingDevice.SelectedItem is AudioEndpointDescriptor endpoint
+                    ? endpoint.ChannelCount
+                    : 0;
+                // An interface that presents its inputs to WASAPI as separate
+                // stereo endpoints reports two here, and its further inputs are
+                // genuinely unreachable in one session — through ASIO they are not.
+                return (
+                    Enumerable.Range(0, count).ToArray(),
+                    count > 2
+                        ? "WASAPI endpoint channels"
+                        : "WASAPI endpoint channels; use ASIO to reach an interface's further inputs");
+            }
+
+            return ([0, 1], "MME is limited to two channels");
+        }
+
+        private void buttonArrayMicrophones_Click(object? sender, EventArgs e)
+        {
+            (IReadOnlyList<int> channels, string source) = GetArrayInputChannels();
+            bool asio = SelectedAudioBackend == AudioBackend.Asio;
+            using var dialog = new ArrayMicrophonesDialog(
+                SelectedArrayMicrophones,
+                BuildCalibrationEntries(),
+                channels,
+                asio ? GetSelectedAsioInputChannelOffset() : GetSelectedWaveInputChannelOffset(),
+                asio
+                    ? GetSelectedAsioLoopbackInputChannelOffset()
+                    : GetSelectedWaveLoopbackChannelOffset(),
+                source);
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            List<ArrayMicrophoneDefinition> edited = dialog.Microphones
+                .Select(microphone => microphone.Clone())
+                .ToList();
+            // Confirming the dialog is the confirmation: whatever the list said
+            // before, these inputs are now meant for the device selected now.
+            if (asio)
+            {
+                asioArrayMicrophones = edited;
+                asioArrayDeviceId = CurrentCaptureDeviceId;
+            }
+            else
+            {
+                waveArrayMicrophones = edited;
+                waveArrayDeviceId = CurrentCaptureDeviceId;
+            }
+
+            UpdateArrayMicrophoneButton();
+            // Every other control on this panel applies on the fly; a dialog is no
+            // different. Without this the edit sat in the field until some unrelated
+            // control happened to raise the event, and closing the panel first threw
+            // it away.
+            RaiseSweepSettingsChanged();
+        }
+
+        private void UpdateArrayMicrophoneButton()
+        {
+            int count = SelectedArrayMicrophones.Count;
+            if (count > 0 && !SelectedArrayMatchesDevice)
+            {
+                // Not a count, because none of them would be recorded. Naming the
+                // device it belongs to is the whole message: the inputs are still
+                // there, so nothing else on this panel would look wrong.
+                buttonArrayMicrophones.Text =
+                    $"{count} on {DescribeArrayDevice()}...";
+                return;
+            }
+
+            int usable = UsableArrayMicrophoneCount();
+            string suffix = usable == count ? string.Empty : $" ({count - usable} unusable)";
+            buttonArrayMicrophones.Text = count == 0
+                ? "None..."
+                : count == 1
+                    ? $"1 microphone{suffix}..."
+                    : $"{count} microphones{suffix}...";
+        }
+
+        /// <summary>
+        /// How many of the configured array microphones would actually be recorded.
+        /// </summary>
+        /// <remarks>
+        /// The same rule <c>MeasurementSettingsFile.ResolveArrayChannels</c> applies,
+        /// and it has to be the same or the button is a second opinion. It matters
+        /// because that rule DROPS what it cannot record — a settings file has to stay
+        /// startable — so a measurement microphone moved onto an array input after the
+        /// array was configured takes a position out of the set. Reported here rather
+        /// than left to be noticed as a curve that never appeared.
+        /// </remarks>
+        private int UsableArrayMicrophoneCount() =>
+            SelectedArrayMatchesDevice ? SelectedReachableArrayChannels().Count : 0;
 
         private void buttonClearCalibration0_Click(object? sender, EventArgs e)
         {
@@ -1346,6 +1600,9 @@ namespace Resonalyze.Options
 
         private void UpdateAudioBackendControls()
         {
+            // The array is per backend, so the button's count changes with the
+            // selection, not only when the array itself is edited.
+            UpdateArrayMicrophoneButton();
             bool useAsio =
                 comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio;
             bool useWasapi = IsSelectedWasapiBackend();
@@ -1835,9 +2092,7 @@ namespace Resonalyze.Options
                 {
                     int selectedRate = GetSelectedSampleRate();
                     int bits = (int)numericUpDownBits.Value;
-                    int captureChannels = Math.Max(
-                        GetSelectedWaveInputChannelOffset(),
-                        GetSelectedWaveLoopbackChannelOffset() ?? 0) + 1;
+                    int captureChannels = GetSelectedWaveRecordingChannelCount();
                     int renderChannels = GetSelectedPlaybackChannelCount();
                     if (comboBoxSampleRate.Items.Count == 0)
                     {
@@ -2299,9 +2554,7 @@ namespace Resonalyze.Options
                         : [];
                 }
 
-                int captureChannels = Math.Max(
-                    GetSelectedWaveInputChannelOffset(),
-                    GetSelectedWaveLoopbackChannelOffset() ?? 0) + 1;
+                int captureChannels = GetSelectedWaveRecordingChannelCount();
                 int renderChannels = GetSelectedPlaybackChannelCount();
                 int bits = (int)numericUpDownBits.Value;
                 return SampleRateCatalog.GetCandidateRates()
@@ -2385,15 +2638,67 @@ namespace Resonalyze.Options
         private int GetSelectedPlaybackChannelCount() =>
             GetSelectedPlaybackChannel() == PlaybackChannel.Mono ? 1 : 2;
 
+        /// <summary>
+        /// The array microphones this panel would actually record on the selected
+        /// device: configured, not colliding with the measurement pair, and present on
+        /// the interface now chosen.
+        /// </summary>
+        /// <remarks>
+        /// The same rule <c>MeasurementSettingsFile.ResolveArrayChannels</c> applies
+        /// when it builds the configuration, because a panel that offered a sample
+        /// rate for a narrower capture than the measurement will open is a panel that
+        /// says Supported and then fails at the device.
+        /// </remarks>
+        private IReadOnlyList<int> SelectedReachableArrayChannels()
+        {
+            bool asio = SelectedAudioBackend == AudioBackend.Asio;
+            int microphoneChannel = asio
+                ? GetSelectedAsioInputChannelOffset()
+                : GetSelectedWaveInputChannelOffset();
+            int? loopbackChannel = asio
+                ? GetSelectedAsioLoopbackInputChannelOffset()
+                : GetSelectedWaveLoopbackChannelOffset();
+            var reachable = GetArrayInputChannels().Channels.ToHashSet();
+            var channels = new List<int>();
+            foreach (ArrayMicrophoneDefinition microphone in SelectedArrayMicrophones)
+            {
+                if (microphone.ChannelOffset >= 0 &&
+                    microphone.ChannelOffset != microphoneChannel &&
+                    microphone.ChannelOffset != loopbackChannel &&
+                    (reachable.Count == 0 || reachable.Contains(microphone.ChannelOffset)) &&
+                    !channels.Contains(microphone.ChannelOffset))
+                {
+                    channels.Add(microphone.ChannelOffset);
+                }
+            }
+
+            return channels;
+        }
+
+        /// <summary>
+        /// How many input channels the measurement will ask the device to open.
+        /// </summary>
+        /// <remarks>
+        /// Answered by <see cref="AudioCaptureRouting.RequiredInputChannelCount"/>, the
+        /// very property every backend opens its capture with, so the width this panel
+        /// probes a format at and the width the measurement asks for cannot drift. They
+        /// did: this counted the microphone and the loopback and stopped there, so an
+        /// interface that supports two channels at 96 kHz but not eight was offered the
+        /// rate, said Supported, and failed at the device when the sweep ran.
+        /// </remarks>
         private int GetSelectedWaveRecordingChannelCount()
         {
-            // The microphone on channel 2 (offset 1) needs a 2-channel format
-            // even without a loopback selection.
-            int loopbackChannels =
-                comboBoxWaveLoopbackChannel.SelectedItem is InputChannelOption { Offset: not null }
-                    ? 2
-                    : 1;
-            return Math.Max(GetSelectedWaveInputChannelOffset() + 1, loopbackChannels);
+            int microphone = GetSelectedWaveInputChannelOffset();
+            int? loopback = GetSelectedWaveLoopbackChannelOffset();
+            var routing = new AudioCaptureRouting(microphone, loopback)
+            {
+                ArrayChannels = SelectedReachableArrayChannels()
+            };
+            // The microphone on channel 2 (offset 1) needs a 2-channel format even
+            // without a loopback selection, and a loopback needs two whichever
+            // channels the pair sits on.
+            int loopbackChannels = loopback.HasValue ? 2 : 1;
+            return Math.Max(routing.RequiredInputChannelCount, loopbackChannels);
         }
 
         private int GetSelectedAsioInputChannelOffset()

@@ -96,8 +96,27 @@ internal sealed class MeasurementPlotContext
         return new ImpulseMeasurementView(
             transfer.ImpulseResponse,
             transfer.PeakIndex,
-            expSweepMeasurement.SampleRate);
+            expSweepMeasurement.SampleRate)
+        {
+            // From the filter and the sweep the RESULT carries, never the
+            // configured ones: the live settings describe the next sweep, and
+            // reading them here would break a loaded file's curve at frequencies
+            // belonging to a measurement it never was.
+            LowestMeasuredFrequencyHz = MeasuredBand.LowEdgeHz,
+            HighestMeasuredFrequencyHz = MeasuredBand.HighEdgeHz
+        };
     }
+
+    /// <summary>
+    /// What the current result actually measured — the band every curve derived from
+    /// it stops at, and the one an overlay captured from it has to carry so it keeps
+    /// stopping there after the measurement is gone.
+    /// </summary>
+    public MeasuredBand MeasuredBand => MeasuredBand.Resolve(
+        expSweepMeasurement.MeasurementProtectiveHighPass,
+        expSweepMeasurement.MeasuredLowFrequencyHz,
+        expSweepMeasurement.MeasuredHighFrequencyHz,
+        expSweepMeasurement.SampleRate);
 
     /// <summary>
     /// The uncalibrated oversampled primary spectrum an overlay stores so it can

@@ -419,10 +419,26 @@ does not stay still.
 average of the same driver. Below them is the difference. Everything the two disagree
 about above ~700 Hz is a property of where the microphone happened to sit.*
 
-So after the impulse responses are saved, take a second pass over the same drivers
-using the **moving-microphone method** (MMM), which averages the response over the
-volume your head actually occupies. It is optional — everything in this guide works
-without it — but it makes the EQ stage noticeably more honest.
+There are two ways to get that average, and both are optional — everything in this
+guide works without one — but either makes the EQ stage noticeably more honest.
+
+**If you have spare inputs and spare microphones**, set up a
+[microphone array](REFERENCE.md#microphone-array) before you measure: **Record
+Settings → Array...**, one row per position, each with its own calibration and a
+note saying where it stands. Place them around the head area — the seven positions
+these were developed against sat within about 30 cm of the listening position, left
+and right of it and forward of it. Then measure exactly as described above and the
+average comes with the sweep: nothing to capture twice, nothing to keep at the same
+gain afterwards, and the positions' own disagreement is stored beside the average so
+you can see where it is a claim and where it is not. A position that clips or goes
+silent fails the whole sweep rather than quietly dropping out of it, so what you get
+is either the array you set up or an error naming the input. **The microphones must
+be on the same interface as the measurement one** — that is what keeps them on the same
+clock and the same loopback, and it is not negotiable.
+
+**If you have one microphone**, take a second pass over the same drivers using the
+**moving-microphone method** (MMM), which averages the response over the volume
+your head actually occupies.
 
 Switch Live Spectrum to **MMM** mode. It pins the settings such an average is only
 valid under — periodic pink noise, infinite averaging, band-power dB SPL, noise-slope
@@ -810,14 +826,29 @@ partially undoing it again after EQ.
 
 ### Optional: equalize the spatial average
 
-If you took the MMM captures in [Section 4](#optional-a-spatial-average-for-the-eq),
-attach them before setting the target.
+If you arranged a spatial average in
+[Section 4](#optional-a-spatial-average-for-the-eq), bring it in before setting the
+target.
 
-On each channel card, press the **MMM** button and select that driver's capture. Do it
-for both sides — left and right have their own — and once for a mono channel, which
-shares its single capture. The button says where each channel stands: **MMM** for none,
-**MMM ✓** when one is attached, **MMM ⚠** when the session refers to one it cannot
-read.
+**Measured with a microphone array?** There is nothing to attach — the average came
+with the measurement. The button on each channel card reads **Array**, and its menu
+picks which average the whole project reads: the arrays the measurements carry, MMM
+captures attached by hand, or none. A channel measured with a single microphone in an
+array project is drawn from that point measurement instead and the panel says how many
+channels that is; below the cabin's first mode a point and an average are the same
+measurement, so a subwoofer loses little by it.
+
+Set **Mic cal** to **Own (as measured)** while you are there. Each array position is
+a different capsule with its own calibration file, and that setting reads every curve
+through the correction its own measurement recorded instead of applying one of yours
+to all of them. Pick a single calibration from the list only when you want to see the
+whole set through one microphone on purpose.
+
+**Took MMM captures instead?** On each channel card, press the **MMM** button and
+select that driver's capture. Do it for both sides — left and right have their own —
+and once for a mono channel, which shares its single capture. The button says where
+each channel stands: **MMM** for none, **MMM ✓** when one is attached, **MMM ⚠** when
+the session refers to one it cannot read.
 
 When every channel that plays has a capture, the **Hybrid** toggle under the graph
 becomes available. Tick it.

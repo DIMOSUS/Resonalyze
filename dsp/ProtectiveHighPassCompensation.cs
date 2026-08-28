@@ -225,6 +225,90 @@ public static class ProtectiveHighPassCompensation
         return correction;
     }
 
+    /// <summary>
+    /// The lowest frequency this compensation can speak about: below it the
+    /// high-pass has taken the signal past <paramref name="maximumBoostDb"/> and
+    /// there is nothing left to recover. Zero when the whole band survives.
+    /// </summary>
+    /// <remarks>
+    /// The same question <see cref="MagnitudeCorrectionDb"/> answers per frequency,
+    /// as the single number a half-line actually is — a high-pass takes everything
+    /// below one frequency and nothing above it. It exists because the two paths
+    /// end differently: a magnitude curve can carry NaN and say "nothing here", but
+    /// an impulse response is a time series and cannot, so
+    /// <see cref="RemoveFromImpulseResponse"/> zeroes those bins instead. A gated
+    /// spectrum of that response then fills them back in with the analysis window's
+    /// own leakage — measured 270 dB above the truth on a 1 kHz / 48 dB per octave
+    /// corner, and drawn as a smooth, entirely plausible driver rolloff. Whoever
+    /// draws such a curve needs this frequency to break it at.
+    /// <para>
+    /// Found by bisection on the same sections and the same reliability rule as
+    /// both corrections, rather than from the analogue asymptote, so the three can
+    /// never disagree about where the signal ended.
+    /// </para>
+    /// </remarks>
+    public static double LowestRecoverableFrequencyHz(
+        CrossoverEdge edge,
+        double sampleRateHz,
+        double maximumBoostDb)
+    {
+        if (sampleRateHz <= 0 || !double.IsFinite(sampleRateHz))
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRateHz));
+        }
+        if (maximumBoostDb < 0 || !double.IsFinite(maximumBoostDb))
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumBoostDb));
+        }
+        if (edge.Family is not (
+            CrossoverFilterFamily.Butterworth or
+            CrossoverFilterFamily.LinkwitzRiley))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(edge),
+                "Protective high-pass compensation supports only Butterworth and Linkwitz-Riley filters.");
+        }
+
+        IReadOnlyList<BiquadCoefficients> sections =
+            CrossoverFilter.BuildSections(edge, highPass: true, sampleRateHz);
+        double nyquist = sampleRateHz / 2.0;
+        if (!Recoverable(sections, nyquist, sampleRateHz, maximumBoostDb))
+        {
+            // A cap of zero on a filter that never quite reaches unity gain. Nothing
+            // is recoverable, and saying so beats returning a frequency that implies
+            // the top of the band is.
+            return nyquist;
+        }
+
+        double low = 0.0;
+        double high = nyquist;
+        for (int step = 0; step < 64; step++)
+        {
+            double middle = 0.5 * (low + high);
+            if (Recoverable(sections, middle, sampleRateHz, maximumBoostDb))
+            {
+                high = middle;
+            }
+            else
+            {
+                low = middle;
+            }
+        }
+
+        return high;
+    }
+
+    private static bool Recoverable(
+        IReadOnlyList<BiquadCoefficients> sections,
+        double frequencyHz,
+        double sampleRateHz,
+        double maximumBoostDb)
+    {
+        Complex z1 = Complex.FromPolarCoordinates(
+            1.0, -Math.Tau * frequencyHz / sampleRateHz);
+        return ReliabilityWeight(Response(sections, z1).Magnitude, maximumBoostDb) > 0.0;
+    }
+
     private static Complex Response(
         IReadOnlyList<BiquadCoefficients> sections,
         Complex z1)

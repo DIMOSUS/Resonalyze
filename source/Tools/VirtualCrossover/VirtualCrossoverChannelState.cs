@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -42,6 +42,90 @@ internal sealed class VirtualCrossoverChannelState
     /// </para>
     /// </remarks>
     public LiveCaptureDocument? SpatialAverage { get; set; }
+
+    /// <summary>
+    /// The spatial average the measurement on this side brought with it — the
+    /// microphone array it was recorded with — or null when it was recorded with
+    /// one microphone.
+    /// </summary>
+    /// <remarks>
+    /// Beside <see cref="SpatialAverage"/> and not instead of it: an attached
+    /// moving-microphone pass is a file the user chose, this one arrives with the
+    /// measurement, and the project decides which it reads. Cleared with the
+    /// measurement, because it IS part of it.
+    /// </remarks>
+    public LiveCaptureDocument? ArrayCapture { get; set; }
+
+    /// <summary>
+    /// The microphone calibration the measurement on this side was READ through,
+    /// as its file recorded it; null when the file names none.
+    /// </summary>
+    /// <remarks>
+    /// The panel corrects with one calibration because one microphone usually took
+    /// every channel — but which one that was is a fact of each measurement, not of
+    /// the project, and the file has carried it since measurements became portable.
+    /// This is what the selector's "Own (as measured)" reads. Kept as the settings
+    /// rather than the curve so the name travels with it: the selector has to be able
+    /// to say what it is applying.
+    /// </remarks>
+    public VirtualCrossoverCalibrationSettings? MicrophoneCalibration
+    {
+        get => microphoneCalibration;
+        set
+        {
+            microphoneCalibration = value;
+            // Converted once. The redraw asks for it per channel per frame, and
+            // rebuilding a three-hundred-point curve on every ask is a cost with
+            // nothing to show for it.
+            microphoneCalibrationCurve = value?.ToCalibrationFile();
+        }
+    }
+
+    /// <summary>
+    /// <see cref="MicrophoneCalibration"/> as the curve the analysis applies.
+    /// </summary>
+    public CalibrationFile? MicrophoneCalibrationCurve => microphoneCalibrationCurve;
+
+    private VirtualCrossoverCalibrationSettings? microphoneCalibration;
+    private CalibrationFile? microphoneCalibrationCurve;
+
+    /// <summary>
+    /// How far apart <see cref="ArrayCapture"/>'s microphones sat at each band of the
+    /// shared grid, or null when this side carries no array.
+    /// </summary>
+    /// <remarks>
+    /// Beside the average rather than inside it, because it answers a different
+    /// question: the average says what the listening volume measures, the spread says
+    /// how much of a claim that is. The EQ Wizard gates its boosts on it — where seven
+    /// positions part by more than 20 dB, filling the dip six of them measured helps
+    /// the seventh and spends everyone's headroom.
+    /// </remarks>
+    public double[]? ArraySpreadDb { get; set; }
+
+    /// <summary>
+    /// What this side's response actually measured; the whole range by default.
+    /// </summary>
+    /// <remarks>
+    /// Narrowed where a protective high-pass was divided back out, and where the
+    /// sweep behind it never reached. Either way the response is zeroed there, and a
+    /// gated spectrum of a zero draws the analysis window's leakage — smooth,
+    /// plausible, and none of it measured. Curves stop at these edges; sums do not,
+    /// because a sum plays wherever any of its channels does.
+    /// </remarks>
+    public MeasuredBand MeasuredBand { get; set; } = MeasuredBand.Everything;
+
+    /// <summary>
+    /// The spatial average this side contributes under <paramref name="mode"/>, or
+    /// null when it has none of that family.
+    /// </summary>
+    public LiveCaptureDocument? SpatialAverageFor(
+        VirtualCrossoverSpatialAverageMode mode) =>
+        mode switch
+        {
+            VirtualCrossoverSpatialAverageMode.MicArray => ArrayCapture,
+            VirtualCrossoverSpatialAverageMode.MovingMic => SpatialAverage,
+            _ => null
+        };
     public int TransferPeakIndex { get; set; }
     public int SampleRate { get; set; }
 
@@ -90,6 +174,14 @@ internal sealed class VirtualCrossoverChannelState
         // The average belongs to the measurement that was here; a slot wiped for a
         // new source must not keep the old driver's curve.
         SpatialAverage = null;
+        ArrayCapture = null;
+        // They described the measurement that was here, like the array does. Every
+        // one of them is written by ResolvedVirtualDspSource.ApplyTo, so every one of
+        // them has to be cleared here: a slot wiped for a source that then failed to
+        // load would otherwise answer for the previous measurement's band.
+        ArraySpreadDb = null;
+        MeasuredBand = MeasuredBand.Everything;
+        MicrophoneCalibration = null;
         TransferPeakIndex = 0;
         SampleRate = 0;
         TransferCoherence = null;

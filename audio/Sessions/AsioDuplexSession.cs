@@ -1,4 +1,4 @@
-namespace Resonalyze.Audio;
+﻿namespace Resonalyze.Audio;
 
 /// <summary>
 /// Finite play-and-capture over a single ASIO driver session. The driver is
@@ -21,15 +21,11 @@ internal sealed class AsioDuplexSession : IAudioDuplexSession
     public AsioDuplexSession(AudioSessionRequest request, AudioPlaybackSignal signal)
     {
         ArgumentNullException.ThrowIfNull(signal);
-        int mic = request.Routing.MicrophoneChannel;
-        int? loopback = request.Routing.LoopbackChannel;
-        firstInputOffset = CaptureChannelLayout.AsioFirstInputOffset(mic, loopback);
-        int inputChannelCount = CaptureChannelLayout.AsioInputChannelCount(mic, loopback);
+        firstInputOffset = CaptureChannelLayout.AsioFirstInputOffset(request.Routing);
+        int inputChannelCount = CaptureChannelLayout.AsioInputChannelCount(request.Routing);
         sampleRate = request.SampleRate;
         signalSampleCount = signal.SampleCount;
-        relativeRouting = new AudioCaptureRouting(
-            mic - firstInputOffset,
-            loopback.HasValue ? loopback.Value - firstInputOffset : null);
+        relativeRouting = CaptureChannelLayout.ToAsioRelative(request.Routing);
         session = new AsioFullDuplexSession(
             request.AsioDriverName ?? string.Empty,
             firstInputOffset,
@@ -82,7 +78,10 @@ internal sealed class AsioDuplexSession : IAudioDuplexSession
             relativeRouting.LoopbackChannel,
             StereoSeparationExpected: false,
             AudioCaptureAnomalies.None,
-            Diagnostics: null);
+            Diagnostics: null)
+        {
+            ArrayChannels = relativeRouting.ArrayChannels
+        };
     }
 
     private void HandleLevels(AudioChannelLevel[] channels)

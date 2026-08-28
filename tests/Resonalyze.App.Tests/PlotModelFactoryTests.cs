@@ -454,6 +454,94 @@ public sealed class PlotModelFactoryTests
     }
 
     [Fact]
+    public void FrequencyResponse_ArrayCurvesFollowTheirOwnFlags()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        measurement.ArrayMicrophones = SyntheticArray();
+
+        var off = new CurveVisibilityOptions();
+        Assert.DoesNotContain(
+            "Array average",
+            SeriesTitles(CreateFactory(
+                    measurement, noiseMeasurement, frequencyResponseVisibility: off)
+                .CreateFrequencyResponse(includeCurves: true)));
+
+        var shown = new CurveVisibilityOptions
+        {
+            ShowArrayAverage = true,
+            ShowArrayMicrophones = true,
+            ShowArraySpread = true
+        };
+        IReadOnlyList<string> titles = SeriesTitles(CreateFactory(
+                measurement, noiseMeasurement, frequencyResponseVisibility: shown)
+            .CreateFrequencyResponse(includeCurves: true));
+
+        Assert.Contains("Array average", titles);
+        Assert.Contains("Array spread", titles);
+        Assert.Contains("Input 1 (measurement)", titles);
+        Assert.Contains("left ear", titles);
+    }
+
+    [Fact]
+    public void FrequencyResponse_TheArraySpreadGetsItsOwnAxis()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        measurement.ArrayMicrophones = SyntheticArray();
+        var shown = new CurveVisibilityOptions { ShowArraySpread = true };
+
+        OxyPlot.PlotModel model = CreateFactory(
+                measurement, noiseMeasurement, frequencyResponseVisibility: shown)
+            .CreateFrequencyResponse(includeCurves: true);
+
+        // A dB RANGE is not a level: on the magnitude axis it would either sit on
+        // top of the curves or fall off the bottom, and both invite reading it as
+        // a response.
+        OxyPlot.Series.Series spread = model.Series.Single(
+            series => series.Title == "Array spread");
+        Assert.Equal(
+            "array-spread",
+            ((OxyPlot.Series.LineSeries)spread).YAxisKey);
+        Assert.Contains(model.Axes, axis => axis.Key == "array-spread");
+    }
+
+    [Fact]
+    public void FrequencyResponse_AMeasurementWithoutAnArrayDrawsNone()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var shown = new CurveVisibilityOptions
+        {
+            ShowArrayAverage = true,
+            ShowArrayMicrophones = true,
+            ShowArraySpread = true
+        };
+
+        OxyPlot.PlotModel model = CreateFactory(
+                measurement, noiseMeasurement, frequencyResponseVisibility: shown)
+            .CreateFrequencyResponse(includeCurves: true);
+
+        Assert.DoesNotContain("Array average", SeriesTitles(model));
+        Assert.DoesNotContain(model.Axes, axis => axis.Key == "array-spread");
+    }
+
+    private static IReadOnlyList<ArrayMicrophoneCurve> SyntheticArray()
+    {
+        int bands = SpatialAverage.GridBandCount;
+        return
+        [
+            new ArrayMicrophoneCurve(
+                0, true, Enumerable.Repeat(-6.0, bands).ToArray(), 1),
+            new ArrayMicrophoneCurve(
+                2, false, Enumerable.Repeat(-9.0, bands).ToArray(), 1)
+            {
+                Note = "left ear"
+            }
+        ];
+    }
+
+    [Fact]
     public void PhaseResponse_AutoDetrendPreservesMainCompareRelativeDelay()
     {
         const int sampleRate = 44_100;
@@ -637,6 +725,64 @@ public sealed class PlotModelFactoryTests
             Assert.Equal(displayed.Points[i].X, overlay[i].X);
             Assert.Equal(displayed.Points[i].Y, overlay[i].Y, tolerance: 1e-12);
         }
+    }
+
+    [Fact]
+    public void ComplexSum_StopsWhereNeitherResponseMeasured()
+    {
+        // The sum is a record neither measurement made, so it carries no band of its
+        // own — and it was therefore the one curve on the plot still drawing the
+        // analysis window's leakage below a band sweep. Both contributors stop at
+        // 500 Hz here; the sum has to stop with them, and go on wherever EITHER of
+        // them plays.
+        // A band sweep on each side, and different ones: the main from 800 Hz up, the
+        // compared one from 500 to 8 kHz. Under 500 neither played.
+        var impulse = new Complex[2048];
+        impulse[64] = Complex.One;
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            lowFrequencyHz: 800,
+            highFrequencyHz: 20_000,
+            sampleRate: 44_100,
+            bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: impulse,
+            sweepDeconvolutionPeakIndex: 64,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: impulse,
+            transferPeakIndex: 64,
+            achievedLowFrequencyHz: 800,
+            achievedHighFrequencyHz: 20_000);
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference",
+                44_100,
+                compareIr,
+                64,
+                Band: new MeasuredBand(500, 8_000)));
+
+        AnalysisCurve? sum = factory.TryBuildComplexSumCurve();
+        Assert.NotNull(sum);
+
+        Assert.All(
+            sum!.Points.Where(point => point.X < 480),
+            point => Assert.True(
+                double.IsNaN(point.Y),
+                $"{point.X:0} Hz is below every contributor and must be a break"));
+        // And it goes on wherever EITHER of them plays: 600 Hz is the compared
+        // measurement's alone, 10 kHz the main's alone.
+        Assert.Contains(
+            sum.Points,
+            point => point.X is > 550 and < 700 && double.IsFinite(point.Y));
+        Assert.Contains(
+            sum.Points,
+            point => point.X is > 9_000 and < 12_000 && double.IsFinite(point.Y));
     }
 
     [Fact]
@@ -1737,7 +1883,13 @@ public sealed class PlotModelFactoryTests
             sweepDeconvolutionPeakIndex: peakSample,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: transferImpulse,
-            transferPeakIndex: peakSample);
+            transferPeakIndex: peakSample,
+            // Stated, not inherited from a regenerated sweep: these fixtures are about
+            // what the curves DO over the whole analysis grid, and a one-second sweep
+            // of ten octaves reaches full amplitude well inside it, which would mask
+            // the very points under test.
+            achievedLowFrequencyHz: 20,
+            achievedHighFrequencyHz: 20_000);
         return measurement;
     }
 

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 using Resonalyze.History;
 
@@ -22,6 +22,38 @@ internal sealed class ResolvedVirtualDspSource
     public IReadOnlyList<SignalPoint>? DistortionCurve { get; init; }
 
     /// <summary>
+    /// The spatial average this measurement carries in itself, when it was recorded
+    /// with a microphone array; null otherwise.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from the attached moving-microphone capture rather than folded
+    /// into one slot: they are two sources of the same quantity, tethered
+    /// differently, and which of them a project uses is the project's choice. A
+    /// channel that has both keeps both, and switching the method does not have to
+    /// re-read anything.
+    /// </remarks>
+    public LiveCaptureDocument? ArrayCapture { get; init; }
+
+    /// <summary>
+    /// The spread between <see cref="ArrayCapture"/>'s microphones, band by band.
+    /// </summary>
+    public double[]? ArraySpreadDb { get; init; }
+
+    /// <summary>
+    /// What this measurement actually measured, from the protective high-pass
+    /// divided back out of it and the band its sweep swept.
+    /// </summary>
+    public MeasuredBand MeasuredBand { get; init; } = MeasuredBand.Everything;
+
+    /// <summary>
+    /// The microphone calibration this measurement was read through, as its file
+    /// recorded it. Null when the file names none — every measurement written before
+    /// the format carried one, which is why the panel's own selection is still the
+    /// answer for those.
+    /// </summary>
+    public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; init; }
+
+    /// <summary>
     /// Prepares a source from a measurement snapshot, or returns null when the
     /// snapshot has no loopback transfer IR — the virtual sum only has physical
     /// meaning for loopback-referenced responses — or when it was imported from a
@@ -38,6 +70,12 @@ internal sealed class ResolvedVirtualDspSource
             return null;
         }
 
+        (LiveCaptureDocument? arrayCapture, double[]? arraySpreadDb) =
+            ArrayCaptureDocument.TryCreateWithSpread(
+                snapshot.ArrayMicrophones,
+                snapshot.SampleRate,
+                snapshot.ProtectiveHighPass,
+                snapshot.MeasuredAtUtc);
         return new ResolvedVirtualDspSource
         {
             TransferImpulseResponse = transferIr,
@@ -45,7 +83,15 @@ internal sealed class ResolvedVirtualDspSource
                 snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1),
             SampleRate = snapshot.SampleRate,
             TransferCoherence = snapshot.TransferCoherence,
-            DistortionCurve = ComputeDistortionCurve(snapshot)
+            DistortionCurve = ComputeDistortionCurve(snapshot),
+            ArrayCapture = arrayCapture,
+            ArraySpreadDb = arraySpreadDb,
+            MeasuredBand = MeasuredBand.Resolve(
+                snapshot.ProtectiveHighPass,
+                snapshot.MeasuredLowFrequencyHz,
+                snapshot.MeasuredHighFrequencyHz,
+                snapshot.SampleRate),
+            MicrophoneCalibration = snapshot.MicrophoneCalibration
         };
     }
 
@@ -58,6 +104,10 @@ internal sealed class ResolvedVirtualDspSource
         state.SampleRate = SampleRate;
         state.TransferCoherence = TransferCoherence;
         state.DistortionCurve = DistortionCurve;
+        state.ArrayCapture = ArrayCapture;
+        state.ArraySpreadDb = ArraySpreadDb;
+        state.MeasuredBand = MeasuredBand;
+        state.MicrophoneCalibration = MicrophoneCalibration;
     }
 
     // Computes the channel's harmonic distortion (THD, dB vs the fundamental) from

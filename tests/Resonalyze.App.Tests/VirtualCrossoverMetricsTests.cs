@@ -53,7 +53,7 @@ public sealed class VirtualCrossoverMetricsTests
         var seenRates = new ConcurrentBag<int>();
         var metrics = new VirtualCrossoverMetrics(
             coordinator,
-            (_, _, sampleRate) =>
+            (_, _, sampleRate, _, _) =>
             {
                 seenRates.Add(sampleRate);
                 return EmptyMagnitude;
@@ -73,13 +73,33 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
-    public void BuildCurves_ReturnsNoMetric_ForFewerThanTwoChannels()
+    public void BuildCurves_StillDrawsTheChannel_WithNoMetricToGoWithIt()
     {
+        // One channel has no metric: its sum is itself and its summation loss is zero
+        // by definition. It still has a CURVE, and withholding that was a bug with a
+        // long reach — everything downstream gates on the magnitudes being present,
+        // so muting every channel but one silently turned off the hybrid view and the
+        // spatial average the EQ Wizard would have been handed.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
 
         (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, List<SignalPoint>? loss) =
             metrics.BuildCurves([Processed("A", Impulse(), 5, 48_000)], 0);
+
+        Assert.NotNull(magnitudes);
+        Assert.Single(magnitudes!);
+        Assert.Null(sum);
+        Assert.Null(loss);
+    }
+
+    [Fact]
+    public void BuildCurves_HasNothingToDrawForAnEmptySet()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, List<SignalPoint>? loss) =
+            metrics.BuildCurves([], 0);
 
         Assert.Null(magnitudes);
         Assert.Null(sum);
@@ -103,7 +123,7 @@ public sealed class VirtualCrossoverMetricsTests
         var captured = new ConcurrentBag<(Complex[] Ir, int Peak, int Rate)>();
         var metrics = new VirtualCrossoverMetrics(
             coordinator,
-            (ir, peak, rate) =>
+            (ir, peak, rate, _, _) =>
             {
                 captured.Add((ir, peak, rate));
                 return EmptyMagnitude;
@@ -126,7 +146,7 @@ public sealed class VirtualCrossoverMetricsTests
         var captured = new ConcurrentBag<(Complex[] Ir, int Peak, int Rate)>();
         var metrics = new VirtualCrossoverMetrics(
             coordinator,
-            (ir, peak, rate) =>
+            (ir, peak, rate, _, _) =>
             {
                 captured.Add((ir, peak, rate));
                 return EmptyMagnitude;
@@ -161,7 +181,7 @@ public sealed class VirtualCrossoverMetricsTests
     public void BuildEntries_IsEmptyWhenThereIsNoMetric()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
 
         Assert.Empty(metrics.BuildEntries(
             [Processed("A", Impulse(), 5, 48_000)], lossCurve: null));
@@ -203,7 +223,7 @@ public sealed class VirtualCrossoverMetricsTests
     public void BuildPhaseEntries_IsEmptyForFewerThanTwoChannels()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
 
         Assert.Empty(metrics.BuildPhaseEntries(
             [ProcessedThroughChain("A", CrossoverKind.LowPass, 200)]));
@@ -213,7 +233,7 @@ public sealed class VirtualCrossoverMetricsTests
     public void BuildPhaseEntries_ReadsTheJunctionAndRecoversAMisalignment()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
 
         // Passed upper-first on purpose: the entries must order by band, not by
         // argument order. The upper channel runs 2 ms late, so the read-out
@@ -238,7 +258,7 @@ public sealed class VirtualCrossoverMetricsTests
     public async Task ComputeSideSumAsync_SumsTheParticipatingSides()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
 
         VirtualCrossoverSideSum? side = await metrics.ComputeSideSumAsync(
@@ -262,7 +282,7 @@ public sealed class VirtualCrossoverMetricsTests
     public async Task ComputeSideSumAsync_HandsBackThePartsThatWentIntoTheSum()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         VirtualCrossoverChannel a = ResolvedChannel("A", 48_000);
         VirtualCrossoverChannel b = ResolvedChannel("B", 48_000);
         // A channel with nothing behind it takes no part, so it must not appear
@@ -297,7 +317,7 @@ public sealed class VirtualCrossoverMetricsTests
     public async Task ComputeSideSumAsync_HonorsTheMinimumChannelCount()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
 
         // One resolved channel: enough for the audition (minimum 1), not for
@@ -319,7 +339,7 @@ public sealed class VirtualCrossoverMetricsTests
     public async Task ComputeSideSumAsync_MonoChannelContributesToBothSidesAtFullLevel()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         // A mono channel (a sub) resolved on its single slot: program material
         // routes it into BOTH ears at full level, so both side sums must carry
         // its response unattenuated.
@@ -345,7 +365,7 @@ public sealed class VirtualCrossoverMetricsTests
     public async Task ComputeSideSumAsync_ReturnsNullForAStaleRevision()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
         coordinator.Invalidate();
 
@@ -360,7 +380,7 @@ public sealed class VirtualCrossoverMetricsTests
     public async Task ComputeStereoDeltasAsync_SkipsAStereoPairWithOnlyOneSideResolved()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
 
         // A stereo pair (not mono) with only the left side resolved is not eligible
@@ -391,7 +411,7 @@ public sealed class VirtualCrossoverMetricsTests
     public async Task ComputeStereoDeltasAsync_ReportsOneDeltaForAResolvedStereoPair()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
         var channel = new VirtualCrossoverChannel("A");
         Resolve(channel, rightSide: false);
@@ -436,7 +456,7 @@ public sealed class VirtualCrossoverMetricsTests
         // wavelet — the disagreement IS the latch. The right side has a
         // clean dominant direct and must stay unflagged.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
 
         var latched = new Complex[8_192];
@@ -473,7 +493,7 @@ public sealed class VirtualCrossoverMetricsTests
     public async Task ComputeStereoDeltasAsync_MonoChannelReportsNoRightSide()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
-        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyMagnitude);
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
         var channel = new VirtualCrossoverChannel("Sub") { Pair = { Mono = true } };
         Resolve(channel, rightSide: false);

@@ -62,7 +62,64 @@ namespace Resonalyze.Dsp
                     frequencyResponseOptions.SmoothingInverseOctaves),
                 psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
                     frequencyResponseOptions.SmoothingInverseOctaves));
-            return new AnalysisCurve("Frequency Response", data);
+            return new AnalysisCurve(
+                "Frequency Response",
+                MaskUnmeasuredBands(
+                    data,
+                    measurement.LowestMeasuredFrequencyHz,
+                    measurement.HighestMeasuredFrequencyHz));
+        }
+
+        /// <summary>
+        /// Breaks a finished curve where the response carries no measurement.
+        /// </summary>
+        /// <remarks>
+        /// AFTER the smoothing, deliberately. Masking the oversampled spectrum that
+        /// feeds it would let the smoothing window straddle the boundary in both
+        /// directions: measured on a 1 kHz / 48 dB per octave corner, 29 bands below
+        /// the limit survived on borrowed passband energy while 9 bands above it
+        /// were lost to the NaN. On the output grid the break lands exactly where
+        /// the filter put it.
+        /// </remarks>
+        private static AnalysisCurve Masked(
+            AnalysisCurve curve,
+            double lowestMeasuredFrequencyHz,
+            double highestMeasuredFrequencyHz) =>
+            !(lowestMeasuredFrequencyHz > 0.0) &&
+                double.IsPositiveInfinity(highestMeasuredFrequencyHz)
+                ? curve
+                : curve with
+                {
+                    Points = MaskUnmeasuredBands(
+                        [.. curve.Points],
+                        lowestMeasuredFrequencyHz,
+                        highestMeasuredFrequencyHz)
+                };
+
+        private static List<SignalPoint> MaskUnmeasuredBands(
+            List<SignalPoint> data,
+            double lowestMeasuredFrequencyHz,
+            double highestMeasuredFrequencyHz)
+        {
+            bool maskBelow = lowestMeasuredFrequencyHz > 0.0 &&
+                double.IsFinite(lowestMeasuredFrequencyHz);
+            bool maskAbove = highestMeasuredFrequencyHz > 0.0 &&
+                double.IsFinite(highestMeasuredFrequencyHz);
+            if (!maskBelow && !maskAbove)
+            {
+                return data;
+            }
+
+            for (int i = 0; i < data.Count; i++)
+            {
+                if ((maskBelow && data[i].X < lowestMeasuredFrequencyHz) ||
+                    (maskAbove && data[i].X > highestMeasuredFrequencyHz))
+                {
+                    data[i] = new SignalPoint(data[i].X, double.NaN);
+                }
+            }
+
+            return data;
         }
 
         /// <summary>
@@ -159,10 +216,13 @@ namespace Resonalyze.Dsp
             double smoothingInverseOctaves)
         {
             Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
-            return ResampleGatedMagnitude(
-                GatedMagnitudePoints(spectrum, measurement.SampleRate),
-                calibration,
-                smoothingInverseOctaves);
+            return Masked(
+                ResampleGatedMagnitude(
+                    GatedMagnitudePoints(spectrum, measurement.SampleRate),
+                    calibration,
+                    smoothingInverseOctaves),
+                measurement.LowestMeasuredFrequencyHz,
+                measurement.HighestMeasuredFrequencyHz);
         }
 
         /// <summary>
@@ -182,6 +242,130 @@ namespace Resonalyze.Dsp
         {
             Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
             List<SignalPoint> bins = GatedMagnitudePoints(spectrum, measurement.SampleRate);
+            double lowest = measurement.LowestMeasuredFrequencyHz;
+            double highest = measurement.HighestMeasuredFrequencyHz;
+            // BOTH widths, including the one the summation loss divides: a channel
+            // that measured nothing must contribute nothing there, and the loss is
+            // told to skip what is not a number rather than to add it.
+            AnalysisCurve unsmoothed = Masked(
+                ResampleGatedMagnitude(bins, calibration, 0), lowest, highest);
+            return (
+                smoothingInverseOctaves == 0
+                    ? unsmoothed
+                    : Masked(
+                        ResampleGatedMagnitude(bins, calibration, smoothingInverseOctaves),
+                        lowest,
+                        highest),
+                unsmoothed);
+        }
+
+        /// <summary>
+        /// The gated magnitude of a SUM of measured channels, at two smoothing widths,
+        /// with each channel contributing only where it measured anything.
+        /// </summary>
+        /// <remarks>
+        /// Summing the impulse responses and gating the total once is the same thing
+        /// arithmetically — one shared window makes the transform linear, so the gated
+        /// sum IS the sum of the gated spectra — but it is not the same thing
+        /// honestly. A channel the sweep never excited below its corner carries an
+        /// exactly zero spectrum there, and the window smears its in-band energy
+        /// across the gap: measured on two brick-walled bands an octave apart, the
+        /// total read 1.4 dB above the only channel that measured at 900 Hz and 2.5 dB
+        /// above it at 990 Hz, falling to nothing an octave away. That is a summation
+        /// GAIN the loudspeakers never produced, drawn exactly where a crossover is
+        /// read most carefully — and the per-channel curves cannot show it, because
+        /// each of them is broken there.
+        /// <para>
+        /// So each channel is gated first, its own unmeasured bins are cleared, and
+        /// the phasors are added. Where NO channel measured the total comes out zero
+        /// rather than as a level; the caller breaks those frequencies, which it must
+        /// do anyway for a hole its channels' band edges cannot express.
+        /// </para>
+        /// <para>
+        /// <paramref name="calibrations"/> is one correction per channel, because the
+        /// pressure a microphone measured is the response TIMES its calibration and
+        /// the sum is taken over the pressures: Σ HᵢCᵢ, not C·ΣHᵢ. The two agree
+        /// exactly when one microphone measured everything, which is the ordinary
+        /// case, and that case still applies the correction once at the end — where
+        /// the per-channel curves apply theirs, so the summation loss that divides one
+        /// by the other cancels it exactly. They part when the channels were measured
+        /// through DIFFERENT microphones, and there the correction has to go inside
+        /// the sum: a single one cannot undo two microphones, and leaving it out drew
+        /// a raw total beside corrected channels, whose difference reads as summation
+        /// loss and is not.
+        /// </para>
+        /// </remarks>
+        public static (AnalysisCurve Display, AnalysisCurve Unsmoothed)
+            GetGatedMeasuredMagnitudeSumPair(
+                IReadOnlyList<IImpulseMeasurement> channels,
+                PhaseAnalysisSettings settings,
+                IReadOnlyList<CalibrationFile?> calibrations,
+                double smoothingInverseOctaves)
+        {
+            ArgumentNullException.ThrowIfNull(channels);
+            ArgumentNullException.ThrowIfNull(calibrations);
+            if (channels.Count != calibrations.Count)
+            {
+                throw new ArgumentException(
+                    "Every channel needs its own calibration entry.",
+                    nameof(calibrations));
+            }
+            if (channels.Count == 0)
+            {
+                AnalysisCurve empty = new(string.Empty, []);
+                return (empty, empty);
+            }
+
+            // One microphone measured everything: keep the correction out of the sum
+            // and let the resample apply it, exactly as before and exactly as the
+            // channel curves do.
+            bool shared = calibrations.All(
+                entry => CalibrationFile.SameCurve(entry, calibrations[0]));
+            CalibrationFile? calibration = shared ? calibrations[0] : null;
+
+            Complex[]? total = null;
+            int sampleRate = 0;
+            for (int channel = 0; channel < channels.Count; channel++)
+            {
+                IImpulseMeasurement measurement = channels[channel];
+                Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
+                total ??= new Complex[spectrum.Length];
+                sampleRate = measurement.SampleRate;
+                double lowest = measurement.LowestMeasuredFrequencyHz;
+                double highest = measurement.HighestMeasuredFrequencyHz;
+                // Null in the shared case, where the resample applies it instead.
+                CalibrationFile? own = shared ? null : calibrations[channel];
+                int usable = Math.Min(total.Length, spectrum.Length);
+                for (int i = 1; i < usable / 2; i++)
+                {
+                    double frequency = i * (sampleRate / (double)spectrum.Length);
+                    if ((lowest > 0.0 && frequency < lowest) ||
+                        (double.IsFinite(highest) && highest > 0.0 && frequency > highest))
+                    {
+                        continue;
+                    }
+
+                    total[i] += own == null
+                        ? spectrum[i]
+                        : spectrum[i] * DecibelsToAmplitude(
+                            -own.GetDecibelCorrection(frequency));
+                }
+            }
+
+            if (total == null || sampleRate <= 0)
+            {
+                AnalysisCurve empty = new(string.Empty, []);
+                return (empty, empty);
+            }
+
+            var bins = new List<SignalPoint>(total.Length / 2);
+            for (int i = 1; i < total.Length / 2; i++)
+            {
+                bins.Add(new SignalPoint(
+                    i * (sampleRate / (double)total.Length),
+                    AmplitudeToDecibels(total[i].Magnitude)));
+            }
+
             AnalysisCurve unsmoothed = ResampleGatedMagnitude(bins, calibration, 0);
             return (
                 smoothingInverseOctaves == 0

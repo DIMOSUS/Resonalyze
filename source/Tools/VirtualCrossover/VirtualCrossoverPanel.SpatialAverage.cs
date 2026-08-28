@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -33,12 +33,33 @@ namespace Resonalyze;
 /// names the channel beside its figure, and a packed list silently shifted those
 /// names onto the wrong drivers as soon as one channel had nothing to say.
 /// </param>
+/// <summary>One channel of the set and how far its capture sits from its response.</summary>
+internal readonly record struct SetDatum(
+    VirtualCrossoverChannel Channel,
+    double? DatumDb);
+
 internal sealed record HybridMagnitudes(
     IReadOnlyList<IReadOnlyList<SignalPoint>> Channels,
     IReadOnlyList<IReadOnlyList<SignalPoint>> UnsmoothedChannels,
     IReadOnlyList<double?> ChannelOffsetsDb,
     double OffsetDb)
 {
+    /// <summary>
+    /// Which channels were drawn from their own point measurement because they had
+    /// no spatial average, in channel order.
+    /// </summary>
+    /// <remarks>
+    /// The hybrid exists to keep a point measurement's dips out of an equalizer's
+    /// way, so a channel drawn from one is the exception the user has to be told
+    /// about. It is legitimate — a subwoofer gains almost nothing from an array,
+    /// because below the cabin's first mode a point and an average are the same
+    /// measurement — but it must never be silent.
+    /// </remarks>
+    public IReadOnlyList<bool> PointMeasuredChannels { get; init; } = [];
+
+    /// <summary>How many channels fell back to their point measurement.</summary>
+    public int PointMeasuredCount => PointMeasuredChannels.Count(fallback => fallback);
+
     /// <summary>
     /// How far apart the channels are about where the captures sit relative to the
     /// impulse responses — the largest per-channel offset minus the smallest, in dB.
@@ -62,13 +83,29 @@ internal sealed record HybridMagnitudes(
     {
         get
         {
-            List<double> known = ChannelOffsetsDb
+            List<double> known = (SetDatumsDb.Count > 0
+                    ? SetDatumsDb.Select(entry => entry.DatumDb)
+                    : ChannelOffsetsDb)
                 .Where(offset => offset.HasValue)
                 .Select(offset => offset!.Value)
                 .ToList();
             return known.Count < 2 ? 0.0 : known.Max() - known.Min();
         }
     }
+
+    /// <summary>
+    /// Every channel's datum on this side, muted ones included — what
+    /// <see cref="OffsetDb"/> is the median of and <see cref="SpreadDb"/> the range
+    /// of. Empty for a caller that supplied none, which then falls back to the drawn
+    /// channels.
+    /// </summary>
+    /// <remarks>
+    /// The set is the measurements, not the selection of them a user happens to be
+    /// listening to. Judging its coherence on the drawn channels alone made the
+    /// warning appear and vanish with the mute buttons, and moved every curve on the
+    /// plot while it did.
+    /// </remarks>
+    public IReadOnlyList<SetDatum> SetDatumsDb { get; init; } = [];
 }
 
 // Attaching a spatially averaged magnitude to a channel, and deciding whether the
@@ -81,9 +118,113 @@ internal sealed record HybridMagnitudes(
 // chase.
 public partial class VirtualCrossoverPanel
 {
+    /// <summary>
+    /// Which spatial average this project reads: the stored choice, or — for a
+    /// project that has nothing stored and nothing attached yet — a fallback that
+    /// <see cref="SettleSpatialAverageMode"/> replaces with a stored choice the
+    /// moment the project has anything to guess from.
+    /// </summary>
+    internal VirtualCrossoverSpatialAverageMode SpatialAverageMode =>
+        project.SpatialAverageMode ?? (HasAnyArrayCapture()
+            ? VirtualCrossoverSpatialAverageMode.MicArray
+            : VirtualCrossoverSpatialAverageMode.MovingMic);
+
+    /// <summary>
+    /// Stores the guessed method the first time the project has any spatial average
+    /// to guess from. True when it wrote one, so the caller can persist.
+    /// </summary>
+    /// <remarks>
+    /// The guess has to be made ONCE and kept, because it is the answer to "where do
+    /// the levels come from" for the whole project — and computing it live made it
+    /// change under a project that never chose. A session written before arrays
+    /// existed carries attachments and no stored mode; loading a single new
+    /// measurement that happens to carry an array flipped the whole project to the
+    /// array method, at which point the attachments went unread and every channel
+    /// without an array quietly fell back to its point response. The user changed
+    /// one channel's source and the source of every channel's levels changed.
+    /// <para>
+    /// What is stored is whatever the fallback ALREADY says, so a project that opens
+    /// today opens the same way tomorrow. Freezing is the whole fix: by the time a
+    /// new measurement can arrive the mode is stored, so it cannot move the project
+    /// under the user. Preferring one family over the other on top of that was a
+    /// second rule doing no extra work, and it changed what a session holding BOTH an
+    /// array and attachments displayed — which is a live session of the owner's, and
+    /// a surprise is exactly what this is supposed to prevent.
+    /// </para>
+    /// <para>
+    /// A project with nothing to guess from is left unstored, so the first
+    /// measurement to arrive still gets to decide — an array arrives WITH the
+    /// measurement, and asking a user who just recorded one to find a menu would be
+    /// asking twice.
+    /// </para>
+    /// </remarks>
+    private bool SettleSpatialAverageMode()
+    {
+        if (project.SpatialAverageMode != null)
+        {
+            return false;
+        }
+
+        bool attachments = channels.Any(channel =>
+            channel.SideState(false).SpatialAverage != null ||
+            channel.SideState(true).SpatialAverage != null);
+        if (!attachments && !HasAnyArrayCapture())
+        {
+            return false;
+        }
+
+        project.SpatialAverageMode = SpatialAverageMode;
+        return true;
+    }
+
+    private bool HasAnyArrayCapture() =>
+        channels.Any(channel =>
+            channel.SideState(false).ArrayCapture != null ||
+            channel.SideState(true).ArrayCapture != null);
+
+    private void SetSpatialAverageMode(VirtualCrossoverSpatialAverageMode mode)
+    {
+        if (SpatialAverageMode == mode && project.SpatialAverageMode == mode)
+        {
+            return;
+        }
+
+        project.SpatialAverageMode = mode;
+        foreach (VirtualCrossoverChannel channel in channels)
+        {
+            RefreshSpatialAverageStatus(channel);
+        }
+
+        RefreshHybridAvailability();
+        ScheduleSave();
+        OnViewChanged();
+    }
+
     private void ShowSpatialAverageMenu(VirtualCrossoverChannel channel)
     {
         var menu = new ContextMenuStrip();
+
+        // The method is the project's, so it is offered on every channel's button
+        // rather than hidden somewhere else: the button is where a user notices the
+        // curve is missing, and it is where they will look for why.
+        foreach ((VirtualCrossoverSpatialAverageMode mode, string label) in new[]
+        {
+            (VirtualCrossoverSpatialAverageMode.MicArray, "Use microphone arrays"),
+            (VirtualCrossoverSpatialAverageMode.MovingMic, "Use attached MMM captures"),
+            (VirtualCrossoverSpatialAverageMode.Off, "No spatial average")
+        })
+        {
+            ToolStripMenuItem item = new(label)
+            {
+                Checked = SpatialAverageMode == mode,
+                CheckOnClick = false
+            };
+            VirtualCrossoverSpatialAverageMode chosen = mode;
+            item.Click += (_, _) => SetSpatialAverageMode(chosen);
+            menu.Items.Add(item);
+        }
+
+        menu.Items.Add(new ToolStripSeparator());
 
         ToolStripMenuItem chooseItem = new("Attach capture...");
         chooseItem.Click += (_, _) => ChooseSpatialAverage(channel);
@@ -158,6 +299,9 @@ public partial class VirtualCrossoverPanel
 
     private void OnSpatialAverageChanged(VirtualCrossoverChannel channel)
     {
+        // The first attachment is what a project with no stored method is waiting
+        // for; from here the method is the project's own and cannot drift.
+        SettleSpatialAverageMode();
         RefreshSpatialAverageStatus(channel);
         RefreshHybridAvailability();
         // The attachment is session state, so it travels with the session — the whole
@@ -173,17 +317,25 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        LiveCaptureDocument? document = channel.SpatialAverage;
+        VirtualCrossoverSpatialAverageMode mode = SpatialAverageMode;
+        LiveCaptureDocument? document =
+            channel.SideState(channel.ActiveRight).SpatialAverageFor(mode);
         // A stored path with no document behind it is the missing case: name it from
         // the path, since the file that carried the title is the file that is gone.
-        string? path = channel.Settings.SpatialAveragePath;
+        // Only in the moving-microphone method — an array is not attached by path,
+        // so there is nothing that could go missing.
+        string? path = mode == VirtualCrossoverSpatialAverageMode.MovingMic
+            ? channel.Settings.SpatialAveragePath
+            : null;
         control.SetSpatialAverage(
             document?.Title
                 ?? (string.IsNullOrWhiteSpace(path)
                     ? null
                     : Path.GetFileNameWithoutExtension(path)),
             document?.Recipe.IntegratedSeconds,
-            resolved: document != null);
+            resolved: document != null,
+            mode,
+            document?.SavedAtUtc);
     }
 
     /// <summary>
@@ -264,7 +416,10 @@ public partial class VirtualCrossoverPanel
     /// keeps the panel's figure identical to the one the threshold was calibrated on.
     /// </remarks>
     private AnalysisCurve BuildCanonicalRawCurve(
-        Complex[] impulseResponse, int peakIndex, int sampleRate)
+        Complex[] impulseResponse,
+        int peakIndex,
+        int sampleRate,
+        MeasuredBand band)
     {
         int anchorIndex = ProcessedChannels.StartAnchorIndex(
             impulseResponse, peakIndex, sampleRate);
@@ -273,7 +428,11 @@ public partial class VirtualCrossoverPanel
             GateOffsetMs = anchorIndex * 1_000.0 / sampleRate
         };
         return DataHelper.GetGatedPrimarySpectrumPair(
-            new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate),
+            new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate)
+            {
+                LowestMeasuredFrequencyHz = band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = band.HighEdgeHz
+            },
             gate,
             calibration: null,
             smoothingInverseOctaves: 0).Unsmoothed;
@@ -372,14 +531,35 @@ public partial class VirtualCrossoverPanel
 
         foreach (VirtualCrossoverChannelState state in playing)
         {
-            if (state.SpatialAverage == null)
+            if (state.SpatialAverageFor(SpatialAverageMode) is not { } capture)
             {
+                // An ARRAY set may have gaps. Both families are levelled by the same
+                // loopback the impulse responses are referenced to, so a channel
+                // drawn from its own measurement is on the same axis as the rest —
+                // the objection that makes this all-or-nothing for a moving
+                // microphone (two different references on one axis) does not apply.
+                // What remains is a shape difference, and on the band a channel
+                // without an array usually covers it is small: below the cabin's
+                // first mode a point measurement IS the average.
+                if (SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray)
+                {
+                    continue;
+                }
+
                 return LiveCaptureSetVerdict.No(
-                    "Needs a spatial average on every channel that plays. Attach " +
-                    "one per channel with the MMM button.");
+                    "Needs a spatial average on every channel that plays. " +
+                    "Attach one per channel with the MMM button.");
             }
 
-            captures.Add(state.SpatialAverage);
+            captures.Add(capture);
+        }
+
+        if (captures.Count == 0)
+        {
+            return LiveCaptureSetVerdict.No(
+                SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+                    ? "No channel on this side was measured with a microphone array."
+                    : "No channel on this side has a spatial average.");
         }
 
         return LiveCaptureSetVerdict.Ok;
@@ -460,19 +640,43 @@ public partial class VirtualCrossoverPanel
             return null;
         }
 
+        // The datum is read on the two measurements BEFORE any chain, never on the
+        // curves below. Those carry the DSP on both sides and it does NOT cancel: the
+        // impulse response is filtered and then gated while the capture is filtered
+        // analytically, and a gate does not commute with a filter; and the band the
+        // median is taken over is set by the channel's peak, which the crossover
+        // moves. Reading it there made the whole hybrid set drift up and down the
+        // axis while the user tuned — and that offset travels to the EQ Wizard.
+        // Resolved FIRST because a channel falling back to its point measurement has
+        // to be lowered by it: the set's curves are held without the offset and it is
+        // added on the way to the plot, so a curve already on the impulse responses'
+        // axis must arrive pre-subtracted to land back where it started.
+        (double?[] offsets, double setOffset, IReadOnlyList<SetDatum> setDatums) =
+            ResolveRawHybridOffsetsDb(processed, rightSide);
+
         var hybrids = new List<IReadOnlyList<SignalPoint>>(processed.Count);
         var unsmoothed = new List<IReadOnlyList<SignalPoint>>(processed.Count);
+        var pointMeasured = new bool[processed.Count];
         for (int i = 0; i < processed.Count; i++)
         {
             // Built RAW and smoothed here rather than twice through the chain: the
             // shared builder's own last step is this same smoothing, so smoothing its
             // unsmoothed output reproduces what it would have returned, and the
             // expensive part — the analytic chain over the whole grid — runs once.
-            if (BuildHybridChannelCurve(
-                processed[i].Channel, rightSide, references[i].Points, smoothingCode: 0)
-                is not { } raw)
+            IReadOnlyList<SignalPoint>? raw = BuildHybridChannelCurve(
+                processed[i].Channel, rightSide, references[i].Points, smoothingCode: 0);
+            if (raw == null)
             {
-                return null;
+                if (SpatialAverageMode != VirtualCrossoverSpatialAverageMode.MicArray)
+                {
+                    return null;
+                }
+
+                // This channel has no array. Its own processed magnitude is already
+                // on the impulse responses' axis and is a perfectly good curve — it
+                // is simply a point measurement, which is what the badge says.
+                raw = ShiftedBy(references[i].Points, -setOffset);
+                pointMeasured[i] = true;
             }
 
             unsmoothed.Add(raw);
@@ -484,16 +688,11 @@ public partial class VirtualCrossoverPanel
                     SpectrumSmoothing.IsPsychoacoustic(smoothingCode)));
         }
 
-        // The datum is read on the two measurements BEFORE any chain, never on the
-        // curves above. Those carry the DSP on both sides and it does NOT cancel: the
-        // impulse response is filtered and then gated while the capture is filtered
-        // analytically, and a gate does not commute with a filter; and the band the
-        // median is taken over is set by the channel's peak, which the crossover
-        // moves. Reading it there made the whole hybrid set drift up and down the
-        // axis while the user tuned — and that offset travels to the EQ Wizard.
-        (double?[] offsets, double setOffset) =
-            ResolveRawHybridOffsetsDb(processed, rightSide);
-        return new HybridMagnitudes(hybrids, unsmoothed, offsets, setOffset);
+        return new HybridMagnitudes(hybrids, unsmoothed, offsets, setOffset)
+        {
+            PointMeasuredChannels = pointMeasured,
+            SetDatumsDb = setDatums
+        };
     }
 
     /// <summary>
@@ -518,7 +717,8 @@ public partial class VirtualCrossoverPanel
         // side's sum is built from this too, and reading the shown side's capture there
         // would draw one side's tuning under the other's label.
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
-        if (state.SpatialAverage is not { } document || reference.Count == 0)
+        if (state.SpatialAverageFor(SpatialAverageMode) is not { } document ||
+            reference.Count == 0)
         {
             return null;
         }
@@ -537,14 +737,20 @@ public partial class VirtualCrossoverPanel
             // measurement beside it, was taken at. The capture's own rate is already
             // folded into its stored levels.
             channel.ProcessorSampleRateFor(rightSide),
-            Calibration,
+            // This channel's own under "Own (as measured)". For a capture whose
+            // positions shared one file the swap is exact and — since that file is
+            // normally the one the impulse response beside it was read through — it
+            // comes out a no-op; for one whose positions did not, the capture keeps
+            // its own corrections and this is ignored, because no single curve could
+            // replace a mixture (see SpatialAverageHybrid).
+            SpatialAverageCalibrationFor(state),
             reference.Select(point => point.X).ToList(),
             smoothingCode);
     }
 
     /// <summary>
-    /// Each channel's datum and the set's, read on the RAW pair: the capture with no
-    /// chain against the channel's bypass response. A property of the two
+    /// Each drawn channel's datum, and the SET's, read on the RAW pair: the capture
+    /// with no chain against the channel's bypass response. A property of the two
     /// measurements, so nothing the user tunes can move it.
     /// </summary>
     /// <remarks>
@@ -552,47 +758,107 @@ public partial class VirtualCrossoverPanel
     /// redraw, which only has it when the Raw view is switched on. One gated build
     /// per channel while the hybrid is drawn; the alternative — reading the datum off
     /// the processed curves — is what this exists to stop.
+    /// <para>
+    /// The set's offset is the median over EVERY channel of this side that carries a
+    /// capture, muted or not, and that distinction is the whole reason this takes the
+    /// channel list rather than only the drawn ones. A mute says which curves to
+    /// draw; it does not say which measurements the set is made of. Taking the median
+    /// over the drawn ones alone moved every remaining curve each time one was muted
+    /// — a quarter of a decibel per channel on the owner's cabins, in the arrays and
+    /// the moving-microphone captures alike — so a level read off the plot depended
+    /// on which channels happened to be listening.
+    /// </para>
     /// </remarks>
-    private (double?[] PerChannel, double SetOffsetDb) ResolveRawHybridOffsetsDb(
-        IReadOnlyList<ProcessedChannel> processed,
-        bool rightSide)
+    private (double?[] PerChannel, double SetOffsetDb, IReadOnlyList<SetDatum> SetDatums)
+        ResolveRawHybridOffsetsDb(
+            IReadOnlyList<ProcessedChannel> processed,
+            bool rightSide)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.HybridOffsets");
-        var captures = new List<IReadOnlyList<SignalPoint>>(processed.Count);
-        var references = new List<AnalysisCurve>(processed.Count);
-        for (int i = 0; i < processed.Count; i++)
+        var datums = new Dictionary<VirtualCrossoverChannel, double?>();
+        var setDatums = new List<SetDatum>();
+        foreach (VirtualCrossoverChannel channel in AllChannelsWith(processed))
         {
-            VirtualCrossoverChannelState state =
-                processed[i].Channel.SideState(rightSide);
-            AnalysisCurve? rawIr = state.TransferImpulseResponse is { } ir &&
-                state.SampleRate > 0
-                    ? BuildCanonicalRawCurve(ir, state.TransferPeakIndex, state.SampleRate)
-                    : null;
-            IReadOnlyList<SignalPoint>? rawCapture =
-                rawIr != null && state.SpatialAverage is { } document
-                    ? SpatialAverageHybrid.BuildChannelCurve(
-                        document,
-                        DspChannelChain.Identity,
-                        state.SampleRate,
-                        // Canonical, not what the plot happens to be showing:
-                        // identity chain, no calibration, no display smoothing. A
-                        // datum that moved with the smoothing selector would not be a
-                        // property of the two measurements, and the threshold the
-                        // spread is judged against is calibrated on these very terms
-                        // (HybridOffsetDatumMeasurement reads them the same way).
-                        calibration: null,
-                        rawIr.Points.Select(point => point.X).ToList(),
-                        smoothingCode: 0)
-                    : null;
-
-            // A channel that cannot produce the raw pair contributes no datum. Its
-            // hole stays in place; it never falls back to the processed curves, which
-            // would put one channel's offset on a different footing from the rest.
-            captures.Add(rawCapture ?? []);
-            references.Add(rawIr ?? new AnalysisCurve("raw", []));
+            double? datum = ResolveRawDatumDb(channel, rightSide);
+            datums[channel] = datum;
+            // A channel with no capture at all is not part of this set and must not
+            // appear in what the warning lists; one WITH a capture it cannot compare
+            // stays, as a named hole.
+            if (channel.SideState(rightSide).SpatialAverageFor(SpatialAverageMode) != null)
+            {
+                setDatums.Add(new SetDatum(channel, datum));
+            }
         }
 
-        return ResolveHybridOffsetsDb(captures, references);
+        var perChannel = new double?[processed.Count];
+        for (int i = 0; i < processed.Count; i++)
+        {
+            perChannel[i] = datums.TryGetValue(processed[i].Channel, out double? datum)
+                ? datum
+                : null;
+        }
+
+        List<double> known = setDatums
+            .Where(entry => entry.DatumDb.HasValue)
+            .Select(entry => entry.DatumDb!.Value)
+            .ToList();
+        return (perChannel, known.Count == 0 ? 0.0 : Median(known), setDatums);
+    }
+
+    // Every channel that could contribute a datum: the panel's own list, plus any
+    // drawn channel it does not hold (a harness builds those directly).
+    private IEnumerable<VirtualCrossoverChannel> AllChannelsWith(
+        IReadOnlyList<ProcessedChannel> processed)
+    {
+        var seen = new HashSet<VirtualCrossoverChannel>();
+        foreach (VirtualCrossoverChannel channel in channels ?? [])
+        {
+            if (seen.Add(channel))
+            {
+                yield return channel;
+            }
+        }
+
+        foreach (ProcessedChannel item in processed)
+        {
+            if (seen.Add(item.Channel))
+            {
+                yield return item.Channel;
+            }
+        }
+    }
+
+    // One channel side's datum, or null when it cannot produce the raw pair. Such a
+    // channel contributes nothing rather than falling back to the processed curves,
+    // which would put its offset on a different footing from the rest.
+    private double? ResolveRawDatumDb(VirtualCrossoverChannel channel, bool rightSide)
+    {
+        VirtualCrossoverChannelState state = channel.SideState(rightSide);
+        if (state.TransferImpulseResponse is not { } ir || state.SampleRate <= 0)
+        {
+            return null;
+        }
+
+        AnalysisCurve rawIr = BuildCanonicalRawCurve(
+            ir, state.TransferPeakIndex, state.SampleRate, state.MeasuredBand);
+        if (state.SpatialAverageFor(SpatialAverageMode) is not { } document)
+        {
+            return null;
+        }
+
+        IReadOnlyList<SignalPoint>? rawCapture = SpatialAverageHybrid.BuildChannelCurve(
+            document,
+            DspChannelChain.Identity,
+            state.SampleRate,
+            // Canonical, not what the plot happens to be showing: identity chain, no
+            // calibration, no display smoothing. A datum that moved with the
+            // smoothing selector would not be a property of the two measurements, and
+            // the threshold the spread is judged against is calibrated on these very
+            // terms (HybridOffsetDatumMeasurement reads them the same way).
+            SpatialAverageCalibration.Off,
+            rawIr.Points.Select(point => point.X).ToList(),
+            smoothingCode: 0);
+        return rawCapture == null ? null : ResolveChannelOffsetDb(rawCapture, rawIr.Points);
     }
 
     // The set's common offset, applied on the way to the plot.

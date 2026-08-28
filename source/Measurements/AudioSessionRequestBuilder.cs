@@ -1,4 +1,4 @@
-namespace Resonalyze;
+﻿namespace Resonalyze;
 
 /// <summary>
 /// Builds a backend-neutral <see cref="AudioSessionRequest"/> from the
@@ -24,11 +24,16 @@ internal static class AudioSessionRequestBuilder
         string? wasapiRenderEndpointId,
         string? asioDriverName,
         int bufferMilliseconds,
-        int expectedCaptureSamples)
+        int expectedCaptureSamples,
+        IReadOnlyList<int>? arrayInputChannelOffsets = null)
     {
         AudioCaptureRouting routing = backend == AudioBackend.Asio
             ? new AudioCaptureRouting(asioInputChannelOffset, asioLoopbackInputChannelOffset)
             : new AudioCaptureRouting(waveInputChannelOffset, waveLoopbackInputChannelOffset);
+        if (arrayInputChannelOffsets is { Count: > 0 })
+        {
+            routing = routing with { ArrayChannels = arrayInputChannelOffsets };
+        }
         return new AudioSessionRequest(
             backend,
             sampleRate,

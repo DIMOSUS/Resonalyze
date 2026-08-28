@@ -15,7 +15,12 @@ internal sealed record EqWizardGatedPreviewRequest(
     int ProcessorSampleRate,
     PhaseAnalysisSettings Gate,
     CalibrationFile? Calibration,
-    double SmoothingInverseOctaves);
+    double SmoothingInverseOctaves,
+    // What the source measured. Both curves rendered here — the bare one and the
+    // corrected one — are the panel's own channel curve, so they have to stop where
+    // it stops; without this the wizard drew a break on its source and a continuous
+    // line on the preview beside it, from the same response.
+    MeasuredBand Band = default);
 
 /// <summary>
 /// Builds a Virtual DSP channel's curve the way the Virtual DSP plot builds it: the
@@ -65,7 +70,11 @@ internal static class EqWizardGatedPreview
         // curve would slide under its own correction.
         return DataHelper.GetGatedPrimarySpectrum(
             new ImpulseMeasurementView(
-                processed, request.AnchorIndex, request.SampleRate),
+                processed, request.AnchorIndex, request.SampleRate)
+            {
+                LowestMeasuredFrequencyHz = request.Band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = request.Band.HighEdgeHz
+            },
             request.Gate,
             request.Calibration,
             request.SmoothingInverseOctaves).Points;

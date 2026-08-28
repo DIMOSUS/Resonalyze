@@ -3487,7 +3487,16 @@ public static class VirtualCrossoverAnalysis
             double magnitudeSum = 0;
             foreach (IReadOnlyList<SignalPoint> curve in channelCurves)
             {
-                magnitudeSum += DataHelper.DecibelsToAmplitude(curve[i].Y);
+                // A channel that measured nothing here adds nothing. Its curve says
+                // so with NaN — a protective high-pass took the signal past
+                // recovering — and adding that would carry the NaN into the sum and
+                // break a reading that is perfectly good wherever another driver
+                // plays alone. Where NO channel measured anything the sum stays
+                // zero, and the level gate below turns the point into a break.
+                if (double.IsFinite(curve[i].Y))
+                {
+                    magnitudeSum += DataHelper.DecibelsToAmplitude(curve[i].Y);
+                }
             }
 
             magnitudeSums[i] = magnitudeSum;

@@ -123,7 +123,7 @@ public sealed class HybridOffsetDatumMeasurement(ITestOutputHelper output)
                 capture,
                 DspChannelChain.Identity,
                 state.SampleRate,
-                calibration: null,
+                SpatialAverageCalibration.Off,
                 rawIr.Select(point => point.X).ToList(),
                 smoothingCode: 0);
             if (rawCapture == null || MedianDifference(rawCapture, rawIr) is not { } offset)

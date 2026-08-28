@@ -219,7 +219,12 @@ internal sealed class MeasurementHistoryService
             measurement.SampleRate,
             measurement.MeasurementMode,
             transfer,
-            transferResult?.PeakIndex);
+            transferResult?.PeakIndex,
+            MeasuredBand.Resolve(
+                measurement.MeasurementProtectiveHighPass,
+                measurement.MeasuredLowFrequencyHz,
+                measurement.MeasuredHighFrequencyHz,
+                measurement.SampleRate));
 
         return new MeasurementHistorySnapshot
         {
@@ -229,6 +234,9 @@ internal sealed class MeasurementHistoryService
             HighFrequencyHz = measurement.HighFrequencyHz,
             AchievedLowFrequencyHz = measurement.AchievedLowFrequencyHz,
             AchievedHighFrequencyHz = measurement.AchievedHighFrequencyHz,
+            MeasuredLowFrequencyHz = measurement.MeasuredLowFrequencyHz,
+            MeasuredHighFrequencyHz = measurement.MeasuredHighFrequencyHz,
+            MeasuredAtUtc = measurement.MeasuredAtUtc,
             SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
@@ -245,6 +253,9 @@ internal sealed class MeasurementHistoryService
             TransferImpulseResponse = transfer,
             TransferCoherence = measurement.TransferCoherence?.ToArray(),
             MeterSnapshot = measurement.CurrentLevels,
+            ArrayMicrophones = measurement.ArrayMicrophones,
+            ProtectiveHighPass = measurement.MeasurementProtectiveHighPass,
+            MicrophoneCalibration = measurement.MeasurementMicrophoneCalibration,
             // Same rule as saving to disk: keep the calibration frozen onto THIS
             // result, and only when it belongs to the input the result ran on — a
             // leftover anchor from another device would be trusted on restore.
@@ -264,6 +275,16 @@ internal sealed class MeasurementHistoryService
     {
         Complex[] sweep = file.GetSweepDeconvolutionImpulseResponse();
         Complex[]? transfer = file.GetTransferImpulseResponse();
+        (double lowHz, double highHz) = file.ResolveSweepBand();
+        (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();
+        // A file written before the full-amplitude edges were recorded falls back to
+        // the achieved band — what it has always been read over.
+        double measuredLowHz = file.MeasuredLowFrequencyHz > 0
+            ? file.MeasuredLowFrequencyHz
+            : achievedLowHz;
+        double measuredHighHz = file.MeasuredHighFrequencyHz > measuredLowHz
+            ? file.MeasuredHighFrequencyHz
+            : achievedHighHz;
         MeasurementHistoryPreview preview = file.ToPreview() ??
             MeasurementHistoryPreviewBuilder.Build(
                 sweep,
@@ -271,10 +292,13 @@ internal sealed class MeasurementHistoryService
                 file.SampleRate,
                 file.MeasurementMode,
                 transfer,
-                file.TransferPeakIndex);
+                file.TransferPeakIndex,
+                MeasuredBand.Resolve(
+                    file.ProtectiveHighPass?.ToConfiguration(),
+                    measuredLowHz,
+                    measuredHighHz,
+                    file.SampleRate));
 
-        (double lowHz, double highHz) = file.ResolveSweepBand();
-        (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();
         return new MeasurementHistorySnapshot
         {
             SampleRate = file.SampleRate,
@@ -283,6 +307,11 @@ internal sealed class MeasurementHistoryService
             HighFrequencyHz = highHz,
             AchievedLowFrequencyHz = achievedLowHz,
             AchievedHighFrequencyHz = achievedHighHz,
+            MeasuredLowFrequencyHz = measuredLowHz,
+            MeasuredHighFrequencyHz = measuredHighHz,
+            MeasuredAtUtc = file.MeasuredAtUtc > DateTimeOffset.UnixEpoch
+                ? file.MeasuredAtUtc
+                : file.SavedAtUtc,
             Octaves = file.Octaves,
             SweepDurationSeconds = file.SweepDurationSeconds,
             PlayChannel = file.PlayChannel,
@@ -297,6 +326,9 @@ internal sealed class MeasurementHistoryService
             TransferImpulseResponse = transfer,
             TransferCoherence = file.TransferCoherence?.ToArray(),
             MeterSnapshot = file.GetMeterSnapshot(),
+            ArrayMicrophones = file.ArrayMicrophones?.ToCurves() ?? [],
+            ProtectiveHighPass = file.ProtectiveHighPass?.ToConfiguration(),
+            MicrophoneCalibration = file.MicrophoneCalibration,
             // The file's anchor was validated against its own input when written.
             SplCalibration = file.SplCalibration,
             Preview = preview,

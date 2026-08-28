@@ -38,18 +38,28 @@ internal static class SpatialAverageHybrid
     /// capture's rate here would draw a prediction of a DSP nobody is building.
     /// </param>
     /// <param name="calibration">
-    /// The correction the result should carry. The capture's own is undone first, on
-    /// the capture's own grid, before anything is interpolated: these corrections are
-    /// additive per frequency, so the swap is exact, and doing it before the
-    /// interpolation keeps each value on the frequency it was frozen at. Null means
-    /// none — which is the right answer when the panel draws uncalibrated, since the
-    /// curves beside this one are uncalibrated too.
+    /// Which correction the result should carry, as a MODE rather than a curve.
+    /// <list type="bullet">
+    /// <item><b>Off</b> — the capture back at the level it was taken. Its own
+    /// correction is undone on its own grid, before anything is interpolated: these
+    /// corrections are additive per frequency, so the undo is exact, and doing it
+    /// first keeps each value on the frequency it was frozen at.</item>
+    /// <item><b>Own</b> — the capture exactly as stored. A moving-microphone pass was
+    /// a measurement of its own through its own file; an array is several capsules
+    /// each through theirs. Either way the answer is the one the capture already
+    /// holds, and nothing beside it has standing to replace it.</item>
+    /// <item><b>Specific</b> — a named curve in place of the capture's own. Defined
+    /// only when the capture declares ONE correction; a capture whose positions
+    /// carried different files has an aggregate that belongs to no single microphone,
+    /// and no curve can be swapped for it. That case falls back to Own, which is the
+    /// nearest thing that is true, rather than to a swap that is not.</item>
+    /// </list>
     /// </param>
     public static List<SignalPoint>? BuildChannelCurve(
         LiveCaptureDocument document,
         DspChannelChain chain,
         int chainSampleRateHz,
-        CalibrationFile? calibration,
+        SpatialAverageCalibration calibration,
         IReadOnlyList<double> frequenciesHz,
         int smoothingCode)
     {
@@ -61,7 +71,14 @@ internal static class SpatialAverageHybrid
             return null;
         }
 
-        List<SignalPoint> capture = Uncalibrated(document);
+        // A swap the capture cannot support is not performed; it reads as Own.
+        bool swap = calibration.Mode == SpatialAverageCalibrationMode.Specific &&
+            !document.CalibrationIsAggregate;
+        CalibrationFile? curve = swap ? calibration.Curve : null;
+        List<SignalPoint> capture =
+            calibration.Mode == SpatialAverageCalibrationMode.Off || swap
+                ? Uncalibrated(document)
+                : document.ToCurvePoints();
         var prepared = PreparedDspResponse.Create(chain, chainSampleRateHz);
         var points = new List<SignalPoint>(frequenciesHz.Count);
         foreach (double hz in frequenciesHz)
@@ -101,7 +118,7 @@ internal static class SpatialAverageHybrid
         // handoff. Correcting first and smoothing afterwards smooths the correction
         // too, so a frequency-dependent calibration file made one capture read
         // slightly differently by which route it arrived.
-        if (calibration == null)
+        if (curve == null)
         {
             return smoothed;
         }
@@ -110,7 +127,7 @@ internal static class SpatialAverageHybrid
         {
             smoothed[i] = new SignalPoint(
                 smoothed[i].X,
-                smoothed[i].Y - calibration.GetDecibelCorrection(smoothed[i].X));
+                smoothed[i].Y - curve.GetDecibelCorrection(smoothed[i].X));
         }
 
         return smoothed;
@@ -144,11 +161,21 @@ internal static class SpatialAverageHybrid
     {
         int count = curve.Count;
         double position = document.IndexOf(hz);
-        if (double.IsNaN(position) || position < 0 || position > count - 1)
+        // The SAME tolerance the snap below uses, and for the same reason. The drawn
+        // grid and a capture's own grid are one logarithmic grid built two ways, and
+        // their endpoints differ in the last ULPs: the capture stores 20.000000000000004
+        // and the curve is drawn at exactly 20, which puts the first band at an index
+        // of -3.3e-14. Rejected as "outside", that dropped the lowest band of every
+        // hybrid channel — 20 Hz on a subwoofer, where there is content — for no
+        // reason but arithmetic.
+        const double SnapTolerance = 1e-9;
+        if (double.IsNaN(position) ||
+            position < -SnapTolerance || position > count - 1 + SnapTolerance)
         {
             return double.NaN;
         }
 
+        position = Math.Clamp(position, 0.0, count - 1.0);
         int low = (int)Math.Floor(position);
         int high = Math.Min(low + 1, count - 1);
         double fraction = position - low;
@@ -163,7 +190,6 @@ internal static class SpatialAverageHybrid
         // index it came from, and an exact test would miss the case that matters
         // most. A billionth of an index step is nothing — the step itself is about
         // a hundredth of an octave.
-        const double SnapTolerance = 1e-9;
         if (fraction <= SnapTolerance || high == low)
         {
             return curve[low].Y;

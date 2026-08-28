@@ -278,7 +278,13 @@ internal sealed class PlotModelFactory
                 (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves),
                 // Compare is only offered at the main measurement's rate (see
                 // TryCreateCompareMeasurement), so one rate covers both sources.
-                expSweepMeasurement.SampleRate > 0 ? expSweepMeasurement.SampleRate : null)
+                expSweepMeasurement.SampleRate > 0 ? expSweepMeasurement.SampleRate : null,
+                PointsCalibration: null,
+                // Each source's OWN band: the compared measurement was swept and
+                // filtered on its own terms, which need not be this one's.
+                Band: tag.Source == CurveSource.Compare
+                    ? getCompareSource?.Invoke()?.Band ?? default
+                    : measurementContext.MeasuredBand)
             : null;
     }
 
@@ -604,6 +610,8 @@ internal sealed class PlotModelFactory
                     model,
                     frequencyResponseOptions,
                     frequencyResponseVisibility.ShowCoherence);
+
+                AddArrayMicrophones(model, splOffset);
 
                 AddHiddenHarmonicAnnotation(model, curves);
             }
@@ -2381,6 +2389,112 @@ internal sealed class PlotModelFactory
             options.SmoothingInverseOctaves));
     }
 
+    /// <summary>
+    /// The measurement's spatial average, the positions behind it and the spread
+    /// between them.
+    /// </summary>
+    /// <remarks>
+    /// These curves do not follow the time window. They are steady-state — no gate
+    /// at all — because that is what a spatial average is and what the consumers of
+    /// one need, so moving the gate leaves them where they are while the measured
+    /// magnitude beside them moves. That is honest rather than awkward: the two are
+    /// different measurements of the same driver, and the array's whole point is
+    /// that it is not the one the gate belongs to.
+    /// </remarks>
+    private void AddArrayMicrophones(PlotModel model, double? splOffsetDb)
+    {
+        CurveVisibilityOptions visibility = frequencyResponseVisibility;
+        if (!visibility.ShowArrayAverage &&
+            !visibility.ShowArrayMicrophones &&
+            !visibility.ShowArraySpread)
+        {
+            return;
+        }
+
+        ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
+            expSweepMeasurement.ArrayMicrophones,
+            frequencyResponseOptions.UseCalibration,
+            frequencyResponseOptions.SmoothingInverseOctaves);
+
+        // The array is a transfer magnitude like the measurement's own, so the same
+        // offset puts it on the absolute axis. Without one the level curves are
+        // omitted exactly as the measured magnitude is — a relative shape drawn on
+        // an absolute axis is a lie about how loud the car was.
+        if (splOffsetDb is { } offset)
+        {
+            display = display with
+            {
+                Average = display.Average == null
+                    ? null
+                    : SplConversion.ToSoundPressureLevel([display.Average], offset)[0],
+                Microphones = SplConversion.ToSoundPressureLevel(display.Microphones, offset)
+            };
+        }
+
+        if (visibility.ShowArrayMicrophones)
+        {
+            foreach (AnalysisCurve microphone in display.Microphones)
+            {
+                LineSeries series = AddLineSeries(
+                    model,
+                    microphone,
+                    ArrayTrackerFormat,
+                    Mode.FrequencyResponse,
+                    DecibelAxisKey);
+                // Thin and behind: they are what the average is made of, not
+                // curves competing with it for the eye.
+                series.StrokeThickness = 1;
+            }
+        }
+
+        if (visibility.ShowArrayAverage && display.Average is { } average)
+        {
+            AddLineSeries(
+                model,
+                average,
+                ArrayTrackerFormat,
+                Mode.FrequencyResponse,
+                DecibelAxisKey).StrokeThickness = 2.5;
+        }
+
+        if (visibility.ShowArraySpread && display.Spread is { } spread)
+        {
+            AddArraySpreadAxis(model);
+            AddLineSeries(
+                model,
+                spread,
+                "{0}\n{2:0.# Hz}: {4:0.0} dB",
+                Mode.FrequencyResponse,
+                ArraySpreadAxisKey);
+        }
+    }
+
+    // A range, not a level: its own axis, because on the magnitude axis it would
+    // either sit on top of the curves (relative) or fall off the bottom (SPL), and
+    // both would invite reading it as a response.
+    private static void AddArraySpreadAxis(PlotModel model)
+    {
+        if (model.Axes.Any(axis => axis.Key == ArraySpreadAxisKey))
+        {
+            return;
+        }
+
+        PlotModelStyle.AddAxis(model, new LinearAxis
+        {
+            Key = ArraySpreadAxisKey,
+            Position = AxisPosition.Right,
+            AbsoluteMinimum = 0,
+            AbsoluteMaximum = 60,
+            Minimum = 0,
+            Maximum = 30,
+            MajorGridlineStyle = LineStyle.None,
+            MinorGridlineStyle = LineStyle.None,
+            Title = "Array spread (dB)",
+            IsPanEnabled = false,
+            IsZoomEnabled = false
+        });
+    }
+
     internal static void AddCoherenceAxis(PlotModel model)
     {
         if (model.Axes.Any(axis => axis.Key == CoherenceAxisKey))
@@ -2403,6 +2517,10 @@ internal sealed class PlotModelFactory
             IsZoomEnabled = false
         });
     }
+
+    private const string ArraySpreadAxisKey = "array-spread";
+
+    private const string ArrayTrackerFormat = "{0}\n{2:0.# Hz}: {4:0.0} dB";
 
     private static LineSeries AddLineSeries(
         PlotModel model,
@@ -2498,7 +2616,11 @@ internal sealed class PlotModelFactory
 
         int peakIndex = Math.Clamp(compare.TransferPeakIndex, 0, transferIr.Length - 1);
         return (
-            new ImpulseMeasurementView(transferIr, peakIndex, compare.SampleRate),
+            new ImpulseMeasurementView(transferIr, peakIndex, compare.SampleRate)
+            {
+                LowestMeasuredFrequencyHz = compare.Band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = compare.Band.HighEdgeHz
+            },
             compare.DisplayName,
             compare.TransferCoherence,
             compare.SplOffsetDb);
@@ -2602,11 +2724,23 @@ internal sealed class PlotModelFactory
                 length - 1));
 
         FrequencyResponseOptions curveOptions = options ?? frequencyResponseOptions;
-        return DataHelper.GetPrimarySpectrum(
+        AnalysisCurve curve = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(sum, peakIndex, expSweepMeasurement.SampleRate),
             curveOptions,
             GetCalibration(curveOptions),
             anchorIndex);
+        // A sum plays wherever EITHER response measured, and nowhere else. The view
+        // above carries no band of its own — it is a record neither measurement made
+        // — so the break has to be applied here, from the two that did: below both
+        // sweeps every contributor is zero at once, and a windowed spectrum of that
+        // draws the analysis window as a rolloff. Exactly the curve this whole idea
+        // exists to keep off the plot, in the one place that was still drawing it.
+        return curve with
+        {
+            Points = MeasuredBand.MaskUnmeasured(
+                curve.Points,
+                [measurementContext.MeasuredBand, compare.Band])
+        };
     }
 
     private static Complex SampleAt(Complex[] source, int index) =>
@@ -2654,14 +2788,22 @@ internal sealed class PlotModelFactory
             new ImpulseMeasurementView(
                 mainIr,
                 Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, mainIr.Length - 1),
-                expSweepMeasurement.SampleRate),
+                expSweepMeasurement.SampleRate)
+            {
+                LowestMeasuredFrequencyHz = measurementContext.MeasuredBand.LowEdgeHz,
+                HighestMeasuredFrequencyHz = measurementContext.MeasuredBand.HighEdgeHz
+            },
             rawOptions,
             GetCalibration(rawOptions));
         AnalysisCurve compareMagnitude = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(
                 compareIr,
                 Math.Clamp(compare.TransferPeakIndex, 0, compareIr.Length - 1),
-                compare.SampleRate),
+                compare.SampleRate)
+            {
+                LowestMeasuredFrequencyHz = compare.Band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = compare.Band.HighEdgeHz
+            },
             rawOptions,
             GetCalibration(rawOptions));
 
@@ -2671,12 +2813,30 @@ internal sealed class PlotModelFactory
         var points = new List<SignalPoint>(count);
         for (int i = 0; i < count; i++)
         {
-            double magnitudeSumDb = DataHelper.AmplitudeToDecibels(
-                DataHelper.DecibelsToAmplitude(mainMagnitude.Points[i].Y) +
-                DataHelper.DecibelsToAmplitude(compareMagnitude.Points[i].Y));
+            // Skipped, not added: a response that measured nothing here contributes
+            // nothing, and adding its NaN would break a loss reading that is perfectly
+            // good wherever the other one plays alone — the same rule
+            // VirtualCrossoverAnalysis.SumLossCurve follows for a whole set. Where
+            // NEITHER measured anything the sum stays zero and the point is a break,
+            // which is the honest answer to "how much did these two lose".
+            double magnitudeSum = 0.0;
+            bool measured = false;
+            foreach (SignalPoint operand in
+                new[] { mainMagnitude.Points[i], compareMagnitude.Points[i] })
+            {
+                if (double.IsFinite(operand.Y))
+                {
+                    magnitudeSum += DataHelper.DecibelsToAmplitude(operand.Y);
+                    measured = true;
+                }
+            }
+
             points.Add(new SignalPoint(
                 complexCurve.Points[i].X,
-                complexCurve.Points[i].Y - magnitudeSumDb));
+                measured
+                    ? complexCurve.Points[i].Y -
+                        DataHelper.AmplitudeToDecibels(magnitudeSum)
+                    : double.NaN));
         }
 
         double smoothing = smoothingInverseOctaves

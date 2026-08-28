@@ -1,4 +1,4 @@
-namespace Resonalyze.Options
+﻿namespace Resonalyze.Options
 {
     partial class FROptions
     {
@@ -53,6 +53,9 @@ namespace Resonalyze.Options
             checkBoxShowHd4 = new CheckBox();
             checkBoxShowThdPlusNoise = new CheckBox();
             checkBoxShowNoiseFloor = new CheckBox();
+            checkBoxShowArrayAverage = new CheckBox();
+            checkBoxShowArrayMicrophones = new CheckBox();
+            checkBoxShowArraySpread = new CheckBox();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             (numericWindow).BeginInit();
             (numericRightWindow).BeginInit();
@@ -347,10 +350,43 @@ namespace Resonalyze.Options
             checkBoxShowNoiseFloor.Text = "Show noise floor";
             checkBoxShowNoiseFloor.UseVisualStyleBackColor = true;
             //
+            // checkBoxShowArrayAverage
+            //
+            checkBoxShowArrayAverage.AutoSize = true;
+            checkBoxShowArrayAverage.ForeColor = SystemColors.ControlLight;
+            checkBoxShowArrayAverage.Location = new Point(12, 391);
+            checkBoxShowArrayAverage.Name = "checkBoxShowArrayAverage";
+            checkBoxShowArrayAverage.Size = new Size(140, 19);
+            checkBoxShowArrayAverage.TabIndex = 55;
+            checkBoxShowArrayAverage.Text = "Show array average";
+            checkBoxShowArrayAverage.UseVisualStyleBackColor = true;
+            //
+            // checkBoxShowArrayMicrophones
+            //
+            checkBoxShowArrayMicrophones.AutoSize = true;
+            checkBoxShowArrayMicrophones.ForeColor = SystemColors.ControlLight;
+            checkBoxShowArrayMicrophones.Location = new Point(12, 413);
+            checkBoxShowArrayMicrophones.Name = "checkBoxShowArrayMicrophones";
+            checkBoxShowArrayMicrophones.Size = new Size(165, 19);
+            checkBoxShowArrayMicrophones.TabIndex = 56;
+            checkBoxShowArrayMicrophones.Text = "Show array microphones";
+            checkBoxShowArrayMicrophones.UseVisualStyleBackColor = true;
+            //
+            // checkBoxShowArraySpread
+            //
+            checkBoxShowArraySpread.AutoSize = true;
+            checkBoxShowArraySpread.ForeColor = SystemColors.ControlLight;
+            checkBoxShowArraySpread.Location = new Point(12, 435);
+            checkBoxShowArraySpread.Name = "checkBoxShowArraySpread";
+            checkBoxShowArraySpread.Size = new Size(135, 19);
+            checkBoxShowArraySpread.TabIndex = 57;
+            checkBoxShowArraySpread.Text = "Show array spread";
+            checkBoxShowArraySpread.UseVisualStyleBackColor = true;
+            //
             // irPlotView
             //
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 395);
+            irPlotView.Location = new Point(12, 461);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -365,7 +401,7 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 702);
+            ClientSize = new Size(265, 768);
             Controls.Add(labelWindowMode);
             Controls.Add(comboWindowMode);
             Controls.Add(labelFdwCycles);
@@ -380,6 +416,9 @@ namespace Resonalyze.Options
             Controls.Add(checkBoxShowHd3);
             Controls.Add(checkBoxShowHd2);
             Controls.Add(checkBoxShowCoherence);
+            Controls.Add(checkBoxShowArrayAverage);
+            Controls.Add(checkBoxShowArrayMicrophones);
+            Controls.Add(checkBoxShowArraySpread);
             Controls.Add(checkBoxShowPrimary);
             Controls.Add(labelCurves);
             Controls.Add(comboCalibration);
@@ -427,6 +466,9 @@ namespace Resonalyze.Options
         private Label labelCurves;
         private CheckBox checkBoxShowPrimary;
         private CheckBox checkBoxShowCoherence;
+        private CheckBox checkBoxShowArrayAverage;
+        private CheckBox checkBoxShowArrayMicrophones;
+        private CheckBox checkBoxShowArraySpread;
         private CheckBox checkBoxShowHd2;
         private CheckBox checkBoxShowHd3;
         private CheckBox checkBoxShowHd4;

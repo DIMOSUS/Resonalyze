@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -58,6 +58,31 @@ public sealed record ProtectiveHighPassConfiguration(
             NormalizeSlope(configuration.Kind, configuration.SlopeDbPerOctave));
     }
 
+    /// <summary>
+    /// Where a response this filter was divided back out of stops carrying a
+    /// measurement, in Hz; zero when it carries one everywhere.
+    /// </summary>
+    /// <remarks>
+    /// Takes the MEASUREMENT's own filter, which is null for a response measured
+    /// before that was recorded. Null is "unknown", not "off", so nothing is
+    /// masked — the alternative is breaking an old curve at a frequency belonging
+    /// to a filter nobody knows it passed through.
+    /// <para>
+    /// Only for a response the filter was REMOVED from — a loopback transfer. A
+    /// sweep deconvolution still carries the filter, so its rolloff is signal the
+    /// loudspeaker really produced and masking it would delete a measurement.
+    /// </para>
+    /// </remarks>
+    public static double LowestMeasuredFrequencyHz(
+        ProtectiveHighPassConfiguration? measurementFilter,
+        int sampleRate) =>
+        measurementFilter is { Enabled: true } filter && sampleRate > 0
+            ? ProtectiveHighPassCompensation.LowestRecoverableFrequencyHz(
+                filter.ToEdge(),
+                sampleRate,
+                MaximumCompensationBoostDb)
+            : 0.0;
+
     public CrossoverEdge ToEdge()
     {
         if (!Enabled)
@@ -113,7 +138,9 @@ public sealed record SweepAudioConfiguration(
     string? WasapiRenderEndpointId = null,
     string? WasapiCaptureEndpointName = null,
     string? WasapiRenderEndpointName = null,
-    int WasapiBufferMilliseconds = 100);
+    int WasapiBufferMilliseconds = 100,
+    IReadOnlyList<int>? WaveArrayInputChannelOffsets = null,
+    IReadOnlyList<int>? AsioArrayInputChannelOffsets = null);
 
 public sealed record SweepAveragingConfiguration(
     int RunCount = 1,

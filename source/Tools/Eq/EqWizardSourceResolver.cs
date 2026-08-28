@@ -149,6 +149,8 @@ internal sealed class EqWizardSourceResolver
             DisplayName = file.Title,
             Description = DescribeSlot(file),
             RawSpectrum = raw,
+            RawSpectrumBand = new MeasuredBand(
+                file.MeasuredLowFrequencyHz, file.MeasuredHighFrequencyHz),
             OwnCalibrationCorrectionDb = file.RawCalibrationCorrectionDb.ToArray(),
             Points = points,
             PointsCalibrationCorrectionDb = pointsCorrection,
@@ -224,9 +226,26 @@ internal sealed class EqWizardSourceResolver
             transfer is { Length: > 0 } &&
             file.TransferPeakIndex is not null;
 
+        // The transfer response is zeroed outside what was measured — past the
+        // protective high-pass, and outside the sweep's own band — while the sweep
+        // deconvolution carries the filter and its own normalization, so its edges
+        // are signal and stay.
+        MeasuredBand band = MeasuredBand.Resolve(
+            file.ProtectiveHighPass?.ToConfiguration(),
+            file.MeasuredLowFrequencyHz > 0
+                ? file.MeasuredLowFrequencyHz
+                : file.AchievedLowFrequencyHz,
+            file.MeasuredHighFrequencyHz > file.MeasuredLowFrequencyHz
+                ? file.MeasuredHighFrequencyHz
+                : file.AchievedHighFrequencyHz,
+            file.SampleRate);
         IImpulseMeasurement measurement = useTransfer
             ? new ImpulseMeasurementView(
                 transfer!, file.TransferPeakIndex!.Value, file.SampleRate)
+            {
+                LowestMeasuredFrequencyHz = band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = band.HighEdgeHz
+            }
             : new ImpulseMeasurementView(
                 file.GetSweepDeconvolutionImpulseResponse(),
                 file.SweepDeconvolutionPeakIndex,
@@ -293,6 +312,7 @@ internal sealed class EqWizardSourceResolver
             Description = description,
             Points = points,
             PointsCalibrationCorrectionDb = pointsCorrection,
+            CalibrationIsAggregate = document.CalibrationIsAggregate,
             CapturedSmoothingCode = document.Recipe.SmoothingCode,
             Scale = document.Recipe.MagnitudeScale,
             SampleRateHz = document.Recipe.SampleRateHz > 0
@@ -303,6 +323,140 @@ internal sealed class EqWizardSourceResolver
             // re-smoothable here.
             CurveKind = AnalysisCurveKind.InputSpectrum
         };
+    }
+
+    /// <summary>
+    /// How far the microphones of an array may disagree at a frequency before a boost
+    /// there is refused.
+    /// </summary>
+    /// <remarks>
+    /// Read off the owner's seven-position sets rather than chosen: after any
+    /// smoothing the spread between positions in a car sits at a median of 11 to 12 dB
+    /// across the whole band on BOTH a midrange and a tweeter, with a p90 near 15 dB.
+    /// Disagreement of that size is the normal state of a listening volume, not a
+    /// warning — a gate at 10 or 12 dB would refuse to boost across half of a
+    /// midrange and nine tenths of a tweeter, which is a boost ban wearing a
+    /// threshold's clothes. 20 dB selects the top few per cent instead: the bands
+    /// where the average is carried by whichever position happened to be loudest,
+    /// and filling the dip the others measured helps one seat centimetre while
+    /// spending the headroom of every other.
+    /// <para>
+    /// Deliberately on the UNSMOOTHED spread. A single band where the positions part
+    /// by 30 dB is exactly the pathology, and smoothing fills its neighbours in until
+    /// nothing on the owner's sets exceeds 20 dB at all.
+    /// </para>
+    /// </remarks>
+    private const double ArraySpreadBoostLimitDb = 20.0;
+
+    /// <summary>
+    /// A measurement's own microphone array as a source: the spatial average it was
+    /// recorded with, in place of the response measured at the one position the
+    /// impulse response came from.
+    /// </summary>
+    /// <remarks>
+    /// The point of the whole array feature reaching the one tool that can do harm
+    /// with the difference. A point measurement carries dips belonging to its own few
+    /// centimetres, and an equalizer fitted to those is fitted to a place nobody's
+    /// head occupies.
+    /// <para>
+    /// A SNAPSHOT like every other import: the curve is built here and nothing points
+    /// back at the file, so the source cannot change under a tune in progress.
+    /// </para>
+    /// </remarks>
+    public static EqWizardCurveSource? TryCreateFromArray(
+        ImpulseResponseFile file,
+        string displayName,
+        string description)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        if (file.ArrayMicrophones is not { } entry)
+        {
+            return null;
+        }
+
+        (LiveCaptureDocument? document, double[]? spreadDb) =
+            ArrayCaptureDocument.TryCreateWithSpread(
+                entry.ToCurves(),
+                file.SampleRate,
+                file.ProtectiveHighPass?.ToConfiguration(),
+                file.MeasuredAtUtc > DateTimeOffset.UnixEpoch
+                    ? file.MeasuredAtUtc
+                    : file.SavedAtUtc);
+        if (document == null)
+        {
+            return null;
+        }
+
+        return CreateFromSpatialAverage(document, description) with
+        {
+            // The measurement's name, not the document's: the button has to say WHICH
+            // measurement is being equalized, and "Array of 7 microphones" says only
+            // how it was taken.
+            DisplayName = displayName,
+            Coherence = BuildAgreementCurve(document, spreadDb)
+        };
+    }
+
+    /// <summary>
+    /// The array's position agreement as the confidence Auto Tune gates boosts on: 1
+    /// where the microphones agree closely enough to boost, 0 where they do not.
+    /// </summary>
+    /// <remarks>
+    /// A flat allow/refuse rather than a curve mapped from the spread. Any smooth map
+    /// from decibels of disagreement to a confidence between 0 and 1 would be invented
+    /// precision — the mask only ever compares it against one floor — and a
+    /// two-valued curve says exactly what is known.
+    /// <para>
+    /// A band where fewer than two microphones had anything to say reads 0 — refuse —
+    /// whenever the average itself is a level. There is no disagreement to measure
+    /// there, and that is exactly the point: the confidence this curve carries is a
+    /// second opinion, and a band with only one has none. Handing back the spread's
+    /// NaN would be worse than saying nothing, because the mask reads a non-finite
+    /// entry as PERMISSION — so the one case where the array cannot vouch for a dip
+    /// would be the case where the gate switched itself off. Where the average is NaN
+    /// too, the fit has already excluded the band and this says nothing about it.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<SignalPoint>? BuildAgreementCurve(
+        LiveCaptureDocument document,
+        double[]? spreadDb)
+    {
+        if (spreadDb == null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<SignalPoint> curve = document.ToCurvePoints();
+        if (curve.Count != spreadDb.Length)
+        {
+            return null;
+        }
+
+        var agreement = new List<SignalPoint>(spreadDb.Length);
+        for (int band = 0; band < spreadDb.Length; band++)
+        {
+            agreement.Add(new SignalPoint(
+                curve[band].X,
+                !double.IsFinite(spreadDb[band])
+                    ? double.IsFinite(curve[band].Y) ? 0.0 : double.NaN
+                    : spreadDb[band] > ArraySpreadBoostLimitDb ? 0.0 : 1.0));
+        }
+
+        return agreement;
+    }
+
+    /// <summary>
+    /// What the source button's tooltip says about a measurement's array.
+    /// </summary>
+    public static string DescribeArray(ImpulseResponseFile file, string path)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        int count = file.ArrayMicrophones?.Microphones.Count ?? 0;
+        string microphones = count == 1 ? "1 microphone" : $"{count} microphones";
+        return
+            $"{path}\r\nMicrophone array spatial average\r\n" +
+            $"{microphones} averaged over the listening volume\r\n" +
+            $"{file.SampleRate} Hz";
     }
 
     /// <summary>

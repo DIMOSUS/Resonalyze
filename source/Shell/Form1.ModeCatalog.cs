@@ -1,4 +1,4 @@
-using OxyPlot;
+﻿using OxyPlot;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -50,7 +50,7 @@ public partial class Form1
                         expSweepMeasurement,
                         frequencyResponseOptions,
                         frequencyResponseVisibility,
-                        microphoneCalibration.GetEntries()),
+                        CalibrationEntries()),
                     opt => opt.SetOptions(frequencyResponseOptions, frequencyResponseVisibility),
                     // Switching dBr <-> SPL rescales the axis, so the old zoom is
                     // meaningless: refit instead of restoring it.

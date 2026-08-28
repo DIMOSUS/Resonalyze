@@ -233,6 +233,59 @@ public partial class Form1
         ApplyImpulseResponseFile(file, path);
     }
 
+    /// <summary>
+    /// Reads the loaded measurement through the calibration it was measured with.
+    /// </summary>
+    /// <remarks>
+    /// The selection is left alone when a local calibration already holds the same
+    /// curve — your own file on your own machine — so the ordinary case shows no
+    /// change at all. It moves only when the file's curve is one this machine does
+    /// not have, which is exactly when leaving it alone would draw someone else's
+    /// measurement through your microphone's correction and say nothing.
+    /// </remarks>
+    private void AdoptFileCalibration(VirtualCrossoverCalibrationSettings? calibration)
+    {
+        if (!FileCalibrationSelection.IsFile(frequencyResponseOptions.CalibrationId))
+        {
+            // The user is reading through one of their own; remember which, because
+            // the entry about to displace it belongs to a file and will not outlive
+            // it.
+            displacedLocalCalibrationId = frequencyResponseOptions.CalibrationId;
+        }
+        else if (calibration == null)
+        {
+            // The selection names a curve that no longer exists: the measurement it
+            // came with has been replaced by one carrying none. Leaving it alone
+            // looks harmless and is not — the id resolves to nothing, so the view
+            // quietly drops the correction, the question before a run does not fire
+            // because there is no loaded calibration to ask about, and the next
+            // sweep is stamped as measured through no calibration at all.
+            SelectFrequencyResponseCalibration(
+                displacedLocalCalibrationId ?? MicrophoneCalibrationIds.ZeroDegrees);
+            return;
+        }
+
+        string? chosen = FileCalibrationSelection.Choose(
+            calibration,
+            frequencyResponseOptions.CalibrationId,
+            microphoneCalibration.GetEntries(),
+            microphoneCalibration.Get);
+        if (chosen == null)
+        {
+            return;
+        }
+
+        SelectFrequencyResponseCalibration(chosen);
+    }
+
+    private void SelectFrequencyResponseCalibration(string? calibrationId)
+    {
+        frequencyResponseOptions.CalibrationId = calibrationId;
+        IReadOnlyList<MicrophoneCalibrationEntry> entries = CalibrationEntries();
+        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
+            panel => panel.SelectCalibration(calibrationId, entries));
+    }
+
     // The install half, split from the read so a caller that must not land a stale
     // result can check its own guard between the two — reading a large file takes
     // long enough for a newer request to overtake it.
@@ -257,24 +310,21 @@ public partial class Form1
             file.AcceptedAverageRunCount,
             achievedLowHz,
             achievedHighHz,
-            file.TimingReference);
+            file.TimingReference,
+            file.MeasuredLowFrequencyHz,
+            file.MeasuredHighFrequencyHz,
+            file.MeasuredAtUtc > DateTimeOffset.UnixEpoch
+                ? file.MeasuredAtUtc
+                : file.SavedAtUtc);
         expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
-        // The loaded file's own calibration is this result's snapshot (what
-        // it was measured under), so it can be shown in dB SPL. The configured
-        // calibration for the next new run is left untouched. Its capture
-        // identity stands in for the result's input, so re-saving the file
-        // validates the anchor against the input it was measured on — not the
-        // app's current device — and keeps it.
-        expSweepMeasurement.MeasurementSplCalibration = file.SplCalibration;
-        // Whatever the file knows about the protective high-pass travels with it,
-        // including "nothing": the app's own setting describes the next run, not the
-        // response just loaded.
-        expSweepMeasurement.MeasurementProtectiveHighPass =
+        AdoptRestoredResult(
+            file.SplCalibration,
+            file.MicrophoneCalibration,
+            file.ArrayMicrophones?.ToCurves() ?? [],
             file.ProtectiveHighPass is { } entry
                 ? new ProtectiveHighPassConfiguration(
                     entry.Kind, entry.FrequencyHz, entry.SlopeDbPerOctave)
-                : null;
-        expSweepMeasurement.MeasurementInput = file.SplCalibration?.CaptureIdentity;
+                : null);
         ApplyLoadedImpulseResponseState(path);
         sessionTracker.MarkLoadedFile(path, file);
         // A loaded file carries its own SPL calibration and loopback level, so

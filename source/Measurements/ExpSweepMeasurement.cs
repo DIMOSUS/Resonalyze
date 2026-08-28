@@ -101,6 +101,38 @@ namespace Resonalyze
         // generator uses today cannot express.
         public double AchievedLowFrequencyHz { get; private set; }
         public double AchievedHighFrequencyHz { get; private set; }
+
+        /// <summary>
+        /// The band the sweep excited at FULL amplitude — what the measurement can
+        /// honestly be read over, as opposed to what it reaches.
+        /// </summary>
+        /// <remarks>
+        /// The generator widens the requested band by half an octave each side and
+        /// puts the fades in those guard bands, so the envelope is flat across what
+        /// was asked for. Inside a guard band the excitation is still there and H1 is
+        /// still unbiased — the taper cancels in Gxy/Gxx — but its signal-to-noise
+        /// falls away, and the validity weight the estimate carries attenuates it to
+        /// match: measured on a 500-5000 Hz sweep the weight reads -13.0 dB at 400 Hz,
+        /// -2.7 at 450 and -10.3 at 6300. Presenting that as the driver's response
+        /// would draw the estimator's own roll-off as a measurement, on a perfect
+        /// system, with nothing to say it was not real.
+        /// </remarks>
+        public double MeasuredLowFrequencyHz { get; private set; }
+        public double MeasuredHighFrequencyHz { get; private set; }
+
+        /// <summary>
+        /// When this result was MEASURED, which is not when its file was written.
+        /// </summary>
+        /// <remarks>
+        /// A spatial average built from it is shown with this date, because nothing
+        /// records where an array's microphones stood and when they stood there is the
+        /// only evidence a user has that two channels came from one sitting. Taking it
+        /// from the file's own save stamp instead survives a load but not a re-save:
+        /// open Monday's measurement and Friday's on Saturday, save each once, and
+        /// both read Saturday — the warning then says the two came from one session,
+        /// which is exactly the claim it exists to let a user check.
+        /// </remarks>
+        public DateTimeOffset MeasuredAtUtc { get; private set; } = DateTimeOffset.UtcNow;
         // Length of that same sweep. Also recorded rather than read back off the
         // rebuilt one, which caps its generation at MaxDurationSeconds and would
         // otherwise halve the harmonic offsets of a restored 200-second sweep.
@@ -126,11 +158,59 @@ namespace Resonalyze
         public int AsioInputChannelOffset { get; private set; }
         public int? AsioLoopbackInputChannelOffset { get; private set; }
         public int AsioOutputChannelOffset { get; private set; }
+        public IReadOnlyList<int> WaveArrayInputChannelOffsets { get; private set; } = [];
+        public IReadOnlyList<int> AsioArrayInputChannelOffsets { get; private set; } = [];
+
+        /// <summary>
+        /// The array microphone channels for the backend in use — the further
+        /// microphones this measurement records for its spatial average.
+        /// </summary>
+        public IReadOnlyList<int> ArrayInputChannelOffsets =>
+            AudioBackend == AudioBackend.Asio
+                ? AsioArrayInputChannelOffsets
+                : WaveArrayInputChannelOffsets;
+
+        /// <summary>
+        /// Every microphone of the last completed measurement's array, the
+        /// measurement microphone first; empty when no array was configured.
+        /// </summary>
+        /// <remarks>
+        /// Settable from outside for the same reason
+        /// <see cref="MeasurementSplCalibration"/> is: loading a file restores the
+        /// result's own snapshot, and the loaded array belongs to that result
+        /// rather than to whatever the next run is configured to record.
+        /// </remarks>
+        internal IReadOnlyList<ArrayMicrophoneCurve> ArrayMicrophones { get; set; } = [];
+
         public int AverageRunCount { get; private set; } = 1;
         public int AcceptedAverageRunCount { get; private set; } = 1;
         public bool ConfirmEachAverageRun { get; private set; }
         public ProtectiveHighPassConfiguration ProtectiveHighPass { get; private set; } =
             ProtectiveHighPassConfiguration.Off;
+
+        /// <summary>
+        /// The calibration CONFIGURED for the measurement microphone — the curve
+        /// the analysis views read it through. Nothing here uses it; it is carried
+        /// so the saved file can say which microphone response the impulse
+        /// response was taken with, which is what makes a measurement portable.
+        /// </summary>
+        public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; set; }
+
+        /// <summary>
+        /// The notes and calibrations configured for the array microphones, keyed
+        /// by channel. Same reason: measured curves are stored raw, and this is
+        /// what says how to read them.
+        /// </summary>
+        internal IReadOnlyList<ArrayMicrophoneMetadata> ArrayMicrophoneMetadata { get; set; } = [];
+
+        /// <summary>
+        /// The microphone calibration in force when the last run STARTED, frozen
+        /// onto its result the way the SPL anchor and the protective high-pass are.
+        /// </summary>
+        internal VirtualCrossoverCalibrationSettings? MeasurementMicrophoneCalibration
+        { get; set; }
+
+        private IReadOnlyList<ArrayMicrophoneMetadata> measurementArrayMetadata = [];
         // The SPL calibration CONFIGURED for the next run (follows the settings /
         // dialog). It is snapshotted into MeasurementSplCalibration when a run
         // starts, so recalibrating afterwards never rewrites an existing result.
@@ -179,6 +259,12 @@ namespace Resonalyze
         public bool NextRunHasSplAnchor =>
             SplCalibration is { } calibration &&
             calibration.MatchesInput(CurrentInputIdentity());
+
+        /// <summary>
+        /// The input the measurement microphone is on for the backend in use.
+        /// </summary>
+        internal int ActiveMicrophoneChannelOffset =>
+            AudioBackend == AudioBackend.Asio ? AsioInputChannelOffset : WaveInputChannelOffset;
 
         internal MeasurementInputIdentity CurrentInputIdentity() => new(
             AudioBackend,
@@ -255,12 +341,23 @@ namespace Resonalyze
             AsioInputChannelOffset = audio.AsioInputChannelOffset;
             AsioLoopbackInputChannelOffset = audio.AsioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = audio.AsioOutputChannelOffset;
+            WaveArrayInputChannelOffsets = NormalizeArrayChannels(
+                audio.WaveArrayInputChannelOffsets,
+                normalizedWaveInputChannelOffset,
+                normalizedWaveLoopbackInputChannelOffset);
+            AsioArrayInputChannelOffsets = NormalizeArrayChannels(
+                audio.AsioArrayInputChannelOffsets,
+                audio.AsioInputChannelOffset,
+                audio.AsioLoopbackInputChannelOffset);
+            ArrayMicrophones = [];
             sweepDeconvolutionResult = null;
             transferResult = null;
             // The old result is gone; its calibration and input snapshots go with it.
             // The next run re-snapshots the configured calibration and input.
             MeasurementSplCalibration = null;
             MeasurementProtectiveHighPass = null;
+            MeasurementMicrophoneCalibration = null;
+            measurementArrayMetadata = [];
             MeasurementInput = null;
             TransferCoherence = null;
             MicrophoneRecordedSamples = null;
@@ -291,6 +388,8 @@ namespace Resonalyze
                 signal.SampleRate);
             AchievedLowFrequencyHz = Sweep.LowFrequencyHz;
             AchievedHighFrequencyHz = Sweep.HighFrequencyHz;
+            MeasuredLowFrequencyHz = Sweep.Spec.FullAmplitudeLowFrequencyHz;
+            MeasuredHighFrequencyHz = Sweep.Spec.FullAmplitudeHighFrequencyHz;
             AchievedSweepSampleCount = Sweep.SweepSamples;
         }
 
@@ -328,6 +427,8 @@ namespace Resonalyze
                 // which input it is validated against.
                 MeasurementSplCalibration = SplCalibration;
                 MeasurementProtectiveHighPass = ProtectiveHighPass;
+                MeasurementMicrophoneCalibration = MicrophoneCalibration;
+                measurementArrayMetadata = ArrayMicrophoneMetadata;
                 MeasurementInput = CurrentInputIdentity();
                 TransferCoherence = null;
                 MicrophoneRecordedSamples = null;
@@ -464,7 +565,10 @@ namespace Resonalyze
             int acceptedAverageRunCount = 1,
             double achievedLowFrequencyHz = 0.0,
             double achievedHighFrequencyHz = 0.0,
-            TimingReference timingReference = TimingReference.SynchronizedLoopback)
+            TimingReference timingReference = TimingReference.SynchronizedLoopback,
+            double measuredLowFrequencyHz = 0.0,
+            double measuredHighFrequencyHz = 0.0,
+            DateTimeOffset? measuredAtUtc = null)
         {
             ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(sweepDeconvolutionImpulseResponse);
@@ -544,7 +648,9 @@ namespace Resonalyze
                     WasapiRenderEndpointId: WasapiRenderEndpointId,
                     WasapiCaptureEndpointName: WasapiCaptureEndpointName,
                     WasapiRenderEndpointName: WasapiRenderEndpointName,
-                    WasapiBufferMilliseconds: WasapiBufferMilliseconds),
+                    WasapiBufferMilliseconds: WasapiBufferMilliseconds,
+                    WaveArrayInputChannelOffsets: WaveArrayInputChannelOffsets,
+                    AsioArrayInputChannelOffsets: AsioArrayInputChannelOffsets),
                 new SweepAveragingConfiguration(
                     AverageRunCount,
                     ConfirmEachAverageRun),
@@ -554,11 +660,25 @@ namespace Resonalyze
             // came from the original one. The length matters as much as the band:
             // generation is capped at MaxDurationSeconds while a stored sweep may
             // be minutes long, and the harmonic offsets scale with it.
+            // Restored, never re-stamped: a file re-saved today was still measured
+            // whenever it was measured. Null only for a source that carries no time of
+            // its own, where the clock is the best answer there is.
+            MeasuredAtUtc = measuredAtUtc ?? DateTimeOffset.UtcNow;
             if (achievedLowFrequencyHz > 0 &&
                 achievedHighFrequencyHz > achievedLowFrequencyHz)
             {
                 AchievedLowFrequencyHz = achievedLowFrequencyHz;
                 AchievedHighFrequencyHz = achievedHighFrequencyHz;
+                // A file written before the full-amplitude edges were recorded says
+                // nothing about them, and the regenerated sweep's are the wrong
+                // answer for a stored geometry. Fall back to the achieved band — what
+                // such a file has always been read over.
+                MeasuredLowFrequencyHz = measuredLowFrequencyHz > 0
+                    ? measuredLowFrequencyHz
+                    : achievedLowFrequencyHz;
+                MeasuredHighFrequencyHz = measuredHighFrequencyHz > MeasuredLowFrequencyHz
+                    ? measuredHighFrequencyHz
+                    : achievedHighFrequencyHz;
             }
             int storedSampleCount = (int)Math.Round(sweepDurationSeconds * sampleRate);
             if (storedSampleCount > 0)
@@ -1075,7 +1195,53 @@ namespace Resonalyze
                 AcceptedRunCount: 1,
                 MicrophoneDistortion: null,
                 LoopbackDistortion: null,
-                LoopbackWorstRun: null));
+                LoopbackWorstRun: null,
+                // An imported recording is one microphone by construction: it was
+                // made outside Resonalyze, and nothing in the file says anything
+                // about further positions.
+                ArrayMicrophones: []));
+        }
+
+        /// <summary>
+        /// Pairs the measured array curves with the notes and calibrations they were
+        /// configured with, by channel.
+        /// </summary>
+        /// <remarks>
+        /// By channel and not by position in the list: a microphone that failed every
+        /// run is absent from the measured curves, so the two lists are not the same
+        /// length and pairing them by index would hand each surviving microphone the
+        /// next one's calibration.
+        /// </remarks>
+        private IReadOnlyList<ArrayMicrophoneCurve> AttachArrayMetadata(
+            IReadOnlyList<ArrayMicrophoneCurve> microphones)
+        {
+            if (microphones.Count == 0)
+            {
+                return microphones;
+            }
+
+            var attached = new List<ArrayMicrophoneCurve>(microphones.Count);
+            foreach (ArrayMicrophoneCurve microphone in microphones)
+            {
+                if (microphone.IsMeasurementMicrophone)
+                {
+                    attached.Add(microphone with
+                    {
+                        Calibration = MeasurementMicrophoneCalibration
+                    });
+                    continue;
+                }
+
+                ArrayMicrophoneMetadata? metadata = measurementArrayMetadata.FirstOrDefault(
+                    candidate => candidate.ChannelOffset == microphone.ChannelOffset);
+                attached.Add(microphone with
+                {
+                    Note = metadata?.Note,
+                    Calibration = metadata?.Calibration
+                });
+            }
+
+            return attached;
         }
 
         // A circular rotation that carries `from` to `to`. Circular because the
@@ -1141,6 +1307,11 @@ namespace Resonalyze
 
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
+            // When the sweep RUNS, not when the measurement was configured. One
+            // configuration serves every press of Record, so stamping it at Init gave
+            // every result the same time — and the composition warning reads this date
+            // to let a user notice that two channels came from different sittings.
+            MeasuredAtUtc = DateTimeOffset.UtcNow;
             ExponentialSineSweep sweep = Sweep!;
             bool success = false;
             IAudioDuplexSession? session = null;
@@ -1172,8 +1343,14 @@ namespace Resonalyze
                 // fades — a ramp below the achieved edge half-passes unexcited
                 // bins, which shows as garbage spikes just under the sweep start.
                 var accumulator = new SweepAverageAccumulator(
-                    BuildExcitationGate(sweep));
+                    BuildExcitationGate(sweep),
+                    SampleRate,
+                    ProtectiveHighPass,
+                    ActiveMicrophoneChannelOffset,
+                    ArrayInputChannelOffsets);
                 var rejections = new List<SweepRunRejection>();
+                // The one rejected capture, kept only to phrase the refusal below.
+                AudioCaptureResult? rejectedCapture = null;
                 int requestedRuns = AverageRunCount;
                 for (int run = 1; run <= requestedRuns; run++)
                 {
@@ -1186,26 +1363,20 @@ namespace Resonalyze
                     IReadOnlyList<string> issues = AssessRunQuality(captured, sweep);
                     if (issues.Count > 0)
                     {
-                        // One automatic retry per bad run; a second failure skips
-                        // the run so it cannot contaminate the average.
-                        rejections.Add(new SweepRunRejection(run, Retried: false, issues));
-                        Publish(AverageProgressChanged, new SweepAverageProgress(
-                            run,
-                            requestedRuns,
-                            accumulator.AcceptedRuns,
-                            SweepAverageProgressState.Retrying));
-                        captured = await CaptureOneAsync().ConfigureAwait(false);
-                        issues = AssessRunQuality(captured, sweep);
-                        if (issues.Count > 0)
-                        {
-                            rejections.Add(new SweepRunRejection(run, Retried: true, issues));
-                            captured = null;
-                        }
+                        // A bad run STOPS the measurement. There used to be one
+                        // automatic retry, and the field answer is that it never
+                        // recovered anything: what these checks catch is a gain set
+                        // wrong, a cable in the wrong socket, a channel that is not
+                        // there — configuration, which the next sweep reproduces
+                        // exactly. Sweeping again to prove it wastes the user's time
+                        // twice over, and dropping the run instead would leave an
+                        // average quietly built on fewer runs than were asked for.
+                        rejections.Add(new SweepRunRejection(run, issues));
+                        rejectedCapture = captured;
+                        break;
                     }
-                    if (captured != null)
-                    {
-                        accumulator.Add(AnalyzeCapturedRun(captured, sweep));
-                    }
+
+                    accumulator.Add(AnalyzeCapturedRun(captured, sweep));
 
                     if (ConfirmEachAverageRun && run < requestedRuns)
                     {
@@ -1221,10 +1392,22 @@ namespace Resonalyze
                     requestedRuns,
                     accumulator.AcceptedRuns,
                     rejections);
-                if (accumulator.AcceptedRuns == 0)
+                if (rejections.Count > 0 || accumulator.AcceptedRuns == 0)
                 {
+                    // A whole measurement that failed on SHAPE is the bad-loopback
+                    // case, and the diagnosis for it knows things a run issue cannot:
+                    // that a quiet loopback means bleed instead of the wire, and which
+                    // channel's distortion is the culprit. Now that a run can be
+                    // rejected for shape, that diagnosis would otherwise be lost
+                    // exactly where it is most wanted — so one rejected capture is
+                    // analysed for it, at a point where nothing else is going to
+                    // happen anyway.
+                    DiagnoseTotalFailure(rejectedCapture, sweep, rejections);
                     throw new InvalidOperationException(
-                        "Every sweep run failed the capture quality checks: " +
+                        (rejections.Count > 0
+                            ? $"Sweep run {rejections[0].Run} of {requestedRuns} failed " +
+                                "the capture quality checks: "
+                            : "Every sweep run failed the capture quality checks: ") +
                         string.Join(
                             "; ",
                             rejections.SelectMany(rejection => rejection.Issues).Distinct()) +
@@ -1343,6 +1526,51 @@ namespace Resonalyze
             return new ExcitationBandGate(lowZero, lowFull, highFull, highZero);
         }
 
+        /// <summary>
+        /// The configured array channels, refused rather than repaired when they
+        /// collide with the measurement's own inputs.
+        /// </summary>
+        /// <remarks>
+        /// Dropping a colliding channel silently would be the worse answer: the
+        /// measurement would run, produce an array one microphone short of the one
+        /// the user set up, and average a listening volume it never sampled.
+        /// </remarks>
+        private static IReadOnlyList<int> NormalizeArrayChannels(
+            IReadOnlyList<int>? channels,
+            int microphoneChannel,
+            int? loopbackChannel)
+        {
+            if (channels == null || channels.Count == 0)
+            {
+                return [];
+            }
+
+            var normalized = new List<int>(channels.Count);
+            foreach (int channel in channels)
+            {
+                if (channel < 0)
+                {
+                    throw new InvalidOperationException(
+                        "An array microphone channel cannot be negative.");
+                }
+                if (channel == microphoneChannel || channel == loopbackChannel)
+                {
+                    throw new InvalidOperationException(
+                        $"Array microphone channel {channel} is already in use by the " +
+                        "measurement microphone or the loopback.");
+                }
+                if (normalized.Contains(channel))
+                {
+                    throw new InvalidOperationException(
+                        $"Array microphone channel {channel} is configured twice.");
+                }
+
+                normalized.Add(channel);
+            }
+
+            return normalized;
+        }
+
         private AudioSessionRequest BuildSessionRequest(ExponentialSineSweep sweep) =>
             AudioSessionRequestBuilder.Build(
                 AudioBackend,
@@ -1360,7 +1588,8 @@ namespace Resonalyze
                 WasapiRenderEndpointId,
                 AsioDriverName,
                 WasapiBufferMilliseconds,
-                expectedCaptureSamples: sweep.SweepSamples + SampleRate * 2);
+                expectedCaptureSamples: sweep.SweepSamples + SampleRate * 2,
+                arrayInputChannelOffsets: ArrayInputChannelOffsets);
 
         private AudioPlaybackSignal BuildPlaybackSignal(ExponentialSineSweep sweep) =>
             new(sweep.SweepData, SampleRate, Bits, PlaybackChannel, Loop: false);
@@ -1370,6 +1599,58 @@ namespace Resonalyze
             InputLevelMeterSnapshot snapshot = InputLevelMapping.Map(levels);
             CurrentLevels = snapshot;
             RaiseLevels(snapshot);
+        }
+
+        /// <summary>
+        /// Replaces the generic "every run failed" refusal with the transfer
+        /// function's own diagnosis, when the failures were about its SHAPE.
+        /// </summary>
+        /// <remarks>
+        /// Throws that diagnosis rather than returning it: the caller's own throw is
+        /// the fallback for everything this cannot improve on — a capture that will
+        /// not analyse at all, or runs rejected for plain level faults, where the
+        /// generic sentence is already the honest one.
+        /// </remarks>
+        private void DiagnoseTotalFailure(
+            AudioCaptureResult? capture,
+            ExponentialSineSweep sweep,
+            IReadOnlyList<SweepRunRejection> rejections)
+        {
+            if (capture == null ||
+                !rejections.Any(rejection => rejection.Issues.Any(
+                    issue => issue.Contains("credible response", StringComparison.Ordinal))))
+            {
+                return;
+            }
+
+            SweepAverageResult result;
+            try
+            {
+                var accumulator = new SweepAverageAccumulator(
+                    BuildExcitationGate(sweep),
+                    SampleRate,
+                    ProtectiveHighPass,
+                    ActiveMicrophoneChannelOffset,
+                    // No array microphones: this exists to explain the MEASUREMENT
+                    // pair's shape, and building array curves would refuse on the
+                    // very fault being explained.
+                    []);
+                // The one capture that failed, which is now the only one there is:
+                // the measurement stops on it rather than sweeping again. That is also
+                // what bounds this — a diagnosis whose scratch is FFT-sized must not
+                // be handed a list that grows with the run count.
+                accumulator.Add(
+                    AnalyzeCapturedRun(capture, sweep, raiseIntermediateLevels: false));
+                result = accumulator.BuildResult();
+            }
+            catch (Exception)
+            {
+                // The capture cannot be analysed at all, which the caller's own
+                // refusal already describes as well as anything could.
+                return;
+            }
+
+            RequireCredibleTransferIr(result);
         }
 
         private IReadOnlyList<string> AssessRunQuality(
@@ -1400,7 +1681,137 @@ namespace Resonalyze
             {
                 issues.Add("WASAPI reported a render buffer underrun.");
             }
+
+            // Every array microphone, judged exactly as the measurement one is: a run
+            // that compromised any of them is not a run this measurement can use.
+            //
+            // The alternative — drop that microphone from that run and keep the rest —
+            // is what this used to do, and it buys a measurement that looks complete
+            // and is not: the array keeps only the curve each position produced, so a
+            // position that lost its runs is simply absent from the average, and the
+            // average of six positions where seven were set up is a different
+            // measurement wearing the same name. A sweep is cheap; a spatial average
+            // built on a position that was never there is not.
+            //
+            // Level faults first, for every channel, because a clipped or silent one
+            // has already failed and dividing it would add a second sentence about the
+            // same fault. What survives is asked the question the level checks cannot:
+            // is this a RESPONSE at all.
+            var judged = new List<(string Where, float[] Samples)>();
+            if (issues.Count == 0)
+            {
+                // The measurement microphone faces the same question as every array
+                // microphone, for the same reason and with the same arithmetic. A run
+                // that recorded noise instead of the sweep passes every level check,
+                // hides in the H1 average — the good runs still put an arrival in the
+                // total — and scales the whole measurement by the fraction of runs that
+                // were good: -2.50 dB for one bad run in four, whatever the noise level
+                // was. On this channel that lands on the level every other channel is
+                // compared against.
+                judged.Add((string.Empty, microphone));
+            }
+
+            // The capture's channel indices are relative to the first channel the
+            // session opened, which for ASIO is not the hardware input the user
+            // configured: a rig on inputs 6, 8 and 9 arrives here as 1, 3 and 4. The
+            // SAMPLES are matched correctly either way, but a refusal that sends
+            // someone to check input 4 when the fault is on input 9 is a refusal that
+            // costs an afternoon. The i-th capture channel is the i-th CONFIGURED
+            // microphone (see BuildArrayCaptures), so the configured offset is what
+            // gets named.
+            IReadOnlyList<int> configured = ArrayInputChannelOffsets;
+            for (int position = 0; position < captured.ArrayChannels.Count; position++)
+            {
+                int channel = captured.ArrayChannels[position];
+                float[] samples = (uint)channel < (uint)channels.Length
+                    ? channels[channel]
+                    : [];
+                int named = position < configured.Count ? configured[position] : channel;
+                string where = $"array microphone on input {named + 1}";
+                if (samples.Length == 0)
+                {
+                    issues.Add($"{where}: the channel was not captured.");
+                    continue;
+                }
+
+                int before = issues.Count;
+                foreach (string issue in SweepRunQualityCheck.AssessArrayMicrophone(
+                    samples, sweep.SweepSamples))
+                {
+                    issues.Add($"{where}: {issue}.");
+                }
+
+                if (issues.Count == before)
+                {
+                    judged.Add((where, samples));
+                }
+            }
+
+            AddIncredibleResponses(issues, loopback, judged, sweep);
             return issues;
+        }
+
+        /// <summary>
+        /// Asks every channel that passed its level checks whether what it recorded
+        /// divides into a response, against the ONE loopback recorded beside them all.
+        /// </summary>
+        /// <remarks>
+        /// One reference, transformed once. Judging each microphone on its own
+        /// transformed the same loopback again for every one of them: measured on
+        /// eight channels of a 96 kHz / 20 s take, 3993 ms one at a time against
+        /// 2093 ms shared. The answers are identical bin for bin, because the
+        /// excitation gate and the regularization are functions of the reference alone
+        /// (<see cref="TransferFunction.MeasureSingleFrameCompactness"/>). Only the
+        /// VERDICTS come back, never the responses: one of those is 64 MiB at the
+        /// transform length a 96 kHz twenty-second take reaches.
+        /// </remarks>
+        private void AddIncredibleResponses(
+            List<string> issues,
+            float[]? loopback,
+            IReadOnlyList<(string Where, float[] Samples)> judged,
+            ExponentialSineSweep sweep)
+        {
+            if (loopback == null || judged.Count == 0)
+            {
+                return;
+            }
+
+            // The same ceiling the loopback's own diagnosis lives under, and for the
+            // same reason. This transform is 2 x NextPowerOfTwo(samples), and the
+            // scratch around it is FFT-sized: at 2^22 bins that is already a few
+            // hundred megabytes per run, and the rates and durations the app accepts
+            // reach 2^24 (384 kHz, 20 s) and 2^27 (384 kHz, 100 s), where it would ask
+            // for gigabytes to answer a yes-or-no question. Above the bound the run
+            // check is skipped and the level checks stand alone; the AVERAGED verdict
+            // still runs, because its transform is the one the measurement needed
+            // anyway and only the inverse is added to it.
+            if (!RunCredibilityDiagnosisFits(loopback.Length))
+            {
+                return;
+            }
+
+            TransferIrCompactness?[] shapes = TransferFunction.MeasureSingleFrameCompactness(
+                new RecordedSamplesView(loopback),
+                judged.Select(entry =>
+                    (IReadOnlyList<double>)new RecordedSamplesView(entry.Samples)).ToList(),
+                BuildExcitationGate(sweep),
+                SampleRate);
+            double floorDb = ArrayMicrophoneAnalysis.RunFloorDb(AverageRunCount);
+            for (int i = 0; i < judged.Count; i++)
+            {
+                if (ArrayMicrophoneAnalysis.DescribeIncredibleShape(
+                    shapes[i], floorDb) is not { } shape)
+                {
+                    continue;
+                }
+
+                (string where, _) = judged[i];
+                issues.Add(where.Length == 0
+                    ? "the microphone recorded a signal, but it did not divide into " +
+                        $"a credible response ({shape})"
+                    : $"{where}: it recorded a signal, but it did not divide into a " +
+                        $"credible response ({shape})");
+            }
         }
 
         private SweepRunAnalysis AnalyzeCapturedRun(
@@ -1491,7 +1902,58 @@ namespace Resonalyze
                 captured.LoopbackChannel,
                 finalLevels,
                 microphoneDistortion,
-                loopbackDistortion);
+                loopbackDistortion,
+                BuildArrayCaptures(captured, sampleChannels));
+        }
+
+        /// <summary>
+        /// One accepted run's array frames, positionally — index i is the i-th
+        /// configured microphone.
+        /// </summary>
+        /// <remarks>
+        /// No verdicts here any more. A run reaches this only after
+        /// <see cref="AssessRunQuality"/> found every array microphone sound, because
+        /// a compromised position now fails the RUN rather than dropping quietly out
+        /// of it: the array keeps only the curve each position produced, so a position
+        /// that lost its runs is simply absent from the average, and an average of six
+        /// positions where seven were set up is a different measurement wearing the
+        /// same name.
+        /// <para>
+        /// No loopback, no array: an array microphone is read as a transfer function
+        /// against the loopback, and a measurement without one has nothing to
+        /// reference it to. That is refused for the whole measurement long before
+        /// here.
+        /// </para>
+        /// </remarks>
+        private static IReadOnlyList<TransferFunctionFrame?> BuildArrayCaptures(
+            AudioCaptureResult captured,
+            float[][] sampleChannels)
+        {
+            if (captured.ArrayChannels.Count == 0)
+            {
+                return [];
+            }
+
+            var frames = new TransferFunctionFrame?[captured.ArrayChannels.Count];
+            if (captured.LoopbackChannel is not int loopbackIndex ||
+                (uint)loopbackIndex >= (uint)sampleChannels.Length)
+            {
+                return frames;
+            }
+
+            for (int microphone = 0; microphone < frames.Length; microphone++)
+            {
+                int channel = captured.ArrayChannels[microphone];
+                if ((uint)channel < (uint)sampleChannels.Length &&
+                    sampleChannels[channel].Length > 0)
+                {
+                    frames[microphone] = new TransferFunctionFrame(
+                        new RecordedSamplesView(sampleChannels[loopbackIndex]),
+                        new RecordedSamplesView(sampleChannels[channel]));
+                }
+            }
+
+            return frames;
         }
 
         /// <summary>
@@ -1557,6 +2019,22 @@ namespace Resonalyze
         // and the microphone reading (which reuses the measurement's own
         // deconvolution and is never skipped).
         internal const int MaxLoopbackDiagnosisFftLength = 1 << 22;
+
+        /// <summary>
+        /// Whether the per-run credibility check's transform stays under the same
+        /// ceiling the loopback's diagnosis lives under. Its H1 pads to twice the
+        /// capture, so this is the length that matters rather than a convolution's.
+        /// </summary>
+        internal static bool RunCredibilityDiagnosisFits(int recordedSamples)
+        {
+            // In long, so an absurd configuration reads as "does not fit" rather than
+            // overflowing into an exception that would fail the measurement for the
+            // sake of its own optional check.
+            long padded = (long)recordedSamples * 2;
+            return recordedSamples > 0 &&
+                padded <= MaxLoopbackDiagnosisFftLength &&
+                DspMath.NextPowerOfTwo((int)padded) <= MaxLoopbackDiagnosisFftLength;
+        }
 
         internal static bool LoopbackDiagnosisFits(
             int recordedSamples,
@@ -1691,6 +2169,7 @@ namespace Resonalyze
 
         private void ApplyAverageResult(SweepAverageResult result)
         {
+            ArrayMicrophones = AttachArrayMetadata(result.ArrayMicrophones);
             sweepDeconvolutionResult = new MeasurementImpulseResponse(
                 result.SweepImpulseResponse,
                 result.SweepPeakIndex);
@@ -1802,6 +2281,11 @@ namespace Resonalyze
             return peakIndex;
         }
 
+        /// <summary>
+        /// What one array microphone produced in one run: the frame to average,
+        /// or the reasons it produced nothing.
+        /// </summary>
+
         private sealed record SweepRunAnalysis(
             Complex[] SweepImpulseResponse,
             int SweepPeakIndex,
@@ -1811,7 +2295,8 @@ namespace Resonalyze
             int? LoopbackIndex,
             InputLevelMeterSnapshot Levels,
             EssHarmonicEnergy? MicrophoneDistortion,
-            EssHarmonicEnergy? LoopbackDistortion);
+            EssHarmonicEnergy? LoopbackDistortion,
+            IReadOnlyList<TransferFunctionFrame?> ArrayCaptures);
 
         /// <summary>What one run's harmonic reading amounts to for the tally.</summary>
         internal enum DistortionVerdict
@@ -1945,11 +2430,17 @@ namespace Resonalyze
             int AcceptedRunCount,
             DistortionTally? MicrophoneDistortion,
             DistortionTally? LoopbackDistortion,
-            WorstLoopbackRun? LoopbackWorstRun);
+            WorstLoopbackRun? LoopbackWorstRun,
+            IReadOnlyList<ArrayMicrophoneCurve> ArrayMicrophones);
 
         private sealed class SweepAverageAccumulator
         {
             private readonly ExcitationBandGate excitationGate;
+            private readonly int sampleRate;
+            private readonly ProtectiveHighPassConfiguration protectiveHighPass;
+            private readonly int microphoneChannelOffset;
+            private readonly IReadOnlyList<int> arrayChannelOffsets;
+            private readonly List<TransferFunctionFrame>[] arrayFrames;
             private readonly List<TransferFunctionFrame> transferFrames = new();
             private readonly ChannelLevelAccumulator microphoneLevels = new(fullScaleReference: false);
             private readonly ChannelLevelAccumulator loopbackLevels = new(fullScaleReference: true);
@@ -1961,9 +2452,23 @@ namespace Resonalyze
             private float[]? lastMicrophoneSamples;
             private float[]? lastLoopbackSamples;
 
-            public SweepAverageAccumulator(ExcitationBandGate excitationGate)
+            public SweepAverageAccumulator(
+                ExcitationBandGate excitationGate,
+                int sampleRate,
+                ProtectiveHighPassConfiguration protectiveHighPass,
+                int microphoneChannelOffset,
+                IReadOnlyList<int> arrayChannelOffsets)
             {
                 this.excitationGate = excitationGate;
+                this.sampleRate = sampleRate;
+                this.protectiveHighPass = protectiveHighPass;
+                this.microphoneChannelOffset = microphoneChannelOffset;
+                this.arrayChannelOffsets = arrayChannelOffsets;
+                arrayFrames = new List<TransferFunctionFrame>[arrayChannelOffsets.Count];
+                for (int microphone = 0; microphone < arrayChannelOffsets.Count; microphone++)
+                {
+                    arrayFrames[microphone] = new List<TransferFunctionFrame>();
+                }
             }
 
             public int AcceptedRuns { get; private set; }
@@ -2004,6 +2509,16 @@ namespace Resonalyze
                     float[] samples = run.SampleChannels[loopbackIndex];
                     loopbackLevels.Add(samples);
                     lastLoopbackSamples = samples.ToArray();
+                }
+
+                for (int microphone = 0;
+                    microphone < arrayFrames.Length && microphone < run.ArrayCaptures.Count;
+                    microphone++)
+                {
+                    if (run.ArrayCaptures[microphone] is TransferFunctionFrame arrayFrame)
+                    {
+                        arrayFrames[microphone].Add(arrayFrame);
+                    }
                 }
 
                 microphoneDistortion.Add(run.MicrophoneDistortion);
@@ -2063,7 +2578,59 @@ namespace Resonalyze
                     AcceptedRuns,
                     microphoneDistortion.ToTally(),
                     loopbackDistortion.ToTally(),
-                    loopbackWorstRun);
+                    loopbackWorstRun,
+                    BuildArrayMicrophones());
+            }
+
+            /// <summary>
+            /// The spatial average's microphones, the measurement one first.
+            /// </summary>
+            /// <remarks>
+            /// It leads the list because it is the anchor every other microphone
+            /// is levelled onto, and it is in the list at all because it is a
+            /// position in the listening volume like the others — the only one
+            /// whose level is tied to the SPL calibration.
+            /// </remarks>
+            private IReadOnlyList<ArrayMicrophoneCurve> BuildArrayMicrophones()
+            {
+                if (arrayChannelOffsets.Count == 0 || transferFrames.Count == 0)
+                {
+                    return [];
+                }
+
+                var microphones = new List<ArrayMicrophoneCurve>(arrayChannelOffsets.Count + 1)
+                {
+                    new(
+                        microphoneChannelOffset,
+                        IsMeasurementMicrophone: true,
+                        ArrayMicrophoneAnalysis.BuildMeasurementCurve(
+                            transferFrames,
+                            excitationGate,
+                            sampleRate,
+                            protectiveHighPass),
+                        transferFrames.Count)
+                };
+                for (int microphone = 0; microphone < arrayChannelOffsets.Count; microphone++)
+                {
+                    List<TransferFunctionFrame> frames = arrayFrames[microphone];
+                    if (frames.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    microphones.Add(new ArrayMicrophoneCurve(
+                        arrayChannelOffsets[microphone],
+                        IsMeasurementMicrophone: false,
+                        ArrayMicrophoneAnalysis.BuildArrayCurve(
+                            frames,
+                            excitationGate,
+                            sampleRate,
+                            protectiveHighPass,
+                            arrayChannelOffsets[microphone]),
+                        frames.Count));
+                }
+
+                return microphones;
             }
         }
 
@@ -2209,5 +2776,4 @@ public enum SweepAverageProgressState
     WaitingForConfirmation,
     // The run failed the capture quality checks and its single automatic
     // retry is being captured.
-    Retrying
 }

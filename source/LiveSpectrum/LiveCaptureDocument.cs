@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
 
@@ -18,7 +18,22 @@ namespace Resonalyze;
 public enum SpatialAverageMethod
 {
     /// <summary>One microphone walked through the listening volume.</summary>
-    MovingMic
+    MovingMic,
+
+    /// <summary>
+    /// Several microphones recorded at once, as channels of the measurement's own
+    /// interface, and averaged over their positions.
+    /// </summary>
+    /// <remarks>
+    /// The arithmetic is identical to a moving microphone's and the consumers stay
+    /// blind to which was used — but the two are TETHERED differently, and that is
+    /// why the method is recorded rather than forgotten. A moving-microphone pass
+    /// is a reference-free capture whose level is held by nothing but one analyzer
+    /// session at one input gain; an array rides the measurement's own loopback, so
+    /// its level is fixed by the same reference the impulse responses use. The
+    /// checks a set must pass differ accordingly, and a set may not mix the two.
+    /// </remarks>
+    MicArray
 }
 
 /// <summary>
@@ -62,6 +77,18 @@ public sealed class LiveCaptureRecipe
     public double WindowEnbwBins { get; set; }
 
     public double WindowMainLobeBins { get; set; }
+
+    /// <summary>
+    /// How many microphones the average was taken over, for a microphone array;
+    /// zero for a moving microphone, which has no such number.
+    /// </summary>
+    /// <remarks>
+    /// The method-specific half of the recipe. It changes nothing about the
+    /// arithmetic — the consumers are blind to it — but two channels averaged over
+    /// different arrays are two different questions asked of the listening volume,
+    /// and the panel says so.
+    /// </remarks>
+    public int MicrophoneCount { get; set; }
 
     public int OverlapPercent { get; set; }
     public AveragingSpeed AveragingSpeed { get; set; } = AveragingSpeed.Infinite;
@@ -312,6 +339,25 @@ public sealed class LiveCaptureDocument
     public double[] CalibrationCorrectionDb { get; set; } = [];
 
     /// <summary>
+    /// Whether <see cref="CalibrationCorrectionDb"/> is an AGGREGATE belonging to no
+    /// single microphone — an array whose positions were corrected by different files.
+    /// </summary>
+    /// <remarks>
+    /// Undoing it stays exact whatever this says: the correction is MEASURED as the
+    /// difference between the corrected average and the raw one, not copied from a
+    /// file. What this forbids is the step after — putting one curve in its place,
+    /// when there is no one curve the positions shared. A reader that swaps
+    /// calibrations has to ask, because the swap looks equally correct either way and
+    /// is wrong by the spread of the files in one of them.
+    /// <para>
+    /// False for every capture made through a single microphone, which is every
+    /// moving-microphone capture and every matched array. Additive and optional: an
+    /// older file omits it and reads as false, which is what it was.
+    /// </para>
+    /// </remarks>
+    public bool CalibrationIsAggregate { get; set; }
+
+    /// <summary>
     /// The protective high-pass divided back out of <see cref="CurveDb"/>, per drawn
     /// point, in dB — NaN where the filter took the signal below what could be
     /// recovered. Empty when no such filter was configured.
@@ -362,6 +408,25 @@ public sealed class LiveCaptureDocument
         }
 
         LiveCaptureDocument first = captures[0];
+        // One method per set. The two are not interchangeable here even though
+        // their arithmetic is: a moving-microphone pass is levelled by one scalar
+        // the whole set shares, an array by the loopback each measurement already
+        // carries. Mixing them would need a per-channel offset, and the per-channel
+        // offsets ARE the spread detector — using them to draw would leave a set
+        // that can never disagree with itself and a diagnostic identically zero.
+        if (captures.Any(capture => capture.Method != first.Method))
+        {
+            return LiveCaptureSetVerdict.No(
+                "Some channels carry a moving-microphone pass and some a microphone " +
+                "array. They are levelled differently, so one set cannot hold both — " +
+                "pick one method for the project.");
+        }
+
+        if (first.Method == SpatialAverageMethod.MicArray)
+        {
+            return JudgeArraySet(captures, first);
+        }
+
         foreach (LiveCaptureDocument capture in captures)
         {
             if (capture.Recipe.MatchesSetOf(first.Recipe))
@@ -390,6 +455,46 @@ public sealed class LiveCaptureDocument
             "matching. Re-take them in one session, or with an SPL calibration in " +
             "force.");
     }
+
+    /// <summary>
+    /// What an ARRAY set has to agree on, which is far less than a set of
+    /// moving-microphone passes.
+    /// </summary>
+    /// <remarks>
+    /// Almost every rule a moving-microphone set lives under exists because that
+    /// capture is untethered: the analyzer recipe must match because the slope
+    /// compensation it carries is a curve whose shape depends on the frame length,
+    /// the window and the rate together, and the sessions must match (or every
+    /// capture carry an SPL anchor) because nothing else holds their levels
+    /// together. An array has no analyzer and no recipe to match — it is a swept
+    /// transfer function — and its level is held by the same loopback the impulse
+    /// responses are referenced to, so channels measured minutes or days apart are
+    /// comparable by construction.
+    /// <para>
+    /// Nothing remains, and the protective high-pass in particular is NOT compared —
+    /// the same rule <see cref="LiveCaptureRecipe.MatchesSetOf"/> states for the other
+    /// family, learned the same way. It describes the CHANNEL's own hardware path, a
+    /// tweeter has one and a subwoofer does not, and each array has its own divided
+    /// back out per position before anything is averaged. Two channels filtered
+    /// differently are on the same footing afterwards; where the compensation could
+    /// not reach, the curve carries NaN and the channel's
+    /// <see cref="MeasuredBand"/> says so. Comparing it refused an ordinary four-way
+    /// set for the one difference that was physically correct.
+    /// </para>
+    /// <para>
+    /// What the arrays were MADE OF is not judged here either, and that is a separate
+    /// decision rather than the same one. Two channels averaged over seven positions
+    /// and five describe slightly different listening volumes, which is worth knowing
+    /// — but it does not stop one offset from levelling them, which is the only
+    /// question this verdict answers, and refusing to draw would withhold the view
+    /// that shows the difference. Virtual DSP warns about composition instead, over
+    /// every array in the project rather than one side's, so the cross-side case (a
+    /// left of seven against a right of five) is caught as well.
+    /// </para>
+    /// </remarks>
+    private static LiveCaptureSetVerdict JudgeArraySet(
+        IReadOnlyList<LiveCaptureDocument> captures,
+        LiveCaptureDocument first) => LiveCaptureSetVerdict.Ok;
 
     public void Save(string path)
     {

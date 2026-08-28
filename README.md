@@ -87,8 +87,8 @@ fabricating a number when the measurement cannot support one.
     <td width="50%">
       <img src="assets/images/eq_wizard.png" alt="EQ Wizard parametric EQ tuning">
       <p><strong>EQ Wizard</strong> equalizes any measured response — an impulse
-      response, a captured overlay curve, or a moving-microphone RTA in dB SPL —
-      toward its own target curve.</p>
+      response, a captured overlay curve, or a spatial average from a moving
+      microphone or a microphone array — toward its own target curve.</p>
     </td>
     <td width="50%">
       <img src="assets/images/time-alignment.png" alt="Time Alignment delay measurement">
@@ -209,6 +209,11 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   room) and compensation of the noise's own spectral slope; plus a dedicated
   **MMM** mode that pins the recipe a moving-microphone average is valid under and
   saves the capture — raw bins and full recipe — as its own file
+- **Microphone array** — further microphones on spare inputs of the same
+  interface, each with its own calibration, averaged over the listening volume in
+  the same sweep that produces the impulse response; the measurement stores every
+  position's curve and the spread between them, and Virtual DSP and the EQ Wizard
+  read the average in place of the one point the response was measured at
 - **Compare** a second measurement (file or History) across Time Alignment,
   Phase, Group Delay, Frequency Response and Impulse Response, and **overlays** —
   captured, calculated and target curves with styling, curve math,

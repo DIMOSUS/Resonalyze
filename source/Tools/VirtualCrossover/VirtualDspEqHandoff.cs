@@ -117,6 +117,13 @@ internal sealed record VirtualDspEqReturnToken(
     double? PinnedGateOffsetMs,
     CalibrationFile? Calibration,
     LiveCaptureDocument? SpatialAverage,
+    // HOW that capture was read, which the calibration above cannot say. Off, Own
+    // and Specific turn one stored average into three different magnitudes, and two
+    // of those changes leave the panel's own calibration untouched: switching from
+    // Own to the very file the impulse response names, or — for an array whose
+    // measurement microphone carries none — from Own to Off. Without this the bank
+    // would come back onto a curve it was never fitted to, silently.
+    SpatialAverageCalibration SpatialAverageCalibration,
     int ProcessorSampleRateHz);
 
 /// <summary>
@@ -203,9 +210,11 @@ internal static class VirtualDspEqHandoff
         int smoothingInverseOctaves,
         CalibrationFile? calibration,
         string? calibrationName,
+        SpatialAverageCalibration spatialAverageCalibration,
         long projectGeneration,
         LiveCaptureDocument? spatialAverage,
-        double spatialAverageOffsetDb)
+        double spatialAverageOffsetDb,
+        bool pointMeasured = false)
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(gateTemplate);
@@ -277,6 +286,32 @@ internal static class VirtualDspEqHandoff
         // the PEQ belongs to — a bank tuned against a crossover-less curve would be
         // wrong for the setup the moment bypass came off — so the handoff keeps
         // building it and says so instead of quietly showing a different curve.
+        // The panel is drawing spatial averages, and this channel has none — the
+        // plot's own badge says so, and the tool that can act on the difference has to
+        // be told too.
+        //
+        // What protects it is NOT nothing, which is what this comment used to claim
+        // and what a reviewer then read it as. A channel without an array is handed
+        // its own transfer coherence below instead of the array's agreement curve, so
+        // it keeps the witness every single-microphone measurement in this program has
+        // always been gated by; and EqBoostabilityMask refuses a boost anywhere the
+        // magnitude climbs 6 dB on BOTH sides within a quarter octave, which is
+        // exactly the narrow interference null a single position invents. Both run for
+        // every automatic tune.
+        //
+        // What it loses is the array's witness for BROAD disagreement, which the null
+        // detector cannot see by construction. Measured on the owner's two real
+        // seven-position sets, a single position departs from the average of seven by
+        // at most 4.9 dB at 1/6 octave (midrange, 400-700 Hz; the tweeter reaches
+        // 3.4 dB) — under the 6 dB the null detector needs, so that residue is
+        // boostable. It is bounded, it is named on the plot and again in the note
+        // below, and a third gate against five decibels was judged not worth its
+        // complexity.
+        string pointNote = pointMeasured
+            ? "\r\nThis channel has NO spatial average: the rest of the set is drawn " +
+              "from arrays and this one from its single measurement position. Its " +
+              "dips may belong to those few centimetres rather than to the seat."
+            : string.Empty;
         string bypassNote = withChain && channel.Pair.Bypass
             ? "\r\nThe block is BYPASSED on the plot right now, so the panel is drawing " +
               "its raw response — this curve is the chain the PEQ will live in."
@@ -302,13 +337,30 @@ internal static class VirtualDspEqHandoff
                     : withChain
                         ? "\r\nDSP chain applied (PEQ bypassed), windowed by the Virtual DSP gate."
                         : "\r\nRaw measurement, windowed by the Virtual DSP gate at its own arrival.") +
+                pointNote +
                 bypassNote,
-            Measurement = new ImpulseMeasurementView(response, anchorIndex, sampleRate),
-            Coherence = EqWizardSourceResolver.ExtractTransferCoherence(
-                state.TransferCoherence, sampleRate),
+            // The band this channel measured travels with the response, or the
+            // wizard would draw its own curve past where the panel's stops: the
+            // chain does not create signal in a range the sweep never excited, nor
+            // below what the protective high-pass took past recovering.
+            Measurement = new ImpulseMeasurementView(response, anchorIndex, sampleRate)
+            {
+                LowestMeasuredFrequencyHz = state.MeasuredBand.LowEdgeHz,
+                HighestMeasuredFrequencyHz = state.MeasuredBand.HighEdgeHz
+            },
+            // For an array, the agreement between its positions rather than the
+            // impulse response's coherence: both gate boosts, and when the curve being
+            // fitted is the average over a listening volume, how far that volume's
+            // positions disagree is the witness that belongs to it.
+            Coherence = spatialAverage is { Method: SpatialAverageMethod.MicArray }
+                ? EqWizardSourceResolver.BuildAgreementCurve(
+                    spatialAverage, state.ArraySpreadDb)
+                : EqWizardSourceResolver.ExtractTransferCoherence(
+                    state.TransferCoherence, sampleRate),
             GateSettings = gateTemplate with { GateOffsetMs = gateOffsetMs },
             PinnedCalibration = calibration,
             PinnedCalibrationName = calibration == null ? null : calibrationName,
+            SpatialAverageCalibration = spatialAverageCalibration,
             // The ORIGINAL measurement and the chain around the bank, so the corrected
             // preview is one ApplyChain of the whole chain — the panel's own arithmetic
             // — rather than the bypassed response filtered a second time.
@@ -374,6 +426,7 @@ internal static class VirtualDspEqHandoff
                 // from the wizard: null here means "fitted against the impulse
                 // response", and the two must still agree on the way back.
                 spatialAverage,
+                spatialAverageCalibration,
                 processorSampleRate));
     }
 
@@ -410,6 +463,7 @@ internal static class VirtualDspEqHandoff
         EqualizationCurve curve,
         long projectGeneration,
         CalibrationFile? calibration,
+        SpatialAverageCalibration spatialAverageCalibration,
         PhaseAnalysisSettings gateTemplate,
         double? pinnedGateOffsetMs,
         double targetLevelDb,
@@ -462,6 +516,18 @@ internal static class VirtualDspEqHandoff
         // hands over the very document it is drawing from, and a re-attached file is a
         // different capture whether or not its bytes match.
         if (!ReferenceEquals(token.SpatialAverage, spatialAverage))
+        {
+            return false;
+        }
+
+        // And it must still be read the same way. The guard above says the capture is
+        // the same document; this says the panel still turns it into the same curve.
+        // Only where there IS a capture: for a channel drawn from its impulse response
+        // the mode describes nothing, and refusing on it would refuse a tune nothing
+        // had moved. See the token — the two changes this catches both leave the
+        // calibration guard above perfectly satisfied.
+        if (token.SpatialAverage != null &&
+            !token.SpatialAverageCalibration.Matches(spatialAverageCalibration))
         {
             return false;
         }

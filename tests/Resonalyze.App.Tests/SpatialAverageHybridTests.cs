@@ -70,7 +70,9 @@ public sealed class SpatialAverageHybridTests
 
         // Drawn under a different correction of 5 dB: the old one out, the new one in.
         List<SignalPoint> recalibrated = Build(
-            document, new DspChannelChain(), Calibration(5));
+            document,
+            new DspChannelChain(),
+            SpatialAverageCalibration.Specific(Calibration(5)));
         Assert.All(recalibrated, point => Assert.Equal(-23, point.Y, 6));
     }
 
@@ -91,7 +93,10 @@ public sealed class SpatialAverageHybridTests
         }
 
         List<SignalPoint> curve = Build(
-            document, new DspChannelChain(), calibration: null, smoothingCode: 6);
+            document,
+            new DspChannelChain(),
+            calibration: SpatialAverageCalibration.Off,
+            smoothingCode: 6);
 
         Assert.All(
             curve.Where(point => point.X < 150),
@@ -121,7 +126,7 @@ public sealed class SpatialAverageHybridTests
         List<SignalPoint> curve = Build(
             document,
             new DspChannelChain(),
-            calibration: null,
+            SpatialAverageCalibration.Off,
             smoothingCode: 0,
             frequenciesHz:
             [
@@ -145,7 +150,7 @@ public sealed class SpatialAverageHybridTests
         List<SignalPoint> curve = Build(
             Capture(-20),
             new DspChannelChain(),
-            calibration: null,
+            SpatialAverageCalibration.Off,
             smoothingCode: 0,
             frequenciesHz: [5, 10, 100, 1_000, 25_000, 40_000]);
 
@@ -160,7 +165,7 @@ public sealed class SpatialAverageHybridTests
     private static List<SignalPoint> Build(
         LiveCaptureDocument document,
         DspChannelChain chain,
-        CalibrationFile? calibration = null,
+        SpatialAverageCalibration? calibration = null,
         int smoothingCode = 0,
         IReadOnlyList<double>? frequenciesHz = null)
     {
@@ -169,7 +174,12 @@ public sealed class SpatialAverageHybridTests
                 .Select(i => 25 * Math.Pow(10, 2.8 * i / 255))
                 .ToList();
         List<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
-            document, chain, 48_000, calibration, grid, smoothingCode);
+            document,
+            chain,
+            48_000,
+            calibration ?? SpatialAverageCalibration.Off,
+            grid,
+            smoothingCode);
         Assert.NotNull(curve);
         return curve;
     }
@@ -177,6 +187,41 @@ public sealed class SpatialAverageHybridTests
     private static CalibrationFile Calibration(double db) =>
         CalibrationFile.FromPoints(
             [new CalibrationPoint(10, db), new CalibrationPoint(30_000, db)]);
+
+    [Fact]
+    public void TheEndPointsSurviveTheirOwnGridBeingBuiltTwoWays()
+    {
+        // A capture stores the grid EqualizationCurve builds — whose first point is
+        // 20.000000000000004 — while the curve beside it is drawn on the grid the
+        // resampler builds, whose first point is exactly 20. The same grid, two
+        // constructions, endpoints a few ULPs apart: the lowest band lands at an
+        // index of -3.3e-14. Read as "outside the capture", that silently dropped
+        // 20 Hz from every hybrid channel, which on a subwoofer is content.
+        LiveCaptureDocument capture = new()
+        {
+            SavedAtUtc = DateTimeOffset.UnixEpoch,
+            Title = "capture",
+            CurveDb = Enumerable.Repeat(-30.0, 1_024).ToArray(),
+            GridStartHz = EqualizationCurve.LogFrequencyGrid(20, 20_000, 1_024)[0],
+            GridStopHz = EqualizationCurve.LogFrequencyGrid(20, 20_000, 1_024)[^1],
+            Recipe = new LiveCaptureRecipe
+            {
+                AnalysisMode = LiveAnalysisMode.Mmm,
+                SampleRateHz = 48_000
+            }
+        };
+
+        List<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
+            capture,
+            DspChannelChain.Identity,
+            48_000,
+            SpatialAverageCalibration.Off,
+            [20.0, 1_000.0, 20_000.0],
+            smoothingCode: 0);
+
+        Assert.NotNull(curve);
+        Assert.All(curve!, point => Assert.Equal(-30.0, point.Y, 6));
+    }
 
     private static LiveCaptureDocument Capture(double db) => new()
     {

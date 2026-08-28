@@ -34,6 +34,37 @@ public sealed record AudioCaptureRouting(
         init => arrayChannels = Validate(value);
     }
 
+    /// <summary>
+    /// How many input channels a capture has to open to reach every channel this
+    /// routing names — the microphone, the loopback and every array microphone.
+    /// </summary>
+    /// <remarks>
+    /// On the routing rather than beside it because the answer is asked in two very
+    /// different places: the backend opens a device with it, and the settings panel
+    /// asks a WASAPI endpoint whether it supports that width before offering a sample
+    /// rate. Those two disagreed — the panel counted the microphone and the loopback
+    /// and stopped there, so a card that supports two channels at 96 kHz but not eight
+    /// was offered the rate and then failed to open at measurement time, which is the
+    /// worst moment to find out.
+    /// </remarks>
+    public int RequiredInputChannelCount
+    {
+        get
+        {
+            int last = MicrophoneChannel;
+            if (LoopbackChannel.HasValue)
+            {
+                last = Math.Max(last, LoopbackChannel.Value);
+            }
+            foreach (int channel in ArrayChannels)
+            {
+                last = Math.Max(last, channel);
+            }
+
+            return last + 1;
+        }
+    }
+
     private int[] Validate(IReadOnlyList<int>? channels)
     {
         if (channels == null || channels.Count == 0)

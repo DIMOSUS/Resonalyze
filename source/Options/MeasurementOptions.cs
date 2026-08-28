@@ -645,7 +645,19 @@ namespace Resonalyze.Options
                         comboBoxPlaybackDevice.SelectedItem is AudioEndpointDescriptor renderInfo
                             ? renderInfo.DisplayName
                             : preferredWasapiRenderEndpointName,
-                    WasapiBufferMilliseconds: settings.WasapiBufferMilliseconds),
+                    WasapiBufferMilliseconds: settings.WasapiBufferMilliseconds,
+                    // The array too, or applying this panel hands the measurement a
+                    // configuration that differs from the one the settings file builds
+                    // for the next run — the array simply absent from it. Harmless
+                    // today only because a run re-applies from the settings; a
+                    // configuration that is quietly not the one being measured with is
+                    // the shape of a defect, not a state to leave standing.
+                    WaveArrayInputChannelOffsets: audioBackend == AudioBackend.Asio
+                        ? []
+                        : SelectedReachableArrayChannels(),
+                    AsioArrayInputChannelOffsets: audioBackend == AudioBackend.Asio
+                        ? SelectedReachableArrayChannels()
+                        : []),
                 new SweepAveragingConfiguration(
                     averageRunCount,
                     confirmEachAverageRun),
@@ -914,33 +926,8 @@ namespace Resonalyze.Options
         /// array was configured takes a position out of the set. Reported here rather
         /// than left to be noticed as a curve that never appeared.
         /// </remarks>
-        private int UsableArrayMicrophoneCount()
-        {
-            bool asio = SelectedAudioBackend == AudioBackend.Asio;
-            int microphoneChannel = asio
-                ? GetSelectedAsioInputChannelOffset()
-                : GetSelectedWaveInputChannelOffset();
-            int? loopbackChannel = asio
-                ? GetSelectedAsioLoopbackInputChannelOffset()
-                : GetSelectedWaveLoopbackChannelOffset();
-            // And the inputs this device actually has: the array is stored per
-            // BACKEND, so an interface swapped for a narrower one leaves channels
-            // behind that nothing can record.
-            var reachable = GetArrayInputChannels().Channels.ToHashSet();
-            var taken = new HashSet<int>();
-            foreach (ArrayMicrophoneDefinition microphone in SelectedArrayMicrophones)
-            {
-                if (microphone.ChannelOffset >= 0 &&
-                    microphone.ChannelOffset != microphoneChannel &&
-                    microphone.ChannelOffset != loopbackChannel &&
-                    (reachable.Count == 0 || reachable.Contains(microphone.ChannelOffset)))
-                {
-                    taken.Add(microphone.ChannelOffset);
-                }
-            }
-
-            return taken.Count;
-        }
+        private int UsableArrayMicrophoneCount() =>
+            SelectedReachableArrayChannels().Count;
 
         private void buttonClearCalibration0_Click(object? sender, EventArgs e)
         {
@@ -2032,9 +2019,7 @@ namespace Resonalyze.Options
                 {
                     int selectedRate = GetSelectedSampleRate();
                     int bits = (int)numericUpDownBits.Value;
-                    int captureChannels = Math.Max(
-                        GetSelectedWaveInputChannelOffset(),
-                        GetSelectedWaveLoopbackChannelOffset() ?? 0) + 1;
+                    int captureChannels = GetSelectedWaveRecordingChannelCount();
                     int renderChannels = GetSelectedPlaybackChannelCount();
                     if (comboBoxSampleRate.Items.Count == 0)
                     {
@@ -2496,9 +2481,7 @@ namespace Resonalyze.Options
                         : [];
                 }
 
-                int captureChannels = Math.Max(
-                    GetSelectedWaveInputChannelOffset(),
-                    GetSelectedWaveLoopbackChannelOffset() ?? 0) + 1;
+                int captureChannels = GetSelectedWaveRecordingChannelCount();
                 int renderChannels = GetSelectedPlaybackChannelCount();
                 int bits = (int)numericUpDownBits.Value;
                 return SampleRateCatalog.GetCandidateRates()
@@ -2582,15 +2565,67 @@ namespace Resonalyze.Options
         private int GetSelectedPlaybackChannelCount() =>
             GetSelectedPlaybackChannel() == PlaybackChannel.Mono ? 1 : 2;
 
+        /// <summary>
+        /// The array microphones this panel would actually record on the selected
+        /// device: configured, not colliding with the measurement pair, and present on
+        /// the interface now chosen.
+        /// </summary>
+        /// <remarks>
+        /// The same rule <c>MeasurementSettingsFile.ResolveArrayChannels</c> applies
+        /// when it builds the configuration, because a panel that offered a sample
+        /// rate for a narrower capture than the measurement will open is a panel that
+        /// says Supported and then fails at the device.
+        /// </remarks>
+        private IReadOnlyList<int> SelectedReachableArrayChannels()
+        {
+            bool asio = SelectedAudioBackend == AudioBackend.Asio;
+            int microphoneChannel = asio
+                ? GetSelectedAsioInputChannelOffset()
+                : GetSelectedWaveInputChannelOffset();
+            int? loopbackChannel = asio
+                ? GetSelectedAsioLoopbackInputChannelOffset()
+                : GetSelectedWaveLoopbackChannelOffset();
+            var reachable = GetArrayInputChannels().Channels.ToHashSet();
+            var channels = new List<int>();
+            foreach (ArrayMicrophoneDefinition microphone in SelectedArrayMicrophones)
+            {
+                if (microphone.ChannelOffset >= 0 &&
+                    microphone.ChannelOffset != microphoneChannel &&
+                    microphone.ChannelOffset != loopbackChannel &&
+                    (reachable.Count == 0 || reachable.Contains(microphone.ChannelOffset)) &&
+                    !channels.Contains(microphone.ChannelOffset))
+                {
+                    channels.Add(microphone.ChannelOffset);
+                }
+            }
+
+            return channels;
+        }
+
+        /// <summary>
+        /// How many input channels the measurement will ask the device to open.
+        /// </summary>
+        /// <remarks>
+        /// Answered by <see cref="AudioCaptureRouting.RequiredInputChannelCount"/>, the
+        /// very property every backend opens its capture with, so the width this panel
+        /// probes a format at and the width the measurement asks for cannot drift. They
+        /// did: this counted the microphone and the loopback and stopped there, so an
+        /// interface that supports two channels at 96 kHz but not eight was offered the
+        /// rate, said Supported, and failed at the device when the sweep ran.
+        /// </remarks>
         private int GetSelectedWaveRecordingChannelCount()
         {
-            // The microphone on channel 2 (offset 1) needs a 2-channel format
-            // even without a loopback selection.
-            int loopbackChannels =
-                comboBoxWaveLoopbackChannel.SelectedItem is InputChannelOption { Offset: not null }
-                    ? 2
-                    : 1;
-            return Math.Max(GetSelectedWaveInputChannelOffset() + 1, loopbackChannels);
+            int microphone = GetSelectedWaveInputChannelOffset();
+            int? loopback = GetSelectedWaveLoopbackChannelOffset();
+            var routing = new AudioCaptureRouting(microphone, loopback)
+            {
+                ArrayChannels = SelectedReachableArrayChannels()
+            };
+            // The microphone on channel 2 (offset 1) needs a 2-channel format even
+            // without a loopback selection, and a loopback needs two whichever
+            // channels the pair sits on.
+            int loopbackChannels = loopback.HasValue ? 2 : 1;
+            return Math.Max(routing.RequiredInputChannelCount, loopbackChannels);
         }
 
         private int GetSelectedAsioInputChannelOffset()

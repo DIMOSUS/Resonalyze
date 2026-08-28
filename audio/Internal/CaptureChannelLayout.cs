@@ -18,17 +18,7 @@ internal static class CaptureChannelLayout
     public static int RequiredWaveInputChannelCount(AudioCaptureRouting routing)
     {
         ArgumentNullException.ThrowIfNull(routing);
-        int last = routing.MicrophoneChannel;
-        if (routing.LoopbackChannel.HasValue)
-        {
-            last = Math.Max(last, routing.LoopbackChannel.Value);
-        }
-        foreach (int channel in routing.ArrayChannels)
-        {
-            last = Math.Max(last, channel);
-        }
-
-        return last + 1;
+        return routing.RequiredInputChannelCount;
     }
 
     public static int AsioFirstInputOffset(AudioCaptureRouting routing)

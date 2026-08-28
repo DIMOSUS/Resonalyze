@@ -127,10 +127,11 @@ on the fly, redrawing the analysis while preserving the visible plot range. Each
 curve-based view groups its plotted curves under a **Curves:** heading with one
 checkbox per curve — Primary / HD2–HD4 / THD+N in Frequency Response, or
 measured / minimum / excess in Phase. A measurement carrying a
-[microphone array](#microphone-array) adds three more in Frequency Response, all
-off by default: **Array average** (the spatial average itself), **Array
-microphones** (each position on its own, thin), and **Array spread** — how far
-apart the positions sat at each frequency, on its own right-hand 0–30 dB axis.
+[microphone array](#microphone-array) fills three more in Frequency Response — they
+are always in the panel and empty without one, all off by default: **Show array
+average** (the spatial average itself), **Show array microphones** (each position on
+its own, thin), and **Show array spread** — how far apart the positions sat at each
+frequency, on its own right-hand 0–30 dB axis.
 Read the spread as the confidence of the average: near zero the positions agreed
 and one microphone would have said the same thing, while 20 dB means the dip one
 of them measured is a property of that seat centimetre and nothing an equalizer
@@ -326,10 +327,14 @@ It answers the same question the [moving-microphone method](#live-spectrum) does
 — one driver as the listening area hears it, rather than as one point does — in
 one sweep instead of a second pass.
 
-**Array...** in Record Settings opens the list and says how many microphones are
-configured. Each row is one position: which **input** it is on, its own
-**calibration** file, and a **note** naming where it stands (`left forward`,
-`centre`, whatever you will recognize months later). Only inputs that are still
+The **Array microphones** row in Record Settings opens the list, and its button is
+the count — *None...* until one is configured. Each row is one further microphone:
+which **input** it is on, its own **calibration** file, and a **Position** note
+naming where it stands (`left forward`, `centre`, whatever you will recognize months
+later). The calibration comes from the list the measurement microphone chooses from —
+the **0°** entry plus everything under **More calibrations** — so a capsule's own file
+must be added there first; it is that panel's WORKING copy, so one added a moment ago
+can be assigned before anything is applied. Only inputs that are still
 free are offered, so a microphone cannot be put on the measurement or loopback
 channel by accident, and **Add** stays disabled while the editor shows an input
 another microphone already holds — the selected row's own input is offered so its
@@ -348,8 +353,8 @@ Nothing is thrown away in the meantime.
 
 The measurement microphone or the loopback can be moved onto one of the array's
 inputs afterwards, in a different part of the panel. Such a position cannot be recorded; it is named
-rather than dropped in silence — the **Array...** button counts it as unusable and
-the dialog says which input the measurement took.
+rather than dropped in silence — the **Array microphones** button counts it as
+unusable and the dialog says which input the measurement took.
 
 They are channels of the **same device** on purpose. One device means one clock,
 so the array shares the sweep, the loopback, the averaging runs and the quality
@@ -1191,11 +1196,12 @@ is building.
 
 ![EQ Wizard phase mode](assets/images/eq_wizard_phase.png)
 
-Above: a midbass handed over from Virtual DSP, zoomed onto its 350 Hz junction
-with the midrange. The channel under edit is the solid curve, its dashed twin is
-the same channel before the bank, and the neighbouring drivers keep the colours
-they had on the panel. Slot 4 is a second-order all-pass on the corner, reading
-out the 1.27 ms of group delay it piles up there.
+Above: the midrange of a four-way, handed over from Virtual DSP with its bank
+fitted. The channel under edit is the solid curve, its dashed twin is the same
+channel before the bank (**Without EQ**), and the neighbouring drivers keep the
+colours they had on the panel — the subwoofer, the midbass and the tweeter,
+frozen as it drew them. The white curve is the bank's own phase on the
+right-hand axis, which the **EQ curve** checkbox turns off.
 
 **Phase gate…** is the window those curves are read through — the same dialog,
 and the same settings, the Virtual DSP phase view uses, down to the impulse

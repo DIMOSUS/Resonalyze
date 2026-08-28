@@ -79,6 +79,15 @@ static int Run(string[] args)
     foreach (Scene scene in scenes)
     {
         Console.WriteLine($"{scene.Name}:");
+        // Material this config does not have is not a failure: the scene says what it
+        // is missing and the sweep goes on, so a run stays green for a rig that cannot
+        // take that figure.
+        if (scene.Unavailable?.Invoke(config) is { } reason)
+        {
+            Console.WriteLine($"  skipped: {reason}");
+            continue;
+        }
+
         try
         {
             ShotSession.Run(config, scene.WindowSize, session => scene.Body(session, Wanted));

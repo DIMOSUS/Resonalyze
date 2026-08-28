@@ -24,6 +24,15 @@ internal sealed class ShotConfig
     public string Session { get; set; } = string.Empty;
 
     /// <summary>
+    /// A measurement recorded with a microphone array, for the array figures — both
+    /// the curves and the dialog, whose rows are read out of this same file so the
+    /// two cannot describe different sets. Optional: without it the array scene is
+    /// skipped rather than failed, since not every rig has one.
+    /// </summary>
+    [JsonPropertyName("arrayMeasurement")]
+    public string ArrayMeasurement { get; set; } = string.Empty;
+
+    /// <summary>
     /// Where the PNGs land. Empty means the repository's own <c>assets/images</c>,
     /// found by walking up from the executable — the usual case, where re-shooting is
     /// meant to overwrite the committed figures in place.
@@ -94,6 +103,13 @@ internal sealed class ShotConfig
             {
                 throw new FileNotFoundException($"{file}: \"{name}\" → {value}", value);
             }
+        }
+
+        // Optional, but a path that is set and wrong is a typo rather than a choice.
+        if (!string.IsNullOrWhiteSpace(ArrayMeasurement) && !File.Exists(ArrayMeasurement))
+        {
+            throw new FileNotFoundException(
+                $"{file}: \"arrayMeasurement\" → {ArrayMeasurement}", ArrayMeasurement);
         }
     }
 

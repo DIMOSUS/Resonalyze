@@ -35,6 +35,16 @@ internal static class Shots
         new("virtual-dsp", ShotSession.AssetWindowSize, ["visual_dsp"], VirtualDspAsset),
         new("eq-wizard", ShotSession.AssetWindowSize,
             ["eq_wizard", "eq_wizard_phase"], EqWizardAssets),
+        // Skipped rather than failed without a measurement recorded through an
+        // array: the figures need one and not every rig has one, and a config that
+        // cannot take them must not report the sweep as broken.
+        new("array", ShotSession.ManualWindowSize,
+            ["manual/array-curves", "manual/array-microphones"],
+            ArrayFigures,
+            Unavailable: config => string.IsNullOrWhiteSpace(config.ArrayMeasurement)
+                ? "no \"arrayMeasurement\" in the config — a measurement recorded " +
+                  "with a microphone array"
+                : null),
         new("manual", ShotSession.ManualWindowSize,
             ["manual/virtual-dsp", "manual/eq-wizard-handoff", "manual/eq-wizard-tuned",
              "manual/dsp-processor", "manual/dsp-processor-model", "manual/eq-target",
@@ -171,6 +181,116 @@ internal static class Shots
             session.Pump(6_000);
             session.CaptureScreen("eq_wizard_phase");
         }
+    }
+
+    // -------------------------------------------------------- the microphone array
+
+    /// <summary>
+    /// The two array figures, both from ONE measurement: the curves as the mode
+    /// settings draw them, and the dialog that configured the set.
+    /// </summary>
+    /// <remarks>
+    /// The dialog's rows are read back out of the measurement rather than invented,
+    /// so the figure shows the positions whose curves the other shot draws — a made-up
+    /// set would drift from the guide's text the first time the real one changed.
+    /// The dialog is constructed rather than reached through Record Settings, which
+    /// offers only inputs the ATTACHED interface has: without the rig this shot would
+    /// otherwise be a dialog with nothing in it.
+    /// </remarks>
+    private static void ArrayFigures(ShotSession session, Func<string, bool> wanted)
+    {
+        Task<ImpulseResponseFile> loading =
+            ImpulseResponseFile.LoadAsync(session.Config.ArrayMeasurement);
+        session.Await(loading);
+        List<ImpulseResponseFile.ArrayMicrophoneFileEntry> positions =
+            loading.Result.ArrayMicrophones?.Microphones
+            ?? throw new InvalidOperationException(
+                $"{session.Config.ArrayMeasurement} carries no microphone array.");
+
+        if (wanted("manual/array-curves"))
+        {
+            session.LoadMeasurement(session.Config.ArrayMeasurement);
+            session.SelectTab("Frequency");
+            session.Pump(4_000);
+            session.OpenModeSettings();
+            Form settings = session.ModeSettingsDialog
+                ?? throw new InvalidOperationException(
+                    "manual/array-curves: the Frequency Response settings did not open.");
+            // The measurement carries its own curve selection, and the figure is about
+            // ONE comparison: the point response against the positions, their average
+            // and their spread. Distortion, noise floor and coherence are switched off
+            // rather than left to whatever the file was last read with — six more
+            // traces over the same decade is what buries the four that are the point.
+            foreach ((string box, bool on) in new[]
+            {
+                ("checkBoxShowPrimary", true),
+                ("checkBoxShowArrayAverage", true),
+                ("checkBoxShowArrayMicrophones", true),
+                ("checkBoxShowArraySpread", true),
+                ("checkBoxShowHd2", false),
+                ("checkBoxShowHd3", false),
+                ("checkBoxShowHd4", false),
+                ("checkBoxShowThdPlusNoise", false),
+                ("checkBoxShowNoiseFloor", false),
+                ("checkBoxShowCoherence", false)
+            })
+            {
+                Reflect.Field<CheckBox>(settings, box).Checked = on;
+            }
+
+            session.Pump(3_000);
+            session.CaptureScreen("manual/array-curves");
+        }
+
+        if (wanted("manual/array-microphones"))
+        {
+            session.CaptureDialog(ArrayDialog(positions), "manual/array-microphones");
+        }
+    }
+
+    private static Form ArrayDialog(
+        IReadOnlyList<ImpulseResponseFile.ArrayMicrophoneFileEntry> positions)
+    {
+        ImpulseResponseFile.ArrayMicrophoneFileEntry anchor =
+            positions.FirstOrDefault(position => position.IsMeasurementMicrophone)
+            ?? throw new InvalidOperationException(
+                "The array has no measurement microphone in it.");
+        List<ImpulseResponseFile.ArrayMicrophoneFileEntry> further =
+            [.. positions.Where(position => !position.IsMeasurementMicrophone)];
+
+        // The dialog names calibrations by id out of Record Settings' own list, and
+        // the file kept only the curve's name — enough to show the row as it was
+        // configured, which is all a figure has to be right about.
+        List<MicrophoneCalibrationEntry> calibrations =
+            [.. further
+                .Select(position => position.Calibration?.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.Ordinal)
+                .Select(name => new MicrophoneCalibrationEntry(name!, name!, true))];
+
+        List<ArrayMicrophoneDefinition> microphones =
+            [.. further.Select(position => new ArrayMicrophoneDefinition
+            {
+                ChannelOffset = position.ChannelOffset,
+                CalibrationId = position.Calibration?.Name,
+                Note = position.Note
+            })];
+
+        // The loopback's input is not in the file — no array microphone may sit on it,
+        // so it is the lowest input none of them took — and the interface is given one
+        // input more than the set used, which is what leaves the editor in its ordinary
+        // "ready to add another" state instead of with an empty input list.
+        int inputs = positions.Max(position => position.ChannelOffset) + 2;
+        int loopback = Enumerable.Range(0, inputs).First(
+            channel => positions.All(position => position.ChannelOffset != channel));
+
+        return new Options.ArrayMicrophonesDialog(
+            microphones,
+            calibrations,
+            [.. Enumerable.Range(0, inputs)],
+            anchor.ChannelOffset,
+            loopback,
+            "ASIO driver inputs");
     }
 
     // ------------------------------------------------------------- the manual
@@ -392,4 +512,5 @@ internal sealed record Scene(
     Size WindowSize,
     IReadOnlyList<string> Shots,
     Action<ShotSession, Func<string, bool>> Body,
-    bool OnRequest = false);
+    bool OnRequest = false,
+    Func<ShotConfig, string?>? Unavailable = null);

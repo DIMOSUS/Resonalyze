@@ -24,6 +24,7 @@ is git-ignored — and point it at your own files:
 | --- | --- |
 | `measurement` | an impulse response (`.json`). Every analysis-mode shot is taken from it. |
 | `session` | a finished Virtual DSP project. The Virtual DSP, EQ Wizard and manual shots come from it, so it wants every channel loaded and tuned. |
+| `arrayMeasurement` | optional: a measurement recorded with a microphone array. Both array figures come from it — the curves, and the dialog, whose rows are read back out of the same file. Leave it out and the `array` scene is skipped with a note rather than failing. |
 | `output` | leave empty for the repository's own `assets/images`. |
 
 `--config <path>` overrides the file, which is the way to render into a scratch
@@ -37,6 +38,10 @@ one. Ask for it by name, with the rig plugged in:
 ```powershell
 dotnet run --project tools/Resonalyze.Screenshots -- measurement-options
 ```
+
+**The array figures need a measurement that carries an array.** `arrayMeasurement` is
+the only material a sweep can be missing without breaking; the scene prints what it
+wants and the run continues.
 
 **The run needs the screen to itself.** Several shots are screen captures, so the
 tool raises the shell above everything else and refuses the shot when another

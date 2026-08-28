@@ -182,8 +182,7 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   from the transfer function (harmonics and THD+N stay on the sweep
   deconvolution); Live Spectrum can additionally run as a reference-free RTA
 - **Multi-sweep averaging** (1–64 runs) as a cross-spectrum estimate with a
-  per-frequency **coherence** (γ²) curve, and an optional confirm-between-runs
-  pause for spatial averaging
+  per-frequency **coherence** (γ²) curve, the runs playing back to back
 - **Analysis views** — frequency response, phase, group delay, waterfall, Burst
   Decay, autocorrelation, harmonic distortion, THD and THD+N, with
   reliability-anchored phase unwrapping, Fixed/**FDW** phase windowing, and

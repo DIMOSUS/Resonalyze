@@ -281,6 +281,12 @@ public partial class Form1
             // not just success.
             dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
                 panel => panel.RefreshSplAvailability());
+            // The same debt the live spectrum pays when it stops, and for the same
+            // reason: an Apply made while the sweep held the device left the settings
+            // panel's picture of the driver alone rather than probing a device it did
+            // not own. The run has just released it — after EVERY completion, since an
+            // aborted or failed run releases it exactly as a good one does.
+            RefreshOpenMeasurementSettingsDevice();
 
             if (success)
             {
@@ -312,12 +318,7 @@ public partial class Form1
     {
         TryBeginInvokeOnUiThread(() =>
         {
-            buttonRecord.Text = progress.State switch
-            {
-                SweepAverageProgressState.WaitingForConfirmation =>
-                    $"Next run ({progress.CurrentRun + 1}/{progress.TotalRuns})",
-                _ => $"Running {progress.CurrentRun}/{progress.TotalRuns}..."
-            };
+            buttonRecord.Text = $"Running {progress.CurrentRun}/{progress.TotalRuns}...";
         });
     }
 

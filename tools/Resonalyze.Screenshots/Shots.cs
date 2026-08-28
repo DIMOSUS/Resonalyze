@@ -369,7 +369,12 @@ internal static class Shots
         figure.Gutter(52, onLeft: true, sample: new Point(100, 600))
               .Region(Box(14, 62, 204, 93), "1", new Point(26, 77), leader: true)
               .Region(Box(14, 120, 204, 270), "2", new Point(26, 195), leader: true)
-              .Region(Box(14, 450, 204, 510), "3", new Point(26, 480), leader: true)
+              // The two DSP-handoff buttons, 25 px lower than they were: the panel
+              // gained an EQ-curve checkbox under Bypass/Phase and the column below
+              // it moved down by one row. These boxes are figure pixels and the shot
+              // is captured 1:1 (window chrome puts the panel's y=0 at 46), so the
+              // designer's 25 is 25 here too.
+              .Region(Box(14, 475, 204, 535), "3", new Point(26, 505), leader: true)
               .Region(Box(14, 832, 206, 982), "4", new Point(26, 907), leader: true)
               .Region(Box(18, 985, 202, 1014), "5", new Point(26, 999), leader: true)
               .Detail(Box(18, 883, 200, 935))

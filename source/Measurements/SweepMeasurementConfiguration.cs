@@ -142,6 +142,4 @@ public sealed record SweepAudioConfiguration(
     IReadOnlyList<int>? WaveArrayInputChannelOffsets = null,
     IReadOnlyList<int>? AsioArrayInputChannelOffsets = null);
 
-public sealed record SweepAveragingConfiguration(
-    int RunCount = 1,
-    bool ConfirmEachRun = false);
+public sealed record SweepAveragingConfiguration(int RunCount = 1);

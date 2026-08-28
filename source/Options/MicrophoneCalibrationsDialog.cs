@@ -67,6 +67,13 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
         definition.Normalize();
         definitions.Add(definition);
         RefreshList(definition.Id);
+        // The file's own name is a SUGGESTION, not the name: it is whatever the
+        // capsule's maker called the download, and the list is read by the person
+        // who owns the microphone. So the new row opens straight into its rename
+        // with that suggestion selected — type over it, or leave it with Enter or
+        // Escape. Naming an entry otherwise meant finding it again and pressing
+        // Rename, which is a second decision about a name already on screen.
+        BeginRename(definition.Id);
     }
 
     private void AddAngle()
@@ -133,8 +140,30 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
     {
         if (listViewCalibrations.SelectedItems.Count == 1)
         {
-            listViewCalibrations.SelectedItems[0].BeginEdit();
+            BeginRename(listViewCalibrations.SelectedItems[0]);
         }
+    }
+
+    private void BeginRename(string id)
+    {
+        foreach (ListViewItem item in listViewCalibrations.Items)
+        {
+            if (item.Tag is string itemId &&
+                string.Equals(itemId, id, StringComparison.OrdinalIgnoreCase))
+            {
+                BeginRename(item);
+                return;
+            }
+        }
+    }
+
+    private void BeginRename(ListViewItem item)
+    {
+        // The list has to hold the focus first: the edit box belongs to it, and
+        // both callers arrive with the focus on a button — one of them from a
+        // file dialog that took it away entirely.
+        listViewCalibrations.Focus();
+        item.BeginEdit();
     }
 
     private void RemoveSelected()

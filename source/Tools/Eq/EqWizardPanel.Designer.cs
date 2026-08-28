@@ -60,6 +60,7 @@
             labelGainMax = new Label();
             checkBoxBypass = new CheckBox();
             checkBoxEqPhase = new CheckBox();
+            checkBoxEqCurve = new CheckBox();
             checkBoxCutsOnly = new CheckBox();
             panelAutoTune = new Panel();
             buttonOverlaySettings = new Button();
@@ -388,6 +389,20 @@
             checkBoxEqPhase.Text = "Phase";
             checkBoxEqPhase.UseVisualStyleBackColor = true;
             // 
+            // checkBoxEqCurve
+            // 
+            checkBoxEqCurve.AutoSize = true;
+            checkBoxEqCurve.Checked = true;
+            checkBoxEqCurve.CheckState = CheckState.Checked;
+            checkBoxEqCurve.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxEqCurve.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxEqCurve.Location = new Point(13, 246);
+            checkBoxEqCurve.Name = "checkBoxEqCurve";
+            checkBoxEqCurve.Size = new Size(78, 19);
+            checkBoxEqCurve.TabIndex = 67;
+            checkBoxEqCurve.Text = "EQ curve";
+            checkBoxEqCurve.UseVisualStyleBackColor = true;
+            // 
             // checkBoxCutsOnly
             // 
             checkBoxCutsOnly.AutoSize = true;
@@ -505,10 +520,10 @@
             buttonPhaseGate.Enabled = false;
             buttonPhaseGate.FlatStyle = FlatStyle.Popup;
             buttonPhaseGate.ForeColor = Color.White;
-            buttonPhaseGate.Location = new Point(2, 246);
+            buttonPhaseGate.Location = new Point(2, 271);
             buttonPhaseGate.Name = "buttonPhaseGate";
             buttonPhaseGate.Size = new Size(186, 24);
-            buttonPhaseGate.TabIndex = 67;
+            buttonPhaseGate.TabIndex = 68;
             buttonPhaseGate.Text = "Phase gate...";
             buttonPhaseGate.UseVisualStyleBackColor = true;
             //
@@ -516,7 +531,7 @@
             //
             buttonImport.FlatStyle = FlatStyle.Popup;
             buttonImport.ForeColor = Color.White;
-            buttonImport.Location = new Point(2, 275);
+            buttonImport.Location = new Point(2, 300);
             buttonImport.Name = "buttonImport";
             buttonImport.Size = new Size(87, 24);
             buttonImport.TabIndex = 57;
@@ -527,7 +542,7 @@
             // 
             buttonExport.FlatStyle = FlatStyle.Popup;
             buttonExport.ForeColor = Color.White;
-            buttonExport.Location = new Point(101, 275);
+            buttonExport.Location = new Point(101, 300);
             buttonExport.Name = "buttonExport";
             buttonExport.Size = new Size(87, 24);
             buttonExport.TabIndex = 58;
@@ -538,7 +553,7 @@
             //
             buttonResetBands.FlatStyle = FlatStyle.Popup;
             buttonResetBands.ForeColor = Color.White;
-            buttonResetBands.Location = new Point(2, 304);
+            buttonResetBands.Location = new Point(2, 329);
             buttonResetBands.Name = "buttonResetBands";
             buttonResetBands.Size = new Size(186, 24);
             buttonResetBands.TabIndex = 59;
@@ -550,7 +565,7 @@
             buttonUndo.Enabled = false;
             buttonUndo.FlatStyle = FlatStyle.Popup;
             buttonUndo.ForeColor = Color.White;
-            buttonUndo.Location = new Point(2, 364);
+            buttonUndo.Location = new Point(2, 389);
             buttonUndo.Name = "buttonUndo";
             buttonUndo.Size = new Size(87, 24);
             buttonUndo.TabIndex = 62;
@@ -562,7 +577,7 @@
             buttonRedo.Enabled = false;
             buttonRedo.FlatStyle = FlatStyle.Popup;
             buttonRedo.ForeColor = Color.White;
-            buttonRedo.Location = new Point(101, 364);
+            buttonRedo.Location = new Point(101, 389);
             buttonRedo.Name = "buttonRedo";
             buttonRedo.Size = new Size(87, 24);
             buttonRedo.TabIndex = 63;
@@ -574,7 +589,7 @@
             buttonReturnToDsp.BackColor = Color.FromArgb(46, 51, 67);
             buttonReturnToDsp.FlatStyle = FlatStyle.Popup;
             buttonReturnToDsp.ForeColor = Color.White;
-            buttonReturnToDsp.Location = new Point(2, 400);
+            buttonReturnToDsp.Location = new Point(2, 425);
             buttonReturnToDsp.Name = "buttonReturnToDsp";
             buttonReturnToDsp.Size = new Size(186, 26);
             buttonReturnToDsp.TabIndex = 64;
@@ -586,7 +601,7 @@
             //
             buttonBackToDsp.FlatStyle = FlatStyle.Popup;
             buttonBackToDsp.ForeColor = Color.White;
-            buttonBackToDsp.Location = new Point(2, 430);
+            buttonBackToDsp.Location = new Point(2, 455);
             buttonBackToDsp.Name = "buttonBackToDsp";
             buttonBackToDsp.Size = new Size(186, 24);
             buttonBackToDsp.TabIndex = 65;
@@ -598,7 +613,7 @@
             //
             comboBoxQConvention.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxQConvention.ForeColor = Color.White;
-            comboBoxQConvention.Location = new Point(108, 336);
+            comboBoxQConvention.Location = new Point(108, 361);
             comboBoxQConvention.MinimumSize = new Size(36, 19);
             comboBoxQConvention.Name = "comboBoxQConvention";
             comboBoxQConvention.Size = new Size(80, 19);
@@ -609,7 +624,7 @@
             labelQConvention.AutoSize = true;
             labelQConvention.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelQConvention.ForeColor = Color.FromArgb(210, 214, 222);
-            labelQConvention.Location = new Point(9, 338);
+            labelQConvention.Location = new Point(9, 363);
             labelQConvention.Margin = new Padding(3);
             labelQConvention.Name = "labelQConvention";
             labelQConvention.Size = new Size(66, 15);
@@ -642,6 +657,7 @@
             Controls.Add(panelAutoTune);
             Controls.Add(checkBoxBypass);
             Controls.Add(checkBoxEqPhase);
+            Controls.Add(checkBoxEqCurve);
             Controls.Add(buttonPhaseGate);
             Controls.Add(labelGain);
             Controls.Add(NumericGain);
@@ -692,6 +708,7 @@
         private Label labelGainMax;
         private CheckBox checkBoxBypass;
         private CheckBox checkBoxEqPhase;
+        private CheckBox checkBoxEqCurve;
         private CheckBox checkBoxCutsOnly;
         private Panel panelAutoTune;
         private Button buttonOverlaySettings;

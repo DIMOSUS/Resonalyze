@@ -449,7 +449,6 @@ namespace Resonalyze.Options
             // Total duration and the achieved-range line are filled by the shared
             // preview at the end of Init, once the sample-rate control is settled.
             numericUpDownAverageRunCount.Value = Math.Clamp(settings.AverageRunCount, 1, 64);
-            checkBoxConfirmEachAverageRun.Checked = settings.ConfirmEachAverageRun;
             microphoneCalibration0DegreesPath = settings.MicrophoneCalibration0DegreesPath;
             additionalMicrophoneCalibrations = settings.AdditionalMicrophoneCalibrations
                 .Select(definition => definition.Clone())
@@ -562,7 +561,6 @@ namespace Resonalyze.Options
                     ? waveLoopback.Offset
                     : null;
             int averageRunCount = (int)numericUpDownAverageRunCount.Value;
-            bool confirmEachAverageRun = checkBoxConfirmEachAverageRun.Checked;
             string? wasapiCaptureEndpointId =
                 comboBoxRecordingDevice.SelectedItem is AudioEndpointDescriptor captureSelection
                     ? captureSelection.Id
@@ -666,9 +664,7 @@ namespace Resonalyze.Options
                     AsioArrayInputChannelOffsets: audioBackend == AudioBackend.Asio
                         ? SelectedReachableArrayChannels()
                         : []),
-                new SweepAveragingConfiguration(
-                    averageRunCount,
-                    confirmEachAverageRun),
+                new SweepAveragingConfiguration(averageRunCount),
                 ReadProtectiveHighPass()));
 
             settings.LowFrequencyHz = lowFrequencyHz;
@@ -718,7 +714,6 @@ namespace Resonalyze.Options
             settings.RequestedDurationSeconds = GetRequestedDurationSeconds(settings.SampleRate);
             settings.PlaybackChannel = GetSelectedPlaybackChannel();
             settings.AverageRunCount = (int)numericUpDownAverageRunCount.Value;
-            settings.ConfirmEachAverageRun = checkBoxConfirmEachAverageRun.Checked;
             ProtectiveHighPassConfiguration protectiveHighPass = ReadProtectiveHighPass();
             settings.ProtectiveHighPassKind = protectiveHighPass.Kind;
             settings.ProtectiveHighPassFrequencyHz = protectiveHighPass.FrequencyHz;

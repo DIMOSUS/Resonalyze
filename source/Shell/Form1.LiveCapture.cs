@@ -152,10 +152,7 @@ public partial class Form1
 
     private async Task LoadLiveCaptureAsync()
     {
-        if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
-        {
-            await liveSpectrumController.AbortAsync();
-        }
+        await StopLiveCaptureAsync();
 
         // The same choice the main Load button offers. Which measurement a file holds
         // is the file's business, not the button's: refusing an impulse response here

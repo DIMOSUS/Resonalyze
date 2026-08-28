@@ -514,9 +514,14 @@ public partial class EqWizardPanel
         // and the standing IR preference stays untouched. The panel's Off is Off.
         if (source.Kind == EqWizardSourceKind.VirtualDspChannel)
         {
-            return source.PinnedCalibration == null
-                ? EqWizardCalibrationChoice.Off
-                : EqWizardCalibrationChoice.PinnedToSource;
+            // Pinned whenever the panel pinned ANY correction, curve or mode. Asking
+            // for the curve alone dropped the spatial average's own correction on
+            // every channel whose impulse response named no calibration file: the
+            // choice fell to Off, Off resolves the average to Uncalibrated, and the
+            // wizard fitted a curve the panel had never drawn.
+            return source.PinsCorrection
+                ? EqWizardCalibrationChoice.PinnedToSource
+                : EqWizardCalibrationChoice.Off;
         }
 
         return EqWizardCalibrationChoice.Off;
@@ -1211,11 +1216,18 @@ public partial class EqWizardPanel
         // A Virtual DSP channel's correction is listed under the name its panel
         // shows for it — which may be a curve the session carries, absent from the
         // wizard's own list — so the disabled selector still says what applies.
-        if (loadedSource is { Kind: EqWizardSourceKind.VirtualDspChannel, PinnedCalibration: not null } pinned)
+        if (loadedSource is { Kind: EqWizardSourceKind.VirtualDspChannel, PinsCorrection: true } pinned)
         {
             options.Add(new EqWizardCalibrationOption(
                 EqWizardCalibrationChoice.PinnedToSource,
-                pinned.PinnedCalibrationName ?? "Virtual DSP"));
+                // Nameless exactly when the pinned correction is the spatial average's
+                // own: it is whatever THAT capture was recorded through, which no file
+                // in this list need name. The panel's own words for it, so the disabled
+                // selector reads the same in both tools.
+                pinned.PinnedCalibrationName ??
+                    (pinned.SpatialAverageCalibration.Mode == SpatialAverageCalibrationMode.Own
+                        ? "Own (as measured)"
+                        : "Virtual DSP")));
         }
 
         // A curve whose correction is an aggregate of several microphones' files gets
@@ -1503,6 +1515,7 @@ public partial class EqWizardPanel
             numericGainMin.Value = numericGainMin.ClampValue(settings.GainMinDb);
             numericGainMax.Value = numericGainMax.ClampValue(settings.GainMaxDb);
             checkBoxCutsOnly.Checked = settings.CutsOnly;
+            checkBoxEqCurve.Checked = settings.ShowEqCurve;
             SetSourceSmoothing(settings.SourceSmoothingInverseOctaves);
             ApplyPersistedBank(settings);
 
@@ -1547,7 +1560,8 @@ public partial class EqWizardPanel
         SourceSmoothingInverseOctaves = SourceSmoothingInverseOctaves,
         CalibrationId = preferredIrCalibrationId,
         ManualSampleRateHz = manualSampleRateHz,
-        CutsOnly = checkBoxCutsOnly.Checked
+        CutsOnly = checkBoxCutsOnly.Checked,
+        ShowEqCurve = checkBoxEqCurve.Checked
     };
 
     private void RaiseSettingsChanged()

@@ -66,7 +66,7 @@ internal sealed class PcmDuplexSession : IAudioDuplexSession
             captureTailSamples,
             cancellationToken).ConfigureAwait(false);
         // Stop accumulating between runs: the device keeps running (meter stays
-        // live) but a long averaging confirmation pause no longer grows memory.
+        // live) but the gap between averaged runs no longer grows memory.
         // The next run's orchestrator Reset resumes capture.
         captureSession.Pause();
 

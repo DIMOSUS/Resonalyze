@@ -46,10 +46,7 @@ public partial class Form1
 
         if (expSweepMeasurement.HasImpulseResponse && !expSweepMeasurement.InProgress)
         {
-            if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
-            {
-                await liveSpectrumController.AbortAsync();
-            }
+            await StopLiveCaptureAsync();
 
             using var dialog = new SaveFileDialog
             {
@@ -104,10 +101,7 @@ public partial class Form1
 
         if (!expSweepMeasurement.InProgress)
         {
-            if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
-            {
-                await liveSpectrumController.AbortAsync();
-            }
+            await StopLiveCaptureAsync();
 
             using var dialog = new OpenFileDialog
             {
@@ -381,10 +375,7 @@ public partial class Form1
             return;
         }
 
-        if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
-        {
-            await liveSpectrumController.AbortAsync();
-        }
+        await StopLiveCaptureAsync();
 
         await SelectModeAsync(ModeTab.Frequency);
         commandController.SetSaveAvailable(false);

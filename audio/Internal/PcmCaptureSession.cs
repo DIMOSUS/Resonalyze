@@ -169,10 +169,11 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
 
     /// <summary>
     /// Stops appending captured samples while the device keeps running (and keeps
-    /// raising level meters) — used between averaged sweep runs, where a long
-    /// confirmation pause would otherwise grow the capture buffer without bound.
-    /// Stopping the device between runs is not an option — WASAPI cannot be
-    /// restarted — so packets are dropped instead. <see cref="Reset"/> resumes.
+    /// raising level meters) — used between averaged sweep runs, where the gap the
+    /// caller spends deconvolving and judging the run just captured would otherwise
+    /// grow the capture buffer without bound. Stopping the device between runs is
+    /// not an option — WASAPI cannot be restarted — so packets are dropped instead.
+    /// <see cref="Reset"/> resumes.
     /// </summary>
     public void Pause()
     {
@@ -227,7 +228,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
 
             // While paused (between averaged runs) the device keeps running so the
             // level meter stays live, but samples are dropped instead of appended —
-            // otherwise a long confirmation pause grows the buffer without bound.
+            // otherwise the gap between runs grows the buffer without bound.
             if (!paused && accumulator is { } activeAccumulator)
             {
                 activeAccumulator.Append(decodeScratch, decodedFrames);

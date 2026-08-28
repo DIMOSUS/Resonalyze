@@ -5,6 +5,10 @@ namespace Resonalyze.History;
 internal sealed class MeasurementHistoryService
 {
     public const int MaxInMemoryHistoryEntries = 10;
+    // The whole list, saved rows included. Nothing bounded it before: the history
+    // gained a row for every file ever opened and kept it for as long as that file
+    // existed, so a few weeks of tuning left hundreds to scroll past.
+    public const int MaxHistoryEntries = 30;
 
     private readonly MeasurementHistoryPersistence persistence;
     private readonly List<MeasurementHistoryEntry> entries;
@@ -13,6 +17,13 @@ internal sealed class MeasurementHistoryService
     {
         this.persistence = persistence ?? new MeasurementHistoryPersistence();
         entries = this.persistence.Load().ToList();
+        // A store written before the cap existed, or by a build without it, arrives
+        // over depth; it is cut here rather than at the next mutation, which may
+        // never come — a session that only reads the history never saves it.
+        if (TrimEntries())
+        {
+            SaveTrimmedEntries();
+        }
     }
 
     public event Action? Changed;
@@ -31,7 +42,14 @@ internal sealed class MeasurementHistoryService
             sourceFilePath: null,
             snapshot);
         entries.Insert(0, entry);
-        TrimInMemoryEntries();
+        // Recording does not otherwise touch the store — an unsaved entry lives in
+        // memory alone — but the depth cap can push a SAVED row off the end, and
+        // that has to reach disk.
+        if (TrimEntries())
+        {
+            SaveTrimmedEntries();
+        }
+
         OnChanged();
         return entry.Id;
     }
@@ -65,6 +83,7 @@ internal sealed class MeasurementHistoryService
         }
 
         RetainSingleFileBackedSnapshot(entry);
+        TrimEntries();
         persistence.Save(entries);
         OnChanged();
         return entry.Id;
@@ -110,6 +129,7 @@ internal sealed class MeasurementHistoryService
         }
 
         RetainSingleFileBackedSnapshot(entry);
+        TrimEntries();
         persistence.Save(entries);
         OnChanged();
     }
@@ -336,7 +356,21 @@ internal sealed class MeasurementHistoryService
         };
     }
 
-    private void TrimInMemoryEntries()
+    // Two caps answering two different questions. The in-memory one is about
+    // MEMORY: an unsaved snapshot holds the complete impulse responses, so only a
+    // small rolling set of them is kept. The depth one is about the LIST, which a
+    // reader has to be able to find something in.
+    //
+    // Over the depth it is a FILE-BACKED row that goes, oldest first, even when an
+    // unsaved row is older. What such a row loses is its working state; the
+    // measurement itself is on disk and opening the file brings the row back, while
+    // an unsaved row IS the measurement — dropping it to keep a saved one would
+    // trade the irreplaceable for the recoverable. There is always one to drop: the
+    // memory cap runs first and leaves at most ten unsaved rows out of the thirty.
+    //
+    // Returns whether a PERSISTED row was removed, which is the caller's cue to
+    // rewrite the store even when it had no other reason to.
+    private bool TrimEntries()
     {
         while (entries.Count(entry => !entry.IsFileBacked) > MaxInMemoryHistoryEntries)
         {
@@ -347,6 +381,40 @@ internal sealed class MeasurementHistoryService
             }
 
             entries.Remove(oldestUnsaved);
+        }
+
+        bool removedPersisted = false;
+        while (entries.Count > MaxHistoryEntries)
+        {
+            MeasurementHistoryEntry? oldestSaved = entries.LastOrDefault(entry => entry.IsFileBacked);
+            if (oldestSaved == null)
+            {
+                break;
+            }
+
+            entries.Remove(oldestSaved);
+            removedPersisted = true;
+        }
+
+        return removedPersisted;
+    }
+
+    // Best effort, the way the store rewrite in MeasurementHistoryPersistence.Load
+    // is: the in-memory list is already cut, so a store that cannot be written this
+    // launch is written by the next mutation or cut again by the next launch. The
+    // two callers are why it is swallowed rather than raised — this is the only
+    // write either of them makes, and neither has anywhere to report it that would
+    // not cost the user the launch (a field initializer on the shell) or the sweep
+    // that just finished.
+    private void SaveTrimmedEntries()
+    {
+        try
+        {
+            persistence.Save(entries);
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException)
+        {
         }
     }
 

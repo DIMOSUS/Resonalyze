@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Numerics;
 using OxyPlot;
 using OxyPlot.Annotations;
@@ -75,6 +75,7 @@ public partial class EqWizardPanel : UserControl
     private PlotWatermarkAnnotation hintAnnotation = null!;
     private LineAnnotation fromMarker = null!;
     private LineAnnotation toMarker = null!;
+    private LineAnnotation bandMarker = null!;
     private RectangleAnnotation rangeFill = null!;
     private EqTuneStats? lastStats;
     private bool suppressRedraw;
@@ -123,6 +124,11 @@ public partial class EqWizardPanel : UserControl
         NumericGain.ValueChanged += BankValueChanged;
         checkBoxBypass.CheckedChanged += (_, _) => DrawSelectedCurves();
         checkBoxEqPhase.CheckedChanged += (_, _) => DrawSelectedCurves();
+        checkBoxEqCurve.CheckedChanged += (_, _) =>
+        {
+            DrawSelectedCurves();
+            RaiseSettingsChanged();
+        };
         buttonPhaseGate.Click += (_, _) => OpenPhaseGateDialog();
         checkBoxCutsOnly.CheckedChanged += (_, _) =>
         {
@@ -370,6 +376,11 @@ public partial class EqWizardPanel : UserControl
             "Lower edge of the Auto Tune frequency window; also bounds the error metrics.");
         SetTip(labelToHz, numericToHz,
             "Upper edge of the Auto Tune frequency window; also bounds the error metrics.");
+        SetTip(checkBoxEqCurve,
+            "Draw the bank's own response — the white curve on the right-hand axis, " +
+            "in dB here and in degrees in Phase. Turning it off leaves the plot to " +
+            "the measurement and the target; the filters keep working either way. " +
+            "The right-hand axis goes with it when nothing else is left on it.");
         SetTip(checkBoxCutsOnly,
             "Auto Tune only cuts, never boosts — the safe default for a car tune " +
             "(a boost cannot fill an interference null, it just burns headroom). " +
@@ -512,6 +523,21 @@ public partial class EqWizardPanel : UserControl
         toMarker.X = (double)numericToHz.Value;
         rangeFill.MinimumX = fromMarker.X;
         rangeFill.MaximumX = toMarker.X;
+
+        // Where the selected band SITS, as against what it does. The band curve
+        // answers the second question and is a poor answer to the first: a low-Q
+        // bell is a shape an octave wide whose summit the eye places by guesswork,
+        // and a shelf or an all-pass has no summit to place at all.
+        // Held out of the model until a band is selected: this OxyPlot has no
+        // Visible on an annotation, so membership is the switch.
+        bandMarker = new LineAnnotation
+        {
+            Type = LineAnnotationType.Vertical,
+            Color = BandCurveColor,
+            StrokeThickness = 1,
+            LineStyle = LineStyle.Dot,
+            Layer = AnnotationLayer.AboveSeries
+        };
 
         plotWizard.Model = model;
         UpdateEqAxisRange();
@@ -691,6 +717,9 @@ public partial class EqWizardPanel : UserControl
 
         AddEqCurve(model, eq, render.Target);
         AddSelectedBandCurve(model, render.Target);
+        UpdateSelectedBandMarker(model);
+        SetEqAxisVisible(model.Series.Any(series =>
+            series is XYAxisSeries { YAxisKey: EqGainAxisKey }));
 
         plotLabels.Refresh();
         model.InvalidatePlot(true);
@@ -1140,16 +1169,30 @@ public partial class EqWizardPanel : UserControl
 
         if (PhaseMode)
         {
-            AddWizardSeries(
-                model,
-                new EqWizardCurve(
-                    "EQ phase",
-                    OxyColors.White,
-                    1.5,
-                    LineStyle.Solid,
-                    PhasePoints(eq.Bands, baseline)),
-                EqGainAxisKey,
-                PhaseTrackerFormat);
+            if (checkBoxEqCurve.Checked)
+            {
+                AddWizardSeries(
+                    model,
+                    new EqWizardCurve(
+                        "EQ phase",
+                        OxyColors.White,
+                        1.5,
+                        LineStyle.Solid,
+                        PhasePoints(eq.Bands, baseline)),
+                    EqGainAxisKey,
+                    PhaseTrackerFormat);
+            }
+
+            // Re-armed whether or not the curve is drawn: the measured phase curves
+            // share this axis, and it is here that it is told it carries degrees.
+            UpdateEqAxisRange();
+            return;
+        }
+
+        if (!checkBoxEqCurve.Checked)
+        {
+            // Back to the plain boost/cut budget: the range that was fitted to the
+            // curve belonged to a curve that is no longer drawn.
             UpdateEqAxisRange();
             return;
         }
@@ -1274,6 +1317,27 @@ public partial class EqWizardPanel : UserControl
                 points));
     }
 
+    // Puts the vertical guide on the selected band's frequency, and hides it when
+    // no band is selected. Deliberately not part of AddSelectedBandCurve: that curve
+    // needs a baseline to lay the band's shape on, while a frequency is the band's
+    // own property and is worth drawing whether or not there is a curve under it.
+    // Both views get it — a phase band is placed by its corner exactly as a
+    // magnitude one is.
+    private void UpdateSelectedBandMarker(PlotModel model)
+    {
+        model.Annotations.Remove(bandMarker);
+        if (selectedSlot == null)
+        {
+            return;
+        }
+
+        // No guard against an unplaceable frequency: the strip's own field cannot
+        // be taken below 10 Hz, so there is no zero for the logarithmic axis to
+        // choke on.
+        bandMarker.X = ReadBand(selectedSlot).FrequencyHz;
+        model.Annotations.Add(bandMarker);
+    }
+
     // Translucent fills for the deviation band between Source + EQ and the target:
     // red where the result sits above the target, blue where it sits below.
     private static readonly OxyColor AboveTargetFill = OxyColor.FromArgb(72, 232, 80, 80);
@@ -1328,6 +1392,12 @@ public partial class EqWizardPanel : UserControl
         AddClampedFill(model, curveAug, targetAug, above: false, BelowTargetFill);
     }
 
+    // One area per RUN of frequencies where the curve actually exists. Where it does
+    // not — under a protective high-pass, outside the band a driver was swept over,
+    // past the end of a capture's grid — the level is NaN, and a NaN vertex used to go
+    // into the polygon like any other: the renderer then closed the shape across the
+    // gap and shaded whole octaves where nothing was measured, reading as a deviation
+    // from the target that no measurement supports.
     private static void AddClampedFill(
         PlotModel model,
         IReadOnlyList<DataPoint> curve,
@@ -1335,23 +1405,34 @@ public partial class EqWizardPanel : UserControl
         bool above,
         OxyColor fill)
     {
-        var area = new AreaSeries
-        {
-            Color = OxyColors.Transparent,
-            Fill = fill,
-            StrokeThickness = 0,
-            Tag = WizardSeriesTag
-        };
+        AreaSeries? area = null;
         for (int i = 0; i < curve.Count; i++)
         {
             double clamped = above
                 ? Math.Max(curve[i].Y, target[i].Y)
                 : Math.Min(curve[i].Y, target[i].Y);
+            if (!double.IsFinite(clamped) || !double.IsFinite(target[i].Y))
+            {
+                // The run ends here; the next finite pair starts a new one.
+                area = null;
+                continue;
+            }
+
+            if (area == null)
+            {
+                area = new AreaSeries
+                {
+                    Color = OxyColors.Transparent,
+                    Fill = fill,
+                    StrokeThickness = 0,
+                    Tag = WizardSeriesTag
+                };
+                model.Series.Add(area);
+            }
+
             area.Points.Add(new DataPoint(curve[i].X, clamped));
             area.Points2.Add(target[i]);
         }
-
-        model.Series.Add(area);
     }
 
     // Interpolates between two frequencies at fraction f in the log domain, matching

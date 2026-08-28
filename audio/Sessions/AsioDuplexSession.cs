@@ -4,8 +4,8 @@
 /// Finite play-and-capture over a single ASIO driver session. The driver is
 /// opened once and kept running across averaging runs (re-initializing it per
 /// run costs seconds on slow drivers); each run resets the capture accumulator
-/// and rewinds the excitation. Capture is paused between runs so a long
-/// confirmation wait does not grow the buffer while the meter stays live.
+/// and rewinds the excitation. Capture is paused between runs so the gap between
+/// them does not grow the buffer while the meter stays live.
 /// </summary>
 internal sealed class AsioDuplexSession : IAudioDuplexSession
 {

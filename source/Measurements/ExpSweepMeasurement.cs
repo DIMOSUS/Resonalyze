@@ -18,11 +18,9 @@ namespace Resonalyze
         private readonly object stateSync = new();
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
-        private TaskCompletionSource<bool>? averageConfirmation;
         private volatile bool inProgress;
         // Whether inProgress is held by an outstanding Claim rather than by a run.
         private bool claimed;
-        private volatile bool waitingForAverageConfirmation;
         private bool disposed;
         // Results are published from the measurement worker and read by the UI
         // without locks. Each impulse response travels with its peak index as one
@@ -184,7 +182,6 @@ namespace Resonalyze
 
         public int AverageRunCount { get; private set; } = 1;
         public int AcceptedAverageRunCount { get; private set; } = 1;
-        public bool ConfirmEachAverageRun { get; private set; }
         public ProtectiveHighPassConfiguration ProtectiveHighPass { get; private set; } =
             ProtectiveHighPassConfiguration.Off;
 
@@ -279,7 +276,6 @@ namespace Resonalyze
         // a measurement ran (or when the result was restored from a file).
         internal SweepRunQualityReport? QualityReport { get; private set; }
         public Exception? LastError { get; private set; }
-        public bool WaitingForAverageConfirmation => waitingForAverageConfirmation;
         internal InputLevelMeterSnapshot CurrentLevels
         {
             get => (InputLevelMeterSnapshot)currentLevels;
@@ -368,7 +364,6 @@ namespace Resonalyze
             ImportedChannelIndex = 0;
             AverageRunCount = Math.Clamp(averaging.RunCount, 1, 64);
             AcceptedAverageRunCount = 0;
-            ConfirmEachAverageRun = averaging.ConfirmEachRun;
             ProtectiveHighPass = ProtectiveHighPassConfiguration.Normalize(
                 configuration.ProtectiveHighPass);
             QualityReport = null;
@@ -488,14 +483,6 @@ namespace Resonalyze
             public void Dispose()
             {
                 Interlocked.Exchange(ref owner, null)?.ReleaseClaim();
-            }
-        }
-
-        public void ContinueAverageRun()
-        {
-            lock (stateSync)
-            {
-                averageConfirmation?.TrySetResult(true);
             }
         }
 
@@ -651,9 +638,7 @@ namespace Resonalyze
                     WasapiBufferMilliseconds: WasapiBufferMilliseconds,
                     WaveArrayInputChannelOffsets: WaveArrayInputChannelOffsets,
                     AsioArrayInputChannelOffsets: AsioArrayInputChannelOffsets),
-                new SweepAveragingConfiguration(
-                    AverageRunCount,
-                    ConfirmEachAverageRun),
+                new SweepAveragingConfiguration(AverageRunCount),
                 ProtectiveHighPass));
             // InitCore just set these from the sweep it regenerated; the recorded
             // geometry wins, since that sweep is a reconstruction and this result
@@ -1357,8 +1342,7 @@ namespace Resonalyze
                     Publish(AverageProgressChanged, new SweepAverageProgress(
                         run,
                         requestedRuns,
-                        accumulator.AcceptedRuns,
-                        SweepAverageProgressState.Running));
+                        accumulator.AcceptedRuns));
                     AudioCaptureResult? captured = await CaptureOneAsync().ConfigureAwait(false);
                     IReadOnlyList<string> issues = AssessRunQuality(captured, sweep);
                     if (issues.Count > 0)
@@ -1377,15 +1361,6 @@ namespace Resonalyze
                     }
 
                     accumulator.Add(AnalyzeCapturedRun(captured, sweep));
-
-                    if (ConfirmEachAverageRun && run < requestedRuns)
-                    {
-                        await WaitForAverageConfirmationAsync(
-                            run,
-                            requestedRuns,
-                            accumulator.AcceptedRuns,
-                            cancellationToken).ConfigureAwait(false);
-                    }
                 }
 
                 QualityReport = new SweepRunQualityReport(
@@ -1447,49 +1422,12 @@ namespace Resonalyze
 
                 lock (stateSync)
                 {
-                    waitingForAverageConfirmation = false;
-                    averageConfirmation = null;
                     inProgress = false;
                 }
                 Publish(Completed, success);
             }
 
             return success;
-        }
-
-        private async Task WaitForAverageConfirmationAsync(
-            int completedRun,
-            int requestedRuns,
-            int acceptedRuns,
-            CancellationToken cancellationToken)
-        {
-            Task waitTask;
-            lock (stateSync)
-            {
-                averageConfirmation = new TaskCompletionSource<bool>(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
-                waitingForAverageConfirmation = true;
-                waitTask = averageConfirmation.Task;
-            }
-
-            Publish(AverageProgressChanged, new SweepAverageProgress(
-                completedRun,
-                requestedRuns,
-                acceptedRuns,
-                SweepAverageProgressState.WaitingForConfirmation));
-
-            try
-            {
-                await waitTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                lock (stateSync)
-                {
-                    waitingForAverageConfirmation = false;
-                    averageConfirmation = null;
-                }
-            }
         }
 
         // The requested band (this.LowFrequencyHz/HighFrequencyHz) is fully
@@ -2767,13 +2705,4 @@ namespace Resonalyze
 public readonly record struct SweepAverageProgress(
     int CurrentRun,
     int TotalRuns,
-    int AcceptedRuns,
-    SweepAverageProgressState State);
-
-public enum SweepAverageProgressState
-{
-    Running,
-    WaitingForConfirmation,
-    // The run failed the capture quality checks and its single automatic
-    // retry is being captured.
-}
+    int AcceptedRuns);

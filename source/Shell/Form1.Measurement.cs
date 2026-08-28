@@ -84,7 +84,17 @@ public partial class Form1
             await timeAlignmentController.AbortAsync();
         }
 
+        bool liveCaptureWasRunning = liveSpectrumController.InProgress;
         await liveSpectrumController.AbortAsync();
+        if (liveCaptureWasRunning)
+        {
+            // Only when a capture was actually stopped. This runs on every mode
+            // switch, and a settings panel whose view was never denied has nothing
+            // to be paid back — probing the driver for it would open an AsioOut on
+            // each tab click. A switch to a Tools mode closes the panel anyway
+            // (SetCaptureControlsVisible), which the refresh reads as "nothing open".
+            RefreshOpenMeasurementSettingsDevice();
+        }
 
         CurrentMode = mode;
         plotViewports.Show(null, mode);
@@ -122,18 +132,18 @@ public partial class Form1
 
             await liveSpectrumController.ToggleAsync();
             UpdateRecordButtonForCurrentMode();
+            // The capture owns the audio device while it runs, so an Apply during one
+            // deliberately leaves the settings panel's picture of the driver alone
+            // rather than probing a device it does not own. This is where that debt is
+            // paid: the moment the capture releases the device, an open panel gets the
+            // straight answer it was denied.
+            RefreshOpenMeasurementSettingsDevice();
             return;
         }
 
         if (liveSpectrumController.InProgress)
         {
             await liveSpectrumController.AbortAsync();
-        }
-
-        if (expSweepMeasurement.WaitingForAverageConfirmation)
-        {
-            expSweepMeasurement.ContinueAverageRun();
-            return;
         }
 
         if (expSweepMeasurement.InProgress)
@@ -418,6 +428,41 @@ public partial class Form1
         }
     }
 
+    /// <summary>
+    /// Lets an open Record Settings panel re-read the audio device, once nothing is
+    /// holding it. A no-op when the panel is closed or a capture is still running.
+    /// </summary>
+    private void RefreshOpenMeasurementSettingsDevice()
+    {
+        if (liveSpectrumController.InProgress || expSweepMeasurement.InProgress)
+        {
+            return;
+        }
+
+        dockedMeasurementSettingsHost.InvokeIfOpen<MeasurementOptions>(
+            panel => panel.RefreshAudioDeviceView());
+    }
+
+    /// <summary>
+    /// Stops a live capture — running, or merely holding its redraw timer — and pays
+    /// the settings panel's device debt once it is stopped. Every path that takes the
+    /// device back from the analyzer goes through here, so an open Record Settings
+    /// panel is refreshed wherever the capture ends rather than only where the Record
+    /// button stopped it. A no-op, refresh included, when nothing was running: the
+    /// panel was never denied its answer, and probing an ASIO driver for nothing is
+    /// what the refresh is careful about in the first place.
+    /// </summary>
+    private async Task StopLiveCaptureAsync()
+    {
+        if (!liveSpectrumController.InProgress && !liveSpectrumController.TimerEnabled)
+        {
+            return;
+        }
+
+        await liveSpectrumController.AbortAsync();
+        RefreshOpenMeasurementSettingsDevice();
+    }
+
     private async Task ApplySweepSettingsAsync(MeasurementOptions dialog)
     {
         AudioSessionRequest requestBefore =
@@ -509,14 +554,25 @@ public partial class Form1
                         await audioSessionFactory.WarmUpAsync(
                             CreateAudioWarmupRequest(measurementSettings.Measurement),
                             CancellationToken.None);
-                    }
 
-                    // The panel stays on screen after Apply, and the device it is
-                    // describing has just been reconfigured under it. Its picture of
-                    // the driver is a snapshot, so without this a rate change leaves
-                    // the status amber against a driver that is now running at exactly
-                    // that rate, and the only cure is reopening the panel.
-                    dialog.RefreshAudioDeviceView();
+                        // The panel stays on screen after Apply, and the device it is
+                        // describing has just been reconfigured under it. Its picture
+                        // of the driver is a snapshot, so without this a rate change
+                        // leaves the status amber against a driver that is now running
+                        // at exactly that rate, and the only cure is reopening the
+                        // panel.
+                        //
+                        // Inside this branch and not after it: the condition is "the
+                        // device is ours to touch". Applying while the live spectrum
+                        // runs restarts that session, which OWNS the driver — and
+                        // probing it then opens a second AsioOut against a driver that
+                        // may refuse it or answer with only the rate it is running at,
+                        // which is the very short rate list this refresh exists to
+                        // prevent. A stale view is the smaller harm, and it is not
+                        // permanent: stopping the capture refreshes an open panel (see
+                        // the live spectrum toggle).
+                        dialog.RefreshAudioDeviceView();
+                    }
                 }
                 catch (InvalidOperationException exception)
                 {

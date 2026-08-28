@@ -20,7 +20,7 @@ public sealed class SweepMeasurementConfigurationTests
                 AsioInputChannelOffset: 4,
                 AsioLoopbackInputChannelOffset: 5,
                 AsioOutputChannelOffset: 2),
-            new SweepAveragingConfiguration(3, ConfirmEachRun: true));
+            new SweepAveragingConfiguration(3));
 
         measurement.Init(configuration);
 
@@ -34,6 +34,5 @@ public sealed class SweepMeasurementConfigurationTests
         Assert.Equal(5, measurement.AsioLoopbackInputChannelOffset);
         Assert.Equal(2, measurement.AsioOutputChannelOffset);
         Assert.Equal(3, measurement.AverageRunCount);
-        Assert.True(measurement.ConfirmEachAverageRun);
     }
 }

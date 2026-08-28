@@ -232,8 +232,20 @@ internal sealed class PlotModelFactory
     private CalibrationFile? GetCalibration(FrequencyResponseOptions options) =>
         getCalibration(options.CalibrationId);
 
-    private CalibrationFile? GetCalibration(LiveSpectrumOptions options) =>
-        getCalibration(options.CalibrationId);
+    /// <summary>
+    /// The microphone calibration a live capture is drawn and saved through: the one
+    /// frozen on the accumulation when its run began, never the rig's current choice.
+    /// </summary>
+    /// <remarks>
+    /// These bins are rendered again on every redraw and once more when the capture is
+    /// saved. Read from the live options, a rig setting changed between the walk and
+    /// the Save recomputed the walk through a microphone it never passed through, and
+    /// the file then named that microphone as the one it was taken with. The rig's
+    /// choice belongs to the NEXT run, exactly as the protective high-pass beside it
+    /// does.
+    /// </remarks>
+    private CalibrationFile? LiveCaptureCalibration =>
+        noiseMeasurement.CaptureMicrophoneCalibration;
 
     /// <summary>
     /// The RAW (unsmoothed) samples of a captured analysis curve plus the mode's
@@ -386,7 +398,7 @@ internal sealed class PlotModelFactory
             return DescribeWithoutRawForm(
                 smoothingCode,
                 noiseMeasurement.SampleRate,
-                GetCalibration(liveSpectrumOptions));
+                LiveCaptureCalibration);
         }
 
         List<SignalPoint> spectrum = LiveRtaRawCapture.BuildRelativeRaw(
@@ -399,13 +411,13 @@ internal sealed class PlotModelFactory
             return DescribeWithoutRawForm(
                 smoothingCode,
                 noiseMeasurement.SampleRate,
-                GetCalibration(liveSpectrumOptions));
+                LiveCaptureCalibration);
         }
 
         return new RawCurveCapture(
             spectrum,
             RawCurveRenderer.CaptureCalibrationCorrection(
-                GetCalibration(liveSpectrumOptions)),
+                LiveCaptureCalibration),
             smoothingCode,
             noiseMeasurement.SampleRate > 0 ? noiseMeasurement.SampleRate : null);
     }
@@ -457,7 +469,7 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        CalibrationFile? calibration = GetCalibration(liveSpectrumOptions);
+        CalibrationFile? calibration = LiveCaptureCalibration;
 
         int hop = Math.Max(1, noiseMeasurement.AnalysisHopSize);
         int frames = frameCount;
@@ -482,7 +494,7 @@ internal sealed class PlotModelFactory
             Calibration = calibration != null
                 ? VirtualCrossoverCalibrationSettings.From(
                     calibration,
-                    liveSpectrumOptions.CalibrationId ?? string.Empty,
+                    noiseMeasurement.CaptureMicrophoneCalibrationId ?? string.Empty,
                     fileName: null)
                 : null,
             Recipe = new LiveCaptureRecipe
@@ -1949,7 +1961,7 @@ internal sealed class PlotModelFactory
             psychoacoustic);
 
         double offsetDb = LiveSplRenderOffset;
-        CalibrationFile? calibration = GetCalibration(liveSpectrumOptions);
+        CalibrationFile? calibration = LiveCaptureCalibration;
         double[]? recordedCorrection =
             applied != null && calibration != null ? new double[bands.Count] : null;
         for (int i = 0; i < bands.Count; i++)
@@ -2099,7 +2111,7 @@ internal sealed class PlotModelFactory
             20,
             20000,
             1024,
-            GetCalibration(liveSpectrumOptions),
+            LiveCaptureCalibration,
             SpectrumSmoothing.SmoothingOctaves(EffectiveLiveSmoothingCode),
             psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
                 EffectiveLiveSmoothingCode));

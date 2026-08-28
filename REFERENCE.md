@@ -582,6 +582,14 @@ gets that chain applied a second time: the crossover corner doubles its slope an
 every filter counts twice. Nothing downstream can detect this. The curve stays
 smooth and entirely plausible, which is what makes it worth stating here.
 
+**A capture belongs to the state its run began in.** The protective high-pass and
+the microphone calibration are both frozen on the accumulation when Start is pressed,
+and everything drawn or saved from it reads those, never the rig's current setting.
+The bins are rendered again on every redraw and once more on Save, so a calibration
+edited between the walk and the Save would otherwise recompute the walk through a
+microphone it never passed through — and the file would name that microphone as the
+one it was taken with. A changed rig describes the NEXT run.
+
 If a **protective high-pass** is configured (Measurement Options), MMM divides it
 back out of its curve. That filter sits in your own DSP, ahead of the loudspeaker,
 so a reference-free capture carries it while a swept impulse response has it

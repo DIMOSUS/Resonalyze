@@ -23,6 +23,9 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly Action updateRecordButton;
     private readonly Action updatePlotLabels;
     private readonly LiveSpectrumOptions liveSpectrumOptions;
+    // Turns the selected calibration id into the curve itself, so a run can freeze
+    // what it is taken through rather than a name that may point elsewhere later.
+    private readonly Func<string?, CalibrationFile?> resolveCalibration;
     // Same guard the sweep path has (Form1.ShowMeasurementError): no modal
     // error dialog while the owner is tearing down.
     private readonly Func<bool> suppressErrorDialogs;
@@ -94,6 +97,7 @@ internal sealed class LiveSpectrumController : IDisposable
         Action updateRecordButton,
         Action updatePlotLabels,
         LiveSpectrumOptions liveSpectrumOptions,
+        Func<string?, CalibrationFile?> resolveCalibration,
         Func<bool> suppressErrorDialogs)
     {
         this.owner = owner;
@@ -108,6 +112,7 @@ internal sealed class LiveSpectrumController : IDisposable
         this.updateRecordButton = updateRecordButton;
         this.updatePlotLabels = updatePlotLabels;
         this.liveSpectrumOptions = liveSpectrumOptions;
+        this.resolveCalibration = resolveCalibration;
         this.suppressErrorDialogs = suppressErrorDialogs;
         measurement.Completed += MeasurementCompleted;
         timer.Tick += TimerTick;
@@ -594,6 +599,14 @@ internal sealed class LiveSpectrumController : IDisposable
         // the curve divides out and what the saved recipe records are then the same
         // filter, and a setting edited mid-pass cannot re-tilt a walk already underway.
         measurement.SetCaptureProtectiveHighPass(configuredProtectiveHighPass);
+        // The microphone is frozen at the same moment and for the same reason. The
+        // CURVE is taken, not the id: the bins are rendered again on every redraw and
+        // once more on Save, so a rig calibration changed between the walk and the Save
+        // would otherwise recompute the walk — and the file would name a microphone it
+        // was never taken through.
+        measurement.SetCaptureMicrophoneCalibration(
+            liveSpectrumOptions.CalibrationId,
+            resolveCalibration(liveSpectrumOptions.CalibrationId));
         _ = measurement.RunAsync();
         timer.Start();
         updateRecordButton();

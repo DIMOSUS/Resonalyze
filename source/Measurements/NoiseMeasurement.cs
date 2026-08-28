@@ -115,6 +115,37 @@ namespace Resonalyze
             CaptureProtectiveHighPass =
                 ProtectiveHighPassConfiguration.Normalize(protectiveHighPass);
 
+        /// <summary>
+        /// The microphone calibration this accumulation was taken through, as a CURVE
+        /// rather than as an id, with the id beside it only to name it in a saved
+        /// capture.
+        /// </summary>
+        /// <remarks>
+        /// Frozen for the same reason as <see cref="CaptureProtectiveHighPass"/>, and
+        /// it is the same failure without it: the bins are rendered again when the
+        /// capture is drawn and again when it is saved, so a calibration read live
+        /// would let a rig setting changed between the walk and the Save recompute the
+        /// walk — and stamp the file with a microphone it was not taken through. The
+        /// resolved curve is held, not the id, so replacing or editing the calibration
+        /// file behind that id cannot reach a capture already taken either.
+        /// </remarks>
+        public CalibrationFile? CaptureMicrophoneCalibration { get; private set; }
+
+        /// <summary>How the calibration list named that curve when the run began.</summary>
+        public string? CaptureMicrophoneCalibrationId { get; private set; }
+
+        /// <summary>
+        /// Freezes the microphone calibration for the run about to start, beside the
+        /// protective high-pass and at the same moment.
+        /// </summary>
+        public void SetCaptureMicrophoneCalibration(
+            string? calibrationId,
+            CalibrationFile? calibration)
+        {
+            CaptureMicrophoneCalibrationId = calibrationId;
+            CaptureMicrophoneCalibration = calibration;
+        }
+
         public int AveragedFrameCount
         {
             get

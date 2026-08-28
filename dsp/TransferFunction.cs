@@ -217,8 +217,9 @@ public static class TransferFunction
     }
 
     /// <summary>
-    /// One frame's impulse response for each of several targets that share a single
-    /// reference — the whole point being that the reference is transformed ONCE.
+    /// How compact one frame's impulse response is, for each of several targets that
+    /// share a single reference — the whole point being that the reference is
+    /// transformed ONCE, and that no caller ever holds them all.
     /// </summary>
     /// <remarks>
     /// A run of a microphone array is exactly this shape: one loopback recorded
@@ -232,20 +233,29 @@ public static class TransferFunction
     /// because the excitation gate and the regularization are functions of the
     /// reference alone.
     /// <para>
+    /// A COMPACTNESS and not an impulse response, because the responses are the
+    /// expensive part and nothing needs two of them at once: at the transform length
+    /// a 96 kHz twenty-second take reaches, one is 64 MiB, and handing back eight
+    /// would have peaked near a gigabyte for a diagnostic that reduces each of them
+    /// to a single number. They are measured and dropped one at a time instead.
+    /// </para>
+    /// <para>
     /// Entries are null where the target is unusable (empty, or shorter than the
-    /// reference); the caller decides what that means.
+    /// reference) or where its shape could not be measured; the caller decides what
+    /// that means.
     /// </para>
     /// </remarks>
-    public static Complex[]?[] ComputeSingleFrameIrs(
+    public static TransferIrCompactness?[] MeasureSingleFrameCompactness(
         IReadOnlyList<double> reference,
         IReadOnlyList<IReadOnlyList<double>> targets,
-        ExcitationBandGate excitationGate)
+        ExcitationBandGate excitationGate,
+        int sampleRate)
     {
         ArgumentNullException.ThrowIfNull(reference);
         ArgumentNullException.ThrowIfNull(targets);
         excitationGate.Validate();
 
-        var results = new Complex[]?[targets.Count];
+        var results = new TransferIrCompactness?[targets.Count];
         int sampleCount = reference.Count;
         if (sampleCount == 0 || targets.Count == 0)
         {
@@ -294,11 +304,14 @@ public static class TransferFunction
                     targetSpectrum[bin] * Complex.Conjugate(referenceSpectrum[bin]);
             }
 
-            results[index] = InverseGatedH1(
+            // Measured and dropped inside the loop: the response is the large
+            // allocation and the verdict is one number.
+            Complex[] response = InverseGatedH1(
                 crossSpectrum,
                 referencePowerSpectrum,
                 gateWeights,
                 regularization);
+            results[index] = TransferIrDiagnostics.MeasureCompactness(response, sampleRate);
         }
 
         return results;

@@ -1712,7 +1712,9 @@ namespace Resonalyze
         /// eight channels of a 96 kHz / 20 s take, 3993 ms one at a time against
         /// 2093 ms shared. The answers are identical bin for bin, because the
         /// excitation gate and the regularization are functions of the reference alone
-        /// (<see cref="TransferFunction.ComputeSingleFrameIrs"/>).
+        /// (<see cref="TransferFunction.MeasureSingleFrameCompactness"/>). Only the
+        /// VERDICTS come back, never the responses: one of those is 64 MiB at the
+        /// transform length a 96 kHz twenty-second take reaches.
         /// </remarks>
         private void AddIncredibleResponses(
             List<string> issues,
@@ -1725,16 +1727,17 @@ namespace Resonalyze
                 return;
             }
 
-            Complex[]?[] responses = TransferFunction.ComputeSingleFrameIrs(
+            TransferIrCompactness?[] shapes = TransferFunction.MeasureSingleFrameCompactness(
                 new RecordedSamplesView(loopback),
                 judged.Select(entry =>
                     (IReadOnlyList<double>)new RecordedSamplesView(entry.Samples)).ToList(),
-                BuildExcitationGate(sweep));
+                BuildExcitationGate(sweep),
+                SampleRate);
             double floorDb = ArrayMicrophoneAnalysis.RunFloorDb(AverageRunCount);
             for (int i = 0; i < judged.Count; i++)
             {
-                if (ArrayMicrophoneAnalysis.DescribeIncredibleResponse(
-                    responses[i], SampleRate, floorDb) is not { } shape)
+                if (ArrayMicrophoneAnalysis.DescribeIncredibleShape(
+                    shapes[i], floorDb) is not { } shape)
                 {
                     continue;
                 }

@@ -202,13 +202,22 @@ internal static class ArrayMicrophoneAnalysis
     public static string? DescribeIncredibleResponse(
         Complex[]? transfer,
         int sampleRate,
+        double floorDb = TransferIrDiagnostics.MinimumCompactnessDb) =>
+        DescribeIncredibleShape(
+            transfer is null ? null : TransferIrDiagnostics.MeasureCompactness(transfer, sampleRate),
+            floorDb);
+
+    /// <summary>
+    /// The same verdict from an already-measured shape, for a caller that measured it
+    /// without keeping the response — see
+    /// <see cref="TransferFunction.MeasureSingleFrameCompactness"/>.
+    /// </summary>
+    public static string? DescribeIncredibleShape(
+        TransferIrCompactness? compactness,
         double floorDb = TransferIrDiagnostics.MinimumCompactnessDb)
     {
         // FAIL-CLOSED, like the measurement microphone's: a shape that cannot be
         // measured at all is a refusal, not a pass.
-        TransferIrCompactness? compactness = transfer is null
-            ? null
-            : TransferIrDiagnostics.MeasureCompactness(transfer, sampleRate);
         if (compactness is { } measured &&
             double.IsFinite(measured.InsideOutsideDb) &&
             measured.InsideOutsideDb >= floorDb)

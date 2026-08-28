@@ -6,7 +6,7 @@ namespace Resonalyze.Dsp.Tests;
 public sealed class TransferFunctionTests
 {
     [Fact]
-    public void ComputeSingleFrameIrs_MatchesJudgingEachTargetOnItsOwn()
+    public void MeasureSingleFrameCompactness_MatchesJudgingEachTargetOnItsOwn()
     {
         // The whole justification for the batched call is that it changes the cost and
         // not the answer: one loopback transformed once instead of once per
@@ -43,8 +43,8 @@ public sealed class TransferFunctionTests
 
         targets.Add(noise);
 
-        Complex[]?[] batched = TransferFunction.ComputeSingleFrameIrs(
-            reference, targets, ExcitationBandGate.FullBand);
+        TransferIrCompactness?[] batched = TransferFunction.MeasureSingleFrameCompactness(
+            reference, targets, ExcitationBandGate.FullBand, 48_000);
 
         Assert.Equal(targets.Count, batched.Length);
         for (int i = 0; i < targets.Count; i++)
@@ -52,19 +52,18 @@ public sealed class TransferFunctionTests
             (_, Complex[]? alone) = TransferFunction.ComputeAveragedMagnitudeAndIr(
                 [new TransferFunctionFrame(reference, targets[i])],
                 ExcitationBandGate.FullBand);
-            Complex[] expected = Assert.IsType<Complex[]>(alone);
-            Complex[] actual = Assert.IsType<Complex[]>(batched[i]);
-            Assert.Equal(expected.Length, actual.Length);
-            for (int bin = 0; bin < expected.Length; bin++)
-            {
-                Assert.Equal(expected[bin].Real, actual[bin].Real, 12);
-                Assert.Equal(expected[bin].Imaginary, actual[bin].Imaginary, 12);
-            }
+            TransferIrCompactness expected = Assert.IsType<TransferIrCompactness>(
+                TransferIrDiagnostics.MeasureCompactness(
+                    Assert.IsType<Complex[]>(alone), 48_000));
+            TransferIrCompactness actual =
+                Assert.IsType<TransferIrCompactness>(batched[i]);
+            Assert.Equal(expected.InsideOutsideDb, actual.InsideOutsideDb, 12);
+            Assert.Equal(expected.PeakDelayMs, actual.PeakDelayMs, 12);
         }
     }
 
     [Fact]
-    public void ComputeSingleFrameIrs_LeavesAnUnusableTargetNull()
+    public void MeasureSingleFrameCompactness_LeavesAnUnusableTargetNull()
     {
         var reference = new double[512];
         for (int i = 0; i < reference.Length; i++)
@@ -72,10 +71,19 @@ public sealed class TransferFunctionTests
             reference[i] = Math.Sin(i * 0.11);
         }
 
-        Complex[]?[] results = TransferFunction.ComputeSingleFrameIrs(
+        // A usable target beside the unusable ones: silence is not "usable but
+        // shapeless", it is a response that cannot be measured either.
+        var usable = new double[512];
+        for (int i = 7; i < usable.Length; i++)
+        {
+            usable[i] = reference[i - 7] * 0.6;
+        }
+
+        TransferIrCompactness?[] results = TransferFunction.MeasureSingleFrameCompactness(
             reference,
-            [new double[512], new double[16], []],
-            ExcitationBandGate.FullBand);
+            [usable, new double[16], []],
+            ExcitationBandGate.FullBand,
+            48_000);
 
         Assert.NotNull(results[0]);
         Assert.Null(results[1]);

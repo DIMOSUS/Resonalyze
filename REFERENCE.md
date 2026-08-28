@@ -1943,6 +1943,20 @@ lacks, so what it does to a 48 kHz record is fully described by its response ove
 that record's band. The simulation then speaks for everything up to the lower of
 the two Nyquist limits, which the dialog states for the project in front of you.
 
+Measured rather than argued. On a seven-driver car (right tweeter: HP 1800 Hz BW48
+plus a 20-band PEQ) a 48 kHz record with the processor named reproduced the 96 kHz
+reference to **0.000 dB rms**, worst bin 0.001 dB; with the processor left following
+the measurements the same chain was off by **0.96 dB rms and +4.1 dB at 19.9 kHz** —
+and a 96 kHz record designed at 48 kHz was off by exactly that much, which places the
+error on the design rate rather than on the recording.
+
+The MEASUREMENT rate still earns a mild preference of its own, and only through
+timing: delays ride the record's grid, so repeating a full alignment on 44.1 kHz
+copies of one set moved three delays by a single 0.01 ms step (10 µs, about 3 mm of
+path), while 48 kHz copies reproduced every one exactly — magnitude agreeing to
+0.01 dB up to 20 kHz either way. Where the interface offers the choice, the
+processor's own rate or a simple sub-multiple of it is the one to take.
+
 The rate list offers **Follow measurements** beside the fixed rates, and the two
 are deliberately different answers: following means the project states no rate of
 its own, so replacing its measurements with a set at another rate moves the

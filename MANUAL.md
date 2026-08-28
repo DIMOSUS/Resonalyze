@@ -191,50 +191,18 @@ For this orientation, use a **90° calibration file**.
 > profiles. Resonalyze supports both; if only a 0° file is available, it can
 > approximate a 90° correction, but a real 90° calibration is preferable.
 
-### Sample rate: two rates, deliberately apart
+### Sample rate
 
-Resonalyze keeps two sample rates apart, and it is worth knowing which is which before
-you set anything:
+Two rates are in play and they do not have to agree: the **measurement rate** your
+interface records at, and the **processing rate** your DSP builds its filters at, which
+you state once in Virtual DSP (see
+[Name the processor you are tuning](#name-the-processor-you-are-tuning)). A 48 kHz sound
+card tunes a 96 kHz processor exactly, provided that processor is named — why the two
+are kept apart, and what a chain designed at the wrong one costs, is in
+[REFERENCE.md](REFERENCE.md#dsp-processor).
 
-- **the measurement rate** — what your audio interface records at. It belongs to the
-  file, and everything read out of measured content (windows, gates, arrivals) uses it;
-- **the processing rate** — what your DSP builds its filters at. It belongs to the
-  device, and you state it once in Virtual DSP (see
-  [Name the processor you are tuning](#name-the-processor-you-are-tuning)).
-
-Why the distinction matters: a digital filter's corner is warped by the rate it was
-designed at. The same numbers entered into a 96 kHz processor do not describe the same
-filter as a chain designed at 48 kHz, and the gap grows toward the top of the band — an
-LR4 low-pass at 8 kHz designed at 48 kHz sits 1.5 dB below the 96 kHz one at 10 kHz,
-4.1 dB at 12 kHz and 10.3 dB at 15 kHz.
-
-What matters is that the simulation designs at the **processor's** rate — not that the
-two rates agree. So:
-
-> **Measure at whatever rate your interface offers, from 44.1 kHz upward, and tell
-> Virtual DSP which processor you are tuning.**
-
-A 48 kHz sound card can tune a 96 kHz processor exactly. A filter invents no frequency
-its input lacks, so what it does to a 48 kHz record is fully described by its response
-over that record's band; the simulation then speaks for everything up to the lower of
-the two Nyquist limits, which the processor dialog states for the project in front of
-you.
-
-> **Author's note — measured, not argued.** On a seven-driver car (right tweeter: HP
-> 1800 Hz BW48 plus a 20-band PEQ), with the processor named correctly, a 48 kHz record
-> reproduced the 96 kHz reference to **0.000 dB rms**, worst bin 0.001 dB. With the
-> processor left following the measurements instead, the same chain was off by
-> **0.96 dB rms and +4.1 dB at 19.9 kHz** — and a 96 kHz record designed at 48 kHz was
-> off by exactly the same amount, which is what proves the error comes from the design
-> rate rather than from the recording.
-
-**Where the measurement rate still earns a preference.** Delays are time, so they ride
-the record's own grid. Repeating a full alignment on 44.1 kHz copies of the same
-measurements moved three of the resulting delays by a single 0.01 ms step (10 µs —
-about 3 mm of path length), while 48 kHz copies reproduced every one of them exactly;
-magnitude agreed to within 0.01 dB up to 20 kHz either way. It is a small effect, but it is the
-reason to prefer the DSP's own rate or a simple sub-multiple of it (48 kHz for a 96 kHz
-processor, say) when your interface gives you the choice.
+> **Measure at whatever rate your interface offers, from 44.1 kHz upward, keep it the
+> same for every driver, and tell Virtual DSP which processor you are tuning.**
 
 **Backend.** With a Focusrite interface, **ASIO** is the preferred backend: Resonalyze
 can request the desired sample rate directly and verify that the driver supports it.
@@ -279,7 +247,9 @@ The panel is grouped the way the decisions are:
 4. **Format** — **Sample Rate** (outlined) is the measurement rate, and since the
    [DSP processor](#name-the-processor-you-are-tuning) is stated separately, anything
    from 44.1 kHz upward will do. Prefer your DSP's own rate or a simple sub-multiple of
-   it if the interface offers one, and keep it the same for every driver in the set.
+   it if the interface offers one — delays ride the record's own grid, so that is the
+   choice that reproduces them exactly — and keep it the same for every driver in the
+   set.
    **Audio backend** — preferably the native ASIO driver.
 5. **Routing** — which output feeds the DSP, which input carries the microphone, and
    which channel carries the **loopback**. Without a loopback the measurement will not

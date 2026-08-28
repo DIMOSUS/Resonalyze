@@ -427,9 +427,12 @@ the only source of timing — the impulse responses, the arrivals and every dela
 come from it alone. The further ones exist for the average the EQ stage reads and for
 nothing else, so their placement is free: spread them around that position, through the
 volume a head occupies. The seven these were developed against sat within about 30 cm
-of it, left and right of it and forward of it — the measurement microphone being the
-seventh, and the one every other is levelled onto, so six rows are what you configure
-and one row is the least an average can be built from.
+of it, left and right of it and forward of it.
+
+**The table lists only the further microphones.** The measurement one is not a row in
+it and cannot be made one — the dialog does not offer the input it is on — it joins the
+set by itself when the sweep runs, which is why six rows produced those seven
+positions. One row is the least an average can be built from.
 
 A capsule's calibration has to be in Record Settings' own list before it can be
 assigned — **More calibrations → Manage... → Add file...** — because the array chooses

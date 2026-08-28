@@ -366,9 +366,10 @@ as the impulse response.
 What the measurement stores is each microphone's **level curve** on a shared
 logarithmic grid, uncalibrated, with its calibration frozen beside it — not its
 impulse response. The curves are raw so a calibration can be swapped later, and
-the measurement microphone is in the list like any other position: it is a
-microphone in the listening volume, and it is the one every other is levelled
-onto. Nothing about timing changes, because a spatial average is a magnitude.
+the measurement microphone is among those STORED curves like any other position —
+it is a microphone in the listening volume, and the one every other is levelled onto
+— though it is never a row in the dialog: it is on an input the list does not offer,
+and it joins the set on its own when the sweep runs. Nothing about timing changes, because a spatial average is a magnitude.
 
 **Levelled onto** is meant literally: each further microphone is shifted by the
 median difference from the measurement microphone over that driver's working band

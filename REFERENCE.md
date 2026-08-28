@@ -1544,6 +1544,16 @@ measurement — below the cabin's first mode they are, so a subwoofer loses litt
 and it is refused outright for a moving-microphone set, whose captures are levelled
 by one analyzer session that a lone impulse response is not part of.
 
+What such a channel gives up is narrower than it sounds. Automatic equalization gates
+its boosts two ways that have nothing to do with arrays: below a coherence floor, and
+anywhere the magnitude climbs 6 dB on both sides within a quarter octave — which is
+precisely the narrow interference null a single position invents. What the array's
+own witness adds is BROAD disagreement between positions, which that detector cannot
+see by construction. Measured on two real seven-position sets, a single position
+departs from the average of seven by at most 4.9 dB at 1/6 octave (midrange, 400 to
+700 Hz; a tweeter reaches 3.4 dB) — under the 6 dB the null detector needs, so that
+much is boostable, and 0.13 dB rms below 250 Hz, where the fallback is exact.
+
 Each array microphone's own **calibration** is applied before the positions are
 averaged, so the stored average is already corrected — each capsule through its own
 file. When every position shared one file, the average says which, and the Virtual

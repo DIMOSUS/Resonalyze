@@ -288,8 +288,25 @@ internal static class VirtualDspEqHandoff
         // building it and says so instead of quietly showing a different curve.
         // The panel is drawing spatial averages, and this channel has none — the
         // plot's own badge says so, and the tool that can act on the difference has to
-        // be told too. Decision: a channel drawn from one position carries dips that
-        // belong to that position, and nothing here protects against equalizing them.
+        // be told too.
+        //
+        // What protects it is NOT nothing, which is what this comment used to claim
+        // and what a reviewer then read it as. A channel without an array is handed
+        // its own transfer coherence below instead of the array's agreement curve, so
+        // it keeps the witness every single-microphone measurement in this program has
+        // always been gated by; and EqBoostabilityMask refuses a boost anywhere the
+        // magnitude climbs 6 dB on BOTH sides within a quarter octave, which is
+        // exactly the narrow interference null a single position invents. Both run for
+        // every automatic tune.
+        //
+        // What it loses is the array's witness for BROAD disagreement, which the null
+        // detector cannot see by construction. Measured on the owner's two real
+        // seven-position sets, a single position departs from the average of seven by
+        // at most 4.9 dB at 1/6 octave (midrange, 400-700 Hz; the tweeter reaches
+        // 3.4 dB) — under the 6 dB the null detector needs, so that residue is
+        // boostable. It is bounded, it is named on the plot and again in the note
+        // below, and a third gate against five decibels was judged not worth its
+        // complexity.
         string pointNote = pointMeasured
             ? "\r\nThis channel has NO spatial average: the rest of the set is drawn " +
               "from arrays and this one from its single measurement position. Its " +

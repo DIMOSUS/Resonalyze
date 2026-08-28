@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Numerics;
 using OxyPlot;
 using OxyPlot.Annotations;
@@ -1392,6 +1392,12 @@ public partial class EqWizardPanel : UserControl
         AddClampedFill(model, curveAug, targetAug, above: false, BelowTargetFill);
     }
 
+    // One area per RUN of frequencies where the curve actually exists. Where it does
+    // not — under a protective high-pass, outside the band a driver was swept over,
+    // past the end of a capture's grid — the level is NaN, and a NaN vertex used to go
+    // into the polygon like any other: the renderer then closed the shape across the
+    // gap and shaded whole octaves where nothing was measured, reading as a deviation
+    // from the target that no measurement supports.
     private static void AddClampedFill(
         PlotModel model,
         IReadOnlyList<DataPoint> curve,
@@ -1399,23 +1405,34 @@ public partial class EqWizardPanel : UserControl
         bool above,
         OxyColor fill)
     {
-        var area = new AreaSeries
-        {
-            Color = OxyColors.Transparent,
-            Fill = fill,
-            StrokeThickness = 0,
-            Tag = WizardSeriesTag
-        };
+        AreaSeries? area = null;
         for (int i = 0; i < curve.Count; i++)
         {
             double clamped = above
                 ? Math.Max(curve[i].Y, target[i].Y)
                 : Math.Min(curve[i].Y, target[i].Y);
+            if (!double.IsFinite(clamped) || !double.IsFinite(target[i].Y))
+            {
+                // The run ends here; the next finite pair starts a new one.
+                area = null;
+                continue;
+            }
+
+            if (area == null)
+            {
+                area = new AreaSeries
+                {
+                    Color = OxyColors.Transparent,
+                    Fill = fill,
+                    StrokeThickness = 0,
+                    Tag = WizardSeriesTag
+                };
+                model.Series.Add(area);
+            }
+
             area.Points.Add(new DataPoint(curve[i].X, clamped));
             area.Points2.Add(target[i]);
         }
-
-        model.Series.Add(area);
     }
 
     // Interpolates between two frequencies at fraction f in the log domain, matching

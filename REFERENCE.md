@@ -1112,7 +1112,11 @@ frequency.
 
 The plot shows, on shared frequency/dB axes: **Source** (with optional extra
 smoothing), **Target**, **Source + EQ**, the **EQ** filter response itself (on
-its own right-hand dB axis), and a shaded **error fill**. Click a band card to
+its own right-hand dB axis), and a shaded **error fill**. The fill stops where the
+measurement does: where the source curve has no level — under a protective
+high-pass, outside the band the driver was swept over, past the end of a capture's
+grid — that range is left unshaded rather than shaded as a deviation from a target
+nothing was measured against. Click a band card to
 overlay that band's contribution as a dashed curve, with a dotted vertical guide
 at its frequency in the same colour. The curve says what the filter does and the
 guide says where it sits, which the curve is bad at: a low-Q bell is a shape an
@@ -1278,6 +1282,14 @@ break the identity above, so the correction is changed where it lives. What is
 pinned is the curve the panel draws with — including one a loaded session carries
 that is in no list of yours — under the name the panel shows for it. The wizard's
 standing calibration preference for impulse responses survives untouched.
+
+A channel need not have a CURVE to be corrected, and under the panel's **Own (as
+measured)** it often does not: an impulse response taken before calibrations were
+stamped into files names none, while the moving-microphone capture beside it
+carries its own — two corrections for two curves, and the wizard reproduces each
+where it applies. The selector then reads *Own (as measured)*, the panel's own
+words, because the correction is whatever that capture was recorded through and no
+entry in the wizard's list need name it.
 
 The return guard covers this too: a bank fitted against the spatial average will
 not land on a panel that has gone back to its impulse responses, or onto a channel

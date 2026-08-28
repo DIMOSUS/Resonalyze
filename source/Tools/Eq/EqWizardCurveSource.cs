@@ -277,6 +277,25 @@ internal sealed record EqWizardCurveSource
         Kind == EqWizardSourceKind.ImpulseResponse || HasOwnCalibration;
 
     /// <summary>
+    /// Whether the Virtual DSP panel pinned a correction to this channel at all.
+    /// </summary>
+    /// <remarks>
+    /// TWO corrections travel with a channel and only one of them is a curve: the
+    /// impulse response's (<see cref="PinnedCalibration"/>, null when the file names
+    /// none) and the one the panel read the SPATIAL AVERAGE through, which is a MODE.
+    /// Under "Own (as measured)" that mode is a real correction — the capture's own —
+    /// while the impulse response beside it may name no file, and a capture is a
+    /// separate measurement through its own calibration. Asking only about the curve
+    /// is the collapse <see cref="SpatialAverageCalibrationMode"/> exists to prevent,
+    /// one layer up: it reads "no file on the measurement" as "no correction anywhere"
+    /// and hands the wizard the uncalibrated capture the panel never drew.
+    /// </remarks>
+    public bool PinsCorrection =>
+        PinnedCalibration != null ||
+        (SpatialAverage != null &&
+            SpatialAverageCalibration.Mode != SpatialAverageCalibrationMode.Off);
+
+    /// <summary>
     /// Whether the correction this curve carries is an AGGREGATE belonging to no
     /// single microphone: an array whose positions were corrected by different files.
     /// </summary>

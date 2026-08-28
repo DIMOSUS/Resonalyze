@@ -897,26 +897,22 @@ namespace Resonalyze.Options
             AudioBackend backend = SelectedAudioBackend;
             if (backend == AudioBackend.Asio)
             {
-                return (
-                    asioDriverInfo.InputChannels.Select(channel => channel.Offset).ToArray(),
-                    "ASIO driver inputs");
+                int[] asio = asioDriverInfo.InputChannels
+                    .Select(channel => channel.Offset)
+                    .ToArray();
+                return (asio, ArrayInputSources.Describe(backend, asio.Length));
             }
             if (backend.IsWasapi())
             {
                 int count = comboBoxRecordingDevice.SelectedItem is AudioEndpointDescriptor endpoint
                     ? endpoint.ChannelCount
                     : 0;
-                // An interface that presents its inputs to WASAPI as separate
-                // stereo endpoints reports two here, and its further inputs are
-                // genuinely unreachable in one session — through ASIO they are not.
                 return (
                     Enumerable.Range(0, count).ToArray(),
-                    count > 2
-                        ? "WASAPI endpoint channels"
-                        : "WASAPI endpoint channels; use ASIO to reach an interface's further inputs");
+                    ArrayInputSources.Describe(backend, count));
             }
 
-            return ([0, 1], "MME is limited to two channels");
+            return ([0, 1], ArrayInputSources.Describe(backend, 2));
         }
 
         private void buttonArrayMicrophones_Click(object? sender, EventArgs e)

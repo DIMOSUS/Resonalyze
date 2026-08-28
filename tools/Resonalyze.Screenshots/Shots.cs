@@ -35,16 +35,21 @@ internal static class Shots
         new("virtual-dsp", ShotSession.AssetWindowSize, ["visual_dsp"], VirtualDspAsset),
         new("eq-wizard", ShotSession.AssetWindowSize,
             ["eq_wizard", "eq_wizard_phase"], EqWizardAssets),
-        // Skipped rather than failed without a measurement recorded through an
-        // array: the figures need one and not every rig has one, and a config that
-        // cannot take them must not report the sweep as broken.
-        new("array", ShotSession.ManualWindowSize,
-            ["manual/array-curves", "manual/array-microphones"],
-            ArrayFigures,
-            Unavailable: config => string.IsNullOrWhiteSpace(config.ArrayMeasurement)
-                ? "no \"arrayMeasurement\" in the config — a measurement recorded " +
-                  "with a microphone array"
-                : null),
+        // Skipped in a sweep rather than failed without a measurement recorded
+        // through an array: the figures need one and not every rig has one, and a
+        // config that cannot take them must not report the sweep as broken. Asked for
+        // by name it fails instead — see Program.
+        new("array", ShotSession.ManualWindowSize, ["manual/array-curves"],
+            ArrayCurves, Unavailable: NeedsArrayMeasurement),
+        // Its own scene because it needs one thing more: the DIALOG states what the
+        // device offers, and no measurement file records that.
+        new("array-dialog", ShotSession.ManualWindowSize, ["manual/array-microphones"],
+            ArrayDialogFigure,
+            Unavailable: config => NeedsArrayMeasurement(config)
+                ?? (config.Rig == null
+                    ? "no \"arrayRig\" in the config — the inputs, the loopback and the " +
+                      "backend to draw the dialog for, which no measurement records"
+                    : null)),
         new("manual", ShotSession.ManualWindowSize,
             ["manual/virtual-dsp", "manual/eq-wizard-handoff", "manual/eq-wizard-tuned",
              "manual/dsp-processor", "manual/dsp-processor-model", "manual/eq-target",
@@ -185,20 +190,64 @@ internal static class Shots
 
     // -------------------------------------------------------- the microphone array
 
+    /// <summary>What both array figures need before either can be taken.</summary>
+    private static string? NeedsArrayMeasurement(ShotConfig config) =>
+        string.IsNullOrWhiteSpace(config.ArrayMeasurement)
+            ? "no \"arrayMeasurement\" in the config — a measurement recorded with a " +
+              "microphone array"
+            : null;
+
+    /// <summary>The array as the Frequency Response settings draw it.</summary>
+    private static void ArrayCurves(ShotSession session, Func<string, bool> wanted)
+    {
+        _ = wanted;
+        session.LoadMeasurement(session.Config.ArrayMeasurement);
+        session.SelectTab("Frequency");
+        session.Pump(4_000);
+        session.OpenModeSettings();
+        Form settings = session.ModeSettingsDialog
+            ?? throw new InvalidOperationException(
+                "manual/array-curves: the Frequency Response settings did not open.");
+        // The measurement carries its own curve selection, and the figure is about ONE
+        // comparison: the point response against the positions, their average and their
+        // spread. Distortion, noise floor and coherence are switched off rather than
+        // left to whatever the file was last read with — six more traces over the same
+        // decade is what buries the four that are the point.
+        foreach ((string box, bool on) in new[]
+        {
+            ("checkBoxShowPrimary", true),
+            ("checkBoxShowArrayAverage", true),
+            ("checkBoxShowArrayMicrophones", true),
+            ("checkBoxShowArraySpread", true),
+            ("checkBoxShowHd2", false),
+            ("checkBoxShowHd3", false),
+            ("checkBoxShowHd4", false),
+            ("checkBoxShowThdPlusNoise", false),
+            ("checkBoxShowNoiseFloor", false),
+            ("checkBoxShowCoherence", false)
+        })
+        {
+            Reflect.Field<CheckBox>(settings, box).Checked = on;
+        }
+
+        session.Pump(3_000);
+        session.CaptureScreen("manual/array-curves");
+    }
+
     /// <summary>
-    /// The two array figures, both from ONE measurement: the curves as the mode
-    /// settings draw them, and the dialog that configured the set.
+    /// The dialog that configured the set, built rather than reached through Record
+    /// Settings — which offers only inputs the ATTACHED interface has, so without the
+    /// rig plugged in that route shoots a dialog with nothing in it.
     /// </summary>
     /// <remarks>
-    /// The dialog's rows are read back out of the measurement rather than invented,
-    /// so the figure shows the positions whose curves the other shot draws — a made-up
-    /// set would drift from the guide's text the first time the real one changed.
-    /// The dialog is constructed rather than reached through Record Settings, which
-    /// offers only inputs the ATTACHED interface has: without the rig this shot would
-    /// otherwise be a dialog with nothing in it.
+    /// The rows are read back out of the measurement rather than invented, so this
+    /// figure shows the positions whose curves the other shot draws and the two cannot
+    /// drift apart. What the file does NOT record — the device's inputs, the loopback,
+    /// the backend — comes from the config instead of from guesswork.
     /// </remarks>
-    private static void ArrayFigures(ShotSession session, Func<string, bool> wanted)
+    private static void ArrayDialogFigure(ShotSession session, Func<string, bool> wanted)
     {
+        _ = wanted;
         Task<ImpulseResponseFile> loading =
             ImpulseResponseFile.LoadAsync(session.Config.ArrayMeasurement);
         session.Await(loading);
@@ -207,49 +256,13 @@ internal static class Shots
             ?? throw new InvalidOperationException(
                 $"{session.Config.ArrayMeasurement} carries no microphone array.");
 
-        if (wanted("manual/array-curves"))
-        {
-            session.LoadMeasurement(session.Config.ArrayMeasurement);
-            session.SelectTab("Frequency");
-            session.Pump(4_000);
-            session.OpenModeSettings();
-            Form settings = session.ModeSettingsDialog
-                ?? throw new InvalidOperationException(
-                    "manual/array-curves: the Frequency Response settings did not open.");
-            // The measurement carries its own curve selection, and the figure is about
-            // ONE comparison: the point response against the positions, their average
-            // and their spread. Distortion, noise floor and coherence are switched off
-            // rather than left to whatever the file was last read with — six more
-            // traces over the same decade is what buries the four that are the point.
-            foreach ((string box, bool on) in new[]
-            {
-                ("checkBoxShowPrimary", true),
-                ("checkBoxShowArrayAverage", true),
-                ("checkBoxShowArrayMicrophones", true),
-                ("checkBoxShowArraySpread", true),
-                ("checkBoxShowHd2", false),
-                ("checkBoxShowHd3", false),
-                ("checkBoxShowHd4", false),
-                ("checkBoxShowThdPlusNoise", false),
-                ("checkBoxShowNoiseFloor", false),
-                ("checkBoxShowCoherence", false)
-            })
-            {
-                Reflect.Field<CheckBox>(settings, box).Checked = on;
-            }
-
-            session.Pump(3_000);
-            session.CaptureScreen("manual/array-curves");
-        }
-
-        if (wanted("manual/array-microphones"))
-        {
-            session.CaptureDialog(ArrayDialog(positions), "manual/array-microphones");
-        }
+        session.CaptureDialog(
+            ArrayDialog(positions, session.Config.Rig!), "manual/array-microphones");
     }
 
     private static Form ArrayDialog(
-        IReadOnlyList<ImpulseResponseFile.ArrayMicrophoneFileEntry> positions)
+        IReadOnlyList<ImpulseResponseFile.ArrayMicrophoneFileEntry> positions,
+        ArrayRig rig)
     {
         ImpulseResponseFile.ArrayMicrophoneFileEntry anchor =
             positions.FirstOrDefault(position => position.IsMeasurementMicrophone)
@@ -276,21 +289,33 @@ internal static class Shots
                 Note = position.Note
             })];
 
-        // The loopback's input is not in the file — no array microphone may sit on it,
-        // so it is the lowest input none of them took — and the interface is given one
-        // input more than the set used, which is what leaves the editor in its ordinary
-        // "ready to add another" state instead of with an empty input list.
-        int inputs = positions.Max(position => position.ChannelOffset) + 2;
-        int loopback = Enumerable.Range(0, inputs).First(
-            channel => positions.All(position => position.ChannelOffset != channel));
+        // The device facts the measurement does not record: how many inputs it offers,
+        // which one the loopback takes, and the backend whose words the status line is
+        // stated in. They come from the config because they are an authored decision —
+        // the tool filling them in by itself is how the figure ended up stating a free
+        // input count nobody had checked. The rows below still come from the
+        // measurement, so what the dialog LISTS remains the set the curves are drawn
+        // from; only the device it is listed on is declared.
+        int loopback = rig.LoopbackInput - 1;
+        foreach (ImpulseResponseFile.ArrayMicrophoneFileEntry position in positions)
+        {
+            if (position.ChannelOffset >= rig.Inputs || position.ChannelOffset == loopback)
+            {
+                throw new InvalidOperationException(
+                    $"arrayRig says {rig.Inputs} inputs with the loopback on " +
+                    $"Input {rig.LoopbackInput}, and the measurement recorded a " +
+                    $"position on Input {position.ChannelOffset + 1}. One of the two " +
+                    "describes a different rig.");
+            }
+        }
 
         return new Options.ArrayMicrophonesDialog(
             microphones,
             calibrations,
-            [.. Enumerable.Range(0, inputs)],
+            [.. Enumerable.Range(0, rig.Inputs)],
             anchor.ChannelOffset,
             loopback,
-            "ASIO driver inputs");
+            Options.ArrayInputSources.Describe(rig.Backend, rig.Inputs));
     }
 
     // ------------------------------------------------------------- the manual

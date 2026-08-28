@@ -84,7 +84,17 @@ public partial class Form1
             await timeAlignmentController.AbortAsync();
         }
 
+        bool liveCaptureWasRunning = liveSpectrumController.InProgress;
         await liveSpectrumController.AbortAsync();
+        if (liveCaptureWasRunning)
+        {
+            // Only when a capture was actually stopped. This runs on every mode
+            // switch, and a settings panel whose view was never denied has nothing
+            // to be paid back — probing the driver for it would open an AsioOut on
+            // each tab click. A switch to a Tools mode closes the panel anyway
+            // (SetCaptureControlsVisible), which the refresh reads as "nothing open".
+            RefreshOpenMeasurementSettingsDevice();
+        }
 
         CurrentMode = mode;
         plotViewports.Show(null, mode);
@@ -431,6 +441,26 @@ public partial class Form1
 
         dockedMeasurementSettingsHost.InvokeIfOpen<MeasurementOptions>(
             panel => panel.RefreshAudioDeviceView());
+    }
+
+    /// <summary>
+    /// Stops a live capture — running, or merely holding its redraw timer — and pays
+    /// the settings panel's device debt once it is stopped. Every path that takes the
+    /// device back from the analyzer goes through here, so an open Record Settings
+    /// panel is refreshed wherever the capture ends rather than only where the Record
+    /// button stopped it. A no-op, refresh included, when nothing was running: the
+    /// panel was never denied its answer, and probing an ASIO driver for nothing is
+    /// what the refresh is careful about in the first place.
+    /// </summary>
+    private async Task StopLiveCaptureAsync()
+    {
+        if (!liveSpectrumController.InProgress && !liveSpectrumController.TimerEnabled)
+        {
+            return;
+        }
+
+        await liveSpectrumController.AbortAsync();
+        RefreshOpenMeasurementSettingsDevice();
     }
 
     private async Task ApplySweepSettingsAsync(MeasurementOptions dialog)

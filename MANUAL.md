@@ -419,11 +419,17 @@ There are two ways to get one.
 **If you have spare inputs and spare microphones**, set up a
 [microphone array](REFERENCE.md#microphone-array) before you measure: **Record
 Settings → Array microphones**, one row per further microphone — its input, its
-calibration, and a note saying where it stands. Place them around the head area; the
-seven positions these were developed against sat within about 30 cm of the listening
-position, left and right of it and forward of it. The measurement microphone is the
-seventh of those seven and the one every other is levelled onto, so six rows are what
-you configure, and one row is the least an average can be built from.
+calibration, and a note saying where it stands.
+
+The measurement microphone does not move: it stays where
+[Section 3](#microphone-position) mounted it, at the listening position, and it remains
+the only source of timing — the impulse responses, the arrivals and every delay
+come from it alone. The further ones exist for the average the EQ stage reads and for
+nothing else, so their placement is free: spread them around that position, through the
+volume a head occupies. The seven these were developed against sat within about 30 cm
+of it, left and right of it and forward of it — the measurement microphone being the
+seventh, and the one every other is levelled onto, so six rows are what you configure
+and one row is the least an average can be built from.
 
 A capsule's calibration has to be in Record Settings' own list before it can be
 assigned — **More calibrations → Manage... → Add file...** — because the array chooses

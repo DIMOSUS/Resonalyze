@@ -143,6 +143,7 @@ public partial class Form1
                     liveSpectrumController.HasDisplayableCurve,
                     liveSpectrumController.HasConfiguredLoopback,
                     noiseMeasurement.SampleRate);
+                opt.ShowCalibration(DescribeLiveCalibration());
                 opt.ResetAverageRequested += liveSpectrumController.ResetAverage;
             },
             ApplyLiveSpectrumOptionsAsync,

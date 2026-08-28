@@ -191,14 +191,50 @@ public partial class Form1
         string? rigCalibrationId =
             measurementSettings.Measurement.MicrophoneCalibrationId;
         liveSpectrumOptions.CalibrationId = rigCalibrationId;
-        // The panel's read-out answers for the curve ON SCREEN while there is one —
-        // which is the capture's frozen calibration, not the rig's — and only falls
-        // back to the rig when there is nothing drawn for it to describe.
-        string? liveDisplayCalibrationId = liveSpectrumController.HasDisplayableCurve
-            ? noiseMeasurement.CaptureMicrophoneCalibrationId
-            : rigCalibrationId;
+        RefreshLiveCalibrationReadout();
+    }
+
+    /// <summary>
+    /// Tells the live panel what the plot in front of it is corrected through.
+    /// </summary>
+    /// <remarks>
+    /// The controller answers for the curve on screen — a loaded capture by the name
+    /// stored in it, a running or held one by the calibration frozen when its run
+    /// began — and only an empty plot falls through to the rig, which is what the NEXT
+    /// run will use. Pushed from here rather than read by the panel because the panel
+    /// is opened, refreshed and re-opened at moments it does not choose.
+    /// </remarks>
+    private void RefreshLiveCalibrationReadout() =>
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
-            panel => panel.RefreshCalibrationEntries(liveDisplayCalibrationId, entries));
+            panel => panel.ShowCalibration(DescribeLiveCalibration()));
+
+    private string DescribeLiveCalibration()
+    {
+        if (liveSpectrumController.DisplayedCalibration is not { } displayed)
+        {
+            return NameCalibration(
+                measurementSettings.Measurement.MicrophoneCalibrationId);
+        }
+
+        // A loaded capture's calibration is a name from another machine's list, so it
+        // is shown as it was written rather than looked up here and lost.
+        return displayed.FromLoadedFile
+            ? string.IsNullOrWhiteSpace(displayed.Value) ? "Off" : displayed.Value
+            : NameCalibration(displayed.Value);
+    }
+
+    private string NameCalibration(string? calibrationId)
+    {
+        if (MicrophoneCalibrationIds.IsOff(calibrationId))
+        {
+            return "Off";
+        }
+
+        MicrophoneCalibrationEntry? entry = microphoneCalibration
+            .GetEntries()
+            .FirstOrDefault(candidate => string.Equals(
+                candidate.Id, calibrationId, StringComparison.OrdinalIgnoreCase));
+        return entry?.Name ?? "Deleted calibration";
     }
 
     // Adds a calibration curve a Virtual DSP session carried in to the configured

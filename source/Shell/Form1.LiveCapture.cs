@@ -82,6 +82,8 @@ public partial class Form1
         }
 
         liveSpectrumController.ShowLoadedCapture(document);
+        // The plot now holds someone else's capture, corrected by whatever they used.
+        RefreshLiveCalibrationReadout();
         UpdateLastImpulseResponseDirectory(path);
         RefreshSaveAvailability();
         return true;

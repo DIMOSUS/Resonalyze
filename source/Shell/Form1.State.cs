@@ -82,6 +82,9 @@ public partial class Form1
         // through" is a different answer from "none".
         expSweepMeasurement.MeasurementProtectiveHighPass = protectiveHighPass;
         expSweepMeasurement.MeasurementInput = splCalibration?.CaptureIdentity;
+        // For the history path, which restores a result without going through
+        // ApplyLoadedImpulseResponseState; the file path selects it there and lands
+        // here first, so the second call is a no-op on an already-correct selection.
         SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
     }
 
@@ -176,6 +179,12 @@ public partial class Form1
 
     private void ApplyLoadedImpulseResponseState(string? filePath)
     {
+        // Everything that arrives from disk lands here — a Resonalyze file, a REW
+        // export, a recorded WAV — and every one of them is a new measurement to be
+        // read through its own calibration. The imports matter most: they carry NONE,
+        // so a view left on one of the user's own curves would correct an imported
+        // response with a microphone that had nothing to do with it, silently.
+        SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
         ApplyMeasurementConfigurationToControllers();
         SetImpulseResponseSourceFile(filePath);
         if (!string.IsNullOrWhiteSpace(filePath))

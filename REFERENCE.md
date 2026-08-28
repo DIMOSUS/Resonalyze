@@ -582,11 +582,11 @@ gets that chain applied a second time: the crossover corner doubles its slope an
 every filter counts twice. Nothing downstream can detect this. The curve stays
 smooth and entirely plausible, which is what makes it worth stating here.
 
-The **Sequence Length** matters more here than in the other modes and is the one
-setting MMM leaves open: the excitation is one frame-length period of pink noise, so
-the frame decides the lowest frequency it really contains and the resolution the bands
-are built from — 2048 at 48 kHz resolves about 47 Hz, 65536 about 1.5 Hz. The sets this
-was developed against were taken at 65536 at 48 kHz, 1.4 s a frame.
+The **Sequence Length** is the one setting MMM leaves open, and the maximum is the
+answer: the excitation is one frame-length period of pink noise, so the longest frame
+holds the most bass and gives the finest grid — 65536 at 48 kHz is a 0.73 Hz bin
+spacing and a 1.4 s frame, against 23.4 Hz at the 2048 default. The sets this was
+developed against were taken there.
 
 **A capture belongs to the state its run began in.** The protective high-pass and
 the microphone calibration are both frozen on the accumulation when Start is pressed,

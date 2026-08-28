@@ -118,15 +118,14 @@ public sealed class LiveSpectrumOptLayoutTests
     }
 
     /// <summary>
-    /// The calibration box shows the rig's choice and never offers one of its own —
-    /// including after the calibration list is rebuilt under an open panel.
+    /// The calibration box is a read-out: it shows what the plot is corrected
+    /// through and never offers a choice, however often it is rebuilt.
     /// </summary>
     /// <remarks>
-    /// <see cref="MicrophoneCalibrationComboHelper.Configure"/> enables the box
-    /// whenever it holds more than one entry, so disabling it once at construction
-    /// lasted exactly until a calibration was added or removed: the read-out became
-    /// editable, and a selection made in it would have changed nothing and then
-    /// snapped back to the rig's value on the next refresh.
+    /// It held entries once, and <see cref="MicrophoneCalibrationComboHelper.Configure"/>
+    /// enables the box whenever it holds more than one — so disabling it at
+    /// construction lasted exactly until a calibration was added or removed, and a
+    /// selection made in it changed nothing and then snapped back.
     /// </remarks>
     [Fact]
     public void TheCalibrationReadOutStaysReadOnlyWhenTheListIsRebuilt() =>
@@ -136,17 +135,11 @@ public sealed class LiveSpectrumOptLayoutTests
             var combo = (DarkComboBox)Find(panel, "comboCalibration");
             Assert.False(combo.Enabled);
 
-            panel.RefreshCalibrationEntries(
-                "cal-1",
-                [
-                    new MicrophoneCalibrationEntry("0deg", "0°", Available: true),
-                    new MicrophoneCalibrationEntry("cal-1", "90°", Available: true)
-                ]);
+            panel.ShowCalibration("90° capsule 2");
 
             Assert.False(combo.Enabled);
-            Assert.Equal(
-                "cal-1",
-                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(combo));
+            Assert.Equal("90° capsule 2", combo.SelectedItem);
+            Assert.Single(combo.Items);
         });
 
     private static LiveSpectrumOpt CreatePanel(LiveSpectrumOptions? options = null)

@@ -137,6 +137,26 @@ internal sealed class LiveSpectrumController : IDisposable
     public bool HasDisplayableCurve => measurement.InProgress || lastSnapshot != null;
 
     /// <summary>
+    /// What the curve currently on the plot was corrected through, or null when the
+    /// plot holds no capture of its own and the rig's setting is the honest answer.
+    /// </summary>
+    /// <remarks>
+    /// Three sources, in the order they take the screen: a LOADED capture carries its
+    /// correction inside it and answers by name, because that name belongs to whoever
+    /// took it and need not exist in this machine's list at all; a running or held
+    /// accumulation answers with the id frozen on it when its run began; and an empty
+    /// plot has nothing to answer for. Without this the read-out showed the rig — the
+    /// microphone the NEXT run will use — beside a curve taken with another one.
+    /// </remarks>
+    public LiveDisplayCalibration? DisplayedCalibration =>
+        loadedCapture is { } document
+            ? new LiveDisplayCalibration(document.Calibration?.Name, FromLoadedFile: true)
+            : HasDisplayableCurve
+                ? new LiveDisplayCalibration(
+                    measurement.CaptureMicrophoneCalibrationId, FromLoadedFile: false)
+                : null;
+
+    /// <summary>
     /// Whether a held accumulation could be written as a capture document. A loaded
     /// capture does not count: it is already a file, and re-saving it as if it were a
     /// fresh measurement would restamp it with this session's recipe.
@@ -269,6 +289,14 @@ internal sealed class LiveSpectrumController : IDisposable
     // exists. Keying on the RIG's calibration instead — which is what this did while
     // the live options still owned that choice — dropped a perfectly valid envelope
     // whenever the next run's microphone was chosen mid-hold.
+    /// <summary>
+    /// The correction behind the curve on screen: a NAME when it came out of a loaded
+    /// capture, an id from this machine's list when it was taken here.
+    /// </summary>
+    internal readonly record struct LiveDisplayCalibration(
+        string? Value,
+        bool FromLoadedFile);
+
     private readonly record struct PeakHoldDisplayKey(
         MagnitudeScale Scale,
         bool RtaOnly,

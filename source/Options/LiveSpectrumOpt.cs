@@ -181,7 +181,9 @@ namespace Resonalyze.Options
                 options.AnalysisMode == LiveAnalysisMode.TransferFunction;
             UpdateModeDependentControls();
 
-            ShowRigCalibration(options.CalibrationId, calibrationEntries);
+            // A placeholder until the shell says what the plot is corrected through;
+            // it calls ShowCalibration immediately after Init.
+            ShowCalibration(string.Empty);
         }
 
         /// <summary>
@@ -189,33 +191,23 @@ namespace Resonalyze.Options
         /// host calls this when the configured calibrations change while the
         /// panel is open.
         /// </summary>
-        internal void RefreshCalibrationEntries(
-            string? calibrationId,
-            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
-            ShowRigCalibration(calibrationId, calibrationEntries);
-
         /// <summary>
-        /// Shows the rig's calibration without offering it as a choice.
+        /// Shows what the plot is corrected through, as a read-out.
         /// </summary>
         /// <remarks>
-        /// A read-out: a live capture is taken on the rig, through the capsule Record
-        /// Settings names, and a second selection here would let an MMM pass and the
-        /// sweeps beside it disagree about which microphone was used — a difference
-        /// nothing downstream could see. It has to be disabled after EVERY rebuild of
-        /// the list, because <see cref="MicrophoneCalibrationComboHelper.Configure"/>
-        /// enables the box whenever it holds more than one entry: leaving it to the
-        /// panel's construction alone made the field editable again the moment a
-        /// calibration was added or removed, and a selection made in it would have
-        /// changed nothing and then snapped back.
+        /// Not a selection, and not even an entry from a list: a loaded capture names
+        /// a calibration that belongs to whoever took it and need not exist on this
+        /// machine, and a held accumulation names the one frozen on it — neither is a
+        /// choice this panel may offer. A second selection here would let an MMM pass
+        /// and the sweeps beside it disagree about which microphone was used, which is
+        /// a difference nothing downstream could see. The box is disabled on every
+        /// call, because it is rebuilt on every call.
         /// </remarks>
-        private void ShowRigCalibration(
-            string? calibrationId,
-            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries)
+        internal void ShowCalibration(string text)
         {
-            MicrophoneCalibrationComboHelper.Configure(
-                comboCalibration,
-                calibrationId,
-                calibrationEntries);
+            comboCalibration.Items.Clear();
+            comboCalibration.Items.Add(text ?? string.Empty);
+            comboCalibration.SelectedIndex = 0;
             comboCalibration.Enabled = false;
         }
 

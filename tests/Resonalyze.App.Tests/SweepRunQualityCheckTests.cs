@@ -127,35 +127,26 @@ public sealed class SweepRunQualityCheckTests
     }
 
     [Fact]
-    public void Report_DescribeSeparatesExcludedRunsFromRecoveredOnes()
+    public void Report_NamesTheRunThatStoppedTheMeasurement()
     {
+        // There is no retry any more, so there is no "recovered" case to separate: a
+        // bad run stops the measurement, and the report says which one and why. The
+        // retry never recovered anything in the field — a gain set wrong or a cable in
+        // the wrong socket is reproduced exactly by the next sweep.
         var report = new SweepRunQualityReport(
             RequestedRuns: 4,
-            AcceptedRuns: 3,
+            AcceptedRuns: 2,
             Rejections:
             [
-                // Run 1: first attempt failed, the retry entered the average.
-                new SweepRunRejection(1, Retried: false, ["the microphone signal clipped"]),
-                // Run 2: both attempts failed, the run is excluded.
-                new SweepRunRejection(2, Retried: false, ["the microphone signal clipped"]),
-                new SweepRunRejection(
-                    2,
-                    Retried: true,
-                    ["the loopback reference signal is silent"])
+                new SweepRunRejection(3, ["the microphone signal clipped"])
             ]);
 
         string text = report.Describe();
 
-        Assert.Contains("used 3 of the 4 requested sweep runs", text);
+        Assert.Contains("used 2 of the 4 requested sweep runs", text);
         Assert.Contains(
-            "Run 1: first attempt rejected (the microphone signal clipped); " +
-            "the retry was accepted",
-            text);
-        Assert.Contains(
-            "Run 2: excluded from the average (first attempt: the microphone " +
-            "signal clipped; retry: the loopback reference signal is silent)",
-            text);
-        Assert.DoesNotContain("Run 1: excluded", text);
+            "Run 3: stopped the measurement (the microphone signal clipped)", text);
+        Assert.DoesNotContain("retry", text);
     }
 
     private static float[] Tone(int length, float amplitude)

@@ -87,15 +87,22 @@ internal static class ArrayCaptureDocument
             SavedAtUtc = measuredAtUtc ?? DateTimeOffset.UtcNow,
             // Named after what it is rather than after a file: the button shows
             // this, and "7 microphones" is the thing a user wants to read there.
-            Title = microphones.Count == 1
+            //
+            // How many were PLACED, not how many were configured. A position whose
+            // band never overlapped the anchor's has no trim and is absent from the
+            // average, and a document that counted it would say seven over an average
+            // of six — in the button, in the composition warning, and in the set
+            // comparison that reads the count to decide whether two channels describe
+            // one volume.
+            Title = placed.PlacedCount == 1
                 ? "Array of 1 microphone"
-                : $"Array of {microphones.Count} microphones",
+                : $"Array of {placed.PlacedCount} microphones",
             Method = SpatialAverageMethod.MicArray,
             // Each measurement is its own session, and for an array that costs
             // nothing: what a session id guards — that levels were held together by
             // one analyzer run — is guaranteed here by the loopback instead.
             CaptureSessionId = Guid.NewGuid(),
-            Recipe = BuildRecipe(sampleRateHz, microphones.Count, protectiveHighPass),
+            Recipe = BuildRecipe(sampleRateHz, placed.PlacedCount, protectiveHighPass),
             Calibration = ArrayPlacement.SharedCalibration(microphones),
             CurveDb = placed.CalibratedAverageDb,
             CalibrationCorrectionDb = placed.CorrectionDb(),

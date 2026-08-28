@@ -414,8 +414,12 @@ reached, which is what they have always been read over.
 
 A microphone that clipped, was unplugged, or recorded something that is not a
 response **fails the run**, exactly as the measurement microphone does: the run is
-retried once, and a run that fails twice does not enter the average. If every run
-fails, so does the measurement, and the error names the input and the reason.
+stops the measurement, and the error names the input and the reason. There is no
+retry: one used to run automatically, and the field answer is that it never recovered
+anything — what these checks catch is a gain set wrong, a cable in the wrong socket,
+a channel that is not there, and the next sweep reproduces all of them exactly.
+Nothing is published either, not even the runs that had already passed: an average of
+two runs where four were asked for is a different measurement wearing the same name.
 
 The last of those is judged on the run rather than on the finished average, and the
 difference is not cosmetic. A microphone that recorded noise on one run of four

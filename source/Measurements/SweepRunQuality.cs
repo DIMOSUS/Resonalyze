@@ -121,10 +121,9 @@ internal static class SweepRunQualityCheck
     }
 }
 
-/// <summary>One rejected capture attempt of an averaging run.</summary>
+/// <summary>The rejected run that stopped an averaged measurement.</summary>
 internal sealed record SweepRunRejection(
     int Run,
-    bool Retried,
     IReadOnlyList<string> Issues);
 
 /// <summary>
@@ -140,53 +139,36 @@ internal sealed record SweepRunQualityReport(
     /// </summary>
     /// <remarks>
     /// An array microphone needs no clause of its own here. A run that compromised
-    /// one is rejected like any other bad run, so it shows up as a run that did not
-    /// enter the average, with the input named among its reasons — the array cannot
-    /// quietly end up with fewer positions than the user set up, because a
-    /// measurement that would have is not a measurement at all.
+    /// one stops the measurement like any other bad run, with the input named among
+    /// its reasons — the array cannot quietly end up with fewer positions than the
+    /// user set up, because a measurement that would have is not a measurement at all.
     /// <para>
-    /// A REJECTION counts even when the retry then succeeded, which it did not before.
-    /// <see cref="Describe"/> has always had a line for that case — "first attempt
-    /// rejected; the retry was accepted" — and it could never be reached, because
-    /// every run had entered the average and the gate above asked only about that. A
-    /// channel that clipped once and passed on the second try is exactly the thing a
-    /// user wants to hear about while the microphone is still where they put it.
+    /// There is no retry to report. One used to run automatically, and the field
+    /// answer is that it never recovered anything: what these checks catch is a gain
+    /// set wrong, a cable in the wrong socket, a channel that is not there —
+    /// configuration, which the next sweep reproduces exactly. Sweeping again to prove
+    /// it costs the user their time twice over.
     /// </para>
     /// </remarks>
     public bool IsDegraded => AcceptedRuns < RequestedRuns || Rejections.Count > 0;
 
     /// <summary>
-    /// User-facing summary for the end-of-measurement notice. A run whose
-    /// retry succeeded DID enter the average — its line says so explicitly;
-    /// only a run whose retry also failed is reported as excluded.
+    /// User-facing summary for the end-of-measurement notice.
     /// </summary>
-    private const string CRLF = "\r\n";
-
     public string Describe()
     {
         var text = new StringBuilder();
         text.Append(
             $"The averaged measurement used {AcceptedRuns} of the " +
-            $"{RequestedRuns} requested sweep runs (a run failing the capture " +
-            "quality checks is retried once):");
-        foreach (IGrouping<int, SweepRunRejection> run in Rejections.GroupBy(
-            rejection => rejection.Run))
+            $"{RequestedRuns} requested sweep runs:");
+        foreach (SweepRunRejection rejection in Rejections)
         {
-            SweepRunRejection? attempt = run.FirstOrDefault(
-                rejection => !rejection.Retried);
-            SweepRunRejection? retry = run.FirstOrDefault(
-                rejection => rejection.Retried);
             text.Append("\r\n");
-            text.Append(retry != null
-                ? $"Run {run.Key}: excluded from the average (first attempt: " +
-                    $"{JoinIssues(attempt)}; retry: {JoinIssues(retry)})"
-                : $"Run {run.Key}: first attempt rejected ({JoinIssues(attempt)}); " +
-                    "the retry was accepted");
+            text.Append(
+                $"Run {rejection.Run}: stopped the measurement " +
+                $"({string.Join(", ", rejection.Issues)})");
         }
 
         return text.ToString();
     }
-
-    private static string JoinIssues(SweepRunRejection? rejection) =>
-        rejection == null ? "-" : string.Join(", ", rejection.Issues);
 }

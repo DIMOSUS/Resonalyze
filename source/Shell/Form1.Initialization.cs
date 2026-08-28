@@ -289,9 +289,9 @@ public partial class Form1
         });
     }
 
-    // Sweep-run acceptance: rejected runs (and their failed retries) are
-    // excluded silently while the measurement is running; the user is told
-    // once, at the end, when the average holds fewer runs than requested.
+    // Sweep-run acceptance: a bad run stops the measurement, and the refusal
+    // says why. This notice covers what the refusal cannot — a report left on a
+    // measurement that did publish, which is any run count short of the request.
     private void NotifyDegradedSweepAverage()
     {
         SweepRunQualityReport? report = expSweepMeasurement.QualityReport;
@@ -316,8 +316,6 @@ public partial class Form1
             {
                 SweepAverageProgressState.WaitingForConfirmation =>
                     $"Next run ({progress.CurrentRun + 1}/{progress.TotalRuns})",
-                SweepAverageProgressState.Retrying =>
-                    $"Retrying {progress.CurrentRun}/{progress.TotalRuns}...",
                 _ => $"Running {progress.CurrentRun}/{progress.TotalRuns}..."
             };
         });

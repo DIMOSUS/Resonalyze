@@ -172,8 +172,13 @@ public sealed class AbstractedMeasurementTests
     }
 
     [Fact]
-    public async Task RejectedRunIsRetried()
+    public async Task RejectedRunStopsTheMeasurement()
     {
+        // There used to be one automatic retry per bad run. The field answer is that
+        // it never recovered anything: what these checks catch is a gain set wrong, a
+        // cable in the wrong socket, a channel that is not there — configuration,
+        // which the next sweep reproduces exactly. So the second sweep is not spent,
+        // and the user is told at once instead of after the rest of the runs.
         var factory = new FakeAudioSessionFactory(
             duplexFactory: (_, signal) => new RecordingDuplexSession(
                 signal, (attempt, s, tail, _) => Task.FromResult(attempt == 1
@@ -181,11 +186,12 @@ public sealed class AbstractedMeasurementTests
                     : SyntheticCapture.Good(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
-
-        Assert.True(success, measurement.LastError?.ToString());
-        Assert.Equal(1, measurement.AcceptedAverageRunCount);
-        Assert.NotNull(measurement.QualityReport);
+        Assert.False(await measurement.RunAsync());
+        Assert.Contains("silent", measurement.LastError!.Message);
+        SweepRunQualityReport report = Assert.IsType<SweepRunQualityReport>(
+            measurement.QualityReport);
+        Assert.Equal(0, report.AcceptedRuns);
+        Assert.Equal(1, Assert.Single(report.Rejections).Run);
     }
 
     // A cleanly attenuated wire at ~-41 dBFS must MEASURE: transfer
@@ -269,14 +275,18 @@ public sealed class AbstractedMeasurementTests
     [Fact]
     public async Task DistortionDiagnosisCountsTheAffectedRuns()
     {
-        // A mixed set: one capture's loopback was overdriven, the rest recorded
-        // noise. Both are real failure modes, and the message must still say how much
-        // of what it read the distortion accounts for rather than implying every run
-        // carried it.
+        // The first capture's loopback is overdriven, and that stops the measurement:
+        // there is no retry, so it is also the only capture the diagnosis reads. The
+        // message must still name the culprit and quote ITS levels rather than a
+        // generic complaint about the wiring.
         //
-        // Four captures for two runs: neither divides into a response, so each run is
-        // rejected on its shape and retried once. The fixture answers by capture, so
-        // the retries take the noise branch — which is what the count then reports.
+        // Two companion tests lived here — one for the count across several runs, one
+        // for scoping the verdict to the runs whose loopback could actually be read.
+        // Neither is reachable any more: a measurement stops on its first bad run, so
+        // the total-failure diagnosis has exactly one capture to describe and drops
+        // the run-count clause. That clause is still live for the other path, where
+        // runs WERE accepted and the average came out incredible, and these fixtures
+        // never reached it.
         var factory = new FakeAudioSessionFactory(
             duplexFactory: (_, signal) => new RecordingDuplexSession(
                 signal, (attempt, s, tail, _) => Task.FromResult(attempt == 1
@@ -290,33 +300,10 @@ public sealed class AbstractedMeasurementTests
         Assert.NotNull(measurement.LastError);
         string message = measurement.LastError!.Message;
         Assert.Contains("LOOPBACK REFERENCE is distorting", message);
-        Assert.Contains("on 1 of the 4 averaged runs", message);
+        Assert.Contains("its harmonic packets read -8.2 dB", message);
+        Assert.Contains("it peaked at only -18.1 dBFS", message);
     }
 
-    // A run whose loopback reading could not be taken is not a clean run, and
-    // the verdict must not be stretched over it: the first capture's loopback is
-    // overdriven, the rest are poisoned by a non-finite sample — accepted by
-    // every level check, judged by nothing. The message has to scope the verdict
-    // to the runs it actually READ, which is one of the four captures the two
-    // rejected-and-retried runs produced.
-    [Fact]
-    public async Task DistortionDiagnosisSeparatesJudgedRunsFromAveragedOnes()
-    {
-        var factory = new FakeAudioSessionFactory(
-            duplexFactory: (_, signal) => new RecordingDuplexSession(
-                signal, (attempt, s, tail, _) => Task.FromResult(attempt == 1
-                    ? SyntheticCapture.DistortingLoopback(s, tail)
-                    : SyntheticCapture.NaNLoopback(s, tail))));
-        using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 2);
-
-        bool success = await measurement.RunAsync();
-
-        Assert.False(success);
-        Assert.NotNull(measurement.LastError);
-        string message = measurement.LastError!.Message;
-        Assert.Contains("LOOPBACK REFERENCE is distorting", message);
-        Assert.Contains("on 1 of the 1 judged runs (4 were averaged)", message);
-    }
 
     // The loopback diagnosis deconvolution is skipped above a size bound — it
     // exists only to phrase a refusal, and a hint must not add FFT-sized
@@ -434,22 +421,6 @@ public sealed class AbstractedMeasurementTests
         Assert.Contains("microphone path crossed the distortion threshold as well", message);
     }
 
-    // Every run overdriven: the same wording without the qualifier reading as a
-    // partial fault, and the tally counting all of them.
-    [Fact]
-    public async Task DistortionDiagnosisCoversEveryRunWhenAllAreOverdriven()
-    {
-        var factory = new FakeAudioSessionFactory(
-            duplexFactory: (_, signal) => new RecordingDuplexSession(
-                signal, (_, s, tail, _) => Task.FromResult(
-                    SyntheticCapture.DistortingLoopback(s, tail))));
-        using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 2);
-
-        bool success = await measurement.RunAsync();
-
-        Assert.False(success);
-        Assert.Contains("on 4 of the 4 averaged runs", measurement.LastError!.Message);
-    }
 
     // The mirror image: a clean reference and a distorting acoustic path must
     // not be blamed on the loopback.

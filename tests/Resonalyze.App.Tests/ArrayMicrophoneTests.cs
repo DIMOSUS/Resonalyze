@@ -155,7 +155,7 @@ public sealed class ArrayMicrophoneTests
     }
 
     [Fact]
-    public async Task AClippedArrayMicrophoneFailsTheRunAndTheRetryCarriesIt()
+    public async Task AClippedArrayMicrophoneStopsTheMeasurement()
     {
         // The owner's rule: a run that compromised ANY microphone of the array is not
         // a run this measurement can use. It used to drop that position from that run
@@ -172,33 +172,29 @@ public sealed class ArrayMicrophoneTests
                 {
                     attempt++;
                     // Driven past full scale on the first attempt only: the sweep
-                    // itself peaks at 0.5, so 2.5 puts the channel over. The retry
-                    // is clean, so the run is accepted after it.
+                    // itself peaks at 0.5, so 2.5 puts the channel over. A later
+                    // capture would be clean — and is never taken, because the run
+                    // that compromised a position stops the measurement.
                     return Task.FromResult(SyntheticCapture.WithArray(
                         s, tail, attempt == 1 ? 2.5f : 0.125f));
                 }));
         using ExpSweepMeasurement measurement = CreateSweep(
             factory, runs: 2, arrayChannels: [2]);
 
-        Assert.True(await measurement.RunAsync(), measurement.LastError?.ToString());
+        Assert.False(await measurement.RunAsync());
+        Assert.Contains("array microphone on input 3", measurement.LastError!.Message);
+        Assert.Contains("clipped", measurement.LastError.Message);
 
-        // Both runs entered the average, because the bad attempt was retried — the
-        // ordinary path for any bad run, which is the point: the array is judged
-        // exactly as the measurement microphone is.
-        Assert.Equal(2, measurement.AcceptedAverageRunCount);
-        Assert.Equal(2, measurement.ArrayMicrophones[1].AcceptedRuns);
-
-        SweepRunQualityReport? report = measurement.QualityReport;
-        Assert.NotNull(report);
-        Assert.True(report!.IsDegraded);
+        SweepRunQualityReport report = Assert.IsType<SweepRunQualityReport>(
+            measurement.QualityReport);
+        Assert.True(report.IsDegraded);
         string described = report.Describe();
         Assert.Contains("array microphone on input 3", described);
-        Assert.Contains("clipped", described);
-        Assert.Contains("the retry was accepted", described);
+        Assert.Contains("stopped the measurement", described);
     }
 
     [Fact]
-    public async Task AnArrayMicrophoneThatIsWrongOnONERunRejectsThatRun()
+    public async Task AnArrayMicrophoneThatIsWrongOnONERunStopsTheMeasurement()
     {
         // The intermittent fault, and the one an averaged verdict cannot see. Four
         // runs, and the array microphone records noise on the third capture only —
@@ -217,8 +213,9 @@ public sealed class ArrayMicrophoneTests
         // averaged backstop cannot be the whole rule: what it can see depends on the
         // noise level, and what the error costs does not.
         //
-        // So the verdict belongs where the level checks are, on the RUN — which is
-        // also what this measurement's own rule says out loud.
+        // So the verdict belongs where the level checks are, on the RUN — and a bad
+        // run stops the measurement, because the fault these checks catch is
+        // configuration and the next sweep reproduces it exactly.
         var factory = new FakeAudioSessionFactory(
             duplexFactory: (_, signal) => new RecordingDuplexSession(
                 signal,
@@ -228,15 +225,14 @@ public sealed class ArrayMicrophoneTests
         using ExpSweepMeasurement measurement = CreateSweep(
             factory, runs: 4, arrayChannels: [2]);
 
-        // The retry is clean, so the measurement still gets its four runs — which is
-        // the point: the rule costs a sweep, not the measurement.
-        Assert.True(await measurement.RunAsync());
+        Assert.False(await measurement.RunAsync());
         SweepRunQualityReport report = Assert.IsType<SweepRunQualityReport>(
             measurement.QualityReport);
-        Assert.Equal(4, report.AcceptedRuns);
+        // Two clean runs were taken before the bad one, and none of them is published:
+        // an average of two where four were asked for is a different measurement.
+        Assert.Equal(2, report.AcceptedRuns);
         SweepRunRejection rejection = Assert.Single(report.Rejections);
         Assert.Equal(3, rejection.Run);
-        Assert.False(rejection.Retried);
         string issue = Assert.Single(rejection.Issues);
         Assert.Contains("array microphone on input 3", issue);
         Assert.Contains("credible response", issue);
@@ -291,10 +287,10 @@ public sealed class ArrayMicrophoneTests
                         s, tail, noisy: capture == 3))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 4);
 
-        Assert.True(await measurement.RunAsync());
+        Assert.False(await measurement.RunAsync());
         SweepRunQualityReport report = Assert.IsType<SweepRunQualityReport>(
             measurement.QualityReport);
-        Assert.Equal(4, report.AcceptedRuns);
+        Assert.Equal(2, report.AcceptedRuns);
         SweepRunRejection rejection = Assert.Single(report.Rejections);
         Assert.Equal(3, rejection.Run);
         string issue = Assert.Single(rejection.Issues);

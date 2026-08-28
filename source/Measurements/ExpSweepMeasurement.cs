@@ -1325,10 +1325,8 @@ namespace Resonalyze
                     ActiveMicrophoneChannelOffset,
                     ArrayInputChannelOffsets);
                 var rejections = new List<SweepRunRejection>();
-                // Only while NOTHING has been accepted: the moment a run lands, the
-                // averaged verdict is the one that will speak and these are dead
-                // weight. A measurement that never accepts one ends here anyway.
-                var rejectedCaptures = new List<AudioCaptureResult>();
+                // The one rejected capture, kept only to phrase the refusal below.
+                AudioCaptureResult? rejectedCapture = null;
                 int requestedRuns = AverageRunCount;
                 for (int run = 1; run <= requestedRuns; run++)
                 {
@@ -1341,35 +1339,20 @@ namespace Resonalyze
                     IReadOnlyList<string> issues = AssessRunQuality(captured, sweep);
                     if (issues.Count > 0)
                     {
-                        if (accumulator.AcceptedRuns == 0)
-                        {
-                            rejectedCaptures.Add(captured);
-                        }
-                        // One automatic retry per bad run; a second failure skips
-                        // the run so it cannot contaminate the average.
-                        rejections.Add(new SweepRunRejection(run, Retried: false, issues));
-                        Publish(AverageProgressChanged, new SweepAverageProgress(
-                            run,
-                            requestedRuns,
-                            accumulator.AcceptedRuns,
-                            SweepAverageProgressState.Retrying));
-                        captured = await CaptureOneAsync().ConfigureAwait(false);
-                        issues = AssessRunQuality(captured, sweep);
-                        if (issues.Count > 0)
-                        {
-                            rejections.Add(new SweepRunRejection(run, Retried: true, issues));
-                            if (accumulator.AcceptedRuns == 0)
-                            {
-                                rejectedCaptures.Add(captured);
-                            }
-                            captured = null;
-                        }
+                        // A bad run STOPS the measurement. There used to be one
+                        // automatic retry, and the field answer is that it never
+                        // recovered anything: what these checks catch is a gain set
+                        // wrong, a cable in the wrong socket, a channel that is not
+                        // there — configuration, which the next sweep reproduces
+                        // exactly. Sweeping again to prove it wastes the user's time
+                        // twice over, and dropping the run instead would leave an
+                        // average quietly built on fewer runs than were asked for.
+                        rejections.Add(new SweepRunRejection(run, issues));
+                        rejectedCapture = captured;
+                        break;
                     }
-                    if (captured != null)
-                    {
-                        accumulator.Add(AnalyzeCapturedRun(captured, sweep));
-                        rejectedCaptures.Clear();
-                    }
+
+                    accumulator.Add(AnalyzeCapturedRun(captured, sweep));
 
                     if (ConfirmEachAverageRun && run < requestedRuns)
                     {
@@ -1385,7 +1368,7 @@ namespace Resonalyze
                     requestedRuns,
                     accumulator.AcceptedRuns,
                     rejections);
-                if (accumulator.AcceptedRuns == 0)
+                if (rejections.Count > 0 || accumulator.AcceptedRuns == 0)
                 {
                     // A whole measurement that failed on SHAPE is the bad-loopback
                     // case, and the diagnosis for it knows things a run issue cannot:
@@ -1395,9 +1378,12 @@ namespace Resonalyze
                     // exactly where it is most wanted — so one rejected capture is
                     // analysed for it, at a point where nothing else is going to
                     // happen anyway.
-                    DiagnoseTotalFailure(rejectedCaptures, sweep, rejections);
+                    DiagnoseTotalFailure(rejectedCapture, sweep, rejections);
                     throw new InvalidOperationException(
-                        "Every sweep run failed the capture quality checks: " +
+                        (rejections.Count > 0
+                            ? $"Sweep run {rejections[0].Run} of {requestedRuns} failed " +
+                                "the capture quality checks: "
+                            : "Every sweep run failed the capture quality checks: ") +
                         string.Join(
                             "; ",
                             rejections.SelectMany(rejection => rejection.Issues).Distinct()) +
@@ -1602,11 +1588,11 @@ namespace Resonalyze
         /// generic sentence is already the honest one.
         /// </remarks>
         private void DiagnoseTotalFailure(
-            IReadOnlyList<AudioCaptureResult> captures,
+            AudioCaptureResult? capture,
             ExponentialSineSweep sweep,
             IReadOnlyList<SweepRunRejection> rejections)
         {
-            if (captures.Count == 0 ||
+            if (capture == null ||
                 !rejections.Any(rejection => rejection.Issues.Any(
                     issue => issue.Contains("credible response", StringComparison.Ordinal))))
             {
@@ -1625,16 +1611,12 @@ namespace Resonalyze
                     // pair's shape, and building array curves would refuse on the
                     // very fault being explained.
                     []);
-                // EVERY rejected capture, because the diagnosis counts runs: which
-                // channel is distorting, in how many of them, and the levels of the
-                // worst. Those are the same runs that would have been accumulated
-                // before a run could be rejected for its shape.
-                foreach (AudioCaptureResult capture in captures)
-                {
-                    accumulator.Add(
-                        AnalyzeCapturedRun(capture, sweep, raiseIntermediateLevels: false));
-                }
-
+                // The one capture that failed, which is now the only one there is:
+                // the measurement stops on it rather than sweeping again. That is also
+                // what bounds this — a diagnosis whose scratch is FFT-sized must not
+                // be handed a list that grows with the run count.
+                accumulator.Add(
+                    AnalyzeCapturedRun(capture, sweep, raiseIntermediateLevels: false));
                 result = accumulator.BuildResult();
             }
             catch (Exception)
@@ -2740,5 +2722,4 @@ public enum SweepAverageProgressState
     WaitingForConfirmation,
     // The run failed the capture quality checks and its single automatic
     // retry is being captured.
-    Retrying
 }

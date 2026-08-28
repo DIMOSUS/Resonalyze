@@ -167,6 +167,21 @@ close.
 
 ## Measurement orchestrators
 
+- [ ] ★ **An averaged measurement holds every run's raw capture in memory,
+  and an array multiplies that by the number of positions.**
+  `SweepAverageAccumulator` keeps a `TransferFunctionFrame` per microphone per
+  accepted run, and a frame is a *view* over the recorded `float[]` rather than a
+  reduction of it — so the whole capture of every array microphone, of the
+  measurement microphone and of the loopback (shared within a run) stays live
+  until the last run has been analysed. Retained ≈
+  `(2 + microphones) × samples × 4` bytes per run: **0.28 GiB** at 96 kHz / 20 s /
+  7 microphones / 4 runs, **1.46 GiB** at 48 kHz / 100 s / 8 microphones / 8 runs,
+  0.02 GiB for a modest 48 kHz / 10 s / 3 microphones / 2 runs. The fix is to
+  accumulate H1 as the runs arrive — `Gxy`, `Gxx`, `Gyy` per microphone, sized by
+  the transform and not by the take, no frames retained — which also drops the
+  peak from `runs × capture` to one capture. That is a rework of the transfer
+  core the ordinary single-microphone path shares, with its own field
+  validation, so it wants its own PR rather than a tail on the array work.
 - [ ] **Run an averaged ASIO measurement on real hardware** (ideally a slow
   driver). Averaged sweeps keep one open ASIO session across runs; every software
   lifecycle guard around that — callback pools, capture epochs, in-flight block

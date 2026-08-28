@@ -168,7 +168,25 @@ public static class TransferFunction
     /// </remarks>
     public static TransferMagnitudeEstimate ComputeAveragedMagnitude(
         IReadOnlyList<TransferFunctionFrame> frames,
-        ExcitationBandGate excitationGate)
+        ExcitationBandGate excitationGate) =>
+        ComputeAveragedMagnitudeAndIr(frames, excitationGate, wantImpulseResponse: false)
+            .Magnitude;
+
+    /// <summary>
+    /// The gated magnitude AND the impulse response it came from, from one
+    /// accumulation of the frames.
+    /// </summary>
+    /// <remarks>
+    /// A caller that wants the steady-state magnitude and also has to judge whether
+    /// the channel measured anything at all needs both, and the accumulation — the
+    /// forward transform of every frame — is what costs. The inverse transform on top
+    /// of it is one more pass over one array.
+    /// </remarks>
+    public static (TransferMagnitudeEstimate Magnitude, Complex[]? ImpulseResponse)
+        ComputeAveragedMagnitudeAndIr(
+            IReadOnlyList<TransferFunctionFrame> frames,
+            ExcitationBandGate excitationGate,
+            bool wantImpulseResponse = true)
     {
         GatedH1Accumulation accumulation = AccumulateGatedH1(frames, excitationGate);
 
@@ -184,10 +202,18 @@ public static class TransferFunction
                 : 0.0;
         }
 
-        return new TransferMagnitudeEstimate(
-            magnitude,
-            frames.Count >= 2 ? accumulation.Coherence : null,
-            fftLength);
+        return (
+            new TransferMagnitudeEstimate(
+                magnitude,
+                frames.Count >= 2 ? accumulation.Coherence : null,
+                fftLength),
+            wantImpulseResponse
+                ? InverseGatedH1(
+                    accumulation.CrossSpectrum,
+                    accumulation.ReferencePowerSpectrum,
+                    accumulation.GateWeights,
+                    accumulation.Regularization)
+                : null);
     }
 
     // The shared core of both estimates: the cross/auto spectra summed over the

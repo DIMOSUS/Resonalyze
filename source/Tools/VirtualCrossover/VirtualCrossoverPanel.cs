@@ -3799,13 +3799,17 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        var arrays = new List<(string Name, LiveCaptureDocument Document)>();
-        foreach (VirtualCrossoverChannel channel in channels.Where(
-            candidate => candidate.Pair.Enabled))
+        // Every channel carrying an array, muted ones included — the same set the
+        // offset and the spread are judged over. What a set is MADE OF is a property
+        // of the measurements; a mute says which curves to draw, and a composition
+        // warning that came and went with the mute buttons would be describing the
+        // buttons.
+        var arrays = new List<(string Name, LiveCaptureDocument Document, bool Drawn)>();
+        foreach (VirtualCrossoverChannel channel in channels)
         {
             if (channel.SideState(project.ActiveSideRight).ArrayCapture is { } document)
             {
-                arrays.Add((channel.Name, document));
+                arrays.Add((channel.Name, document, channel.Pair.Enabled));
             }
         }
 
@@ -3829,12 +3833,15 @@ public partial class VirtualCrossoverPanel : UserControl
             "A spatial average describes the volume its microphones stood in, so " +
             "channels averaged over different arrays are answering slightly " +
             "different questions:\r\n\r\n");
-        foreach ((string name, LiveCaptureDocument document) in arrays)
+        foreach ((string name, LiveCaptureDocument document, bool drawn) in arrays)
         {
-            string calibration = document.Calibration?.Name ?? "no calibration";
+            string calibration = document.Calibration?.Name
+                ?? (document.CalibrationIsAggregate
+                    ? "several calibrations, one per position"
+                    : "no calibration");
             lines.Append(
                 $"    {name}    {document.Recipe.MicrophoneCount} microphone(s), " +
-                $"{calibration}\r\n");
+                $"{calibration}{(drawn ? string.Empty : "  (muted)")}\r\n");
         }
 
         lines.Append(

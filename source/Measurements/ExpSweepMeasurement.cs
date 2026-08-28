@@ -2394,7 +2394,8 @@ namespace Resonalyze
                             frames,
                             excitationGate,
                             sampleRate,
-                            protectiveHighPass),
+                            protectiveHighPass,
+                            arrayChannelOffsets[microphone]),
                         frames.Count,
                         []));
                 }

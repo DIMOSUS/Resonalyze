@@ -1,4 +1,5 @@
-﻿using Resonalyze.Dsp;
+﻿using System.Numerics;
+using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -90,11 +91,16 @@ internal static class ArrayMicrophoneAnalysis
     /// <summary>
     /// The steady-state level curve for one microphone's accepted runs.
     /// </summary>
+    /// <param name="channelOffset">
+    /// Which input this is, for the refusal to name. A verdict that says "one of the
+    /// array microphones" sends the user to unplug seven of them in turn.
+    /// </param>
     public static double[] BuildCurve(
         IReadOnlyList<TransferFunctionFrame> frames,
         ExcitationBandGate excitationGate,
         int sampleRate,
-        ProtectiveHighPassConfiguration? protectiveHighPass)
+        ProtectiveHighPassConfiguration? protectiveHighPass,
+        int channelOffset = 0)
     {
         ArgumentNullException.ThrowIfNull(frames);
         if (frames.Count == 0)
@@ -108,13 +114,60 @@ internal static class ArrayMicrophoneAnalysis
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
 
-        TransferMagnitudeEstimate estimate = TransferFunction.ComputeAveragedMagnitude(
-            frames,
-            excitationGate);
+        (TransferMagnitudeEstimate estimate, Complex[]? transfer) =
+            TransferFunction.ComputeAveragedMagnitudeAndIr(frames, excitationGate);
+        RequireCredible(transfer, sampleRate, channelOffset);
         double[] levels = SpatialAverage.FromTransferMagnitude(
             estimate.Magnitude,
             (double)sampleRate / estimate.FftLength);
         return RemoveProtectiveHighPass(levels, sampleRate, protectiveHighPass);
+    }
+
+    /// <summary>
+    /// Refuses a microphone whose transfer response has no shape — the same verdict,
+    /// on the same threshold, the measurement microphone's own response is held to.
+    /// </summary>
+    /// <remarks>
+    /// The level checks a run applies catch a channel that is silent, clipped or
+    /// short. They cannot catch one that is LIVE and wrong: an unused preamp hissing
+    /// at -40 dBFS, a microphone plugged into the wrong socket, a capsule that has
+    /// failed into noise. Any of those divides into an H1 estimate with no arrival in
+    /// it — and then the spatial average trims its median level onto the measurement
+    /// microphone's and gives it a full seventh of the weight. A plausible curve, no
+    /// exception, and a tune fitted to a channel that measured nothing.
+    /// <para>
+    /// The threshold is not a new one: <c>MinimumCompactnessDb</c> was calibrated
+    /// against an archived set of deliberately bad loopbacks, where a real measurement
+    /// reads 29-49 dB and an unusable one divides into noise well below it.
+    /// </para>
+    /// </remarks>
+    private static void RequireCredible(
+        Complex[]? transfer,
+        int sampleRate,
+        int channelOffset)
+    {
+        // FAIL-CLOSED, like the measurement microphone's: a shape that cannot be
+        // measured at all is a refusal, not a pass.
+        TransferIrCompactness? compactness = transfer is null
+            ? null
+            : TransferIrDiagnostics.MeasureCompactness(transfer, sampleRate);
+        if (compactness is { } measured &&
+            double.IsFinite(measured.InsideOutsideDb) &&
+            measured.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb)
+        {
+            return;
+        }
+
+        string shape = compactness is { } value && double.IsFinite(value.InsideOutsideDb)
+            ? FormattableString.Invariant(
+                $"the energy around its peak is only {value.InsideOutsideDb:0.0} dB above the rest of the capture (a real measurement reads 29-49 dB)")
+            : "its shape could not be measured at all";
+        throw new InvalidOperationException(
+            $"The array microphone on input {channelOffset + 1} recorded a signal, but " +
+            $"it did not divide into a credible response: {shape}. It is live and " +
+            "wrong rather than absent — a hissing preamp, the wrong socket, or a " +
+            "failed capsule — and averaging it in would give a channel that measured " +
+            "nothing a full share of the result. Check that input, then measure again.");
     }
 
     /// <summary>

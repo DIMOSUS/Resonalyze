@@ -50,6 +50,13 @@ public sealed class AudioLevelResolverTests
 
         Assert.Equal(2, levels.Array.Count);
         Assert.Equal(-2.0, levels.Array[0].PeakDbFs);
-        Assert.Equal(default, levels.Array[1]);
+        // Silence, spelled out. This asserted `default` — and a default
+        // AudioChannelLevel is 0 dBFS, which is full scale, not silence. The test
+        // agreed with the code and both were wrong about what they meant; nothing
+        // draws these yet, so a meter wired to them would have been the first to
+        // find out, by painting a missing channel pinned at the top of the scale.
+        Assert.Equal(double.NegativeInfinity, levels.Array[1].PeakDbFs);
+        Assert.Equal(double.NegativeInfinity, levels.Array[1].RmsDbFs);
+        Assert.False(levels.Array[1].FullScale);
     }
 }

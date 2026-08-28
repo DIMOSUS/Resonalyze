@@ -247,6 +247,42 @@ internal static class SyntheticCapture
     }
 
     /// <summary>
+    /// A measurement pair plus ONE array microphone carrying noise instead of the
+    /// sweep: an unused preamp hissing, the wrong socket, a failed capsule.
+    /// </summary>
+    /// <remarks>
+    /// The point is that it passes every level check there is — it is neither silent
+    /// nor clipped nor short, and it sits at an entirely ordinary level. What it does
+    /// not do is divide into a response.
+    /// </remarks>
+    public static AudioCaptureResult WithNoisyArrayMicrophone(
+        AudioPlaybackSignal signal,
+        int tailSamples,
+        double peak = 0.05)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        var noise = new float[mic.Length];
+        // Deterministic, so the verdict is the same on every run and on every machine.
+        uint state = 0x9E3779B9;
+        for (int i = 0; i < noise.Length; i++)
+        {
+            state = state * 1664525u + 1013904223u;
+            noise[i] = (float)(((state >> 8) / (double)0x00FFFFFF - 0.5) * 2.0 * peak);
+        }
+
+        return new AudioCaptureResult(
+            [mic, loop, noise],
+            MicrophoneChannel: 0,
+            LoopbackChannel: 1,
+            StereoSeparationExpected: false,
+            AudioCaptureAnomalies.None,
+            Diagnostics: null)
+        {
+            ArrayChannels = [2]
+        };
+    }
+
+    /// <summary>
     /// A measurement pair plus array microphones on channels 2, 3, ... Each
     /// array scale is that microphone's level relative to the played sweep, so a
     /// test can state what its transfer level must come out as.

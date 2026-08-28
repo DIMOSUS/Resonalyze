@@ -198,6 +198,29 @@ public sealed class ArrayMicrophoneTests
     }
 
     [Fact]
+    public async Task AnArrayMicrophoneThatIsLiveButWrongFailsTheMeasurement()
+    {
+        // The dangerous one, because every level check passes: an unused preamp
+        // hissing at an ordinary level is not silent, not clipped and not short. It
+        // divides into an H1 estimate with no arrival in it — and the spatial average
+        // would then trim its median level onto the measurement microphone's and give
+        // it a full share of the result. A plausible curve, no exception, and a tune
+        // fitted partly to a channel that measured nothing.
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal,
+                (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.WithNoisyArrayMicrophone(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory, arrayChannels: [2]);
+
+        Assert.False(await measurement.RunAsync());
+        Assert.NotNull(measurement.LastError);
+        string message = measurement.LastError!.Message;
+        Assert.Contains("array microphone on input 3", message);
+        Assert.Contains("credible response", message);
+    }
+
+    [Fact]
     public async Task AnArrayMicrophoneThatNeverWorkedFailsTheMeasurement()
     {
         // Every attempt has a silent array microphone, so every run is rejected and

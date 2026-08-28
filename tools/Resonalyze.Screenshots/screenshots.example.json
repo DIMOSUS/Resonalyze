@@ -5,7 +5,9 @@
   "//arrayMeasurement": "Optional: a measurement recorded with a microphone array. Without it the array figures are skipped.",
   "arrayMeasurement": "",
   "//arrayRig": "Optional: the interface THAT measurement was recorded on, for the array dialog's figure. Inputs are numbered as the dialog prints them: Input 1 is 1.",
-  "arrayRig": { "inputs": 10, "loopbackInput": 9, "backend": "asio" },
+  "arrayRig": { "inputs": 10, "loopbackInput": 9, "backend": "asio",
+                "//calibrations": "Optional: one name per further microphone, in the measurement's order. Omit to show the names it stored.",
+                "calibrations": ["90° capsule 2", "90° capsule 3"] },
   "//output": "Empty means the repository's own assets/images, found by walking up from the executable.",
   "output": ""
 }

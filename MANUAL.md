@@ -449,8 +449,9 @@ without applying or reopening anything.
 ![The Array microphones list: six further inputs, each with its calibration and the position it stands in](assets/images/manual/array-microphones.png)
 
 *The set this guide's array figures come from: six further microphones on inputs 3 to 8,
-with the measurement one on input 2 as the seventh position. The line under the editor
-says how many inputs are still free and where that count comes from.*
+each read through its own capsule's calibration, with the measurement one on input 2 as
+the seventh position. The line under the editor says how many inputs are still free and
+where that count comes from.*
 
 In practice this means **ASIO**. The array is further inputs of the same interface, and
 MME reaches two channels in all, while a WASAPI endpoint usually presents an interface's

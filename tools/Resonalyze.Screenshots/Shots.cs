@@ -271,21 +271,30 @@ internal static class Shots
         List<ImpulseResponseFile.ArrayMicrophoneFileEntry> further =
             [.. positions.Where(position => !position.IsMeasurementMicrophone)];
 
-        // The dialog names calibrations by id out of Record Settings' own list, and
-        // the file kept only the curve's name — enough to show the row as it was
-        // configured, which is all a figure has to be right about.
+        // The dialog names calibrations by id out of Record Settings' own list, and the
+        // file kept only the curve's name — enough to show the row as it was configured.
+        // The config may name them instead, one per row: an array is individually
+        // calibrated, and a set recorded by one microphone moved between sittings stores
+        // one name for every position, which illustrates the column badly.
+        string?[] names = rig.Calibrations is { } authored
+            ? authored.Length == further.Count
+                ? [.. authored]
+                : throw new InvalidOperationException(
+                    $"arrayRig names {authored.Length} calibrations and the measurement " +
+                    $"has {further.Count} further microphones. One per row, in order.")
+            : [.. further.Select(position => position.Calibration?.Name)];
+
         List<MicrophoneCalibrationEntry> calibrations =
-            [.. further
-                .Select(position => position.Calibration?.Name)
+            [.. names
                 .Where(name => !string.IsNullOrWhiteSpace(name))
                 .Distinct(StringComparer.Ordinal)
                 .Select(name => new MicrophoneCalibrationEntry(name!, name!, true))];
 
         List<ArrayMicrophoneDefinition> microphones =
-            [.. further.Select(position => new ArrayMicrophoneDefinition
+            [.. further.Select((position, index) => new ArrayMicrophoneDefinition
             {
                 ChannelOffset = position.ChannelOffset,
-                CalibrationId = position.Calibration?.Name,
+                CalibrationId = names[index],
                 Note = position.Note
             })];
 

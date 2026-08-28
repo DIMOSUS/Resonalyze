@@ -208,4 +208,19 @@ internal sealed class ArrayRig
     /// </summary>
     [JsonPropertyName("backend")]
     public AudioBackend Backend { get; set; } = AudioBackend.Asio;
+
+    /// <summary>
+    /// What to call each further microphone's calibration in the figure, in the
+    /// measurement's own order — one name per row, or absent to show the names the
+    /// measurement stored.
+    /// </summary>
+    /// <remarks>
+    /// A real array is individually calibrated: every capsule carries its own file,
+    /// and the guide says so. A SET can still be recorded through one microphone moved
+    /// between sittings, and then every row stores the same name — true of that file,
+    /// and a poor illustration of the dialog, since a reader cannot tell a column that
+    /// happens to repeat from one that cannot vary.
+    /// </remarks>
+    [JsonPropertyName("calibrations")]
+    public string[]? Calibrations { get; set; }
 }

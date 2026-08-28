@@ -1009,6 +1009,26 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     /// <summary>
+    /// The receipt names the METHOD the average was taken by, the way the channel
+    /// card's button does. It is the one line that says what is about to be equalized,
+    /// and a project reading microphone arrays has no MMM capture to go looking for.
+    /// </summary>
+    [Fact]
+    public void WithAnArrayAverage_TheReceiptNamesTheArrayRatherThanMmm()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        LiveCaptureDocument array = Capture();
+        array.Title = "Array of 7 microphones";
+        array.Method = SpatialAverageMethod.MicArray;
+
+        VirtualDspEqHandoffRequest request = Build(
+            channel, withChain: true, spatialAverage: array, spatialAverageOffsetDb: -73.5);
+
+        Assert.Contains("Array", request.Source.DisplayName);
+        Assert.DoesNotContain("MMM", request.Source.DisplayName);
+    }
+
+    /// <summary>
     /// Without one, nothing changes: the panel is drawing impulse responses and the
     /// handoff hands impulse responses over, gated exactly as before.
     /// </summary>

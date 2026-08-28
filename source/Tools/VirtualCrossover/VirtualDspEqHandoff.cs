@@ -278,8 +278,15 @@ internal static class VirtualDspEqHandoff
             : null;
 
         string side = channel.Pair.Mono ? "mono" : rightSide ? "R" : "L";
-        string variant = spatialAverage != null
-            ? withChain ? "DSP, MMM" : "MMM"
+        // Named after the method the average was actually taken by, the way the
+        // channel card's own button is. The receipt is the one place that says what is
+        // about to be equalized, and MMM over an array's average sends its reader
+        // looking for a capture nobody attached — on a project where none exists.
+        string? average = spatialAverage == null
+            ? null
+            : spatialAverage.Method == SpatialAverageMethod.MicArray ? "Array" : "MMM";
+        string variant = average != null
+            ? withChain ? $"DSP, {average}" : average
             : withChain ? "DSP" : "raw";
         // A bypassed block contributes its RAW signal to the plot and the sum, so with
         // bypass on the panel is not drawing this chain at all. The chain is still what

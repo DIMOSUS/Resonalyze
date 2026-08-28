@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Resonalyze.Audio;
 
 namespace Resonalyze.Screenshots;
 
@@ -24,6 +25,31 @@ internal sealed class ShotConfig
     public string Session { get; set; } = string.Empty;
 
     /// <summary>
+    /// A measurement recorded with a microphone array, for the array figures — both
+    /// the curves and the dialog, whose rows are read out of this same file so the
+    /// two cannot describe different sets. Optional: without it the array scene is
+    /// skipped rather than failed, since not every rig has one.
+    /// </summary>
+    [JsonPropertyName("arrayMeasurement")]
+    public string ArrayMeasurement { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The interface the array DIALOG's figure is drawn for.
+    /// </summary>
+    /// <remarks>
+    /// The dialog states how many inputs are still free and where that count comes
+    /// from, and a measurement file records none of it: not the loopback's input, not
+    /// the backend, not how many inputs the device has. The tool used to fill that in
+    /// by itself, which put a status line in the manual that nobody had authored — so
+    /// the figure is not taken until the rig is stated here. It is the figure's rig
+    /// rather than the measurement's: a set may have been assembled over sittings on a
+    /// smaller interface, and which device the dialog should be shown for is the
+    /// author's decision to make out loud, not the tool's to guess.
+    /// </remarks>
+    [JsonPropertyName("arrayRig")]
+    public ArrayRig? Rig { get; set; }
+
+    /// <summary>
     /// Where the PNGs land. Empty means the repository's own <c>assets/images</c>,
     /// found by walking up from the executable — the usual case, where re-shooting is
     /// meant to overwrite the committed figures in place.
@@ -32,6 +58,12 @@ internal sealed class ShotConfig
     public string Output { get; set; } = string.Empty;
 
     private string? resolvedOutput;
+
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
 
     public static ShotConfig Load(string? path)
     {
@@ -47,7 +79,7 @@ internal sealed class ShotConfig
         }
 
         ShotConfig config =
-            JsonSerializer.Deserialize<ShotConfig>(File.ReadAllText(file))
+            JsonSerializer.Deserialize<ShotConfig>(File.ReadAllText(file), SerializerOptions)
             ?? throw new InvalidOperationException($"{file} is empty.");
         config.Validate(file);
         return config;
@@ -95,6 +127,32 @@ internal sealed class ShotConfig
                 throw new FileNotFoundException($"{file}: \"{name}\" → {value}", value);
             }
         }
+
+        // Optional, but a path that is set and wrong is a typo rather than a choice.
+        if (!string.IsNullOrWhiteSpace(ArrayMeasurement) && !File.Exists(ArrayMeasurement))
+        {
+            throw new FileNotFoundException(
+                $"{file}: \"arrayMeasurement\" → {ArrayMeasurement}", ArrayMeasurement);
+        }
+
+        if (Rig == null)
+        {
+            return;
+        }
+
+        if (Rig.Inputs < 2)
+        {
+            throw new InvalidOperationException(
+                $"{file}: \"arrayRig.inputs\" is {Rig.Inputs}; an array needs a device with " +
+                "the measurement microphone, the loopback and at least one further input.");
+        }
+
+        if (Rig.LoopbackInput < 1 || Rig.LoopbackInput > Rig.Inputs)
+        {
+            throw new InvalidOperationException(
+                $"{file}: \"arrayRig.loopbackInput\" is {Rig.LoopbackInput}, which is not one " +
+                $"of the {Rig.Inputs} inputs. It is numbered as the dialog shows it: Input 1 is 1.");
+        }
     }
 
     /// <summary>Turns a shot name into the file it writes.</summary>
@@ -124,4 +182,45 @@ internal sealed class ShotConfig
         throw new DirectoryNotFoundException(
             "No assets/images above the executable; set \"output\" in the config.");
     }
+}
+
+/// <summary>
+/// The interface an array measurement was recorded on, as the dialog counts it.
+/// </summary>
+internal sealed class ArrayRig
+{
+    /// <summary>How many inputs the backend offers on that device.</summary>
+    [JsonPropertyName("inputs")]
+    public int Inputs { get; set; }
+
+    /// <summary>
+    /// Which input carries the loopback, numbered the way the dialog prints inputs —
+    /// Input 1 is 1. It is excluded from the free ones, so the status line only comes
+    /// out right when this is the input the measurement actually used.
+    /// </summary>
+    [JsonPropertyName("loopbackInput")]
+    public int LoopbackInput { get; set; }
+
+    /// <summary>
+    /// Which backend recorded it: <c>asio</c>, <c>wasapiShared</c>,
+    /// <c>wasapiExclusive</c> or <c>wave</c> (MME). It decides the wording of the
+    /// status line's parenthesis, which is the application's own.
+    /// </summary>
+    [JsonPropertyName("backend")]
+    public AudioBackend Backend { get; set; } = AudioBackend.Asio;
+
+    /// <summary>
+    /// What to call each further microphone's calibration in the figure, in the
+    /// measurement's own order — one name per row, or absent to show the names the
+    /// measurement stored.
+    /// </summary>
+    /// <remarks>
+    /// A real array is individually calibrated: every capsule carries its own file,
+    /// and the guide says so. A SET can still be recorded through one microphone moved
+    /// between sittings, and then every row stores the same name — true of that file,
+    /// and a poor illustration of the dialog, since a reader cannot tell a column that
+    /// happens to repeat from one that cannot vary.
+    /// </remarks>
+    [JsonPropertyName("calibrations")]
+    public string[]? Calibrations { get; set; }
 }

@@ -2,9 +2,7 @@
 
 **A complete step-by-step guide**
 
-This guide tracks the repository's `main` branch. Everything in it is in **v0.7.2**
-except the **DSP processor** selector described in [Section 3](#3-measurement-setup)
-and [Section 6](#6-building-the-virtual-system), which lands in the next release.
+This guide tracks the repository's `main` branch. Everything in it is in **v0.7.3**.
 
 > **Author's note.** I wrote Resonalyze. It is free and open-source (MIT) — nothing to
 > buy, nothing to sign up for. If you go through this guide, successfully or not,
@@ -145,6 +143,11 @@ The required hardware is simple:
 - an analog measurement microphone with a calibration file;
 - a way to feed the measurement signal from the interface into the car DSP.
 
+Optionally, further measurement microphones on further inputs of that same interface —
+a [microphone array](#optional-a-spatial-average-for-the-eq), which averages each driver
+over the volume a head occupies in the same sweep. It changes nothing about the workflow
+below except that it has to be mounted and configured before the first sweep.
+
 > **Author's note.** I use a **Focusrite Scarlett Solo 4th Gen**. It has built-in
 > stereo loopback, so there is no need to physically route an output back into a spare
 > input — Resonalyze can use the internal loopback channels directly.
@@ -268,7 +271,11 @@ The panel is grouped the way the decisions are:
    usable coherence curve.
 3. **Calibration** — the microphone's own correction file. Load the **90°** one here,
    because that is the orientation [Section 3](#microphone-position) mounts the capsule
-   in. SPL calibration is optional and not needed for this workflow.
+   in. SPL calibration is optional and not needed for this workflow. **Array
+   microphones** is the last row of the group and optional as well: it configures the
+   further microphones described under
+   [a spatial average for the EQ](#optional-a-spatial-average-for-the-eq), and its
+   button reads *None...* until you set some up.
 4. **Format** — **Sample Rate** (outlined) is the measurement rate, and since the
    [DSP processor](#name-the-processor-you-are-tuning) is stated separately, anything
    from 44.1 kHz upward will do. Prefer your DSP's own rate or a simple sub-multiple of
@@ -424,17 +431,45 @@ guide works without one — but either makes the EQ stage noticeably more honest
 
 **If you have spare inputs and spare microphones**, set up a
 [microphone array](REFERENCE.md#microphone-array) before you measure: **Record
-Settings → Array...**, one row per position, each with its own calibration and a
-note saying where it stands. Place them around the head area — the seven positions
-these were developed against sat within about 30 cm of the listening position, left
-and right of it and forward of it. Then measure exactly as described above and the
-average comes with the sweep: nothing to capture twice, nothing to keep at the same
-gain afterwards, and the positions' own disagreement is stored beside the average so
-you can see where it is a claim and where it is not. A position that clips or goes
-silent fails the whole sweep rather than quietly dropping out of it, so what you get
-is either the array you set up or an error naming the input. **The microphones must
-be on the same interface as the measurement one** — that is what keeps them on the same
-clock and the same loopback, and it is not negotiable.
+Settings → Array microphones**, whose button reads *None...* until it holds something.
+Each row is one further microphone — the **input** it sits on, its own **calibration**,
+and a **Position** note saying where it stands (`left forward`, `centre`, whatever you
+will recognize months later). The measurement microphone counts as a position too, and
+is the one every other is levelled onto, so the seven positions these were developed
+against are six rows plus it; one row is the least an average can be built from. Place
+them around the head area — those seven sat within about 30 cm of the listening
+position, left and right of it and forward of it.
+
+The calibration is picked from the same list the measurement microphone chooses from,
+and only from it: a capsule's own file has to be in that list before it can be assigned,
+through **More calibrations → Manage... → Add file...** in Record Settings. That list is
+the panel's working copy, so one added there can be given to a microphone straight away,
+without applying or reopening anything.
+
+![The Array microphones list: six further inputs, each with its calibration and the position it stands in](assets/images/manual/array-microphones.png)
+
+*The set this guide's array figures come from: six further microphones on inputs 3 to 8,
+each read through its own capsule's calibration, with the measurement one on input 2 as
+the seventh position. The line under the editor says how many inputs are still free and
+where that count comes from.*
+
+In practice this means **ASIO**. The array is further inputs of the same interface, and
+MME reaches two channels in all, while a WASAPI endpoint usually presents an interface's
+inputs as stereo pairs — the line under the editor names which of the three it counted
+the free inputs from.
+
+Then measure exactly as described above and the average comes with the sweep: nothing
+to capture twice, nothing to keep at the same gain afterwards, and the positions' own
+disagreement is stored beside the average so you can see where it is a claim and where
+it is not. A position that clips or goes silent fails the whole sweep rather than
+quietly dropping out of it, so what you get is either the array you set up or an error
+naming the input. **The microphones must be on the same interface as the measurement
+one** — that is what keeps them on the same clock and the same loopback, and it is not
+negotiable. The array is also remembered for the **device** it was configured on, since
+an input number means something different on another one: select a different capture
+device and the button says how many microphones are configured *and which device for*,
+and none of them are recorded until you open the list and confirm it with **OK**, which
+re-binds them to the device selected now.
 
 **If you have one microphone**, take a second pass over the same drivers using the
 **moving-microphone method** (MMM), which averages the response over the volume
@@ -507,6 +542,39 @@ reflections.
 If you used protective-HPF compensation on this channel, this is also where you check
 it: the region the compensation could not recover is marked in the coherence trace, and
 it should sit safely below the band you intend to use.
+
+### Check the array, if you measured with one
+
+The Frequency Response settings panel carries three more curves, all off by default and
+all empty unless the measurement was recorded with a
+[microphone array](REFERENCE.md#microphone-array): **Show array average** — the spatial
+average itself, which is the curve the EQ stage will be fitted to; **Show array
+microphones** — each position on its own, thin, levelled onto the measurement
+microphone; and **Show array spread**, how far apart the positions sat at each
+frequency, on its own right-hand axis in dB.
+
+![Frequency Response drawing the array: the point response, the positions behind it, their average and their spread](assets/images/manual/array-curves.png)
+
+*One midrange. Orange is the microphone at the listening position — the response the
+impulse file holds; the thin curves are the seven positions, the thick teal one their
+average, and the purple one their spread on the right-hand axis. Below 500 Hz the
+positions sit 2 to 5 dB apart and the point response IS the average, to within half a
+decibel. Above it they part by some 13 dB, and the point response leaves the average by
+3 dB in the median and 19 dB at worst — that difference is where the microphone stood,
+not what the driver does.*
+
+This is where you see that the set is what you set up: as many thin curves as you had
+positions, each named in the legend by its **Position** note — which is what that field
+was for — and agreeing where they should. They are read from what the file stored, so
+they do not follow the impulse gate: a spatial average is a steady-state curve and has
+no window to move.
+
+Read the spread as the confidence of the average. Near zero the positions agreed and one
+microphone would have said the same thing. Positions in a car part by 11 to 12 dB across
+the band as a matter of course, so that is ordinary rather than alarming; past **20 dB**
+the average is carried by whichever position happened to be loudest, and Auto Tune
+places no boost there later — a dip that belongs to one seat centimetre is not worth
+anyone's headroom.
 
 ### Check the time domain
 
@@ -946,10 +1014,11 @@ Nothing has to be selected, typed, or matched by hand, and no file changes hands
 
 ![The wizard after a handoff: the header names the channel, the source and the mode](assets/images/manual/eq-wizard-handoff.png)
 
-1. **The receipt.** **Ch C · L (DSP, MMM)** means channel C, left side, the curve taken
-   through the **DSP** chain, off that channel's **MMM** spatial average. Read this
-   before you touch anything — it is the one place that says what you are about to
-   equalize.
+1. **The receipt.** **Ch C · R (DSP, MMM)** means channel C, right side, the curve
+   taken through the **DSP** chain, off that channel's **MMM** spatial average — a
+   channel measured with a microphone array reads **Array** in that place, and one with
+   no average at all says just **DSP**. Read this before you touch anything: it is the
+   one place that says what you are about to equalize.
 2. **What came across.** Calibration, target level, smoothing, the processor's rate
    and the bank's preamp. **Calibration** and **Rate** are greyed — with **DSP Q**
    further down they belong to the project rather than to the wizard, and are shown so
@@ -975,7 +1044,7 @@ mode, where smoothing should be **Off** for the reasons given above.
 
 Press **Auto Tune** and let Resonalyze fit the response to the target.
 
-![The same channel after Auto Tune: eight bands, RMS error 3.9 → 1.1 dB](assets/images/manual/eq-wizard-tuned.png)
+![The same channel after Auto Tune: nine bands, RMS error 3.7 → 1.5 dB](assets/images/manual/eq-wizard-tuned.png)
 
 ### Read the band edges as the filter, not the driver
 
@@ -1392,6 +1461,10 @@ measurements with the microphone moved slightly around the normal head position.
 
 Do not expect these measurements to be identical. The goal is to make sure that the
 crossover integration remains reasonably stable when the listener moves a little.
+
+If you measured with a [microphone array](#optional-a-spatial-average-for-the-eq) and it
+is still mounted, one verification sweep answers this by itself: the positions are the
+moved microphone, and **Show array spread** is how far apart they came out.
 
 A result that is excellent at one exact point but develops severe cancellation a few
 centimeters away is not a robust tune.

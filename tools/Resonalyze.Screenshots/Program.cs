@@ -79,6 +79,26 @@ static int Run(string[] args)
     foreach (Scene scene in scenes)
     {
         Console.WriteLine($"{scene.Name}:");
+        // Material this config does not have is not a failure in a SWEEP: the scene
+        // says what it is missing and the run goes on, so a rig that cannot take that
+        // figure still reports green for the ones it can. Asked for BY NAME it is a
+        // failure — a named shot that was never written must not exit 0, or a script
+        // that re-shoots one figure reports success having produced nothing. Every
+        // scene here was reached through a shot the user named, so the two cases are
+        // exactly whether anything was named at all.
+        if (scene.Unavailable?.Invoke(config) is { } reason)
+        {
+            if (requested.Count > 0)
+            {
+                Console.Error.WriteLine($"  {scene.Name} FAILED: {reason}");
+                failed = true;
+                continue;
+            }
+
+            Console.WriteLine($"  skipped: {reason}");
+            continue;
+        }
+
         try
         {
             ShotSession.Run(config, scene.WindowSize, session => scene.Body(session, Wanted));

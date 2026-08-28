@@ -24,6 +24,8 @@ is git-ignored — and point it at your own files:
 | --- | --- |
 | `measurement` | an impulse response (`.json`). Every analysis-mode shot is taken from it. |
 | `session` | a finished Virtual DSP project. The Virtual DSP, EQ Wizard and manual shots come from it, so it wants every channel loaded and tuned. |
+| `arrayMeasurement` | optional: a measurement recorded with a microphone array. Both array figures come from it — the curves, and the dialog, whose rows are read back out of the same file. |
+| `arrayRig` | optional, and needed by the array DIALOG only: the `inputs`, `loopbackInput` (numbered as the dialog prints them — Input 1 is 1) and `backend` (`asio`, `wasapiShared`, `wasapiExclusive`, `wave`) the dialog is to be shown for, plus optional `calibrations` — one name per further microphone, in the measurement's order. It states how many inputs are free and where that count comes from, and a measurement records none of it, so the figure waits for an answer instead of composing one. The names are there because a set recorded by one microphone moved between sittings stores the same calibration on every row, which illustrates an individually calibrated array badly. A rig that contradicts the measurement's own channels stops the shot. |
 | `output` | leave empty for the repository's own `assets/images`. |
 
 `--config <path>` overrides the file, which is the way to render into a scratch
@@ -37,6 +39,11 @@ one. Ask for it by name, with the rig plugged in:
 ```powershell
 dotnet run --project tools/Resonalyze.Screenshots -- measurement-options
 ```
+
+**The array figures need material a sweep can be missing.** Without `arrayMeasurement`
+(or, for the dialog, `arrayRig`) those scenes print what they want and the sweep goes on
+— but asking for one of their shots BY NAME fails instead, because a named shot that was
+never written must not exit 0.
 
 **The run needs the screen to itself.** Several shots are screen captures, so the
 tool raises the shell above everything else and refuses the shot when another

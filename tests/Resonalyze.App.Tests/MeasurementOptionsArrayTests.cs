@@ -15,6 +15,31 @@ namespace Resonalyze.App.Tests;
 /// </remarks>
 public sealed class MeasurementOptionsArrayTests
 {
+    /// <summary>
+    /// The status line's parenthesis is one wording with two readers now — the panel
+    /// that has a device, and the screenshot tool that builds the dialog without one —
+    /// and a figure stating a line the application never shows is the reason it is
+    /// shared rather than written twice.
+    /// </summary>
+    [Theory]
+    [InlineData(AudioBackend.Asio, 10, "ASIO driver inputs")]
+    [InlineData(AudioBackend.Wave, 2, "MME is limited to two channels")]
+    [InlineData(AudioBackend.WasapiExclusive, 8, "WASAPI endpoint channels")]
+    public void TheInputSourceIsNamedByBackend(
+        AudioBackend backend, int channels, string expected) =>
+        Assert.Equal(expected, ArrayInputSources.Describe(backend, channels));
+
+    /// <summary>
+    /// The one branch that is advice rather than a label: an interface presenting its
+    /// inputs as separate stereo endpoints reports two, and its further inputs are
+    /// reachable — through ASIO. A user left to guess that has nowhere to go.
+    /// </summary>
+    [Fact]
+    public void AStereoWasapiEndpointIsToldWhereTheFurtherInputsAre() =>
+        Assert.Equal(
+            "WASAPI endpoint channels; use ASIO to reach an interface's further inputs",
+            ArrayInputSources.Describe(AudioBackend.WasapiShared, 2));
+
     private static MeasurementSettingsFile.SweepMeasurementSettings SettingsWithArray() =>
         new()
         {

@@ -1274,8 +1274,20 @@ curve hangs exactly where the plot had it and the Target Level still means the
 same thing; where the capture has nothing to report — under a protective
 high-pass — the curve breaks and Auto Tune places no band there. There is no gate
 on this curve: an average is a steady-state measurement with no window, so the
-gated preview below is bypassed and **Source + EQ** is the curve plus the bank's
-analytic magnitude, which for a windowless curve is exact.
+gated preview below is bypassed. The bank still goes INTO the chain rather than
+onto the finished curve, because the display smoothing is the hybrid's last step
+and smoothing does not commute with a filter: a narrow band beside a deeper one
+reads differently depending on which came first — measured on a 13-band MMM tune,
+by up to 3 dB under the psychoacoustic width, whose mean weights peaks and so is
+not even linear. So **Source + EQ** is the average rebuilt through the whole
+chain with the edited bank inside it, which is the arithmetic Virtual DSP runs
+for a channel already carrying that PEQ, and the two panels draw one curve.
+(With smoothing **Off** the order stops mattering and both readings coincide
+exactly — which is what the manual asks for in Hybrid mode anyway.) One thing the
+fit cannot promise: Auto Tune designs its bands against the SMOOTHED source, and
+the corrected curve is smoothed after the bank, so where the smoothing is doing
+real work the result lands beside the target rather than on it. The **Tuning
+results** figures report where it actually landed.
 
 That identity extends to the corrected curve: **Source + EQ** is not the bare
 curve with the filters' ideal magnitude added on top, the way an equalizer

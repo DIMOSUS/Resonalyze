@@ -626,9 +626,19 @@ public partial class EqWizardPanel
     /// being fitted here is going back to that channel, and the panel will run it at
     /// the project's rate.
     /// </para>
+    /// <para>
+    /// <paramref name="bank"/> is the bank under edit, substituted INTO the chain the
+    /// way the Virtual DSP plot substitutes the channel's own PEQ — never added to the
+    /// finished curve afterwards. The builder's last step is the display smoothing, and
+    /// smoothing does not commute with the bank: measured on a real MMM tune (13 bands,
+    /// psychoacoustic width) the two orders part by up to 3.1 dB, most of it where a
+    /// narrow band sits beside a deep one, because the psychoacoustic mean is a
+    /// peak-weighted cubic mean and so not linear. Null draws the source alone.
+    /// </para>
     /// </remarks>
     private IReadOnlyList<SignalPoint> ComputeSpatialAverageCurve(
-        EqWizardCurveSource source)
+        EqWizardCurveSource source,
+        EqualizationCurve? bank = null)
     {
         LiveCaptureDocument document = source.SpatialAverage!;
         List<double> grid = document.ToCurvePoints()
@@ -636,7 +646,7 @@ public partial class EqWizardPanel
             .ToList();
         List<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
             document,
-            source.PreviewChain ?? DspChannelChain.Identity,
+            (source.PreviewChain ?? DspChannelChain.Identity) with { Peq = bank },
             // The chain is realized at the PROCESSOR's rate, not the capture's.
             EqProcessorSampleRate,
             // Pinned to the panel's, like every other part of a handoff: a bank fitted
@@ -876,6 +886,23 @@ public partial class EqWizardPanel
                     2,
                     LineStyle.Solid,
                     landedGatedPreview);
+        }
+
+        // A spatial average is rebuilt through the chain with the bank INSIDE it — the
+        // same substitution the gated preview above makes, and the one the Virtual DSP
+        // plot makes for the same capture. Adding the bank's ideal magnitude to the
+        // curve below would put it AFTER the display smoothing, and the two orders are
+        // not the same reading: see ComputeSpatialAverageCurve. The grid, the gaps and
+        // the count come from the same builder as the source curve, so the two stay
+        // aligned by index for the target, the error fill and the fit statistics.
+        if (loadedSource is { SpatialAverage: not null } average)
+        {
+            List<DataPoint> corrected = ToPlotPoints(
+                ComputeSpatialAverageCurve(average, eq), KeepsGaps(average));
+            return corrected.Count >= 2
+                ? new EqWizardCurve(
+                    "Source + EQ", SourcePlusEqColor, 2, LineStyle.Solid, corrected)
+                : null;
         }
 
         var points = new DataPoint[sourcePoints.Count];

@@ -794,9 +794,10 @@ public static class EqAutoTuner
     /// <paramref name="eqSum"/> and <paramref name="bands"/> in place.
     /// </summary>
     /// <remarks>
-    /// One round per direction. Each searches every direction not yet placed, keeps the
-    /// single best candidate across both, and applies it only if that candidate beats
-    /// the bell the greedy pass would put in the same slot. Running the second round
+    /// One round per direction. Each round takes every candidate of every direction not
+    /// yet placed — both shelves, every corner, every knee — through the rest of the fit
+    /// on scratch state, and applies the one that ends closest to the target, provided
+    /// it beats finishing the round with no shelf at all. Running the second round
     /// against the residual the first one left is what lets a bass shelf and a treble
     /// shelf describe one tilt together, instead of both being fitted to the same slope.
     /// The stage never marks a frequency blocked: a shelf sterilises nothing, and the
@@ -823,9 +824,10 @@ public static class EqAutoTuner
             round < ShelfDirections.Length && bands.Count < opt.MaxBands;
             round++)
         {
-            // Whether a shelf is worth its slot is decided by finishing the fit BOTH
-            // ways on scratch state and comparing where the two end up. Nothing cheaper
-            // survived measurement: a shelf that lowers the objective on its own, or
+            // Whether a shelf is worth its slot is decided by finishing the fit on
+            // scratch state WITH the candidate and without it, and comparing where the
+            // two end up. Nothing cheaper survived measurement: a shelf that lowers the
+            // objective on its own, or
             // that beats the single bell it displaces, can still leave the whole fit
             // worse, because it acts across octaves and changes what every later band
             // has left to correct. Both weaker rules were tried and both spent a slot

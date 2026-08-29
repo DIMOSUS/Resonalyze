@@ -1419,17 +1419,21 @@ error** between Source + EQ and Target, **Filters used**, **Peak boost** and
 as bells. A car target is a bass shelf plus a downward tilt, and a bell is the
 wrong shape for either: a stack of them spends slots on a trend that resonances
 needed, and rings between the centres. A shelf is kept only where it earns the
-slot: the rest of the fit is finished for each direction on offer and once with
-no shelf at all, and a shelf goes in only if its finished curve ends closer to
-the target than the shelf-free one — whichever direction finishes best, not
-whichever looks best before the bells are placed. So a response made of
-resonances alone gets none at all, and nothing changes for it.
+slot, and which shelf that is gets decided on the finished curve rather than on
+how the band reads by itself: every corner and knee of both directions is taken
+all the way through the rest of the fit, once more with no shelf at all, and the
+one that ends closest to the target goes in — if any of them beats placing none.
+A shelf that does not leave the fit shorter has to earn its filter by a margin
+you could see, so a response made of resonances alone gets none at all and
+nothing changes for it.
 Measured on synthetic responses, at the default Max Gain of 6 dB: a top end
 running uniformly hot took one shelf where four bells had been spent, at a third
-of the residual (0.04 dB RMS against 0.13); a car target with bass lift and tilt
-came out at 0.42 dB RMS against 1.28 with the same ten filters. At most one
-shelf per direction, and the fit re-runs its own search after placing the first,
-so a bass shelf and a treble shelf can describe one tilt between them.
+of the residual (0.04 dB RMS against 0.13); the same response with resonances on
+it came out at four filters against seven, for the same error; a car target with
+bass lift and tilt at 0.34 dB RMS against 1.28 with the same ten filters. At
+most one shelf per direction, and the fit re-runs its own search after placing
+the first, so a bass shelf and a treble shelf can describe one tilt between
+them.
 
 A shelf's knee is capped at **Q 0.7**, the steepest that still rises
 monotonically: above that an RBJ shelf overshoots its own gain before settling,
@@ -1446,8 +1450,8 @@ applies to a boosting bell deliberately does not apply to a shelf, since a
 shelf's plateau is the correction rather than spill from one. And a shelf is not
 counted against the cumulative boost the bells are held to, because it is a
 correction of the whole tail and not a stack of bands at one frequency: with a
-shelf placed, the **total** boost can exceed **Max Gain** (measured: +11 dB where
-Max Gain was +6), which is what the **Headroom** read-out is for. Each individual
+shelf placed, the **total** boost can exceed **Max Gain** (measured: +10.5 dB
+where Max Gain was +6), which is what the **Headroom** read-out is for. Each
 band still obeys **Max Gain**, and **Cuts only** rules all of this out.
 
 ### Import, export, and tuning sheet

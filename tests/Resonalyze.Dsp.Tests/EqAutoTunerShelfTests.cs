@@ -190,6 +190,42 @@ public sealed class EqAutoTunerShelfTests
     }
 
     [Fact]
+    public void Tune_ShelfThatOnlyWinsOnTheFinishedFit_IsStillFound()
+    {
+        // The case the finished-fit rule exists for, and the one a pre-filter on the
+        // single-band score hides. Against a gently tilted response carrying a loud
+        // narrow resonance, the shelf that scores best on its own is a wide low shelf
+        // at 631 Hz: it shaves the resonance's skirt, which reads well before any bell
+        // is placed and wrecks what the bells then have to do — finished, it lands at
+        // 1.276 against 1.275 for placing no shelf at all. The shelf that actually wins
+        // is a different band entirely, two and a half octaves lower, and it only turns
+        // up because every candidate is taken to a finished fit. Filter by the
+        // single-band score first and the stage is offered the 631 Hz one, the lookahead
+        // refuses it, and no shelf is placed at all.
+        IReadOnlyList<SignalPoint> source = Grid(f =>
+            -0.6 * Math.Log2(f / 1_000) + Bump(f, 2_000, 0.3, 8));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+        EqAutoTuner.Options options = CutsOnly with { MaxBands = 2 };
+
+        EqualizationCurve bells = EqAutoTuner.Tune(source, target, options);
+        EqualizationCurve shelved = EqAutoTuner.Tune(
+            source, target, options with { AllowShelves = true });
+
+        PeqBand shelf = Assert.Single(shelved.Bands, band => band.Type.IsShelving());
+        Assert.Equal(PeqBandType.LowShelf, shelf.Type);
+        Assert.True(
+            shelf.FrequencyHz < 300,
+            $"the shelf landed at {shelf.FrequencyHz:0} Hz — the corner the single-band " +
+            "score prefers is 631 Hz, and that one finishes worse than placing none.");
+        double shelvedRms = FitRmsDb(shelved, source, target);
+        double bellsRms = FitRmsDb(bells, source, target);
+        Assert.True(
+            shelvedRms < bellsRms - 0.1,
+            $"the shelf bought nothing: {shelvedRms:0.000} dB against " +
+            $"{bellsRms:0.000} dB.");
+    }
+
+    [Fact]
     public void Tune_BumpsOnly_SpendsNoSlotOnAShelf()
     {
         // Nothing here is a trend: three resonances on an otherwise flat response. A

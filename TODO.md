@@ -499,8 +499,8 @@ items below are what a car DSP tune actually needs, roughly in priority order.
   changes the curve a fit returns, and the evidence so far is one-sided but
   synthetic: a uniformly hot top end took one shelf where four bells had been
   spent, at a third of the residual (0.04 dB RMS against 0.13); a car target with
-  bass lift and tilt came out at 0.42 dB RMS against 1.28 with the same ten
-  filters, at the cost of an 11.05 dB peak boost against 6.79 (a shelf is not
+  bass lift and tilt came out at 0.34 dB RMS against 1.28 with the same ten
+  filters, at the cost of a 10.48 dB peak boost against 6.79 (a shelf is not
   counted against the bells' cumulative boost ceiling — deliberate, and the
   Headroom read-out is where it shows). Flip the default
   once it has been run against real cabin measurements — there is no code left to

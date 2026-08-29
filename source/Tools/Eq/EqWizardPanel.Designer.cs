@@ -64,6 +64,7 @@
             checkBoxEqPhase = new ReleaseClickCheckBox();
             checkBoxEqCurve = new ReleaseClickCheckBox();
             checkBoxCutsOnly = new ReleaseClickCheckBox();
+            checkBoxShelves = new ReleaseClickCheckBox();
             panelAutoTune = new Panel();
             buttonOverlaySettings = new ReleaseClickButton();
             comboBoxCalibration = new DarkComboBox();
@@ -450,6 +451,18 @@
             checkBoxCutsOnly.Text = "Cuts only";
             checkBoxCutsOnly.UseVisualStyleBackColor = true;
             // 
+            // checkBoxShelves
+            // 
+            checkBoxShelves.AutoSize = true;
+            checkBoxShelves.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxShelves.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxShelves.Location = new Point(95, 157);
+            checkBoxShelves.Name = "checkBoxShelves";
+            checkBoxShelves.Size = new Size(66, 19);
+            checkBoxShelves.TabIndex = 69;
+            checkBoxShelves.Text = "Shelves";
+            checkBoxShelves.UseVisualStyleBackColor = true;
+            // 
             // panelAutoTune
             // 
             panelAutoTune.BackColor = Color.FromArgb(46, 51, 62);
@@ -467,6 +480,7 @@
             panelAutoTune.Controls.Add(labelBandsLimit);
             panelAutoTune.Controls.Add(comboBoxBandsLimit);
             panelAutoTune.Controls.Add(checkBoxCutsOnly);
+            panelAutoTune.Controls.Add(checkBoxShelves);
             panelAutoTune.Controls.Add(buttonAutoTune);
             panelAutoTune.Location = new Point(6, 550);
             panelAutoTune.Name = "panelAutoTune";
@@ -748,6 +762,7 @@
         private ReleaseClickCheckBox checkBoxEqPhase;
         private ReleaseClickCheckBox checkBoxEqCurve;
         private ReleaseClickCheckBox checkBoxCutsOnly;
+        private ReleaseClickCheckBox checkBoxShelves;
         private Panel panelAutoTune;
         private ReleaseClickButton buttonOverlaySettings;
         private DarkComboBox comboBoxCalibration;

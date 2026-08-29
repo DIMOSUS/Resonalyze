@@ -492,15 +492,23 @@ items below are what a car DSP tune actually needs, roughly in priority order.
   "driver band" it works inside is just the user's From/To window. Derive each
   driver's usable band from the measured roll-off or the crossover so the mask
   also blocks boosts outside it.
-- [ ] ★ **Auto Tune still fits peaking bands only.** The bank, the preview and
-  the parsers carry shelves and all-pass bands now; the tuner does not. Car
-  targets are shelved (bass boost + downward tilt), which a stack of peaking
-  bands approximates poorly — wasted slots and ringing. Teach the greedy fit to
-  propose a low/high shelf where the residual is a slope rather than a bump.
-  (All-pass stays out of the FIT — it is flat, so the magnitude error can never
-  ask for one; a bank holding all-pass bands is instead offered to be kept, and
-  their count comes off the fit's budget.) HP/LP/notch are NOT needed here: the
-  Virtual DSP tool owns crossovers and time alignment.
+- [ ] **Decide whether the shelf stage should default on.** Auto Tune fits
+  low/high shelves now (`EqAutoTuner.Options.AllowShelves`, the wizard's
+  **Shelves** box), gated on finishing the whole fit both ways and landing
+  closer with the shelf than without. It is OFF by default because turning it on
+  changes the curve a fit returns, and the evidence so far is one-sided but
+  synthetic: a uniformly hot top end took one shelf where four bells had been
+  spent, at a third of the residual (0.04 dB RMS against 0.13); a car target with
+  bass lift and tilt came out at 0.42 dB RMS against 1.28 with the same ten
+  filters, at the cost of an 11.05 dB peak boost against 6.79 (a shelf is not
+  counted against the bells' cumulative boost ceiling — deliberate, and the
+  Headroom read-out is where it shows). Flip the default
+  once it has been run against real cabin measurements — there is no code left to
+  write for it, only the field check. (All-pass stays out of the FIT — it is
+  flat, so the magnitude error can never ask for one; a bank holding all-pass
+  bands is instead offered to be kept, and their count comes off the fit's
+  budget. HP/LP/notch are NOT needed here: the Virtual DSP tool owns crossovers
+  and time alignment.)
 - [ ] **Greedy fit redesign.** Band spacing ignores the chosen Q (fixed ±0.33/±1
   oct blocks); band gain is fixed from the peak residual before Q is searched; the
   preamp is rounded to integer dB *before* the fit; and the objective treats

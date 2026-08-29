@@ -1018,7 +1018,15 @@ Nothing has to be selected, typed, or matched by hand, and no file changes hands
    acoustic nulls. **Max Q** caps how narrow a filter it may place (6.0 by default):
    below that ceiling the fit favours broader trends, the ones likelier to hold across
    the listening area, over notching a peak that may belong to where the microphone
-   stood. **From** and **To**
+   stood. **Shelves** is worth ticking when the target is shelved — a bass lift, a
+   downward tilt — or when a whole end of the measurement runs hot or shy: one shelf
+   then does what three or four bells were doing badly, and the slots it frees go to
+   real resonances. With **Cuts only** ticked it is safe to leave on: a shelf is kept
+   only where finishing the fit with it lands closer to the target than finishing it
+   without, so a response made of resonances alone gets none. With **Cuts only** off, a
+   boosting shelf lifts a whole end of the range and the total boost can pass **Max
+   Gain** — read **Headroom** on the scoreboard afterwards before you accept the tune.
+   **From** and **To**
    (outlined) arrived already filled in from this channel's crossover corners, so the
    fit stays inside the band the driver is actually used in.
 5. **Auto Tune** — run it once these are set.

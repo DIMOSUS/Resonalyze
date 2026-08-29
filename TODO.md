@@ -6,17 +6,28 @@ item describing work already done keeps only the residual. Grouped by area,
 highest-value items marked ★. `[✗]` marks a settled decision kept on purpose, so
 the same idea does not get re-proposed — those are not open work.
 
-Last audited against the code on 2026-07-26. That pass ran a duplication /
-dead-code sweep and landed the mechanical half of it (dead `UiStyle` factories,
-five clamp helpers collapsed into `ClampValue`, the options-panel gate/Tukey
-boilerplate hoisted into `ImpulsePreviewOptionsForm`, four `IsWasapiBackend`
-copies replaced by `AudioBackend.IsWasapi()`, and the two capture pumps put on a
-shared `CapturePump<TSlot, TBlock>`). The two structural findings it did NOT
-land are filed below, marked ★. That pass dropped
-the "Windows live-checks pending" section: every item in it shipped in v0.5.3,
-and only the person with the car and the microphone can tick them, so they
-belong in the next field session rather than in a register nobody else can
-close.
+Last audited against the code on 2026-08-29 — the first pass since the
+moving-microphone, microphone-array, calibration-home and audition work landed
+(#124, #126, #128, #130, #135, #137, #138, #139).
+
+Two EQ Wizard items closed as DONE and were removed: spatial averaging before
+the fit (the wizard takes a spatially averaged capture as a source kind of its
+own and gates its boosts on the array's per-band spread,
+`ArraySpreadBoostLimitDb`), and sourcing from History (an "Impulse response from
+history" menu item; the per-channel half of that same item is the Virtual DSP
+handoff). Everything else was re-checked against the code and stands.
+
+What HAD drifted is the figures, and they are corrected in place. The three
+structural items are the story: `VirtualCrossoverPanel` is 7061 lines against the
+~3900 last recorded, `Overlay.cs` 3219 against ~2230, `PlotModelFactoryTests`
+2560 against ~1030. Each of those roughly doubled while its item sat still, which
+raises the price of the split rather than lowering it — the panel is now larger
+than it was BEFORE its decomposition. `AutoAlignmentEngine.ComputeStereo` grew
+744 → 759 lines and its nested local 343 → 348.
+
+An earlier pass dropped the "Windows live-checks pending" section: only the
+person with the car and the microphone can close those, so they belong in the
+next field session rather than in a register nobody else can tick.
 
 ## DSP library (`dsp/`)
 
@@ -134,8 +145,8 @@ close.
   its own kept pick. Remaining: derive the threshold from comb statistics of the
   junction. (`MaxInterSideDirectPathMs` is gone — the cross-side work replaced it
   with the donor-corroborated geometry in #47.)
-- [ ] ★ **`AutoAlignmentEngine.ComputeStereo` is 744 lines**, and it nests a
-  **343-line local function** (`CrossSideTargetMs`) plus an 88-line `AlignRight`.
+- [ ] ★ **`AutoAlignmentEngine.ComputeStereo` is 759 lines**, and it nests a
+  **348-line local function** (`CrossSideTargetMs`) plus an 88-line `AlignRight`.
   The method has five clear phases (validate → left cascade → bridge fit → right
   cascade → rebalance/mono/normalize/polarity), but a local function that long
   closes over every local in the method, so the cross-side target logic cannot be
@@ -152,17 +163,35 @@ close.
   both OxyPlot presenters (`VirtualCrossoverAcousticPlot` / `DspChainPlot`), the
   metric computation (`VirtualCrossoverMetrics` + shared `ProcessedChannels`) and
   the shared Auto delay `AlignmentReprocessor` are extracted; the panel dropped
-  ~4250 → ~3060 lines, and the Auto delay work since (#43–#50) has grown it back
-  to ~3900 — the boundaries below are worth more than they were. Remaining,
-  lower-value slices: a full source resolver/assignment
+  ~4250 → ~3060 lines, and everything since has grown it to **7061** — Auto delay
+  (#43–#50), then the spatial-average attachment and the hybrid view (#124, #130),
+  the calibration selector (#112, #135) and the audition (#139). It is bigger now
+  than it was BEFORE the decomposition, so the boundaries below are worth more
+  than they have ever been. Remaining, lower-value slices: a full source
+  resolver/assignment
   boundary (the panel still orchestrates the file/History/
   restore flow around the shared core), splitting `VirtualCrossoverMetrics` into
   curve building vs side-processing orchestration, and moving `ProcessedChannel`'s
   `OxyColor` out into the render binding. Persistence, calibration and control
   binding are inherently UI-bound — leave them.
-- [ ] **PDF images still go through temp files.** The shared `PdfSheet` helper
-  centralised the temp-file dance, but MigraDoc 6 supports
-  `AddImage("base64:...")`, which would remove it (needs a Windows render check
+- [ ] **The audition's "Own (as measured)" refuses more than the render needs.**
+  A car whose two SIDES were measured through different microphones is refused
+  along with one whose own channels disagree, though only the second is
+  impossible: the ears have their own kernels, so left could carry microphone A's
+  correction and right microphone B's. What blocks it is that the render designs
+  ONE calibration FIR and convolves both kernels with it — and it is combined
+  with the cabin subtraction into that single filter, with a reference pair built
+  from it for the level match, so splitting it per side touches three places in
+  `VirtualCrossoverAuditionDialog.ExecuteRender` rather than one. Raised in the
+  review of #139 and deliberately left: a refusal is the safe side of it, and the
+  message and the docs now name the real limit instead of claiming it is per
+  side. A side whose OWN channels were measured through different microphones
+  stays refused whatever happens here — they are summed before the filter meets
+  them.
+- [ ] **PDF images still go through temp files.** The shared
+  `Tools/Sheets/PdfSheet` helper centralised the temp-file dance, but MigraDoc 6
+  supports `AddImage("base64:...")`, which would remove it (needs a Windows
+  render check
   that the sheets stay pixel-identical).
 
 ## Measurement orchestrators
@@ -296,17 +325,17 @@ close.
   would change appearance everywhere, not just while loading. Owner looked at a
   rendered comparison on 2026-08-24 and chose to leave it; take it as its own
   change with its own visual pass, not as a rider on something else.
-- [ ] **A light theme is wanted eventually, and 626 colour assignments do not go
-  through `UiPalette`** — 487 `Color.FromArgb` literals across the 34
-  `.Designer.cs` files plus 139 `SystemColors.ControlLight` label foregrounds.
+- [ ] **A light theme is wanted eventually, and 650 colour assignments do not go
+  through `UiPalette`** — 504 `Color.FromArgb` literals across the `.Designer.cs`
+  files plus 146 `SystemColors.ControlLight` label foregrounds.
   The contrast work (#116) named the roles the app paints with — `AccentFill`,
   `TextDisabled`, the `Graph*` chrome — and put the graph surface and the accent
   buttons' fill under the palette, so the SEAMS now exist:
   `PlotModelStyle.ApplyChrome` is the one place a plot's colours are decided,
   and `UiPaletteContrastTests` re-measures whatever values a second theme
   brings. What is left for the theme itself is the designer sweep, and it is
-  smaller than the count suggests: only **37 distinct values** appear in those
-  files and four of them cover 313 of the 487, so a dark→light map plus a
+  smaller than the count suggests: only **35 distinct values** appear in those
+  files and four of them cover 329 of the 504, so a dark→light map plus a
   runtime pass over the control tree covers most of it. The judgment part is
   not the chrome but the CURVES: `OxyColors.White` sums, white THD traces,
   light-grey source curves and the user's own overlay slot colours (persisted
@@ -384,7 +413,7 @@ close.
 
 ## Overlays
 
-- [ ] ★ **`Overlay` is a God object** — ~2230 lines, ~95 members in one class:
+- [ ] ★ **`Overlay` is a God object** — 3219 lines in one class:
   runtime control creation, the capture menu and its long-press behaviour, text
   import/export, three settings dialogs, persistence, preview/restore and the
   plot series. The render-path caching and the pure-math extraction are done;
@@ -421,8 +450,9 @@ close.
   top finding (2026-07-26): it is what a "plotting layer" split was really
   after, and it needs no new project.
   The reason it is not done yet is honest scope: the payoff — plot tests no
-  longer needing `FakeAudioSessionFactory` — only lands if the ~1030-line
-  `PlotModelFactoryTests` is rewritten too, because it builds state through
+  longer needing `FakeAudioSessionFactory` — only lands if the 2560-line
+  `PlotModelFactoryTests` is rewritten too (it was ~1030 when this was filed, and
+  the rewrite is what has grown), because it builds state through
   `measurement.RestoreImpulseResponse(...)` and therefore needs a live
   measurement regardless of what the factory accepts. Interface + adapter
   without that rewrite is pure addition. Do it as one piece, its own branch.
@@ -467,16 +497,6 @@ items below are what a car DSP tune actually needs, roughly in priority order.
   ask for one; a bank holding all-pass bands is instead offered to be kept, and
   their count comes off the fit's budget.) HP/LP/notch are NOT needed here: the
   Virtual DSP tool owns crossovers and time alignment.
-- [ ] **Spatial averaging of several measurements.** A single mic point
-  over-corrects for that seat's position-specific nulls; car tuning averages a
-  handful of positions around the headrest. The mode loads ONE IR — add
-  multi-measurement (moving-mic / N-position) averaging before the fit, working
-  together with the reliability mask above.
-- [ ] **Source from History / the Virtual DSP channels, not just a file.** Car
-  audio is multi-channel and the tune iterates "measure a channel → EQ it". The
-  mode only loads a saved `.json` (deliberately decoupled per AGENTS.md); a
-  History / per-channel source picker would remove the round-trip and enable
-  per-channel EQ of the just-measured driver.
 - [ ] **Greedy fit redesign.** Band spacing ignores the chosen Q (fixed ±0.33/±1
   oct blocks); band gain is fixed from the peak residual before Q is searched; the
   preamp is rounded to integer dB *before* the fit; and the objective treats

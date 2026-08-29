@@ -17,13 +17,16 @@ own and gates its boosts on the array's per-band spread,
 history" menu item; the per-channel half of that same item is the Virtual DSP
 handoff). Everything else was re-checked against the code and stands.
 
-What HAD drifted is the figures, and they are corrected in place. The three
-structural items are the story: `VirtualCrossoverPanel` is 7061 lines against the
-~3900 last recorded, `Overlay.cs` 3219 against ~2230, `PlotModelFactoryTests`
-2560 against ~1030. Each of those roughly doubled while its item sat still, which
-raises the price of the split rather than lowering it — the panel is now larger
-than it was BEFORE its decomposition. `AutoAlignmentEngine.ComputeStereo` grew
-744 → 759 lines and its nested local 343 → 348.
+What HAD drifted is the figures, and they are corrected in place. TWO of the
+three structural items nearly doubled while they sat still, which raises the
+price of the split rather than lowering it: `VirtualCrossoverPanel.cs` is 7061
+lines against the ~3900 last recorded — larger than it was BEFORE its
+decomposition — and `PlotModelFactoryTests` 2560 against ~1035. The third moved
+far less: the `Overlay` CLASS is 2541 lines against ~2230. This audit first gave
+it 3219, which is the FILE, `OverlayCollection` and two small types included —
+measure the class when the item is about splitting a class, and say which when
+the two differ by a quarter. `AutoAlignmentEngine.ComputeStereo` grew 744 → 759
+lines and its nested local 343 → 348.
 
 An earlier pass dropped the "Windows live-checks pending" section: only the
 person with the car and the microphone can close those, so they belong in the
@@ -413,7 +416,8 @@ next field session rather than in a register nobody else can tick.
 
 ## Overlays
 
-- [ ] ★ **`Overlay` is a God object** — 3219 lines in one class:
+- [ ] ★ **`Overlay` is a God object** — 2541 lines in one class (line 669 to
+  3209; the file is 3219, with `OverlayCollection` and two small types beside it):
   runtime control creation, the capture menu and its long-press behaviour, text
   import/export, three settings dialogs, persistence, preview/restore and the
   plot series. The render-path caching and the pure-math extraction are done;

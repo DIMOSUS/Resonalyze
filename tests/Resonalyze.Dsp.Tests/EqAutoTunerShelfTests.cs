@@ -159,6 +159,37 @@ public sealed class EqAutoTunerShelfTests
     }
 
     [Fact]
+    public void Tune_BothEndsSloped_TakesAShelfAtEach()
+    {
+        // Each direction is carried to a finished fit of its own and ranked on where
+        // that fit ends, so a response sloped at both ends gets both shelves — the
+        // second searched against the residual the first one left, which is what lets
+        // the two describe one tilt between them. Ranking the directions by their
+        // single-band score first would let the stronger end decide for both, and one
+        // direction losing would end the stage with the other never asked.
+        IReadOnlyList<SignalPoint> source = Grid(f =>
+            StepAbove(f, 3_000, 12) - StepBelow(f, 150, 8));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve bells = EqAutoTuner.Tune(source, target, Boosting);
+        EqualizationCurve shelved = EqAutoTuner.Tune(
+            source, target, Boosting with { AllowShelves = true });
+
+        Assert.Contains(shelved.Bands, band => band.Type == PeqBandType.LowShelf);
+        Assert.Contains(shelved.Bands, band => band.Type == PeqBandType.HighShelf);
+        Assert.True(
+            shelved.Bands.Count < bells.Bands.Count,
+            $"the shelves saved no slot: {shelved.Bands.Count} bands against " +
+            $"{bells.Bands.Count} without them.");
+        double shelvedRms = FitRmsDb(shelved, source, target);
+        double bellsRms = FitRmsDb(bells, source, target);
+        Assert.True(
+            shelvedRms < bellsRms,
+            $"two shelves fitted worse than bells: {shelvedRms:0.00} dB against " +
+            $"{bellsRms:0.00} dB.");
+    }
+
+    [Fact]
     public void Tune_BumpsOnly_SpendsNoSlotOnAShelf()
     {
         // Nothing here is a trend: three resonances on an otherwise flat response. A

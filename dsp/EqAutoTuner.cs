@@ -799,8 +799,26 @@ public static class EqAutoTuner
             round < ShelfDirections.Length && bands.Count < opt.MaxBands;
             round++)
         {
+            // Whether a shelf is worth its slot is decided by finishing the fit BOTH
+            // ways on scratch state and comparing where the two end up. Nothing cheaper
+            // survived measurement: a shelf that lowers the objective on its own, or
+            // that beats the single bell it displaces, can still leave the whole fit
+            // worse, because it acts across octaves and changes what every later band
+            // has left to correct. Both weaker rules were tried and both spent a slot
+            // on a shelf that cost more than it bought.
+            //
+            // EVERY direction still open is taken that far, and the finished score is
+            // what ranks them. Ranking the two by their single-band score first and
+            // only asking the winner would let a low shelf that reads better before the
+            // bells are placed suppress a high shelf that finishes closer, and would
+            // let one direction's rejection end the stage with the other never asked.
+            // The baseline is the same for both, so it is run once.
+            int remaining = opt.MaxBands - bands.Count;
+            double withoutShelf = TrialFit(
+                opt, fit, qCandidates, residual, eqSum, bellSum, remaining);
+
             PeqBand chosen = default;
-            double chosenScore = double.MaxValue;
+            double chosenFinal = withoutShelf;
             bool found = false;
             foreach (PeqBandType type in ShelfDirections)
             {
@@ -809,6 +827,13 @@ public static class EqAutoTuner
                     continue;
                 }
 
+                // Which corner, knee and gain that direction offers is still settled by
+                // the single-band objective, the same one the bells pick their Q with.
+                // Ranking every corner x knee x gain by a finished fit instead is three
+                // orders of magnitude more work — a full greedy pass per candidate,
+                // roughly 1300 of them per direction per round, against the two runs
+                // here — so the shortlist is one candidate and the shape of the
+                // approximation is the same one the greedy pass already makes.
                 (PeqBand Band, double Score)? candidate = BestShelf(
                     type,
                     opt,
@@ -816,50 +841,48 @@ public static class EqAutoTuner
                     residual,
                     contribution,
                     candidateContribution);
-                if (candidate == null || (found && candidate.Value.Score >= chosenScore))
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < n; i++)
+                {
+                    shelfResidual[i] = residual[i];
+                    shelfEqSum[i] = eqSum[i];
+                    if (fit.Valid[i])
+                    {
+                        shelfResidual[i] -= candidateContribution[i];
+                        shelfEqSum[i] += candidateContribution[i];
+                    }
+                }
+
+                double withShelf = TrialFit(
+                    opt,
+                    fit,
+                    qCandidates,
+                    shelfResidual,
+                    shelfEqSum,
+                    bellSum,
+                    remaining - 1);
+
+                // Seeded with the no-shelf score, so this one comparison both ranks the
+                // directions and refuses a shelf that does not beat placing none.
+                if (withShelf >= chosenFinal)
                 {
                     continue;
                 }
 
                 found = true;
                 chosen = candidate.Value.Band;
-                chosenScore = candidate.Value.Score;
+                chosenFinal = withShelf;
                 Array.Copy(candidateContribution, chosenContribution, n);
             }
 
+            // A round in which no direction finishes ahead of the bells ends the stage:
+            // nothing was applied, so the next round would search the very same residual
+            // and lose again.
             if (!found)
-            {
-                return;
-            }
-
-            // Whether the shelf is worth its slot is decided by finishing the fit BOTH
-            // ways on scratch state and comparing where the two end up. Nothing cheaper
-            // survived measurement. A shelf that lowers the objective on its own, or
-            // that beats the single bell it displaces, can still leave the whole fit
-            // worse: it acts across octaves, so it changes what every later band has
-            // left to correct, and only running the rest of the pass shows whether that
-            // trade came out ahead. Both weaker rules were tried and both spent a slot
-            // on a shelf that cost more than it bought.
-            int remaining = opt.MaxBands - bands.Count;
-            for (int i = 0; i < n; i++)
-            {
-                shelfResidual[i] = residual[i];
-                shelfEqSum[i] = eqSum[i];
-                if (fit.Valid[i])
-                {
-                    shelfResidual[i] -= chosenContribution[i];
-                    shelfEqSum[i] += chosenContribution[i];
-                }
-            }
-
-            double withShelf = TrialFit(
-                opt, fit, qCandidates, shelfResidual, shelfEqSum, bellSum, remaining - 1);
-            double withoutShelf = TrialFit(
-                opt, fit, qCandidates, residual, eqSum, bellSum, remaining);
-
-            // A round the lookahead turns down ends the stage: nothing was applied, so
-            // the next round would search the very same residual and lose again.
-            if (withShelf >= withoutShelf)
             {
                 return;
             }

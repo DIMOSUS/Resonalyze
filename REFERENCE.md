@@ -1419,9 +1419,11 @@ error** between Source + EQ and Target, **Filters used**, **Peak boost** and
 as bells. A car target is a bass shelf plus a downward tilt, and a bell is the
 wrong shape for either: a stack of them spends slots on a trend that resonances
 needed, and rings between the centres. A shelf is kept only where it earns the
-slot — the rest of the fit is run twice, once with the shelf and once without,
-and the shelf stays only if the finished curve ends closer to the target — so a
-response made of resonances alone gets none at all, and nothing changes for it.
+slot: the rest of the fit is finished for each direction on offer and once with
+no shelf at all, and a shelf goes in only if its finished curve ends closer to
+the target than the shelf-free one — whichever direction finishes best, not
+whichever looks best before the bells are placed. So a response made of
+resonances alone gets none at all, and nothing changes for it.
 Measured on synthetic responses, at the default Max Gain of 6 dB: a top end
 running uniformly hot took one shelf where four bells had been spent, at a third
 of the residual (0.04 dB RMS against 0.13); a car target with bass lift and tilt

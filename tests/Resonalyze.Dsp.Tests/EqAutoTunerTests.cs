@@ -282,6 +282,28 @@ public sealed class EqAutoTunerTests
     }
 
     [Fact]
+    public void Tune_MaxQ_KeepsEveryBandAtOrBelowTheCeiling()
+    {
+        // A resonance sharp enough that the unbounded fit reaches for its narrowest
+        // bands. That is the fit the EQ Wizard's Max Q exists to refuse: the peak is
+        // read at one microphone position, and a filter that narrow corrects that
+        // position alone.
+        IReadOnlyList<SignalPoint> source = Grid(
+            f => new PeqBand(1_000, 10.0, 12.0).MagnitudeDbAt(f));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve unbounded = EqAutoTuner.Tune(source, target);
+        EqualizationCurve capped = EqAutoTuner.Tune(
+            source, target, new EqAutoTuner.Options { QMax = 6.0 });
+
+        Assert.Contains(unbounded.Bands, band => band.Q > 6.0);
+        Assert.NotEmpty(capped.Bands);
+        Assert.All(
+            capped.Bands,
+            band => Assert.True(band.Q <= 6.0, $"band at Q {band.Q} is past the ceiling."));
+    }
+
+    [Fact]
     public void Tune_QRangeExcludingAllCandidates_FallsBackWithoutThrowing()
     {
         // [QMin, QMax] = [3, 3.5] excludes every entry of the fixed candidate-Q list

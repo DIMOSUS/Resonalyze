@@ -706,6 +706,13 @@ internal sealed partial class MeasurementSettingsFile
         // EqAutoTuner.Options.CutsOnlyMode.
         public bool CutsOnly { get; set; } = true;
 
+        // The narrowest band Auto Tune may place (EqAutoTuner.Options.QMax). Well
+        // below the 20 a strip accepts by hand: the fit reads a single microphone
+        // position, and a sharp notch fitted to it is a filter for that position
+        // alone. A file written before the ceiling existed restores this default,
+        // which is the change those files see.
+        public double AutoTuneMaxQ { get; set; } = 6.0;
+
         // Whether the bank's own response is drawn on the plot's right-hand axis.
         // A view preference, persisted the way the Impulse view persists which of
         // its curves are shown: a user who cleared the plot of it does not want it

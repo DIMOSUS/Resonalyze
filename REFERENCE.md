@@ -1274,8 +1274,20 @@ curve hangs exactly where the plot had it and the Target Level still means the
 same thing; where the capture has nothing to report — under a protective
 high-pass — the curve breaks and Auto Tune places no band there. There is no gate
 on this curve: an average is a steady-state measurement with no window, so the
-gated preview below is bypassed and **Source + EQ** is the curve plus the bank's
-analytic magnitude, which for a windowless curve is exact.
+gated preview below is bypassed. The bank still goes INTO the chain rather than
+onto the finished curve, because the display smoothing is the hybrid's last step
+and smoothing does not commute with a filter: a narrow band beside a deeper one
+reads differently depending on which came first — measured on a 13-band MMM tune,
+by up to 3 dB under the psychoacoustic width, whose mean weights peaks and so is
+not even linear. So **Source + EQ** is the average rebuilt through the whole
+chain with the edited bank inside it, which is the arithmetic Virtual DSP runs
+for a channel already carrying that PEQ, and the two panels draw one curve.
+(With smoothing **Off** the order stops mattering and both readings coincide
+exactly — which is what the manual asks for in Hybrid mode anyway.) One thing the
+fit cannot promise: Auto Tune designs its bands against the SMOOTHED source, and
+the corrected curve is smoothed after the bank, so where the smoothing is doing
+real work the result lands beside the target rather than on it. The **Tuning
+results** figures report where it actually landed.
 
 That identity extends to the corrected curve: **Source + EQ** is not the bare
 curve with the filters' ideal magnitude added on top, the way an equalizer
@@ -1364,6 +1376,21 @@ band's frequency, gain, and the Q that reduces the error the most. It **chooses
 the band count itself**, up to the **Max Filters** limit (4–32), while a
 cumulative-boost cap and minimum band spacing keep it from stacking maxed-out
 bands where the response simply cannot be corrected.
+
+**Max Q** is the ceiling on how narrow those bands may be — **6.0** by default,
+against the 20 a strip accepts when you type one in by hand. It bounds Auto Tune
+alone; nothing it fitted earlier is touched, and you can still narrow any band
+yourself. The fit picks each band's Q off a fixed ladder (0.5, 0.7, 1.0, 1.4,
+2.0, 2.8, 4.0, 5.6, 8.0, 10.0), so the effective limit is the highest rung at or
+below your number — 6.0 admits 5.6. Keep it low because a single measurement is
+a single microphone position: much of a sharp peak there is interference, it
+moves when the microphone moves, and a filter cut to match it corrects that one
+point, while a broader band favours the trend that is likelier to hold across
+the listening area. Raising it is for a source that has already answered that
+objection — a spatial average, where a peak that survived the averaging is at
+least stable over the volume that was averaged rather than a property of the
+spot the microphone stood in — or for a deliberately narrow correction of a mode
+you have identified.
 
 The fit is a magnitude fit, so the bells it places are all it can propose — and a
 run replaces the bank it found. If that bank holds **all-pass** bands, Auto Tune

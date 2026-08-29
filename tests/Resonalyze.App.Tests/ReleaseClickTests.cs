@@ -114,8 +114,8 @@ public sealed class ReleaseClickTests
     public void AClickTheFrameworkAlreadyRaisedIsNotOwedASecondOne()
     {
         using var button = new ProbeButton();
-        var tracker = new ReleaseClickTracker();
         var release = new MouseEventArgs(MouseButtons.Left, 1, 10, 10, 0);
+        var tracker = new ReleaseClickTracker(releasePointIsCovered: (_, _) => true);
 
         tracker.Press(release);
         tracker.BeginRelease();
@@ -129,7 +129,7 @@ public sealed class ReleaseClickTests
     {
         using var button = new ProbeButton();
         var release = new MouseEventArgs(MouseButtons.Left, 1, 10, 10, 0);
-        var tracker = new ReleaseClickTracker();
+        var tracker = new ReleaseClickTracker(releasePointIsCovered: (_, _) => true);
 
         tracker.Press(release);
         tracker.BeginRelease();
@@ -142,7 +142,7 @@ public sealed class ReleaseClickTests
     {
         using var button = new ProbeButton();
         var release = new MouseEventArgs(MouseButtons.Left, 1, 10, 10, 0);
-        var tracker = new ReleaseClickTracker();
+        var tracker = new ReleaseClickTracker(releasePointIsCovered: (_, _) => true);
 
         tracker.Press(release);
         tracker.BeginRelease();
@@ -151,6 +151,39 @@ public sealed class ReleaseClickTests
         // A second release with no press behind it — a stray one, or the same one
         // asked twice — must not manufacture another click.
         Assert.False(tracker.ClickIsOwed(button, release));
+    }
+
+    // The recovery repairs ONE failure. A missing Click is not proof that it was that
+    // one: ButtonBase also withholds a click when validation was cancelled, and on its
+    // own press/capture state, and those are decisions to respect rather than override.
+    [Fact]
+    public void AClickWithheldWhileTheControlWasStillOnTopIsLeftWithheld()
+    {
+        using var button = new ProbeButton();
+        var release = new MouseEventArgs(MouseButtons.Left, 1, 10, 10, 0);
+        var tracker = new ReleaseClickTracker(
+            releasePointIsCovered: (_, _) => false);
+
+        tracker.Press(release);
+        tracker.BeginRelease();
+
+        // The hit test answers with the control itself, so the framework had this
+        // release and declined it for a reason of its own.
+        Assert.False(tracker.ClickIsOwed(button, release));
+    }
+
+    [Fact]
+    public void AClickWithheldWithAnotherWindowOnThePointIsOwed()
+    {
+        using var button = new ProbeButton();
+        var release = new MouseEventArgs(MouseButtons.Left, 1, 10, 10, 0);
+        var tracker = new ReleaseClickTracker(
+            releasePointIsCovered: (_, _) => true);
+
+        tracker.Press(release);
+        tracker.BeginRelease();
+
+        Assert.True(tracker.ClickIsOwed(button, release));
     }
 
     private sealed class ProbeButton : ReleaseClickButton

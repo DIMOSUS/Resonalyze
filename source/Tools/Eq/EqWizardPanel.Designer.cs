@@ -58,6 +58,8 @@
             labelGainMin = new Label();
             numericGainMax = new DarkNumericUpDown();
             labelGainMax = new Label();
+            numericQMax = new DarkNumericUpDown();
+            labelQMax = new Label();
             checkBoxBypass = new ReleaseClickCheckBox();
             checkBoxEqPhase = new ReleaseClickCheckBox();
             checkBoxEqCurve = new ReleaseClickCheckBox();
@@ -86,6 +88,7 @@
             (numericFromHz).BeginInit();
             (numericGainMin).BeginInit();
             (numericGainMax).BeginInit();
+            (numericQMax).BeginInit();
             panelAutoTune.SuspendLayout();
             SuspendLayout();
             // 
@@ -210,7 +213,7 @@
             buttonAutoTune.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoTune.FlatStyle = FlatStyle.Popup;
             buttonAutoTune.ForeColor = Color.White;
-            buttonAutoTune.Location = new Point(6, 156);
+            buttonAutoTune.Location = new Point(6, 181);
             buttonAutoTune.Name = "buttonAutoTune";
             buttonAutoTune.Size = new Size(173, 24);
             buttonAutoTune.TabIndex = 46;
@@ -221,7 +224,7 @@
             // 
             comboBoxBandsLimit.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxBandsLimit.ForeColor = Color.White;
-            comboBoxBandsLimit.Location = new Point(93, 106);
+            comboBoxBandsLimit.Location = new Point(93, 131);
             comboBoxBandsLimit.MinimumSize = new Size(36, 19);
             comboBoxBandsLimit.Name = "comboBoxBandsLimit";
             comboBoxBandsLimit.Size = new Size(90, 19);
@@ -232,7 +235,7 @@
             labelBandsLimit.AutoSize = true;
             labelBandsLimit.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelBandsLimit.ForeColor = Color.FromArgb(210, 214, 222);
-            labelBandsLimit.Location = new Point(6, 108);
+            labelBandsLimit.Location = new Point(6, 133);
             labelBandsLimit.Margin = new Padding(3);
             labelBandsLimit.Name = "labelBandsLimit";
             labelBandsLimit.Size = new Size(82, 15);
@@ -246,7 +249,7 @@
             numericToHz.Font = new Font("Segoe UI", 9F);
             numericToHz.ForeColor = Color.White;
             numericToHz.Increment = new decimal(new int[] { 10, 0, 0, 0 });
-            numericToHz.Location = new Point(93, 81);
+            numericToHz.Location = new Point(93, 106);
             numericToHz.LogarithmicFrequencyStep = true;
             numericToHz.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
             numericToHz.Minimum = new decimal(new int[] { 20, 0, 0, 0 });
@@ -266,7 +269,7 @@
             numericFromHz.Font = new Font("Segoe UI", 9F);
             numericFromHz.ForeColor = Color.White;
             numericFromHz.Increment = new decimal(new int[] { 10, 0, 0, 0 });
-            numericFromHz.Location = new Point(93, 56);
+            numericFromHz.Location = new Point(93, 81);
             numericFromHz.LogarithmicFrequencyStep = true;
             numericFromHz.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
             numericFromHz.Minimum = new decimal(new int[] { 20, 0, 0, 0 });
@@ -284,7 +287,7 @@
             labelFromHz.AutoSize = true;
             labelFromHz.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelFromHz.ForeColor = Color.FromArgb(210, 214, 222);
-            labelFromHz.Location = new Point(6, 58);
+            labelFromHz.Location = new Point(6, 83);
             labelFromHz.Margin = new Padding(3);
             labelFromHz.Name = "labelFromHz";
             labelFromHz.Size = new Size(35, 15);
@@ -296,7 +299,7 @@
             labelToHz.AutoSize = true;
             labelToHz.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelToHz.ForeColor = Color.FromArgb(210, 214, 222);
-            labelToHz.Location = new Point(6, 83);
+            labelToHz.Location = new Point(6, 108);
             labelToHz.Margin = new Padding(3);
             labelToHz.Name = "labelToHz";
             labelToHz.Size = new Size(20, 15);
@@ -364,6 +367,36 @@
             labelGainMax.Size = new Size(57, 15);
             labelGainMax.TabIndex = 59;
             labelGainMax.Text = "Max Gain";
+            // 
+            // numericQMax
+            // 
+            numericQMax.BackColor = Color.FromArgb(55, 60, 72);
+            numericQMax.DecimalPlaces = 1;
+            numericQMax.Font = new Font("Segoe UI", 9F);
+            numericQMax.ForeColor = Color.White;
+            numericQMax.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
+            numericQMax.Location = new Point(93, 56);
+            numericQMax.Maximum = new decimal(new int[] { 20, 0, 0, 0 });
+            numericQMax.Minimum = new decimal(new int[] { 5, 0, 0, 65536 });
+            numericQMax.MinimumSize = new Size(36, 19);
+            numericQMax.Name = "numericQMax";
+            numericQMax.Size = new Size(90, 19);
+            numericQMax.TabIndex = 68;
+            numericQMax.TextAlign = HorizontalAlignment.Right;
+            numericQMax.ThousandsSeparator = false;
+            numericQMax.Value = new decimal(new int[] { 60, 0, 0, 65536 });
+            // 
+            // labelQMax
+            // 
+            labelQMax.AutoSize = true;
+            labelQMax.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelQMax.ForeColor = Color.FromArgb(210, 214, 222);
+            labelQMax.Location = new Point(6, 58);
+            labelQMax.Margin = new Padding(3);
+            labelQMax.Name = "labelQMax";
+            labelQMax.Size = new Size(41, 15);
+            labelQMax.TabIndex = 69;
+            labelQMax.Text = "Max Q";
             //
             // checkBoxBypass
             //
@@ -410,7 +443,7 @@
             checkBoxCutsOnly.CheckState = CheckState.Checked;
             checkBoxCutsOnly.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxCutsOnly.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxCutsOnly.Location = new Point(6, 132);
+            checkBoxCutsOnly.Location = new Point(6, 157);
             checkBoxCutsOnly.Name = "checkBoxCutsOnly";
             checkBoxCutsOnly.Size = new Size(75, 19);
             checkBoxCutsOnly.TabIndex = 48;
@@ -424,6 +457,8 @@
             panelAutoTune.Controls.Add(labelGainMin);
             panelAutoTune.Controls.Add(numericGainMin);
             panelAutoTune.Controls.Add(labelGainMax);
+            panelAutoTune.Controls.Add(labelQMax);
+            panelAutoTune.Controls.Add(numericQMax);
             panelAutoTune.Controls.Add(labelFromHz);
             panelAutoTune.Controls.Add(numericFromHz);
             panelAutoTune.Controls.Add(numericGainMax);
@@ -433,9 +468,9 @@
             panelAutoTune.Controls.Add(comboBoxBandsLimit);
             panelAutoTune.Controls.Add(checkBoxCutsOnly);
             panelAutoTune.Controls.Add(buttonAutoTune);
-            panelAutoTune.Location = new Point(6, 575);
+            panelAutoTune.Location = new Point(6, 550);
             panelAutoTune.Name = "panelAutoTune";
-            panelAutoTune.Size = new Size(186, 186);
+            panelAutoTune.Size = new Size(186, 211);
             panelAutoTune.TabIndex = 54;
             // 
             // buttonOverlaySettings
@@ -679,6 +714,7 @@
             (numericFromHz).EndInit();
             (numericGainMin).EndInit();
             (numericGainMax).EndInit();
+            (numericQMax).EndInit();
             panelAutoTune.ResumeLayout(false);
             panelAutoTune.PerformLayout();
             ResumeLayout(false);
@@ -706,6 +742,8 @@
         private Label labelGainMin;
         private DarkNumericUpDown numericGainMax;
         private Label labelGainMax;
+        private DarkNumericUpDown numericQMax;
+        private Label labelQMax;
         private ReleaseClickCheckBox checkBoxBypass;
         private ReleaseClickCheckBox checkBoxEqPhase;
         private ReleaseClickCheckBox checkBoxEqCurve;

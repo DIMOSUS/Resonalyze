@@ -150,6 +150,14 @@ public partial class EqWizardPanel : UserControl
         numericToHz.ValueChanged += (_, _) => FrequencyBoundChanged(fromChanged: false);
         numericGainMin.ValueChanged += (_, _) => GainBoundChanged(minChanged: true);
         numericGainMax.ValueChanged += (_, _) => GainBoundChanged(minChanged: false);
+        numericQMax.ValueChanged += (_, _) =>
+        {
+            // Nothing on the plot depends on it — only the next fit reads it — but
+            // orphan any in-flight one so a result fitted under the previous ceiling
+            // cannot land.
+            autoTuneOrchestrator.Invalidate();
+            RaiseSettingsChanged();
+        };
         // Clicking away from the bands clears the highlighted single-band curve.
         Click += (_, _) => DeselectBand();
         panelPEQ.Click += (_, _) => DeselectBand();
@@ -372,6 +380,13 @@ public partial class EqWizardPanel : UserControl
             "Also bounds what Auto Tune may apply.");
         SetTip(labelBandsLimit, comboBoxBandsLimit,
             "Maximum number of bands Auto Tune may create.");
+        SetTip(labelQMax, numericQMax,
+            "Narrowest band Auto Tune may place — the highest Q it is allowed to " +
+            "choose. Lower it to keep the fit on broad, audible trends instead of " +
+            "chasing a sharp peak that only exists where the microphone stood; the " +
+            "strips themselves still accept any Q up to 20. The fit picks from a " +
+            "fixed ladder of Q values (…2.0, 2.8, 4.0, 5.6, 8.0, 10.0), so the " +
+            "effective ceiling is the largest of those at or below this number.");
         SetTip(labelFromHz, numericFromHz,
             "Lower edge of the Auto Tune frequency window; also bounds the error metrics.");
         SetTip(labelToHz, numericToHz,
@@ -988,11 +1003,13 @@ public partial class EqWizardPanel : UserControl
             // interference null. Unchecking it allows boosts, still gated to
             // reliable regions (high coherence, not inside a narrow deep null).
             CutsOnlyMode = cutsOnly,
-            // Q has no panel-level range control; the strips' own limits are the
-            // range, and reading them from the control class rather than from a
-            // strip keeps them available when the bank is empty.
+            // The widest band is the strips' own limit — read from the control class
+            // rather than from a strip so it is available when the bank is empty. The
+            // narrowest is the user's: a fit is free to place a filter far sharper
+            // than a cabin measurement justifies, so Max Q caps it well below what a
+            // hand-typed strip accepts.
             QMin = PeqSlotControl.MinimumQ,
-            QMax = PeqSlotControl.MaximumQ
+            QMax = (double)numericQMax.Value
         };
     }
 

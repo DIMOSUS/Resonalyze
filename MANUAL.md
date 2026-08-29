@@ -1015,9 +1015,11 @@ Nothing has to be selected, typed, or matched by hand, and no file changes hands
 4. **What the fit is allowed to do.** **Max / Min Gain** should match what your real DSP
    supports, **Max EQ Filters** the number of bands it has, and **Cuts only** should
    stay ticked — it stops the optimizer from spending amplifier headroom filling
-   acoustic nulls. **From** and **To** (outlined) arrived already filled in from this
-   channel's crossover corners, so the fit stays inside the band the driver is actually
-   used in.
+   acoustic nulls. **Max Q** caps how narrow a filter it may place (6.0 by default):
+   below that ceiling the fit corrects trends you can hear from every seat instead of
+   notching a peak that belongs to the microphone position. **From** and **To**
+   (outlined) arrived already filled in from this channel's crossover corners, so the
+   fit stays inside the band the driver is actually used in.
 5. **Auto Tune** — run it once these are set.
 6. **The scoreboard.** RMS and max error against the target, how many filters were
    spent, and the headroom the bank costs. Before the fit it reads the raw disagreement

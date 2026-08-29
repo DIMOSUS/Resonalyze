@@ -1542,6 +1542,7 @@ public partial class EqWizardPanel
             NumericTargetOffset.Value = NumericTargetOffset.ClampValue(settings.TargetOffsetDb);
             numericGainMin.Value = numericGainMin.ClampValue(settings.GainMinDb);
             numericGainMax.Value = numericGainMax.ClampValue(settings.GainMaxDb);
+            numericQMax.Value = numericQMax.ClampValue(settings.AutoTuneMaxQ);
             checkBoxCutsOnly.Checked = settings.CutsOnly;
             checkBoxEqCurve.Checked = settings.ShowEqCurve;
             SetSourceSmoothing(settings.SourceSmoothingInverseOctaves);
@@ -1589,6 +1590,7 @@ public partial class EqWizardPanel
         CalibrationId = preferredIrCalibrationId,
         ManualSampleRateHz = manualSampleRateHz,
         CutsOnly = checkBoxCutsOnly.Checked,
+        AutoTuneMaxQ = (double)numericQMax.Value,
         ShowEqCurve = checkBoxEqCurve.Checked
     };
 

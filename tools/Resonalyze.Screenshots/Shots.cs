@@ -1,4 +1,4 @@
-namespace Resonalyze.Screenshots;
+﻿namespace Resonalyze.Screenshots;
 
 /// <summary>
 /// The catalogue: every screenshot the documentation uses that this tool can take.
@@ -529,7 +529,10 @@ internal static class Shots
               // is captured 1:1 (window chrome puts the panel's y=0 at 46), so the
               // designer's 25 is 25 here too.
               .Region(Box(14, 475, 204, 535), "3", new Point(26, 505), leader: true)
-              .Region(Box(14, 832, 206, 982), "4", new Point(26, 907), leader: true)
+              // The auto-tune box, 25 px taller at the top: it gained a Max Q row and
+              // grows UPWARD, its bottom edge (and the Auto Tune button in region 5)
+              // staying where they were.
+              .Region(Box(14, 807, 206, 982), "4", new Point(26, 894), leader: true)
               .Region(Box(18, 985, 202, 1014), "5", new Point(26, 999), leader: true)
               .Detail(Box(18, 883, 200, 935))
               .Region(Box(1494, 682, 1712, 1018), "6", new Point(1584, 962))

@@ -1,4 +1,4 @@
-namespace Resonalyze.Dsp.Tests;
+﻿namespace Resonalyze.Dsp.Tests;
 
 public sealed class EqAutoTunerTests
 {
@@ -279,6 +279,28 @@ public sealed class EqAutoTunerTests
         double initial = FitRmsDb(new EqualizationCurve([]), source, source.Select(p => new SignalPoint(p.X, 0.0)).ToList());
         double final = FitRmsDb(curve, source, source.Select(p => new SignalPoint(p.X, 0.0)).ToList());
         Assert.True(final < initial * 0.5, $"Overlap error not reduced: {initial:0.00} -> {final:0.00} dB.");
+    }
+
+    [Fact]
+    public void Tune_MaxQ_KeepsEveryBandAtOrBelowTheCeiling()
+    {
+        // A resonance sharp enough that the unbounded fit reaches for its narrowest
+        // bands. That is the fit the EQ Wizard's Max Q exists to refuse: the peak is
+        // read at one microphone position, and a filter that narrow corrects that
+        // position alone.
+        IReadOnlyList<SignalPoint> source = Grid(
+            f => new PeqBand(1_000, 10.0, 12.0).MagnitudeDbAt(f));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve unbounded = EqAutoTuner.Tune(source, target);
+        EqualizationCurve capped = EqAutoTuner.Tune(
+            source, target, new EqAutoTuner.Options { QMax = 6.0 });
+
+        Assert.Contains(unbounded.Bands, band => band.Q > 6.0);
+        Assert.NotEmpty(capped.Bands);
+        Assert.All(
+            capped.Bands,
+            band => Assert.True(band.Q <= 6.0, $"band at Q {band.Q} is past the ceiling."));
     }
 
     [Fact]

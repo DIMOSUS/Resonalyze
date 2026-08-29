@@ -1365,6 +1365,20 @@ the band count itself**, up to the **Max Filters** limit (4–32), while a
 cumulative-boost cap and minimum band spacing keep it from stacking maxed-out
 bands where the response simply cannot be corrected.
 
+**Max Q** is the ceiling on how narrow those bands may be — **6.0** by default,
+against the 20 a strip accepts when you type one in by hand. It bounds Auto Tune
+alone; nothing it fitted earlier is touched, and you can still narrow any band
+yourself. The fit picks each band's Q off a fixed ladder (0.5, 0.7, 1.0, 1.4,
+2.0, 2.8, 4.0, 5.6, 8.0, 10.0), so the effective limit is the highest rung at or
+below your number — 6.0 admits 5.6. Keep it low because a single measurement is
+a single microphone position: a sharp peak there is largely interference, it
+moves when the microphone moves, and a filter cut to match it corrects that one
+point while a broad band corrects the trend every seat shares. Raising it is for
+a source that has already answered that objection — a spatial average, where a
+peak that survived the averaging is a resonance of the car rather than of the
+spot the microphone stood in — or for a deliberately narrow correction of a mode
+you have identified.
+
 The fit is a magnitude fit, so the bells it places are all it can propose — and a
 run replaces the bank it found. If that bank holds **all-pass** bands, Auto Tune
 asks before starting: keep them and tune the remaining slots around them (the

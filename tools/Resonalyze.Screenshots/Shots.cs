@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Screenshots;
+namespace Resonalyze.Screenshots;
 
 /// <summary>
 /// The catalogue: every screenshot the documentation uses that this tool can take.

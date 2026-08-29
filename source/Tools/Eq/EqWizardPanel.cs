@@ -382,11 +382,12 @@ public partial class EqWizardPanel : UserControl
             "Maximum number of bands Auto Tune may create.");
         SetTip(labelQMax, numericQMax,
             "Narrowest band Auto Tune may place — the highest Q it is allowed to " +
-            "choose. Lower it to keep the fit on broad, audible trends instead of " +
-            "chasing a sharp peak that only exists where the microphone stood; the " +
-            "strips themselves still accept any Q up to 20. The fit picks from a " +
-            "fixed ladder of Q values (…2.0, 2.8, 4.0, 5.6, 8.0, 10.0), so the " +
-            "effective ceiling is the largest of those at or below this number.");
+            "choose. Lower it to keep the fit on broader trends, the ones likelier " +
+            "to hold across the listening area, instead of chasing a sharp peak that " +
+            "may belong to where the microphone stood; the strips themselves still " +
+            "accept any Q up to 20. The fit picks from a fixed ladder of Q values " +
+            "(…2.0, 2.8, 4.0, 5.6, 8.0, 10.0), so the effective ceiling is the " +
+            "largest of those at or below this number.");
         SetTip(labelFromHz, numericFromHz,
             "Lower edge of the Auto Tune frequency window; also bounds the error metrics.");
         SetTip(labelToHz, numericToHz,

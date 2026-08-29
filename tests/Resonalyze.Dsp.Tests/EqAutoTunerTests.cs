@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Dsp.Tests;
+namespace Resonalyze.Dsp.Tests;
 
 public sealed class EqAutoTunerTests
 {

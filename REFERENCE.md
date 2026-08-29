@@ -1383,11 +1383,12 @@ alone; nothing it fitted earlier is touched, and you can still narrow any band
 yourself. The fit picks each band's Q off a fixed ladder (0.5, 0.7, 1.0, 1.4,
 2.0, 2.8, 4.0, 5.6, 8.0, 10.0), so the effective limit is the highest rung at or
 below your number — 6.0 admits 5.6. Keep it low because a single measurement is
-a single microphone position: a sharp peak there is largely interference, it
+a single microphone position: much of a sharp peak there is interference, it
 moves when the microphone moves, and a filter cut to match it corrects that one
-point while a broad band corrects the trend every seat shares. Raising it is for
-a source that has already answered that objection — a spatial average, where a
-peak that survived the averaging is a resonance of the car rather than of the
+point, while a broader band favours the trend that is likelier to hold across
+the listening area. Raising it is for a source that has already answered that
+objection — a spatial average, where a peak that survived the averaging is at
+least stable over the volume that was averaged rather than a property of the
 spot the microphone stood in — or for a deliberately narrow correction of a mode
 you have identified.
 

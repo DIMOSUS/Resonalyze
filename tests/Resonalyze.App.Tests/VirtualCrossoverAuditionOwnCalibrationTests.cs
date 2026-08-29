@@ -36,8 +36,10 @@ public sealed class VirtualCrossoverAuditionOwnCalibrationTests
 
     /// <summary>
     /// Channels read through different calibrations have no single answer, and the
-    /// refusal names them — an array of capsules, or channels measured on different
-    /// days with different microphones.
+    /// refusal names them: channels measured on separate days with different
+    /// microphones. (A microphone array is NOT this case — the array shares one sweep
+    /// with the measurement microphone, so the impulse responses have one microphone
+    /// behind them however many were listening.)
     /// </summary>
     [Fact]
     public void ChannelsThroughDifferentCalibrations_Refuse()

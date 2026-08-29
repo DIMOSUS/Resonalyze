@@ -41,7 +41,9 @@ namespace Resonalyze.Dsp
         /// <para>
         /// Rectangular, because there is nothing to window: the record is not a frame cut
         /// out of a running signal but the whole response, and a window over it would only
-        /// taper away the decay this is here to keep. Through
+        /// taper away the decay this is here to keep. The calibration, when one is given,
+        /// is applied AFTER the smoothing — the order the rest of the pipeline uses, so
+        /// the same response reads the same whichever route it arrived by. Through
         /// <see cref="LogarithmicResample"/> and not the band-power path, so it is the
         /// same KIND of curve as the gated ones it will be compared with — the band-power
         /// integrator answers in power per band, which rises with the band's width, and a
@@ -51,6 +53,7 @@ namespace Resonalyze.Dsp
         public static List<SignalPoint> GetUngatedMagnitude(
             IImpulseMeasurement measurement,
             double smoothingOctaves,
+            CalibrationFile? calibration = null,
             double startHz = 20.0,
             double stopHz = 20_000.0,
             int steps = 1024)
@@ -68,7 +71,7 @@ namespace Resonalyze.Dsp
                 startHz,
                 stopHz,
                 steps,
-                calibration: null,
+                calibration,
                 smoothingOctaves);
         }
 

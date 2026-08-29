@@ -7,10 +7,15 @@ namespace Resonalyze;
 /// One channel as the audition correction reads it: the BYPASS response measured at
 /// the microphone position, and the spatial average of the same driver.
 /// </summary>
+/// <param name="MicrophoneCalibration">
+/// What the impulse response itself was recorded through — the measurement
+/// microphone's own correction, as its file froze it. Null when the file names none.
+/// </param>
 internal sealed record SpatialAverageAuditionChannel(
     Complex[] RawImpulseResponse,
     int SampleRate,
     MeasuredBand MeasuredBand,
+    CalibrationFile? MicrophoneCalibration,
     LiveCaptureDocument? Capture);
 
 /// <summary>
@@ -165,16 +170,20 @@ internal static class SpatialAverageAudition
             // passed for the same reason the panel's datum passes it: there is nothing
             // else here that could be more nearly right.
             //
-            // Uncalibrated on BOTH sides, the terms the plot reads its own datum on: a
-            // microphone correction present on both cancels out of a difference exactly,
-            // being additive per frequency, and leaving it off keeps this a purely
-            // acoustic quantity — average against point. The audition applies the
-            // microphone correction once, to the finished render.
+            // Each measurement through ITS OWN correction, which is what makes the
+            // difference an acoustic quantity rather than partly a comparison of
+            // capsules. Where one microphone took both — a moving-microphone pass, an
+            // array of matched capsules — the two corrections are the same curve and
+            // cancel, so this only shows up where they are NOT: a microphone array
+            // whose positions carry individual calibrations reports an aggregate of
+            // them, and reading both raw would have left the gap between that aggregate
+            // and the measurement microphone's own file inside the correction, tilting
+            // the whole render by it.
             IReadOnlyList<SignalPoint>? average = SpatialAverageHybrid.BuildChannelCurve(
                 channel.Capture,
                 DspChannelChain.Identity,
                 channel.SampleRate,
-                SpatialAverageCalibration.Off,
+                SpatialAverageCalibration.Own,
                 [.. point.Select(band => band.X)],
                 SmoothingCode);
             if (average == null)
@@ -264,7 +273,9 @@ internal static class SpatialAverageAudition
         }
 
         List<SignalPoint> bands = DataHelper.GetUngatedMagnitude(
-            new ImpulseMeasurementView(response, 0, channel.SampleRate), SmoothingOctaves);
+            new ImpulseMeasurementView(response, 0, channel.SampleRate),
+            SmoothingOctaves,
+            channel.MicrophoneCalibration);
         if (bands.Count < 2)
         {
             return null;

@@ -202,12 +202,42 @@ public sealed class SpatialAverageAuditionTests
         return capture.CurveDb[nearest];
     }
 
+    /// <summary>
+    /// Each measurement is read through ITS OWN correction, so the difference is
+    /// acoustic rather than partly a comparison of capsules. The case it exists for is
+    /// a microphone array whose positions carry individual calibrations: the capture
+    /// reports their aggregate, the impulse response was taken through the measurement
+    /// microphone's own file, and reading both raw would leave the gap between the two
+    /// inside the correction — a tilt over the whole render.
+    /// </summary>
+    [Fact]
+    public void EachMeasurementIsReadThroughItsOwnCalibration()
+    {
+        // A response whose microphone reads 4 dB hot above 1 kHz, against a capture
+        // that says the driver is flat.
+        CalibrationFile microphone = CalibrationFile.FromPoints(
+            [new CalibrationPoint(20, 0), new CalibrationPoint(999, 0),
+             new CalibrationPoint(1_001, 4), new CalibrationPoint(20_000, 4)]);
+
+        SpatialAverageAuditionCorrection corrected =
+            Build(Channel(Capture(_ => -30), microphone)).Corrections[0];
+        SpatialAverageAuditionCorrection bare =
+            Build(Channel(Capture(_ => -30))).Corrections[0];
+
+        // The correction carries the microphone's own shape, so the render can take it
+        // back off: four decibels less asked for above the corner than below it.
+        Assert.Equal(-4.0, At(corrected, 4_000) - At(corrected, 200), 1);
+        // Without a calibration on the response there is nothing to take back off.
+        Assert.Equal(0.0, At(bare, 4_000) - At(bare, 200), 1);
+    }
+
     private static SpatialAverageAuditionPlan Build(
         params SpatialAverageAuditionChannel[] channels) =>
         SpatialAverageAudition.Build(channels);
 
-    private static SpatialAverageAuditionChannel Channel(LiveCaptureDocument? capture) =>
-        new(Delta(), SampleRate, MeasuredBand.Everything, capture);
+    private static SpatialAverageAuditionChannel Channel(
+        LiveCaptureDocument? capture, CalibrationFile? calibration = null) =>
+        new(Delta(), SampleRate, MeasuredBand.Everything, calibration, capture);
 
     // A unit impulse: its magnitude is flat at every frequency, so whatever the
     // correction asks for came from the capture beside it.

@@ -2142,9 +2142,12 @@ The remaining buttons in the column beside the plots:
   keeps that choice in the project. Under **Own (as measured)** it uses the curve
   the measurements themselves recorded; a render bakes ONE filter into a side its
   channels have already been summed into, so where those channels were read
-  through different calibrations (an array of capsules, channels measured on
-  different days) it refuses and names them rather than picking one and labelling
-  the render as though it answered for all of them.
+  through different calibrations — channels measured on separate days with
+  different microphones — it refuses and names them rather than picking one and
+  labelling the render as though it answered for all of them. A
+  [microphone array](#microphone-array) is not that case: it shares one sweep with
+  the measurement microphone, so however many capsules were listening the impulse
+  responses have one microphone behind them.
   **Subtract cabin** optionally removes a typical body-style cabin transfer
   function (the pressure-zone bass rise reaching +15…+27 dB at 20 Hz),
   level-matched so an A/B differs in tone, not loudness: the raw render
@@ -2157,8 +2160,12 @@ The remaining buttons in the column beside the plots:
   listening volume before the sides are summed, so the render carries the tonal
   balance those captures state instead of the dips of the one position. The
   correction is the difference between the two measurements read on the BYPASS pair,
-  ungated, at 1/6 octave and limited to ±12 dB: the DSP chain cancels out of it
-  exactly, so it does not move as you tune, and at that width the position's own
+  each through its OWN microphone correction, ungated, at 1/6 octave and limited to
+  ±12 dB. The DSP chain cancels out of it exactly, so it does not move as you tune;
+  reading each measurement through its own correction is what keeps the difference
+  acoustic where an array's positions carry individual calibrations, since the
+  aggregate the capture reports is then not the measurement microphone's own file;
+  and at that width the position's own
   interference nulls are narrower than the difference and stay in the render rather
   than being filled by twenty-odd decibels of boost. It is offered only while both
   sides' captures form one set, since levelling the sides separately would put an L/R

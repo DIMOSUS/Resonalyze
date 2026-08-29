@@ -166,10 +166,19 @@ public partial class VirtualCrossoverPanel
     /// separately; a render cannot, because it bakes one filter into a side that
     /// several channels have already been summed into. Where the channels agree —
     /// one microphone measured the car, which is the ordinary case — the rule names a
-    /// curve after all and the render carries it. Where they do not (an array of
-    /// capsules, channels measured on different days) the honest answer is to refuse
-    /// and let the user name one, rather than pick a channel's curve and label the
-    /// result as though it answered for all of them.
+    /// curve after all and the render carries it.
+    /// <para>
+    /// A microphone ARRAY is that ordinary case, not the exception: the array shares
+    /// the sweep with the measurement microphone and stores level curves for its other
+    /// positions, so the impulse response has one microphone behind it however many
+    /// were listening, and the positions' individual calibrations never enter this
+    /// question. What does reach it is a project assembled from measurements taken
+    /// through DIFFERENT microphones — channels measured on separate days, or files
+    /// written before a measurement recorded what it was read through mixed with newer
+    /// ones. There the honest answer is to refuse and let the user name one curve,
+    /// rather than pick a channel's and label the result as though it answered for all
+    /// of them.
+    /// </para>
     /// <para>
     /// It used to resolve through the app's calibration list, which has never heard of
     /// this id: Own came back as no curve at all, so the render was UNCALIBRATED and
@@ -325,6 +334,7 @@ public partial class VirtualCrossoverPanel
                         state.TransferImpulseResponse ?? [],
                         processed.SampleRate,
                         processed.MeasuredBand,
+                        state.MicrophoneCalibrationCurve,
                         state.SpatialAverageFor(SpatialAverageMode)));
                     names.Add(
                         bothSides && !processed.Channel.Pair.Mono

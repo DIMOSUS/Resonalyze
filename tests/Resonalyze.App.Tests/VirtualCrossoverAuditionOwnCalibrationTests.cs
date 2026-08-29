@@ -83,6 +83,20 @@ public sealed class VirtualCrossoverAuditionOwnCalibrationTests
         Assert.Contains("none recorded", own.Conflict);
     }
 
+    /// <summary>
+    /// Half a tune renders both ears from the one side that HAS sources, and the flag
+    /// names that side. Backwards it is invisible on a full tune and silent on a half
+    /// one: every per-side lookup reads the empty side, so a tune with averages on the
+    /// side it renders from reports having none.
+    /// </summary>
+    [Theory]
+    [InlineData(true, true, new[] { false, true })]
+    [InlineData(true, false, new[] { false })]
+    [InlineData(false, true, new[] { true })]
+    public void TheMeasuredSidesAreTheSidesThatHaveSources(
+        bool hasLeft, bool hasRight, bool[] expected) =>
+        Assert.Equal(expected, VirtualCrossoverPanel.MeasuredSides(hasLeft, hasRight));
+
     // One side carrying the given channels, judged on its own — the borrowed-ear
     // shape, which is also the shape that keeps a mono pair from being counted twice.
     private static VirtualCrossoverAuditionOwnCalibration Resolve(

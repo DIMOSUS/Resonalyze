@@ -108,9 +108,8 @@ public partial class VirtualCrossoverPanel
         // Which measured side each ear ends up on, BEFORE the borrowing collapses
         // the two references into one. The spatial-average set is a set of
         // measurements, and a borrowed ear must not enter it twice.
-        List<bool> measuredSides = leftSide != null && rightSide != null
-            ? [false, true]
-            : [leftSide != null];
+        List<bool> measuredSides =
+            MeasuredSides(leftSide != null, rightSide != null);
         leftSide ??= rightSide;
         rightSide ??= leftSide;
         VirtualCrossoverSideSum left = leftSide!;
@@ -135,6 +134,18 @@ public partial class VirtualCrossoverPanel
         // agreed, so the refusal came from the measurements themselves — a capture
         // whose band never meets its channel's, typically — and saying "no spatial
         // average" there would send the user looking for a file that is attached.
+        // The preparation above is the flow's second await, and the panel stays live
+        // behind the wait cursor — nothing disables it. A channel changed while it ran
+        // would leave these sums describing the tune the user has just moved on from,
+        // and neither the dialog nor the render it writes has any way to know.
+        if (!processingCoordinator.IsCurrent(revision))
+        {
+            ShowError(
+                "The tune changed while the audition was being prepared.",
+                "Nothing was rendered; press Audition track again.");
+            return null;
+        }
+
         string? spatialRefusal = spatialAverage != null
             ? null
             : spatialVerdict.Coherent
@@ -254,6 +265,21 @@ public partial class VirtualCrossoverPanel
     }
 
     /// <summary>
+    /// Which measured sides the two ears will render from, as the side flags every
+    /// per-side lookup takes — <c>false</c> is the left one.
+    /// </summary>
+    /// <remarks>
+    /// Half a tune renders both ears from the ONE side that has sources, so the list
+    /// names that side rather than both. Its flag is the side's own: a left-only tune
+    /// is <c>[false]</c>. Getting that backwards is invisible in the ordinary case and
+    /// silent in the half one — every per-side lookup would read the EMPTY side, so a
+    /// tune with averages on the side it renders from would report having none.
+    /// A caller with neither side has already refused.
+    /// </remarks>
+    internal static List<bool> MeasuredSides(bool hasLeft, bool hasRight) =>
+        hasLeft && hasRight ? [false, true] : [!hasLeft];
+
+    /// <summary>
     /// Whether the sides being rendered may be corrected onto their spatial averages
     /// at all.
     /// </summary>
@@ -328,10 +354,17 @@ public partial class VirtualCrossoverPanel
                 {
                     entry = entries.Count;
                     entries.Add(new SpatialAverageAuditionChannel(
-                        // An unresolved source cannot reach a side sum, so this is a
-                        // guard: an empty response produces no curve and the channel
-                        // keeps its point measurement.
-                        state.TransferImpulseResponse ?? [],
+                        // The CROPPED source, which is the array the processed response
+                        // was made from — the same reason the EQ Wizard handoff reads it.
+                        // The measurement's own record runs on for seconds past the
+                        // arrival at the noise floor, and a curve read over all of it
+                        // describes a longer record than the kernel being filtered: the
+                        // extra noise lifts the bands where a channel is quiet, which is
+                        // where the difference is least able to bear it. An unresolved
+                        // source cannot reach a side sum, so the fallback is a guard —
+                        // an empty response yields no curve and the channel keeps its
+                        // point measurement.
+                        state.ProcessingSource?.CroppedImpulseResponse ?? [],
                         processed.SampleRate,
                         processed.MeasuredBand,
                         state.MicrophoneCalibrationCurve,

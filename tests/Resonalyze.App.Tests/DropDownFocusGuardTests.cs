@@ -77,6 +77,66 @@ public sealed class DropDownFocusGuardTests
         Assert.False(dropDown.RaiseClosing(ToolStripDropDownCloseReason.AppFocusChange));
     }
 
+    [Fact]
+    public void AMenuStrandedByARealSwitchClosesOnceTheChurnHasSettled() =>
+        StaTest.Run(() =>
+        {
+            using var dropDown = new TestDropDown();
+            var closed = new List<ToolStripDropDown>();
+            DropDownFocusGuard.Attach(
+                dropDown, applicationIsActive: () => false, closed.Add);
+            dropDown.RaiseOpened();
+
+            // The cancel is unconditional — nothing on the spot can tell the artifact
+            // from an application switch landing in the same quarter second.
+            Assert.True(dropDown.RaiseClosing(ToolStripDropDownCloseReason.AppFocusChange));
+            Assert.Empty(closed);
+
+            // Once the churn is over, the app is still in the background: it was a real
+            // switch, and a topmost menu must not be left floating over whatever the
+            // user moved to.
+            PumpUntil(() => closed.Count > 0);
+
+            Assert.Single(closed);
+        });
+
+    [Fact]
+    public void AMenuTheArtifactTriedToCloseIsLeftOpen() => StaTest.Run(() =>
+    {
+        using var dropDown = new TestDropDown();
+        var closed = new List<ToolStripDropDown>();
+        DropDownFocusGuard.Attach(
+            dropDown, applicationIsActive: () => true, closed.Add);
+        dropDown.RaiseOpened();
+
+        Assert.True(dropDown.RaiseClosing(ToolStripDropDownCloseReason.AppFocusChange));
+
+        // The application never went anywhere, so the close was the artifact and the
+        // menu stays — which is the whole point of the guard.
+        PumpFor(TimeSpan.FromMilliseconds(900));
+
+        Assert.Empty(closed);
+    });
+
+    private static void PumpUntil(Func<bool> done)
+    {
+        for (int attempt = 0; attempt < 200 && !done(); attempt++)
+        {
+            Application.DoEvents();
+            Thread.Sleep(10);
+        }
+    }
+
+    private static void PumpFor(TimeSpan duration)
+    {
+        int until = Environment.TickCount + (int)duration.TotalMilliseconds;
+        while (Environment.TickCount < until)
+        {
+            Application.DoEvents();
+            Thread.Sleep(10);
+        }
+    }
+
     // The events the guard listens to are raised by WinForms from inside a real
     // show; this reaches them without one.
     private sealed class TestDropDown : ToolStripDropDown

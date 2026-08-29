@@ -5,11 +5,6 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    private void buttonCompare_Click(object? sender, EventArgs e)
-    {
-        ShowCompareMenu();
-    }
-
     private void ShowCompareMenu()
     {
         compareMenuStrip?.Dispose();
@@ -30,7 +25,7 @@ public partial class Form1
         clearItem.Click += (_, _) => compareSelection.Clear();
         compareMenuStrip.Items.Add(clearItem);
 
-        compareMenuStrip.Show(buttonCompare, new Point(0, buttonCompare.Height));
+        DropDownMenu.ShowUnder(buttonCompare, compareMenuStrip);
     }
 
     private void PopulateCompareHistoryMenu(ToolStripMenuItem historyItem)

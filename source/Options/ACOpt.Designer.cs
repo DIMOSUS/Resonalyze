@@ -29,7 +29,7 @@ namespace Resonalyze.Options
         private void InitializeComponent()
         {
             labelCurves = new Label();
-            checkBoxShowAutocorrelation = new CheckBox();
+            checkBoxShowAutocorrelation = new ReleaseClickCheckBox();
             SuspendLayout();
             //
             // labelCurves
@@ -74,6 +74,6 @@ namespace Resonalyze.Options
         #endregion
 
         private Label labelCurves;
-        private CheckBox checkBoxShowAutocorrelation;
+        private ReleaseClickCheckBox checkBoxShowAutocorrelation;
     }
 }

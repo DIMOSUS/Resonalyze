@@ -76,7 +76,7 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         };
         foreach (string label in channelLabels)
         {
-            var box = new CheckBox
+            var box = new ReleaseClickCheckBox
             {
                 AutoSize = true,
                 Checked = true,
@@ -159,7 +159,7 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
 
     private static CheckBox CreateScopeBox(string text, bool checkedByDefault)
     {
-        return new CheckBox
+        return new ReleaseClickCheckBox
         {
             AutoSize = true,
             Checked = checkedByDefault,

@@ -139,7 +139,7 @@ internal sealed class ColorPickerDialog : Form
 
     private Button CreateSwatch(Color color)
     {
-        var button = new Button
+        var button = new ReleaseClickButton
         {
             AccessibleName = $"Select {ToHex(color)}",
             BackColor = color,

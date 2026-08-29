@@ -32,10 +32,10 @@ namespace Resonalyze
             var resources = new System.ComponentModel.ComponentResourceManager(typeof(TimeAlignmentPanel));
             helpLabel = new Label();
             sourceSummaryLabel = new Label();
-            bandModeFullRadio = new RadioButton();
-            bandModeAutoRadio = new RadioButton();
+            bandModeFullRadio = new ReleaseClickRadioButton();
+            bandModeAutoRadio = new ReleaseClickRadioButton();
             autoBandLabel = new Label();
-            bandModeManualRadio = new RadioButton();
+            bandModeManualRadio = new ReleaseClickRadioButton();
             bandpassCenterLabel = new Label();
             bandpassCenterNumeric = new DarkNumericUpDown();
             bandpassPassOctavesLabel = new Label();
@@ -288,10 +288,10 @@ namespace Resonalyze
         #endregion
         private Label helpLabel;
         private Label sourceSummaryLabel;
-        private RadioButton bandModeFullRadio;
-        private RadioButton bandModeAutoRadio;
+        private ReleaseClickRadioButton bandModeFullRadio;
+        private ReleaseClickRadioButton bandModeAutoRadio;
         private Label autoBandLabel;
-        private RadioButton bandModeManualRadio;
+        private ReleaseClickRadioButton bandModeManualRadio;
         private Label bandpassCenterLabel;
         private DarkNumericUpDown bandpassCenterNumeric;
         private Label bandpassPassOctavesLabel;

@@ -46,7 +46,7 @@ namespace Resonalyze
             presenceFrequencyInput = new DarkNumericUpDown();
             presenceWidthInput = new DarkNumericUpDown();
             colorLabel = new Label();
-            colorButton = new Button();
+            colorButton = new ReleaseClickButton();
             thicknessLabel = new Label();
             thicknessInput = new DarkNumericUpDown();
             styleLabel = new Label();
@@ -58,8 +58,8 @@ namespace Resonalyze
             opacityValueLabel = new Label();
             previewLabel = new Label();
             previewPlot = new OxyPlot.WindowsForms.PlotView();
-            cancelButton = new Button();
-            saveButton = new Button();
+            cancelButton = new ReleaseClickButton();
+            saveButton = new ReleaseClickButton();
             toolTip = new WrappingToolTip(components);
             (toleranceInput).BeginInit();
             (tiltInput).BeginInit();
@@ -703,7 +703,7 @@ namespace Resonalyze
         private DarkNumericUpDown presenceFrequencyInput;
         private DarkNumericUpDown presenceWidthInput;
         private Label colorLabel;
-        private Button colorButton;
+        private ReleaseClickButton colorButton;
         private Label thicknessLabel;
         private DarkNumericUpDown thicknessInput;
         private Label styleLabel;
@@ -715,8 +715,8 @@ namespace Resonalyze
         private Label opacityValueLabel;
         private Label previewLabel;
         private OxyPlot.WindowsForms.PlotView previewPlot;
-        private Button cancelButton;
-        private Button saveButton;
+        private ReleaseClickButton cancelButton;
+        private ReleaseClickButton saveButton;
         private WrappingToolTip toolTip;
     }
 }

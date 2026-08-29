@@ -32,11 +32,11 @@ namespace Resonalyze
             numericLeft = new DarkNumericUpDown();
             labelRight = new Label();
             numericRight = new DarkNumericUpDown();
-            buttonFit = new Button();
-            buttonDefaults = new Button();
-            buttonFitY = new Button();
-            buttonApply = new Button();
-            buttonClose = new Button();
+            buttonFit = new ReleaseClickButton();
+            buttonDefaults = new ReleaseClickButton();
+            buttonFitY = new ReleaseClickButton();
+            buttonApply = new ReleaseClickButton();
+            buttonClose = new ReleaseClickButton();
             (numericTop).BeginInit();
             (numericBottom).BeginInit();
             (numericLeft).BeginInit();
@@ -259,10 +259,10 @@ namespace Resonalyze
         private DarkNumericUpDown numericLeft;
         private Label labelRight;
         private DarkNumericUpDown numericRight;
-        private Button buttonFit;
-        private Button buttonDefaults;
-        private Button buttonFitY;
-        private Button buttonApply;
-        private Button buttonClose;
+        private ReleaseClickButton buttonFit;
+        private ReleaseClickButton buttonDefaults;
+        private ReleaseClickButton buttonFitY;
+        private ReleaseClickButton buttonApply;
+        private ReleaseClickButton buttonClose;
     }
 }

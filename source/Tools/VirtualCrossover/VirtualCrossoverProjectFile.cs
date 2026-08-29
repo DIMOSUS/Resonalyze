@@ -868,23 +868,37 @@ public sealed class VirtualCrossoverProjectFile
     // reason the view exists. Only the gate's PLACEMENT (offset, and the τ it references)
     // is per-side, since only that follows the drivers' differing distances.
     // These kept v4's names on the wire, so an older file deserializes straight into them.
-    public double PhaseGateLeftMs { get; set; } =
-        FrequencyResponseOptions.DefaultPhaseLeftMs;
-    public double PhaseGatePlateauMs { get; set; } =
-        FrequencyResponseOptions.DefaultPhasePlateauMs;
-    public double PhaseGateRightMs { get; set; } =
-        FrequencyResponseOptions.DefaultPhaseRightMs;
+    //
+    // Deliberately longer than Phase Response mode's junction-length default: by the
+    // 1/T criterion the read-out states, a 6 ms gate holds one period only down to
+    // ≈ 170 Hz, which leaves the phase view short exactly where the sub-to-midbass
+    // junctions this tool exists to align live. 41 ms holds one down to ≈ 24 Hz — the
+    // window's nominal reach rather than a promise about the phase read through it —
+    // and FDW below keeps the mid and high end direct-sound-oriented anyway, so the
+    // long window is spent on the bass, where the wavelengths are longer than the
+    // cabin's early reflection path.
+    public const double DefaultPhaseGateLeftMs = 1.0;
+    public const double DefaultPhaseGatePlateauMs = 30.0;
+    public const double DefaultPhaseGateRightMs = 10.0;
+
+    public double PhaseGateLeftMs { get; set; } = DefaultPhaseGateLeftMs;
+    public double PhaseGatePlateauMs { get; set; } = DefaultPhaseGatePlateauMs;
+    public double PhaseGateRightMs { get; set; } = DefaultPhaseGateRightMs;
 
     // These three decide HOW the phase is analysed rather than where it is looked at,
     // so the two sides must be analysed alike.
     //
-    // Fixed by default: the Virtual DSP phase view exists to align channels at
-    // the listening position, where the early in-cabin reflections FDW removes
-    // are physically part of the summed sound — and of any verification
-    // measurement taken afterwards. FDW remains a per-project opt-in for
-    // inspecting the drivers' direct sound.
-    public PhaseWindowMode PhaseWindowMode { get; set; } = PhaseWindowMode.Fixed;
-    public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
+    // FDW by default, at the gentlest of its three cycle counts: with a gate this
+    // long a fixed window would carry the whole late reflection tail into the mid
+    // and high junctions, where the direct arrival is what the channels are timed
+    // on. 8 cycles keeps the most late detail of the three — the suppression is
+    // there to make the junctions readable, not to reduce every channel to its
+    // first cycle.
+    public const int DefaultPhaseFdwCycles = 8;
+
+    public PhaseWindowMode PhaseWindowMode { get; set; } =
+        PhaseWindowMode.FrequencyDependent;
+    public int PhaseFdwCycles { get; set; } = DefaultPhaseFdwCycles;
     public PhaseDetrendMode PhaseDetrendMode { get; set; } = PhaseDetrendMode.Auto;
 
     /// <summary>The gate of one side; the tool always draws and edits the ACTIVE side's.</summary>
@@ -1388,7 +1402,7 @@ public sealed class VirtualCrossoverProjectFile
         Calibration?.Validate();
         if (PhaseFdwCycles is not (4 or 6 or 8))
         {
-            PhaseFdwCycles = PhaseAnalysisSettings.DefaultFdwCycles;
+            PhaseFdwCycles = DefaultPhaseFdwCycles;
         }
         PhaseGateLeft.Validate();
         PhaseGateRight.Validate();

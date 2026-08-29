@@ -30,16 +30,16 @@ namespace Resonalyze
         private void InitializeComponent()
         {
             labelChannel = new Label();
-            buttonSource = new Button();
-            buttonSpatialAverage = new Button();
+            buttonSource = new ReleaseClickButton();
+            buttonSpatialAverage = new ReleaseClickButton();
             labelGain = new Label();
-            buttonCollapse = new Button();
+            buttonCollapse = new ReleaseClickButton();
             numericGain = new DarkNumericUpDown();
             labelDelay = new Label();
             numericDelay = new DarkNumericUpDown();
             labelDelayMm = new Label();
-            checkBoxInvert = new CheckBox();
-            checkBoxMono = new CheckBox();
+            checkBoxInvert = new ReleaseClickCheckBox();
+            checkBoxMono = new ReleaseClickCheckBox();
             labelCrossover = new Label();
             comboBoxCrossoverKind = new DarkComboBox();
             labelMeasuredPolarity = new Label();
@@ -52,13 +52,13 @@ namespace Resonalyze
             comboBoxLowPassFamily = new DarkComboBox();
             comboBoxLowPassSlope = new DarkComboBox();
             labelPeq = new Label();
-            buttonPeqMenu = new Button();
+            buttonPeqMenu = new ReleaseClickButton();
             labelPeqInfo = new Label();
             labelCurves = new Label();
-            checkBoxShowRaw = new CheckBox();
-            checkBoxShowProcessed = new CheckBox();
-            checkBoxBypass = new CheckBox();
-            buttonMute = new Button();
+            checkBoxShowRaw = new ReleaseClickCheckBox();
+            checkBoxShowProcessed = new ReleaseClickCheckBox();
+            checkBoxBypass = new ReleaseClickCheckBox();
+            buttonMute = new ReleaseClickButton();
             numericHighPassRipple = new DarkNumericUpDown();
             numericLowPassRipple = new DarkNumericUpDown();
             labelTotalGain = new Label();
@@ -538,16 +538,16 @@ namespace Resonalyze
         #endregion
 
         private Label labelChannel;
-        private Button buttonSource;
-        private Button buttonSpatialAverage;
+        private ReleaseClickButton buttonSource;
+        private ReleaseClickButton buttonSpatialAverage;
         private Label labelGain;
-        private Button buttonCollapse;
+        private ReleaseClickButton buttonCollapse;
         private DarkNumericUpDown numericGain;
         private Label labelDelay;
         private DarkNumericUpDown numericDelay;
         private Label labelDelayMm;
-        private CheckBox checkBoxInvert;
-        private CheckBox checkBoxMono;
+        private ReleaseClickCheckBox checkBoxInvert;
+        private ReleaseClickCheckBox checkBoxMono;
         private Label labelCrossover;
         private DarkComboBox comboBoxCrossoverKind;
         private Label labelMeasuredPolarity;
@@ -560,13 +560,13 @@ namespace Resonalyze
         private DarkComboBox comboBoxLowPassFamily;
         private DarkComboBox comboBoxLowPassSlope;
         private Label labelPeq;
-        private Button buttonPeqMenu;
+        private ReleaseClickButton buttonPeqMenu;
         private Label labelPeqInfo;
         private Label labelCurves;
-        private CheckBox checkBoxShowRaw;
-        private CheckBox checkBoxShowProcessed;
-        private CheckBox checkBoxBypass;
-        private Button buttonMute;
+        private ReleaseClickCheckBox checkBoxShowRaw;
+        private ReleaseClickCheckBox checkBoxShowProcessed;
+        private ReleaseClickCheckBox checkBoxBypass;
+        private ReleaseClickButton buttonMute;
         private DarkNumericUpDown numericHighPassRipple;
         private DarkNumericUpDown numericLowPassRipple;
         private Label labelTotalGain;

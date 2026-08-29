@@ -221,6 +221,33 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void ANewProject_OpensOnAGateThatReachesTheBassJunctions()
+    {
+        // The tool exists to align channels across their junctions, and the lowest of
+        // those sits in the bass — a junction-length gate (Phase Response mode's own
+        // default) reads nothing below ~170 Hz, which is where the sub meets the
+        // midbass. So the phase view opens on a long window, read through FDW so the
+        // mid and high junctions still see the direct arrival rather than the whole
+        // reflection tail, and unpinned, so it follows each side's own front.
+        var project = new VirtualCrossoverProjectFile();
+
+        Assert.Equal(
+            24.0,
+            FrequencyResponseOptions.GateMinReliableFrequencyHz(
+                project.PhaseGateLeftMs,
+                project.PhaseGatePlateauMs,
+                project.PhaseGateRightMs),
+            0);
+        Assert.Equal(PhaseWindowMode.FrequencyDependent, project.PhaseWindowMode);
+        Assert.Equal(8, project.PhaseFdwCycles);
+        Assert.Equal(PhaseDetrendMode.Auto, project.PhaseDetrendMode);
+        foreach (bool rightSide in new[] { false, true })
+        {
+            Assert.Null(project.PhaseGateFor(rightSide).OffsetMs);
+        }
+    }
+
+    [Fact]
     public void LoadOrDefault_V4Project_CopiesItsOneGateOntoBothSides()
     {
         // v4 kept a single gate for the whole project. Both sides must inherit it, so a

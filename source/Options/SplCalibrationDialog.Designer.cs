@@ -21,11 +21,11 @@ namespace Resonalyze.Options
             labelReference = new Label();
             comboBoxReference = new DarkComboBox();
             labelGainWarning = new Label();
-            buttonStart = new Button();
+            buttonStart = new ReleaseClickButton();
             progressBar = new ProgressBar();
             labelStatus = new Label();
-            buttonSave = new Button();
-            buttonCancel = new Button();
+            buttonSave = new ReleaseClickButton();
+            buttonCancel = new ReleaseClickButton();
             SuspendLayout();
             //
             // labelInstruction
@@ -157,10 +157,10 @@ namespace Resonalyze.Options
         private Label labelReference;
         private DarkComboBox comboBoxReference;
         private Label labelGainWarning;
-        private Button buttonStart;
+        private ReleaseClickButton buttonStart;
         private ProgressBar progressBar;
         private Label labelStatus;
-        private Button buttonSave;
-        private Button buttonCancel;
+        private ReleaseClickButton buttonSave;
+        private ReleaseClickButton buttonCancel;
     }
 }

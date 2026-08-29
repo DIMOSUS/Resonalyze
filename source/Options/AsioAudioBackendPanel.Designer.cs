@@ -40,8 +40,8 @@
             labelAsioSampleRateStatus = new Label();
             labelAsioPlaybackLatency = new Label();
             labelAsioPlaybackLatencyValue = new Label();
-            buttonAsioInputProbe = new Button();
-            buttonAsioControlPanel = new Button();
+            buttonAsioInputProbe = new ReleaseClickButton();
+            buttonAsioControlPanel = new ReleaseClickButton();
             SuspendLayout();
             //
             // labelAsioDriver
@@ -228,7 +228,7 @@
         private Label labelAsioSampleRateStatus;
         private Label labelAsioPlaybackLatency;
         private Label labelAsioPlaybackLatencyValue;
-        private Button buttonAsioInputProbe;
-        private Button buttonAsioControlPanel;
+        private ReleaseClickButton buttonAsioInputProbe;
+        private ReleaseClickButton buttonAsioControlPanel;
     }
 }

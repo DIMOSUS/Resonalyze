@@ -114,7 +114,7 @@ internal static class UiStyle
         bool accent,
         Size? size = null)
     {
-        var button = new Button
+        var button = new ReleaseClickButton
         {
             BackColor = accent
                 ? UiPalette.AccentFill

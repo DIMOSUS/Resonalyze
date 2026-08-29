@@ -23,8 +23,8 @@
             ColumnMatch = new DataGridViewTextBoxColumn();
             ColumnRms = new DataGridViewTextBoxColumn();
             ColumnPeak = new DataGridViewTextBoxColumn();
-            buttonMeasure = new Button();
-            buttonCancel = new Button();
+            buttonMeasure = new ReleaseClickButton();
+            buttonCancel = new ReleaseClickButton();
             ((System.ComponentModel.ISupportInitialize)channelGridView).BeginInit();
             SuspendLayout();
             //
@@ -141,7 +141,7 @@
         private DataGridViewTextBoxColumn ColumnMatch;
         private DataGridViewTextBoxColumn ColumnRms;
         private DataGridViewTextBoxColumn ColumnPeak;
-        private Button buttonMeasure;
-        private Button buttonCancel;
+        private ReleaseClickButton buttonMeasure;
+        private ReleaseClickButton buttonCancel;
     }
 }

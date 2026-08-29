@@ -31,8 +31,8 @@ namespace Resonalyze
             comboBoxQConvention = new DarkComboBox();
             labelStatus = new Label();
             labelHint = new Label();
-            buttonOk = new Button();
-            buttonCancel = new Button();
+            buttonOk = new ReleaseClickButton();
+            buttonCancel = new ReleaseClickButton();
             SuspendLayout();
             //
             // labelCaption
@@ -197,7 +197,7 @@ namespace Resonalyze
         private DarkComboBox comboBoxQConvention;
         private Label labelStatus;
         private Label labelHint;
-        private Button buttonOk;
-        private Button buttonCancel;
+        private ReleaseClickButton buttonOk;
+        private ReleaseClickButton buttonCancel;
     }
 }

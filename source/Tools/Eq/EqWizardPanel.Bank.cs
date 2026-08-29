@@ -238,8 +238,7 @@ public partial class EqWizardPanel
             bandTypeMenu.Items.Add(item);
         }
 
-        DropDownFocusGuard.Attach(bandTypeMenu);
-        bandTypeMenu.Show(screenPoint);
+        DropDownMenu.ShowAt(this, bandTypeMenu, screenPoint);
     }
 
     private void SetBandType(PeqSlotControl slot, PeqBandType type)

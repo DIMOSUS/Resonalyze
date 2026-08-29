@@ -30,20 +30,20 @@ namespace Resonalyze
         private void InitializeComponent()
         {
             labelTrack = new Label();
-            buttonChooseSource = new Button();
+            buttonChooseSource = new ReleaseClickButton();
             labelSourceFile = new Label();
             labelOutput = new Label();
-            buttonChooseTarget = new Button();
+            buttonChooseTarget = new ReleaseClickButton();
             labelTargetFile = new Label();
             labelCalibration = new Label();
             comboBoxCalibration = new DarkComboBox();
             labelCabin = new Label();
             comboBoxCabin = new DarkComboBox();
-            buttonRender = new Button();
+            buttonRender = new ReleaseClickButton();
             progressBar = new ProgressBar();
             labelStatus = new Label();
             textBoxReport = new TextBox();
-            buttonClose = new Button();
+            buttonClose = new ReleaseClickButton();
             SuspendLayout();
             // 
             // labelTrack
@@ -248,19 +248,19 @@ namespace Resonalyze
         #endregion
 
         private Label labelTrack;
-        private Button buttonChooseSource;
+        private ReleaseClickButton buttonChooseSource;
         private Label labelSourceFile;
         private Label labelOutput;
-        private Button buttonChooseTarget;
+        private ReleaseClickButton buttonChooseTarget;
         private Label labelTargetFile;
         private Label labelCalibration;
         private DarkComboBox comboBoxCalibration;
         private Label labelCabin;
         private DarkComboBox comboBoxCabin;
-        private Button buttonRender;
+        private ReleaseClickButton buttonRender;
         private ProgressBar progressBar;
         private Label labelStatus;
         private TextBox textBoxReport;
-        private Button buttonClose;
+        private ReleaseClickButton buttonClose;
     }
 }

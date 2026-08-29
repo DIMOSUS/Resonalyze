@@ -1752,7 +1752,17 @@ designed size nothing shrinks and the panel scrolls instead. Its **Gate...** dia
 the IR preview, Tukey controls, and gate offset. Where the gate SITS belongs to
 the side you are viewing, since the two sides' drivers sit at different
 distances; how the phase is READ stays project-wide, because two sides read
-through different windows could not be compared.
+through different windows could not be compared. A new project opens on
+**1 / 30 / 10 ms** read through **FDW at 8 cycles**: the lowest junction the tool
+aligns is the sub meeting the midbass, and by the read-out's own 1 / T criterion a
+junction-length gate holds one period only down to ≈ 170 Hz, well above it, while
+41 ms holds one down to ≈ 24 Hz. That is the window's nominal reach rather than a
+promise about the phase read through it — one period inside the gate is where a
+frequency starts being resolved at all, not where it becomes trustworthy. FDW then
+keeps the mid and high junctions reading their direct arrival rather than the whole
+reflection tail the long window would otherwise admit; its cycle count shortens the
+window with frequency and never lengthens it, so the gate stays the outer limit and
+8 cycles are not suddenly available at 24 Hz.
 
 The gate's durations shape the **phase and impulse views only**. The magnitude
 view — channels, Sum, Sum loss and the read-out built from them — deliberately

@@ -29,9 +29,9 @@ namespace Resonalyze.Options
         private void InitializeComponent()
         {
             labelAnalysisMode = new Label();
-            radioModeTransfer = new RadioButton();
-            radioModeRta = new RadioButton();
-            radioModeMmm = new RadioButton();
+            radioModeTransfer = new ReleaseClickRadioButton();
+            radioModeRta = new ReleaseClickRadioButton();
+            radioModeMmm = new ReleaseClickRadioButton();
             comboCalibration = new DarkComboBox();
             label2 = new Label();
             labelSignalType = new Label();
@@ -47,21 +47,21 @@ namespace Resonalyze.Options
             label7 = new Label();
             averagingComboBox = new DarkComboBox();
             label8 = new Label();
-            checkPeakHold = new CheckBox();
+            checkPeakHold = new ReleaseClickCheckBox();
             label9 = new Label();
-            checkCoherence = new CheckBox();
+            checkCoherence = new ReleaseClickCheckBox();
             label10 = new Label();
             coherenceLimitComboBox = new DarkComboBox();
-            buttonResetAverage = new Button();
+            buttonResetAverage = new ReleaseClickButton();
             labelSpl = new Label();
-            checkSpl = new CheckBox();
+            checkSpl = new ReleaseClickCheckBox();
             labelTilt = new Label();
-            checkTilt = new CheckBox();
+            checkTilt = new ReleaseClickCheckBox();
             labelCurves = new Label();
             labelMainCurve = new Label();
-            checkMainCurve = new CheckBox();
+            checkMainCurve = new ReleaseClickCheckBox();
             labelInputMagnitude = new Label();
-            checkInputMagnitude = new CheckBox();
+            checkInputMagnitude = new ReleaseClickCheckBox();
             SuspendLayout();
             //
             // labelAnalysisMode
@@ -472,9 +472,9 @@ namespace Resonalyze.Options
 
         #endregion
         private Label labelAnalysisMode;
-        private RadioButton radioModeTransfer;
-        private RadioButton radioModeRta;
-        private RadioButton radioModeMmm;
+        private ReleaseClickRadioButton radioModeTransfer;
+        private ReleaseClickRadioButton radioModeRta;
+        private ReleaseClickRadioButton radioModeMmm;
         private DarkComboBox comboCalibration;
         private Label label2;
         private Label labelSignalType;
@@ -490,20 +490,20 @@ namespace Resonalyze.Options
         private Label label7;
         private DarkComboBox averagingComboBox;
         private Label label8;
-        private CheckBox checkPeakHold;
+        private ReleaseClickCheckBox checkPeakHold;
         private Label label9;
-        private CheckBox checkCoherence;
+        private ReleaseClickCheckBox checkCoherence;
         private Label label10;
         private DarkComboBox coherenceLimitComboBox;
-        private Button buttonResetAverage;
+        private ReleaseClickButton buttonResetAverage;
         private Label labelSpl;
-        private CheckBox checkSpl;
+        private ReleaseClickCheckBox checkSpl;
         private Label labelTilt;
-        private CheckBox checkTilt;
+        private ReleaseClickCheckBox checkTilt;
         private Label labelCurves;
         private Label labelMainCurve;
-        private CheckBox checkMainCurve;
+        private ReleaseClickCheckBox checkMainCurve;
         private Label labelInputMagnitude;
-        private CheckBox checkInputMagnitude;
+        private ReleaseClickCheckBox checkInputMagnitude;
     }
 }

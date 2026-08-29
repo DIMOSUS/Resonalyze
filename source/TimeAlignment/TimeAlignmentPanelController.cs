@@ -124,6 +124,15 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     public void RefreshConfiguration()
     {
+        // The options object is SHARED and is written behind this panel's back. Twice:
+        // the persisted settings land in it after the controls were first filled from
+        // the defaults (the controllers are built before ApplyPersistedSettings runs),
+        // and every history entry restores its own session into it. Neither touches a
+        // control, so without re-reading it here the band radios keep showing what they
+        // were built with while the analysis runs on something else — the panel then
+        // says "Auto" with the band caption on "-" and reads the whole spectrum, which
+        // is what FullBand looks like from the outside.
+        ApplyOptionsToControls();
         RefreshAnalysis();
     }
 
@@ -146,7 +155,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         // arriving button; reacting to the arriving one alone refreshes once.
         void OnRadio(object? sender, EventArgs _)
         {
-            if (sender is RadioButton { Checked: true })
+            if (!applyingOptions && sender is RadioButton { Checked: true })
+            {
+                ApplyBandpassOptionChange();
+            }
+        }
+        void OnNumeric(object? sender, EventArgs _)
+        {
+            if (!applyingOptions)
             {
                 ApplyBandpassOptionChange();
             }
@@ -154,9 +170,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         bandModeFullRadio.CheckedChanged += OnRadio;
         bandModeAutoRadio.CheckedChanged += OnRadio;
         bandModeManualRadio.CheckedChanged += OnRadio;
-        bandpassCenterNumeric.ValueChanged += (_, _) => ApplyBandpassOptionChange();
-        bandpassPassOctavesNumeric.ValueChanged += (_, _) => ApplyBandpassOptionChange();
-        bandpassFadeOctavesNumeric.ValueChanged += (_, _) => ApplyBandpassOptionChange();
+        bandpassCenterNumeric.ValueChanged += OnNumeric;
+        bandpassPassOctavesNumeric.ValueChanged += OnNumeric;
+        bandpassFadeOctavesNumeric.ValueChanged += OnNumeric;
     }
 
     private void ApplyBandpassOptionChange()
@@ -466,17 +482,34 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             : (new DominantBand(low, high, Math.Clamp(main.PeakHz, low, high)), true);
     }
 
+    // Writing the controls raises the same events the user's own edits do, and those
+    // read the controls straight back into the options and save them. Harmless while
+    // the two agree; the whole point of this call is the case where they do not.
+    private bool applyingOptions;
+
     private void ApplyOptionsToControls()
     {
-        bandModeFullRadio.Checked = options.BandMode == TimeAlignmentBandMode.FullBand;
-        bandModeAutoRadio.Checked = options.BandMode == TimeAlignmentBandMode.AutoBand;
-        bandModeManualRadio.Checked = options.BandMode == TimeAlignmentBandMode.ManualBand;
-        bandpassCenterNumeric.Value =
-            bandpassCenterNumeric.ClampValue(options.BandpassCenterHz);
-        bandpassPassOctavesNumeric.Value =
-            bandpassPassOctavesNumeric.ClampValue(options.BandpassPassOctaves);
-        bandpassFadeOctavesNumeric.Value =
-            bandpassFadeOctavesNumeric.ClampValue(options.BandpassFadeOctaves);
+        applyingOptions = true;
+        try
+        {
+            bandModeFullRadio.Checked =
+                options.BandMode == TimeAlignmentBandMode.FullBand;
+            bandModeAutoRadio.Checked =
+                options.BandMode == TimeAlignmentBandMode.AutoBand;
+            bandModeManualRadio.Checked =
+                options.BandMode == TimeAlignmentBandMode.ManualBand;
+            bandpassCenterNumeric.Value =
+                bandpassCenterNumeric.ClampValue(options.BandpassCenterHz);
+            bandpassPassOctavesNumeric.Value =
+                bandpassPassOctavesNumeric.ClampValue(options.BandpassPassOctaves);
+            bandpassFadeOctavesNumeric.Value =
+                bandpassFadeOctavesNumeric.ClampValue(options.BandpassFadeOctaves);
+        }
+        finally
+        {
+            applyingOptions = false;
+        }
+
         UpdateBandpassControlStates();
     }
 

@@ -1062,6 +1062,48 @@ the two shelves, and **AP1 / AP2**, the first- and second-order all-pass bands
 [Section 9](#9-delay-and-phase-alignment) uses to bend phase without touching
 magnitude.
 
+### Do not over-equalize
+
+A flatter magnitude response is not automatically a better result.
+
+Every ordinary minimum-phase PEQ band moves phase and group delay along with
+magnitude. A few broad corrections are usually harmless, and correcting a genuine
+minimum-phase resonance improves both at once — which is why
+[the band edges above](#read-the-band-edges-as-the-filter-not-the-driver) single out
+broad, minimum-phase bumps and dips. The problem is excess: many narrow, high-Q
+filters can leave a complicated phase and group-delay response that makes adjacent
+drivers harder to integrate.
+
+This is especially important on the **subwoofer and midbass**. Their crossover already
+contains substantial phase rotation, and the subwoofer may carry a steep protective
+high-pass or subsonic filter on top of it. Add many narrow corrections to that and the
+relative phase changes rapidly through the crossover region — at which point no single
+delay value sums the pair well over a useful bandwidth, which is exactly what
+[Section 9](#9-delay-and-phase-alignment) is about to ask of it. The same mechanism is
+at work at the mid-to-tweeter junction, where a high-Q filter sitting right on the
+crossover does the same thing; it is simply easier to see in the bass, where the group
+delay it adds is measured in milliseconds.
+
+Use PEQ on the response that is actually correctable:
+
+- prefer broad, moderate corrections over many narrow ones;
+- cut significant resonant peaks when they are repeatable and clearly belong to the
+  driver or the installation;
+- do not try to fill deep cancellation nulls with boost — this is what **Cuts only**
+  keeps Auto Tune from attempting;
+- do not spend filters on every small ripple simply to make the graph look flat;
+- watch narrow filters near a crossover frequency in particular, where their phase
+  contribution feeds straight into the integration with the adjacent driver.
+
+There is no useful rule of the form "five PEQs are safe and ten are too many." A filter
+should exist because it solves a real problem, not because another small deviation from
+the target is still visible.
+
+After equalizing, look at the result in the context of the complete crossover — the
+phase and group-delay views, and **Sum Loss** at the junction. If removing an
+unnecessary band makes the phase or group-delay behavior smoother and broadens the
+summation with the adjacent driver, the simpler EQ is the better tune.
+
 ### Return the result
 
 Press **Return PEQ to Virtual DSP**. The bank — filters and preamp — lands on the

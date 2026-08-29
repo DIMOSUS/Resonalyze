@@ -33,8 +33,8 @@ namespace Resonalyze.Options
             comboBoxReference = new DarkComboBox();
             plotViewPreview = new OxyPlot.WindowsForms.PlotView();
             labelSummary = new Label();
-            buttonOk = new Button();
-            buttonCancel = new Button();
+            buttonOk = new ReleaseClickButton();
+            buttonCancel = new ReleaseClickButton();
             SuspendLayout();
             //
             // labelName
@@ -291,7 +291,7 @@ namespace Resonalyze.Options
         private DarkComboBox comboBoxReference;
         private OxyPlot.WindowsForms.PlotView plotViewPreview;
         private Label labelSummary;
-        private Button buttonOk;
-        private Button buttonCancel;
+        private ReleaseClickButton buttonOk;
+        private ReleaseClickButton buttonCancel;
     }
 }

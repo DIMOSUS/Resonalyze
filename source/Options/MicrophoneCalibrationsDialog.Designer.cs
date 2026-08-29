@@ -22,14 +22,14 @@ namespace Resonalyze.Options
             columnHeaderKind = new ColumnHeader();
             columnHeaderDetails = new ColumnHeader();
             columnHeaderStatus = new ColumnHeader();
-            buttonAddFile = new Button();
-            buttonAddAngle = new Button();
-            buttonEdit = new Button();
-            buttonRename = new Button();
-            buttonRemove = new Button();
+            buttonAddFile = new ReleaseClickButton();
+            buttonAddAngle = new ReleaseClickButton();
+            buttonEdit = new ReleaseClickButton();
+            buttonRename = new ReleaseClickButton();
+            buttonRemove = new ReleaseClickButton();
             labelHint = new Label();
-            buttonOk = new Button();
-            buttonCancel = new Button();
+            buttonOk = new ReleaseClickButton();
+            buttonCancel = new ReleaseClickButton();
             SuspendLayout();
             //
             // listViewCalibrations
@@ -196,13 +196,13 @@ namespace Resonalyze.Options
         private ColumnHeader columnHeaderKind;
         private ColumnHeader columnHeaderDetails;
         private ColumnHeader columnHeaderStatus;
-        private Button buttonAddFile;
-        private Button buttonAddAngle;
-        private Button buttonEdit;
-        private Button buttonRename;
-        private Button buttonRemove;
+        private ReleaseClickButton buttonAddFile;
+        private ReleaseClickButton buttonAddAngle;
+        private ReleaseClickButton buttonEdit;
+        private ReleaseClickButton buttonRename;
+        private ReleaseClickButton buttonRemove;
         private Label labelHint;
-        private Button buttonOk;
-        private Button buttonCancel;
+        private ReleaseClickButton buttonOk;
+        private ReleaseClickButton buttonCancel;
     }
 }

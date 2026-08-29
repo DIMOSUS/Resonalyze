@@ -303,7 +303,7 @@ public partial class Form1
 
     private void WireFormEvents()
     {
-        buttonCompare.Click += buttonCompare_Click;
+        buttonCompare.Click += (_, _) => ShowCompareMenu();
         FormClosing += Form1_FormClosing;
         Shown += Form1_Shown;
     }

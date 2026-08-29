@@ -32,7 +32,7 @@ namespace Resonalyze
         {
             labelGateOffset = new Label();
             numericGateOffset = new DarkNumericUpDown();
-            checkAutoOffset = new CheckBox();
+            checkAutoOffset = new ReleaseClickCheckBox();
             labelLeft = new Label();
             numericLeft = new DarkNumericUpDown();
             labelPlateau = new Label();
@@ -42,8 +42,8 @@ namespace Resonalyze
             labelMinFrequency = new Label();
             labelTau = new Label();
             numericTau = new DarkNumericUpDown();
-            buttonTauSlope = new Button();
-            buttonTauPeak = new Button();
+            buttonTauSlope = new ReleaseClickButton();
+            buttonTauPeak = new ReleaseClickButton();
             labelWindowMode = new Label();
             comboWindowMode = new DarkComboBox();
             labelFdwCycles = new Label();
@@ -52,8 +52,8 @@ namespace Resonalyze
             comboDetrendMode = new DarkComboBox();
             labelAutoDetrend = new Label();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
-            buttonSave = new Button();
-            buttonCancel = new Button();
+            buttonSave = new ReleaseClickButton();
+            buttonCancel = new ReleaseClickButton();
             (numericGateOffset).BeginInit();
             (numericLeft).BeginInit();
             (numericPlateau).BeginInit();
@@ -416,7 +416,7 @@ namespace Resonalyze
 
         private Label labelGateOffset;
         private DarkNumericUpDown numericGateOffset;
-        private CheckBox checkAutoOffset;
+        private ReleaseClickCheckBox checkAutoOffset;
         private Label labelLeft;
         private DarkNumericUpDown numericLeft;
         private Label labelPlateau;
@@ -426,8 +426,8 @@ namespace Resonalyze
         private Label labelMinFrequency;
         private Label labelTau;
         private DarkNumericUpDown numericTau;
-        private Button buttonTauSlope;
-        private Button buttonTauPeak;
+        private ReleaseClickButton buttonTauSlope;
+        private ReleaseClickButton buttonTauPeak;
         private Label labelWindowMode;
         private DarkComboBox comboWindowMode;
         private Label labelFdwCycles;
@@ -436,7 +436,7 @@ namespace Resonalyze
         private DarkComboBox comboDetrendMode;
         private Label labelAutoDetrend;
         private OxyPlot.WindowsForms.PlotView irPlotView;
-        private Button buttonSave;
-        private Button buttonCancel;
+        private ReleaseClickButton buttonSave;
+        private ReleaseClickButton buttonCancel;
     }
 }

@@ -1703,8 +1703,7 @@ public partial class VirtualCrossoverPanel : UserControl
         clearItem.Click += (_, _) => ClearSource(channel);
         menu.Items.Add(clearItem);
 
-        Button sourceButton = ControlFor(channel).SourceButton;
-        menu.Show(sourceButton, new Point(0, sourceButton.Height));
+        DropDownMenu.ShowUnder(ControlFor(channel).SourceButton, menu);
     }
 
     // The source reference in openable form, resolved the same way the silent
@@ -2220,8 +2219,7 @@ public partial class VirtualCrossoverPanel : UserControl
         };
         menu.Items.Add(clearItem);
 
-        Button anchor = ControlFor(channel).PeqMenuButton;
-        menu.Show(anchor, new Point(0, anchor.Height));
+        DropDownMenu.ShowUnder(ControlFor(channel).PeqMenuButton, menu);
     }
 
     // Builds the handoff for the active side and hands it to the host. The gate

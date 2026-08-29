@@ -33,7 +33,7 @@
         private void InitializeComponent()
         {
             sweepPanel = new Panel();
-            buttonSaveSweepFile = new Button();
+            buttonSaveSweepFile = new ReleaseClickButton();
             labelActualRangeCaption = new Label();
             numericUpDownRequestedDuration = new DarkNumericUpDown();
             label4 = new Label();
@@ -52,23 +52,23 @@
             comboBoxChannel = new DarkComboBox();
             label3 = new Label();
             audioBackendPanel = new Panel();
-            button1 = new Button();
+            button1 = new ReleaseClickButton();
             labelAudioBackend = new Label();
             comboBoxAudioBackend = new DarkComboBox();
             labelAverageRunCount = new Label();
             numericUpDownAverageRunCount = new DarkNumericUpDown();
             labelCalibration0 = new Label();
-            buttonCalibration0 = new Button();
-            buttonClearCalibration0 = new Button();
+            buttonCalibration0 = new ReleaseClickButton();
+            buttonClearCalibration0 = new ReleaseClickButton();
             labelCalibrationExtra = new Label();
-            buttonCalibrationExtra = new Button();
+            buttonCalibrationExtra = new ReleaseClickButton();
             labelMicrophoneCalibration = new Label();
             comboBoxMicrophoneCalibration = new DarkComboBox();
             labelArrayMicrophones = new Label();
-            buttonArrayMicrophones = new Button();
+            buttonArrayMicrophones = new ReleaseClickButton();
             labelSplCalibration = new Label();
-            buttonSplCalibration = new Button();
-            buttonClearSplCalibration = new Button();
+            buttonSplCalibration = new ReleaseClickButton();
+            buttonClearSplCalibration = new ReleaseClickButton();
             waveAudioBackendPanel = new WaveAudioBackendPanel();
             asioAudioBackendPanel = new AsioAudioBackendPanel();
             sweepPanel.SuspendLayout();
@@ -615,7 +615,7 @@
         private Label label3;
         private Label label4;
         private DarkNumericUpDown numericUpDownRequestedDuration;
-        private Button button1;
+        private ReleaseClickButton button1;
         private Label labelLowFrequency;
         private DarkComboBox comboBoxSampleRate;
         private DarkNumericUpDown numericUpDownBits;
@@ -623,7 +623,7 @@
         private DarkNumericUpDown numericUpDownHighFrequency;
         private Label labelHighFrequency;
         private Label labelActualRangeCaption;
-        private Button buttonSaveSweepFile;
+        private ReleaseClickButton buttonSaveSweepFile;
         private Label labelProtectiveHighPass;
         private DarkComboBox comboBoxProtectiveHighPassKind;
         private DarkNumericUpDown numericUpDownProtectiveHighPassFrequency;
@@ -633,17 +633,17 @@
         private Label labelAverageRunCount;
         private DarkNumericUpDown numericUpDownAverageRunCount;
         private Label labelCalibration0;
-        private Button buttonCalibration0;
-        private Button buttonClearCalibration0;
+        private ReleaseClickButton buttonCalibration0;
+        private ReleaseClickButton buttonClearCalibration0;
         private Label labelCalibrationExtra;
-        private Button buttonCalibrationExtra;
+        private ReleaseClickButton buttonCalibrationExtra;
         private Label labelMicrophoneCalibration;
         private DarkComboBox comboBoxMicrophoneCalibration;
         private Label labelArrayMicrophones;
-        private Button buttonArrayMicrophones;
+        private ReleaseClickButton buttonArrayMicrophones;
         private Label labelSplCalibration;
-        private Button buttonSplCalibration;
-        private Button buttonClearSplCalibration;
+        private ReleaseClickButton buttonSplCalibration;
+        private ReleaseClickButton buttonClearSplCalibration;
         private WaveAudioBackendPanel waveAudioBackendPanel;
         private AsioAudioBackendPanel asioAudioBackendPanel;
     }

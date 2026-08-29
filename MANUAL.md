@@ -1032,7 +1032,7 @@ mode, where smoothing should be **Off** for the reasons given above.
 
 Press **Auto Tune** and let Resonalyze fit the response to the target.
 
-![The same channel after Auto Tune: nine bands, RMS error 3.7 → 1.5 dB](assets/images/manual/eq-wizard-tuned.png)
+![The same channel after Auto Tune: seven bands, RMS error 3.9 → 1.3 dB](assets/images/manual/eq-wizard-tuned.png)
 
 ### Read the band edges as the filter, not the driver
 

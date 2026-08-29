@@ -592,7 +592,7 @@ public sealed class OverlayCollection
 
     private static CheckBox CreateCheckBox(CheckBox template, int index)
     {
-        return new CheckBox
+        return new ReleaseClickCheckBox
         {
             BackColor = template.BackColor,
             FlatStyle = template.FlatStyle,
@@ -645,7 +645,7 @@ public sealed class OverlayCollection
 
     private static Button CreateCaptureButton(Button template, int index)
     {
-        return new Button
+        return new ReleaseClickButton
         {
             FlatStyle = template.FlatStyle,
             BackColor = template.BackColor,
@@ -812,7 +812,6 @@ public sealed class Overlay
             out targetMenuItem,
             out settingsMenuItem,
             out clearSlotMenuItem);
-        DropDownFocusGuard.Attach(captureMenu);
 
         // Holding the button for over half a second jumps straight to the slot's
         // settings; a normal click still opens the capture menu.
@@ -832,7 +831,7 @@ public sealed class Overlay
             "Click for the overlay menu; hold to open this slot's settings");
 
         checkBox.CheckedChanged += CheckBoxChanged;
-        captureButton.Click += CaptureButtonClick;
+        captureButton.Click += (_, _) => OpenCaptureMenu();
         captureButton.MouseDown += CaptureButtonMouseDown;
         captureButton.MouseUp += CaptureButtonMouseUp;
         offsetControl.ValueChanged += OffsetValueChanged;
@@ -1515,9 +1514,9 @@ public sealed class Overlay
         }
     }
 
-    private void CaptureButtonClick(object? sender, EventArgs e)
+    private void OpenCaptureMenu()
     {
-        // A long press already opened the settings dialog, so swallow the click that
+        // A long press already opened the settings dialog, so swallow the release that
         // ends the hold instead of also opening the menu.
         if (longPressTriggered)
         {
@@ -1525,19 +1524,18 @@ public sealed class Overlay
             return;
         }
 
-        // Open on Click (which fires after the mouse-up) and defer with BeginInvoke.
-        // Two WinForms quirks made the menu intermittently fail to appear when shown
-        // from mouse-down: showing synchronously inside the mouse message was
-        // swallowed by the focus/activation change, and showing on mouse-down let the
-        // click's own mouse-up land outside the just-opened menu and immediately
-        // close it. Showing on Click, posted after the current message, avoids both.
+        // On Click (which the button raises from the release, reliably — see
+        // ReleaseClickButton) rather than on mouse-down: opened from mouse-down, the
+        // click's own mouse-up lands outside the just-opened menu and closes it again.
+        // The rest of the opening — posting the show clear of the mouse message, and
+        // the focus guard — belongs to DropDownMenu, which every menu goes out through.
         if (captureMenu.Visible)
         {
             captureMenu.Close();
             return;
         }
 
-        captureButton.BeginInvoke(ShowCaptureMenu);
+        ShowCaptureMenu();
     }
 
     private void CaptureButtonMouseDown(object? sender, MouseEventArgs e)
@@ -1562,7 +1560,6 @@ public sealed class Overlay
     private void LongPressTimerTick(object? sender, EventArgs e)
     {
         longPressTimer.Stop();
-        longPressTriggered = true;
 
         // The click that opens the menu only fires on mouse-up, so the menu is not
         // up yet during the hold; close it defensively in case of odd ordering.
@@ -1571,7 +1568,12 @@ public sealed class Overlay
             captureMenu.Close();
         }
 
-        OpenSettings();
+        // Only a hold that actually OPENED something swallows the click that ends it.
+        // An empty slot has no settings, so a slow press on one used to hit the timer,
+        // open nothing, and then eat the click as if it had — the button painted its
+        // press and no menu appeared, on exactly the slots a user clicks to capture
+        // something into.
+        longPressTriggered = OpenSettings();
     }
 
     private void ShowCaptureMenu()
@@ -1602,7 +1604,7 @@ public sealed class Overlay
         // Clearing only applies to a slot that holds content, under the same
         // mode-ownership rule as Settings.
         clearSlotMenuItem.Enabled = settingsMenuItem.Enabled;
-        captureMenu.Show(captureButton, new Point(0, captureButton.Height));
+        DropDownMenu.ShowUnder(captureButton, captureMenu);
     }
 
     private void RebuildCaptureCurveMenu()
@@ -2065,34 +2067,44 @@ public sealed class Overlay
         return trimmed;
     }
 
-    // Routes the capture menu's "Settings…" entry to the editor for the slot's
-    // current kind. Captured slots open the curve settings (name, color, clear);
-    // calculated and target slots reopen their own configuration dialogs.
-    private void OpenSettings()
+    /// <summary>
+    /// Routes the capture menu's "Settings…" entry to the editor for the slot's
+    /// current kind. Captured slots open the curve settings (name, color, clear);
+    /// calculated and target slots reopen their own configuration dialogs.
+    /// </summary>
+    /// <returns>
+    /// Whether there was anything to open. An empty slot — and any slot belonging to
+    /// another mode — has no settings, and says so rather than silently doing nothing:
+    /// the long press reads this to decide whether it took the gesture, and a hold
+    /// that opened nothing must leave the click to the menu (see
+    /// <see cref="LongPressTimerTick"/>).
+    /// </returns>
+    private bool OpenSettings()
     {
         if (SeriesMode != CurrentOverlayMode)
         {
-            return;
+            return false;
         }
 
         if (kind == OverlayKind.Operation)
         {
             ConfigureOperation();
-            return;
+            return true;
         }
 
         if (kind == OverlayKind.Target)
         {
             ConfigureTarget();
-            return;
+            return true;
         }
 
         if (!HasCaptureData)
         {
-            return;
+            return false;
         }
 
         ConfigureCaptured();
+        return true;
     }
 
     // The Settings entry only applies to a slot that already holds content.

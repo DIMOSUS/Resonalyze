@@ -40,8 +40,8 @@ namespace Resonalyze
             numericLevel = new DarkNumericUpDown();
             labelAudioSettingsTitle = new Label();
             labelAudioSettings = new Label();
-            buttonPlay = new Button();
-            buttonStop = new Button();
+            buttonPlay = new ReleaseClickButton();
+            buttonStop = new ReleaseClickButton();
             labelStatusTitle = new Label();
             labelStatus = new Label();
             ((System.ComponentModel.ISupportInitialize)numericFrequency).BeginInit();
@@ -265,8 +265,8 @@ namespace Resonalyze
         private DarkNumericUpDown numericLevel;
         private Label labelAudioSettingsTitle;
         private Label labelAudioSettings;
-        private Button buttonPlay;
-        private Button buttonStop;
+        private ReleaseClickButton buttonPlay;
+        private ReleaseClickButton buttonStop;
         private Label labelStatusTitle;
         private Label labelStatus;
     }

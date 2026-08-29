@@ -29,7 +29,7 @@ namespace Resonalyze.Options
         private void InitializeComponent()
         {
             labelGateOffset = new Label();
-            checkAutoFit = new CheckBox();
+            checkAutoFit = new ReleaseClickCheckBox();
             numericGateOffset = new DarkNumericUpDown();
             label9 = new Label();
             labelMinFrequency = new Label();
@@ -41,10 +41,10 @@ namespace Resonalyze.Options
             numericWindow = new DarkNumericUpDown();
             label1 = new Label();
             labelCurves = new Label();
-            checkBoxShowGroupDelay = new CheckBox();
-            checkBoxShowMinimumPhaseGroupDelay = new CheckBox();
-            checkBoxShowExcessGroupDelay = new CheckBox();
-            checkBoxShowCoherence = new CheckBox();
+            checkBoxShowGroupDelay = new ReleaseClickCheckBox();
+            checkBoxShowMinimumPhaseGroupDelay = new ReleaseClickCheckBox();
+            checkBoxShowExcessGroupDelay = new ReleaseClickCheckBox();
+            checkBoxShowCoherence = new ReleaseClickCheckBox();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             (numericGateOffset).BeginInit();
             (numericRightWindow).BeginInit();
@@ -316,7 +316,7 @@ namespace Resonalyze.Options
         #endregion
 
         private Label labelGateOffset;
-        private CheckBox checkAutoFit;
+        private ReleaseClickCheckBox checkAutoFit;
         private DarkNumericUpDown numericGateOffset;
         private Label label9;
         private Label labelMinFrequency;
@@ -328,10 +328,10 @@ namespace Resonalyze.Options
         private DarkNumericUpDown numericWindow;
         private Label label1;
         private Label labelCurves;
-        private CheckBox checkBoxShowGroupDelay;
-        private CheckBox checkBoxShowMinimumPhaseGroupDelay;
-        private CheckBox checkBoxShowExcessGroupDelay;
-        private CheckBox checkBoxShowCoherence;
+        private ReleaseClickCheckBox checkBoxShowGroupDelay;
+        private ReleaseClickCheckBox checkBoxShowMinimumPhaseGroupDelay;
+        private ReleaseClickCheckBox checkBoxShowExcessGroupDelay;
+        private ReleaseClickCheckBox checkBoxShowCoherence;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }
 }

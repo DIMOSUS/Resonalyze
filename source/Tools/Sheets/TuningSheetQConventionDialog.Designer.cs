@@ -30,13 +30,13 @@ namespace Resonalyze
         private void InitializeComponent()
         {
             labelCaption = new Label();
-            radioRbj = new RadioButton();
-            radioSymmetric = new RadioButton();
-            radioClassic = new RadioButton();
+            radioRbj = new ReleaseClickRadioButton();
+            radioSymmetric = new ReleaseClickRadioButton();
+            radioClassic = new ReleaseClickRadioButton();
             textCheatSheet = new TextBox();
             labelHint = new Label();
-            buttonExport = new Button();
-            buttonCancel = new Button();
+            buttonExport = new ReleaseClickButton();
+            buttonCancel = new ReleaseClickButton();
             SuspendLayout();
             //
             // labelCaption
@@ -167,12 +167,12 @@ namespace Resonalyze
         #endregion
 
         private Label labelCaption;
-        private RadioButton radioRbj;
-        private RadioButton radioSymmetric;
-        private RadioButton radioClassic;
+        private ReleaseClickRadioButton radioRbj;
+        private ReleaseClickRadioButton radioSymmetric;
+        private ReleaseClickRadioButton radioClassic;
         private TextBox textCheatSheet;
         private Label labelHint;
-        private Button buttonExport;
-        private Button buttonCancel;
+        private ReleaseClickButton buttonExport;
+        private ReleaseClickButton buttonCancel;
     }
 }

@@ -27,13 +27,13 @@
             comboBoxCalibration = new DarkComboBox();
             labelNote = new Label();
             textBoxNote = new TextBox();
-            buttonAdd = new Button();
-            buttonUpdate = new Button();
-            buttonRemove = new Button();
+            buttonAdd = new ReleaseClickButton();
+            buttonUpdate = new ReleaseClickButton();
+            buttonRemove = new ReleaseClickButton();
             labelHint = new Label();
             labelStatus = new Label();
-            buttonOk = new Button();
-            buttonCancel = new Button();
+            buttonOk = new ReleaseClickButton();
+            buttonCancel = new ReleaseClickButton();
             SuspendLayout();
             //
             // listViewMicrophones
@@ -246,12 +246,12 @@
         private DarkComboBox comboBoxCalibration;
         private Label labelNote;
         private TextBox textBoxNote;
-        private Button buttonAdd;
-        private Button buttonUpdate;
-        private Button buttonRemove;
+        private ReleaseClickButton buttonAdd;
+        private ReleaseClickButton buttonUpdate;
+        private ReleaseClickButton buttonRemove;
         private Label labelStatus;
         private Label labelHint;
-        private Button buttonOk;
-        private Button buttonCancel;
+        private ReleaseClickButton buttonOk;
+        private ReleaseClickButton buttonCancel;
     }
 }

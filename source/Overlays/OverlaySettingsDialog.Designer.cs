@@ -22,7 +22,7 @@ namespace Resonalyze
             nameLabel = new Label();
             nameTextBox = new TextBox();
             colorLabel = new Label();
-            colorButton = new Button();
+            colorButton = new ReleaseClickButton();
             thicknessLabel = new Label();
             thicknessInput = new DarkNumericUpDown();
             styleLabel = new Label();
@@ -32,9 +32,9 @@ namespace Resonalyze
             opacityLabel = new Label();
             opacityTrackBar = new TrackBar();
             opacityValueLabel = new Label();
-            clearButton = new Button();
-            cancelButton = new Button();
-            saveButton = new Button();
+            clearButton = new ReleaseClickButton();
+            cancelButton = new ReleaseClickButton();
+            saveButton = new ReleaseClickButton();
             toolTip = new WrappingToolTip(components);
             (thicknessInput).BeginInit();
             (opacityTrackBar).BeginInit();
@@ -259,7 +259,7 @@ namespace Resonalyze
         private Label nameLabel;
         private TextBox nameTextBox;
         private Label colorLabel;
-        private Button colorButton;
+        private ReleaseClickButton colorButton;
         private Label thicknessLabel;
         private DarkNumericUpDown thicknessInput;
         private Label styleLabel;
@@ -269,9 +269,9 @@ namespace Resonalyze
         private Label opacityLabel;
         private TrackBar opacityTrackBar;
         private Label opacityValueLabel;
-        private Button clearButton;
-        private Button cancelButton;
-        private Button saveButton;
+        private ReleaseClickButton clearButton;
+        private ReleaseClickButton cancelButton;
+        private ReleaseClickButton saveButton;
         private WrappingToolTip toolTip;
     }
 }

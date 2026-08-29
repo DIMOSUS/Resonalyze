@@ -28,7 +28,7 @@ partial class MeasurementHistoryWindow
     /// </summary>
     private void InitializeComponent()
     {
-        buttonNewSession = new Button();
+        buttonNewSession = new ReleaseClickButton();
         historyDataGridView = new DataGridView();
         Column1 = new DataGridViewTextBoxColumn();
         Column2 = new DataGridViewTextBoxColumn();
@@ -131,7 +131,7 @@ partial class MeasurementHistoryWindow
 
     #endregion
 
-    private Button buttonNewSession;
+    private ReleaseClickButton buttonNewSession;
     private DataGridView historyDataGridView;
     private OxyPlot.WindowsForms.PlotView FRPlotView;
     private DataGridViewTextBoxColumn Column1;

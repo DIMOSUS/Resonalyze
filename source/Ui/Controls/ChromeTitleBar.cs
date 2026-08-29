@@ -299,7 +299,7 @@ internal sealed class ChromeTitleBar : Panel
         string text,
         IReadOnlyDictionary<ModeTab, Action> tabActions)
     {
-        var button = new Button
+        var button = new ReleaseClickButton
         {
             AutoSize = false,
             Font = new Font(form.Font, FontStyle.Regular),
@@ -334,7 +334,7 @@ internal sealed class ChromeTitleBar : Panel
         };
         host.MouseDown += TitleBarMouseDown;
 
-        var mainButton = new Button
+        var mainButton = new ReleaseClickButton
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             AutoSize = false,
@@ -350,7 +350,7 @@ internal sealed class ChromeTitleBar : Panel
         UiStyle.ApplySurfaceButton(mainButton, BackColor, UiPalette.TitleBarTextSoft);
         mainButton.Click += (_, _) => SelectToolsTab(tabActions, lastToolsTab);
 
-        toolsDropDownButton = new Button
+        toolsDropDownButton = new ReleaseClickButton
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right,
             AutoSize = false,
@@ -387,7 +387,7 @@ internal sealed class ChromeTitleBar : Panel
         // The tab actions are fixed at wire-up time, so the menu is identical on
         // every open — build it once and just re-show it.
         toolsMenu ??= BuildToolsMenu(tabActions);
-        toolsMenu.Show(toolsDropDownButton, new Point(0, toolsDropDownButton.Height));
+        DropDownMenu.ShowUnder(toolsDropDownButton, toolsMenu);
     }
 
     private ContextMenuStrip BuildToolsMenu(IReadOnlyDictionary<ModeTab, Action> tabActions)

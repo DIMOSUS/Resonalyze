@@ -43,13 +43,13 @@ namespace Resonalyze.Options
             labelEnvelopeSmoothing = new Label();
             numericEnvelopeSmoothing = new DarkNumericUpDown();
             labelInvert = new Label();
-            checkInvert = new CheckBox();
+            checkInvert = new ReleaseClickCheckBox();
             labelNormalizeStep = new Label();
-            checkNormalizeStep = new CheckBox();
+            checkNormalizeStep = new ReleaseClickCheckBox();
             labelCurves = new Label();
-            checkBoxShowImpulse = new CheckBox();
-            checkBoxShowEnvelope = new CheckBox();
-            checkBoxShowStep = new CheckBox();
+            checkBoxShowImpulse = new ReleaseClickCheckBox();
+            checkBoxShowEnvelope = new ReleaseClickCheckBox();
+            checkBoxShowStep = new ReleaseClickCheckBox();
             (numericLength).BeginInit();
             (numericEnvelopeSmoothing).BeginInit();
             SuspendLayout();
@@ -353,12 +353,12 @@ namespace Resonalyze.Options
         private Label labelEnvelopeSmoothing;
         private DarkNumericUpDown numericEnvelopeSmoothing;
         private Label labelInvert;
-        private CheckBox checkInvert;
+        private ReleaseClickCheckBox checkInvert;
         private Label labelNormalizeStep;
-        private CheckBox checkNormalizeStep;
+        private ReleaseClickCheckBox checkNormalizeStep;
         private Label labelCurves;
-        private CheckBox checkBoxShowImpulse;
-        private CheckBox checkBoxShowEnvelope;
-        private CheckBox checkBoxShowStep;
+        private ReleaseClickCheckBox checkBoxShowImpulse;
+        private ReleaseClickCheckBox checkBoxShowEnvelope;
+        private ReleaseClickCheckBox checkBoxShowStep;
     }
 }

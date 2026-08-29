@@ -30,18 +30,18 @@ namespace Resonalyze
         /// </summary>
         private void InitializeComponent()
         {
-            radioLeftHandDrive = new RadioButton();
-            radioRightHandDrive = new RadioButton();
+            radioLeftHandDrive = new ReleaseClickRadioButton();
+            radioRightHandDrive = new ReleaseClickRadioButton();
             labelSceneOffset = new Label();
             numericSceneOffset = new DarkNumericUpDown();
-            checkBoxGains = new CheckBox();
+            checkBoxGains = new ReleaseClickCheckBox();
             labelNearSideCut = new Label();
             numericNearSideCut = new DarkNumericUpDown();
-            buttonRun = new Button();
+            buttonRun = new ReleaseClickButton();
             labelStatus = new Label();
             textBoxReport = new TextBox();
-            buttonApply = new Button();
-            buttonCancel = new Button();
+            buttonApply = new ReleaseClickButton();
+            buttonCancel = new ReleaseClickButton();
             (numericSceneOffset).BeginInit();
             (numericNearSideCut).BeginInit();
             SuspendLayout();
@@ -231,17 +231,17 @@ namespace Resonalyze
 
         #endregion
 
-        private RadioButton radioLeftHandDrive;
-        private RadioButton radioRightHandDrive;
+        private ReleaseClickRadioButton radioLeftHandDrive;
+        private ReleaseClickRadioButton radioRightHandDrive;
         private Label labelSceneOffset;
         private DarkNumericUpDown numericSceneOffset;
-        private CheckBox checkBoxGains;
+        private ReleaseClickCheckBox checkBoxGains;
         private Label labelNearSideCut;
         private DarkNumericUpDown numericNearSideCut;
-        private Button buttonRun;
+        private ReleaseClickButton buttonRun;
         private Label labelStatus;
         private TextBox textBoxReport;
-        private Button buttonApply;
-        private Button buttonCancel;
+        private ReleaseClickButton buttonApply;
+        private ReleaseClickButton buttonCancel;
     }
 }

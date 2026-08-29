@@ -246,7 +246,7 @@ public partial class VirtualCrossoverPanel
             menu.Items.Add(detachItem);
         }
 
-        menu.Show(Cursor.Position);
+        DropDownMenu.ShowAt(this, menu, Cursor.Position);
     }
 
     private void ChooseSpatialAverage(VirtualCrossoverChannel channel)

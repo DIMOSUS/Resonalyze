@@ -116,7 +116,7 @@ public partial class EqWizardPanel : UserControl
         // Showing a dropdown synchronously inside the mouse message is swallowed by the
         // focus change, and showing it on mouse-down lets the click's own mouse-up land
         // outside the just-opened menu and close it again.
-        buttonSource.Click += (_, _) => buttonSource.BeginInvoke(ShowSourceMenu);
+        buttonSource.Click += (_, _) => ShowSourceMenu();
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
         NumericTargetOffset.ValueChanged += (_, _) => OnTargetOffsetChanged();
         // The preamp is part of the filter bank's undo state, so it goes through
@@ -924,11 +924,14 @@ public partial class EqWizardPanel : UserControl
             return source.Points;
         }
 
-        return EqWizardGatedPreview.Render(
+        // Through the panel's own conversion: the tuner reads this against the target,
+        // which is built on the SOURCE curve's frequencies, so the render has to drop
+        // the same points that curve dropped (see ToPlotPoints).
+        return ToPlotPoints(
+            EqWizardGatedPreview.Render(
                 BuildGatedPreviewRequest(
-                    gated, new EqualizationCurve(keptAllPass, preampDb: 0)))
-            .Select(point => new DataPoint(point.X, point.Y))
-            .ToArray();
+                    gated, new EqualizationCurve(keptAllPass, preampDb: 0))),
+            KeepsGaps(gated));
     }
 
     /// <summary>How many filters the user has allowed the bank, from the Max Filters box.</summary>

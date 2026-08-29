@@ -33,21 +33,21 @@ namespace Resonalyze
             labelHeader = new Label();
             tableChannels = new TableLayoutPanel();
             labelFilters = new Label();
-            checkButterworth = new CheckBox();
-            checkLinkwitzRiley = new CheckBox();
-            checkBessel = new CheckBox();
+            checkButterworth = new ReleaseClickCheckBox();
+            checkLinkwitzRiley = new ReleaseClickCheckBox();
+            checkBessel = new ReleaseClickCheckBox();
             labelRange = new Label();
             minCrossover = new DarkNumericUpDown();
             labelDash = new Label();
             maxCrossover = new DarkNumericUpDown();
             labelHz = new Label();
-            independentSlopes = new CheckBox();
+            independentSlopes = new ReleaseClickCheckBox();
             labelSubElevation = new Label();
             subElevation = new DarkNumericUpDown();
             labelSubElevationUnit = new Label();
             labelPreview = new Label();
-            buttonApply = new Button();
-            buttonCancel = new Button();
+            buttonApply = new ReleaseClickButton();
+            buttonCancel = new ReleaseClickButton();
             SuspendLayout();
             //
             // labelHeader
@@ -303,20 +303,20 @@ namespace Resonalyze
         private Label labelHeader;
         private TableLayoutPanel tableChannels;
         private Label labelFilters;
-        private CheckBox checkButterworth;
-        private CheckBox checkLinkwitzRiley;
-        private CheckBox checkBessel;
+        private ReleaseClickCheckBox checkButterworth;
+        private ReleaseClickCheckBox checkLinkwitzRiley;
+        private ReleaseClickCheckBox checkBessel;
         private Label labelRange;
         private DarkNumericUpDown minCrossover;
         private Label labelDash;
         private DarkNumericUpDown maxCrossover;
         private Label labelHz;
-        private CheckBox independentSlopes;
+        private ReleaseClickCheckBox independentSlopes;
         private Label labelSubElevation;
         private DarkNumericUpDown subElevation;
         private Label labelSubElevationUnit;
         private Label labelPreview;
-        private Button buttonApply;
-        private Button buttonCancel;
+        private ReleaseClickButton buttonApply;
+        private ReleaseClickButton buttonCancel;
     }
 }

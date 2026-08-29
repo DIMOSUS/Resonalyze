@@ -99,8 +99,7 @@ public partial class EqWizardPanel
 
         sourceMenu?.Dispose();
         sourceMenu = BuildSourceMenu();
-        DropDownFocusGuard.Attach(sourceMenu);
-        sourceMenu.Show(buttonSource, new Point(0, buttonSource.Height));
+        DropDownMenu.ShowUnder(buttonSource, sourceMenu);
     }
 
     private ContextMenuStrip BuildSourceMenu()
@@ -610,9 +609,7 @@ public partial class EqWizardPanel
             source.SpatialAverage != null ? ComputeSpatialAverageCurve(source)
             : source.Measurement != null ? ComputeImpulseResponseSpectrum(source)
             : ComputeImportedCurve(source);
-        return BuildSourceCurve(
-            points,
-            keepGaps: source.SpatialAverage != null || source.Measurement == null);
+        return BuildSourceCurve(points, KeepsGaps(source));
     }
 
     /// <summary>
@@ -761,10 +758,34 @@ public partial class EqWizardPanel
                 ResolveChosenCalibration());
     }
 
-    // A measured curve keeps its NaN gaps: they mark bands the measurement could not
-    // trust, and the fitter reads them instead of bridging them. A computed FR has no
-    // such convention, so a non-finite value there is just noise and is dropped.
     private static EqWizardCurve? BuildSourceCurve(
+        IReadOnlyList<SignalPoint> points,
+        bool keepGaps)
+    {
+        List<DataPoint> result = ToPlotPoints(points, keepGaps);
+        return result.Count >= 2
+            ? new EqWizardCurve("Source", SourceCurveColor, 1.5, LineStyle.Solid, result)
+            : null;
+    }
+
+    /// <summary>
+    /// Every spectrum this panel draws or fits becomes plot points HERE, so that all of
+    /// them keep — or drop — exactly the same ones.
+    /// </summary>
+    /// <remarks>
+    /// The curves are read against each other BY INDEX: the target is built on the
+    /// source's own frequencies, the deviation shading pairs each vertex with the one
+    /// beneath it, the read-out subtracts them and the tuner takes the error between
+    /// them. That only holds while they are the same frequencies, and the gaps are what
+    /// decide it — an unmeasured bin is masked by FREQUENCY alone
+    /// (<c>MaskUnmeasuredBands</c>), so two renders of one measurement mask the same
+    /// points and one conversion drops the same points from both. TWO conversions is
+    /// what broke it: the bare curve dropped the masked bins while the corrected
+    /// preview kept them, and a channel swept from 200 Hz then read its target 341 grid
+    /// points too high — the shading closed in a wedge at 2 kHz (the sweep's low edge
+    /// squared over the grid's 20 Hz start) instead of following the result to 20 kHz.
+    /// </remarks>
+    private static List<DataPoint> ToPlotPoints(
         IReadOnlyList<SignalPoint> points,
         bool keepGaps)
     {
@@ -783,10 +804,16 @@ public partial class EqWizardPanel
             result.Add(new DataPoint(point.X, point.Y));
         }
 
-        return result.Count >= 2
-            ? new EqWizardCurve("Source", SourceCurveColor, 1.5, LineStyle.Solid, result)
-            : null;
+        return result;
     }
+
+    // A measured curve keeps its NaN gaps: they mark bands the measurement could not
+    // trust, and the fitter reads them instead of bridging them. A computed FR has no
+    // such convention, so a non-finite value there is just noise and is dropped.
+    // The answer belongs to the SOURCE and not to a call site: its bare curve, its
+    // corrected preview and the fit's own render all have to take the same one.
+    private static bool KeepsGaps(EqWizardCurveSource source) =>
+        source.SpatialAverage != null || source.Measurement == null;
 
     // Builds everything the plot draws from the loaded source and the local target,
     // without any overlay. The target is always present; the source (and therefore
@@ -921,11 +948,11 @@ public partial class EqWizardPanel
 
         EqWizardGatedPreviewRequest request = BuildGatedPreviewRequest(source, eq);
         gatedPreviewInFlight = true;
-        _ = RenderGatedPreviewAsync(request, bank);
+        _ = RenderGatedPreviewAsync(request, bank, KeepsGaps(source));
     }
 
     private async Task RenderGatedPreviewAsync(
-        EqWizardGatedPreviewRequest request, PeqBankState bank)
+        EqWizardGatedPreviewRequest request, PeqBankState bank, bool keepGaps)
     {
         try
         {
@@ -941,9 +968,10 @@ public partial class EqWizardPanel
                 return;
             }
 
-            landedGatedPreview = points
-                .Select(point => new DataPoint(point.X, point.Y))
-                .ToArray();
+            // The bare curve's own conversion, taken from the source that asked for
+            // this render: the two are the same measurement through the same gate, and
+            // only stay comparable while they keep the same points (see ToPlotPoints).
+            landedGatedPreview = ToPlotPoints(points, keepGaps);
             landedGatedPreviewBank = bank;
         }
         catch (Exception exception)

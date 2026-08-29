@@ -38,7 +38,7 @@
             comboBoxWaveLoopbackChannel = new DarkComboBox();
             labelWaveLoopbackStatus = new Label();
             labelDeviceSettings = new Label();
-            buttonDeviceSettings = new Button();
+            buttonDeviceSettings = new ReleaseClickButton();
             SuspendLayout();
             //
             // labelPlaybackDevice
@@ -186,6 +186,6 @@
         private DarkComboBox comboBoxWaveLoopbackChannel;
         private Label labelWaveLoopbackStatus;
         private Label labelDeviceSettings;
-        private Button buttonDeviceSettings;
+        private ReleaseClickButton buttonDeviceSettings;
     }
 }

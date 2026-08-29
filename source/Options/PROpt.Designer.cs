@@ -29,7 +29,7 @@ namespace Resonalyze.Options
         private void InitializeComponent()
         {
             labelGateOffset = new Label();
-            checkAutoFit = new CheckBox();
+            checkAutoFit = new ReleaseClickCheckBox();
             numericGateOffset = new DarkNumericUpDown();
             label9 = new Label();
             labelMinFrequency = new Label();
@@ -42,15 +42,15 @@ namespace Resonalyze.Options
             label1 = new Label();
             numericOffset = new DarkNumericUpDown();
             label11 = new Label();
-            buttonTauSlope = new Button();
-            buttonTauPeak = new Button();
-            checkBoxUnwrap = new CheckBox();
+            buttonTauSlope = new ReleaseClickButton();
+            buttonTauPeak = new ReleaseClickButton();
+            checkBoxUnwrap = new ReleaseClickCheckBox();
             label2 = new Label();
             labelCurves = new Label();
-            checkBoxShowMeasured = new CheckBox();
-            checkBoxShowMinimum = new CheckBox();
-            checkBoxShowExcess = new CheckBox();
-            checkBoxShowCoherence = new CheckBox();
+            checkBoxShowMeasured = new ReleaseClickCheckBox();
+            checkBoxShowMinimum = new ReleaseClickCheckBox();
+            checkBoxShowExcess = new ReleaseClickCheckBox();
+            checkBoxShowCoherence = new ReleaseClickCheckBox();
             labelWindowMode = new Label();
             comboWindowMode = new DarkComboBox();
             labelFdwCycles = new Label();
@@ -480,7 +480,7 @@ namespace Resonalyze.Options
         #endregion
 
         private Label labelGateOffset;
-        private CheckBox checkAutoFit;
+        private ReleaseClickCheckBox checkAutoFit;
         private DarkNumericUpDown numericGateOffset;
         private Label label9;
         private Label labelMinFrequency;
@@ -493,15 +493,15 @@ namespace Resonalyze.Options
         private Label label1;
         private DarkNumericUpDown numericOffset;
         private Label label11;
-        private Button buttonTauSlope;
-        private Button buttonTauPeak;
-        private CheckBox checkBoxUnwrap;
+        private ReleaseClickButton buttonTauSlope;
+        private ReleaseClickButton buttonTauPeak;
+        private ReleaseClickCheckBox checkBoxUnwrap;
         private Label label2;
         private Label labelCurves;
-        private CheckBox checkBoxShowMeasured;
-        private CheckBox checkBoxShowMinimum;
-        private CheckBox checkBoxShowExcess;
-        private CheckBox checkBoxShowCoherence;
+        private ReleaseClickCheckBox checkBoxShowMeasured;
+        private ReleaseClickCheckBox checkBoxShowMinimum;
+        private ReleaseClickCheckBox checkBoxShowExcess;
+        private ReleaseClickCheckBox checkBoxShowCoherence;
         private Label labelWindowMode;
         private DarkComboBox comboWindowMode;
         private Label labelFdwCycles;

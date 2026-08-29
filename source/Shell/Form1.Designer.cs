@@ -31,25 +31,25 @@ namespace Resonalyze
         {
             components = new System.ComponentModel.Container();
             var resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
-            buttonRecord = new Button();
+            buttonRecord = new ReleaseClickButton();
             plotView1 = new OxyPlot.WindowsForms.PlotView();
             overlays = new Panel();
             overlayPanel1 = new Panel();
-            buttonSaveOverlay = new Button();
+            buttonSaveOverlay = new ReleaseClickButton();
             labelOverlay1 = new Label();
             numericUpDown1 = new DarkNumericUpDown();
-            checkBox1 = new CheckBox();
-            buttonRecordOpt = new Button();
-            buttonSave = new Button();
-            buttonLoad = new Button();
+            checkBox1 = new ReleaseClickCheckBox();
+            buttonRecordOpt = new ReleaseClickButton();
+            buttonSave = new ReleaseClickButton();
+            buttonLoad = new ReleaseClickButton();
             toolTip1 = new WrappingToolTip(components);
-            buttonOverlayShowAll = new Button();
-            buttonOverlayHideAll = new Button();
-            buttonCurrentModeSettings = new Button();
+            buttonOverlayShowAll = new ReleaseClickButton();
+            buttonOverlayHideAll = new ReleaseClickButton();
+            buttonCurrentModeSettings = new ReleaseClickButton();
             panel1 = new Panel();
-            buttonCompare = new Button();
+            buttonCompare = new ReleaseClickButton();
             inputLevelMeterPanel = new InputLevelMeterPanel();
-            buttonHistory = new Button();
+            buttonHistory = new ReleaseClickButton();
             chromeTitleBar = new ChromeTitleBar();
             timeAlignmentPanel = new TimeAlignmentPanel();
             eqWizardPanel = new EqWizardPanel();
@@ -474,24 +474,24 @@ namespace Resonalyze
 
         #endregion
 
-        private Button buttonRecord;
+        private ReleaseClickButton buttonRecord;
         private OxyPlot.WindowsForms.PlotView plotView1;
         private Panel overlays;
-        private Button buttonSaveOverlay;
+        private ReleaseClickButton buttonSaveOverlay;
         private Label labelOverlay1;
-        private CheckBox checkBox1;
+        private ReleaseClickCheckBox checkBox1;
         private Panel overlayPanel1;
-        private Button buttonRecordOpt;
-        private Button buttonSave;
-        private Button buttonLoad;
+        private ReleaseClickButton buttonRecordOpt;
+        private ReleaseClickButton buttonSave;
+        private ReleaseClickButton buttonLoad;
         private WrappingToolTip toolTip1;
-        private Button buttonOverlayShowAll;
-        private Button buttonCurrentModeSettings;
-        private Button buttonOverlayHideAll;
+        private ReleaseClickButton buttonOverlayShowAll;
+        private ReleaseClickButton buttonCurrentModeSettings;
+        private ReleaseClickButton buttonOverlayHideAll;
         private Panel panel1;
         private InputLevelMeterPanel inputLevelMeterPanel;
         private DarkNumericUpDown numericUpDown1;
-        private Button buttonHistory;
+        private ReleaseClickButton buttonHistory;
         private ChromeTitleBar chromeTitleBar;
         private TimeAlignmentPanel timeAlignmentPanel;
         private EqWizardPanel eqWizardPanel;
@@ -500,6 +500,6 @@ namespace Resonalyze
         private EqResultsPanel eqResultsPanel;
         private Label virtualDspMetricLabel;
         private Label virtualDspWarningLabel;
-        private Button buttonCompare;
+        private ReleaseClickButton buttonCompare;
     }
 }

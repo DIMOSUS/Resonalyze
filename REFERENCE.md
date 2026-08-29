@@ -2136,7 +2136,15 @@ The remaining buttons in the column beside the plots:
 - **Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
   the tune into a stereo WAV: each program channel is convolved with the summed
   processed response of its side, with the microphone calibration optionally
-  baked in and one shared normalization gain so the L/R balance survives.
+  baked in and one shared normalization gain so the L/R balance survives. The
+  calibration selector opens on **whatever the panel is set to**, every time — the
+  render is meant to sound the way the panel's curves look, and the panel already
+  keeps that choice in the project. Under **Own (as measured)** it uses the curve
+  the measurements themselves recorded; a render bakes ONE filter into a side its
+  channels have already been summed into, so where those channels were read
+  through different calibrations (an array of capsules, channels measured on
+  different days) it refuses and names them rather than picking one and labelling
+  the render as though it answered for all of them.
   **Subtract cabin** optionally removes a typical body-style cabin transfer
   function (the pressure-zone bass rise reaching +15…+27 dB at 20 Hz),
   level-matched so an A/B differs in tone, not loudness: the raw render

@@ -152,8 +152,96 @@ public partial class VirtualCrossoverPanel
             CalibrationEntriesWithSession(),
             Options.MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(
                 comboBoxCalibration),
+            ResolveOwnCalibration(left, right, measuredSides),
             spatialAverage,
             spatialRefusal);
+    }
+
+    /// <summary>
+    /// What the panel's "Own (as measured)" means for a RENDER: the one curve every
+    /// channel was read through, or the reason there is no such curve.
+    /// </summary>
+    /// <remarks>
+    /// The panel can hold that selection because it corrects each channel's curve
+    /// separately; a render cannot, because it bakes one filter into a side that
+    /// several channels have already been summed into. Where the channels agree —
+    /// one microphone measured the car, which is the ordinary case — the rule names a
+    /// curve after all and the render carries it. Where they do not (an array of
+    /// capsules, channels measured on different days) the honest answer is to refuse
+    /// and let the user name one, rather than pick a channel's curve and label the
+    /// result as though it answered for all of them.
+    /// <para>
+    /// It used to resolve through the app's calibration list, which has never heard of
+    /// this id: Own came back as no curve at all, so the render was UNCALIBRATED and
+    /// the report blamed a file it could not read.
+    /// </para>
+    /// </remarks>
+    internal static VirtualCrossoverAuditionOwnCalibration ResolveOwnCalibration(
+        VirtualCrossoverSideSum left,
+        VirtualCrossoverSideSum right,
+        IReadOnlyList<bool> measuredSides)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        ArgumentNullException.ThrowIfNull(measuredSides);
+        var groups = new List<(CalibrationFile? Curve, string Label, List<string> Channels)>();
+        var seen = new HashSet<VirtualCrossoverChannelState>();
+        bool bothSides = measuredSides.Count > 1;
+        for (int i = 0; i < measuredSides.Count; i++)
+        {
+            VirtualCrossoverSideSum side = i == 0 ? left : right;
+            bool rightSide = measuredSides[i];
+            foreach (ProcessedChannel processed in side.Channels)
+            {
+                VirtualCrossoverChannelState state =
+                    processed.Channel.SideState(rightSide);
+                // A mono pair hands the same measurement to both ears; counting it
+                // twice would say two channels agree when there is only one.
+                if (!seen.Add(state))
+                {
+                    continue;
+                }
+
+                CalibrationFile? curve = state.MicrophoneCalibrationCurve;
+                string channelName = bothSides && !processed.Channel.Pair.Mono
+                    ? $"{processed.Channel.Name} {(rightSide ? "R" : "L")}"
+                    : processed.Channel.Name;
+                int group = groups.FindIndex(
+                    entry => CalibrationFile.SameCurve(entry.Curve, curve));
+                if (group < 0)
+                {
+                    groups.Add((
+                        curve,
+                        state.MicrophoneCalibration?.Name ?? "none recorded",
+                        [channelName]));
+                }
+                else
+                {
+                    groups[group].Channels.Add(channelName);
+                }
+            }
+        }
+
+        if (groups.Count == 0)
+        {
+            return new VirtualCrossoverAuditionOwnCalibration(null, null, null);
+        }
+
+        if (groups.Count == 1)
+        {
+            return new VirtualCrossoverAuditionOwnCalibration(
+                groups[0].Curve, groups[0].Curve == null ? null : groups[0].Label, null);
+        }
+
+        return new VirtualCrossoverAuditionOwnCalibration(
+            null,
+            null,
+            "the channels were not measured through one calibration (" +
+                string.Join(
+                    "; ",
+                    groups.Select(group =>
+                        $"{group.Label}: {string.Join(", ", group.Channels)}")) +
+                "), and a render carries one correction for a whole side");
     }
 
     /// <summary>

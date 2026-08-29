@@ -1424,9 +1424,12 @@ destroys exactly the inter-side timing and level cues the render exists to show.
 
 Two settings in the dialog are worth attention:
 
-- **Mic calibration** — use the same one you tune with. It is baked into both side
-  kernels as a single linear-phase filter, so the magnitude matches your on-screen
-  curves while the inter-side timing shifts by the same constant on both channels;
+- **Mic calibration** — opens on whatever Virtual DSP is set to, so it is already the
+  one you tune with. It is baked into both side kernels as a single linear-phase
+  filter, so the magnitude matches your on-screen curves while the inter-side timing
+  shifts by the same constant on both channels. On *Own (as measured)* it uses the
+  curve your measurements recorded — and says so if they were not all recorded
+  through the same one, since one render cannot carry two;
 - **Subtract cabin** — the raw render carries the car's full in-car bass rise, roughly
   **+15 to +27 dB at 20 Hz** depending on the body style. Sitting in the car you do not
   perceive that as boom; through headphones you certainly will. Subtracting a typical

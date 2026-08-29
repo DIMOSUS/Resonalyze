@@ -18,6 +18,7 @@ public sealed class VirtualCrossoverAuditionReportTests
         string report = VirtualCrossoverAuditionDialog.ComposeReport(
             Context(Spatial()),
             spatialAverageRequested: true,
+            calibrationNote: null,
             trackSection: "== Track ==\r\nsong.wav",
             resultSection: "== Result ==\r\nWritten: out.wav");
 
@@ -37,6 +38,7 @@ public sealed class VirtualCrossoverAuditionReportTests
         string report = VirtualCrossoverAuditionDialog.ComposeReport(
             Context(Spatial()),
             spatialAverageRequested: true,
+            calibrationNote: null,
             trackSection: "== Track ==\r\nsong.wav",
             resultSection: string.Empty);
 
@@ -52,20 +54,40 @@ public sealed class VirtualCrossoverAuditionReportTests
     public void TheMagnitudeSectionSaysWhereTheLevelsComeFrom()
     {
         string requested = VirtualCrossoverAuditionDialog.ComposeReport(
-            Context(Spatial()), true, string.Empty, string.Empty);
+            Context(Spatial()), true, null, string.Empty, string.Empty);
         Assert.Contains("Set offset +1.0 dB", requested);
 
         string declined = VirtualCrossoverAuditionDialog.ComposeReport(
-            Context(Spatial()), false, string.Empty, string.Empty);
+            Context(Spatial()), false, null, string.Empty, string.Empty);
         Assert.Contains("one microphone position", declined);
         Assert.DoesNotContain("Set offset +1.0 dB", declined);
 
         string unavailable = VirtualCrossoverAuditionDialog.ComposeReport(
             Context(spatial: null, reason: "the two sides are not one set."),
             true,
+            null,
             string.Empty,
             string.Empty);
         Assert.Contains("the two sides are not one set.", unavailable);
+    }
+
+    /// <summary>
+    /// The calibration block appears only when there is something to say — under
+    /// "Own (as measured)", the one selection whose meaning depends on the
+    /// measurements rather than on a file the user picked.
+    /// </summary>
+    [Fact]
+    public void TheCalibrationBlockAppearsOnlyWhenItHasSomethingToSay()
+    {
+        string silent = VirtualCrossoverAuditionDialog.ComposeReport(
+            Context(null), false, null, string.Empty, string.Empty);
+        Assert.DoesNotContain("== Calibration ==", silent);
+
+        string spoken = VirtualCrossoverAuditionDialog.ComposeReport(
+            Context(null), false, "Own (as measured): every channel through 'XREF'.",
+            string.Empty, string.Empty);
+        Assert.Contains("== Calibration ==", spoken);
+        Assert.Contains("XREF", spoken);
     }
 
     private static VirtualCrossoverAuditionSpatialAverage Spatial() =>
@@ -74,5 +96,5 @@ public sealed class VirtualCrossoverAuditionReportTests
     private static VirtualCrossoverAuditionContext Context(
         VirtualCrossoverAuditionSpatialAverage? spatial,
         string? reason = null) =>
-        new([], [], 48_000, 2, 2, null, null, [], null, spatial, reason);
+        new([], [], 48_000, 2, 2, null, null, [], null, new(null, null, null), spatial, reason);
 }

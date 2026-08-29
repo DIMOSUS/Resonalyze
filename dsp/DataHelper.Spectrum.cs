@@ -28,6 +28,57 @@ namespace Resonalyze.Dsp
         }
 
         /// <summary>
+        /// An impulse response's UNGATED band levels on the shared spatial-average
+        /// grid: the WHOLE record, no window and no gate, integrated as the band mean
+        /// of POWER — the estimator an array's own positions are read with.
+        /// </summary>
+        /// <remarks>
+        /// This is what a steady-state measurement of the same source reads, and it
+        /// exists so a response can be compared against one. Two choices, both of them
+        /// spelled out in <see cref="SpatialAverage.FromTransferMagnitude"/>, and both
+        /// of them load-bearing here.
+        /// <list type="bullet">
+        /// <item>UNGATED, because the kernel it will be compared against carries the
+        /// whole decay and a steady-state capture carries it too. A window leaves out
+        /// the cabin's own decay, and a difference taken against a gated curve would
+        /// read the missing energy as a disagreement between the measurements.</item>
+        /// <item>The band mean of POWER, not the interpolating resampler. An ungated
+        /// response carries every mode at full bin resolution, so sampling a handful of
+        /// bins around each grid point reports whichever modal notch that point landed
+        /// in — on a response with one 5 ms reflection the two estimators part by 11 dB
+        /// at 500 Hz, which a difference against a capture would then spend as
+        /// correction.</item>
+        /// </list>
+        /// The level is RELATIVE — the caller compares shapes, or levels it has
+        /// levelled itself — and the result is raw band levels: smoothing and any
+        /// calibration belong to the caller, in that order, as they do for a capture.
+        /// </remarks>
+        public static double[] GetUngatedBandLevels(IImpulseMeasurement measurement)
+        {
+            ArgumentNullException.ThrowIfNull(measurement);
+            Complex[] response = measurement.ImpulseResponse
+                ?? throw new InvalidOperationException("Impulse response is not available.");
+            int length = response.Length;
+            if (length < 4 || measurement.SampleRate <= 0)
+            {
+                return [];
+            }
+
+            var spectrum = new Complex[length];
+            Array.Copy(response, spectrum, length);
+            Fourier.Forward(spectrum, FourierOptions.Matlab);
+
+            var magnitude = new double[length / 2 + 1];
+            for (int bin = 0; bin < magnitude.Length; bin++)
+            {
+                magnitude[bin] = spectrum[bin].Magnitude;
+            }
+
+            return SpatialAverage.FromTransferMagnitude(
+                magnitude, measurement.SampleRate / (double)length);
+        }
+
+        /// <summary>
         /// The primary (linear) response spectrum: windowed at the response's own
         /// start (fixed Tukey or FDW), oversampled, log-resampled with optional
         /// calibration and smoothing. Used

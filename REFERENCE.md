@@ -2136,12 +2136,51 @@ The remaining buttons in the column beside the plots:
 - **Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
   the tune into a stereo WAV: each program channel is convolved with the summed
   processed response of its side, with the microphone calibration optionally
-  baked in and one shared normalization gain so the L/R balance survives.
+  baked in and one shared normalization gain so the L/R balance survives. The
+  calibration selector opens on **whatever the panel is set to**, every time — the
+  render is meant to sound the way the panel's curves look, and the panel already
+  keeps that choice in the project. Under **Own (as measured)** it uses the curve
+  the measurements themselves recorded; a render bakes ONE filter into a side its
+  channels have already been summed into, so where those channels were read
+  through different calibrations — channels measured on separate days with
+  different microphones — it refuses and names them rather than picking one and
+  labelling the render as though it answered for all of them. The refusal is wider
+  than the render strictly needs: a car whose two SIDES were measured through
+  different microphones could have one correction each, since the ears have their
+  own kernels, but the render applies one calibration filter to both and so refuses
+  that case too. A
+  [microphone array](#microphone-array) is not that case: it shares one sweep with
+  the measurement microphone, so however many capsules were listening the impulse
+  responses have one microphone behind them.
   **Subtract cabin** optionally removes a typical body-style cabin transfer
   function (the pressure-zone bass rise reaching +15…+27 dB at 20 Hz),
   level-matched so an A/B differs in tone, not loudness: the raw render
   reproduces the in-car bass rise as headphone boom the in-car listener never
   perceives, while the subtracted one leaves this car's own deviation audible.
+  **Magnitudes** chooses where the levels come from: the impulse responses, measured
+  at one microphone position, or — when the captures allow it — the
+  [spatial averages](#hybrid-spatial-averages-under-the-prediction). The second is the
+  hybrid view made audible. Each channel is filtered onto its own average over the
+  listening volume before the sides are summed, so the render carries the tonal
+  balance those captures state instead of the dips of the one position. The
+  correction is the difference between the two measurements read on the BYPASS pair,
+  each through its OWN microphone correction, ungated, at 1/6 octave and limited to
+  ±12 dB. Both sides are read by the SAME estimator — the band mean of power an
+  array's own positions are read with, never the interpolating resampler, which on
+  an ungated response reports whichever modal notch a grid point landed in and put
+  the two curves 11 dB apart on a response with a single 5 ms reflection. The DSP chain cancels out of it exactly, so it does not move as you tune;
+  reading each measurement through its own correction is what keeps the difference
+  acoustic where an array's positions carry individual calibrations, since the
+  aggregate the capture reports is then not the measurement microphone's own file;
+  and at that width the position's own
+  interference nulls are narrower than the difference and stay in the render rather
+  than being filled by twenty-odd decibels of boost. It is offered only while both
+  sides' captures form one set, since levelling the sides separately would put an L/R
+  imbalance into the track that the car does not have; a channel without a capture
+  keeps its point response and is named in the report, along with each channel's own
+  correction and any band that reached the limit. What does not change is phase —
+  timing, polarity and the interference at a junction stay the point measurement's,
+  exactly as they do in the hybrid Sum.
   Listen through **headphones only** — it is a stereo auralization of the two
   sides, not a binaural head simulation.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain

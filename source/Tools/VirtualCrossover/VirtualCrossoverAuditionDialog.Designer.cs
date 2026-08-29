@@ -39,6 +39,8 @@ namespace Resonalyze
             comboBoxCalibration = new DarkComboBox();
             labelCabin = new Label();
             comboBoxCabin = new DarkComboBox();
+            labelSpatialAverage = new Label();
+            checkBoxSpatialAverage = new ReleaseClickCheckBox();
             buttonRender = new ReleaseClickButton();
             progressBar = new ProgressBar();
             labelStatus = new Label();
@@ -152,36 +154,57 @@ namespace Resonalyze
             comboBoxCabin.Size = new Size(200, 19);
             comboBoxCabin.TabIndex = 9;
             // 
+            // labelSpatialAverage
+            // 
+            labelSpatialAverage.AutoSize = true;
+            labelSpatialAverage.ForeColor = Color.FromArgb(185, 190, 200);
+            labelSpatialAverage.Location = new Point(12, 147);
+            labelSpatialAverage.Name = "labelSpatialAverage";
+            labelSpatialAverage.Size = new Size(76, 15);
+            labelSpatialAverage.TabIndex = 10;
+            labelSpatialAverage.Text = "Magnitudes:";
+            // 
+            // checkBoxSpatialAverage
+            // 
+            checkBoxSpatialAverage.AutoSize = true;
+            checkBoxSpatialAverage.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxSpatialAverage.Location = new Point(104, 146);
+            checkBoxSpatialAverage.Name = "checkBoxSpatialAverage";
+            checkBoxSpatialAverage.Size = new Size(240, 19);
+            checkBoxSpatialAverage.TabIndex = 11;
+            checkBoxSpatialAverage.Text = "from the spatial averages (MMM / array)";
+            checkBoxSpatialAverage.UseVisualStyleBackColor = true;
+            // 
             // buttonRender
             // 
             buttonRender.BackColor = Color.FromArgb(46, 51, 67);
             buttonRender.FlatStyle = FlatStyle.Popup;
             buttonRender.ForeColor = Color.White;
-            buttonRender.Location = new Point(12, 144);
+            buttonRender.Location = new Point(12, 176);
             buttonRender.Name = "buttonRender";
             buttonRender.Size = new Size(120, 26);
-            buttonRender.TabIndex = 10;
+            buttonRender.TabIndex = 12;
             buttonRender.Text = "Render";
             buttonRender.UseVisualStyleBackColor = false;
             // 
             // progressBar
             // 
             progressBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            progressBar.Location = new Point(144, 144);
+            progressBar.Location = new Point(144, 176);
             progressBar.Maximum = 1000;
             progressBar.Name = "progressBar";
             progressBar.Size = new Size(440, 26);
             progressBar.Style = ProgressBarStyle.Continuous;
-            progressBar.TabIndex = 11;
+            progressBar.TabIndex = 13;
             // 
             // labelStatus
             // 
             labelStatus.AutoSize = true;
             labelStatus.ForeColor = Color.FromArgb(185, 190, 200);
-            labelStatus.Location = new Point(12, 178);
+            labelStatus.Location = new Point(12, 210);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(0, 15);
-            labelStatus.TabIndex = 12;
+            labelStatus.TabIndex = 14;
             // 
             // textBoxReport
             // 
@@ -190,13 +213,13 @@ namespace Resonalyze
             textBoxReport.BorderStyle = BorderStyle.FixedSingle;
             textBoxReport.Font = new Font("Consolas", 9F);
             textBoxReport.ForeColor = Color.FromArgb(210, 214, 222);
-            textBoxReport.Location = new Point(12, 200);
+            textBoxReport.Location = new Point(12, 232);
             textBoxReport.Multiline = true;
             textBoxReport.Name = "textBoxReport";
             textBoxReport.ReadOnly = true;
             textBoxReport.ScrollBars = ScrollBars.Vertical;
             textBoxReport.Size = new Size(572, 302);
-            textBoxReport.TabIndex = 13;
+            textBoxReport.TabIndex = 15;
             // 
             // buttonClose
             // 
@@ -204,10 +227,10 @@ namespace Resonalyze
             buttonClose.DialogResult = DialogResult.Cancel;
             buttonClose.FlatStyle = FlatStyle.Popup;
             buttonClose.ForeColor = Color.White;
-            buttonClose.Location = new Point(492, 512);
+            buttonClose.Location = new Point(492, 544);
             buttonClose.Name = "buttonClose";
             buttonClose.Size = new Size(92, 26);
-            buttonClose.TabIndex = 14;
+            buttonClose.TabIndex = 16;
             buttonClose.Text = "Close";
             buttonClose.UseVisualStyleBackColor = true;
             // 
@@ -217,7 +240,7 @@ namespace Resonalyze
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(40, 44, 54);
             CancelButton = buttonClose;
-            ClientSize = new Size(596, 550);
+            ClientSize = new Size(596, 582);
             Controls.Add(labelTrack);
             Controls.Add(buttonChooseSource);
             Controls.Add(labelSourceFile);
@@ -228,6 +251,8 @@ namespace Resonalyze
             Controls.Add(comboBoxCalibration);
             Controls.Add(labelCabin);
             Controls.Add(comboBoxCabin);
+            Controls.Add(labelSpatialAverage);
+            Controls.Add(checkBoxSpatialAverage);
             Controls.Add(buttonRender);
             Controls.Add(progressBar);
             Controls.Add(labelStatus);
@@ -236,7 +261,7 @@ namespace Resonalyze
             Font = new Font("Segoe UI", 9F);
             ForeColor = Color.White;
             MinimizeBox = false;
-            MinimumSize = new Size(560, 452);
+            MinimumSize = new Size(560, 484);
             Name = "VirtualCrossoverAuditionDialog";
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
@@ -257,6 +282,8 @@ namespace Resonalyze
         private DarkComboBox comboBoxCalibration;
         private Label labelCabin;
         private DarkComboBox comboBoxCabin;
+        private Label labelSpatialAverage;
+        private ReleaseClickCheckBox checkBoxSpatialAverage;
         private ReleaseClickButton buttonRender;
         private ProgressBar progressBar;
         private Label labelStatus;

@@ -869,12 +869,14 @@ public sealed class VirtualCrossoverProjectFile
     // is per-side, since only that follows the drivers' differing distances.
     // These kept v4's names on the wire, so an older file deserializes straight into them.
     //
-    // Deliberately longer than Phase Response mode's junction-length default: a
-    // 6 ms gate is only reliable from ≈ 170 Hz, which leaves the phase view blind
-    // exactly where the sub-to-midbass junctions this tool exists to align live.
-    // 41 ms reads down to ≈ 24 Hz, and FDW below keeps the mid and high end
-    // direct-sound-oriented anyway — the long window is spent on the bass, where
-    // the wavelengths are longer than the cabin's early reflection path.
+    // Deliberately longer than Phase Response mode's junction-length default: by the
+    // 1/T criterion the read-out states, a 6 ms gate holds one period only down to
+    // ≈ 170 Hz, which leaves the phase view short exactly where the sub-to-midbass
+    // junctions this tool exists to align live. 41 ms holds one down to ≈ 24 Hz — the
+    // window's nominal reach rather than a promise about the phase read through it —
+    // and FDW below keeps the mid and high end direct-sound-oriented anyway, so the
+    // long window is spent on the bass, where the wavelengths are longer than the
+    // cabin's early reflection path.
     public const double DefaultPhaseGateLeftMs = 1.0;
     public const double DefaultPhaseGatePlateauMs = 30.0;
     public const double DefaultPhaseGateRightMs = 10.0;

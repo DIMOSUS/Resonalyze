@@ -8,11 +8,11 @@ namespace Resonalyze;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>ButtonBase.OnMouseUp</c> raises <see cref="Control.Click"/> only while
-/// <c>WindowFromPoint</c> at the release point still answers with the control's own
-/// handle. Any other window on that one pixel at that instant takes the click and says
-/// nothing: a tooltip still up from wherever the pointer came from, a popup that has
-/// not finished going away, anything topmost. The press itself is painted from
+/// <c>ButtonBase.OnMouseUp</c> puts a <c>WindowFromPoint</c> ownership check in the
+/// path to <see cref="Control.Click"/> — one of its conditions, not the only one — so
+/// any other window on that one pixel at that instant takes the click and says nothing:
+/// a tooltip still up from wherever the pointer came from, a popup that has not
+/// finished going away, anything topmost. The press itself is painted from
 /// MouseDown/MouseUp, which always arrive — so the control reacts, nothing happens, and
 /// it looks random, because it depends on what happened to be on screen.
 /// </para>

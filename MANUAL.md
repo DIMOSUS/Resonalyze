@@ -1074,12 +1074,15 @@ broad, minimum-phase bumps and dips. The problem is excess: many narrow, high-Q
 filters can leave a complicated phase and group-delay response that makes adjacent
 drivers harder to integrate.
 
-This matters most on the **subwoofer and midbass**. Their crossover already contains
-substantial phase rotation, and the subwoofer may carry a steep protective high-pass or
-subsonic filter on top of it. Add many narrow corrections to that and the relative
-phase changes rapidly through the crossover region — at which point no single delay
-value sums the pair well over a useful bandwidth, which is exactly what
-[Section 9](#9-delay-and-phase-alignment) is about to ask of it.
+This is especially important on the **subwoofer and midbass**. Their crossover already
+contains substantial phase rotation, and the subwoofer may carry a steep protective
+high-pass or subsonic filter on top of it. Add many narrow corrections to that and the
+relative phase changes rapidly through the crossover region — at which point no single
+delay value sums the pair well over a useful bandwidth, which is exactly what
+[Section 9](#9-delay-and-phase-alignment) is about to ask of it. The same mechanism is
+at work at the mid-to-tweeter junction, where a high-Q filter sitting right on the
+crossover does the same thing; it is simply easier to see in the bass, where the group
+delay it adds is measured in milliseconds.
 
 Use PEQ on the response that is actually correctable:
 

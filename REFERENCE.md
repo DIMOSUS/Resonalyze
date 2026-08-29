@@ -2144,7 +2144,11 @@ The remaining buttons in the column beside the plots:
   channels have already been summed into, so where those channels were read
   through different calibrations — channels measured on separate days with
   different microphones — it refuses and names them rather than picking one and
-  labelling the render as though it answered for all of them. A
+  labelling the render as though it answered for all of them. The refusal is wider
+  than the render strictly needs: a car whose two SIDES were measured through
+  different microphones could have one correction each, since the ears have their
+  own kernels, but the render applies one calibration filter to both and so refuses
+  that case too. A
   [microphone array](#microphone-array) is not that case: it shares one sweep with
   the measurement microphone, so however many capsules were listening the impulse
   responses have one microphone behind them.
@@ -2161,7 +2165,10 @@ The remaining buttons in the column beside the plots:
   balance those captures state instead of the dips of the one position. The
   correction is the difference between the two measurements read on the BYPASS pair,
   each through its OWN microphone correction, ungated, at 1/6 octave and limited to
-  ±12 dB. The DSP chain cancels out of it exactly, so it does not move as you tune;
+  ±12 dB. Both sides are read by the SAME estimator — the band mean of power an
+  array's own positions are read with, never the interpolating resampler, which on
+  an ungated response reports whichever modal notch a grid point landed in and put
+  the two curves 11 dB apart on a response with a single 5 ms reflection. The DSP chain cancels out of it exactly, so it does not move as you tune;
   reading each measurement through its own correction is what keeps the difference
   acoustic where an array's positions carry individual calibrations, since the
   aggregate the capture reports is then not the measurement microphone's own file;

@@ -260,9 +260,19 @@ internal static class SpatialAverageAudition
     }
 
     /// <summary>
-    /// The channel's bypass response as band levels on the shared grid, broken outside
-    /// what it actually measured.
+    /// The channel's bypass response as band levels on the shared grid, read the way a
+    /// capture is read, broken outside what it actually measured.
     /// </summary>
+    /// <remarks>
+    /// The ESTIMATOR is the whole point. A capture's bands are the mean of POWER over
+    /// the bins each band spans, and a difference is only a difference when both sides
+    /// are the same quantity: reading this side with the interpolating resampler
+    /// instead put the two curves 11 dB apart at 500 Hz on a response with a single
+    /// 5 ms reflection — a disagreement invented entirely by the arithmetic, which the
+    /// correction would then have spent, most of the way to its limit. Smoothing after
+    /// the bands and the calibration after the smoothing, the order the capture beside
+    /// this one is built in.
+    /// </remarks>
     private static IReadOnlyList<SignalPoint>? PointCurve(
         SpatialAverageAuditionChannel channel)
     {
@@ -272,21 +282,31 @@ internal static class SpatialAverageAudition
             return null;
         }
 
-        List<SignalPoint> bands = DataHelper.GetUngatedMagnitude(
-            new ImpulseMeasurementView(response, 0, channel.SampleRate),
-            SmoothingOctaves,
-            channel.MicrophoneCalibration);
-        if (bands.Count < 2)
+        double[] levels = DataHelper.GetUngatedBandLevels(
+            new ImpulseMeasurementView(response, 0, channel.SampleRate));
+        IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
+        if (levels.Length < 2 || levels.Length != grid.Count)
         {
             return null;
         }
 
+        var raw = new List<SignalPoint>(levels.Length);
+        for (int i = 0; i < levels.Length; i++)
+        {
+            raw.Add(new SignalPoint(grid[i], levels[i]));
+        }
+
+        List<SignalPoint> bands =
+            DataHelper.SmoothBandLevels(raw, SmoothingOctaves, psychoacoustic: false);
         for (int i = 0; i < bands.Count; i++)
         {
-            if (!channel.MeasuredBand.Contains(bands[i].X))
-            {
-                bands[i] = new SignalPoint(bands[i].X, double.NaN);
-            }
+            bands[i] = new SignalPoint(
+                bands[i].X,
+                channel.MeasuredBand.Contains(bands[i].X)
+                    ? bands[i].Y -
+                        (channel.MicrophoneCalibration?.GetDecibelCorrection(bands[i].X)
+                            ?? 0.0)
+                    : double.NaN);
         }
 
         return bands;

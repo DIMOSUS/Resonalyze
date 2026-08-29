@@ -231,6 +231,58 @@ public sealed class SpatialAverageAuditionTests
         Assert.Equal(0.0, At(bare, 4_000) - At(bare, 200), 1);
     }
 
+    /// <summary>
+    /// A capture built from the very response it will be compared against asks for
+    /// NOTHING. Both sides have to be read by the same estimator for that to hold, and
+    /// they were not: the capture side is the band mean of POWER an array's positions
+    /// are read with, while the point side interpolated a handful of FFT bins around
+    /// each grid point — which on an ungated response reports whichever modal notch
+    /// that point landed in. On this response, one reflection at 5 ms, the two parted
+    /// by about 11 dB at 500 Hz, and the audition would have spent that as correction.
+    /// </summary>
+    [Fact]
+    public void ACaptureBuiltFromTheResponseItself_AsksForNothing()
+    {
+        Complex[] response = Reflection();
+        LiveCaptureDocument capture = CaptureOf(response);
+
+        SpatialAverageAuditionCorrection correction = SpatialAverageAudition.Build(
+            [new SpatialAverageAuditionChannel(
+                response, SampleRate, MeasuredBand.Everything, null, capture)])
+            .Corrections[0];
+
+        Assert.All(
+            correction.SubtractDb.Where(point => point.X is >= 30 and <= 15_000),
+            point => Assert.InRange(point.Y, -0.05, 0.05));
+    }
+
+    // A response with structure a smooth estimator cannot fake: one reflection at
+    // 5 ms, so the spectrum combs every 200 Hz at full bin resolution.
+    private static Complex[] Reflection()
+    {
+        var response = new Complex[32_768];
+        response[64] = Complex.One;
+        response[64 + (SampleRate * 5 / 1_000)] = 0.9;
+        return response;
+    }
+
+    // The capture a single-position array would have written from that response: the
+    // same band levels, on the same grid, by the same estimator.
+    private static LiveCaptureDocument CaptureOf(Complex[] response) => new()
+    {
+        SavedAtUtc = DateTimeOffset.UnixEpoch,
+        Title = "capture",
+        CurveDb = DataHelper.GetUngatedBandLevels(
+            new ImpulseMeasurementView(response, 0, SampleRate)),
+        GridStartHz = SpatialAverage.GridStartHz,
+        GridStopHz = SpatialAverage.GridStopHz,
+        Recipe = new LiveCaptureRecipe
+        {
+            AnalysisMode = LiveAnalysisMode.Mmm,
+            SampleRateHz = SampleRate
+        }
+    };
+
     private static SpatialAverageAuditionPlan Build(
         params SpatialAverageAuditionChannel[] channels) =>
         SpatialAverageAudition.Build(channels);
@@ -286,11 +338,17 @@ public sealed class SpatialAverageAuditionTests
         return nearest.Y;
     }
 
+    // Read the way the correction reads a response: band levels on the shared grid,
+    // then the same smoothing.
     private static double LevelAt(Complex[] response, double frequency)
     {
-        List<SignalPoint> curve = DataHelper.GetUngatedMagnitude(
-            new ImpulseMeasurementView(response, 0, SampleRate),
-            SpatialAverageAudition.SmoothingOctaves);
+        double[] levels = DataHelper.GetUngatedBandLevels(
+            new ImpulseMeasurementView(response, 0, SampleRate));
+        IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
+        List<SignalPoint> curve = DataHelper.SmoothBandLevels(
+            [.. levels.Select((level, i) => new SignalPoint(grid[i], level))],
+            SpatialAverageAudition.SmoothingOctaves,
+            psychoacoustic: false);
         return curve
             .OrderBy(point => Math.Abs(Math.Log(point.X / frequency)))
             .First()

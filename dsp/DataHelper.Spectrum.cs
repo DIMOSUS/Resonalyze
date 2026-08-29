@@ -28,51 +28,54 @@ namespace Resonalyze.Dsp
         }
 
         /// <summary>
-        /// An impulse response's UNGATED magnitude: the WHOLE record, no window and no
-        /// gate, resampled and smoothed by the same resampler every other magnitude
-        /// curve in the app goes through.
+        /// An impulse response's UNGATED band levels on the shared spatial-average
+        /// grid: the WHOLE record, no window and no gate, integrated as the band mean
+        /// of POWER — the estimator an array's own positions are read with.
         /// </summary>
         /// <remarks>
-        /// What a steady-state measurement of the same source reads, and it exists so a
-        /// response can be compared against one. A gated curve would answer a different
-        /// question: the window leaves out the cabin's own decay, which a steady-state
-        /// measurement holds in full, so a difference between the two would carry the
-        /// missing energy as though it were a difference between the measurements.
-        /// <para>
-        /// Rectangular, because there is nothing to window: the record is not a frame cut
-        /// out of a running signal but the whole response, and a window over it would only
-        /// taper away the decay this is here to keep. The calibration, when one is given,
-        /// is applied AFTER the smoothing — the order the rest of the pipeline uses, so
-        /// the same response reads the same whichever route it arrived by. Through
-        /// <see cref="LogarithmicResample"/> and not the band-power path, so it is the
-        /// same KIND of curve as the gated ones it will be compared with — the band-power
-        /// integrator answers in power per band, which rises with the band's width, and a
-        /// difference against a curve that does not would read that rise as a tilt.
-        /// </para>
+        /// This is what a steady-state measurement of the same source reads, and it
+        /// exists so a response can be compared against one. Two choices, both of them
+        /// spelled out in <see cref="SpatialAverage.FromTransferMagnitude"/>, and both
+        /// of them load-bearing here.
+        /// <list type="bullet">
+        /// <item>UNGATED, because the kernel it will be compared against carries the
+        /// whole decay and a steady-state capture carries it too. A window leaves out
+        /// the cabin's own decay, and a difference taken against a gated curve would
+        /// read the missing energy as a disagreement between the measurements.</item>
+        /// <item>The band mean of POWER, not the interpolating resampler. An ungated
+        /// response carries every mode at full bin resolution, so sampling a handful of
+        /// bins around each grid point reports whichever modal notch that point landed
+        /// in — on a response with one 5 ms reflection the two estimators part by 11 dB
+        /// at 500 Hz, which a difference against a capture would then spend as
+        /// correction.</item>
+        /// </list>
+        /// The level is RELATIVE — the caller compares shapes, or levels it has
+        /// levelled itself — and the result is raw band levels: smoothing and any
+        /// calibration belong to the caller, in that order, as they do for a capture.
         /// </remarks>
-        public static List<SignalPoint> GetUngatedMagnitude(
-            IImpulseMeasurement measurement,
-            double smoothingOctaves,
-            CalibrationFile? calibration = null,
-            double startHz = 20.0,
-            double stopHz = 20_000.0,
-            int steps = 1024)
+        public static double[] GetUngatedBandLevels(IImpulseMeasurement measurement)
         {
             ArgumentNullException.ThrowIfNull(measurement);
             Complex[] response = measurement.ImpulseResponse
                 ?? throw new InvalidOperationException("Impulse response is not available.");
-            if (response.Length < 4 || measurement.SampleRate <= 0)
+            int length = response.Length;
+            if (length < 4 || measurement.SampleRate <= 0)
             {
                 return [];
             }
 
-            return LogarithmicResample(
-                GetSpectrumData(measurement, 0, response.Length),
-                startHz,
-                stopHz,
-                steps,
-                calibration,
-                smoothingOctaves);
+            var spectrum = new Complex[length];
+            Array.Copy(response, spectrum, length);
+            Fourier.Forward(spectrum, FourierOptions.Matlab);
+
+            var magnitude = new double[length / 2 + 1];
+            for (int bin = 0; bin < magnitude.Length; bin++)
+            {
+                magnitude[bin] = spectrum[bin].Magnitude;
+            }
+
+            return SpatialAverage.FromTransferMagnitude(
+                magnitude, measurement.SampleRate / (double)length);
         }
 
         /// <summary>

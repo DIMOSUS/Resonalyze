@@ -183,7 +183,16 @@ public partial class VirtualCrossoverPanel
     /// the sweep with the measurement microphone and stores level curves for its other
     /// positions, so the impulse response has one microphone behind it however many
     /// were listening, and the positions' individual calibrations never enter this
-    /// question. What does reach it is a project assembled from measurements taken
+    /// question.
+    /// </para>
+    /// <para>
+    /// The refusal is wider than the render strictly needs: the two ears have their own
+    /// kernels, so a car whose LEFT was measured through one microphone and whose RIGHT
+    /// was measured through another could be rendered with a correction each. What
+    /// cannot be done is a side whose own channels disagree, since they are summed
+    /// before the filter meets them. Both are refused today because the render applies
+    /// ONE calibration filter to both kernels; splitting it per side is a change to the
+    /// render, not to this, and a refusal is the safe side of it. What does reach it is a project assembled from measurements taken
     /// through DIFFERENT microphones — channels measured on separate days, or files
     /// written before a measurement recorded what it was read through mixed with newer
     /// ones. There the honest answer is to refuse and let the user name one curve,
@@ -261,7 +270,7 @@ public partial class VirtualCrossoverPanel
                     "; ",
                     groups.Select(group =>
                         $"{group.Label}: {string.Join(", ", group.Channels)}")) +
-                "), and a render carries one correction for a whole side");
+                "), and a render carries a single correction for both sides");
     }
 
     /// <summary>

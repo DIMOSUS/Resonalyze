@@ -706,6 +706,12 @@ internal sealed partial class MeasurementSettingsFile
         // EqAutoTuner.Options.CutsOnlyMode.
         public bool CutsOnly { get; set; } = true;
 
+        // Whether Auto Tune may fit low/high shelves as well as bells
+        // (EqAutoTuner.Options.AllowShelves). Off by default, which is what a file
+        // written before the stage existed restores to — and the curve those versions
+        // fitted.
+        public bool AllowShelves { get; set; }
+
         // The narrowest band Auto Tune may place (EqAutoTuner.Options.QMax). Well
         // below the 20 a strip accepts by hand: the fit reads a single microphone
         // position, and a sharp notch fitted to it is a filter for that position

@@ -1,17 +1,36 @@
+﻿using System.Numerics;
+
 namespace Resonalyze.Dsp;
 
 /// <summary>
-/// Automatically fits a set of peaking PEQ bands (plus a preamp) so that adding the
+/// Automatically fits a set of PEQ bands (plus a preamp) so that adding the
 /// resulting <see cref="EqualizationCurve"/> to a measured source curve approximates
 /// a target curve. The number of bands is chosen automatically: the fit adds bands
 /// greedily where the residual error is largest and stops once the remaining error
 /// is negligible or the band budget is exhausted.
 /// </summary>
 /// <remarks>
-/// Peaking bands only, by design: the fit places bells where the residual is worst,
-/// and a shelf is a decision about the whole top or bottom of the range that a
-/// tuner makes deliberately. Callers replace the whole bank with the result, so a
-/// shelf dialled in by hand does not survive a re-fit.
+/// <para>
+/// The bell is the fit's ordinary band, and with <see cref="Options.AllowShelves"/>
+/// off it is the only shape it places: the greedy pass puts a bell where the residual
+/// is worst, which is right for a resonance and wrong for a trend. A shelved target —
+/// a car curve is bass-lifted and tilted down — leaves whole octaves at one end of the
+/// residual off-target, and a stack of bells approximates that badly: slots spent on a
+/// trend, and skirts ringing between the centres.
+/// </para>
+/// <para>
+/// Switching shelves on adds one stage in front of the greedy pass, which may place a
+/// low and a high shelf. Which one — and whether either — is settled on the FINISHED
+/// curve: every corner and knee of both directions is carried through the rest of the
+/// fit on scratch state, and the candidate that ends closest to the target is placed,
+/// but only if it beats finishing with no shelf at all. A shelf that would cost more
+/// than the slot it takes is therefore never applied.
+/// </para>
+/// <para>
+/// All-pass bands are never fitted, whatever the options say: an all-pass is flat, so
+/// a magnitude error can never ask for one. Callers replace the whole bank with the
+/// result, so bands dialled in by hand — shelves included — do not survive a re-fit.
+/// </para>
 /// </remarks>
 public static class EqAutoTuner
 {
@@ -109,6 +128,52 @@ public static class EqAutoTuner
         /// restores the unguarded behaviour (skirt spill allowed).
         /// </summary>
         public double ForbiddenRegionMaxBoostDb { get; init; } = 0.5;
+
+        /// <summary>
+        /// Lets the fit place a low and a high shelf in front of the greedy bell pass.
+        /// Off by default, so a caller that says nothing gets the bells-only curve
+        /// earlier versions produced.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A shelf is the honest shape for the ends of a car correction — the target
+        /// itself is a bass shelf plus a downward tilt — and one of them replaces the
+        /// three or four bells a trend otherwise costs, along with the ringing their
+        /// skirts leave between the centres. The stage is deliberately narrow: at most
+        /// one shelf per direction, a knee capped at the steepest that still rises
+        /// monotonically, and acceptance only when the rest of the fit, run to
+        /// exhaustion, ends closer to the target with that shelf than with none.
+        /// </para>
+        /// <para>
+        /// Three weaker rules were tried first and measured, and all three are worth
+        /// not repeating. An absolute "improves the residual by X" bar, and beating the
+        /// single bell the shelf displaces, both spent slots on shelves that left the
+        /// finished fit worse — a shelf acts across octaves and changes what every
+        /// later band has left to do, which no single-band figure can see. Ranking the
+        /// candidates by that single-band figure and running only the winner through
+        /// the finished fit is the same mistake one level up: on a tilted response with
+        /// a loud resonance on it, the best-reading candidate is a wide shelf that
+        /// shaves the resonance's skirt and finishes WORSE than placing none, while the
+        /// shelf that actually wins sits two and a half octaves away and is never
+        /// asked. Only the gain within a fixed corner and knee is still left to the
+        /// single-band objective, which is what keeps this affordable.
+        /// </para>
+        /// <para>
+        /// A BOOSTING shelf is deliberately treated differently from a boosting bell by
+        /// the reliability mask. <see cref="ForbiddenRegionMaxBoostDb"/> exists to stop
+        /// a band aimed at a reliable centre from quietly pouring gain into an adjacent
+        /// null through its SKIRT. A shelf has no skirt in that sense — its plateau IS
+        /// the correction, and it necessarily passes over whatever nulls that end of the
+        /// range holds — so applying the per-bin guard to one would refuse every
+        /// boosting shelf that could ever be proposed. A shelf is gated on being
+        /// JUSTIFIED instead: at least <see cref="ShelfPlateauUsableFraction"/> of its
+        /// plateau must be boost-allowed before a positive gain is even searched, and
+        /// the gain itself is still bounded by <see cref="BandGainMaxDb"/>. The bells
+        /// that follow keep the per-bin guard measured against THEIR own boost alone,
+        /// so a shelf's level does not lock them out of the region it covers.
+        /// </para>
+        /// </remarks>
+        public bool AllowShelves { get; init; }
     }
 
     // Quality factors tried for each band; the one that lowers the residual error
@@ -132,6 +197,68 @@ public static class EqAutoTuner
     // target) is always freely fixable and unpenalised.
     private const double CutsOnlyOverCorrectionWeight = 25.0;
     private const double CutsOnlyOverCutFreeDb = 1.0;
+
+    // Shelf policy (Options.AllowShelves). Every number here is about "is there really
+    // a trend at that end of the range": a shelf that is wrong is wrong across octaves,
+    // so none of these may be decided by a single point.
+
+    // The directions a shelf may take, in the order the stage searches them. Both are
+    // scored every round and the better one wins, so the order is not a preference.
+    private static readonly PeqBandType[] ShelfDirections =
+        { PeqBandType.LowShelf, PeqBandType.HighShelf };
+
+    // Knees a fitted shelf may take, in the one decimal the slot strips keep — a Q the
+    // strips would round is a shelf that is not the one that was scored. Capped at 0.7
+    // BY CONSTRUCTION rather than by the caller's QMax: above 1/sqrt(2) an RBJ shelf
+    // overshoots its own gain before settling on it, and an overshoot on a CUT is a
+    // boost — which cuts-only mode promises never to produce and which the reliability
+    // mask may well have refused at that frequency. Measured over the whole corner and
+    // gain ladder at 48 kHz, the most a cutting shelf lifts anywhere is 0.0000 dB at
+    // Q 0.70 and 0.0002 at 0.71, then 0.15 at 0.8, 0.90 at 1.0 and 2.69 at 1.4 — the
+    // boundary is exactly where the algebra says it is. QMax bounds how NARROW a BELL
+    // may be and says nothing about a knee, so it is not applied here; QMin is, because
+    // it is what the strips accept.
+    private static readonly double[] ShelfCandidateQ = { 0.3, 0.4, 0.5, 0.7 };
+
+    // How much of the fitting range must lie on a shelf's UNAFFECTED side — below a
+    // high shelf, above a low one. This is what separates a shelf from a level change:
+    // a high shelf sitting an octave off the bottom of the range lifts practically
+    // everything, which is a preamp wearing a filter slot, and the fit reached for
+    // exactly that when the mask refused it the shelf it actually wanted. Two octaves
+    // of untouched range is the price of calling the band a shelf.
+    private const double ShelfSettledMarginOctaves = 2.0;
+
+    // And how much must lie on the side it DOES act on, so there is a plateau to decide
+    // about rather than a corner hanging off the end of the range.
+    private const double ShelfPlateauSpanOctaves = 1.0;
+
+    // Where that plateau starts, measured outwards from the corner. Half an octave out,
+    // a shelf has reached 57% of its gain at the widest knee it may take and 78% at the
+    // narrowest — enough of it, at every Q, for the span beyond to be what the shelf is
+    // really deciding about rather than part of its transition.
+    private const double ShelfPlateauMarginOctaves = 0.5;
+
+    // How much of that plateau must carry usable data before the shelf may be fitted:
+    // measured points for a cut, boost-ALLOWED points for a boost. Three quarters, not
+    // a bare majority — measured, at three fifths the fit answered a mask that refused
+    // to lift an incoherent top by lifting nearly the whole range instead, through a
+    // shelf whose plateau cleared that bar by a single point.
+    private const double ShelfPlateauUsableFraction = 0.75;
+
+    // Corners tried per octave. A knee is broad: a third of an octave is already finer
+    // than the choice can be told apart at.
+    private const int ShelfCornersPerOctave = 3;
+
+    // Below this a shelf is not worth a slot. The search steps gain in the same tenth
+    // of a dB the strips keep.
+    private const double ShelfMinGainDb = 0.5;
+
+    // How much better the finished fit must be, as an RMS-equivalent in dB, for a shelf
+    // that does NOT shorten the fit to be worth the filter it adds. Two orders of
+    // magnitude below anything a tuner would notice on the plot, and four above the
+    // improvements an exhaustive search turns up on a response with no trend in it at
+    // all. A shelf that leaves the fit shorter skips this: it has paid for itself.
+    private const double ShelfSlotWorthDb = 0.01;
 
     /// <summary>
     /// Fits an equalization curve so that <paramref name="source"/> + curve best
@@ -253,20 +380,133 @@ public static class EqAutoTuner
                 grid, sourceDb, valid, coherenceGrid, opt.BoostMask);
         }
 
+        // The unit-circle points every candidate's digital response is evaluated at.
+        // Pre-computed once so a candidate costs one biquad build plus a complex
+        // division per point, instead of rebuilding the same biquad at every frequency:
+        // the arithmetic is exactly what DigitalEqualizationResponse.MagnitudeDbAt
+        // performs, which is why the fit still sees the response the DSP will realize.
+        var z1 = new Complex[n];
+        var z2 = new Complex[n];
+        for (int i = 0; i < n; i++)
+        {
+            z1[i] = Complex.Exp(new Complex(0, -Math.Tau * grid[i] / opt.SampleRateHz));
+            z2[i] = z1[i] * z1[i];
+        }
+
+        var fit = new FitGrid(grid, z1, z2, valid, boostAllowed, validCount);
+
         var bands = new List<PeqBand>();
         var contribution = new double[n];
         var bestContribution = new double[n];
         // Running EQ magnitude of the placed bands, used to cap the cumulative boost.
         var eqSum = new double[n];
+        // The same running total for the BELLS alone. Both boost guards read this
+        // rather than eqSum, because both exist to stop BELLS from piling on each
+        // other, and a shelf is not a pile: its plateau is a deliberate correction of a
+        // whole end of the range. Charging the bells for it locks them out of every
+        // region a shelf covers — measured: a +6 dB bass shelf leaves zero headroom
+        // across the bass, every resonance under it is refused for want of it, and the
+        // finished fit is worse than the one with no shelf at all. Identical to eqSum
+        // whenever no shelf was placed, so a bells-only fit is unchanged. See
+        // Options.AllowShelves.
+        var bellSum = new double[n];
         // Frequencies excluded from further bands (already corrected as far as they
         // can be, or an unrecoverable boost deficit).
         var blocked = new bool[n];
+
+        // Shelves first, and only where the residual has a trend at one end worth the
+        // slot: the greedy pass below then works on what they left, so a bell is never
+        // spent re-correcting a tilt a shelf already took out.
+        if (opt.AllowShelves)
+        {
+            PlaceShelves(
+                opt, fit, qCandidates, residual, eqSum, bellSum, bands);
+        }
+
         while (bands.Count < opt.MaxBands)
         {
-            int peakIndex = IndexOfLargestResidual(residual, valid, blocked);
-            if (peakIndex < 0 || Math.Abs(residual[peakIndex]) < opt.StopResidualDb)
+            (PeqBand Band, double Score)? bell = NextBell(
+                opt,
+                fit,
+                qCandidates,
+                residual,
+                eqSum,
+                bellSum,
+                blocked,
+                contribution,
+                bestContribution);
+            if (bell == null)
             {
                 break;
+            }
+
+            bands.Add(bell.Value.Band);
+            for (int i = 0; i < n; i++)
+            {
+                if (valid[i])
+                {
+                    residual[i] -= bestContribution[i];
+                    eqSum[i] += bestContribution[i];
+                    bellSum[i] += bestContribution[i];
+                }
+            }
+        }
+
+        // Digital-clipping guard: cap the preamp so preamp + the summed band
+        // boost never exceeds TotalGainMaxDb anywhere. Cuts leave bandPeak at
+        // 0, so a positive preamp survives only up to the ceiling itself.
+        if (double.IsFinite(opt.TotalGainMaxDb))
+        {
+            double bandPeak = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (valid[i])
+                {
+                    bandPeak = Math.Max(bandPeak, eqSum[i]);
+                }
+            }
+            preamp = Clamp(
+                Math.Min(preamp, Math.Floor(opt.TotalGainMaxDb - bandPeak)),
+                opt.PreampMinDb,
+                opt.PreampMaxDb);
+        }
+
+        return new EqualizationCurve(bands, preamp);
+    }
+
+    /// <summary>
+    /// The next bell the greedy pass would place against this residual, with its
+    /// contribution left in <paramref name="bestContribution"/> — or null when there is
+    /// nothing left it can do.
+    /// </summary>
+    /// <remarks>
+    /// Everything the pass decides about ONE band lives here: which peak to correct,
+    /// whether the mode or the reliability mask forbids it, how much boost headroom is
+    /// left, which Q fits best, and what footprint the choice sterilises. It stops short
+    /// of APPLYING the band, which is what lets the shelf stage ask what a slot would
+    /// buy as a bell without spending it — that call passes scratch copies of
+    /// <paramref name="blocked"/> and of the two contribution buffers, and throws the
+    /// answer away.
+    /// </remarks>
+    private static (PeqBand Band, double Score)? NextBell(
+        Options opt,
+        FitGrid fit,
+        double[] qCandidates,
+        double[] residual,
+        double[] eqSum,
+        double[] bellSum,
+        bool[] blocked,
+        double[] contribution,
+        double[] bestContribution)
+    {
+        IReadOnlyList<double> grid = fit.Hz;
+        int n = grid.Count;
+        while (true)
+        {
+            int peakIndex = IndexOfLargestResidual(residual, fit.Valid, blocked);
+            if (peakIndex < 0 || Math.Abs(residual[peakIndex]) < opt.StopResidualDb)
+            {
+                return null;
             }
 
             double desired = residual[peakIndex];
@@ -275,9 +515,10 @@ public static class EqAutoTuner
             // all: skip the contiguous FORBIDDEN deficit around it, but stop at the
             // first boost-allowed point so the reliable shoulders of a wide dip whose
             // core is a null still get their own bands.
-            if (desired > 0 && !boostAllowed[peakIndex])
+            if (desired > 0 && !fit.BoostAllowed[peakIndex])
             {
-                BlockForbiddenBoostRun(blocked, residual, boostAllowed, valid, peakIndex);
+                BlockForbiddenBoostRun(
+                    blocked, residual, fit.BoostAllowed, fit.Valid, peakIndex);
                 continue;
             }
 
@@ -285,10 +526,13 @@ public static class EqAutoTuner
             bool boostHeadroomLimited = false;
             if (desired > 0)
             {
-                // Limit the boost so the total EQ gain here never exceeds the boost
-                // ceiling; a roll-off that needs +30 dB gets one capped band, not a
-                // stack of them.
-                double headroom = opt.BandGainMaxDb - eqSum[peakIndex];
+                // Limit the boost so the bells' own summed gain here never exceeds the
+                // boost ceiling; a roll-off that needs +30 dB gets one capped band, not
+                // a stack of them. A shelf under it is not part of that stack (see the
+                // bellSum declaration), so a fit that placed one can boost past
+                // BandGainMaxDb in total — which is the caller's to bound through
+                // TotalGainMaxDb, and the EQ Wizard's to report as headroom.
+                double headroom = opt.BandGainMaxDb - bellSum[peakIndex];
                 double allowed = Math.Min(desired, Math.Max(0, headroom));
                 boostHeadroomLimited = allowed < desired - 0.05;
                 gainDb = Math.Round(allowed, 1);
@@ -315,57 +559,28 @@ public static class EqAutoTuner
             // region. Candidates that would are discarded from the search.
             bool isBoost = gainDb > 0;
             double bestQ = qCandidates[0];
-            double bestRms = double.MaxValue;
+            double bestScore = double.MaxValue;
             bool anyCandidateFits = false;
             foreach (double candidate in qCandidates)
             {
                 double q = Math.Round(candidate, 1);
-                var band = new PeqBand(frequencyHz, q, gainDb);
-                double sumSquares = 0;
-                bool spillsIntoForbidden = false;
-                for (int i = 0; i < n; i++)
-                {
-                    if (!valid[i])
-                    {
-                        continue;
-                    }
-
-                    double c = DigitalEqualizationResponse.MagnitudeDbAt(
-                        band, grid[i], opt.SampleRateHz);
-                    contribution[i] = c;
-                    if (isBoost && !boostAllowed[i] &&
-                        eqSum[i] + c > opt.ForbiddenRegionMaxBoostDb)
-                    {
-                        spillsIntoForbidden = true;
-                    }
-
-                    // In cuts-only, charge the part of this band's own cut that lands
-                    // below the target, past the free zone. See the constants above for
-                    // why the charge is on the band's contribution, never the depth the
-                    // point already had.
-                    double r = residual[i] - c;
-                    sumSquares += r * r;
-                    if (opt.CutsOnlyMode && c < 0)
-                    {
-                        double added = Math.Min(-c, Math.Max(0, r));
-                        if (added > CutsOnlyOverCutFreeDb)
-                        {
-                            double over = added - CutsOnlyOverCutFreeDb;
-                            sumSquares += CutsOnlyOverCorrectionWeight * over * over;
-                        }
-                    }
-                }
-
+                double score = ScoreBand(
+                    new PeqBand(frequencyHz, q, gainDb),
+                    opt,
+                    fit,
+                    residual,
+                    isBoost ? bellSum : null,
+                    contribution,
+                    out bool spillsIntoForbidden);
                 if (spillsIntoForbidden)
                 {
                     continue;
                 }
 
                 anyCandidateFits = true;
-                double rms = sumSquares / validCount;
-                if (rms < bestRms)
+                if (score < bestScore)
                 {
-                    bestRms = rms;
+                    bestScore = score;
                     bestQ = q;
                     Array.Copy(contribution, bestContribution, n);
                 }
@@ -380,16 +595,6 @@ public static class EqAutoTuner
                 continue;
             }
 
-            bands.Add(new PeqBand(frequencyHz, bestQ, gainDb));
-            for (int i = 0; i < n; i++)
-            {
-                if (valid[i])
-                {
-                    residual[i] -= bestContribution[i];
-                    eqSum[i] += bestContribution[i];
-                }
-            }
-
             // Sterilise only a narrow footprint around this band's centre — enough to
             // stop it re-nibbling the very same peak, but far smaller than the old
             // fixed spacing so a cluster of narrow peaks each keeps its own band. A
@@ -400,28 +605,556 @@ public static class EqAutoTuner
                 grid,
                 peakIndex,
                 boostHeadroomLimited ? opt.SaturatedBlockOctaves : opt.MinBandSpacingOctaves);
+            return (new PeqBand(frequencyHz, bestQ, gainDb), bestScore);
         }
+    }
 
-        // Digital-clipping guard: cap the preamp so preamp + the summed band
-        // boost never exceeds TotalGainMaxDb anywhere. Cuts leave bandPeak at
-        // 0, so a positive preamp survives only up to the ceiling itself.
-        if (double.IsFinite(opt.TotalGainMaxDb))
+    // How good a FINISHED fit is: the mean squared distance from the target, plus — in
+    // cuts-only — the same charge the band search makes for landing BELOW it, since a
+    // point pushed under the target can no longer be lifted back. Ranks the two
+    // candidate fits the shelf lookahead runs, so the decision is made on the state they
+    // end in rather than on the single band that starts them.
+    // The charge is on what the BANDS did, exactly as it is per band: eqSum is how far
+    // this fit pulled the point down, and only the part of that landing under the target
+    // is charged. Charging the depth itself instead — every point that ended below the
+    // target, whatever put it there — lets a pre-existing deficit the preamp could not
+    // absorb dominate the number, and the comparison then turns on a constant both
+    // candidates share. Measured: it rejected at a four-band budget the very shelf it
+    // had accepted at three, on a response where the shelf was plainly the better fit.
+    private static double FinalScore(
+        Options opt,
+        FitGrid fit,
+        double[] residual,
+        double[] eqSum)
+    {
+        double sumSquares = 0;
+        for (int i = 0; i < residual.Length; i++)
         {
-            double bandPeak = 0;
-            for (int i = 0; i < n; i++)
+            if (!fit.Valid[i])
             {
-                if (valid[i])
+                continue;
+            }
+
+            double r = residual[i];
+            sumSquares += r * r;
+            if (opt.CutsOnlyMode && eqSum[i] < 0)
+            {
+                double added = Math.Min(-eqSum[i], Math.Max(0, r));
+                if (added > CutsOnlyOverCutFreeDb)
                 {
-                    bandPeak = Math.Max(bandPeak, eqSum[i]);
+                    double over = added - CutsOnlyOverCutFreeDb;
+                    sumSquares += CutsOnlyOverCorrectionWeight * over * over;
                 }
             }
-            preamp = Clamp(
-                Math.Min(preamp, Math.Floor(opt.TotalGainMaxDb - bandPeak)),
-                opt.PreampMinDb,
-                opt.PreampMaxDb);
         }
 
-        return new EqualizationCurve(bands, preamp);
+        return sumSquares / fit.ValidCount;
+    }
+
+    // Runs the greedy bell pass to exhaustion on scratch copies of the state and reports
+    // the score of what it ends with, and how many bands it spent getting there. Nothing
+    // the caller owns is touched, so this is how the shelf stage asks what the rest of
+    // the fit would look like either way. The band count matters because the pass STOPS
+    // when nothing left is worth a filter (StopResidualDb): a trial that ends under its
+    // budget was not constrained by it, and a shelf that adds a slot there is adding a
+    // filter rather than spending one better.
+    private static (double Score, int Bands) TrialFit(
+        Options opt,
+        FitGrid fit,
+        double[] qCandidates,
+        double[] residual,
+        double[] eqSum,
+        double[] bellSum,
+        int budget)
+    {
+        int n = fit.Hz.Count;
+        var trialResidual = (double[])residual.Clone();
+        var trialEqSum = (double[])eqSum.Clone();
+        var trialBellSum = (double[])bellSum.Clone();
+        var blocked = new bool[n];
+        var contribution = new double[n];
+        var bestContribution = new double[n];
+        int bands = 0;
+        for (int placed = 0; placed < budget; placed++)
+        {
+            if (NextBell(
+                opt,
+                fit,
+                qCandidates,
+                trialResidual,
+                trialEqSum,
+                trialBellSum,
+                blocked,
+                contribution,
+                bestContribution) == null)
+            {
+                break;
+            }
+
+            bands++;
+            for (int i = 0; i < n; i++)
+            {
+                if (fit.Valid[i])
+                {
+                    trialResidual[i] -= bestContribution[i];
+                    trialEqSum[i] += bestContribution[i];
+                    trialBellSum[i] += bestContribution[i];
+                }
+            }
+        }
+
+        return (FinalScore(opt, fit, trialResidual, trialEqSum), bands);
+    }
+
+    /// <summary>
+    /// The fixed part of a fit: the logarithmic frequency grid, the unit-circle points
+    /// the digital responses are evaluated at, and which of those points carry data a
+    /// band may be judged on at all (<see cref="Valid"/>) or boosted at
+    /// (<see cref="BoostAllowed"/>).
+    /// </summary>
+    private sealed record FitGrid(
+        IReadOnlyList<double> Hz,
+        Complex[] Z1,
+        Complex[] Z2,
+        bool[] Valid,
+        bool[] BoostAllowed,
+        int ValidCount);
+
+    // The fit's objective, and the one place a candidate band becomes numbers: fills
+    // contribution with the band's dB contribution at every valid grid point and
+    // returns the mean squared residual that would remain, plus the cuts-only
+    // over-correction charge described above the constants. Bells and shelves are both
+    // scored through here, so a shelf is never accepted on a softer test than the bell
+    // whose slot it takes.
+    //
+    // spillBase is the running boost the skirt guard measures this candidate against,
+    // or null when the guard does not apply — a cut, which can never fill a null, or a
+    // shelf, whose plateau is the correction rather than a skirt (see
+    // Options.AllowShelves).
+    private static double ScoreBand(
+        PeqBand band,
+        Options opt,
+        FitGrid fit,
+        double[] residual,
+        double[]? spillBase,
+        double[] contribution,
+        out bool spillsIntoForbidden)
+    {
+        // A degenerate band contributes nothing anywhere; PeqBiquad would still hand
+        // back coefficients, so the check DigitalEqualizationResponse makes per point is
+        // made once here instead.
+        bool transparent = band.IsTransparent;
+        BiquadCoefficients coefficients = transparent
+            ? default
+            : PeqBiquad.Compute(band, opt.SampleRateHz);
+
+        double sumSquares = 0;
+        spillsIntoForbidden = false;
+        for (int i = 0; i < fit.Hz.Count; i++)
+        {
+            if (!fit.Valid[i])
+            {
+                continue;
+            }
+
+            double c = transparent
+                ? 0
+                : 20.0 * Math.Log10(Math.Max(
+                    BiquadResponse.Evaluate(coefficients, fit.Z1[i], fit.Z2[i]).Magnitude,
+                    double.Epsilon));
+            contribution[i] = c;
+            if (spillBase != null && !fit.BoostAllowed[i] &&
+                spillBase[i] + c > opt.ForbiddenRegionMaxBoostDb)
+            {
+                spillsIntoForbidden = true;
+            }
+
+            // In cuts-only, charge the part of this band's own cut that lands below the
+            // target, past the free zone. See the constants above for why the charge is
+            // on the band's contribution, never the depth the point already had.
+            double r = residual[i] - c;
+            sumSquares += r * r;
+            if (opt.CutsOnlyMode && c < 0)
+            {
+                double added = Math.Min(-c, Math.Max(0, r));
+                if (added > CutsOnlyOverCutFreeDb)
+                {
+                    double over = added - CutsOnlyOverCutFreeDb;
+                    sumSquares += CutsOnlyOverCorrectionWeight * over * over;
+                }
+            }
+        }
+
+        return sumSquares / fit.ValidCount;
+    }
+
+    /// <summary>
+    /// Places at most one low and one high shelf against the residual, before the
+    /// greedy bell pass ever sees it, updating <paramref name="residual"/>,
+    /// <paramref name="eqSum"/> and <paramref name="bands"/> in place.
+    /// </summary>
+    /// <remarks>
+    /// One round per direction. Each round takes every candidate of every direction not
+    /// yet placed — both shelves, every corner, every knee — through the rest of the fit
+    /// on scratch state, and applies the one that ends closest to the target, provided
+    /// it beats finishing the round with no shelf at all. Running the second round
+    /// against the residual the first one left is what lets a bass shelf and a treble
+    /// shelf describe one tilt together, instead of both being fitted to the same slope.
+    /// The stage never marks a frequency blocked: a shelf sterilises nothing, and the
+    /// bells are meant to work on top of it.
+    /// </remarks>
+    private static void PlaceShelves(
+        Options opt,
+        FitGrid fit,
+        double[] qCandidates,
+        double[] residual,
+        double[] eqSum,
+        double[] bellSum,
+        List<PeqBand> bands)
+    {
+        int n = fit.Hz.Count;
+        var contribution = new double[n];
+        var candidateContribution = new double[n];
+        var chosenContribution = new double[n];
+        var shelfResidual = new double[n];
+        var shelfEqSum = new double[n];
+        bool lowPlaced = false;
+        bool highPlaced = false;
+        for (int round = 0;
+            round < ShelfDirections.Length && bands.Count < opt.MaxBands;
+            round++)
+        {
+            // Whether a shelf is worth its slot is decided by finishing the fit on
+            // scratch state WITH the candidate and without it, and comparing where the
+            // two end up. Nothing cheaper survived measurement: a shelf that lowers the
+            // objective on its own, or
+            // that beats the single bell it displaces, can still leave the whole fit
+            // worse, because it acts across octaves and changes what every later band
+            // has left to correct. Both weaker rules were tried and both spent a slot
+            // on a shelf that cost more than it bought.
+            //
+            // EVERY viable candidate is taken that far — both directions, and every
+            // corner and knee within each — and the finished score is what ranks them
+            // against each other and against placing nothing. Deciding a shelf on the
+            // single-band score first and asking the lookahead only about that winner
+            // is the same near-sighted rule this stage exists to replace: a candidate
+            // that reads better before the bells are placed can finish further away,
+            // and its rejection would end the stage with everything else never asked.
+            // The baseline does not depend on the candidate, so it is run once.
+            int remaining = opt.MaxBands - bands.Count;
+            (double Score, int Bands) withoutShelf = TrialFit(
+                opt, fit, qCandidates, residual, eqSum, bellSum, remaining);
+
+            PeqBand chosen = default;
+            double chosenFinal = withoutShelf.Score;
+            bool found = false;
+            foreach (PeqBandType type in ShelfDirections)
+            {
+                if (type == PeqBandType.LowShelf ? lowPlaced : highPlaced)
+                {
+                    continue;
+                }
+
+                foreach (PeqBand candidate in
+                    ShelfCandidates(type, opt, fit, residual, contribution))
+                {
+                    ScoreBand(
+                        candidate,
+                        opt,
+                        fit,
+                        residual,
+                        spillBase: null,
+                        candidateContribution,
+                        out _);
+                    for (int i = 0; i < n; i++)
+                    {
+                        shelfResidual[i] = residual[i];
+                        shelfEqSum[i] = eqSum[i];
+                        if (fit.Valid[i])
+                        {
+                            shelfResidual[i] -= candidateContribution[i];
+                            shelfEqSum[i] += candidateContribution[i];
+                        }
+                    }
+
+                    (double Score, int Bands) withShelf = TrialFit(
+                        opt,
+                        fit,
+                        qCandidates,
+                        shelfResidual,
+                        shelfEqSum,
+                        bellSum,
+                        remaining - 1);
+
+                    // Seeded with the no-shelf score, so this one comparison ranks the
+                    // candidates against each other AND refuses every one of them when
+                    // none beats placing no shelf at all.
+                    if (withShelf.Score >= chosenFinal)
+                    {
+                        continue;
+                    }
+
+                    // Beating the bells is not the same as being worth a filter. Where
+                    // the shelf leaves the fit SHORTER it has paid for itself by
+                    // definition. Where it does not, the improvement has to be one a
+                    // tuner could see: an exhaustive search always finds some shelf that
+                    // improves the fourth decimal, and without this a resonance-only
+                    // response quietly spends a slot on a half-dB shelf at the bottom of
+                    // the range for no change in the curve at all.
+                    if (withShelf.Bands + 1 >= withoutShelf.Bands &&
+                        Math.Sqrt(withoutShelf.Score) - Math.Sqrt(withShelf.Score) <
+                            ShelfSlotWorthDb)
+                    {
+                        continue;
+                    }
+
+                    found = true;
+                    chosen = candidate;
+                    chosenFinal = withShelf.Score;
+                    Array.Copy(candidateContribution, chosenContribution, n);
+                }
+            }
+
+            // A round in which nothing finishes ahead of the bells ends the stage:
+            // nothing was applied, so the next round would search the very same residual
+            // and lose again.
+            if (!found)
+            {
+                return;
+            }
+
+            bands.Add(chosen);
+            for (int i = 0; i < n; i++)
+            {
+                if (fit.Valid[i])
+                {
+                    residual[i] -= chosenContribution[i];
+                    eqSum[i] += chosenContribution[i];
+                }
+            }
+
+            if (chosen.Type == PeqBandType.LowShelf)
+            {
+                lowPlaced = true;
+            }
+            else
+            {
+                highPlaced = true;
+            }
+        }
+    }
+
+    // Every shelf of one direction worth taking to a finished fit: the best gain at
+    // each corner and knee the fitting range admits. Empty when the range cannot hold a
+    // corner of that direction, when no corner has a plateau to stand on, or when the
+    // caller's QMin excludes every knee a shelf may take.
+    //
+    // Gain is the one parameter left to the single-band objective, and deliberately:
+    // at a fixed corner and knee it is a level, and choosing it badly means
+    // over-correcting the plateau — which is exactly what that objective already
+    // charges for. Where the knee SITS is the choice that changes what the bells
+    // afterwards are left with, and no single-band score can see that, so every
+    // corner/knee pair is handed up and judged on a finished fit instead. The gain
+    // ladder is what would make this unaffordable if it were handed up too: a tenth of
+    // a dB across the whole gain range is a couple of hundred candidates per corner
+    // against the four knees here.
+    private static List<PeqBand> ShelfCandidates(
+        PeqBandType type,
+        Options opt,
+        FitGrid fit,
+        double[] residual,
+        double[] contribution)
+    {
+        var candidates = new List<PeqBand>();
+        double[] qCandidates = ShelfCandidateQ.Where(q => q >= opt.QMin).ToArray();
+        if (qCandidates.Length == 0)
+        {
+            return candidates;
+        }
+
+        IReadOnlyList<double>? corners = ShelfCorners(fit, type);
+        if (corners == null)
+        {
+            return candidates;
+        }
+
+        // Gain is searched in the tenth of a dB the strips keep, coarsely first and then
+        // refined around the winner: the level is what decides whether a shelf
+        // over-corrects and is worth resolving, while its corner and knee are broad
+        // choices the ladders above already cover.
+        int minTenths = (int)Math.Round(opt.BandGainMinDb * 10);
+        int maxTenths = (int)Math.Round(
+            (opt.CutsOnlyMode ? Math.Min(0, opt.BandGainMaxDb) : opt.BandGainMaxDb) * 10);
+        int deadTenths = (int)Math.Round(ShelfMinGainDb * 10);
+        bool searchesBoosts = maxTenths >= deadTenths;
+
+        foreach (double cornerHz in corners)
+        {
+            double frequencyHz = Math.Round(cornerHz);
+            if (frequencyHz < 1)
+            {
+                continue;
+            }
+
+            bool cutPlateau = HasUsablePlateau(fit, type, frequencyHz, boosting: false);
+            bool boostPlateau = searchesBoosts &&
+                HasUsablePlateau(fit, type, frequencyHz, boosting: true);
+            if (!cutPlateau && !boostPlateau)
+            {
+                continue;
+            }
+
+            foreach (double q in qCandidates)
+            {
+                PeqBand best = default;
+                double bestScore = double.MaxValue;
+                bool found = false;
+                for (int tenths = minTenths; tenths <= maxTenths; tenths += 10)
+                {
+                    if (!IsSearchableGain(tenths, deadTenths, cutPlateau, boostPlateau))
+                    {
+                        continue;
+                    }
+
+                    ConsiderShelf(
+                        new PeqBand(frequencyHz, q, tenths / 10.0, type),
+                        opt,
+                        fit,
+                        residual,
+                        contribution,
+                        ref best,
+                        ref bestScore,
+                        ref found);
+                }
+
+                if (!found)
+                {
+                    continue;
+                }
+
+                // The coarse ladder walks in whole dB, so the true level sits within one
+                // step of the winner.
+                PeqBand coarse = best;
+                int coarseTenths = (int)Math.Round(coarse.GainDb * 10);
+                for (int tenths = coarseTenths - 10; tenths <= coarseTenths + 10; tenths++)
+                {
+                    if (tenths < minTenths || tenths > maxTenths ||
+                        !IsSearchableGain(tenths, deadTenths, cutPlateau, boostPlateau))
+                    {
+                        continue;
+                    }
+
+                    ConsiderShelf(
+                        coarse with { GainDb = tenths / 10.0 },
+                        opt,
+                        fit,
+                        residual,
+                        contribution,
+                        ref best,
+                        ref bestScore,
+                        ref found);
+                }
+
+                candidates.Add(best);
+            }
+        }
+
+        return candidates;
+    }
+
+    // Scores one shelf candidate and keeps it when it beats the running best. The skirt
+    // guard is deliberately not enforced here — a shelf's plateau is the correction, not
+    // spill; see Options.AllowShelves.
+    private static void ConsiderShelf(
+        PeqBand band,
+        Options opt,
+        FitGrid fit,
+        double[] residual,
+        double[] contribution,
+        ref PeqBand best,
+        ref double bestScore,
+        ref bool found)
+    {
+        double score = ScoreBand(
+            band, opt, fit, residual, spillBase: null, contribution, out _);
+        if (found && score >= bestScore)
+        {
+            return;
+        }
+
+        found = true;
+        best = band;
+        bestScore = score;
+    }
+
+    // The corners of one direction worth trying: every one that leaves
+    // ShelfSettledMarginOctaves of the fitting range untouched on the shelf's quiet side
+    // and ShelfPlateauSpanOctaves of it under the plateau. The two are different numbers
+    // sitting on opposite sides for the two directions, so the ladder is built per
+    // direction rather than once вЂ” a high shelf at 10 kHz is an ordinary car correction,
+    // and one symmetric margin wide enough to keep a high shelf off the bottom of the
+    // range would have excluded it. Null when the range is too narrow to hold either.
+    private static IReadOnlyList<double>? ShelfCorners(FitGrid fit, PeqBandType type)
+    {
+        bool low = type == PeqBandType.LowShelf;
+        double lowestHz = fit.Hz[0] *
+            Math.Pow(2, low ? ShelfPlateauSpanOctaves : ShelfSettledMarginOctaves);
+        double highestHz = fit.Hz[^1] /
+            Math.Pow(2, low ? ShelfSettledMarginOctaves : ShelfPlateauSpanOctaves);
+        if (highestHz <= lowestHz || lowestHz < 1)
+        {
+            return null;
+        }
+
+        int count = Math.Clamp(
+            (int)Math.Round(Math.Log2(highestHz / lowestHz) * ShelfCornersPerOctave) + 1,
+            2,
+            64);
+        return EqualizationCurve.LogFrequencyGrid(lowestHz, highestHz, count);
+    }
+
+    // A gain the shelf search may try at this corner: clear of the dead zone that is not
+    // worth a slot, and on a side the plateau justifies — a cut needs measured data
+    // under it, a boost needs data the reliability mask cleared.
+    private static bool IsSearchableGain(
+        int tenths,
+        int deadTenths,
+        bool cutPlateau,
+        bool boostPlateau) =>
+        Math.Abs(tenths) >= deadTenths && (tenths < 0 ? cutPlateau : boostPlateau);
+
+    // Whether the span beyond a shelf's knee, on the shelf's own side, carries enough
+    // data to decide a correction of that whole end of the range: measured points for a
+    // cut, boost-allowed points for a boost (see Options.AllowShelves). Two points is
+    // the floor whatever the grid size — one point is a bin, not a plateau.
+    private static bool HasUsablePlateau(
+        FitGrid fit,
+        PeqBandType type,
+        double cornerHz,
+        bool boosting)
+    {
+        bool low = type == PeqBandType.LowShelf;
+        int total = 0;
+        int usable = 0;
+        for (int i = 0; i < fit.Hz.Count; i++)
+        {
+            double octaves = Math.Log2(fit.Hz[i] / cornerHz);
+            bool inPlateau = low
+                ? octaves <= -ShelfPlateauMarginOctaves
+                : octaves >= ShelfPlateauMarginOctaves;
+            if (!inPlateau)
+            {
+                continue;
+            }
+
+            total++;
+            if (boosting ? fit.BoostAllowed[i] : fit.Valid[i])
+            {
+                usable++;
+            }
+        }
+
+        return total >= 2 && usable >= total * ShelfPlateauUsableFraction;
     }
 
     // Marks the contiguous run of masked-off boost-wanting points (residual > 0 AND

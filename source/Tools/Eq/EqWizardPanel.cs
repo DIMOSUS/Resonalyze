@@ -137,6 +137,13 @@ public partial class EqWizardPanel : UserControl
             autoTuneOrchestrator.Invalidate();
             RaiseSettingsChanged();
         };
+        checkBoxShelves.CheckedChanged += (_, _) =>
+        {
+            // Same contract as Cuts only: only the next fit reads it, but an in-flight
+            // one is orphaned so a result shaped by the previous setting cannot land.
+            autoTuneOrchestrator.Invalidate();
+            RaiseSettingsChanged();
+        };
         buttonAutoTune.Click += (_, _) => AutoTune();
         buttonReturnToDsp.Click += (_, _) => ReturnPeqToVirtualDsp();
         buttonBackToDsp.Click += (_, _) => BackToVirtualDsp();
@@ -402,6 +409,15 @@ public partial class EqWizardPanel : UserControl
             "(a boost cannot fill an interference null, it just burns headroom). " +
             "Uncheck to allow boosts, still limited to reliable regions: high " +
             "coherence and not inside a narrow, deep null.");
+        SetTip(checkBoxShelves,
+            "Let Auto Tune fit a low and a high shelf as well as bells. A car target " +
+            "is a bass shelf plus a downward tilt, and a stack of bells copies that " +
+            "badly — slots spent on a trend, and ringing between the centres. A shelf " +
+            "is kept only where finishing the fit with it beats finishing it without, " +
+            "so a response made of resonances alone gets none. Off by default: it " +
+            "changes what a fit returns, and with Cuts only unchecked a shelf can lift " +
+            "a whole end of the range, so the total boost may pass Max Gain — watch " +
+            "the headroom read-out.");
         SetTip(buttonAutoTune,
             "Automatically fit the bands and preamp so Source + EQ approaches the " +
             "target within the frequency window.");
@@ -1010,7 +1026,12 @@ public partial class EqWizardPanel : UserControl
             // than a cabin measurement justifies, so Max Q caps it well below what a
             // hand-typed strip accepts.
             QMin = PeqSlotControl.MinimumQ,
-            QMax = (double)numericQMax.Value
+            QMax = (double)numericQMax.Value,
+            // Shelves are the user's choice because they change the SHAPE of what comes
+            // back, not just its accuracy: Max Q above bounds a bell's narrowness and
+            // says nothing about a shelf's knee, and a boosting shelf lifts a whole end
+            // of the range at once.
+            AllowShelves = checkBoxShelves.Checked
         };
     }
 

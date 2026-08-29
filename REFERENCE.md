@@ -1372,7 +1372,8 @@ the chain check, but it is refused all the same).
 **Auto Tune** fits the whole EQ automatically: it works on the error between the
 target and the (smoothed) source, sets a preamp for the broadband level, then
 adds peaking bands greedily where the residual error is largest, choosing each
-band's frequency, gain, and the Q that reduces the error the most. It **chooses
+band's frequency, gain, and the Q that reduces the error the most — and, with
+**Shelves** ticked, may put a low and a high shelf in front of them. It **chooses
 the band count itself**, up to the **Max Filters** limit (4–32), while a
 cumulative-boost cap and minimum band spacing keep it from stacking maxed-out
 bands where the response simply cannot be corrected.
@@ -1392,16 +1393,17 @@ least stable over the volume that was averaged rather than a property of the
 spot the microphone stood in — or for a deliberately narrow correction of a mode
 you have identified.
 
-The fit is a magnitude fit, so the bells it places are all it can propose — and a
-run replaces the bank it found. If that bank holds **all-pass** bands, Auto Tune
-asks before starting: keep them and tune the remaining slots around them (the
-error curve never asked for them to go — they are flat), or let the fit replace
-the bank whole. Keeping takes their count off the **Max Filters** budget, which
-is a budget for the bank and not for the fit alone: keep three of eight and the
-fit places five. And "around them" is literal on a gated channel — the curve the
-fit corrects is the one with those bands already applied, because through a
-window an all-pass is not flat, and correcting a curve the bank never produces
-would leave the tune off by that difference.
+The fit is a magnitude fit, so bells and — with **Shelves** on — the two
+shelves are all it can propose, and a run replaces the bank it found. If that
+bank holds **all-pass** bands, Auto Tune asks before starting: keep them and
+tune the remaining slots around them (the error curve never asked for them to
+go — they are flat), or let the fit replace the bank whole. Keeping takes their
+count off the **Max Filters** budget, which is a budget for the bank and not
+for the fit alone: keep three of eight and the fit places five. And "around
+them" is literal on a gated channel — the curve the fit corrects is the one
+with those bands already applied, because through a window an all-pass is not
+flat, and correcting a curve the bank never produces would leave the tune off
+by that difference.
 
 **Cuts only** (on by default) is the safe choice for a car tune: a boost cannot
 fill a reflective cabin's interference null — it just burns amplifier headroom on
@@ -1412,6 +1414,45 @@ To** window limits where bands are placed and bounds the error metrics in the
 colour-coded **Tuning results** panel, which reports **RMS error** and **Max
 error** between Source + EQ and Target, **Filters used**, **Peak boost** and
 **Peak cut**, and **Headroom** (red when the EQ nets a boost that could clip).
+
+**Shelves** (off by default) lets the fit propose a low and a high shelf as well
+as bells. A car target is a bass shelf plus a downward tilt, and a bell is the
+wrong shape for either: a stack of them spends slots on a trend that resonances
+needed, and rings between the centres. A shelf is kept only where it earns the
+slot, and which shelf that is gets decided on the finished curve rather than on
+how the band reads by itself: every corner and knee of both directions is taken
+all the way through the rest of the fit, once more with no shelf at all, and the
+one that ends closest to the target goes in — if any of them beats placing none.
+A shelf that does not leave the fit shorter has to earn its filter by a margin
+you could see, so a response made of resonances alone gets none at all and
+nothing changes for it.
+Measured on synthetic responses, at the default Max Gain of 6 dB: a top end
+running uniformly hot took one shelf where four bells had been spent, at a third
+of the residual (0.04 dB RMS against 0.13); the same response with resonances on
+it came out at four filters against seven, for the same error; a car target with
+bass lift and tilt at 0.34 dB RMS against 1.28 with the same ten filters. At
+most one shelf per direction, and the fit re-runs its own search after placing
+the first, so a bass shelf and a treble shelf can describe one tilt between
+them.
+
+A shelf's knee is capped at **Q 0.7**, the steepest that still rises
+monotonically: above that an RBJ shelf overshoots its own gain before settling,
+and on a cut that overshoot is a boost — which **Cuts only** promises never to
+produce. **Max Q** is not applied to a shelf; that number bounds how narrow a
+*bell* may be, and a shelf has no bandwidth to bound. You can still add, edit or
+delete a shelf by hand afterwards, and a re-run replaces it like any other band.
+
+Two things change with **Cuts only** unticked. A boosting shelf lifts a whole end
+of the range, nulls included, so it is offered only where at least three quarters
+of that end is measured and passes the boost mask — a tail that is mostly nulls
+or low coherence never gets shelved upwards, and the per-bin skirt guard that
+applies to a boosting bell deliberately does not apply to a shelf, since a
+shelf's plateau is the correction rather than spill from one. And a shelf is not
+counted against the cumulative boost the bells are held to, because it is a
+correction of the whole tail and not a stack of bands at one frequency: with a
+shelf placed, the **total** boost can exceed **Max Gain** (measured: +10.5 dB
+where Max Gain was +6), which is what the **Headroom** read-out is for. Each
+band still obeys **Max Gain**, and **Cuts only** rules all of this out.
 
 ### Import, export, and tuning sheet
 

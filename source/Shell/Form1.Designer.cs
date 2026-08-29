@@ -199,7 +199,7 @@
             buttonSave.Size = new Size(102, 23);
             buttonSave.TabIndex = 18;
             buttonSave.Text = "Save";
-            toolTip1.SetToolTip(buttonSave, "Save Impulse Response");
+            toolTip1.SetToolTip(buttonSave, "Save Impulse Response\r\nRight-click to send it to REW");
             buttonSave.UseCompatibleTextRendering = true;
             buttonSave.UseVisualStyleBackColor = false;
             buttonSave.Click += buttonSave_Click;

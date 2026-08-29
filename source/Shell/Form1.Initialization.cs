@@ -304,6 +304,7 @@ public partial class Form1
     private void WireFormEvents()
     {
         buttonCompare.Click += (_, _) => ShowCompareMenu();
+        buttonSave.MouseUp += buttonSave_MouseUp;
         FormClosing += Form1_FormClosing;
         Shown += Form1_Shown;
         // Files dragged in from Explorer, which the window accepts anywhere on it

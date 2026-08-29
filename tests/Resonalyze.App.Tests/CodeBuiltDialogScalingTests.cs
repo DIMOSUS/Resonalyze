@@ -42,6 +42,20 @@ public sealed class CodeBuiltDialogScalingTests
         });
 
     [Theory]
+    [InlineData(560, 348)]
+    public void RewExportDialog_ScalesItsDesignedSizeExactlyOnce(int width, int height) =>
+        StaTest.Run(() =>
+        {
+            using var dialog = new RewExportDialog(
+                "probe",
+                "http://localhost:4735/",
+                rewVersion: null,
+                splOffsetDb: null,
+                TimingReference.SynchronizedLoopback);
+            AssertScaledOnce(dialog, new Size(width, height));
+        });
+
+    [Theory]
     [InlineData(true, 500, 235)]
     [InlineData(false, 500, 215)]
     public void ApplicationUpdateDialog_ScalesItsDesignedSizeExactlyOnce(

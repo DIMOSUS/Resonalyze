@@ -100,6 +100,7 @@ public partial class Form1
 
         startupAudioWarmup.Dispose();
         compareMenuStrip?.Dispose();
+        rewExportMenu?.Dispose();
         dockedModeSettingsHost.Dispose();
         dockedMeasurementSettingsHost.Dispose();
         dockedHistoryHost.Dispose();

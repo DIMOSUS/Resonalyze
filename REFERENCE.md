@@ -31,6 +31,7 @@ read-out refuses rather than guesses, what a number was measured against.
 - [Saving and Loading Impulse Responses](#saving-and-loading-impulse-responses)
   - [Importing a sweep recorded elsewhere](#importing-a-sweep-recorded-elsewhere)
   - [Dropping a file on the window](#dropping-a-file-on-the-window)
+  - [Sending a measurement to REW](#sending-a-measurement-to-rew)
 - [Plot Overlays](#plot-overlays)
   - [Target curves](#target-curves)
   - [Import and export](#import-and-export)
@@ -1033,6 +1034,43 @@ time — the shell holds one measurement, so a drag carrying several is refused
 while it hovers, the cursor showing that no drop will happen. The same refusal
 covers a drag arriving while a sweep is running, or while a dialog is up: a file
 opened underneath one would replace the very measurement it is asking about.
+### Sending a measurement to REW
+
+**Right-click Save** to open a short menu with **Send to REW...**, which imports the
+current measurement's loopback transfer function into a running
+[REW](https://www.roomeqwizard.com/) over its HTTP API. The menu asks REW whether it
+is there before it opens, so a REW that is not running says so in the item's caption
+instead of failing after the click.
+
+The dialog names the measurement as it will appear in REW and holds the one setting,
+the address REW's API server listens on (`http://localhost:4735/` unless it has been
+moved; the server is switched on in REW's *Preferences -> API*). The address stays
+editable when REW did not answer, because it is the setting that would fix that.
+Nothing is reported when the send succeeds — the measurement is in REW, which is
+where you are looking.
+
+**What arrives.** The transfer impulse response as measured, with t = 0 on the
+loopback reference. Its samples are sent unchanged and unresampled; the buffer is
+rolled by a tenth of a second so the deconvolution's acausal part, which is wrapped
+into the tail, appears before t = 0 where it belongs, and the roll is stated as a
+negative start time. A circular roll moves no energy, so the arrival still reads the
+delay this measurement found.
+
+**What it does not carry.** REW files an imported impulse response with **no timing
+reference of its own**: the shape and the internal delays are real, but REW cannot
+compare its arrival with another REW measurement's. Level is sent only when the
+measurement carries an [SPL anchor](#sound-pressure-level-db-spl) — its own offset,
+combining the anchor with this measurement's loopback level. Without one, no offset is
+sent at all rather than a placeholder. REW then fills in a default of its own, which
+looks like a calibration and is not: nothing measured it, and the levels shown there
+are relative.
+
+**What is checked.** After the import, Resonalyze reads the new measurement's summary
+back from REW and compares the arrival REW reports with the one the payload was framed
+to produce. A disagreement is reported in samples, together with the version REW
+announced. The REW version itself is deliberately not gated on — it is a moving beta,
+and pinning it would make matching builds your problem while proving less than this
+comparison does.
 
 ## Plot Overlays
 

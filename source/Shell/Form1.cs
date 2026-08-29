@@ -88,6 +88,7 @@ namespace Resonalyze
         private readonly ButtonLongPressBehavior recordButtonLongPress;
         private readonly CompareSelection compareSelection = new();
         private ContextMenuStrip? compareMenuStrip;
+        private ContextMenuStrip? rewExportMenu;
 
         public Form1()
         {

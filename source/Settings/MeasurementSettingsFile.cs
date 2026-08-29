@@ -35,6 +35,12 @@ internal sealed partial class MeasurementSettingsFile
 
     public string? LastImpulseResponseDirectory { get; set; }
 
+    // Where REW's API is listening, for the impulse-response export. Null until the
+    // user changes it, which is the ordinary case: REW's default address is a
+    // constant on the client, so an absent setting means "wherever REW normally is"
+    // rather than "not configured".
+    public string? RewApiBaseUrl { get; set; }
+
     // True when loading reset a loopback configuration that pointed at the
     // removed separate-loopback-device capability; the shell shows a one-time
     // notice telling the user to pick a loopback channel again.

@@ -23,7 +23,24 @@ internal sealed record VirtualCrossoverAuditionContext(
     string? BorrowedSide,
     Func<string?, CalibrationFile?>? CalibrationResolver,
     IReadOnlyList<MicrophoneCalibrationEntry> CalibrationEntries,
-    string? InitialCalibrationId);
+    string? InitialCalibrationId,
+    VirtualCrossoverAuditionSpatialAverage? SpatialAverage,
+    string? SpatialAverageReason);
+
+/// <summary>
+/// The same tune with every channel's magnitude read from its spatial average
+/// instead of from the one microphone position, as a second pair of side sums the
+/// dialog can render instead of the measured pair.
+/// </summary>
+/// <remarks>
+/// Prepared by the panel, which owns the captures, the project's averaging method
+/// and the levelling. What arrives here is finished audio: two summed responses and
+/// the lines that say what was done to them.
+/// </remarks>
+internal sealed record VirtualCrossoverAuditionSpatialAverage(
+    Complex[] LeftSum,
+    Complex[] RightSum,
+    IReadOnlyList<string> ReportLines);
 
 /// <summary>
 /// The Virtual DSP audition dialog: pick a track and a destination, optionally a
@@ -95,6 +112,12 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     private static string? lastCalibrationId;
     private static bool hasLastCalibrationId;
 
+    // Ticked by default wherever it is offered: a set of spatial averages exists
+    // because the point measurement's dips are not what the car sounds like, and a
+    // render that keeps them is the exception rather than the norm. Remembered like
+    // every other choice once the user has made one.
+    private static bool lastSpatialAverage = true;
+
     // The remembered choice only seeds a new opening while it still resolves;
     // otherwise the panel's own selection does. A remembered "Off" is a real
     // choice and is kept, which is what hasLastCalibrationId separates from
@@ -159,6 +182,16 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         comboBoxCabin.SelectedIndex = Math.Max(
             0, Array.FindIndex(CabinOptions, option => option.Style == lastCabinStyle));
 
+        // Muted by hand rather than disabled, the way the panel's own hybrid toggle
+        // is: a CheckBox WinForms disables paints its text in a system grey that
+        // reads as near-black on this theme. The tick is ignored while there is
+        // nothing behind it (RequestedSpatialAverage), and the report says why.
+        checkBoxSpatialAverage.Checked =
+            context.SpatialAverage != null && lastSpatialAverage;
+        UiStyle.SetTextEnabledLook(
+            checkBoxSpatialAverage, context.SpatialAverage != null, interactive: true);
+        checkBoxSpatialAverage.CheckedChanged += (_, _) => RefreshReport();
+
         buttonChooseSource.Click += (_, _) => ChooseSource();
         buttonChooseTarget.Click += (_, _) => ChooseTarget();
         buttonRender.Click += async (_, _) => await OnRenderClickedAsync();
@@ -206,6 +239,14 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
         hasLastCalibrationId = true;
         lastCabinStyle = SelectedCabinStyle;
+        // Only where the choice was real: an unticked box on a tune that HAS no
+        // averages is not a preference, and remembering it would silently turn the
+        // correction off on the next project that does have them.
+        if (context.SpatialAverage != null)
+        {
+            lastSpatialAverage = checkBoxSpatialAverage.Checked;
+        }
+
         base.OnFormClosed(e);
     }
 
@@ -453,6 +494,11 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             ? "off"
             : comboBoxCabin.GetItemText(comboBoxCabin.SelectedItem);
 
+        VirtualCrossoverAuditionSpatialAverage? spatialAverage = RequestedSpatialAverage;
+        string magnitudeLabel = spatialAverage != null
+            ? "spatial averages (MMM / array)"
+            : "impulse responses (one microphone position)";
+
         var cancellation = new CancellationTokenSource();
         activeRender = cancellation;
         SetRunning(true);
@@ -485,10 +531,14 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             RenderOutcome outcome = await Task.Run(
                 () => ExecuteRender(
                     context, source, target, calibration, calibrationLabel,
-                    cabin, cabinLabel, progress, cancellation.Token),
+                    cabin, cabinLabel, spatialAverage, magnitudeLabel, progress,
+                    cancellation.Token),
                 cancellation.Token);
             resultSection = FormatResult(outcome, target);
-            labelStatus.Text = "Finished.";
+            // Names the file it wrote. "Finished." alone left the one question a
+            // render ends on — did it actually write anything? — to be answered by
+            // reading the report.
+            labelStatus.Text = $"Finished — wrote {Path.GetFileName(target)}";
         }
         catch (OperationCanceledException)
         {
@@ -531,6 +581,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         buttonChooseTarget.Enabled = !running;
         comboBoxCalibration.Enabled = !running && comboBoxCalibration.Items.Count > 1;
         comboBoxCabin.Enabled = !running;
+        checkBoxSpatialAverage.Enabled = !running;
         buttonRender.Text = running ? "Cancel" : "Render";
         if (running)
         {
@@ -550,6 +601,11 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     private CabinBodyStyle? SelectedCabinStyle =>
         comboBoxCabin.SelectedItem is CabinOption option ? option.Style : null;
 
+    // Both halves matter: the tick is a preference that outlives a project, and a
+    // ticked box with no captures behind it must not render something else.
+    private VirtualCrossoverAuditionSpatialAverage? RequestedSpatialAverage =>
+        checkBoxSpatialAverage.Checked ? context.SpatialAverage : null;
+
     // The whole pipeline on the worker thread: trim, calibrate, decode, render,
     // write. Static and argument-fed so it cannot touch a control.
     private static RenderOutcome ExecuteRender(
@@ -560,14 +616,20 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         string calibrationLabel,
         CabinTransferFunction? cabin,
         string cabinLabel,
+        VirtualCrossoverAuditionSpatialAverage? spatialAverage,
+        string magnitudeLabel,
         IProgress<AuditionProgress> progress,
         CancellationToken cancellationToken)
     {
         progress.Report(new AuditionProgress("Preparing the responses…", 0));
+        // The corrected sums arrive already summed from corrected channels, so the
+        // choice is made once, here, and everything below is the same pipeline.
+        Complex[] leftSum = spatialAverage?.LeftSum ?? context.LeftSum;
+        Complex[] rightSum = spatialAverage?.RightSum ?? context.RightSum;
         double[] leftKernel = Auralization.TrimResponse(
-            context.LeftSum, context.SampleRate, out AuralizationTrim leftTrim);
+            leftSum, context.SampleRate, out AuralizationTrim leftTrim);
         double[] rightKernel = Auralization.TrimResponse(
-            context.RightSum, context.SampleRate, out AuralizationTrim rightTrim);
+            rightSum, context.SampleRate, out AuralizationTrim rightTrim);
 
         // The mic calibration and the cabin subtraction go into the KERNELS as
         // linear-phase FIRs (Design() negates the correction it is handed, so the
@@ -683,7 +745,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             calibrationLabel,
             cabin != null,
             cabinLabel,
-            cabin?.Evaluate(20.0) ?? 0.0);
+            cabin?.Evaluate(20.0) ?? 0.0,
+            magnitudeLabel);
     }
 
     // Through a temporary file beside the target: a cancel or a failure part-way
@@ -720,9 +783,36 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
     // ----------------------------------------------------------------- report
 
-    private void RefreshReport()
+    private void RefreshReport() =>
+        textBoxReport.Text = ComposeReport(
+            context, checkBoxSpatialAverage.Checked, trackSection, resultSection);
+
+    /// <summary>
+    /// The whole report as one string. Pure and separate so what it puts first can be
+    /// pinned without a dialog.
+    /// </summary>
+    /// <remarks>
+    /// The RESULT leads once there is one. It used to be appended last, which was fine
+    /// while the report was three short blocks and stopped being fine as they grew: on
+    /// a tune with a spatial average per channel the result starts below the bottom of
+    /// the box, so a finished render showed a full progress bar over a report that
+    /// looked exactly like the one before it — nothing said the file had been written.
+    /// Everything above it is the briefing for the NEXT render, which is what the
+    /// blocks are for while one is being set up.
+    /// </remarks>
+    internal static string ComposeReport(
+        VirtualCrossoverAuditionContext context,
+        bool spatialAverageRequested,
+        string trackSection,
+        string resultSection)
     {
         var report = new StringBuilder();
+        if (resultSection.Length > 0)
+        {
+            report.AppendLine(resultSection);
+            report.AppendLine();
+        }
+
         report.AppendLine("== Tune ==");
         report.AppendLine($"Project rate: {context.SampleRate} Hz");
         report.AppendLine($"Left side:  {context.LeftChannelCount} channel(s)");
@@ -735,19 +825,58 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
                 "perfectly centred. That is the missing measurement, not the tune.");
         }
 
+        AppendMagnitudeSection(report, context, spatialAverageRequested);
+
         if (trackSection.Length > 0)
         {
             report.AppendLine();
             report.AppendLine(trackSection);
         }
 
-        if (resultSection.Length > 0)
+        return report.ToString().TrimEnd();
+    }
+
+    // Where the render's levels come from, and what that costs — in view the whole
+    // time the user sets a render up, because it is the one choice here that changes
+    // what the tune SOUNDS like rather than how loud or how long it is.
+    private static void AppendMagnitudeSection(
+        StringBuilder report,
+        VirtualCrossoverAuditionContext context,
+        bool spatialAverageRequested)
+    {
+        report.AppendLine();
+        report.AppendLine("== Magnitudes ==");
+        if (context.SpatialAverage == null)
         {
-            report.AppendLine();
-            report.AppendLine(resultSection);
+            report.AppendLine(
+                "From the impulse responses, measured at one microphone position.");
+            report.AppendLine(
+                "No spatial average is available: " +
+                (context.SpatialAverageReason ?? "this tune has none."));
+            return;
         }
 
-        textBoxReport.Text = report.ToString().TrimEnd();
+        if (!spatialAverageRequested)
+        {
+            report.AppendLine(
+                "From the impulse responses, measured at one microphone position — " +
+                "tick the box to hear the spatial averages instead.");
+            return;
+        }
+
+        report.AppendLine(
+            "From the spatial averages: every channel is filtered onto its own " +
+            "average over the listening volume instead of the one position the " +
+            "responses were measured at.");
+        foreach (string line in context.SpatialAverage.ReportLines)
+        {
+            report.AppendLine(line);
+        }
+
+        report.AppendLine(
+            "Timing, polarity and the interference between channels are unchanged: " +
+            "an average carries no phase, so a junction still cancels the way it " +
+            "does at that one position.");
     }
 
     private static string FormatResult(RenderOutcome outcome, string targetPath)
@@ -757,6 +886,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             rendered.Channels[0].Length / (double)rendered.SampleRate;
         var section = new StringBuilder();
         section.AppendLine("== Result ==");
+        section.AppendLine($"Magnitudes: {outcome.MagnitudeLabel}");
         section.AppendLine($"Calibration: {outcome.CalibrationLabel}");
         section.AppendLine($"Cabin subtracted: {outcome.CabinLabel}" +
             (outcome.CabinApplied
@@ -828,7 +958,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         string CalibrationLabel,
         bool CabinApplied,
         string CabinLabel,
-        double CabinTwentyHzDb);
+        double CabinTwentyHzDb,
+        string MagnitudeLabel);
 
     private sealed record CabinOption(CabinBodyStyle? Style, string Label)
     {

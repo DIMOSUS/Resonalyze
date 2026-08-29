@@ -802,7 +802,7 @@ public partial class VirtualCrossoverPanel
             .Where(entry => entry.DatumDb.HasValue)
             .Select(entry => entry.DatumDb!.Value)
             .ToList();
-        return (perChannel, known.Count == 0 ? 0.0 : Median(known), setDatums);
+        return (perChannel, known.Count == 0 ? 0.0 : SpatialAverageOffsets.Median(known), setDatums);
     }
 
     // Every channel that could contribute a datum: the panel's own list, plus any
@@ -858,7 +858,9 @@ public partial class VirtualCrossoverPanel
             SpatialAverageCalibration.Off,
             rawIr.Points.Select(point => point.X).ToList(),
             smoothingCode: 0);
-        return rawCapture == null ? null : ResolveChannelOffsetDb(rawCapture, rawIr.Points);
+        return rawCapture == null
+            ? null
+            : SpatialAverageOffsets.ChannelDatumDb(rawCapture, rawIr.Points);
     }
 
     // The set's common offset, applied on the way to the plot.
@@ -1041,17 +1043,6 @@ public partial class VirtualCrossoverPanel
     /// </remarks>
     private const double HybridDropoutFloorDb = 25;
 
-    /// <summary>
-    /// How far below its own peak a channel is still read when its offset is taken.
-    /// </summary>
-    /// <remarks>
-    /// Wide enough to hold a driver's whole working band with its crossover skirts,
-    /// narrow enough to stay out of the stopband — where the impulse response shows
-    /// what the room and the noise floor left of a filtered driver while the hybrid
-    /// shows the filter's own analytic slope, and the two part by tens of dB.
-    /// </remarks>
-    private const double HybridOffsetBandDb = 20;
-
     /// <returns>
     /// Each channel's own offset, in channel order and skipping the channels with
     /// nothing to compare, together with the set's single figure — the median of
@@ -1068,68 +1059,13 @@ public partial class VirtualCrossoverPanel
         var perChannel = new double?[hybrids.Count];
         for (int i = 0; i < hybrids.Count && i < references.Count; i++)
         {
-            perChannel[i] = ResolveChannelOffsetDb(hybrids[i], references[i].Points);
+            perChannel[i] = SpatialAverageOffsets.ChannelDatumDb(hybrids[i], references[i].Points);
         }
 
         List<double> known = perChannel
             .Where(offset => offset.HasValue)
             .Select(offset => offset!.Value)
             .ToList();
-        return known.Count == 0 ? (perChannel, 0.0) : (perChannel, Median(known));
-    }
-
-    /// <summary>
-    /// The middle of a set of levels — the mean of the two central values when there
-    /// is an even number of them, not the upper one.
-    /// </summary>
-    /// <remarks>
-    /// Taking the upper central value moves the whole hybrid set by half the gap
-    /// between the two middle channels, which on a four-way is not a rounding
-    /// difference. The list is sorted in place.
-    /// </remarks>
-    private static double Median(List<double> values)
-    {
-        values.Sort();
-        int middle = values.Count / 2;
-        return values.Count % 2 == 1
-            ? values[middle]
-            : 0.5 * (values[middle - 1] + values[middle]);
-    }
-
-    // One channel's median difference inside its own working band. Null when the two
-    // curves never overlap there — nothing to align against.
-    private static double? ResolveChannelOffsetDb(
-        IReadOnlyList<SignalPoint> hybrid,
-        IReadOnlyList<SignalPoint> reference)
-    {
-        int count = Math.Min(hybrid.Count, reference.Count);
-        // The peak is taken over the points where BOTH curves exist, or the band it
-        // sets could sit where the hybrid has nothing to say.
-        double peak = double.NegativeInfinity;
-        for (int k = 0; k < count; k++)
-        {
-            if (double.IsFinite(reference[k].Y) && double.IsFinite(hybrid[k].Y))
-            {
-                peak = Math.Max(peak, reference[k].Y);
-            }
-        }
-
-        if (double.IsNegativeInfinity(peak))
-        {
-            return null;
-        }
-
-        double floor = peak - HybridOffsetBandDb;
-        var differences = new List<double>();
-        for (int k = 0; k < count; k++)
-        {
-            double difference = reference[k].Y - hybrid[k].Y;
-            if (double.IsFinite(difference) && reference[k].Y >= floor)
-            {
-                differences.Add(difference);
-            }
-        }
-
-        return differences.Count == 0 ? null : Median(differences);
+        return known.Count == 0 ? (perChannel, 0.0) : (perChannel, SpatialAverageOffsets.Median(known));
     }
 }

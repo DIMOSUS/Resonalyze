@@ -2142,6 +2142,23 @@ The remaining buttons in the column beside the plots:
   level-matched so an A/B differs in tone, not loudness: the raw render
   reproduces the in-car bass rise as headphone boom the in-car listener never
   perceives, while the subtracted one leaves this car's own deviation audible.
+  **Magnitudes** chooses where the levels come from: the impulse responses, measured
+  at one microphone position, or — when the captures allow it — the
+  [spatial averages](#hybrid-spatial-averages-under-the-prediction). The second is the
+  hybrid view made audible. Each channel is filtered onto its own average over the
+  listening volume before the sides are summed, so the render carries the tonal
+  balance those captures state instead of the dips of the one position. The
+  correction is the difference between the two measurements read on the BYPASS pair,
+  ungated, at 1/6 octave and limited to ±12 dB: the DSP chain cancels out of it
+  exactly, so it does not move as you tune, and at that width the position's own
+  interference nulls are narrower than the difference and stay in the render rather
+  than being filled by twenty-odd decibels of boost. It is offered only while both
+  sides' captures form one set, since levelling the sides separately would put an L/R
+  imbalance into the track that the car does not have; a channel without a capture
+  keeps its point response and is named in the report, along with each channel's own
+  correction and any band that reached the limit. What does not change is phase —
+  timing, polarity and the interference at a junction stay the point measurement's,
+  exactly as they do in the hybrid Sum.
   Listen through **headphones only** — it is a stereo auralization of the two
   sides, not a binaural head simulation.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain

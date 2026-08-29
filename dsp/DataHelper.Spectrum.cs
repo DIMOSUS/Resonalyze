@@ -28,6 +28,51 @@ namespace Resonalyze.Dsp
         }
 
         /// <summary>
+        /// An impulse response's UNGATED magnitude: the WHOLE record, no window and no
+        /// gate, resampled and smoothed by the same resampler every other magnitude
+        /// curve in the app goes through.
+        /// </summary>
+        /// <remarks>
+        /// What a steady-state measurement of the same source reads, and it exists so a
+        /// response can be compared against one. A gated curve would answer a different
+        /// question: the window leaves out the cabin's own decay, which a steady-state
+        /// measurement holds in full, so a difference between the two would carry the
+        /// missing energy as though it were a difference between the measurements.
+        /// <para>
+        /// Rectangular, because there is nothing to window: the record is not a frame cut
+        /// out of a running signal but the whole response, and a window over it would only
+        /// taper away the decay this is here to keep. Through
+        /// <see cref="LogarithmicResample"/> and not the band-power path, so it is the
+        /// same KIND of curve as the gated ones it will be compared with — the band-power
+        /// integrator answers in power per band, which rises with the band's width, and a
+        /// difference against a curve that does not would read that rise as a tilt.
+        /// </para>
+        /// </remarks>
+        public static List<SignalPoint> GetUngatedMagnitude(
+            IImpulseMeasurement measurement,
+            double smoothingOctaves,
+            double startHz = 20.0,
+            double stopHz = 20_000.0,
+            int steps = 1024)
+        {
+            ArgumentNullException.ThrowIfNull(measurement);
+            Complex[] response = measurement.ImpulseResponse
+                ?? throw new InvalidOperationException("Impulse response is not available.");
+            if (response.Length < 4 || measurement.SampleRate <= 0)
+            {
+                return [];
+            }
+
+            return LogarithmicResample(
+                GetSpectrumData(measurement, 0, response.Length),
+                startHz,
+                stopHz,
+                steps,
+                calibration: null,
+                smoothingOctaves);
+        }
+
+        /// <summary>
         /// The primary (linear) response spectrum: windowed at the response's own
         /// start (fixed Tukey or FDW), oversampled, log-resampled with optional
         /// calibration and smoothing. Used

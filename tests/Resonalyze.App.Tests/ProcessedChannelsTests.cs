@@ -78,6 +78,38 @@ public sealed class ProcessedChannelsTests
     }
 
     [Fact]
+    public void GetAdjacentPairs_RefusesNeighboursWithAHoleBetweenThem()
+    {
+        // The Rear + Sub view of the reference car: subwoofers stopping at 110 Hz
+        // beside a rear fill high-passed at 290. They are neighbours in the
+        // ordering and nothing hands a band from one to the other — the octave
+        // around the would-be junction (55-220 Hz) is a band the rear does not
+        // play at all. Reported as a junction it produced a summation loss and a
+        // phase recommendation for a crossover that is not in the car.
+        ProcessedChannel sub = Channel("Sub", LowPass(110));
+        ProcessedChannel rear = Channel("Rear", HighPass(290));
+
+        Assert.Empty(ProcessedChannels.GetAdjacentPairs(
+            ProcessedChannels.OrderByBand([sub, rear])));
+    }
+
+    [Fact]
+    public void GetAdjacentPairs_KeepsDriversCrossedALittleApart()
+    {
+        // The gap test must not be stricter than the measurement it guards: two
+        // drivers deliberately crossed a third of an octave apart still hand over,
+        // and both reach well into the octave-each-way window the junction is read
+        // across. Only a hole wide enough that one of them is silent there counts.
+        ProcessedChannel woofer = Channel("W", LowPass(250));
+        ProcessedChannel mid = Channel("M", HighPass(315));
+
+        AdjacentPair pair = Assert.Single(ProcessedChannels.GetAdjacentPairs(
+            ProcessedChannels.OrderByBand([woofer, mid])));
+
+        Assert.Equal(("W", "M"), (pair.Lower.Channel.Name, pair.Upper.Channel.Name));
+    }
+
+    [Fact]
     public void GetCrossoverWindow_DelegatesToJunctionsOverTheChannelSettings()
     {
         ProcessedChannel low = Channel("Sub", LowPass(200));

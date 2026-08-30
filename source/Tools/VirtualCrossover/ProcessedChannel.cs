@@ -230,6 +230,28 @@ internal static class ProcessedChannels
             .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Channel.Settings))
             .ToList();
 
+    /// <summary>
+    /// The junctions in a band-ordered set: each neighbouring pair that actually
+    /// hands one band to the other, with the frequency it happens at and the
+    /// octave to each side where the two genuinely sum.
+    /// </summary>
+    /// <remarks>
+    /// Adjacency along the spectrum is necessary and not sufficient. Two channels
+    /// can be neighbours in the ordering with a hole between them — a subwoofer
+    /// stopping at 110 Hz beside a rear fill starting at 290 — and no filter
+    /// hands anything across that gap. Reported as a junction it produced a
+    /// summation loss and a phase recommendation for a crossover that is not in
+    /// the car, which is the same defect grouped views exist to remove, one level
+    /// down.
+    /// <para>
+    /// The test is the pair's own overlap band: both channels have to PLAY inside
+    /// the octave-each-way window the junction would be measured over. That reuses
+    /// the window the measurement itself uses rather than inventing a gap
+    /// tolerance, and it keeps every real handover — drivers meeting at a shared
+    /// corner both reach well into it, and so do ones deliberately crossed a
+    /// little apart.
+    /// </para>
+    /// </remarks>
     public static List<AdjacentPair> GetAdjacentPairs(IReadOnlyList<ProcessedChannel> byBand)
     {
         var pairs = new List<AdjacentPair>();
@@ -238,6 +260,12 @@ internal static class ProcessedChannels
             double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
                 byBand[i].Channel.Settings, byBand[i + 1].Channel.Settings);
             (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
+            if (!PlaysWithin(byBand[i], bandLowHz, bandHighHz) ||
+                !PlaysWithin(byBand[i + 1], bandLowHz, bandHighHz))
+            {
+                continue;
+            }
+
             pairs.Add(new AdjacentPair(
                 byBand[i],
                 byBand[i + 1],
@@ -247,5 +275,12 @@ internal static class ProcessedChannels
         }
 
         return pairs;
+    }
+
+    private static bool PlaysWithin(ProcessedChannel channel, double lowHz, double highHz)
+    {
+        (double channelLow, double channelHigh) =
+            VirtualCrossoverJunctions.GetChannelBand(channel.Channel.Settings);
+        return channelHigh > lowHz && channelLow < highHz;
     }
 }

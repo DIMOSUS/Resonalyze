@@ -597,6 +597,15 @@ public partial class VirtualCrossoverPanel : UserControl
                     ? project.SmoothingCode
                     : 12;
             comboBoxGroupView.SelectedItem = project.GroupView;
+            // A project can open ON a grouped view, and its selector event is
+            // suppressed while these are applied — so the controls that view
+            // mutes (the hybrid, the Sum and loss toggles, the phase and impulse
+            // radios) are refreshed explicitly. Without this a session saved in
+            // the Groups view reopened with every one of them bright and inert.
+            if (VirtualCrossoverGroupViews.DrawsGroupSums(project.GroupView))
+            {
+                radioViewMagnitude.Checked = true;
+            }
             radioDspMagnitude.Checked =
                 project.EffectiveDspPlotMode == DspPlotMode.Magnitude;
             radioDspPhase.Checked =
@@ -621,6 +630,13 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             suppressProjectEvents = false;
         }
+
+        // Outside the suppressed block, because everything above was applied with
+        // the selectors' own events silenced: the controls a view mutes (the
+        // hybrid, the Sum and loss toggles, the phase and impulse radios) are
+        // refreshed once here from the state that landed. A session saved in the
+        // Groups view used to reopen with every one of them bright and inert.
+        UpdateViewDependentControls();
 
         BindCalibrationSelection(imported, previousCalibrationId, previousSession);
 
@@ -967,6 +983,17 @@ public partial class VirtualCrossoverPanel : UserControl
         comboBoxSmoothing.SelectedIndexChanged += (_, _) => OnViewChanged();
         comboBoxGroupView.SelectedIndexChanged += (_, _) =>
         {
+            // Groups is a MAGNITUDE view: it draws one summed line per zone, and
+            // there is no group phase or group impulse to offer. Rather than let
+            // the phase view quietly fall back to per-driver curves under a
+            // selector that promises group sums, picking Groups moves the view
+            // radio — visibly, so nothing is drawn that the selector denies.
+            if (VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView) &&
+                !radioViewMagnitude.Checked)
+            {
+                radioViewMagnitude.Checked = true;
+            }
+
             // The hybrid's availability depends on the view, so it has to be
             // re-judged here as it is on a magnitude/phase switch.
             UpdateViewDependentControls();
@@ -1555,8 +1582,25 @@ public partial class VirtualCrossoverPanel : UserControl
         // memorizes the colour it mutes — is safe for them.
         Ui.UiStyle.SetTextEnabledLook(
             checkBoxShowSum, !radioViewImpulse.Checked, interactive: true);
+        // No loss is quoted where the view spans more than one group, so its
+        // toggle would be a switch with nothing behind it.
         Ui.UiStyle.SetTextEnabledLook(
-            checkBoxShowLoss, radioViewMagnitude.Checked, interactive: true);
+            checkBoxShowLoss,
+            radioViewMagnitude.Checked &&
+                VirtualCrossoverGroupViews.LossChainZone(SelectedGroupView) != null,
+            interactive: true);
+        // Groups always draws its per-zone sums — they ARE its curves — so the Sum
+        // toggle has nothing to turn off there either. And the view has no phase or
+        // impulse form, so those radios are muted while it is selected rather than
+        // silently falling back to per-driver curves.
+        bool groupSums = VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
+        if (groupSums)
+        {
+            Ui.UiStyle.SetTextEnabledLook(checkBoxShowSum, false, interactive: true);
+        }
+
+        Ui.UiStyle.SetTextEnabledLook(radioViewPhase, !groupSums, interactive: true);
+        Ui.UiStyle.SetTextEnabledLook(radioViewImpulse, !groupSums, interactive: true);
         // Magnitude-only for the same reason the loss is, and it also carries the
         // coverage answer, so it owns its own refresh.
         RefreshHybridAvailability();

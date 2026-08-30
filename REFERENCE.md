@@ -1,4 +1,4 @@
-# Resonalyze Reference
+﻿# Resonalyze Reference
 
 Every mode, panel, setting and graph gesture, with the reasoning behind the ones
 whose behaviour is not obvious — why a window is anchored where it is, why a
@@ -1814,7 +1814,16 @@ drivers: all its lines are gated on one shared anchor, so their relative timing
 is readable off the plot. The target is drawn there too — judging a rear fill's
 level against the house curve is half of what the view is for — but **Hybrid**
 is muted in it, because a spatial average belongs to one driver and there is
-nothing to hang one on when the plot shows only group sums.
+nothing to hang one on when the plot shows only group sums. Groups is a
+magnitude view: it has no phase or impulse form, so picking it moves the view
+to **Magnitude** and mutes the other two rather than quietly falling back to
+per-driver curves under a selector that promises group sums.
+
+Junctions are read where drivers actually hand over, not merely where they are
+neighbours in the ordering. Two channels with a hole between them — subwoofers
+stopping at 110 Hz beside a rear fill starting at 290 — form no junction, so
+neither a summation loss nor a phase recommendation is printed for a crossover
+that is not in the car.
 
 ### Hybrid: spatial averages under the prediction
 

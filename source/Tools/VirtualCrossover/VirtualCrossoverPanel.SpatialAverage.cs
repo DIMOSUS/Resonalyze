@@ -574,7 +574,15 @@ public partial class VirtualCrossoverPanel
     // Whether this redraw should draw the hybrid. Both halves matter: the tick
     // survives a view switch, and a ticked toggle with no coverage behind it must not
     // put a half-built hybrid on the plot.
-    private bool HybridRequested => checkBoxHybrid.Checked && hybridAvailable;
+    // Intent, coverage AND a view that can show it. The last clause is not
+    // cosmetic: muting the toggle only changed how it looks, so with the hybrid
+    // ticked before the switch the Groups view went on computing it — drawing
+    // plain point-measured group sums while the read-out reported a spatial
+    // average offset for curves that were not on the plot.
+    private bool HybridRequested =>
+        checkBoxHybrid.Checked &&
+        hybridAvailable &&
+        !VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
 
     private void RefreshHybridAvailability()
     {

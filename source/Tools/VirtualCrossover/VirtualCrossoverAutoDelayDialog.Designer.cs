@@ -169,9 +169,9 @@
             labelRearFillHint.ForeColor = Color.FromArgb(170, 176, 190);
             labelRearFillHint.Location = new Point(176, 50);
             labelRearFillHint.Name = "labelRearFillHint";
-            labelRearFillHint.Size = new Size(560, 15);
+            labelRearFillHint.Size = new Size(470, 15);
             labelRearFillHint.Text =
-                "how far the rear arrives BEHIND the front - 10-20 ms keeps the image on the dash; 0 sums them for a second row";
+                "how far behind the front the rear arrives - 10-20 ms holds the image; 0 co-arrives";
             // 
             // buttonRun
             // 

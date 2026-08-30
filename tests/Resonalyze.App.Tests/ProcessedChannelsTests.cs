@@ -113,6 +113,34 @@ public sealed class ProcessedChannelsTests
     }
 
     [Fact]
+    public void IsContinuousChain_SeparatesOneChainFromAChainWithAHoleInIt()
+    {
+        // The reference car's Rear + Sub view, which the two-channel case above is
+        // too simple to represent: TWO subwoofers that genuinely cross (below
+        // 50 Hz into 50-110) and then a rear fill from 290 with a hole in front of
+        // it. "Has a junction" is true here — Sub1/Sub2 is real — so that
+        // predicate alone still let a total summation loss through for a set that
+        // is not one chain.
+        ProcessedChannel deep = Channel("Sub1", LowPass(50));
+        ProcessedChannel sub = Channel("Sub2", BandPass(50, 110));
+        ProcessedChannel rear = Channel("Rear", HighPass(290));
+
+        Assert.True(ProcessedChannels.HasJunction([deep, sub, rear]));
+        Assert.False(ProcessedChannels.IsContinuousChain([deep, sub, rear]));
+        // The real junction inside it survives — losing the two subwoofers'
+        // handover would cost information the tuner wants.
+        AdjacentPair pair = Assert.Single(ProcessedChannels.GetAdjacentPairs(
+            ProcessedChannels.OrderByBand([deep, sub, rear])));
+        Assert.Equal(("Sub1", "Sub2"), (pair.Lower.Channel.Name, pair.Upper.Channel.Name));
+
+        // Drop the rear fill and the same two subwoofers ARE one chain.
+        Assert.True(ProcessedChannels.IsContinuousChain([deep, sub]));
+        // As is the front stage they normally sit under.
+        Assert.True(ProcessedChannels.IsContinuousChain(
+            [deep, sub, Channel("MB", BandPass(110, 290)), Channel("Mid", HighPass(290))]));
+    }
+
+    [Fact]
     public void GetAdjacentPairs_KeepsDriversCrossedALittleApart()
     {
         // The gap test must not be stricter than the measurement it guards: two

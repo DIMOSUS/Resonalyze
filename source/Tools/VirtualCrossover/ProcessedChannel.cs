@@ -285,6 +285,23 @@ internal static class ProcessedChannels
     public static bool HasJunction(IReadOnlyList<ProcessedChannel> channels) =>
         GetAdjacentPairs(OrderByBand(channels)).Count > 0;
 
+    /// <summary>
+    /// Whether the set is ONE unbroken crossover chain — every neighbour along
+    /// the spectrum handing over to the next.
+    /// </summary>
+    /// <remarks>
+    /// The distinction that <see cref="HasJunction"/> alone cannot make, and the
+    /// reference car makes it in practice: its Rear + Sub view holds two
+    /// subwoofers that genuinely cross (below 50 Hz into 50–110) and then a rear
+    /// fill from 290 with a hole in front of it. A per-junction figure for the two
+    /// subwoofers is real and worth reading. A TOTAL over the set is not: it
+    /// averages the loss across a span where, for most of it, only one member
+    /// plays — a single number claiming to summarise a chain that is not one.
+    /// </remarks>
+    public static bool IsContinuousChain(IReadOnlyList<ProcessedChannel> channels) =>
+        channels.Count >= 2 &&
+        GetAdjacentPairs(OrderByBand(channels)).Count == channels.Count - 1;
+
     private static bool PlaysWithin(ProcessedChannel channel, double lowHz, double highHz)
     {
         (double channelLow, double channelHigh) =

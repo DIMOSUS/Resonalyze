@@ -1824,9 +1824,16 @@ neighbours in the ordering. Two channels with a hole between them — subwoofers
 stopping at 110 Hz beside a rear fill starting at 290 — form no junction, so
 neither a summation loss nor a phase recommendation is printed for a crossover
 that is not in the car. A view whose chain holds no junction at all drops the
-**Sum loss** curve and its total with them: that figure measures cancellation at
-a crossover, and here there is none to measure. The Sum itself is still drawn —
-the drivers do both play, and their combined output is a real thing to look at.
+**Sum loss** curve with them: that figure measures cancellation at a crossover,
+and here there is none to measure. The Sum itself is still drawn — the drivers
+do both play, and their combined output is a real thing to look at.
+
+The **total** needs more than one junction somewhere: it needs the set to be one
+unbroken chain. Rear + Sub on a car with two subwoofers is the case that
+separates the two — the subwoofers cross each other for real, so their junction
+row is shown, but the rear fill sits above a hole and a single figure over the
+whole span would average that real handover with a range only one member plays
+in. The per-junction rows stay; the total does not appear.
 
 Everything the read-out says follows the selector too, the L/R timing block
 included: a front view does not list the rear pair's Δ.

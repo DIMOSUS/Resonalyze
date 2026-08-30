@@ -197,6 +197,16 @@ internal sealed class VirtualCrossoverMetrics
             }
         }
 
+        // A total only where the set IS one chain. With a hole in it — the
+        // reference car's two subwoofers and then a rear fill from 290 Hz — the
+        // per-junction rows above are still real and worth reading, but a single
+        // figure over the whole window would average them with a span only one
+        // member plays in, and present that as the chain's summation loss.
+        if (!ProcessedChannels.IsContinuousChain(processed))
+        {
+            return entries;
+        }
+
         (double minHz, double maxHz) = ProcessedChannels.GetCrossoverWindow(processed);
         double? loss = VirtualCrossoverAnalysis.AverageSumLossDb(
             lossCurve, minHz, maxHz);

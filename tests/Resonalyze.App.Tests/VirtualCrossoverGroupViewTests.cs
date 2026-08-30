@@ -101,6 +101,42 @@ public sealed class VirtualCrossoverGroupViewTests
     }
 
     [Fact]
+    public void AViewThatQuotesALossMustNotDrawAnUnsummedChannelIntoIt()
+    {
+        // Front + Center is the awkward one and the reason this rule is written
+        // down: it DOES quote a loss (of the front chain), and it also draws a
+        // channel that is not in the sum. The junction read-outs therefore have
+        // to be built from the summed subset, not from what is on screen —
+        // otherwise the centre is paired with its neighbouring front driver as
+        // if a crossover existed between them, and a front-only loss figure gets
+        // labelled with that invented junction.
+        //
+        // Stated here as an invariant over the views rather than as a fact about
+        // one call site: any view where the two sets differ is a view whose
+        // junction metrics must follow the sum.
+        foreach (VirtualCrossoverGroupView view in VirtualCrossoverGroupViews.All)
+        {
+            bool drawsSomethingUnsummed = VirtualCrossoverZones.All.Any(zone =>
+                VirtualCrossoverGroupViews.IsShown(view, zone) &&
+                !VirtualCrossoverGroupViews.ParticipatesInTotalSum(view, zone));
+            if (!drawsSomethingUnsummed ||
+                VirtualCrossoverGroupViews.LossChainZone(view) == null)
+            {
+                continue;
+            }
+
+            // The only view in that corner today. If another joins it, this test
+            // is the reminder that its junction rows need the same care.
+            Assert.Equal(VirtualCrossoverGroupView.FrontAndCenter, view);
+            Assert.Equal(
+                VirtualCrossoverZone.Front,
+                VirtualCrossoverGroupViews.LossChainZone(view));
+            Assert.False(VirtualCrossoverGroupViews.ParticipatesInTotalSum(
+                view, VirtualCrossoverZone.Center));
+        }
+    }
+
+    [Fact]
     public void TheDefaultViewIsWhatEverySingleStageProjectAlreadyWas()
     {
         // Front + Sub must stay first and must be the enum's zero: a project

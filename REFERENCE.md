@@ -1811,7 +1811,10 @@ arrives later) and level difference (ΔdB, negative when it is quieter), measure
 on the groups' summed responses in the band they share. The Groups view exists
 for exactly that adjustment, which is why it draws the sums rather than the
 drivers: all its lines are gated on one shared anchor, so their relative timing
-is readable off the plot.
+is readable off the plot. The target is drawn there too — judging a rear fill's
+level against the house curve is half of what the view is for — but **Hybrid**
+is muted in it, because a spatial average belongs to one driver and there is
+nothing to hang one on when the plot shows only group sums.
 
 ### Hybrid: spatial averages under the prediction
 

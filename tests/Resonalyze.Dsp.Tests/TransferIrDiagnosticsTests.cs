@@ -918,28 +918,59 @@ public sealed class TransferIrDiagnosticsTests
     // cannot tell that from the fault — both are over the ceiling — but what fills
     // the window can: one arrival with its own decay is a discrete event, the fault
     // is a ring that fills it evenly.
+    // Two fully causal arrivals, the weaker one first: a record whose strongest
+    // sample is not its direct sound. The level alone reads it as acausal at every
+    // band, and it must never be REFUSED for that — either because the window is
+    // seen to hold one discrete event, or, where the excitation is too narrow for
+    // that reading to mean anything, because the refusal is withheld there.
     [Theory]
-    [InlineData(0.20)] // the direct at 4 % of the reflection's energy: -18.0 dB
-    [InlineData(0.30)]
-    [InlineData(0.45)]
-    public void MeasurePreArrivalDb_MarksAnObstructedArrivalAsADiscreteEvent(
-        double directAmplitude)
+    [InlineData(20.0, 25.0, 0.20)]
+    [InlineData(20.0, 50.0, 0.20)]
+    [InlineData(20.0, 200.0, 0.20)]
+    [InlineData(20.0, 1000.0, 0.20)]
+    [InlineData(20.0, 1000.0, 0.30)]
+    [InlineData(20.0, 1000.0, 0.45)]
+    [InlineData(20.0, 20000.0, 0.20)]
+    public void MeasurePreArrivalDb_NeverRefusesAnObstructedArrival(
+        double lowFullHz, double highFullHz, double directAmplitude)
     {
         const int FrameLength = 262_144;
         var record = new double[FrameLength];
         AddDecayingArrival(record, atMs: 300.0, amplitude: directAmplitude, decaySeconds: 0.25);
         AddDecayingArrival(record, atMs: 500.0, amplitude: 1.0, decaySeconds: 0.25);
-        double[] banded = BandLimit(record, 20.0, 1000.0);
+        ExcitationBandGate gate = ProductionGate(lowFullHz, highFullHz);
+        double[] banded = BandLimit(record, gate);
 
         TransferIrPreArrival reading =
             TransferIrDiagnostics.MeasurePreArrivalDb(banded, SampleRate)!.Value;
 
-        Assert.True(
-            reading.LevelDb > TransferIrDiagnostics.MaximumPreArrivalDb,
-            $"the level alone is supposed to be fooled; it read {reading.LevelDb:0.0} dB");
-        Assert.True(
-            reading.CrestDb >= TransferIrDiagnostics.PreArrivalCrestDb,
-            $"a discrete arrival must read as one; crest was {reading.CrestDb:0.0} dB");
+        // Whichever way the record is spared, it must be spared: crest says it is
+        // one event, or the band is too narrow for the refusal to be offered.
+        bool refused =
+            reading.LevelDb > TransferIrDiagnostics.MaximumPreArrivalDb &&
+            reading.CrestDb < TransferIrDiagnostics.PreArrivalCrestDb &&
+            TransferIrDiagnostics.CanRefuseOnPreArrival(gate);
+        Assert.False(
+            refused,
+            $"{lowFullHz}-{highFullHz} Hz at {100 * directAmplitude * directAmplitude:0} % " +
+            $"read {reading.LevelDb:0.0} dB with {reading.CrestDb:0.0} dB of crest");
+    }
+
+    // The band rule the case above leans on, stated on its own: crest can only
+    // separate an event from a ring over a wide excitation.
+    [Theory]
+    [InlineData(20.0, 50.0, false)]
+    [InlineData(20.0, 200.0, false)]
+    [InlineData(20.0, 400.0, true)]
+    [InlineData(20.0, 1000.0, true)]
+    [InlineData(0.0, 0.0, true)] // full range
+    public void CanRefuseOnPreArrival_FollowsTheExcitationSpan(
+        double lowFullHz, double highFullHz, bool refusable)
+    {
+        Assert.Equal(
+            refusable,
+            TransferIrDiagnostics.CanRefuseOnPreArrival(
+                ProductionGate(lowFullHz, highFullHz)));
     }
 
     // The counterpart, on the shape the refusal exists for: a ring fills the window
@@ -1056,14 +1087,8 @@ public sealed class TransferIrDiagnosticsTests
         }
     }
 
-    private static double[] BandLimit(double[] record, double lowHz, double highHz)
+    private static double[] BandLimit(double[] record, ExcitationBandGate gate)
     {
-        double nyquist = SampleRate / 2.0;
-        ExcitationBandGate gate = new(
-            lowHz / 1.414 / nyquist,
-            lowHz / nyquist,
-            highHz / nyquist,
-            Math.Min(1.0, highHz * 1.414 / nyquist));
         double[] reference = StationaryNoise(record.Length, seed: 7);
         return TransferFunction.ComputeAveragedRelativeIr(
             [new TransferFunctionFrame(reference, CircularConvolve(reference, record))],

@@ -2079,8 +2079,12 @@ namespace Resonalyze
             // One discrete event in that window is a record whose strongest sample
             // is not its arrival, not a reference that cancelled itself. It still
             // gets reported by the caution below — the reading is real either way —
-            // but it must not cost the measurement.
-            if (preArrival.CrestDb >= TransferIrDiagnostics.PreArrivalCrestDb)
+            // but it must not cost the measurement. And crest can only say which of
+            // the two it is over a wide enough excitation: on a narrow band even a
+            // single arrival smears until it reads like a ring, so there the
+            // refusal is withheld and the caution speaks instead.
+            if (preArrival.CrestDb >= TransferIrDiagnostics.PreArrivalCrestDb ||
+                !TransferIrDiagnostics.CanRefuseOnPreArrival(ExcitationGate()))
             {
                 return;
             }
@@ -2104,16 +2108,21 @@ namespace Resonalyze
         /// </summary>
         private TransferIrPreArrival? MeasurePreArrival(Complex[] transfer)
         {
-            ExcitationBandGate gate = Sweep is { } sweep
-                ? BuildExcitationGate(sweep)
-                : ExcitationBandGate.FullBand;
             // Not a fail-closed gate: the compactness check has already refused
             // content that cannot be measured at all, and a record this one cannot
             // judge must not be refused twice for the same silence.
-            return TransferIrDiagnostics.CanJudgePreArrival(gate)
+            return TransferIrDiagnostics.CanJudgePreArrival(ExcitationGate())
                 ? TransferIrDiagnostics.MeasurePreArrivalDb(transfer, SampleRate)
                 : null;
         }
+
+        /// <summary>
+        /// The gate the current sweep excites through, or the full band when there
+        /// is no sweep to read it off.
+        /// </summary>
+        private ExcitationBandGate ExcitationGate() => Sweep is { } sweep
+            ? BuildExcitationGate(sweep)
+            : ExcitationBandGate.FullBand;
 
         /// <summary>
         /// What the published result has to say about itself short of a refusal, or

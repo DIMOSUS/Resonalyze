@@ -579,6 +579,12 @@ a single event, the fault is a ring that fills it evenly. A discrete event is
 reported instead of refused, and says so — the reference is probably fine there,
 and what wants checking is where the microphone was pointed.
 
+That reading only means something over a wide excitation. A band-limited record
+cannot hold an event sharper than its own bandwidth allows, so on a narrow band
+even a single arrival smears until it looks like a ring. Below five octaves the
+refusal is therefore withheld and the report speaks instead — the reading is
+still made and still shown, but a band sweep is never refused for it.
+
 The check stays silent on a sweep whose duration was too short to open a guard
 band around its requested band (under a third of an octave). The estimator's own
 band-limiting kernel is symmetric, so it rings both ways too; with the guard the

@@ -698,10 +698,12 @@ public enum TargetPreset
 }
 
 /// <summary>
-/// A parametric target response shape (relative dB) built from an overall tilt
-/// around a 1 kHz pivot, a low-frequency shelf, a high-frequency shelf, and a
-/// presence bump. Presets are just parameter sets the user can edit, and the
-/// four terms cover room, car, home-theater (X-curve), and voicing targets.
+/// A target response shape (relative dB). By default it is parametric: an overall
+/// tilt around a 1 kHz pivot, a low-frequency shelf, a high-frequency shelf, and a
+/// presence bump. Presets are just parameter sets the user can edit, and the four
+/// terms cover room, car, home-theater (X-curve), and voicing targets. When
+/// <see cref="Imported"/> is set the shape is a curve read from a file instead,
+/// and the parametric terms are carried along untouched but unused.
 /// </summary>
 public sealed record TargetCurveSpec(
     double TiltDbPerOctave,
@@ -716,6 +718,16 @@ public sealed record TargetCurveSpec(
     double PresenceWidthOctaves)
 {
     public const double PivotHz = 1_000.0;
+
+    /// <summary>
+    /// A shape read from a file, which REPLACES the parametric terms while it is
+    /// set. It rides inside the spec rather than beside it so that everything
+    /// already passing a target shape around — the settings dialog and its live
+    /// preview, the overlay math, the wizard plot, the Virtual DSP plot and the
+    /// auto-tuner behind it — keeps working through the one <see cref="Evaluate"/>
+    /// they all ask, and so that a target has exactly one shape at a time.
+    /// </summary>
+    public ImportedTargetCurve? Imported { get; init; }
 
     public static TargetCurveSpec FromPreset(TargetPreset preset) => preset switch
     {
@@ -755,6 +767,11 @@ public sealed record TargetCurveSpec(
         if (!(frequencyHz > 0))
         {
             return 0;
+        }
+
+        if (Imported != null)
+        {
+            return Imported.Evaluate(frequencyHz);
         }
 
         double value = TiltDbPerOctave * Math.Log2(frequencyHz / PivotHz);

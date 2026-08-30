@@ -54,7 +54,14 @@ internal sealed record EqTargetCurve(
                 Finite(Spec.TrebleShelfWidthOctaves, flat.TrebleShelfWidthOctaves),
                 Finite(Spec.PresenceGainDb, flat.PresenceGainDb),
                 Finite(Spec.PresenceFrequencyHz, flat.PresenceFrequencyHz),
-                Finite(Spec.PresenceWidthOctaves, flat.PresenceWidthOctaves)),
+                Finite(Spec.PresenceWidthOctaves, flat.PresenceWidthOctaves))
+            {
+                // An imported shape needs no repair here: nothing can build one
+                // except ImportedTargetCurve, which drops what it cannot use and
+                // refuses to exist at all below two points. Dropping it instead
+                // would silently turn a user's house curve back into a preset.
+                Imported = Spec.Imported
+            },
             Finite(ToleranceDb, DefaultToleranceDb),
             Defined(DeviationMode, TargetDeviationMode.Deviation),
             Color,

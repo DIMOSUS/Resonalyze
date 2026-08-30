@@ -217,7 +217,8 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   Phase, Group Delay, Frequency Response and Impulse Response, and **overlays** —
   captured, calculated and target curves with styling, curve math,
   import/export, saved per-mode state, and a live editing preview
-- **EQ Wizard** — up to 32 PEQ bands toward its own target, from an IR, an
+- **EQ Wizard** — up to 32 PEQ bands toward its own target (a parametric shape,
+  or a house curve of your own imported from a text file), from an IR, an
   overlay slot, a text curve or a Virtual DSP channel handed over for editing
   (and returned with one click), with Auto Tune, cross-tool import/export and a
   printable tuning-sheet PDF

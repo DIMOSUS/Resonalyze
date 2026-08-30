@@ -35,6 +35,7 @@ read-out refuses rather than guesses, what a number was measured against.
   - [Import and export](#import-and-export)
   - [Complex (vector) sum](#complex-vector-sum)
 - [EQ Wizard](#eq-wizard)
+  - [The target curve](#the-target-curve)
   - [Choosing what to equalize](#choosing-what-to-equalize)
   - [Editing a Virtual DSP channel's PEQ](#editing-a-virtual-dsp-channels-peq)
   - [Auto Tune](#auto-tune)
@@ -1030,7 +1031,9 @@ overlay opens on `Car`. `X-curve (cinema)` follows ISO 2969 / SMPTE ST 202 —
 flat to 2 kHz, then ≈-3 dB/oct. The deviation curve is **Deviation**
 (`measurement − target`), **EQ correction** (`target − measurement`, the gain to
 dial into an equalizer), or **None**. Target overlays are available in Frequency
-Response and Live Spectrum.
+Response and Live Spectrum, and their shape is always one of these parametric
+ones; the separate target the [EQ Wizard](#the-target-curve) and
+[Virtual DSP](#virtual-dsp) share can also be a curve imported from a file.
 
 ![Target overlay settings](assets/images/target_overlay.png)
 
@@ -1087,9 +1090,47 @@ The **EQ Wizard** (under the **Tools** tab) designs a parametric equalizer — u
 to 32 bands plus a preamp — that moves a measured response toward a
 target. It owns its own target curve, edited through the same dialog the Target
 overlays use but stored with the wizard's own settings, so tuning here never
-disturbs your overlay slots.
+disturbs your overlay slots — and it need not be one of the shapes that dialog
+builds, as the next section describes.
 
 ![EQ Wizard mode](assets/images/eq_wizard.png)
+
+### The target curve
+
+**Target Curve…** drops a menu of the two shapes a target can have, ticking the
+one in force:
+
+- **Parametric shape…** opens the settings dialog described under
+  [Target curves](#target-curves) — a tilt, two shelves and a presence bump, from
+  a preset or edited by hand.
+- **Import from file…** loads a **house curve of your own**: a plain-text file of
+  `frequency level` pairs, one per line, read as leniently as an overlay text
+  import (any separator, extra columns ignored, comment and header lines skipped).
+  A REW target file, a curve exported from an overlay slot and a pair of columns
+  out of a spreadsheet all load. The menu entry then names the file, and its
+  tooltip says how many points the curve holds and what band it covers.
+
+An imported curve is read as **relative dB**, exactly like a parametric shape:
+whatever it reads at 1 kHz is subtracted from it, so a file written around 75 dB
+SPL and the same shape written around 0 dB become one target, hung at the
+**Target Level** you set. Between its points it runs straight in log frequency
+and dB; **outside its range it holds its end values** rather than continuing
+their slope — a curve that stops at 200 Hz says nothing about 10 kHz, and
+inventing a target there is something Auto Tune would spend real filters chasing.
+A file denser than 1024 points is thinned onto a log grid across its own range,
+because the curve is stored by value (see below) and a full-resolution export
+runs to tens of thousands of lines. A **deviation** or **EQ correction** curve is
+refused: it is the difference between a response and a target, not a target.
+
+The imported curve is stored with the wizard's settings and in a
+[Virtual DSP](#virtual-dsp) session — as the curve itself, not as a path to where
+it was imported from, so it survives the file being moved, renamed or edited. It
+also rides through the parametric dialog: it appears as the first entry of the
+**Preset** list, keeping the tilt and shelf fields disabled while it is selected,
+so editing the tolerance, the colour or the line style does not quietly drop it.
+Picking any real preset there is the way back to a parametric shape, and the
+imported entry stays in the list until the dialog is closed, so trying a preset
+against your own curve does not cost you the curve.
 
 ### Choosing what to equalize
 
@@ -1853,7 +1894,8 @@ the response has begun and read the record minus its direct arrival.
 
 A **Target** checkbox draws the EQ target over the prediction: the SAME target
 the EQ Wizard equalizes towards, shaped from either place through the same
-**Target...** dialog, so the tool that predicts the sum and the tool that
+**Target...** menu — a [parametric shape or a house curve imported from a
+file](#the-target-curve) — so the tool that predicts the sum and the tool that
 corrects it aim at one curve rather than at two that drifted apart. These curves
 are transfer-function dB with no absolute reference, so the target has no level
 of its own here — the dB box beside the checkbox says where it hangs. The
@@ -1861,6 +1903,8 @@ session stores both: that level, which belongs to this plot's dB reference and
 so stays put when the shape is retuned, and the target itself — the whole custom
 shape rather than a preset name, because a preset's numbers can change between
 versions while a session has to open aiming at the curve it was tuned against.
+An imported house curve travels the same way, as its points rather than as a path
+to the file, for the same reason.
 Loading a session therefore sets the app's target to the one it carries, which
 is the same single target the EQ Wizard shows; a session written before targets
 were stored carries none, keeps yours, and starts carrying it. A target is a

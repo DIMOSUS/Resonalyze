@@ -94,6 +94,11 @@ public sealed class VirtualCrossoverTargetSettings
     public double PresenceGainDb { get; set; }
     public double PresenceFrequencyHz { get; set; } = 3_000;
     public double PresenceWidthOctaves { get; set; } = 1.0;
+    // An imported target shape, stored by value for the same reason the rest of
+    // this class is flat: a session has to open aiming at exactly the curve it was
+    // tuned against, and a path to the file it came from is not that promise.
+    public string? ImportedName { get; set; }
+    public double[]? ImportedCurve { get; set; }
     public double ToleranceDb { get; set; } = 3;
     public TargetDeviationMode DeviationMode { get; set; } = TargetDeviationMode.Deviation;
     public int ColorArgb { get; set; } = unchecked((int)0xFF37C8A0);
@@ -116,7 +121,13 @@ public sealed class VirtualCrossoverTargetSettings
             TrebleShelfWidthOctaves,
             PresenceGainDb,
             PresenceFrequencyHz,
-            PresenceWidthOctaves),
+            PresenceWidthOctaves)
+        {
+            // Read back through the importer, which drops what it cannot use: a
+            // curve too damaged to be a shape leaves the parametric terms in
+            // charge rather than failing the session.
+            Imported = ImportedTargetCurve.FromStorage(ImportedName, ImportedCurve)
+        },
         ToleranceDb,
         DeviationMode,
         Color.FromArgb(ColorArgb),
@@ -140,6 +151,8 @@ public sealed class VirtualCrossoverTargetSettings
             PresenceGainDb = curve.Spec.PresenceGainDb,
             PresenceFrequencyHz = curve.Spec.PresenceFrequencyHz,
             PresenceWidthOctaves = curve.Spec.PresenceWidthOctaves,
+            ImportedName = curve.Spec.Imported?.Name,
+            ImportedCurve = curve.Spec.Imported?.ToStorage(),
             ToleranceDb = curve.ToleranceDb,
             DeviationMode = curve.DeviationMode,
             ColorArgb = curve.Color.ToArgb(),

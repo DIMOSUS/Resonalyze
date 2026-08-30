@@ -401,8 +401,12 @@ internal static class Shots
 
         if (wanted("manual/eq-target"))
         {
+            // The button drops a menu (parametric shape / import from file), so the
+            // figure asks for the dialog itself rather than posing the menu — the
+            // shot is of the parametric editor, and a posted drop-down is not a
+            // modal to wait on.
             session.CaptureModal("manual/eq-target",
-                () => Reflect.Field<Button>(panel, "buttonTargetSettings").PerformClick(), 2_000);
+                () => Reflect.Invoke(panel, "OpenTargetSettings"), 2_000);
         }
 
         if (wanted("manual/auto-crossover"))

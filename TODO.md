@@ -532,9 +532,11 @@ items below are what a car DSP tune actually needs, roughly in priority order.
 Deliberately out of scope for car DSP tuning (do not add here): FIR/convolution
 export (car DSPs are biquad), the DECOMPOSED phase views — minimum phase, excess
 phase and group delay, which are the analysis tabs' subject — real-time PC audio
-preview (you listen in the car after loading the profile), arbitrary target-curve
-import (the Car / CarMild / XCurve presets cover it), and HP/LP filter types
-(crossover tool). The wizard's Phase mode is not one of these and is IN scope: it
+preview (you listen in the car after loading the profile), and HP/LP filter types
+(crossover tool). Arbitrary target-curve import used to be on this list, on the
+grounds that the Car / CarMild / XCurve presets cover it; it is now shipped
+(**Target Curve… → Import from file…**), because a tuner who already has a house
+curve of their own has nothing to gain from a preset that resembles it. The wizard's Phase mode is not one of these and is IN scope: it
 draws the measured phase of the channel being tuned against the neighbours it was
 handed, which is the only way to see what an all-pass band did — a magnitude plot
 shows it as flat by construction.

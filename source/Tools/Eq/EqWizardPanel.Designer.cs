@@ -20,6 +20,8 @@
                 // owned by the designer container and would otherwise leak its handle.
                 sourceMenu?.Dispose();
                 sourceMenu = null;
+                targetMenu?.Dispose();
+                targetMenu = null;
                 bandTypeMenu?.Dispose();
                 bandTypeMenu = null;
                 // Created in code (see EqWizardPanel.Bank.cs), so it is not in the

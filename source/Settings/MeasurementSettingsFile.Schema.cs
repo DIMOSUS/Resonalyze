@@ -656,6 +656,14 @@ internal sealed partial class MeasurementSettingsFile
         public double PresenceGainDb { get; set; }
         public double PresenceFrequencyHz { get; set; } = 3000;
         public double PresenceWidthOctaves { get; set; } = 1.0;
+        // An imported target shape, which replaces the parametric terms above
+        // while it is there (they are still stored: picking a preset in the
+        // settings dialog is how the user goes back to them). The curve travels by
+        // value, as the flat "frequency, level, …" list ImportedTargetCurve writes
+        // — a path would name a file the settings cannot promise is still there —
+        // and the name beside it is the label the menu shows, nothing more.
+        public string? TargetImportedName { get; set; }
+        public double[]? TargetImportedCurve { get; set; }
         public double ToleranceDb { get; set; } = 3;
         public TargetDeviationMode DeviationMode { get; set; } = TargetDeviationMode.Deviation;
         public int TargetColorArgb { get; set; } = unchecked((int)0xFF37C8A0);

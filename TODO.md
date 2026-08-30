@@ -492,6 +492,17 @@ items below are what a car DSP tune actually needs, roughly in priority order.
   "driver band" it works inside is just the user's From/To window. Derive each
   driver's usable band from the measured roll-off or the crossover so the mask
   also blocks boosts outside it.
+- [ ] **The imported target trusts the file to be a magnitude.**
+  `TargetCurveImport` refuses only the two roles that are differences
+  (`Deviation`, `EqCorrection`); it never looks at `AnalysisCurveKind`, so a
+  phase or group-delay export loads as a target and its degrees or milliseconds
+  are read as dB. Borrowing `EqWizardSourceResolver.IsEqualizableResponse` would
+  close it for our OWN labelled exports and nothing more: a file from another
+  tool declares no kind at all, and `null` is permitted on purpose, so a
+  spreadsheet column of group delay still passes. `Primary` alone does not say
+  "magnitude" either. The real fix is in what the text header can state, not in
+  a pair of `if`s at the import — which is why this is a note rather than a
+  patch (raised in the #143 review).
 - [ ] **Decide whether the shelf stage should default on.** Auto Tune fits
   low/high shelves now (`EqAutoTuner.Options.AllowShelves`, the wizard's
   **Shelves** box), gated on finishing the whole fit both ways and landing

@@ -440,16 +440,16 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "junction it pins.");
         toolTip.SetToolTip(
             comboBoxZone,
-            "Which part of the installation this block is.\r\n" +
-            "Front, Rear and Center can play the SAME band from\r\n" +
-            "different places, which is what the crossover corners\r\n" +
-            "cannot tell apart: the zone is how the sum, the metric\r\n" +
-            "and Auto delay know a rear fill from a midrange.\r\n" +
-            "Sub is a zone for the views and the tuning sheet — the\r\n" +
-            "subwoofers are still tuned as the bottom of the front\r\n" +
-            "chain, which is where their junctions are.\r\n" +
+            "Which part of the installation this block is — the fact\r\n" +
+            "the crossover corners cannot give, because Front, Rear\r\n" +
+            "and Center can play the SAME band from different places.\r\n" +
             "Center forces Mono: it plays a signal derived from L\r\n" +
-            "and R, so it has no side.");
+            "and R, so it has no side.\r\n" +
+            "For now the zone only labels the block and travels with\r\n" +
+            "the project. The sum, the metric and Auto delay still\r\n" +
+            "read every channel as one chain along the spectrum;\r\n" +
+            "the grouped views and the staged alignment that act on\r\n" +
+            "the zone come next.");
         toolTip.SetToolTip(
             labelMeasuredPolarity,
             "Acoustic polarity read from the measured IR\r\n" +

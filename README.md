@@ -196,7 +196,7 @@ is set to show no animations (Settings → Accessibility → Visual effects).
 - **Crossover summation prediction** — in Frequency Response, the true **complex
   (vector) sum** of two measurements (`Main ⊕ Compare`) with Compare
   delay/polarity controls, plus a **sum-loss** curve
-- **Virtual DSP** — up to eight L/R driver pairs (plus mono channels) through
+- **Virtual DSP** — up to twelve L/R driver pairs (plus mono channels) through
   virtual chains: gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel /
   Chebyshev crossovers and PEQ (all-pass bands included), with the complex sum,
   sum loss, phase tracking, junction read-outs, Δ L−R timing, **Auto crossover**,

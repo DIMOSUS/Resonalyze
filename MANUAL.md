@@ -640,6 +640,13 @@ For a three-way front stage with a subwoofer:
 Load the saved `.json` measurements for the **Left** and **Right** sides of each stereo
 band. For a shared subwoofer, enable **Mono** and load its single measurement.
 
+Set each block's **Zone** while you are there — **Front** for the stereo bands of the
+front stage, **Sub** for the subwoofer, and **Rear** or **Center** for the blocks a
+larger install adds. Picking **Center** switches **Mono** on and locks it, because a
+centre channel plays a signal derived from L and R and has no side of its own. The zone
+is a label for now; it costs nothing to set, and it is what the grouped views and the
+staged Auto delay will read once they arrive.
+
 So seven RAW measurements become four Virtual DSP channels:
 
 > **Sub → A Mono**

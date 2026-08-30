@@ -1659,7 +1659,7 @@ which side the controls edit, **L→R** / **R→L** copy chain settings across s
 (a dialog picks the channels and which parts travel — see below),
 and a **Mono** checkbox turns a pair into a single shared driver — the typical
 one-subwoofer car layout — feeding both sides' sums. The setup grows from two up
-to eight pairs, and **+/−** folds a block down to its header. Every channel in a
+to twelve pairs, and **+/−** folds a block down to its header. Every channel in a
 project must share one sample rate — the rate they were MEASURED at, which is a
 separate question from the rate the processor runs at (see
 [DSP processor](#dsp-processor)).
@@ -1677,8 +1677,27 @@ Each channel runs through:
 
 - **Gain** (dB) — relative levels are only honest when the measurements share one
   playback chain; compensate any difference here
-- **Delay** (ms) with a live **mm** read-out — the ruler check against the
-  physical driver offset (343 m/s)
+- **Delay** (ms) — its tooltip states the same figure as a distance in air, the
+  ruler check against the physical driver offset (343 m/s)
+- **Zone** — which part of the installation the block is: **Front**, **Rear**,
+  **Center** or **Sub**. It is the one fact the crossover corners cannot give,
+  because those three zones can play the *same* band from different places: a
+  rear pair high-passed at 290 Hz overlaps the front midrange and tweeter
+  entirely and has no junction with either. **Center** forces **Mono** and locks
+  it — a centre plays a signal derived from L and R, so it has no side; every
+  other zone leaves the checkbox free, since a subwoofer pair can be stereo and
+  a rear pair normally is. Zone and Mono are deliberately separate fields: Mono
+  is a routing fact, and one car can carry two mono subwoofers in different
+  bands beside a mono centre.
+
+  Today the zone only labels the block and travels with the project. The sum,
+  the sum loss, the metric read-out and Auto delay still read every channel as
+  one chain along the spectrum, ordered by band centre — the grouped views and
+  the staged alignment that act on the zone are still to come. Projects saved
+  before zones existed are given one on load, guessed from what those files do
+  record: a stereo pair becomes Front, and a mono block becomes Sub unless it
+  high-passes, which no subwoofer does — that one becomes Center. Nothing else
+  about such a project changes, so a wrong guess costs one combo box.
 - **Invert** — the DSP polarity switch
 - **Crossover** — Off, low-pass, high-pass, or band-pass; each edge picks
   **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/36/48 dB/oct),

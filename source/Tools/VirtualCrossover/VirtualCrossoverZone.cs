@@ -25,11 +25,17 @@ namespace Resonalyze;
 /// here.
 /// </para>
 /// <para>
-/// <see cref="Sub"/> is a zone for DISPLAY and for the tuning sheet. For
-/// alignment and the crossover wizard the subwoofers are the bottom members of
-/// the front chain, which is how they are tuned in practice: the two subs of the
-/// reference install (below 50 Hz and 50–110 Hz) form real junctions with each
-/// other and with the midbass.
+/// <see cref="Sub"/> is meant as a zone for DISPLAY and for the tuning sheet:
+/// where alignment and the crossover wizard are concerned the subwoofers are the
+/// bottom members of the front chain, which is how they are tuned in practice —
+/// the two subs of the reference install (below 50 Hz and 50–110 Hz) form real
+/// junctions with each other and with the midbass.
+/// </para>
+/// <para>
+/// Nothing reads the zone yet. It is persisted, shown and migrated here so the
+/// fact exists; the grouped views, the staged Auto delay and the per-group
+/// crossover wizard that consume it land in their own changes. Until then the
+/// sum, the metric and the alignment still order every channel by band centre.
 /// </para>
 /// </remarks>
 public enum VirtualCrossoverZone

@@ -320,11 +320,41 @@ public static class AutoAlignmentEngine
     /// leave a whole-period cycle skip legal, and stage 2 cannot undo one: its
     /// window reaches the opposite-polarity partner half a period out, not the
     /// same-polarity lobe a full period out. So the deep pick only opens the
-    /// question, and <see cref="DirectSeedMinCoefficient"/>'s witness answers
-    /// it — the direct-sound cut has to land on the SAME lobe, within a
-    /// quarter period and in the same polarity. That witness is what the
-    /// arrival was standing in for: an independent read of where the two
-    /// wavefronts line up, taken on the cuts the reflections never enter.
+    /// question, and what answers it depends on the junction.
+    /// </para>
+    /// <para>
+    /// AT AND ABOVE <see cref="DirectSeedMinCrossoverHz"/> the direct-sound cut
+    /// answers it: it has to land on the same lobe, within
+    /// <see cref="DirectCorroborationPeriods"/> and in the same polarity — an
+    /// independent read of where the two wavefronts line up, taken where the
+    /// reflections never enter.
+    /// </para>
+    /// <para>
+    /// BELOW it that witness does not exist, and this says so rather than
+    /// faking one. The cut's window is sized in PERIODS — half a period of
+    /// fade, two periods of plateau — so at a 110 Hz junction it runs 27 ms and
+    /// the very build-up the arrival was picked under sits inside its plateau.
+    /// Measured on the field cabin: 96 % of that "direct" cut's energy lies
+    /// more than a period behind the front, and shortening the plateau to 1.5,
+    /// 1.0, 0.75 and 0.5 periods walks its extremum to +4.95, +4.16, -0.24 and
+    /// -0.38 ms. It is not a wavefront read (the same physics
+    /// <see cref="DirectSeedMinCrossoverHz"/> already states). A sub-band
+    /// consistency test fares no better: at a crossover the lower half of the
+    /// pair band is the lower channel alone and the upper half the upper
+    /// channel alone, so the halves do not measure one relation — they read
+    /// +6.37 and +4.61 against the whole band's +1.32.
+    /// </para>
+    /// <para>
+    /// So below that frequency the exception rests on the EXTREMUM's own
+    /// strength, held to the bar a direct seed must clear
+    /// (<see cref="DirectSeedMinCoefficient"/>) rather than the floor a seed
+    /// needs (<see cref="PhatSeedMinCoefficient"/>, which a coincidence
+    /// clears). That is a weaker footing than the high junctions get, and it is
+    /// taken because at a LOW junction the dominant full-record |PHAT| extremum
+    /// is the owner's own ground truth — his hand tunes land on it, and an Auto
+    /// delay that does not is the defect. The field junction reads r 0.950 with
+    /// its same-sign rival 0.418 behind; what this gate refuses is a lobe that
+    /// wins by a hair.
     /// </para>
     /// </summary>
     private const double SeedVetoMinProminenceDb =
@@ -1758,12 +1788,11 @@ public static class AutoAlignmentEngine
             // constraint: the same whitened correlation on the two channels'
             // DIRECT-SOUND cuts, held to the trust gates the direct seed itself
             // must pass above (no edge pin, DirectSeedMinCoefficient, and a
-            // margin over its own same-sign rival). Computed on demand and only
-            // where the exception is live, so a junction that never asks pays
-            // nothing — and reused where the cut has already been taken for the
-            // seed path. Deliberately NOT a seed of its own below
-            // DirectSeedMinCrossoverHz: it only ever answers "is the pair on
-            // this lobe", which is the one question the arrival could not.
+            // margin over its own same-sign rival). Asked only at or
+            // above DirectSeedMinCrossoverHz, where the cut is a wavefront read;
+            // the seed path there has usually taken it already and this reuses
+            // it. It answers only "is the pair on this lobe", which is the one
+            // question the arrival could not.
             CorrelationDelayCandidate? DirectCorroboration()
             {
                 CorrelationAlignmentResult? witness = directPhat;
@@ -1899,10 +1928,19 @@ public static class AutoAlignmentEngine
                     // attempt.
                     if (!anchorIsRawReads ||
                         anchorProminenceDb >= SeedVetoMinProminenceDb ||
-                        DirectCorroboration() is not { } corroboration ||
-                        corroboration.InvertPolarity != seed.InvertPolarity ||
-                        Math.Abs(corroboration.DelayMs - seed.DelayMs) >
-                            DirectCorroborationPeriods * 1000.0 / pair.CrossoverHz)
+                        Math.Abs(seed.Coefficient) < DirectSeedMinCoefficient)
+                    {
+                        return $"{seedLabel} beyond the arrival's reach";
+                    }
+
+                    // And where the cut is a wavefront read, it has the last
+                    // word on the lobe.
+                    if (pair.CrossoverHz >= DirectSeedMinCrossoverHz &&
+                        (DirectCorroboration() is not { } corroboration ||
+                            corroboration.InvertPolarity != seed.InvertPolarity ||
+                            Math.Abs(corroboration.DelayMs - seed.DelayMs) >
+                                DirectCorroborationPeriods * 1000.0 /
+                                    pair.CrossoverHz))
                     {
                         return $"{seedLabel} beyond the arrival's reach";
                     }
@@ -1913,10 +1951,14 @@ public static class AutoAlignmentEngine
                         $"from the arrival anchor, past its {reachMs:0.000} ms " +
                         $"reach — but that anchor was picked " +
                         $"{-anchorProminenceDb:0.0} dB under its own band's " +
-                        $"energy, and the direct-sound cut puts the pair on the " +
-                        $"same lobe ({corroboration.DelayMs:+0.000;-0.000} ms, " +
-                        $"r {corroboration.Coefficient:+0.000;-0.000}) — the veto " +
-                        $"passes to the cut, which admits this lobe");
+                        $"energy, and the extremum stands at " +
+                        $"r {Math.Abs(seed.Coefficient):0.000} — " +
+                        (pair.CrossoverHz >= DirectSeedMinCrossoverHz
+                            ? "the veto passes to the direct-sound cut, which puts " +
+                              "the pair on this same lobe"
+                            : "below the cut's own frequency there is no wavefront " +
+                              "witness to pass it to, and the dominant extremum " +
+                              "stands on its own strength"));
                 }
                 return null;
             }

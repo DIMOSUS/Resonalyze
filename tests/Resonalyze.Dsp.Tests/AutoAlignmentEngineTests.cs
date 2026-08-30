@@ -887,13 +887,14 @@ public sealed class AutoAlignmentEngineTests
             // near-zero relation the extremum reads — not the ~7 ms the two
             // fronts differ by.
             Assert.InRange(relative, -1.5, 1.5);
-            Assert.Contains("the veto passes to the cut", text);
+            Assert.Contains("under its own band's energy", text);
+            Assert.Contains("stands on its own strength", text);
             Assert.Contains("-> seed phat", text);
         }
         else
         {
             Assert.Contains("beyond the arrival's reach", text);
-            Assert.DoesNotContain("the veto passes to the cut", text);
+            Assert.DoesNotContain("under its own band's energy", text);
             Assert.True(
                 Math.Abs(relative) > 2.5,
                 $"the vetoed run should keep the arrival's answer, got {relative:0.00} ms");
@@ -925,7 +926,7 @@ public sealed class AutoAlignmentEngineTests
             Run([woofer, tweeter], [2_000], log, bands: [(700, 5_600)]);
 
         string text = log.ToString();
-        Assert.DoesNotContain("the veto passes to the cut", text);
+        Assert.DoesNotContain("under its own band's energy", text);
         Assert.Contains(
             "seed direct-cut (phat: peak beyond the arrival's reach)", text);
         // The fronts' own relation, not the reflection pair's phantom at

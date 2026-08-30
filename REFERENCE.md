@@ -2102,12 +2102,17 @@ the two channels' **direct sound alone**: across a whole record a mid/tweeter
 handover's strongest extremum is often a reflection three to five periods from
 the arrival, and cutting to the wavefronts first is what keeps the seed on the
 right lobe. A seeding extremum that lands far from the coarse arrival is
-normally refused as a cycle skip; the exception is an arrival picked deep
-below its own band's energy. A subwoofer's direct front can sit 20-odd dB
-under the cabin build-up arriving behind it — a real front, and the right one
-to time the channel by — while the correlation reads where the energy is. The
-two are then different features, their difference is not a delay, and the
-front does not get to refuse the correlation for disagreeing with it. That
+refused as a cycle skip, and that distance check has one exception: an arrival
+picked deep below its own band's energy. A subwoofer's direct front can sit
+20-odd dB under the cabin build-up arriving behind it — a real front, and the
+right one to time the channel by — while the correlation reads where the energy
+is. The two are then different features and their difference is not a delay, so
+the front is in no position to refuse the correlation. It does not simply stand
+aside: the **direct-sound cut** is asked the same question instead, and the
+extremum is admitted only if the cut puts the pair on that same lobe, within a
+quarter period and in the same polarity. The distance check moves to a better
+witness rather than being dropped — where the cut disagrees, or is too weak or
+too close to its own window edge to speak, the refusal stands. That
 window is the junction's own: it opens on the earliest **front** of the two
 channels being joined, read in their shared band (never later than the peak, and
 falling back to it where the band carries no measurable arrival), and it is

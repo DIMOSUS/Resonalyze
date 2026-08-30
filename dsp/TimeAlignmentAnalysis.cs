@@ -9,7 +9,18 @@ public sealed class TimeAlignmentAnalysisOptions
     public double BandpassCenterHz { get; init; } = 1000;
     public double BandpassPassOctaves { get; init; } = 1;
     public double BandpassFadeOctaves { get; init; } = 0.5;
-    public double FirstPeakThresholdBelowMaxDb { get; init; } = 25;
+    /// <summary>
+    /// How far below the band maximum the first-arrival search looks. A soft
+    /// direct rise under a strong in-room build-up is a real front, and this
+    /// depth is what finds it. Exposed as a constant because
+    /// <see cref="AutoAlignmentEngine"/> derives a threshold from it: a pick
+    /// in the lower half of this range is a different feature from the band's
+    /// energy, and the two must move together if this ever changes.
+    /// </summary>
+    public const double DefaultFirstPeakThresholdBelowMaxDb = 25;
+
+    public double FirstPeakThresholdBelowMaxDb { get; init; } =
+        DefaultFirstPeakThresholdBelowMaxDb;
     public double FirstPeakMinimumSnrDb { get; init; } = 12;
     public double PeakSearchWindowMilliseconds { get; init; } = 80;
     public bool WrapPeakPositions { get; init; }

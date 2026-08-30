@@ -841,42 +841,96 @@ public sealed class AutoAlignmentEngineTests
         Assert.InRange(alignment[mid].DelayMs, 3.0, 9.0);
     }
 
-    [Fact]
-    public void Compute_ArrivalPickedFarUnderItsBandEnergy_CannotVetoTheExtremum()
+    // A front amplitude either side of half the arrival detector's search
+    // depth, against a body that is the band's own energy 8 ms behind it.
+    // 0.20 reads -14.8 dB of prominence, 0.30 reads -11.6 dB; nothing else
+    // about the pair changes.
+    [Theory]
+    [InlineData(0.20, true)]
+    [InlineData(0.30, false)]
+    public void Compute_ArrivalPickedFarUnderItsBandEnergy_CannotVetoTheExtremum(
+        double frontAmplitude, bool deepEnoughToStandDown)
     {
         // The field failure this pins (a 110 Hz sub/midbass junction): the
         // subwoofer's own direct front is a real arrival, and the detector
-        // finds it 23 dB below the band's energy — the cabin's build-up
-        // arrives 12 ms behind it and dwarfs it. Its neighbour's arrival IS
-        // its band peak, so the pair anchor subtracts a front from an energy
-        // centre and lands a whole lobe away from the whitened extremum, which
-        // reads the energy on both sides. The reach veto then refused that
-        // extremum (r 0.95, the direct-sound cut concurring at 0.93) for
-        // disagreeing with the anchor, and the run parked the midbass half a
-        // period early with its polarity flipped to match.
+        // finds it well below the band's energy — the cabin's build-up arrives
+        // behind it and dwarfs it. Its neighbour's arrival IS its band peak, so
+        // the pair anchor subtracts a front from an energy centre and lands a
+        // whole lobe away from the whitened extremum, which reads the energy on
+        // both sides. The reach veto then refused that extremum (r 0.95, the
+        // direct-sound cut concurring at 0.93) for disagreeing with the anchor,
+        // and the run parked the midbass half a period early with its polarity
+        // flipped to match.
         //
         // Nothing here re-anchors: the pair band's upper half carries the same
         // two copies as the full band, so the honesty probe agrees with the
         // read and the arrival stands. The anchor is honest — it is simply not
-        // the read the extremum disagrees with, and that is what withdraws its
-        // veto.
-        var sub = new TestChannel("W", ImpulseWithEcho(0.0, 0.07, 12.0, 1.0));
-        var midbass = new TestChannel("B", DelayedImpulse(12.0));
+        // the read the extremum disagrees with, and only THAT withdraws its
+        // veto, and only to the direct-sound cut, which agrees with the
+        // extremum here. A shallower pick keeps the veto and the 6.9 ms
+        // anchor with it.
+        var sub = new TestChannel(
+            "W", ImpulseWithEcho(0.0, frontAmplitude, 8.0, 1.0));
+        var midbass = new TestChannel("B", DelayedImpulse(8.0));
         var log = new StringBuilder();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
             Run([sub, midbass], [110], log);
 
-        // Both channels' energy already coincides, so the proposal is the
-        // near-zero relation the extremum reads — not the 12 ms the two
-        // fronts differ by.
         double relative = alignment.GetValueOrDefault(midbass).DelayMs -
             alignment.GetValueOrDefault(sub).DelayMs;
-        Assert.InRange(relative, -1.5, 1.5);
         string text = log.ToString();
-        Assert.Contains("cannot veto it", text);
-        Assert.Contains("-> seed phat", text);
         Assert.DoesNotContain("(modal latch)", text);
+        if (deepEnoughToStandDown)
+        {
+            // Both channels' energy already coincides, so the proposal is the
+            // near-zero relation the extremum reads — not the ~7 ms the two
+            // fronts differ by.
+            Assert.InRange(relative, -1.5, 1.5);
+            Assert.Contains("the veto passes to the cut", text);
+            Assert.Contains("-> seed phat", text);
+        }
+        else
+        {
+            Assert.Contains("beyond the arrival's reach", text);
+            Assert.DoesNotContain("the veto passes to the cut", text);
+            Assert.True(
+                Math.Abs(relative) > 2.5,
+                $"the vetoed run should keep the arrival's answer, got {relative:0.00} ms");
+        }
+    }
+
+    [Fact]
+    public void Compute_DeepArrivalPickWithAContradictingDirectCut_KeepsTheReachVeto()
+    {
+        // The blanket version of the exception would have been a cycle skip
+        // waiting to happen: withdrawing the reach leaves the extremum with
+        // quality gates only (|r|, a rival margin, an edge pin), and not one of
+        // them can tell a lobe from the next one over. This is that shape.
+        //
+        // Both channels carry one strong LATE reflection off shared geometry,
+        // five periods behind the fronts, and it is loud enough (x5) that the
+        // arrival is picked 13.9 dB under the band's energy — deep enough to
+        // open the exception. The reflection pair's whitened lobe dominates the
+        // full record at r 0.980, separated and past the reach. The direct-sound
+        // cut never sees those reflections and puts the pair 2.5 ms away, so it
+        // refuses to corroborate and the veto stands — which is also what keeps
+        // the tightened direct-seed reach at a mid/tweeter junction from being
+        // bypassed by a deep pick.
+        var woofer = new TestChannel("W", ReflectedFront(1.0, 3.0, 5.0));
+        var tweeter = new TestChannel("T", ReflectedFront(0.0, 5.5, 5.0));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([woofer, tweeter], [2_000], log, bands: [(700, 5_600)]);
+
+        string text = log.ToString();
+        Assert.DoesNotContain("the veto passes to the cut", text);
+        Assert.Contains(
+            "seed direct-cut (phat: peak beyond the arrival's reach)", text);
+        // The fronts' own relation, not the reflection pair's phantom at
+        // -1.5 ms.
+        Assert.InRange(alignment[tweeter].DelayMs, 0.9, 1.1);
     }
 
     // The upper channel of the incomparable-probe case: its full band reads

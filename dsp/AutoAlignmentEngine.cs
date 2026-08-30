@@ -268,8 +268,11 @@ public static class AutoAlignmentEngine
     // How far from the arrival estimate a trusted seed extremum may sit: half a
     // period — the next same-polarity lobe is a full period out, so that is the
     // no-cycle-skip bound — floored at the FIXED ±3 ms span rather than the
-    // grown window. At a low junction the grown window may SEE farther lobes
-    // but must never hand one to the timeline.
+    // grown window. At a low junction the grown window may SEE farther lobes,
+    // and a lobe past this bound reaches the timeline only when the arrival is
+    // in no position to judge it AND the direct-sound cut independently puts
+    // the pair on that same lobe (see SeedVetoMinProminenceDb) — never on the
+    // extremum's own say-so.
     private static double SeedReachMs(double crossoverHz) =>
         Math.Max(DiagnosticCorrelationRangeMs, 500.0 / crossoverHz);
 
@@ -302,15 +305,43 @@ public static class AutoAlignmentEngine
     /// direct-sound cut confirms at r 0.93, for disagreeing with it.
     /// </para>
     /// <para>
-    /// Half the detector's own search depth: a pick in the upper half of the
-    /// range is a shoulder on the band's energy and speaks for it, one in the
-    /// lower half is a separate feature. The gate only ever WITHDRAWS the
-    /// anchor's veto, never moves it — the seed, the window centre, the prior
-    /// and the fallback are untouched, and the extremum still has to pass its
-    /// own trust gates.
+    /// Half the detector's own search depth, derived from it so the two cannot
+    /// drift apart: a pick in the upper half of the range is a shoulder on the
+    /// band's energy and speaks for it, one in the lower half is a separate
+    /// feature.
+    /// </para>
+    /// <para>
+    /// A deep pick alone is NOT enough to withdraw the veto. The reach is the
+    /// last distance constraint the seed has — the correlation window sees a
+    /// period and a quarter to each side precisely so the neighbouring lobes
+    /// are visible, and every other trust gate on the extremum is a quality
+    /// test (|r|, a rival margin, an edge pin), none of which can tell one
+    /// lobe from the next. Withdrawing it on a prominence figure alone would
+    /// leave a whole-period cycle skip legal, and stage 2 cannot undo one: its
+    /// window reaches the opposite-polarity partner half a period out, not the
+    /// same-polarity lobe a full period out. So the deep pick only opens the
+    /// question, and <see cref="DirectSeedMinCoefficient"/>'s witness answers
+    /// it — the direct-sound cut has to land on the SAME lobe, within a
+    /// quarter period and in the same polarity. That witness is what the
+    /// arrival was standing in for: an independent read of where the two
+    /// wavefronts line up, taken on the cuts the reflections never enter.
     /// </para>
     /// </summary>
-    private const double SeedVetoMinProminenceDb = -12.5;
+    private const double SeedVetoMinProminenceDb =
+        -TimeAlignmentAnalysisOptions.DefaultFirstPeakThresholdBelowMaxDb / 2.0;
+
+    /// <summary>
+    /// How close the direct-sound witness must sit to the full-record extremum
+    /// to be corroborating it rather than contradicting it: a quarter period,
+    /// the same "on this lobe" tolerance the joint-support adjudication uses.
+    /// Half a period away is the opposite-polarity partner and a full period
+    /// away is the cycle skip the reach veto exists to refuse — neither is
+    /// corroboration. Measured on the field cabin: at the three junctions whose
+    /// anchor is a deep pick the two extrema agree to 0.00-0.02 of a period,
+    /// while at every junction whose anchor is honest they disagree by 0.54 to
+    /// 3.88 periods.
+    /// </summary>
+    private const double DirectCorroborationPeriods = 0.25;
 
     /// <summary>
     /// The margin by which the seed extremum must beat the SAME-POLARITY rival
@@ -1722,6 +1753,57 @@ public static class AutoAlignmentEngine
             bool anchorIsRawReads =
                 !lowerLatchedByPrediction && !upperLatchedByPrediction &&
                 !unreplacedLatch;
+
+            // The witness that replaces the deep arrival as the seed's distance
+            // constraint: the same whitened correlation on the two channels'
+            // DIRECT-SOUND cuts, held to the trust gates the direct seed itself
+            // must pass above (no edge pin, DirectSeedMinCoefficient, and a
+            // margin over its own same-sign rival). Computed on demand and only
+            // where the exception is live, so a junction that never asks pays
+            // nothing — and reused where the cut has already been taken for the
+            // seed path. Deliberately NOT a seed of its own below
+            // DirectSeedMinCrossoverHz: it only ever answers "is the pair on
+            // this lobe", which is the one question the arrival could not.
+            CorrelationDelayCandidate? DirectCorroboration()
+            {
+                CorrelationAlignmentResult? witness = directPhat;
+                if (witness == null)
+                {
+                    (Complex[] lowerCut, Complex[] upperCut) =
+                        VirtualCrossoverAnalysis.CutDirectSoundPair(
+                            pair.Lower.ImpulseResponse,
+                            pair.Upper.ImpulseResponse,
+                            pair.Lower.Channel.SampleRate,
+                            pair.BandLowHz,
+                            pair.BandHighHz,
+                            pair.CrossoverHz,
+                            SeedCorrelationRangeMs(pair.CrossoverHz),
+                            pair.Lower.ValidRange,
+                            pair.Upper.ValidRange);
+                    witness = VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                        lowerCut,
+                        upperCut,
+                        pair.Lower.Channel.SampleRate,
+                        pair.CrossoverHz,
+                        passOctaves,
+                        SeedCorrelationRangeMs(pair.CrossoverHz),
+                        centerLagMs,
+                        phaseTransform: true);
+                }
+
+                CorrelationDelayCandidate best = witness.BestByMagnitude;
+                CorrelationDelayCandidate? rival = best.InvertPolarity
+                    ? witness.NegativeRival
+                    : witness.PositiveRival;
+                return !witness.PositivePeak.EdgePinned &&
+                    !witness.NegativeTrough.EdgePinned &&
+                    Math.Abs(best.Coefficient) >= DirectSeedMinCoefficient &&
+                    (rival == null ||
+                        Math.Abs(best.Coefficient) - Math.Abs(rival.Coefficient) >=
+                            PhatSeedMinRivalDominance)
+                    ? best
+                    : null;
+            }
             Complex[] lowerDirectCut = [];
             Complex[] upperDirectCut = [];
 
@@ -1747,13 +1829,18 @@ public static class AutoAlignmentEngine
                     return "same-polarity rival near-tie";
                 }
                 // The reach veto grades the extremum against the arrival, so it
-                // is lifted only once the pair is RE-ANCHORED on honest
-                // half-band reads: against a convicted-and-replaced anchor it
-                // would enforce the very cycle skip it exists to prevent. A
-                // conviction without a replacement anchor keeps the veto — the
-                // window is still centered on the corrupted diff, and a strong
-                // distant modal peak found there is exactly the skip candidate
-                // the veto guards.
+                // stands down in two cases, and only two. The pair may have been
+                // RE-ANCHORED on honest half-band reads: against a
+                // convicted-and-replaced anchor the veto would enforce the very
+                // cycle skip it exists to prevent. Or the arrival that would
+                // enforce it may be a pick deep under its own band's energy, in
+                // which case the direct-sound cut is asked to put the pair on
+                // the extremum's lobe itself (see SeedVetoMinProminenceDb) — the
+                // veto is transferred to a better witness, not dropped. A
+                // conviction WITHOUT a replacement anchor keeps it either way —
+                // the window is still centered on the corrupted diff, and a
+                // strong distant modal peak found there is exactly the skip
+                // candidate the veto guards.
                 //
                 // A pair whose anchor could not place it inside a lobe has
                 // already been convicted and re-anchored above, which clears
@@ -1800,12 +1887,22 @@ public static class AutoAlignmentEngine
                 if (!arrivalReanchored && Math.Abs(seedOffsetMs) >= reachMs)
                 {
                     // Unless the anchor is not the same kind of read as the
-                    // extremum it would be vetoing (see
+                    // extremum it would be vetoing AND a better witness puts the
+                    // pair on that extremum's lobe (see
                     // SeedVetoMinProminenceDb). One side picked deep under its
                     // own band's energy and the other on top of it: their
-                    // difference is not a delay the reach can grade.
+                    // difference is not a delay the reach can grade. The
+                    // constraint is transferred, not dropped — the direct-sound
+                    // cut has to agree within a quarter period and in the same
+                    // polarity, which is a lobe test the arrival could not
+                    // perform and the extremum's own quality gates do not
+                    // attempt.
                     if (!anchorIsRawReads ||
-                        anchorProminenceDb >= SeedVetoMinProminenceDb)
+                        anchorProminenceDb >= SeedVetoMinProminenceDb ||
+                        DirectCorroboration() is not { } corroboration ||
+                        corroboration.InvertPolarity != seed.InvertPolarity ||
+                        Math.Abs(corroboration.DelayMs - seed.DelayMs) >
+                            DirectCorroborationPeriods * 1000.0 / pair.CrossoverHz)
                     {
                         return $"{seedLabel} beyond the arrival's reach";
                     }
@@ -1816,8 +1913,10 @@ public static class AutoAlignmentEngine
                         $"from the arrival anchor, past its {reachMs:0.000} ms " +
                         $"reach — but that anchor was picked " +
                         $"{-anchorProminenceDb:0.0} dB under its own band's " +
-                        $"energy, so it is not the read the extremum disagrees " +
-                        $"with and cannot veto it");
+                        $"energy, and the direct-sound cut puts the pair on the " +
+                        $"same lobe ({corroboration.DelayMs:+0.000;-0.000} ms, " +
+                        $"r {corroboration.Coefficient:+0.000;-0.000}) — the veto " +
+                        $"passes to the cut, which admits this lobe");
                 }
                 return null;
             }

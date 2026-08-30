@@ -114,14 +114,22 @@ internal static class VirtualCrossoverAutoDelayReport
                         $", near-side cut {Math.Abs(GainBalanceEngine.LevelDifferenceDb(request.LevelDifferenceDb)):0.0} dB")
                     : ""));
         }
-        if (request.RearFillOffsetMs > 0)
+        if (outcomes.Any(outcome =>
+            outcome.Runtime.Pair.Zone == VirtualCrossoverZone.Rear))
         {
             // The single most consequential number in a rear-fill tune: without
             // it a saved proposal cannot say whether the rear was co-arrived or
             // held back, which is the difference between a front image and a
             // collapsed one.
-            text.AppendLine(FormattableString.Invariant(
-                $"Rear fill {request.RearFillOffsetMs:0.0} ms behind the front stage."));
+            //
+            // Printed whenever there IS a rear, zero included. Zero is a
+            // deliberate choice — the second row wants co-arrival — and hiding
+            // it left the report silent about exactly the case the line was
+            // added to disambiguate.
+            text.AppendLine(request.RearFillOffsetMs > 0
+                ? FormattableString.Invariant(
+                    $"Rear fill {request.RearFillOffsetMs:0.0} ms behind the front stage.")
+                : "Rear fill 0.0 ms: co-arriving with the front stage.");
         }
         if (!request.AdjustGains)
         {

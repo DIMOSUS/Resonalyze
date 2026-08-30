@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
@@ -33,9 +33,67 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             delayKind, delayConfidence, delayDetail, gainConfidence, gainDetail);
     }
 
+    private static AutoDelayChannelOutcome RearOutcome(string name)
+    {
+        AutoDelayChannelOutcome outcome = Outcome(name, 0.0, 15.0);
+        outcome.Runtime.Pair.Zone = VirtualCrossoverZone.Rear;
+        return outcome;
+    }
+
     private static string Row(string report, string name) =>
         report.Split('\n')
             .First(line => line.StartsWith(name, StringComparison.Ordinal));
+
+    [Fact]
+    public void Format_StatesTheRearFillOffsetIncludingADeliberateZero()
+    {
+        // Zero is a CHOICE — the second row wants the rear co-arriving — and it
+        // is the one the reader most needs told, because a report silent about
+        // the offset reads the same whether the rear was co-arrived or held
+        // back fifteen milliseconds. Printing it only when non-zero left the
+        // line unable to disambiguate the very case it was added for.
+        var request = new AutoDelayRunRequest(0.25, false, false, 0.0, 0.0);
+
+        string report = VirtualCrossoverAutoDelayReport.Format(
+            [Outcome("A L", 0.0, 1.0), RearOutcome("C L")],
+            stereo: true,
+            request,
+            null);
+
+        Assert.Contains("Rear fill 0.0 ms", report);
+        Assert.Contains("co-arriving", report);
+    }
+
+    [Fact]
+    public void Format_SaysHowFarBackARearFillWasHeld()
+    {
+        var request = new AutoDelayRunRequest(0.25, false, false, 0.0, 15.0);
+
+        string report = VirtualCrossoverAutoDelayReport.Format(
+            [Outcome("A L", 0.0, 1.0), RearOutcome("C L")],
+            stereo: true,
+            request,
+            null);
+
+        Assert.Contains("Rear fill 15.0 ms behind", report);
+    }
+
+    [Fact]
+    public void Format_SaysNothingAboutARearFillAProjectDoesNotHave()
+    {
+        // The offset is stored per project, so it carries a value even for a
+        // front-only car. Printing it there would describe a group that is not
+        // in the run.
+        var request = new AutoDelayRunRequest(0.25, false, false, 0.0, 15.0);
+
+        string report = VirtualCrossoverAutoDelayReport.Format(
+            [Outcome("A L", 0.0, 1.0), Outcome("B L", 0.0, 2.0)],
+            stereo: true,
+            request,
+            null);
+
+        Assert.DoesNotContain("Rear fill", report);
+    }
 
     [Fact]
     public void Format_ShowsBeforeAfterAndConfidence()

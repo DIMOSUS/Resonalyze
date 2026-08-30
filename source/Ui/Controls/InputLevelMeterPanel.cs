@@ -80,11 +80,15 @@ internal sealed class InputLevelMeterPanel : Control
         base.OnPaint(args);
 
         Graphics graphics = args.Graphics;
-        graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        graphics.Clear(SurfaceColor);
 
-        using var borderPen = new Pen(BorderColor);
-        graphics.DrawRectangle(borderPen, 0, 0, Width - 1, Height - 1);
+        // The meter is one of the sidebar's cards, so it is cornered like them.
+        RoundedSurface.Paint(
+            this,
+            graphics,
+            RoundedSurface.DefaultCornerRadius,
+            BorderColor);
+
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
         (Rectangle micRow, Rectangle loopRow) = GetRowRectangles();
         DrawRow(

@@ -32,7 +32,7 @@
         /// </summary>
         private void InitializeComponent()
         {
-            sweepPanel = new Panel();
+            sweepPanel = new RoundedPanel();
             buttonSaveSweepFile = new ReleaseClickButton();
             labelActualRangeCaption = new Label();
             numericUpDownRequestedDuration = new DarkNumericUpDown();
@@ -51,7 +51,7 @@
             label1 = new Label();
             comboBoxChannel = new DarkComboBox();
             label3 = new Label();
-            audioBackendPanel = new Panel();
+            audioBackendPanel = new RoundedPanel();
             button1 = new ReleaseClickButton();
             labelAudioBackend = new Label();
             comboBoxAudioBackend = new DarkComboBox();
@@ -84,7 +84,6 @@
             // sweepPanel
             // 
             sweepPanel.BackColor = Color.FromArgb(50, 55, 66);
-            sweepPanel.BorderStyle = BorderStyle.FixedSingle;
             sweepPanel.Controls.Add(buttonSaveSweepFile);
             sweepPanel.Controls.Add(comboBoxProtectiveHighPassSlope);
             sweepPanel.Controls.Add(numericUpDownProtectiveHighPassFrequency);
@@ -333,7 +332,6 @@
             // audioBackendPanel
             //
             audioBackendPanel.BackColor = Color.FromArgb(50, 55, 66);
-            audioBackendPanel.BorderStyle = BorderStyle.FixedSingle;
             audioBackendPanel.Controls.Add(button1);
             audioBackendPanel.Controls.Add(asioAudioBackendPanel);
             audioBackendPanel.Controls.Add(waveAudioBackendPanel);
@@ -607,8 +605,8 @@
         }
 
         #endregion
-        private Panel sweepPanel;
-        private Panel audioBackendPanel;
+        private RoundedPanel sweepPanel;
+        private RoundedPanel audioBackendPanel;
         private Label label1;
         private Label label2;
         private DarkComboBox comboBoxChannel;

@@ -67,7 +67,7 @@
             checkBoxEqCurve = new ReleaseClickCheckBox();
             checkBoxCutsOnly = new ReleaseClickCheckBox();
             checkBoxShelves = new ReleaseClickCheckBox();
-            panelAutoTune = new Panel();
+            panelAutoTune = new RoundedPanel();
             buttonOverlaySettings = new ReleaseClickButton();
             comboBoxCalibration = new DarkComboBox();
             labelCalibration = new Label();
@@ -468,7 +468,6 @@
             // panelAutoTune
             // 
             panelAutoTune.BackColor = Color.FromArgb(46, 51, 62);
-            panelAutoTune.BorderStyle = BorderStyle.FixedSingle;
             panelAutoTune.Controls.Add(labelGainMin);
             panelAutoTune.Controls.Add(numericGainMin);
             panelAutoTune.Controls.Add(labelGainMax);
@@ -765,7 +764,7 @@
         private ReleaseClickCheckBox checkBoxEqCurve;
         private ReleaseClickCheckBox checkBoxCutsOnly;
         private ReleaseClickCheckBox checkBoxShelves;
-        private Panel panelAutoTune;
+        private RoundedPanel panelAutoTune;
         private ReleaseClickButton buttonOverlaySettings;
         private DarkComboBox comboBoxCalibration;
         private Label labelCalibration;

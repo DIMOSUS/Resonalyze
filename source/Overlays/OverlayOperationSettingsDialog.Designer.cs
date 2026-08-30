@@ -53,7 +53,7 @@
             numericTimeOffset = new DarkNumericUpDown();
             labelTimeOffset = new Label();
             checkBoxInvPhase = new ReleaseClickCheckBox();
-            panel1 = new Panel();
+            panel1 = new RoundedPanel();
             (thicknessInput).BeginInit();
             (blendFrequencyInput).BeginInit();
             (tiltPivotInput).BeginInit();
@@ -458,7 +458,6 @@
             // 
             // panel1
             // 
-            panel1.BorderStyle = BorderStyle.FixedSingle;
             panel1.Controls.Add(curveBLabel);
             panel1.Controls.Add(checkBoxInvPhase);
             panel1.Controls.Add(sourceBComboBox);
@@ -565,6 +564,6 @@
         private DarkNumericUpDown numericTimeOffset;
         private Label labelTimeOffset;
         private ReleaseClickCheckBox checkBoxInvPhase;
-        private Panel panel1;
+        private RoundedPanel panel1;
     }
 }

@@ -176,6 +176,29 @@ public sealed class LiveCaptureDocumentTests
     }
 
     [Fact]
+    public void ADamagedCaptureThrowsRatherThanBeingDisowned()
+    {
+        // The file says what it is in its head and then breaks off — a save
+        // interrupted, a truncated copy. That is a capture that cannot be read, and
+        // reporting it as one is the whole point of claiming by format: handed on as
+        // "not ours" it reaches the impulse-response loader, which tells the user
+        // their capture is an impulse response of an unsupported format.
+        string path = Path.Combine(Path.GetTempPath(), $"damaged-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(
+                path,
+                $"{{\"format\":\"{LiveCaptureDocument.CurrentFormat}\",\"curveDb\":[0.1, 0.2");
+            Assert.Throws<InvalidDataException>(
+                () => LiveCaptureDocument.TryLoad(path, out _));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void ASnapshotCarriesTheFrameCountItsSpectraAverage()
     {
         // The count and the bins must come from one read: a capture that pairs this

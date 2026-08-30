@@ -18,10 +18,11 @@ namespace Resonalyze;
 /// knows as much as a full parse would about WHERE the marker is: only a property of
 /// the root object counts — a nested <c>format</c> belongs to a recipe or a channel,
 /// and naming a file after one of its parts is how a document gets opened as the thing
-/// inside it — and the walk ends with the root object. It is also exactly as strict as
-/// the readers it stands in front of: none of their options ask for case-insensitive
-/// property names, so <c>format</c> matches and <c>Format</c> does not, in the probe
-/// as in the deserializer that follows it.
+/// inside it — and the walk ends with the root object. It also reads a document on
+/// exactly the terms the deserializers behind it do, in both directions: their options
+/// accept comments and trailing commas, so the probe does too — a file they would open
+/// must not be turned away at the door — and none of them ask for case-insensitive
+/// property names, so <c>format</c> matches and <c>Format</c> does not, here as there.
 /// </para>
 /// </remarks>
 internal static class JsonFormatMarker
@@ -34,6 +35,17 @@ internal static class JsonFormatMarker
     /// without ever holding more than this.
     /// </summary>
     private const int ChunkBytes = 64 * 1024;
+
+    /// <summary>
+    /// The leniency every one of the document readers is configured with. A capture
+    /// carrying a comment before its marker is a capture they would open, so it must
+    /// not be declined here and sent on to another loader to be misreported.
+    /// </summary>
+    private static readonly JsonReaderOptions ProbeOptions = new()
+    {
+        AllowTrailingCommas = true,
+        CommentHandling = JsonCommentHandling.Skip
+    };
 
     private static ReadOnlySpan<byte> Utf8ByteOrderMark => [0xEF, 0xBB, 0xBF];
 
@@ -77,7 +89,7 @@ internal static class JsonFormatMarker
         // Set once the marker's property name has been read, so the value can still be
         // picked up when the two fall either side of a chunk boundary.
         bool expectingValue = false;
-        JsonReaderState state = default;
+        JsonReaderState state = new(ProbeOptions);
         while (true)
         {
             int read = stream.Read(buffer, filled, buffer.Length - filled);

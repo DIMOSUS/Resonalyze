@@ -69,6 +69,24 @@ public sealed class JsonFormatMarkerTests : IDisposable
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)));
 
     [Fact]
+    public void ACommentBeforeTheMarkerIsSkippedTheWayTheReadersSkipIt()
+    {
+        // Every document reader is configured to skip comments and to accept a
+        // trailing comma, so a hand-edited file carrying either is a file they would
+        // open. Turning it away here would send a capture to the impulse-response
+        // loader to be misreported as an unsupported format.
+        string json = string.Join(
+            Environment.NewLine,
+            "{",
+            "  // taken in the back seat",
+            "  \"title\": \"l tw\",",
+            "  \"format\": \"resonalyze-live-capture\",",
+            "}");
+
+        Assert.Equal("resonalyze-live-capture", Marker(json));
+    }
+
+    [Fact]
     public void TheNameIsMatchedAsStrictlyAsTheDeserializerMatchesIt() =>
         // None of the readers' options ask for case-insensitive property names, so a
         // file writing "Format" does not bind there — and must not read as declared

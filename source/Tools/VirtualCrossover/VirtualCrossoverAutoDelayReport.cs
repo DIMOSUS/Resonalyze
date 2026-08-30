@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using Resonalyze.Dsp;
 
@@ -50,7 +50,12 @@ internal sealed record AutoDelayRunRequest(
     double SceneOffsetMs,
     bool RightHandDrive,
     bool AdjustGains,
-    double NearSideCutDb)
+    double NearSideCutDb,
+    // How far BEHIND the front stage the rear fill should arrive. Zero sums the
+    // two coherently, which is what a second row of listeners wants; the default
+    // is the precedence-effect offset that keeps the image on the dash for the
+    // front seats while the rear adds room. Ignored by a project with no rear.
+    double RearFillOffsetMs = 0)
 {
     /// <summary>
     /// The tilt in the gain engine's LEFT-minus-RIGHT convention: the near

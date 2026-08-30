@@ -4588,6 +4588,160 @@ public partial class VirtualCrossoverPanel : UserControl
     // final snapshots. Board levelling only — a single side has no L/R
     // relation, so neither the scene offset nor the level difference plays a
     // part here.
+    // ------------------------------------------------------ staged alignment
+
+    // Beyond this much intended offset a polarity flip stops describing anything
+    // audible: the two groups are no longer summing in a way an ear resolves, so
+    // the sign of a correlation between them is a fact about the measurement
+    // rather than about what the listener hears.
+    private const double HaasPolarityIrrelevantMs = 5.0;
+
+    // The front chain and the groups placed against it afterwards. A project with
+    // no rear fill and no centre - every project written before zones existed -
+    // comes back with everything in the chain and nothing after it, and then takes
+    // the unstaged path, which is the engine call it always took.
+    private static (List<VirtualCrossoverChannel> Chain, List<VirtualCrossoverChannel> Later)
+        SplitAlignmentStages(IReadOnlyList<VirtualCrossoverChannel> participants)
+    {
+        List<VirtualCrossoverChannel> chain = [.. participants.Where(channel =>
+            VirtualCrossoverAlignmentStages.StageOf(channel.Pair.Zone) ==
+                VirtualCrossoverAlignmentStage.FrontChain)];
+        List<VirtualCrossoverChannel> later = [.. participants.Except(chain)];
+        // Nothing to be placed AGAINST. A rear-only project is a legitimate thing
+        // to align - it is simply its own chain, so it is walked as one rather
+        // than left waiting for a front stage that does not exist.
+        return chain.Count == 0 || later.Count == 0
+            ? ([.. participants], [])
+            : (chain, later);
+    }
+
+    // The union of a group's members' playing bands.
+    private static (double LowHz, double HighHz) GroupBandOf(
+        IEnumerable<VirtualCrossoverChannel> members)
+    {
+        double low = double.MaxValue;
+        double high = double.MinValue;
+        foreach (VirtualCrossoverChannel member in members)
+        {
+            (double memberLow, double memberHigh) =
+                VirtualCrossoverJunctions.GetChannelBand(member.Settings);
+            low = Math.Min(low, memberLow);
+            high = Math.Max(high, memberHigh);
+        }
+
+        return (low, high);
+    }
+
+    // Stages 2 and 3, on the responses the front-chain walk has already settled.
+    // Each later group gets ONE delay for all its members: the placement is a
+    // property of where the group sits in the car, and it is applied to the group
+    // as a rigid body so nothing inside it is re-tuned by this pass.
+    private void PlaceLaterStages(
+        IReadOnlyList<VirtualCrossoverChannel> chain,
+        IReadOnlyList<VirtualCrossoverChannel> later,
+        AlignmentReprocessor reprocessor,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        double rearFillOffsetMs,
+        System.Text.StringBuilder log)
+    {
+        IReadOnlyList<AlignmentSnapshot> settled = reprocessor.Reprocess(alignment);
+        Dictionary<IAlignmentChannel, AlignmentSnapshot> byChannel =
+            settled.ToDictionary(snapshot => snapshot.Channel);
+        Complex[] SumOf(IEnumerable<VirtualCrossoverChannel> group) =>
+            VirtualCrossoverAnalysis.SumImpulseResponses(
+                [.. group.Select(channel => byChannel[channel].ImpulseResponse)]);
+
+        Complex[] reference = SumOf(chain);
+        int sampleRate = chain[0].SampleRate;
+        (double chainLow, double chainHigh) = GroupBandOf(chain);
+        foreach (VirtualCrossoverAlignmentStage stage in
+            VirtualCrossoverAlignmentStages.InOrder.Where(
+                item => item != VirtualCrossoverAlignmentStage.FrontChain))
+        {
+            List<VirtualCrossoverChannel> members = [.. later.Where(channel =>
+                VirtualCrossoverAlignmentStages.StageOf(channel.Pair.Zone) == stage)];
+            if (members.Count == 0)
+            {
+                continue;
+            }
+
+            (double groupLow, double groupHigh) = GroupBandOf(members);
+            double lowHz = Math.Max(chainLow, groupLow);
+            double highHz = Math.Min(chainHigh, groupHigh);
+            GroupPlacement? placement = VirtualCrossoverGroupPlacement.Place(
+                reference, SumOf(members), sampleRate, lowHz, highHz);
+            if (placement == null)
+            {
+                // Its CURRENT delay stands, written explicitly rather than left
+                // absent: an absent override means zero to the reprocessor, which
+                // would silently move a group this run could not measure.
+                log.AppendLine(
+                    $"  {stage}: not placed - the band it shares with the front " +
+                    $"stage ({lowHz:0}-{highHz:0} Hz) holds no reliable arrival. " +
+                    "Its current delay stands.");
+                foreach (VirtualCrossoverChannel member in members)
+                {
+                    alignment[member] = new AlignmentOverride(
+                        member.Settings.DelayMs, member.Settings.InvertPolarity);
+                }
+
+                continue;
+            }
+
+            // A rear fill is WANTED behind the front stage: the precedence effect
+            // keeps the image on the dash while the rear adds room. A centre
+            // belongs with the front stage, so it takes no offset.
+            double offsetMs = stage == VirtualCrossoverAlignmentStage.Rear
+                ? rearFillOffsetMs
+                : 0.0;
+            double delayMs = placement.CoArrivalDelayMs + offsetMs;
+            bool invert = offsetMs < HaasPolarityIrrelevantMs && placement.Inverted;
+            log.AppendLine(
+                $"  {stage}: {delayMs:+0.00;-0.00;0.00} ms (co-arrival " +
+                $"{placement.CoArrivalDelayMs:+0.00;-0.00;0.00}" +
+                (offsetMs != 0 ? $" plus {offsetMs:0.##} ms fill" : string.Empty) +
+                $"), r {placement.Coefficient:0.00}" +
+                (invert ? ", inverted" : string.Empty) +
+                (placement.Coefficient < VirtualCrossoverGroupPlacement.MinimumTrustedCoefficient
+                    ? " - LOW CONFIDENCE"
+                    : string.Empty));
+            foreach (VirtualCrossoverChannel member in members)
+            {
+                alignment[member] = new AlignmentOverride(delayMs, invert);
+            }
+        }
+    }
+
+    // Every channel slid together until the earliest sits at zero. The stages
+    // compute their offsets against a settled front stage without regard for what
+    // a processor can dial - a rear fill pushed back past the front asks the front
+    // to go negative - so nothing is dialable until this pass, and after it every
+    // relation is preserved with the whole set made dialable.
+    private static void NormalizeStagedDelays(
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        System.Text.StringBuilder log)
+    {
+        if (alignment.Count == 0)
+        {
+            return;
+        }
+
+        double minimum = alignment.Values.Min(over => over.DelayMs);
+        if (minimum >= 0)
+        {
+            return;
+        }
+
+        log.AppendLine(
+            $"  normalization: every channel shifted +{-minimum:0.00} ms so the " +
+            "earliest sits at zero.");
+        foreach (IAlignmentChannel channel in alignment.Keys.ToList())
+        {
+            AlignmentOverride over = alignment[channel];
+            alignment[channel] = over with { DelayMs = over.DelayMs - minimum };
+        }
+    }
+
     private async Task<AutoDelayRunResult> RunSingleSideProposalAsync(
         List<VirtualCrossoverChannel> participants,
         double windowMinHz,
@@ -4606,8 +4760,26 @@ public partial class VirtualCrossoverPanel : UserControl
         AutoDelaySumLossForecast? sumLoss = null;
         await Task.Run(() =>
         {
-            AlignmentReprocessor reprocessor =
-                ComputeAutoAlignment(participants, alignment, decisions, log);
+            // Stage 1: the front chain, walked by the engine exactly as it
+            // always was. An unstaged project has every participant in that
+            // chain, so this IS the old call for it — not a staged run with one
+            // stage — and its result cannot drift from what the battery pinned.
+            (List<VirtualCrossoverChannel> chain, List<VirtualCrossoverChannel> later) =
+                SplitAlignmentStages(participants);
+            AlignmentReprocessor reprocessor = ComputeAutoAlignment(
+                participants,
+                alignment,
+                decisions,
+                log,
+                walkSet: later.Count > 0 ? chain : null);
+            if (later.Count > 0)
+            {
+                // Stages 2 and 3, then the shift that makes the lot dialable.
+                PlaceLaterStages(
+                    chain, later, reprocessor, alignment, request.RearFillOffsetMs, log);
+                NormalizeStagedDelays(alignment, log);
+            }
+
             // The "before" snapshots carry the CURRENT delays and polarities —
             // the alignment itself deliberately ignores them, so they exist
             // only for the report's before/after sum-loss forecast.
@@ -4891,11 +5063,19 @@ public partial class VirtualCrossoverPanel : UserControl
     // channels that changed their overrides are re-FFT'd, and the shared
     // UI-thread coordinator cache is never touched. Returned so the gain stage
     // can reuse the same cache for the final snapshots.
+    /// <param name="walkSet">
+    /// The channels the engine's chain WALK covers, when that is narrower than
+    /// the participants. The reprocessor is still built over all of them — the
+    /// later stages place their groups against snapshots it renders — but only
+    /// these form junctions. Null walks everything, which is every project
+    /// without a rear fill or a centre.
+    /// </param>
     private AlignmentReprocessor ComputeAutoAlignment(
         List<VirtualCrossoverChannel> participants,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         Dictionary<IAlignmentChannel, AlignmentDecision> decisions,
-        System.Text.StringBuilder log)
+        System.Text.StringBuilder log,
+        IReadOnlyList<VirtualCrossoverChannel>? walkSet = null)
     {
         // Order along the spectrum by band center; adjacent drivers form the
         // junctions the search walks (the same ordering and pair bands the metric
@@ -4923,20 +5103,27 @@ public partial class VirtualCrossoverPanel : UserControl
         var snapshots = ordered
             .Select((channel, i) => (channel, snapshot: initial[i]))
             .ToDictionary(item => item.channel, item => item.snapshot);
+        // The walk covers the front chain when the project is staged; every
+        // participant otherwise. Its members keep the band ordering they had
+        // among the whole set, so a narrowed walk is the same walk with members
+        // removed rather than a differently ordered one.
+        List<VirtualCrossoverChannel> walked = walkSet == null
+            ? ordered
+            : [.. ordered.Where(walkSet.Contains)];
         var junctions = new List<AlignmentJunction>();
-        for (int i = 0; i < ordered.Count - 1; i++)
+        for (int i = 0; i < walked.Count - 1; i++)
         {
             double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
-                ordered[i].Settings, ordered[i + 1].Settings);
+                walked[i].Settings, walked[i + 1].Settings);
             (double bandLowHz, double bandHighHz) =
                 VirtualCrossoverJunctions.OverlapBand(pairHz);
             junctions.Add(new AlignmentJunction(
-                snapshots[ordered[i]], snapshots[ordered[i + 1]],
+                snapshots[walked[i]], snapshots[walked[i + 1]],
                 pairHz, bandLowHz, bandHighHz));
         }
 
         AutoAlignmentEngine.Compute(
-            ordered.Select(channel => snapshots[channel]).ToList(),
+            walked.Select(channel => snapshots[channel]).ToList(),
             junctions,
             reprocessor.Reprocess,
             alignment,

@@ -83,6 +83,14 @@ public sealed class VirtualCrossoverChannelOrderTests
             Assert.Same(channels[i].Pair, Project(panel).Pairs[i]);
             Assert.Equal(i, list.Controls.GetChildIndex(ControlOf(panel, channels[i])));
         }
+
+        // The child index is only the mechanism. What the user sees is where the
+        // flow panel actually puts each block, and a reorder that got that
+        // backwards would satisfy every assertion above.
+        list.PerformLayout();
+        IEnumerable<int> tops = channels.Select(channel => ControlOf(panel, channel).Top);
+        Assert.Equal(tops.OrderBy(top => top), tops);
+        Assert.Equal(channels.Count, tops.Distinct().Count());
     }
 
     [Fact]
@@ -147,6 +155,40 @@ public sealed class VirtualCrossoverChannelOrderTests
 
             Assert.Equal(before, Channels(panel));
             AssertConsistent(panel);
+        });
+    }
+
+    private static bool Enabled(
+        VirtualCrossoverPanel panel, VirtualCrossoverChannel channel, string button)
+    {
+        object control = ControlOf(panel, channel);
+        var arrow = (Button)control.GetType().GetField(button, Hidden)!.GetValue(control)!;
+        return arrow.Enabled;
+    }
+
+    [Fact]
+    public void ChannelOrder_GreysTheArrowsTheEndBlocksHaveNowhereToGoWith()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded(3);
+            void AssertEnds()
+            {
+                List<VirtualCrossoverChannel> channels = Channels(panel);
+                Assert.False(Enabled(panel, channels[0], "buttonMoveUp"));
+                Assert.True(Enabled(panel, channels[0], "buttonMoveDown"));
+                Assert.True(Enabled(panel, channels[1], "buttonMoveUp"));
+                Assert.True(Enabled(panel, channels[1], "buttonMoveDown"));
+                Assert.True(Enabled(panel, channels[^1], "buttonMoveUp"));
+                Assert.False(Enabled(panel, channels[^1], "buttonMoveDown"));
+            }
+
+            // Right as the list is built, and right again after a block moves:
+            // the state is positional, so the block that WAS at the top has to be
+            // handed its up-arrow back when it stops being there.
+            AssertEnds();
+            Move(panel, Channels(panel)[0], +1);
+            AssertEnds();
         });
     }
 

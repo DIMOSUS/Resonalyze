@@ -206,7 +206,7 @@
             buttonMoveUp.Location = new Point(268, 77);
             buttonMoveUp.Name = "buttonMoveUp";
             buttonMoveUp.Size = new Size(23, 20);
-            buttonMoveUp.TabIndex = 13;
+            buttonMoveUp.TabIndex = 23;
             buttonMoveUp.Text = "▲";
             buttonMoveUp.UseCompatibleTextRendering = true;
             buttonMoveUp.UseVisualStyleBackColor = true;
@@ -218,7 +218,7 @@
             buttonMoveDown.Location = new Point(293, 77);
             buttonMoveDown.Name = "buttonMoveDown";
             buttonMoveDown.Size = new Size(23, 20);
-            buttonMoveDown.TabIndex = 14;
+            buttonMoveDown.TabIndex = 24;
             buttonMoveDown.Text = "▼";
             buttonMoveDown.UseCompatibleTextRendering = true;
             buttonMoveDown.UseVisualStyleBackColor = true;

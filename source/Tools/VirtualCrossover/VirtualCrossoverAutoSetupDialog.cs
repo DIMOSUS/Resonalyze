@@ -668,6 +668,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return;
         }
 
+        // Before the early exits: the order marking is about the rows, not about
+        // whether a proposal came out, and a row that moved while no family was
+        // enabled would otherwise keep the colour of where it used to be.
+        MarkChainOrder();
         if (SelectedFamilies().Count == 0)
         {
             buttonApply.Enabled = false;
@@ -692,7 +696,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             fits = TryFit(withImpulseResponses: false) ?? fits;
         }
 
-        MarkChainOrder();
         labelPreview.Text = string.Join(Environment.NewLine, PreviewLines(fits));
     }
 

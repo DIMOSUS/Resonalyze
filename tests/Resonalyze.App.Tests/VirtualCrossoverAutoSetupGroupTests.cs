@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Reflection;
+using System.Windows.Forms;
 using Resonalyze;
 using Resonalyze.Dsp;
 
@@ -98,6 +99,47 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
 
         Assert.NotNull(result);
         return result!;
+    }
+
+    // The order the wizard asks the panel to put its blocks into, or null when
+    // the user cleared the checkbox.
+    private static IReadOnlyList<int>? ChainOrder(
+        IReadOnlyList<AutoSetupWizardChannel> channels,
+        bool reorder)
+    {
+        IReadOnlyList<int>? order = null;
+        StaTest.Run(() =>
+        {
+            using var dialog = new VirtualCrossoverAutoSetupDialog();
+            dialog.Init(SampleRate, SampleRate, channels);
+            var box = (CheckBox)typeof(VirtualCrossoverAutoSetupDialog)
+                .GetField("reorderBlocks", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetValue(dialog)!;
+            box.Checked = reorder;
+            typeof(VirtualCrossoverAutoSetupDialog)
+                .GetMethod("ApplyClick", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(dialog, [null, EventArgs.Empty]);
+            Assert.NotNull(dialog.Result);
+            order = dialog.ChainOrder;
+        });
+
+        return order;
+    }
+
+    [Fact]
+    public void Apply_AsksForTheBlocksInTheOrderTheDialogCrossedThem()
+    {
+        // Init indices, group by group: the front chain from the sub the corners
+        // put lowest up to the tweeter, then the rear, then the centre. Nothing
+        // like the order they were handed in, which is the point.
+        Assert.Equal([6, 5, 2, 1, 0, 3, 4], ChainOrder(ReferenceCar(), reorder: true));
+    }
+
+    [Fact]
+    public void Apply_AsksForNothingWhenTheUserClearedTheReorder()
+    {
+        // The proposal still applies; only the blocks are left alone.
+        Assert.Null(ChainOrder(ReferenceCar(), reorder: false));
     }
 
     [Fact]

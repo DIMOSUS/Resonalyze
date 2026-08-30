@@ -1,27 +1,66 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
 /// <summary>
+/// One channel offered to the crossover wizard: its measured curve, the band and
+/// type read off it, whatever crossover corners it already carries (which is how
+/// the user says which of two similar drivers plays lower), and the group it
+/// belongs to.
+/// </summary>
+internal sealed record AutoSetupWizardChannel(
+    string Name,
+    Color Accent,
+    VirtualCrossoverAlignmentStage Group,
+    IReadOnlyList<SignalPoint> MagnitudeDb,
+    IReadOnlyList<double>? Coherence,
+    IReadOnlyList<SignalPoint>? Distortion,
+    DriverBandEstimate Band,
+    double? HighPassHz,
+    double? LowPassHz,
+    Complex[]? ImpulseResponse);
+
+/// <summary>
 /// The crossover wizard: shows each participating channel with its detected
-/// usable band and driver type, lets the user confirm or override the types, and
-/// asks which filter families and crossover-frequency window the optimizer may
-/// use (and whether the two sides of a junction may take different slopes). The
-/// resulting proposal — crossover frequencies, families, slopes and cut-only
-/// gains chosen to flatten the magnitude sum — previews live. Apply hands it back
-/// to the panel; nothing is written until then.
+/// usable band and driver type, lets the user confirm or override the types and
+/// the order their group hands over in, and asks which filter families and
+/// crossover-frequency window the optimizer may use (and whether the two sides of
+/// a junction may take different slopes). The resulting proposal — crossover
+/// frequencies, families, slopes and cut-only gains chosen to flatten the
+/// magnitude sum — previews live. Apply hands it back to the panel; nothing is
+/// written until then.
+/// <para>
+/// Each GROUP is fitted on its own, because only a group is a crossover chain: a
+/// rear fill and a centre play the same band as the front stage from other
+/// places, with no filter handing anything between them, so a single chain drawn
+/// through all of them would invent junctions that do not exist. The groups are
+/// then levelled onto the front stage's own reference, which is a starting point
+/// for the balance rather than an answer to it.
+/// </para>
 /// </summary>
 internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 {
     private sealed record ChannelRow(
-        string Name,
-        IReadOnlyList<SignalPoint> MagnitudeDb,
-        IReadOnlyList<double>? Coherence,
-        IReadOnlyList<SignalPoint>? Distortion,
+        int InitIndex,
+        AutoSetupWizardChannel Source,
         Label NameLabel,
         Label BandLabel,
-        DarkComboBox TypeComboBox);
+        DarkComboBox TypeComboBox,
+        Button Up,
+        Button Down);
+
+    // One group's channels in chain order, ready to be fitted off the UI thread.
+    private sealed record GroupPlan(
+        VirtualCrossoverAlignmentStage Group,
+        IReadOnlyList<int> InitIndices,
+        IReadOnlyList<AutoSetupSource> Sources,
+        IReadOnlyList<Complex[]>? ImpulseResponses,
+        bool IsPrimary);
+
+    private sealed record GroupFit(
+        GroupPlan Plan,
+        IReadOnlyList<CrossoverProposal> Proposals);
 
     private readonly WrappingToolTip toolTip = new()
     {
@@ -31,7 +70,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         ShowAlways = true
     };
 
+    // Every channel in DISPLAY order: the groups in the order they are staged,
+    // and inside each group the chain order the optimizer will walk.
     private readonly List<ChannelRow> rows = new();
+    private readonly Dictionary<VirtualCrossoverAlignmentStage, Label> groupHeaders = new();
     private readonly List<(CheckBox Box, CrossoverFilterFamily Family)> familyBoxes = new();
     private double sampleRateHz = 48_000;
     // The rate the target processor realizes its filters at — what the optimizer
@@ -43,10 +85,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     // measured elevation (its default and upper limit). Until then options carry a
     // null elevation so the DSP uses that measured default itself.
     private bool subElevationInitialized;
-    // The channels' measured transfer IRs (Init order). When present, Apply
-    // re-ranks the top candidates by the junction loss achievable after the
-    // best per-junction delay, instead of trusting the magnitude score alone.
-    private IReadOnlyList<Complex[]>? impulseResponses;
+    // False when the primary group is a lone driver: there is no levelled
+    // mid/tweeter reference for a bass elevation to be measured against.
+    private bool subElevationApplies = true;
 
     public VirtualCrossoverAutoSetupDialog()
     {
@@ -71,26 +112,21 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     /// <summary>The proposal computed on Apply, in the same order as the Init channels.</summary>
     public IReadOnlyList<CrossoverProposal>? Result { get; private set; }
 
-    /// <summary>
-    /// Seeds one row per participating channel: the display name, its accent
-    /// color, the smoothed raw magnitude curve, and the auto-detected band/type.
-    /// Both rates are needed: the measurement's bounds the analysis band, and the
-    /// processor's is the one the optimizer evaluates the exact digital biquad
-    /// cascades at — the cascades the DSP will actually run.
-    /// </summary>
     private bool optionsPositioned;
 
+    /// <summary>
+    /// Seeds one row per participating channel, grouped and ordered. Both rates
+    /// are needed: the measurement's bounds the analysis band, and the processor's
+    /// is the one the optimizer evaluates the exact digital biquad cascades at —
+    /// the cascades the DSP will actually run.
+    /// </summary>
     public void Init(
         double sampleRateHz,
         double processorSampleRateHz,
-        IReadOnlyList<(string Name, Color Accent, IReadOnlyList<SignalPoint> MagnitudeDb,
-            IReadOnlyList<double>? Coherence, IReadOnlyList<SignalPoint>? Distortion,
-            DriverBandEstimate Band)> channels,
-        IReadOnlyList<Complex[]>? impulseResponses = null)
+        IReadOnlyList<AutoSetupWizardChannel> channels)
     {
         this.sampleRateHz = sampleRateHz;
         this.processorSampleRateHz = processorSampleRateHz;
-        this.impulseResponses = impulseResponses;
         // Matches the optimizer's Nyquist ceiling; at 44.1 kHz this keeps the full
         // 20 kHz reachable instead of clamping to ~19.8 kHz.
         double ceiling = Math.Min(20_000, sampleRateHz * 0.49);
@@ -101,71 +137,227 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             maxCrossover.Value = maxCrossover.Maximum;
         }
 
-        // One row per participating channel, laid out by the designer's
-        // TableLayoutPanel so the cells scale with the font/DPI instead of the
-        // old hand-computed pixel coordinates. OnLoad then slides the options
-        // section below the finished table and grows the dialog to fit.
         rows.Clear();
-        tableChannels.SuspendLayout();
-        tableChannels.Controls.Clear();
-        tableChannels.RowStyles.Clear();
-        tableChannels.RowCount = channels.Count;
-        for (int i = 0; i < channels.Count; i++)
+        groupHeaders.Clear();
+        foreach (VirtualCrossoverAlignmentStage group in VirtualCrossoverAlignmentStages.InOrder)
         {
-            (string name, Color accent, IReadOnlyList<SignalPoint> magnitude,
-                IReadOnlyList<double>? coherence, IReadOnlyList<SignalPoint>? distortion,
-                DriverBandEstimate band) = channels[i];
-
-            var nameLabel = new Label
+            IEnumerable<(AutoSetupWizardChannel Channel, int Index)> members = channels
+                .Select((channel, index) => (channel, index))
+                .Where(item => item.channel.Group == group)
+                // The chain order the optimizer walks, seeded from what each
+                // channel measures once its own corners are taken into account.
+                // The arrows override it where the measurement cannot decide.
+                .OrderBy(item => VirtualCrossoverAutoSetupOrder.CenterHz(
+                    item.channel.Band, item.channel.HighPassHz, item.channel.LowPassHz));
+            foreach ((AutoSetupWizardChannel channel, int index) in members)
             {
-                Anchor = AnchorStyles.Left,
-                AutoSize = true,
-                Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204),
-                ForeColor = accent,
-                Margin = new Padding(0, 4, 24, 4),
-                Text = name
-            };
-            var bandLabel = new Label
-            {
-                Anchor = AnchorStyles.Left,
-                AutoSize = true,
-                ForeColor = Color.FromArgb(170, 176, 190),
-                Margin = new Padding(0, 4, 24, 4),
-                Text = $"{FormatHz(band.LowHz)} – {FormatHz(band.HighHz)}"
-            };
-            var typeComboBox = new DarkComboBox
-            {
-                Anchor = AnchorStyles.Left,
-                BackColor = Color.FromArgb(55, 60, 72),
-                ForeColor = Color.White,
-                Margin = new Padding(0, 1, 0, 1),
-                TabIndex = i
-            };
-            typeComboBox.Items.AddRange(
-            [
-                DriverType.Subwoofer,
-                DriverType.Woofer,
-                DriverType.Midbass,
-                DriverType.Midrange,
-                DriverType.Tweeter
-            ]);
-            typeComboBox.SelectedItem = band.SuggestedType;
-            typeComboBox.SelectedIndexChanged += (_, _) => UpdatePreview();
-
-            tableChannels.Controls.Add(nameLabel, 0, i);
-            tableChannels.Controls.Add(bandLabel, 1, i);
-            tableChannels.Controls.Add(typeComboBox, 2, i);
-            rows.Add(new ChannelRow(
-                name, magnitude, coherence, distortion, nameLabel, bandLabel, typeComboBox));
+                rows.Add(BuildRow(index, channel));
+            }
         }
 
-        tableChannels.ResumeLayout(true);
+        PopulateTable();
+        // Nothing is elevated over a flat top the primary group has not got: with
+        // one driver there is no mid/tweeter reference to lift the bass above.
+        subElevationApplies = MembersOf(PrimaryGroup()).Count > 1;
+        subElevation.Enabled = subElevationApplies;
+        UiStyle.SetTextEnabledLook(labelSubElevation, subElevationApplies);
+        UiStyle.SetTextEnabledLook(labelSubElevationUnit, subElevationApplies);
+
         initialized = true;
         UpdatePreview();
         if (IsHandleCreated)
         {
             LayoutBelowChannelTable();
         }
+    }
+
+    private ChannelRow BuildRow(int initIndex, AutoSetupWizardChannel channel)
+    {
+        var nameLabel = new Label
+        {
+            Anchor = AnchorStyles.Left,
+            AutoSize = true,
+            Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204),
+            ForeColor = channel.Accent,
+            Margin = new Padding(0, 4, 24, 4),
+            Text = channel.Name
+        };
+        var bandLabel = new Label
+        {
+            Anchor = AnchorStyles.Left,
+            AutoSize = true,
+            ForeColor = UiPalette.TextSecondarySoft,
+            Margin = new Padding(0, 4, 24, 4),
+            Text = $"{FormatHz(channel.Band.LowHz)} – {FormatHz(channel.Band.HighHz)}"
+        };
+        toolTip.SetToolTip(bandLabel, BandTooltip(channel));
+        var typeComboBox = new DarkComboBox
+        {
+            Anchor = AnchorStyles.Left,
+            BackColor = UiPalette.ControlSurface,
+            ForeColor = UiPalette.TextPrimary,
+            Margin = new Padding(0, 1, 0, 1),
+            TabIndex = initIndex
+        };
+        typeComboBox.Items.AddRange(
+        [
+            DriverType.Subwoofer,
+            DriverType.Woofer,
+            DriverType.Midbass,
+            DriverType.Midrange,
+            DriverType.Tweeter
+        ]);
+        typeComboBox.SelectedItem = channel.Band.SuggestedType;
+        typeComboBox.SelectedIndexChanged += (_, _) => UpdatePreview();
+
+        var row = new ChannelRow(
+            initIndex, channel, nameLabel, bandLabel, typeComboBox,
+            BuildArrow("▲"), BuildArrow("▼"));
+        row.Up.Click += (_, _) => MoveInChain(row, -1);
+        row.Down.Click += (_, _) => MoveInChain(row, +1);
+        foreach (Button arrow in new[] { row.Up, row.Down })
+        {
+            toolTip.SetToolTip(
+                arrow,
+                "Where this driver sits in its group's chain: the one above hands\r\n" +
+                "over to the one below it. The order starts from what each channel\r\n" +
+                "measured (narrowed by any crossover corner it already carries) —\r\n" +
+                "move it when two drivers are too alike for that to decide, as a\r\n" +
+                "pair of subwoofers measured full-range will be.");
+        }
+
+        return row;
+    }
+
+    // Why this channel sits where it does. The band shown is what the driver
+    // MEASURED, which is also what bounds the crossover search — but the chain is
+    // ordered by what the channel is left playing once its own corners are
+    // applied, and when those two differ the row order looks arbitrary without
+    // this.
+    private static string BandTooltip(AutoSetupWizardChannel channel)
+    {
+        const string measured = "The usable band read from the raw response — what\r\n" +
+            "bounds where this driver may be crossed.";
+        (double low, double high) = VirtualCrossoverAutoSetupOrder.EffectiveBand(
+            channel.Band, channel.HighPassHz, channel.LowPassHz);
+        bool narrowed = low > channel.Band.LowHz || high < channel.Band.HighHz;
+        return narrowed
+            ? measured + "\r\n\r\nIts crossover already narrows it to " +
+                $"{FormatHz(low)} – {FormatHz(high)},\r\nwhich is what puts it here in the chain."
+            : measured;
+    }
+
+    private Button BuildArrow(string glyph) =>
+        new ReleaseClickButton
+        {
+            Anchor = AnchorStyles.Left,
+            BackColor = UiPalette.DialogSurface,
+            FlatStyle = FlatStyle.Popup,
+            ForeColor = UiPalette.TextPrimary,
+            Margin = new Padding(2, 1, 0, 1),
+            Text = glyph,
+            UseVisualStyleBackColor = false
+        };
+
+    // The groups that have any channel, in the order they are staged.
+    private IEnumerable<VirtualCrossoverAlignmentStage> GroupsInOrder() =>
+        VirtualCrossoverAlignmentStages.InOrder
+            .Where(group => rows.Any(row => row.Source.Group == group));
+
+    private List<ChannelRow> MembersOf(VirtualCrossoverAlignmentStage group) =>
+        rows.Where(row => row.Source.Group == group).ToList();
+
+    // The group whose flat top the others are levelled onto: the front chain,
+    // which is where the front stage and its subs are. A project with no front
+    // chain at all levels onto whichever group runs first.
+    private VirtualCrossoverAlignmentStage PrimaryGroup() =>
+        GroupsInOrder()
+            .DefaultIfEmpty(VirtualCrossoverAlignmentStage.FrontChain)
+            .First();
+
+    // Lays the rows into the table. Called again after a reorder with the SAME
+    // controls, so nothing created here is re-created and the device-unit sizing
+    // LayoutBelowChannelTable applied to the combos survives.
+    private void PopulateTable()
+    {
+        bool headers = GroupsInOrder().Count() > 1;
+        tableChannels.SuspendLayout();
+        tableChannels.Controls.Clear();
+        tableChannels.RowStyles.Clear();
+        int line = 0;
+        foreach (VirtualCrossoverAlignmentStage group in GroupsInOrder())
+        {
+            List<ChannelRow> members = MembersOf(group);
+            if (headers)
+            {
+                Label header = GroupHeader(group);
+                tableChannels.Controls.Add(header, 0, line);
+                tableChannels.SetColumnSpan(header, 5);
+                line++;
+            }
+
+            for (int i = 0; i < members.Count; i++)
+            {
+                ChannelRow member = members[i];
+                tableChannels.Controls.Add(member.NameLabel, 0, line);
+                tableChannels.Controls.Add(member.BandLabel, 1, line);
+                tableChannels.Controls.Add(member.TypeComboBox, 2, line);
+                // A group of one has no order to state, so it shows no arrows —
+                // two disabled buttons on every rear-fill row would only ask the
+                // reader to work out that there is nothing to press.
+                if (members.Count > 1)
+                {
+                    member.Up.Enabled = i > 0;
+                    member.Down.Enabled = i < members.Count - 1;
+                    tableChannels.Controls.Add(member.Up, 3, line);
+                    tableChannels.Controls.Add(member.Down, 4, line);
+                }
+
+                line++;
+            }
+        }
+
+        tableChannels.RowCount = Math.Max(1, line);
+        tableChannels.ResumeLayout(true);
+    }
+
+    private Label GroupHeader(VirtualCrossoverAlignmentStage group)
+    {
+        if (!groupHeaders.TryGetValue(group, out Label? header))
+        {
+            header = new Label
+            {
+                Anchor = AnchorStyles.Left,
+                AutoSize = true,
+                Font = new Font(
+                    "Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204),
+                ForeColor = UiPalette.TextHighlight,
+                Margin = new Padding(0, 8, 0, 2),
+                Text = VirtualCrossoverAlignmentStages.DisplayName(group)
+            };
+            groupHeaders[group] = header;
+        }
+
+        return header;
+    }
+
+    // Swaps a channel with its neighbour inside its own group. Groups stay
+    // contiguous in `rows` because nothing ever moves a channel across one.
+    private void MoveInChain(ChannelRow row, int delta)
+    {
+        List<ChannelRow> members = MembersOf(row.Source.Group);
+        int at = members.IndexOf(row);
+        int to = at + delta;
+        if (at < 0 || to < 0 || to >= members.Count)
+        {
+            return;
+        }
+
+        int one = rows.IndexOf(members[at]);
+        int other = rows.IndexOf(members[to]);
+        (rows[one], rows[other]) = (rows[other], rows[one]);
+        PopulateTable();
+        UpdatePreview();
     }
 
     protected override void OnLoad(EventArgs e)
@@ -187,16 +379,19 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
         optionsPositioned = true;
 
-        // The channel combos are DarkComboBox UserControls added to the table at
-        // runtime, so the form's one-time font autoscale never reaches them and
-        // their fixed 19-px height would clip the scaled text at high DPI. The
-        // labels are AutoSize and size themselves; the combos must be sized in
-        // device units here, after scaling, so the table row height accounts for
-        // them before we measure it.
+        // The channel combos and the order arrows are controls added to the table
+        // at runtime, so the form's one-time font autoscale never reaches them and
+        // their fixed height would clip the scaled text at high DPI. The labels are
+        // AutoSize and size themselves; these must be sized in device units here,
+        // after scaling, so the table row height accounts for them before we
+        // measure it.
         Size comboSize = LogicalToDeviceUnits(new Size(110, 19));
+        Size arrowSize = LogicalToDeviceUnits(new Size(22, 19));
         foreach (ChannelRow row in rows)
         {
             row.TypeComboBox.Size = comboSize;
+            row.Up.Size = arrowSize;
+            row.Down.Size = arrowSize;
         }
 
         tableChannels.PerformLayout();
@@ -212,16 +407,22 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             control.Top += shift;
         }
 
-        // The preview shows one line per channel plus a summary; size it to the
-        // real font line height so it fits at any DPI, then grow the client area
-        // to clear the bottom-anchored buttons.
+        // The preview shows one line per channel plus a heading and a summary for
+        // every group; size it to the real font line height so it fits at any DPI,
+        // then grow the client area to clear the bottom-anchored buttons.
         labelPreview.Height =
-            (rows.Count + 1) * labelPreview.Font.Height + LogicalToDeviceUnits(6);
+            PreviewLineCount() * labelPreview.Font.Height + LogicalToDeviceUnits(6);
         ClientSize = new Size(
             ClientSize.Width,
             labelPreview.Bottom + LogicalToDeviceUnits(12) + buttonApply.Height
                 + LogicalToDeviceUnits(12));
     }
+
+    // The tallest the preview can get: every channel, plus a heading and a
+    // summary line per group. Computed from the structure rather than the current
+    // text, which may be a one-line error while the options are being changed.
+    private int PreviewLineCount() =>
+        rows.Count + (2 * GroupsInOrder().Count());
 
     // Maps the designer's filter-family checkboxes to their families and wires the
     // option controls to refresh the live preview when the user changes them.
@@ -257,19 +458,19 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             "boosted, onto the resulting target.");
     }
 
-    // One wizard source per channel row, in the row (Init) order.
-    private List<AutoSetupSource> CurrentSources() =>
-        rows.Select(row => new AutoSetupSource(
-                row.MagnitudeDb, TypeOf(row), row.Coherence, row.Distortion))
-            .ToList();
-
     private DriverType TypeOf(ChannelRow row) =>
         row.TypeComboBox.SelectedItem is DriverType type ? type : DriverType.Woofer;
+
+    private AutoSetupSource SourceOf(ChannelRow row) =>
+        new(row.Source.MagnitudeDb, TypeOf(row), row.Source.Coherence, row.Source.Distortion);
 
     private IReadOnlyList<CrossoverFilterFamily> SelectedFamilies() =>
         familyBoxes.Where(item => item.Box.Checked).Select(item => item.Family).ToList();
 
-    private CrossoverAutoSetupOptions CurrentOptions() =>
+    // The sub elevation belongs to the group that carries the bass; the others
+    // keep their own measured internal balance and are levelled as a whole
+    // afterwards.
+    private CrossoverAutoSetupOptions OptionsFor(bool primary) =>
         new(
             SelectedFamilies(),
             (double)minCrossover.Value,
@@ -277,9 +478,83 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             independentSlopes.Checked,
             sampleRateHz,
             processorSampleRateHz,
-            subElevationInitialized ? (double)subElevation.Value : null);
+            primary && subElevationInitialized ? (double)subElevation.Value : null);
 
-    private IReadOnlyList<CrossoverProposal>? TryPropose()
+    // Snapshots what the optimizer needs, on the UI thread: the ranked search
+    // then runs on a background one and must not read a combo box.
+    private List<GroupPlan> CurrentPlan(bool withImpulseResponses)
+    {
+        VirtualCrossoverAlignmentStage primary = PrimaryGroup();
+        var plan = new List<GroupPlan>();
+        foreach (VirtualCrossoverAlignmentStage group in GroupsInOrder())
+        {
+            List<ChannelRow> members = MembersOf(group);
+            bool ranked = withImpulseResponses &&
+                members.Count > 1 &&
+                members.All(row => row.Source.ImpulseResponse is { Length: > 0 });
+            plan.Add(new GroupPlan(
+                group,
+                members.Select(row => row.InitIndex).ToList(),
+                members.Select(SourceOf).ToList(),
+                ranked ? members.Select(row => row.Source.ImpulseResponse!).ToList() : null,
+                group == primary));
+        }
+
+        return plan;
+    }
+
+    // Fits every group and levels the later ones onto the primary's flat top.
+    // Pure — no control is touched — so Apply can run it off the UI thread.
+    private static List<GroupFit> Fit(
+        IReadOnlyList<GroupPlan> plan,
+        Func<bool, CrossoverAutoSetupOptions> options,
+        double sampleRateHz)
+    {
+        var fits = new List<GroupFit>();
+        double? reference = null;
+        foreach (GroupPlan group in plan)
+        {
+            CrossoverAutoSetupOptions groupOptions = options(group.IsPrimary);
+            IReadOnlyList<CrossoverProposal> proposals = group.Sources.Count == 1
+                ? [CrossoverAutoSetup.ProposeSingle(group.Sources[0], groupOptions)]
+                : group.ImpulseResponses != null
+                    ? CrossoverAutoSetup.ProposeRanked(
+                        group.Sources, groupOptions, group.ImpulseResponses)[0].Proposals
+                    : CrossoverAutoSetup.Propose(group.Sources, groupOptions);
+
+            if (group.IsPrimary)
+            {
+                reference = CrossoverAutoSetup.ReferenceLevelDb(
+                    group.Sources, proposals, sampleRateHz);
+            }
+            else if (reference is { } level)
+            {
+                proposals = CrossoverAutoSetup.OffsetToReferenceLevel(
+                    group.Sources, proposals, sampleRateHz, level);
+            }
+
+            fits.Add(new GroupFit(group, proposals));
+        }
+
+        return fits;
+    }
+
+    // The fitted proposals scattered back into the order the channels came in.
+    private static CrossoverProposal[] InInitOrder(IReadOnlyList<GroupFit> fits, int count)
+    {
+        var result = new CrossoverProposal[count];
+        foreach (GroupFit fit in fits)
+        {
+            for (int i = 0; i < fit.Plan.InitIndices.Count; i++)
+            {
+                result[fit.Plan.InitIndices[i]] = fit.Proposals[i];
+            }
+        }
+
+        return result;
+    }
+
+    private List<GroupFit>? TryFit(bool withImpulseResponses)
     {
         if (SelectedFamilies().Count == 0)
         {
@@ -288,7 +563,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
         try
         {
-            return CrossoverAutoSetup.Propose(CurrentSources(), CurrentOptions());
+            return Fit(CurrentPlan(withImpulseResponses), OptionsFor, sampleRateHz);
         }
         catch (ArgumentException)
         {
@@ -296,32 +571,24 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
     }
 
-    // Pre-fills the sub-elevation field once, the first time the driver types
-    // form a valid proposal: its default and upper limit are the measured
-    // elevation of the lowest driver over the levelled mid/tweeter reference.
-    private void TryInitializeSubElevation()
+    // Pre-fills the sub-elevation field once, the first time the channels form a
+    // valid proposal: its default and upper limit are the measured elevation of
+    // the lowest driver over the levelled mid/tweeter reference, read off the
+    // group that carries the bass.
+    private void TryInitializeSubElevation(IReadOnlyList<GroupFit> fits)
     {
-        if (subElevationInitialized || SelectedFamilies().Count == 0)
+        GroupFit? primary = fits.FirstOrDefault(fit => fit.Plan.IsPrimary);
+        if (subElevationInitialized || primary == null || primary.Plan.Sources.Count < 2)
         {
             return;
         }
 
-        List<AutoSetupSource> sources = CurrentSources();
-        try
-        {
-            IReadOnlyList<CrossoverProposal> proposals =
-                CrossoverAutoSetup.Propose(sources, CurrentOptions());
-            double measured = CrossoverAutoSetup.MeasuredSubElevationDb(
-                sources, proposals, sampleRateHz);
-            decimal max = (decimal)Math.Max(0, Math.Round(measured, 1));
-            subElevation.Maximum = Math.Max(max, subElevation.Minimum);
-            subElevationInitialized = true;
-            subElevation.Value = max;
-        }
-        catch (ArgumentException)
-        {
-            // Types are not yet distinct; retry on the next change.
-        }
+        double measured = CrossoverAutoSetup.MeasuredSubElevationDb(
+            primary.Plan.Sources, primary.Proposals, sampleRateHz);
+        decimal max = (decimal)Math.Max(0, Math.Round(measured, 1));
+        subElevation.Maximum = Math.Max(max, subElevation.Minimum);
+        subElevationInitialized = true;
+        subElevation.Value = max;
     }
 
     private void UpdatePreview()
@@ -338,50 +605,84 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return;
         }
 
-        TryInitializeSubElevation();
-        IReadOnlyList<CrossoverProposal>? proposals = TryPropose();
-        buttonApply.Enabled = proposals != null;
-        if (proposals == null)
+        List<GroupFit>? fits = TryFit(withImpulseResponses: false);
+        buttonApply.Enabled = fits != null;
+        if (fits == null)
         {
-            labelPreview.Text = "Assign a distinct driver type to every channel.";
+            labelPreview.Text = "No proposal fits these channels and settings.";
             return;
         }
 
-        var lines = rows
-            .Select((row, index) => FormatProposal(row, proposals[index]))
-            .ToList();
-        lines.Add(FormatSummary(proposals));
-        labelPreview.Text = string.Join(Environment.NewLine, lines);
+        // The elevation control changes the gains, so re-fit once it is filled in
+        // rather than previewing the pre-fill run's numbers.
+        bool wasInitialized = subElevationInitialized;
+        TryInitializeSubElevation(fits);
+        if (!wasInitialized && subElevationInitialized)
+        {
+            fits = TryFit(withImpulseResponses: false) ?? fits;
+        }
+
+        MarkAmbiguousOrder();
+        labelPreview.Text = string.Join(Environment.NewLine, PreviewLines(fits));
+    }
+
+    private IEnumerable<string> PreviewLines(IReadOnlyList<GroupFit> fits)
+    {
+        bool headers = fits.Count > 1;
+        foreach (GroupFit fit in fits)
+        {
+            if (headers)
+            {
+                yield return VirtualCrossoverAlignmentStages.DisplayName(fit.Plan.Group) + ":";
+            }
+
+            for (int i = 0; i < fit.Plan.InitIndices.Count; i++)
+            {
+                ChannelRow row = rows.First(
+                    candidate => candidate.InitIndex == fit.Plan.InitIndices[i]);
+                yield return FormatProposal(row, fit.Proposals[i], headers);
+            }
+
+            yield return FormatSummary(fit, headers);
+        }
     }
 
     // The span of the predicted summed response and the sub elevation applied —
     // with the target-curve gains the sum is an intentional downslope (bass
-    // lifted), not a flat line, so this reports the span rather than a defect.
-    private string FormatSummary(IReadOnlyList<CrossoverProposal> proposals)
+    // lifted), not a flat line, so this reports the span rather than a defect. A
+    // group of one has no sum to speak of, so it says what it was levelled to
+    // instead.
+    private string FormatSummary(GroupFit fit, bool indent)
     {
-        List<AutoSetupSource> sources = CurrentSources();
-        AutoSetupSource lowSource = sources.OrderBy(source => source.Type).First();
-        AutoSetupSource highSource = sources.OrderBy(source => source.Type).Last();
+        string prefix = indent ? "   " : string.Empty;
+        if (fit.Plan.Sources.Count == 1)
+        {
+            return prefix + (fit.Plan.IsPrimary
+                ? "One driver, so nothing to cross: a protective high-pass only."
+                : "Levelled to the front stage — set the balance by ear from there.");
+        }
+
+        IReadOnlyList<AutoSetupSource> sources = fit.Plan.Sources;
         DriverBandEstimate low = CrossoverAutoSetup.EstimateBand(
-            lowSource.MagnitudeDb, lowSource.Coherence);
+            sources[0].MagnitudeDb, sources[0].Coherence);
         DriverBandEstimate high = CrossoverAutoSetup.EstimateBand(
-            highSource.MagnitudeDb, highSource.Coherence);
+            sources[^1].MagnitudeDb, sources[^1].Coherence);
         double trim = Math.Pow(2.0, 0.5);
 
         var window = CrossoverAutoSetup
-            .SummedResponseDb(sources, proposals, sampleRateHz, processorSampleRateHz)
+            .SummedResponseDb(sources, fit.Proposals, sampleRateHz, processorSampleRateHz)
             .Where(point => point.X >= low.LowHz * trim && point.X <= high.HighHz / trim)
             .Select(point => point.Y)
             .ToList();
         double span = window.Count > 0 ? window.Max() - window.Min() : 0;
-        string elevation = subElevationInitialized
+        string elevation = fit.Plan.IsPrimary && subElevationInitialized
             ? $"  ·  bass +{(double)subElevation.Value:0.0} dB over mid/treble"
             : string.Empty;
-        return $"Predicted sum spans {span:0.0} dB over " +
+        return $"{prefix}Predicted sum spans {span:0.0} dB over " +
             $"{FormatHz(low.LowHz)}–{FormatHz(high.HighHz)}{elevation}";
     }
 
-    private static string FormatProposal(ChannelRow row, CrossoverProposal proposal)
+    private static string FormatProposal(ChannelRow row, CrossoverProposal proposal, bool indent)
     {
         var parts = new List<string>();
         if (proposal.HighPassEdge is { } highPass)
@@ -393,7 +694,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             parts.Add($"LP {FormatHz(lowPass.FrequencyHz)} {FormatFamily(lowPass)}");
         }
         parts.Add($"gain {proposal.GainDb:0.0} dB");
-        return $"{row.Name}:  {string.Join(",  ", parts)}";
+        return $"{(indent ? "   " : string.Empty)}{row.Source.Name}:  {string.Join(",  ", parts)}";
     }
 
     // A compact family + slope tag, e.g. "LR24", "BW18", "BE24".
@@ -408,15 +709,84 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         return $"{family}{edge.SlopeDbPerOctave}";
     }
 
-    // Every control whose value feeds TryPropose()/CurrentOptions(). Frozen
-    // while the ranking task runs, so the applied result always matches the
-    // settings the user sees; their change handlers would otherwise re-enable
-    // Apply and overwrite the progress text mid-ranking.
+    // Adjacent pairs whose bands are too alike for the measurement to have put
+    // them in order — the pair of subs the whole grouping exists for, when
+    // neither carries a corner yet.
+    private List<(ChannelRow Lower, ChannelRow Upper)> AmbiguousPairs()
+    {
+        var pairs = new List<(ChannelRow, ChannelRow)>();
+        foreach (VirtualCrossoverAlignmentStage group in GroupsInOrder())
+        {
+            List<ChannelRow> members = MembersOf(group);
+            for (int i = 0; i + 1 < members.Count; i++)
+            {
+                if (VirtualCrossoverAutoSetupOrder.IsAmbiguous(
+                        CenterOf(members[i]), CenterOf(members[i + 1])))
+                {
+                    pairs.Add((members[i], members[i + 1]));
+                }
+            }
+        }
+
+        return pairs;
+    }
+
+    private static double CenterOf(ChannelRow row) =>
+        VirtualCrossoverAutoSetupOrder.CenterHz(
+            row.Source.Band, row.Source.HighPassHz, row.Source.LowPassHz);
+
+    private void MarkAmbiguousOrder()
+    {
+        var doubtful = AmbiguousPairs()
+            .SelectMany(pair => new[] { pair.Lower, pair.Upper })
+            .ToHashSet();
+        foreach (ChannelRow row in rows)
+        {
+            row.BandLabel.ForeColor = doubtful.Contains(row)
+                ? UiPalette.WarningAmber
+                : UiPalette.TextSecondarySoft;
+        }
+    }
+
+    // Stops before writing a chain the measurement did not actually order. The
+    // user may know perfectly well which sub is which — the arrows are there for
+    // exactly that — so this asks rather than refuses.
+    private bool ConfirmAmbiguousOrder()
+    {
+        List<(ChannelRow Lower, ChannelRow Upper)> doubtful = AmbiguousPairs();
+        if (doubtful.Count == 0)
+        {
+            return true;
+        }
+
+        string pairs = string.Join(
+            Environment.NewLine,
+            doubtful.Select(pair =>
+                $"    {pair.Lower.Source.Name}  before  {pair.Upper.Source.Name}"));
+        return MessageBox.Show(
+            this,
+            "These channels measure too much alike for their order to be read " +
+            "off the measurement:" + Environment.NewLine + Environment.NewLine +
+            pairs + Environment.NewLine + Environment.NewLine +
+            "The wizard will cross them in the order shown. Use the arrows to " +
+            "change it, or set a crossover corner on one of them first — either " +
+            "one says which plays lower. Continue?",
+            "Auto crossover",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning) == DialogResult.Yes;
+    }
+
+    // Every control whose value feeds the proposal. Frozen while the ranking task
+    // runs, so the applied result always matches the settings the user sees; their
+    // change handlers would otherwise re-enable Apply and overwrite the progress
+    // text mid-ranking.
     private IEnumerable<Control> RankingInputControls()
     {
         foreach (ChannelRow row in rows)
         {
             yield return row.TypeComboBox;
+            yield return row.Up;
+            yield return row.Down;
         }
 
         foreach ((CheckBox box, CrossoverFilterFamily _) in familyBoxes)
@@ -436,20 +806,33 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         {
             control.Enabled = enabled;
         }
+
+        subElevation.Enabled = enabled && subElevationApplies;
+        if (enabled)
+        {
+            // The arrows' enabled state is positional, not global.
+            PopulateTable();
+        }
     }
 
     private async void ApplyClick(object? sender, EventArgs e)
     {
-        IReadOnlyList<CrossoverProposal>? quick = TryPropose();
+        List<GroupFit>? quick = TryFit(withImpulseResponses: false);
         if (quick == null)
         {
             System.Media.SystemSounds.Beep.Play();
             return;
         }
 
-        if (impulseResponses == null)
+        if (!ConfirmAmbiguousOrder())
         {
-            Result = quick;
+            return;
+        }
+
+        List<GroupPlan> plan = CurrentPlan(withImpulseResponses: true);
+        if (plan.All(group => group.ImpulseResponses == null))
+        {
+            Result = InInitOrder(quick, rows.Count);
             DialogResult = DialogResult.OK;
             return;
         }
@@ -458,29 +841,31 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         // measured IRs) runs off the UI thread; a couple of seconds on a
         // 4-way. The live preview keeps showing the fast magnitude-only
         // proposal until the ranking lands.
-        List<AutoSetupSource> sources = CurrentSources();
-        CrossoverAutoSetupOptions options = CurrentOptions();
-        IReadOnlyList<Complex[]> responses = impulseResponses;
+        CrossoverAutoSetupOptions primaryOptions = OptionsFor(true);
+        CrossoverAutoSetupOptions otherOptions = OptionsFor(false);
+        CrossoverAutoSetupOptions Options(bool primary) =>
+            primary ? primaryOptions : otherOptions;
         string previousPreview = labelPreview.Text;
+        int count = rows.Count;
         buttonApply.Enabled = false;
         SetRankingInputsEnabled(false);
         labelPreview.Text = "Ranking candidates against the measured responses…";
         try
         {
-            IReadOnlyList<RankedCrossoverProposal> ranked = await Task.Run(
-                () => CrossoverAutoSetup.ProposeRanked(sources, options, responses));
+            List<GroupFit> ranked = await Task.Run(
+                () => Fit(plan, Options, sampleRateHz));
             if (IsDisposed)
             {
                 return;
             }
 
-            Result = ranked[0].Proposals;
+            Result = InInitOrder(ranked, count);
             DialogResult = DialogResult.OK;
         }
         catch (ArgumentException)
         {
-            // A user-input shape problem (duplicate types, unusable band):
-            // the same quiet signal the synchronous path gives.
+            // A user-input shape problem (an unusable band): the same quiet
+            // signal the synchronous path gives.
             if (IsDisposed)
             {
                 return;
@@ -504,6 +889,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
             labelPreview.Text = previousPreview;
             buttonApply.Enabled = true;
+            SetRankingInputsEnabled(true);
             MessageBox.Show(
                 this,
                 $"Candidate ranking failed.\r\n\r\n{exception.Message}",

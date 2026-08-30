@@ -7647,9 +7647,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // Band/type detection reads the raw (unprocessed) responses with a fixed
         // 1/3-octave smoothing, independent of the display smoothing.
         var wizardOptions = new FrequencyResponseOptions { SmoothingInverseOctaves = 3 };
-        var dialogChannels = new List<(string Name, Color Accent,
-            IReadOnlyList<SignalPoint> MagnitudeDb, IReadOnlyList<double>? Coherence,
-            IReadOnlyList<SignalPoint>? Distortion, DriverBandEstimate Band)>();
+        var dialogChannels = new List<AutoSetupWizardChannel>();
         try
         {
             foreach (VirtualCrossoverChannel channel in participating)
@@ -7682,13 +7680,26 @@ public partial class VirtualCrossoverPanel : UserControl
                 // sweep deconvolution.
                 IReadOnlyList<SignalPoint>? distortion = channel.DistortionCurve;
                 OxyColor accent = ChannelColors[channels.IndexOf(channel)];
-                dialogChannels.Add((
+                // The corners already on the channel: with two similar drivers
+                // they are what says which plays lower, so the wizard orders its
+                // chain by the band each one is left contributing.
+                VirtualCrossoverChannelSettings settings =
+                    channel.SideSettings(project.ActiveSideRight);
+                dialogChannels.Add(new AutoSetupWizardChannel(
                     $"{channel.Name} — {channel.Settings.DisplayName}",
                     Color.FromArgb(accent.R, accent.G, accent.B),
+                    VirtualCrossoverAlignmentStages.StageOf(channel.Pair.Zone),
                     curve.Points,
                     coherence,
                     distortion,
-                    CrossoverAutoSetup.EstimateBand(curve.Points, coherence, distortion)));
+                    CrossoverAutoSetup.EstimateBand(curve.Points, coherence, distortion),
+                    settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
+                        ? settings.HighPassEdge.FrequencyHz
+                        : null,
+                    settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
+                        ? settings.LowPassEdge.FrequencyHz
+                        : null,
+                    channel.TransferImpulseResponse));
             }
         }
         catch (ArgumentException exception)
@@ -7701,8 +7712,7 @@ public partial class VirtualCrossoverPanel : UserControl
         dialog.Init(
             participating[0].SampleRate,
             ProcessorSampleRateHz,
-            dialogChannels,
-            participating.Select(channel => channel.TransferImpulseResponse!).ToList());
+            dialogChannels);
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } proposals)
         {

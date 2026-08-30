@@ -822,6 +822,22 @@ Resonalyze analyzes the measurements, estimates the usable bandwidth of each cha
 and assigns a likely driver type. Check these classifications and correct them if
 necessary.
 
+The channels are listed under their group — the front stage with its subwoofers, the
+rear fill, the centre — because only a group is a crossover chain; nothing hands a band
+from the front stage to a rear fill, so each group is fitted separately. Inside a group
+the rows are the chain, top to bottom, and each channel hands over to the one below it.
+Two channels may hold the same driver type: a pair of subwoofers splitting the bottom is
+an ordinary install. The order is taken from what each channel measured, narrowed by any
+crossover corner it already has — set one on either sub and that alone says which plays
+lower — and the arrows move a row when the measurement cannot decide. Bands shown in
+amber are the pairs nothing has ordered; Apply asks about those before it writes
+anything.
+
+A group holding a single driver has nothing to cross, so it gets a protective high-pass
+under its usable band and is levelled onto the front stage. Treat that level as a
+starting point: how far a rear fill sits under the front is a decision for your ears,
+not for the measurement.
+
 Then select:
 
 - the filter families supported by your real DSP;

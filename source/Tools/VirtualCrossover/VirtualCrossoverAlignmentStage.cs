@@ -57,6 +57,15 @@ public static class VirtualCrossoverAlignmentStages
         VirtualCrossoverAlignmentStage.Center
     ];
 
+    /// <summary>What a stage is called wherever one is named to the user.</summary>
+    public static string DisplayName(VirtualCrossoverAlignmentStage stage) =>
+        stage switch
+        {
+            VirtualCrossoverAlignmentStage.Rear => "Rear fill",
+            VirtualCrossoverAlignmentStage.Center => "Center",
+            _ => "Front stage and subs"
+        };
+
     /// <summary>
     /// The stage a block belongs to. The subwoofers join the FRONT chain rather
     /// than forming one of their own: that is where their junctions are — on the

@@ -59,14 +59,16 @@ namespace Resonalyze
             labelHeader.Name = "labelHeader";
             labelHeader.Size = new Size(320, 15);
             labelHeader.TabIndex = 0;
-            labelHeader.Text = "Confirm the detected driver types (usable band shown):";
+            labelHeader.Text = "Confirm the driver types and the order each group crosses in:";
             //
             // tableChannels
             //
             tableChannels.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             tableChannels.AutoSize = true;
             tableChannels.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            tableChannels.ColumnCount = 3;
+            tableChannels.ColumnCount = 5;
+            tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));

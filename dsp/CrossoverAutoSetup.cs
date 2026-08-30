@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Numerics;
 
 namespace Resonalyze.Dsp;
@@ -983,7 +983,7 @@ public static class CrossoverAutoSetup
         var results = new CrossoverProposal[channels.Count];
         for (int i = 0; i < channels.Count; i++)
         {
-            results[i] = proposals[i] with { GainDb = Math.Round(gains[i], 1) };
+            results[i] = proposals[i] with { GainDb = RoundGain(gains[i]) };
         }
 
         return results;
@@ -1051,7 +1051,7 @@ public static class CrossoverAutoSetup
 
         double offset = Math.Min(0, referenceLevelDb - own);
         return proposals
-            .Select(proposal => proposal with { GainDb = Math.Round(proposal.GainDb + offset, 1) })
+            .Select(proposal => proposal with { GainDb = RoundGain(proposal.GainDb + offset) })
             .ToList();
     }
 
@@ -1129,6 +1129,11 @@ public static class CrossoverAutoSetup
             lowPass,
             0);
     }
+
+    // A gain as it is written and displayed. The `+ 0.0` is not a no-op: a tiny
+    // negative cut rounds to NEGATIVE zero, which every formatter faithfully
+    // prints as "-0.0 dB" — a reading that looks like a defect in the fit.
+    private static double RoundGain(double gainDb) => Math.Round(gainDb, 1) + 0.0;
 
     // Prefer the family an engineer would reach for first: Linkwitz-Riley, then
     // Bessel, then whatever is left.
@@ -2868,7 +2873,7 @@ public static class CrossoverAutoSetup
                     kind,
                     highPass,
                     lowPass,
-                    Math.Round(gainDb[i], 1));
+                    RoundGain(gainDb[i]));
             }
 
             return results;

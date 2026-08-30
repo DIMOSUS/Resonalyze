@@ -2277,9 +2277,41 @@ to another — the same guard the calibration and the chain already have.
 (subwoofer, woofer, midbass, midrange, tweeter), asks which filter families to
 allow, the crossover-frequency window, and whether the two sides of a junction
 may take independent slopes, then searches frequency, family and slope to
-flatten the summed magnitude — penalizing wide band overlap and keeping a
-practical minimum slope, so it lands on a tight, engineer-sensible split rather
+flatten each group's summed magnitude — penalizing wide band overlap and keeping
+a practical minimum slope, so it lands on a tight, engineer-sensible split rather
 than shallow filters that only look flat by overlapping widely.
+
+#### One chain per group
+
+A car is not one crossover chain. A rear fill and a centre play the same band as
+the front stage from other places, with no filter handing anything between them,
+so the wizard fits each **group** on its own — the same front/rear/centre
+grouping [Auto delay](#auto-delay) stages by, with the subwoofers in the front
+chain, where their junctions are. The dialog lists the channels under their
+group heading and builds the proposal group by group.
+
+The **order inside a group** is the chain: each channel hands over to the one
+below it and to nobody else. It starts from what the channel measured, narrowed
+by any crossover corner already set on it — which is what tells two subwoofers
+apart when nothing in their raw response does — and the arrows beside each row
+change it. Two channels may share a driver type: a pair of subwoofers dividing
+the bottom, or a pair of midbasses, is an ordinary install, and the handover
+between them is a crossover like any other. What the type cannot do is put them
+in order, which is why the chain is the row order rather than a sort of the
+types. Where two neighbours measure too much alike for anything to have ordered
+them — under half an octave apart, with no corner separating them — their bands
+are marked amber and **Apply** asks before committing to the order shown.
+
+A group of one driver has no junction to optimize, and gets instead what a chain
+member gets for free from the driver under it: a protective high-pass an octave
+above where it measured, raised further by its own resonance or by the frequency
+under which its distortion says it stops being clean. Every group after the
+first is then slid as a whole onto the front stage's own reference level,
+cut-only, keeping everything its own fit decided about the balance between its
+members. That is a measured starting point for the balance, not an answer to it
+— where a rear fill finally sits is the ear's decision.
+
+#### The search and the gains
 
 The gains follow a car target curve rather than a flat sum: midrange and
 tweeter are levelled to each other, the lowest bass driver anchors the bass at
@@ -2291,7 +2323,11 @@ peak group delay stays within 10 ms — fine at a 250 Hz woofer/mid handover
 (~5 ms), excluded at a 75 Hz sub/woofer one (~17 ms). Heuristics also penalize
 junctions in the ear's most sensitive band (2–4 kHz), cross two drivers sharing
 a wide band low (except the subwoofer, nudged UP toward ~80 Hz), and make a low
-tweeter handover earn its slope against the driver's resonance. Apply then
+tweeter handover earn its slope against the driver's resonance. The overlap and
+subwoofer nudges both answer which of two *classes* should own the region they
+share, so neither applies between two drivers of one class: where a pair of
+subwoofers splits is left to the measured flatness and the re-rank below. Apply
+then
 expands ~50 near-optimal variants and re-ranks them by the junction loss
 actually achievable after the best per-junction delay.
 

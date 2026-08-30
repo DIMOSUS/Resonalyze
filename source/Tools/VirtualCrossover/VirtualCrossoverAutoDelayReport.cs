@@ -114,6 +114,15 @@ internal static class VirtualCrossoverAutoDelayReport
                         $", near-side cut {Math.Abs(GainBalanceEngine.LevelDifferenceDb(request.LevelDifferenceDb)):0.0} dB")
                     : ""));
         }
+        if (request.RearFillOffsetMs > 0)
+        {
+            // The single most consequential number in a rear-fill tune: without
+            // it a saved proposal cannot say whether the rear was co-arrived or
+            // held back, which is the difference between a front image and a
+            // collapsed one.
+            text.AppendLine(FormattableString.Invariant(
+                $"Rear fill {request.RearFillOffsetMs:0.0} ms behind the front stage."));
+        }
         if (!request.AdjustGains)
         {
             text.AppendLine("Gains not adjusted (checkbox off).");

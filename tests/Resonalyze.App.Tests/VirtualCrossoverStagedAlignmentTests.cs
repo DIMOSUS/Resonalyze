@@ -111,6 +111,21 @@ public sealed class VirtualCrossoverStagedAlignmentTests
                 .Select(item => item.Name));
     }
 
+    [Theory]
+    // Left-hand drive: the driver's side is the left, so the right is the far one.
+    [InlineData(false, false, false)]
+    [InlineData(true, false, true)]
+    // Right-hand drive mirrors it, and this is the case that was wrong: the
+    // group sums reach the placement in the engine's ROLES, so reading the cabin
+    // side there timed every rear driver against the opposite side's front stage.
+    [InlineData(true, true, false)]
+    [InlineData(false, true, true)]
+    public void IsFarSide_FollowsTheLayoutRatherThanTheCabinSide(
+        bool rightSide,
+        bool rightHandDrive,
+        bool far) =>
+        Assert.Equal(far, VirtualCrossoverPanel.IsFarSide(rightSide, rightHandDrive));
+
     [Fact]
     public void NormalizeStagedDelays_SlidesEveryChannelAndKeepsEveryRelation()
     {

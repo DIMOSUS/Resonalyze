@@ -4618,6 +4618,7 @@ public partial class VirtualCrossoverPanel : UserControl
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         double sceneOffsetMs,
         double rearFillOffsetMs,
+        bool rightHandDrive,
         System.Text.StringBuilder log)
     {
         IReadOnlyList<AlignmentSnapshot> settled = reprocessor.Reprocess(alignment);
@@ -4642,6 +4643,8 @@ public partial class VirtualCrossoverPanel : UserControl
             return (low, high);
         }
 
+        // Rebound by the inner walks below, so a group placed after another has
+        // settled reads the responses as they now stand.
         Complex[] referenceSum = SumOf(chainReference);
         Complex[] farSum = SumOf(chainFar);
         (double chainLow, double chainHigh) = BandOf(chainReference);
@@ -4650,27 +4653,62 @@ public partial class VirtualCrossoverPanel : UserControl
         // The rear fill, one side at a time against the front stage of the SAME
         // side: that is the comparison a listener in that seat makes, and it
         // leaves the rear's own L/R relation following the front's.
-        foreach (VirtualCrossoverSideAlignmentChannel side in later.Where(item =>
-            VirtualCrossoverAlignmentStages.StageOf(item.Runtime.Pair.Zone) ==
-                VirtualCrossoverAlignmentStage.Rear))
+        // Grouped by CABIN SIDE, because a rear fill can be a two-way of its own:
+        // its drivers cross each other, and that junction is the engine's
+        // business. Placed one driver at a time they each landed near their own
+        // right answer while their MUTUAL alignment — quite possibly tuned by
+        // hand — was overwritten by two unrelated numbers.
+        foreach (IGrouping<bool, VirtualCrossoverSideAlignmentChannel> sideGroup in
+            later
+                .Where(item =>
+                    VirtualCrossoverAlignmentStages.StageOf(item.Runtime.Pair.Zone) ==
+                        VirtualCrossoverAlignmentStage.Rear)
+                .GroupBy(item => item.RightSide))
         {
-            bool far = side.RightSide;
-            (double sideLow, double sideHigh) = BandOf([side]);
+            List<VirtualCrossoverSideAlignmentChannel> members = [.. sideGroup];
+            // The sums arrive in the engine's ROLES, not in cabin sides: on a
+            // right-hand-drive run the reference IS the right side. Reading the
+            // cabin side here would have timed every rear driver against the
+            // front stage of the opposite side.
+            bool far = IsFarSide(sideGroup.Key, rightHandDrive);
+            Dictionary<IAlignmentChannel, AlignmentOverride> inner = SettleWithinGroup(
+                [.. members.Cast<IAlignmentChannel>()],
+                member => ((VirtualCrossoverSideAlignmentChannel)member).Settings,
+                byChannel,
+                reprocessor,
+                log);
+            if (inner.Count > 0)
+            {
+                foreach (VirtualCrossoverSideAlignmentChannel member in members)
+                {
+                    alignment[member] = inner[member];
+                }
+
+                settled = reprocessor.Reprocess(alignment);
+                byChannel = settled.ToDictionary(snapshot => snapshot.Channel);
+            }
+
+            string name = string.Join("+", members.Select(item => item.Name));
+            (double sideLow, double sideHigh) = BandOf(members);
             double lowHz = Math.Max(chainLow, sideLow);
             double highHz = Math.Min(chainHigh, sideHigh);
             GroupPlacement? placement = VirtualCrossoverGroupPlacement.Place(
                 far ? farSum : referenceSum,
-                byChannel[side].ImpulseResponse,
+                SumOf(members),
                 sampleRate,
                 lowHz,
                 highHz);
             if (placement == null)
             {
                 log.AppendLine(
-                    $"  rear {side.Name}: not placed - no reliable arrival in " +
+                    $"  rear {name}: not placed - no reliable arrival in " +
                     $"{lowHz:0}-{highHz:0} Hz. Its current delay stands.");
-                alignment[side] = new AlignmentOverride(
-                    side.Settings.DelayMs, side.Settings.InvertPolarity);
+                foreach (VirtualCrossoverSideAlignmentChannel member in members)
+                {
+                    alignment[member] = new AlignmentOverride(
+                        member.Settings.DelayMs, member.Settings.InvertPolarity);
+                }
+
                 continue;
             }
 
@@ -4678,14 +4716,24 @@ public partial class VirtualCrossoverPanel : UserControl
             bool invert = rearFillOffsetMs < HaasPolarityIrrelevantMs &&
                 placement.Inverted;
             log.AppendLine(
-                $"  rear {side.Name}: {delayMs:+0.00;-0.00;0.00} ms (co-arrival " +
+                $"  rear {name}: {delayMs:+0.00;-0.00;0.00} ms (co-arrival " +
                 $"{placement.CoArrivalDelayMs:+0.00;-0.00;0.00}" +
                 (rearFillOffsetMs != 0
                     ? $" plus {rearFillOffsetMs:0.##} ms fill"
                     : string.Empty) +
                 $"), r {placement.Coefficient:0.00}" +
                 (invert ? ", inverted" : string.Empty));
-            alignment[side] = new AlignmentOverride(delayMs, invert);
+            foreach (VirtualCrossoverSideAlignmentChannel member in members)
+            {
+                double innerMs = inner.TryGetValue(member, out AlignmentOverride own)
+                    ? own.DelayMs
+                    : 0.0;
+                bool innerInvert =
+                    inner.TryGetValue(member, out AlignmentOverride flip) &&
+                    flip.InvertPolarity;
+                alignment[member] = new AlignmentOverride(
+                    innerMs + delayMs, innerInvert ^ invert);
+            }
         }
 
         // The centre: one driver with no side, so it is read against BOTH front
@@ -4693,14 +4741,37 @@ public partial class VirtualCrossoverPanel : UserControl
         // witness - they should differ by the scene offset, because that is how
         // far apart the sides themselves are - so a disagreement is reported
         // rather than averaged away.
-        foreach (VirtualCrossoverSideAlignmentChannel centre in later.Where(item =>
+        List<VirtualCrossoverSideAlignmentChannel> centreMembers = [.. later.Where(item =>
             VirtualCrossoverAlignmentStages.StageOf(item.Runtime.Pair.Zone) ==
-                VirtualCrossoverAlignmentStage.Center))
+                VirtualCrossoverAlignmentStage.Center)];
+        if (centreMembers.Count > 0)
         {
-            (double centreLow, double centreHigh) = BandOf([centre]);
+            // A two-way centre is two mono blocks that cross each other, so it
+            // gets the same treatment as a two-way rear: its own junction first,
+            // then one placement for the pair.
+            Dictionary<IAlignmentChannel, AlignmentOverride> inner = SettleWithinGroup(
+                [.. centreMembers.Cast<IAlignmentChannel>()],
+                member => ((VirtualCrossoverSideAlignmentChannel)member).Settings,
+                byChannel,
+                reprocessor,
+                log);
+            if (inner.Count > 0)
+            {
+                foreach (VirtualCrossoverSideAlignmentChannel member in centreMembers)
+                {
+                    alignment[member] = inner[member];
+                }
+
+                settled = reprocessor.Reprocess(alignment);
+                byChannel = settled.ToDictionary(snapshot => snapshot.Channel);
+            }
+
+            string centreName =
+                string.Join("+", centreMembers.Select(item => item.Name));
+            (double centreLow, double centreHigh) = BandOf(centreMembers);
             double lowHz = Math.Max(chainLow, centreLow);
             double highHz = Math.Min(chainHigh, centreHigh);
-            Complex[] centreIr = byChannel[centre].ImpulseResponse;
+            Complex[] centreIr = SumOf(centreMembers);
             GroupPlacement? againstReference = VirtualCrossoverGroupPlacement.Place(
                 referenceSum, centreIr, sampleRate, lowHz, highHz);
             GroupPlacement? againstFar = VirtualCrossoverGroupPlacement.Place(
@@ -4708,13 +4779,17 @@ public partial class VirtualCrossoverPanel : UserControl
             if (againstReference == null || againstFar == null)
             {
                 log.AppendLine(
-                    $"  centre {centre.Name}: not placed - no reliable arrival " +
+                    $"  centre {centreName}: not placed - no reliable arrival " +
                     $"in {lowHz:0}-{highHz:0} Hz against " +
                     (againstReference == null ? "the reference side" : "the far side") +
                     ". Its current delay stands.");
-                alignment[centre] = new AlignmentOverride(
-                    centre.Settings.DelayMs, centre.Settings.InvertPolarity);
-                continue;
+                foreach (VirtualCrossoverSideAlignmentChannel member in centreMembers)
+                {
+                    alignment[member] = new AlignmentOverride(
+                        member.Settings.DelayMs, member.Settings.InvertPolarity);
+                }
+
+                return;
             }
 
             (double delayMs, bool inverted, bool confident) =
@@ -4724,16 +4799,34 @@ public partial class VirtualCrossoverPanel : UserControl
                     sceneOffsetMs,
                     CentreWitnessToleranceMs);
             log.AppendLine(
-                $"  centre {centre.Name}: {delayMs:+0.00;-0.00;0.00} ms - midway " +
+                $"  centre {centreName}: {delayMs:+0.00;-0.00;0.00} ms - midway " +
                 $"between {againstReference.CoArrivalDelayMs:+0.00;-0.00;0.00} " +
                 $"(reference side, r {againstReference.Coefficient:0.00}) and " +
                 $"{againstFar.CoArrivalDelayMs:+0.00;-0.00;0.00} " +
                 $"(far side, r {againstFar.Coefficient:0.00})" +
                 (inverted ? ", inverted" : string.Empty) +
                 (confident ? string.Empty : " - LOW CONFIDENCE"));
-            alignment[centre] = new AlignmentOverride(delayMs, inverted);
+            foreach (VirtualCrossoverSideAlignmentChannel member in centreMembers)
+            {
+                double innerMs = inner.TryGetValue(member, out AlignmentOverride own)
+                    ? own.DelayMs
+                    : 0.0;
+                bool innerInvert =
+                    inner.TryGetValue(member, out AlignmentOverride flip) &&
+                    flip.InvertPolarity;
+                alignment[member] = new AlignmentOverride(
+                    innerMs + delayMs, innerInvert ^ inverted);
+            }
         }
     }
+
+    /// <summary>
+    /// Whether a cabin side is the engine's FAR side under this layout. The
+    /// driver's side is the reference — left on left-hand drive, right on right —
+    /// so the far one is simply the other.
+    /// </summary>
+    internal static bool IsFarSide(bool rightSide, bool rightHandDrive) =>
+        rightSide != rightHandDrive;
 
     // How far the centre's two side readings may disagree beyond the scene
     // offset before the placement stops being corroborated. Wide enough for the
@@ -4785,6 +4878,61 @@ public partial class VirtualCrossoverPanel : UserControl
         return (low, high);
     }
 
+    // A later group that is itself a chain — a two-way rear, a two-way centre —
+    // has junctions of its own, and they are the engine's business. Walked here
+    // FIRST, so the group arrives at its placement already internally settled and
+    // the placement then moves it as one.
+    //
+    // Without this the two drivers of such a group were each placed against the
+    // front stage independently. Each landed near its own right answer and their
+    // MUTUAL alignment — the junction between them, quite possibly tuned by hand —
+    // was overwritten by two unrelated numbers. That is worse than not tuning
+    // them: an untouched junction is at least still the one the user set.
+    //
+    // Returns the delay each member ended on relative to the group's own
+    // earliest, which the caller adds its group offset to.
+    private static Dictionary<IAlignmentChannel, AlignmentOverride> SettleWithinGroup(
+        IReadOnlyList<IAlignmentChannel> members,
+        Func<IAlignmentChannel, VirtualCrossoverChannelSettings> settingsOf,
+        IReadOnlyDictionary<IAlignmentChannel, AlignmentSnapshot> snapshots,
+        AlignmentReprocessor reprocessor,
+        System.Text.StringBuilder log)
+    {
+        var inner = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        if (members.Count < 2)
+        {
+            return inner;
+        }
+
+        List<IAlignmentChannel> byBand = [.. members.OrderBy(member =>
+            VirtualCrossoverJunctions.BandCenterHz(settingsOf(member)))];
+        var junctions = new List<AlignmentJunction>();
+        for (int i = 0; i < byBand.Count - 1; i++)
+        {
+            double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
+                settingsOf(byBand[i]), settingsOf(byBand[i + 1]));
+            (double lowHz, double highHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
+            junctions.Add(new AlignmentJunction(
+                snapshots[byBand[i]], snapshots[byBand[i + 1]], pairHz, lowHz, highHz));
+        }
+
+        if (junctions.Count == 0)
+        {
+            return inner;
+        }
+
+        log.AppendLine(
+            $"  settling {byBand.Count} drivers within the group " +
+            $"({junctions.Count} junction(s)) before placing it:");
+        AutoAlignmentEngine.Compute(
+            [.. byBand.Select(member => snapshots[member])],
+            junctions,
+            reprocessor.Reprocess,
+            inner,
+            log);
+        return inner;
+    }
+
     // Stages 2 and 3, on the responses the front-chain walk has already settled.
     // Each later group gets ONE delay for all its members: the placement is a
     // property of where the group sits in the car, and it is applied to the group
@@ -4803,6 +4951,10 @@ public partial class VirtualCrossoverPanel : UserControl
         Complex[] SumOf(IEnumerable<VirtualCrossoverChannel> group) =>
             VirtualCrossoverAnalysis.SumImpulseResponses(
                 [.. group.Select(channel => byChannel[channel].ImpulseResponse)]);
+        // Captured by the local functions above, so the inner walks below rebind
+        // it rather than shadowing it: a group placed after another group settled
+        // must read the responses as they now stand.
+
 
         Complex[] reference = SumOf(chain);
         int sampleRate = chain[0].SampleRate;
@@ -4816,6 +4968,25 @@ public partial class VirtualCrossoverPanel : UserControl
             if (members.Count == 0)
             {
                 continue;
+            }
+
+            // The group's own junctions first, so what gets placed is a settled
+            // group rather than a set of drivers about to be scattered.
+            Dictionary<IAlignmentChannel, AlignmentOverride> inner = SettleWithinGroup(
+                [.. members.Cast<IAlignmentChannel>()],
+                member => ((VirtualCrossoverChannel)member).Settings,
+                byChannel,
+                reprocessor,
+                log);
+            if (inner.Count > 0)
+            {
+                foreach (VirtualCrossoverChannel member in members)
+                {
+                    alignment[member] = inner[member];
+                }
+
+                settled = reprocessor.Reprocess(alignment);
+                byChannel = settled.ToDictionary(snapshot => snapshot.Channel);
             }
 
             (double groupLow, double groupHigh) = GroupBandOf(members);
@@ -4860,7 +5031,16 @@ public partial class VirtualCrossoverPanel : UserControl
                     : string.Empty));
             foreach (VirtualCrossoverChannel member in members)
             {
-                alignment[member] = new AlignmentOverride(delayMs, invert);
+                // The group offset is added to what the inner walk left the
+                // member on, so the group moves as one and its own junctions
+                // survive the move.
+                double innerMs = inner.TryGetValue(member, out AlignmentOverride own)
+                    ? own.DelayMs
+                    : 0.0;
+                bool innerInvert = inner.TryGetValue(member, out AlignmentOverride flip) &&
+                    flip.InvertPolarity;
+                alignment[member] = new AlignmentOverride(
+                    innerMs + delayMs, innerInvert ^ invert);
             }
         }
     }
@@ -5549,6 +5729,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     engineAlignment,
                     request.SceneOffsetMs,
                     request.RearFillOffsetMs,
+                    request.RightHandDrive,
                     log);
                 NormalizeStagedDelays(engineAlignment, log);
             }

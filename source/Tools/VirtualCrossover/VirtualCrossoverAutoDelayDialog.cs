@@ -1,4 +1,4 @@
-namespace Resonalyze;
+﻿namespace Resonalyze;
 
 /// <summary>
 /// The Auto delay dialog: the steering layout (LHD/RHD), the stereo scene
@@ -100,10 +100,17 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         bool rightHandDrive,
         double nearSideCutDb,
         Func<AutoDelayRunRequest, Task<AutoDelayRunResult>> runner,
-        string? polarityWarning = null)
+        string? polarityWarning = null,
+        bool hasRearFill = false,
+        double rearFillOffsetMs = DefaultRearFillOffsetMs)
     {
         this.stereo = stereo;
         this.runner = runner;
+        numericRearFill.Value = Math.Clamp(
+            (decimal)rearFillOffsetMs,
+            numericRearFill.Minimum,
+            numericRearFill.Maximum);
+        ApplyRearFillAvailability(hasRearFill);
         radioLeftHandDrive.Checked = !rightHandDrive;
         radioRightHandDrive.Checked = rightHandDrive;
         numericSceneOffset.Value = Math.Clamp(
@@ -153,6 +160,45 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
     // checkbox off no gain is written at all, and a single-side run has no L/R
     // relation to tilt. Kept visible-but-disabled either way, so the value the
     // next stereo run would use stays readable.
+    /// <summary>
+    /// The precedence-effect offset a rear fill starts at. Ten to twenty
+    /// milliseconds is where the ear stops placing the sound at the rear
+    /// speakers and starts hearing them as room; fifteen is the middle of it.
+    /// </summary>
+    public const double DefaultRearFillOffsetMs = 15.0;
+
+    // Off entirely without a rear fill: the field would be a setting for a
+    // group the project does not have.
+    private void ApplyRearFillAvailability(bool hasRearFill)
+    {
+        UiStyle.SetTextEnabledLook(labelRearFill, hasRearFill);
+        UiStyle.SetTextEnabledLook(labelRearFillHint, hasRearFill);
+        numericRearFill.Enabled = hasRearFill;
+        numericRearFill.ApplyToolTip(
+            toolTip,
+            hasRearFill
+                ? "How far behind the front stage the rear fill should arrive,\r\n" +
+                    "measured acoustically at the listening position.\r\n" +
+                    "\r\n" +
+                    "10-20 ms (start at 15): the precedence effect keeps the image\r\n" +
+                    "on the dash while the rear adds room. Note the rear speakers\r\n" +
+                    "are often CLOSER to your ears than the front, so some delay\r\n" +
+                    "is needed just to reach zero - this offset is on top of that.\r\n" +
+                    "0 ms: co-arrival, which is what a second row of listeners\r\n" +
+                    "wants and what collapses the image for the front seats.\r\n" +
+                    "\r\n" +
+                    "Level is not set here. Rear fill usually sits 6-12 dB under\r\n" +
+                    "the front (raise it until you notice it as a separate source,\r\n" +
+                    "then take 2-3 dB back); the read-out's vs Front block gives\r\n" +
+                    "you the current figure to adjust against by ear.\r\n" +
+                    "\r\n" +
+                    "Polarity between front and rear is not judged at a Haas\r\n" +
+                    "offset - at that distance the two no longer sum in any way\r\n" +
+                    "the ear resolves."
+                : "This project has no block in the Rear zone, so there is no\r\n" +
+                    "rear fill to place. Set a block's Zone to Rear to use it.");
+    }
+
     private void UpdateNearSideCutEnabled()
     {
         bool enabled = stereo && checkBoxGains.Checked;
@@ -221,7 +267,8 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
                 (double)numericSceneOffset.Value,
                 radioRightHandDrive.Checked,
                 checkBoxGains.Checked,
-                (double)numericNearSideCut.Value));
+                (double)numericNearSideCut.Value,
+                (double)numericRearFill.Value));
             if (IsDisposed)
             {
                 return;

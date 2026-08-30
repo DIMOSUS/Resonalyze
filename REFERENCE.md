@@ -544,6 +544,41 @@ only as far as it takes to leave the input's linear region, since a pad
 attenuates the signal and not the input's own noise and a reference driven toward
 the noise floor pays for it in coherence.
 
+### A reference that is not the excitation
+
+Distortion is not the only way a reference can be wrong while every meter reads
+normally. A loopback routed through an interface's own **direct mixer** — a
+monitor mix, an effects send, a fader — is a plausible-looking signal that is no
+longer a copy of what was played, and the transfer function divides the
+microphone by it. The field case this check was written for ran a whole session
+through such a path: eleven takes, every level normal, coherence 0.9995, and the
+two worst records carrying a 34 Hz resonance of Q≈40 that rang for seconds and
+that all seven array positions reported to within 0.7 dB — where a real cabin
+mode spreads the same positions over 5–9 dB.
+
+What gives that away is **causality**. Nothing arrives before the direct sound,
+and a cabin's own resonances ring forward, so Resonalyze compares the stretch
+from 100 to 600 ms *ahead* of the arrival against the arrival itself. A clean
+record reads −39 dB or less there. Above −18 dB the measurement is refused:
+
+> The transfer function did not form a credible impulse response: it rings almost
+> as loudly BEFORE its arrival as after it. The stretch from 100 to 600 ms ahead
+> of the peak reads −14.1 dB against the arrival itself.
+
+Between −22 dB and that ceiling the measurement is **saved and reported** rather
+than refused, with the same explanation — at that depth the record is still
+usable away from the affected frequencies, and whether the channel is worth
+re-measuring is the tuner's call.
+
+The check stays silent on a sweep whose duration was too short to open a guard
+band around its requested band (under a third of an octave). The estimator's own
+band-limiting kernel is symmetric, so it rings both ways too; with the guard the
+sweep generator aims for it stays far below the ceiling, and without one it
+cannot be told from the fault.
+
+The fix is to take the loopback from the wire: the interface output the sweep is
+played from, straight back into an input, with nothing in between.
+
 ## Live Spectrum
 
 The **Live Spectrum** mode runs in one of two explicitly chosen **Mode**s.

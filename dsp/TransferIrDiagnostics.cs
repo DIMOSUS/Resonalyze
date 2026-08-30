@@ -92,6 +92,57 @@ public static class TransferIrDiagnostics
     public const double ArrivalWindowSeconds = 0.002;
 
     /// <summary>
+    /// Where the pre-arrival window starts ahead of the peak: the same 100 ms the
+    /// compactness window reserves for the band-limited kernel's pre-ringing.
+    /// </summary>
+    public const double PreArrivalStartSeconds = 0.100;
+
+    /// <summary>
+    /// Where the pre-arrival window ends. Half a second of it, so a slowly decaying
+    /// ring is read where it is still strong rather than at its own tail.
+    /// </summary>
+    public const double PreArrivalEndSeconds = 0.600;
+
+    /// <summary>
+    /// The pre-arrival reading above which a transfer IR is not a measurement of a
+    /// room but of a reference that cancelled itself.
+    /// <para>
+    /// Calibration, on ideal gated kernels at every supported band plus field
+    /// records from two rigs: an ideal half-octave-guarded kernel reads -26.8 dB at
+    /// the very worst (a 20-25 Hz band sweep) and -34.1 dB at 20-50 Hz, genuine
+    /// field records read -39.0 to -47.3 dB, and the two records taken through a
+    /// loopback that ran through an interface's direct mixer read -14.8 and
+    /// -14.1 dB. -18 dB sits 3.2 dB above the worst of those and 8.8 dB below the
+    /// weakest legitimate shape — the same shape of margin
+    /// <see cref="MinimumCompactnessDb"/> carries, and for the same reason: a real
+    /// capture must not be refused to catch a garbage one.
+    /// </para>
+    /// </summary>
+    public const double MaximumPreArrivalDb = -18.0;
+
+    /// <summary>
+    /// The pre-arrival reading a record has to stay under to be published without a
+    /// word. Between this and <see cref="MaximumPreArrivalDb"/> the record is saved
+    /// and REPORTED rather than refused.
+    /// <para>
+    /// Scaled by imposing a magnitude-only resonance of growing depth at 34.5 Hz,
+    /// Q 40, on a clean field record — an acausal ring of controllable size, not a
+    /// claim about how the field fault arose: 6 dB reads -28.8 dB, 9 dB reads
+    /// -24.5, 12 dB reads -21.0, 16 dB reads -17.1. -22 dB therefore starts
+    /// reporting around 11 dB of it, well before the fault costs a session, and
+    /// still leaves 4.8 dB to the worst legitimate shape there is (the -26.8 dB
+    /// kernel above).
+    /// </para>
+    /// </summary>
+    public const double SuspectPreArrivalDb = -22.0;
+
+    /// <summary>
+    /// The low guard band, in octaves, below which <see cref="CanJudgePreArrival"/>
+    /// withholds the pre-arrival verdict.
+    /// </summary>
+    public const double MinimumJudgeableGuardOctaves = 0.30;
+
+    /// <summary>
     /// The sharpness floor below which a transfer IR is not a measurement of the
     /// sweep it was analyzed against.
     /// <para>
@@ -261,6 +312,144 @@ public static class TransferIrDiagnostics
         // the real parts asked for a second array the size of the response — 34 MB at
         // the transform length a 96 kHz twenty-second take reaches, for nothing.
         return MeasureCompactness(new RealPartsView(impulseResponse), sampleRate);
+    }
+
+    /// <summary>
+    /// How far (dB) the per-sample energy of the stretch WELL BEFORE the arrival
+    /// sits under the arrival's own neighbourhood, measured circularly. Null when
+    /// the record is too short to hold the window, or too degenerate to measure.
+    /// <para>
+    /// This answers a question <see cref="MeasureCompactness"/> cannot: whether the
+    /// ring is CAUSAL. Nothing arrives before the direct sound, so a record that
+    /// rings as loudly ahead of its peak as behind it is not reporting a room. The
+    /// field pair this was written for read -14.8 and -14.1 dB where clean records
+    /// from the same rig read -39.0 and -44.3 dB — and both cleared the compactness
+    /// floor, at 26.0 and 24.1 dB against 22.
+    /// </para>
+    /// <para>
+    /// What separates the two measures is what they are blind to. A resonance
+    /// imposed on a record in MAGNITUDE alone shows up here; a minimum-phase one of
+    /// the same depth does not, because it rings forward only. Compactness reads
+    /// those two as the same record (measured: 24.68 against 24.65 dB). A cabin's
+    /// own resonances are minimum-phase, so this measure ignores them and can carry
+    /// a threshold a reverberant cabin cannot trip — which is what lets it refuse
+    /// where the compactness floor has to stay low enough to keep such a cabin.
+    /// </para>
+    /// </summary>
+    /// <remarks>
+    /// Read against the ARRIVAL rather than the whole record, so it follows the
+    /// peak: a purely electrical measurement peaks at zero, where "before the
+    /// arrival" is the far end of the buffer, and an acoustic one peaks tens of
+    /// milliseconds in. A share-of-total measure moves with that delay by tens of
+    /// dB (an ideal band-limited kernel at zero delay puts half its energy in
+    /// wrapped negative time) and cannot be given a threshold at all.
+    /// </remarks>
+    public static double? MeasurePreArrivalDb(
+        IReadOnlyList<Complex> impulseResponse,
+        int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        return MeasurePreArrivalDb(new RealPartsView(impulseResponse), sampleRate);
+    }
+
+    internal static double? MeasurePreArrivalDb(
+        IReadOnlyList<double> impulseResponse,
+        int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        int length = impulseResponse.Count;
+        if (length < CompactnessMinimumSamples || sampleRate <= 0)
+        {
+            return null;
+        }
+
+        int start = (int)(PreArrivalStartSeconds * sampleRate);
+        // The far edge shrinks on a short record so the two windows cannot meet
+        // around the circle and read each other's content.
+        int end = Math.Min((int)(PreArrivalEndSeconds * sampleRate), length / 4);
+        if (start <= 0 || end < 2 * start)
+        {
+            return null;
+        }
+
+        double peak = 0;
+        int peakIndex = 0;
+        for (int i = 0; i < length; i++)
+        {
+            double sample = impulseResponse[i];
+            if (Math.Abs(sample) > peak)
+            {
+                peak = Math.Abs(sample);
+                peakIndex = i;
+            }
+        }
+
+        double arrival = 0;
+        for (int k = -start; k <= start; k++)
+        {
+            double sample = impulseResponse[((peakIndex + k) % length + length) % length];
+            arrival += sample * sample;
+        }
+
+        double before = 0;
+        for (int k = -end; k < -start; k++)
+        {
+            double sample = impulseResponse[((peakIndex + k) % length + length) % length];
+            before += sample * sample;
+        }
+
+        // Unmeasurable covers "nothing to measure" AND "not a number to measure":
+        // a single NaN/Infinity poisons the sums, and a caller must not read a
+        // poisoned ratio as a pass.
+        if (!double.IsFinite(arrival) || !double.IsFinite(before) || arrival <= 0)
+        {
+            return null;
+        }
+
+        double arrivalPerSample = arrival / (2 * start + 1);
+        double beforePerSample = before / (end - start);
+        // A synthetic record with nothing at all before its arrival would divide by
+        // zero; the floor caps the reading at -120 dB instead.
+        return 10 * Math.Log10(
+            Math.Max(beforePerSample, arrivalPerSample * 1e-12) / arrivalPerSample);
+    }
+
+    /// <summary>
+    /// Whether <see cref="MeasurePreArrivalDb"/> can be given a verdict for a record
+    /// gated by <paramref name="gate"/>, or whether the estimator's own kernel rings
+    /// too much like the fault to tell them apart.
+    /// </summary>
+    /// <remarks>
+    /// The zero-phase excitation gate turns even an ideal H(f)=1 into a symmetric
+    /// band-limited kernel, and how long that kernel rings is set by the width of its
+    /// narrowest transition — the LOW guard band, which is the narrowest in Hz at
+    /// every band, since the same octave guard spans fewer Hz at the bottom. The
+    /// sweep generator aims for half an octave (<c>DesiredGuardOctaves</c>) and only
+    /// falls short when the requested duration cannot open one. Measured on ideal
+    /// gated kernels: with the half-octave guard the worst band the app supports
+    /// (20-25 Hz, a fifth of an octave wide) reads -26.8 dB, and it stays at or
+    /// under -22.7 dB down to a quarter-octave guard — but at 0.05 octaves it reaches
+    /// -14.9 dB, which is where the two broken field records read. Below the floor
+    /// here the check says nothing rather than guessing, in the same spirit as the
+    /// compactness floor sitting on the garbage side of its own gap.
+    /// </remarks>
+    public static bool CanJudgePreArrival(ExcitationBandGate gate)
+    {
+        // No low edge at all (full-band excitation) means no low-edge kernel to
+        // confuse the reading with.
+        if (gate.LowFullNyquistFraction <= 0)
+        {
+            return true;
+        }
+        if (gate.LowZeroNyquistFraction <= 0)
+        {
+            return true;
+        }
+
+        double guardOctaves = Math.Log2(
+            gate.LowFullNyquistFraction / gate.LowZeroNyquistFraction);
+        return double.IsFinite(guardOctaves) &&
+            guardOctaves >= MinimumJudgeableGuardOctaves;
     }
 
     private sealed class RealPartsView(IReadOnlyList<Complex> source)

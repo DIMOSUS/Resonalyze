@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -125,6 +126,41 @@ internal static class SweepRunQualityCheck
 internal sealed record SweepRunRejection(
     int Run,
     IReadOnlyList<string> Issues);
+
+/// <summary>
+/// A published measurement that cleared the refusals and should not have been left
+/// to speak for itself.
+/// </summary>
+/// <remarks>
+/// The pre-arrival refusal is calibrated on the garbage side of its gap, so a real
+/// capture is never thrown away for it. That leaves the band between
+/// <see cref="TransferIrDiagnostics.SuspectPreArrivalDb"/> and
+/// <see cref="TransferIrDiagnostics.MaximumPreArrivalDb"/>, where a reference is
+/// starting to cancel itself but the result is not yet garbage — and where a
+/// measurement used to be saved without a word. The field session behind this one
+/// spent an evening on eleven takes whose reference ran through an interface's
+/// direct mixer; the two worst read -14.8 and -14.1 dB and are refused outright,
+/// but the milder ones from the same rig are exactly what this band is for.
+/// <para>
+/// A notice rather than a refusal, because the cost is asymmetric: at this depth
+/// the record is still usable outside the affected band, and the user is the one
+/// who knows whether the channel is worth re-measuring.
+/// </para>
+/// </remarks>
+internal sealed record SweepResultCaution(double PreArrivalDb)
+{
+    /// <summary>User-facing summary for the end-of-measurement notice.</summary>
+    public string Describe() =>
+        FormattableString.Invariant(
+            $"The measurement was saved, but it rings before its arrival more than a clean one does: the stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms AHEAD of the peak reads {PreArrivalDb:0.0} dB against the arrival itself, where a clean field record reads -39 dB or less.\r\n\r\n") +
+        "Nothing physical arrives before the direct sound, and a room cannot ring " +
+        "backwards, so this is not the cabin — it is what the microphone was " +
+        "divided BY. Check that the loopback carries the excitation itself: a wire " +
+        "from the output, not an interface direct-mixer or monitor path with " +
+        "effects, sends or faders in it. The result is still usable away from the " +
+        "affected frequencies, but compare it against a channel that measures " +
+        "cleanly before you tune on this one.";
+}
 
 /// <summary>
 /// Outcome of the per-run acceptance over a whole averaged measurement.

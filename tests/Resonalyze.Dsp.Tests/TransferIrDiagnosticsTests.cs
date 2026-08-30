@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -780,5 +781,262 @@ public sealed class TransferIrDiagnosticsTests
             [new Complex(double.NaN, 0), new Complex(1, 0)], SampleRate));
         Assert.Null(TransferIrDiagnostics.MeasureArrivalSharpnessDb(
             [new Complex(1, 0)], sampleRate: 0));
+    }
+
+    // The excitation gate at the narrowest supported bands, built the way the
+    // measurement builds it (half-octave guard bands), through the PRODUCTION
+    // estimator. The kernel it turns an ideal H(f)=1 into is symmetric, so it is
+    // the one legitimate shape that can look acausal — and it must stay clear of
+    // the ceiling at every band, or a band sweep would be refused for being one.
+    [Theory]
+    [InlineData(20.0, 25.0)]
+    [InlineData(20.0, 50.0)]
+    [InlineData(20.0, 1000.0)]
+    [InlineData(50.0, 100.0)]
+    [InlineData(0.0, 0.0)] // full range
+    public void MeasurePreArrivalDb_IdealGatedTransfersStayUnderTheCeiling(
+        double lowFullHz, double highFullHz)
+    {
+        const int FrameLength = 262_144;
+        ExcitationBandGate gate = ProductionGate(lowFullHz, highFullHz);
+        double[] reference = StationaryNoise(FrameLength, seed: 7);
+
+        double[] ideal = TransferFunction.ComputeAveragedRelativeIr(
+            [new TransferFunctionFrame(reference, reference)],
+            gate).ImpulseResponse;
+
+        Assert.True(
+            TransferIrDiagnostics.CanJudgePreArrival(gate),
+            $"a half-octave guard at {lowFullHz}-{highFullHz} Hz must be judgeable");
+        double? preArrival = TransferIrDiagnostics.MeasurePreArrivalDb(ideal, SampleRate);
+        Assert.NotNull(preArrival);
+        Assert.True(
+            preArrival.Value < TransferIrDiagnostics.MaximumPreArrivalDb - 5,
+            $"ideal {lowFullHz}-{highFullHz} Hz read {preArrival.Value:0.0} dB");
+    }
+
+    // The measure's whole reason to exist, and the reason it is not a second
+    // spelling of compactness. The same resonance imposed two ways: once in
+    // magnitude alone, which rings both directions, and once as the minimum-phase
+    // filter a cabin would be, which rings forward only. Compactness reads one
+    // number for both — so its floor has to sit low enough to keep a genuinely
+    // resonant cabin, and a fault hiding above that floor cannot be refused on
+    // shape. This measure sees only the first, which is what lets it carry a
+    // threshold at all.
+    [Fact]
+    public void MeasurePreArrivalDb_SeparatesADenominatorDipFromACabinResonance()
+    {
+        const int FrameLength = 262_144;
+        // The depth the field pair's reference actually lost, on a sub-band record
+        // like the one it was measured on: the fault is driven by whatever the
+        // record carries at the cancelled frequency, so a 20-200 Hz take is the
+        // honest base for it and a full-range one would understate it.
+        const double DepthDb = 18.0;
+        double[] clean = SyntheticCabinTransfer(
+            FrameLength, delayMs: 12.0, decaySeconds: 0.25, highFullHz: 200.0);
+        var band = new PeqBand(34.5, 40.0, DepthDb);
+        BiquadCoefficients biquad = PeakingBiquad.Compute(band, SampleRate);
+
+        // The same peak at 34.5 Hz either way; only the phase differs.
+        double[] denominatorDip = ApplySpectrum(
+            clean, z => Complex.Abs(BiquadResponse(biquad, z)));
+        double[] cabinResonance = ApplySpectrum(
+            clean, z => BiquadResponse(biquad, z));
+
+        double cleanPreArrival = TransferIrDiagnostics
+            .MeasurePreArrivalDb(clean, SampleRate)!.Value;
+        double dipPreArrival = TransferIrDiagnostics
+            .MeasurePreArrivalDb(denominatorDip, SampleRate)!.Value;
+        double cabinPreArrival = TransferIrDiagnostics
+            .MeasurePreArrivalDb(cabinResonance, SampleRate)!.Value;
+
+        // The absolute ceiling is calibrated on field records (see
+        // MaximumPreArrivalDb); what a synthetic can prove is the CONTRAST, and
+        // that a fault of this depth is at least reported rather than passed in
+        // silence. The end-to-end refusal is pinned where the reference can be
+        // spoiled for real, in the measurement's own tests.
+        Assert.True(
+            dipPreArrival > cabinPreArrival + 10,
+            $"a zero-phase denominator dip read {dipPreArrival:0.0} dB against " +
+            $"{cabinPreArrival:0.0} dB for the same depth minimum-phase");
+        Assert.True(
+            dipPreArrival > TransferIrDiagnostics.SuspectPreArrivalDb,
+            $"a zero-phase denominator dip must be reported; read {dipPreArrival:0.0} dB");
+        Assert.True(
+            cabinPreArrival < cleanPreArrival + 1.0,
+            $"a minimum-phase cabin resonance must leave the reading where it was " +
+            $"({cleanPreArrival:0.0} dB); it read {cabinPreArrival:0.0} dB");
+        Assert.True(
+            cabinPreArrival < TransferIrDiagnostics.SuspectPreArrivalDb,
+            "a minimum-phase cabin resonance must not even be reported; " +
+            $"read {cabinPreArrival:0.0} dB");
+
+        // And the reason a second measure was needed at all: compactness reads the
+        // two as the same record.
+        double dipCompactness = TransferIrDiagnostics
+            .MeasureCompactness(denominatorDip, SampleRate)!.Value.InsideOutsideDb;
+        double cabinCompactness = TransferIrDiagnostics
+            .MeasureCompactness(cabinResonance, SampleRate)!.Value.InsideOutsideDb;
+        Assert.True(
+            Math.Abs(dipCompactness - cabinCompactness) < 2.0,
+            "compactness is supposed to be blind to the difference, but read " +
+            $"{dipCompactness:0.0} dB against {cabinCompactness:0.0} dB");
+    }
+
+    // A sweep too short to open a guard band leaves the gate a near-hard edge, and
+    // its kernel then rings as long as the fault does. The verdict is withheld
+    // rather than guessed.
+    [Theory]
+    [InlineData(0.50, true)]
+    [InlineData(0.30, true)]
+    [InlineData(0.10, false)]
+    [InlineData(0.02, false)]
+    public void CanJudgePreArrival_FollowsTheGuardBandWidth(
+        double guardOctaves, bool judgeable)
+    {
+        double nyquist = SampleRate / 2.0;
+        double lowFull = 20.0 / nyquist;
+        var gate = new ExcitationBandGate(
+            lowFull / Math.Pow(2.0, guardOctaves),
+            lowFull,
+            50.0 / nyquist,
+            50.0 * 1.414 / nyquist);
+
+        Assert.Equal(judgeable, TransferIrDiagnostics.CanJudgePreArrival(gate));
+    }
+
+    [Fact]
+    public void CanJudgePreArrival_AcceptsAGateWithNoLowEdge()
+    {
+        Assert.True(TransferIrDiagnostics.CanJudgePreArrival(ExcitationBandGate.FullBand));
+    }
+
+    [Fact]
+    public void MeasurePreArrivalDb_IsNullWhenThereIsNothingToMeasure()
+    {
+        // Too short to hold the window: half a second of buffer cannot carry one
+        // that reaches 100 ms out and 600 ms back.
+        Assert.Null(TransferIrDiagnostics.MeasurePreArrivalDb(
+            new Complex[SampleRate / 2], SampleRate));
+        Assert.Null(TransferIrDiagnostics.MeasurePreArrivalDb(
+            new Complex[1 << 12], sampleRate: 0));
+        var poisoned = new Complex[1 << 18];
+        poisoned[100] = double.NaN;
+        Assert.Null(TransferIrDiagnostics.MeasurePreArrivalDb(poisoned, SampleRate));
+        // Silent: no arrival to read the tail against.
+        Assert.Null(TransferIrDiagnostics.MeasurePreArrivalDb(
+            new Complex[1 << 18], SampleRate));
+    }
+
+    [Fact]
+    public void MeasurePreArrivalDb_ComplexTwinMatchesTheRealPath()
+    {
+        double[] impulseResponse = SyntheticCabinTransfer(262_144, delayMs: 12.0, decaySeconds: 0.25);
+        var complexIr = Array.ConvertAll(impulseResponse, v => new Complex(v, 0.0));
+
+        Assert.Equal(
+            TransferIrDiagnostics.MeasurePreArrivalDb(impulseResponse, SampleRate),
+            TransferIrDiagnostics.MeasurePreArrivalDb(complexIr, SampleRate));
+    }
+
+    // The gate the measurement builds for a requested band: half-octave guards on
+    // each side, which is what ExponentialSineSweep aims for.
+    private static ExcitationBandGate ProductionGate(double lowFullHz, double highFullHz)
+    {
+        if (lowFullHz <= 0)
+        {
+            return ExcitationBandGate.FullBand;
+        }
+
+        double nyquist = SampleRate / 2.0;
+        double guard = Math.Sqrt(2.0);
+        return new ExcitationBandGate(
+            lowFullHz / guard / nyquist,
+            lowFullHz / nyquist,
+            highFullHz / nyquist,
+            Math.Min(1.0, highFullHz * guard / nyquist));
+    }
+
+    // A record shaped like a measurement rather than like a delta: a direct
+    // arrival some milliseconds in, a decaying cabin behind it, and the whole
+    // thing read through the PRODUCTION estimator at 20-1000 Hz. The shape
+    // matters — a bare kernel concentrates all its energy in a few samples, which
+    // flatters every ratio measured against the arrival.
+    private static double[] SyntheticCabinTransfer(
+        int length,
+        double delayMs,
+        double decaySeconds,
+        double highFullHz = 1000.0)
+    {
+        double[] reference = StationaryNoise(length, seed: 7);
+        double[] tail = StationaryNoise(length, seed: 99);
+        int arrival = (int)Math.Round(delayMs * SampleRate / 1000.0);
+        int decay = (int)Math.Round(decaySeconds * SampleRate);
+
+        var room = new double[length];
+        room[arrival] = 1.0;
+        for (int i = 1; i < decay; i++)
+        {
+            // -60 dB over the decay length, which is a car cabin at low frequency.
+            room[(arrival + i) % length] +=
+                0.5 * tail[i] * Math.Exp(-6.908 * i / decay);
+        }
+
+        return TransferFunction.ComputeAveragedRelativeIr(
+            [new TransferFunctionFrame(reference, CircularConvolve(reference, room))],
+            ProductionGate(20.0, highFullHz)).ImpulseResponse;
+    }
+
+    private static double[] CircularConvolve(double[] left, double[] right)
+    {
+        int length = left.Length;
+        var a = new Complex[length];
+        var b = new Complex[length];
+        for (int i = 0; i < length; i++)
+        {
+            a[i] = left[i];
+            b[i] = right[i];
+        }
+
+        Fourier.Forward(a, FourierOptions.Matlab);
+        Fourier.Forward(b, FourierOptions.Matlab);
+        for (int bin = 0; bin < length; bin++)
+        {
+            a[bin] *= b[bin] * length;
+        }
+
+        Fourier.Inverse(a, FourierOptions.Matlab);
+        return Array.ConvertAll(a, value => value.Real);
+    }
+
+    private static Complex BiquadResponse(BiquadCoefficients biquad, Complex z)
+    {
+        // The stored a1/a2 are negated for miniDSP's additive feedback form.
+        Complex inverse = 1.0 / z;
+        Complex inverseSquared = inverse * inverse;
+        return (biquad.B0 + biquad.B1 * inverse + biquad.B2 * inverseSquared) /
+            (1.0 - biquad.A1 * inverse - biquad.A2 * inverseSquared);
+    }
+
+    private static double[] ApplySpectrum(
+        double[] impulseResponse,
+        Func<Complex, Complex> response)
+    {
+        int length = impulseResponse.Length;
+        var spectrum = new Complex[length];
+        for (int i = 0; i < length; i++)
+        {
+            spectrum[i] = impulseResponse[i];
+        }
+
+        Fourier.Forward(spectrum, FourierOptions.Matlab);
+        for (int bin = 0; bin < length; bin++)
+        {
+            spectrum[bin] *= response(
+                Complex.FromPolarCoordinates(1.0, Math.Tau * bin / length));
+        }
+
+        Fourier.Inverse(spectrum, FourierOptions.Matlab);
+        return Array.ConvertAll(spectrum, value => value.Real);
     }
 }

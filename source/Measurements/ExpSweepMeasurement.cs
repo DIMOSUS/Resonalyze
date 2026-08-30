@@ -275,6 +275,11 @@ namespace Resonalyze
         // Per-run acceptance outcome of the last completed measurement; null until
         // a measurement ran (or when the result was restored from a file).
         internal SweepRunQualityReport? QualityReport { get; private set; }
+
+        // What the published result's own shape has to say about itself, or null
+        // when it has nothing. Set alongside QualityReport and cleared with it, so
+        // a restored file never wears the last run's verdict.
+        internal SweepResultCaution? ResultCaution { get; private set; }
         public Exception? LastError { get; private set; }
         internal InputLevelMeterSnapshot CurrentLevels
         {
@@ -367,6 +372,7 @@ namespace Resonalyze
             ProtectiveHighPass = ProtectiveHighPassConfiguration.Normalize(
                 configuration.ProtectiveHighPass);
             QualityReport = null;
+            ResultCaution = null;
             LastError = null;
             CurrentLevels = InputLevelMeterSnapshot.Empty;
 
@@ -431,6 +437,7 @@ namespace Resonalyze
                 MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
                 AcceptedAverageRunCount = 0;
                 QualityReport = null;
+                ResultCaution = null;
                 LastError = null;
                 CurrentLevels = InputLevelMeterSnapshot.Empty;
                 measurementTask = RunCoreAsync(cancellationTokenSource.Token);
@@ -1391,6 +1398,10 @@ namespace Resonalyze
 
                 SweepAverageResult averageResult = accumulator.BuildResult();
                 RequireCredibleTransferIr(averageResult);
+                // After the refusal, never inside it: the other caller of that check
+                // is the total-failure diagnosis, which describes a capture nothing
+                // is going to publish.
+                ResultCaution = DescribeResultCaution(averageResult);
                 ApplyAverageResult(averageResult);
                 success = true;
             }
@@ -2012,6 +2023,7 @@ namespace Resonalyze
                 double.IsFinite(measured.InsideOutsideDb) &&
                 measured.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb)
             {
+                RequireCausalTransferIr(result, transfer);
                 return;
             }
 
@@ -2036,6 +2048,90 @@ namespace Resonalyze
                 : " Check the microphone and loopback wiring and levels, then measure again.";
             throw new InvalidOperationException(
                 $"The transfer function did not form a credible impulse response: {shapeDiagnosis}.{levelDiagnosis}{advice}");
+        }
+
+        /// <summary>
+        /// Refuses a transfer IR that rings as far BEFORE its arrival as after it.
+        /// </summary>
+        /// <remarks>
+        /// The compactness gate above cannot see this class. Its window is ±100/+500
+        /// ms around the peak, and the ring stays inside that window while filling
+        /// the whole record either side of zero: the field pair this was written for
+        /// read 26.0 and 24.1 dB, over a floor of 22, carrying a 34 Hz resonance of
+        /// Q≈40-54 that rang for seconds — and that every one of the seven array
+        /// positions reported to within 0.7 dB, where a real cabin mode spread the
+        /// same positions over 5-9 dB. A feature every position shares to that
+        /// precision belongs to the shared denominator, not to the room.
+        /// <para>
+        /// The verdict is withheld, not guessed, when the excitation could not open a
+        /// guard band wide enough for the estimator's own kernel to be told apart
+        /// from the fault (see <see cref="TransferIrDiagnostics.CanJudgePreArrival"/>).
+        /// </para>
+        /// </remarks>
+        private void RequireCausalTransferIr(SweepAverageResult result, Complex[] transfer)
+        {
+            if (MeasurePreArrival(transfer) is not { } preArrivalDb ||
+                preArrivalDb <= TransferIrDiagnostics.MaximumPreArrivalDb)
+            {
+                return;
+            }
+
+            // A distorting channel produces the same symmetry and has its own,
+            // better diagnosis; it replaces the reference advice rather than
+            // joining it, exactly as it does for the compactness refusal.
+            string distortionDiagnosis = DescribeDistortion(result);
+            string advice = distortionDiagnosis.Length > 0
+                ? distortionDiagnosis
+                : " A cabin cannot do that — its own resonances ring forward — so this is not the room but what the microphone was divided BY, and every channel of the result is divided by that same reference. Check that the loopback carries the excitation itself: a wire from the output, not an interface direct-mixer or monitor path with effects, sends or faders in it. Then measure again.";
+            throw new InvalidOperationException(FormattableString.Invariant(
+                $"The transfer function did not form a credible impulse response: it rings almost as loudly BEFORE its arrival as after it. The stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms ahead of the peak reads {preArrivalDb:0.0} dB against the arrival itself, where a real measurement reads -39 dB or less and even an ideal band-limited transfer stays under {TransferIrDiagnostics.MaximumPreArrivalDb:0} dB. Nothing physical arrives half a second before the direct sound.{advice}"));
+        }
+
+        /// <summary>
+        /// The published result's pre-arrival reading, or null when this record
+        /// cannot be given one — the excitation opened no guard band wide enough to
+        /// tell the estimator's own kernel from the fault, or the record is too
+        /// short to hold the window.
+        /// </summary>
+        private double? MeasurePreArrival(Complex[] transfer)
+        {
+            ExcitationBandGate gate = Sweep is { } sweep
+                ? BuildExcitationGate(sweep)
+                : ExcitationBandGate.FullBand;
+            // Not a fail-closed gate: the compactness check has already refused
+            // content that cannot be measured at all, and a record this one cannot
+            // judge must not be refused twice for the same silence.
+            return TransferIrDiagnostics.CanJudgePreArrival(gate)
+                ? TransferIrDiagnostics.MeasurePreArrivalDb(transfer, SampleRate)
+                : null;
+        }
+
+        /// <summary>
+        /// What the published result has to say about itself short of a refusal, or
+        /// null when it has nothing.
+        /// </summary>
+        /// <remarks>
+        /// Measured a second time rather than threaded out of
+        /// <see cref="RequireCausalTransferIr"/>: that method's job is to throw, and
+        /// giving it a return value the throwing path never produces reads worse
+        /// than the two passes cost. Two linear passes over the transfer buffer sit
+        /// against the several transforms of the same length the average already
+        /// paid for.
+        /// </remarks>
+        private SweepResultCaution? DescribeResultCaution(SweepAverageResult result)
+        {
+            if (result.TransferImpulseResponse is not { } transfer)
+            {
+                return null;
+            }
+
+            // The refusal has already run, so anything still here is at or under
+            // MaximumPreArrivalDb; this only picks out the band above the suspect
+            // line.
+            return MeasurePreArrival(transfer) is { } preArrivalDb &&
+                preArrivalDb > TransferIrDiagnostics.SuspectPreArrivalDb
+                ? new SweepResultCaution(preArrivalDb)
+                : null;
         }
 
         /// <summary>

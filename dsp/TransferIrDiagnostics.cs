@@ -59,19 +59,6 @@ public readonly record struct TransferIrCompactness(
     double PeakDelayMs);
 
 /// <summary>
-/// What sits in a transfer IR's pre-arrival window (see
-/// <see cref="TransferIrDiagnostics.MeasurePreArrivalDb"/>).
-/// <see cref="LevelDb"/> is how far its per-sample energy stands under the
-/// arrival's own neighbourhood — the verdict figure. <see cref="CrestDb"/> is
-/// the window's own crest factor, which says whether that energy is a stationary
-/// ring or one discrete event that the peak-relative window happened to enclose,
-/// and so whether the level is worth refusing over.
-/// </summary>
-public readonly record struct TransferIrPreArrival(
-    double LevelDb,
-    double CrestDb);
-
-/// <summary>
 /// Record-hygiene diagnostics shared by the manual Time Alignment mode and
 /// the auto-delay launcher: where the driver's energy actually lives in
 /// frequency, and whether the record's head carries a playback-crosstalk
@@ -117,34 +104,27 @@ public static class TransferIrDiagnostics
     public const double PreArrivalEndSeconds = 0.600;
 
     /// <summary>
-    /// The pre-arrival reading above which a transfer IR is not a measurement of a
-    /// room but of a reference that cancelled itself.
-    /// <para>
-    /// Calibration, on ideal gated kernels at every supported band plus field
-    /// records from two rigs: an ideal half-octave-guarded kernel reads -26.8 dB at
-    /// the very worst (a 20-25 Hz band sweep) and -34.1 dB at 20-50 Hz, genuine
-    /// field records read -39.0 to -47.3 dB, and the two records taken through a
-    /// loopback that ran through an interface's direct mixer read -14.8 and
-    /// -14.1 dB. -18 dB sits 3.2 dB above the worst of those and 8.8 dB below the
-    /// weakest legitimate shape — the same shape of margin
-    /// <see cref="MinimumCompactnessDb"/> carries, and for the same reason: a real
-    /// capture must not be refused to catch a garbage one.
-    /// </para>
-    /// </summary>
-    public const double MaximumPreArrivalDb = -18.0;
-
-    /// <summary>
     /// The pre-arrival reading a record has to stay under to be published without a
-    /// word. Between this and <see cref="MaximumPreArrivalDb"/> the record is saved
-    /// and REPORTED rather than refused.
+    /// word. Above it the measurement is saved and REPORTED — never refused.
     /// <para>
     /// Scaled by imposing a magnitude-only resonance of growing depth at 34.5 Hz,
     /// Q 40, on a clean field record — an acausal ring of controllable size, not a
     /// claim about how the field fault arose: 6 dB reads -28.8 dB, 9 dB reads
     /// -24.5, 12 dB reads -21.0, 16 dB reads -17.1. -22 dB therefore starts
     /// reporting around 11 dB of it, well before the fault costs a session, and
-    /// still leaves 4.8 dB to the worst legitimate shape there is (the -26.8 dB
-    /// kernel above).
+    /// still leaves 4.8 dB to the worst legitimate shape there is — an ideal
+    /// half-octave-guarded kernel over a 20-25 Hz band sweep, at -26.8 dB. Genuine
+    /// field records read -39.0 to -47.3 dB and the two taken through a
+    /// contaminated reference read -14.8 and -14.1 dB.
+    /// </para>
+    /// <para>
+    /// A report and not a refusal, deliberately. A refusal was built on this
+    /// measure and withdrawn: telling a fault from a record whose strongest sample
+    /// is simply not its arrival needs the pre-arrival window's crest, and the
+    /// separation that offers narrows with the record's own bandwidth — down to
+    /// 2.5 dB at the effective width one of the two field faults has. That is too
+    /// thin to destroy a measurement over, on a calibration set of two records
+    /// from one rig. The reading is reported instead, and the user decides.
     /// </para>
     /// </summary>
     public const double SuspectPreArrivalDb = -22.0;
@@ -154,67 +134,6 @@ public static class TransferIrDiagnostics
     /// withholds the pre-arrival verdict.
     /// </summary>
     public const double MinimumJudgeableGuardOctaves = 0.30;
-
-    /// <summary>
-    /// The crest factor at or above which the pre-arrival window is holding a
-    /// discrete EVENT rather than a stationary ring, and a reading over
-    /// <see cref="MaximumPreArrivalDb"/> is reported instead of refused.
-    /// </summary>
-    /// <remarks>
-    /// The window is placed relative to the strongest sample, which every measure
-    /// in this file treats as the arrival. A record whose direct path is obstructed
-    /// and whose strongest sample is therefore a reflection MORE than
-    /// <see cref="PreArrivalStartSeconds"/> later breaks that assumption: its real
-    /// direct sound then sits inside the pre-arrival window and reads as acausal
-    /// energy. Measured, at 48 kHz with a 200 ms gap, a direct carrying 4 % of the
-    /// reflection's energy reads -18.0 dB while clearing the compactness floor at
-    /// 23.1 dB — a refusal for a record that is merely awkward.
-    /// <para>
-    /// The two are told apart by WHAT fills the window. A discrete arrival with its
-    /// own decay concentrates its energy; the fault is a ring that fills the window
-    /// evenly, and the two field records read 13.1 and 12.8 dB of crest. Swept over
-    /// 215 two-arrival records at bands this verdict is allowed for (see
-    /// <see cref="MinimumRefusableSpanOctaves"/>) — first arrival 2-20 % of the
-    /// later one's energy, gaps of 150-400 ms, decays of 0.10 and 0.25 s — the
-    /// LOWEST crest a discrete event produced was 18.3 dB. 16 dB sits 2.9 dB above
-    /// the field fault and 2.3 dB below that worst event.
-    /// </para>
-    /// <para>
-    /// Thinner than the margins the refusals here carry, which is exactly why it
-    /// decides only whether to REFUSE or to REPORT: landing on the wrong side of it
-    /// costs a message, never a measurement.
-    /// </para>
-    /// <para>
-    /// Anchoring on the first credible arrival instead was tried and does not
-    /// work: <see cref="EstimateIrStart"/> answers 499.9 ms on such a record (the
-    /// later, stronger arrival, not the direct 200 ms ahead of it) and 0.0 ms on
-    /// both field records, where the acausal ring reaches the head of the buffer.
-    /// Anchoring there also costs the fault 1.7 dB of the level margin.
-    /// </para>
-    /// </remarks>
-    public const double PreArrivalCrestDb = 16.0;
-
-    /// <summary>
-    /// How wide the excitation has to be, in octaves, before a pre-arrival reading
-    /// over <see cref="MaximumPreArrivalDb"/> may be REFUSED rather than reported.
-    /// </summary>
-    /// <remarks>
-    /// Crest is a statement about time, and a band-limited record cannot hold a
-    /// sharper event than its own bandwidth allows: the narrower the excitation,
-    /// the more a single arrival smears until it is indistinguishable from a ring.
-    /// Measured on the same two-arrival sweep, the lowest crest a discrete event
-    /// reached falls with the band — 21.6 dB at 7.6 octaves, 18.3 at 5.9, 17.6 at
-    /// 4.9, 16.1 at 4.3, and by 2.3 octaves it is 13.3 dB, inside the range the
-    /// field fault itself occupies. Five octaves is where the margin appears and
-    /// stays: every band at or above it read 18.3 dB or more. Below it the reading
-    /// is still made and still REPORTED — it is only the refusal that is withheld,
-    /// because there the two shapes genuinely cannot be told apart.
-    /// <para>
-    /// Both field records that provoked this gate were measured over 6.6 and 11
-    /// octaves, so the refusal still reaches them.
-    /// </para>
-    /// </remarks>
-    public const double MinimumRefusableSpanOctaves = 5.0;
 
     /// <summary>
     /// The sharpness floor below which a transfer IR is not a measurement of the
@@ -431,7 +350,7 @@ public static class TransferIrDiagnostics
     /// already, while the field records cleared that gate at 26.0 and 24.1 dB.
     /// </para>
     /// </remarks>
-    public static TransferIrPreArrival? MeasurePreArrivalDb(
+    public static double? MeasurePreArrivalDb(
         IReadOnlyList<Complex> impulseResponse,
         int sampleRate)
     {
@@ -439,7 +358,7 @@ public static class TransferIrDiagnostics
         return MeasurePreArrivalDb(new RealPartsView(impulseResponse), sampleRate);
     }
 
-    internal static TransferIrPreArrival? MeasurePreArrivalDb(
+    internal static double? MeasurePreArrivalDb(
         IReadOnlyList<double> impulseResponse,
         int sampleRate)
     {
@@ -479,12 +398,10 @@ public static class TransferIrDiagnostics
         }
 
         double before = 0;
-        double beforePeak = 0;
         for (int k = -end; k < -start; k++)
         {
             double sample = impulseResponse[((peakIndex + k) % length + length) % length];
             before += sample * sample;
-            beforePeak = Math.Max(beforePeak, Math.Abs(sample));
         }
 
         // Unmeasurable covers "nothing to measure" AND "not a number to measure":
@@ -499,12 +416,8 @@ public static class TransferIrDiagnostics
         double beforePerSample = before / (end - start);
         // A synthetic record with nothing at all before its arrival would divide by
         // zero; the floor caps the reading at -120 dB instead.
-        double levelDb = 10 * Math.Log10(
+        return 10 * Math.Log10(
             Math.Max(beforePerSample, arrivalPerSample * 1e-12) / arrivalPerSample);
-        double crestDb = beforePerSample > 0
-            ? 20 * Math.Log10(beforePeak / Math.Sqrt(beforePerSample))
-            : 0.0;
-        return new TransferIrPreArrival(levelDb, crestDb);
     }
 
     /// <summary>
@@ -543,31 +456,6 @@ public static class TransferIrDiagnostics
             gate.LowFullNyquistFraction / gate.LowZeroNyquistFraction);
         return double.IsFinite(guardOctaves) &&
             guardOctaves >= MinimumJudgeableGuardOctaves;
-    }
-
-    /// <summary>
-    /// Whether a pre-arrival reading over <see cref="MaximumPreArrivalDb"/> may be
-    /// refused for a record gated by <paramref name="gate"/>, or only reported —
-    /// see <see cref="MinimumRefusableSpanOctaves"/> for why the excitation's width
-    /// decides that.
-    /// </summary>
-    public static bool CanRefuseOnPreArrival(ExcitationBandGate gate)
-    {
-        if (!CanJudgePreArrival(gate))
-        {
-            return false;
-        }
-
-        // No low edge means the excitation runs to DC: the widest span there is.
-        if (gate.LowZeroNyquistFraction <= 0)
-        {
-            return true;
-        }
-
-        double spanOctaves = Math.Log2(
-            gate.HighZeroNyquistFraction / gate.LowZeroNyquistFraction);
-        return double.IsFinite(spanOctaves) &&
-            spanOctaves >= MinimumRefusableSpanOctaves;
     }
 
     private sealed class RealPartsView(IReadOnlyList<Complex> source)

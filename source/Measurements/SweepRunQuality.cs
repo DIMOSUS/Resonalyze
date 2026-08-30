@@ -128,81 +128,49 @@ internal sealed record SweepRunRejection(
     IReadOnlyList<string> Issues);
 
 /// <summary>
-/// A published measurement that cleared the refusals and should not have been left
-/// to speak for itself.
+/// A published measurement whose own shape says something the user would
+/// otherwise only find by wondering why a tune fought back.
 /// </summary>
 /// <remarks>
-/// The pre-arrival refusal is calibrated on the garbage side of its gap, so a real
-/// capture is never thrown away for it. That leaves the band between
-/// <see cref="TransferIrDiagnostics.SuspectPreArrivalDb"/> and
-/// <see cref="TransferIrDiagnostics.MaximumPreArrivalDb"/>, where a reference is
-/// starting to cancel itself but the result is not yet garbage — and where a
-/// measurement used to be saved without a word. The field session behind this one
-/// spent an evening on eleven takes whose reference ran through an interface's
-/// direct mixer; the two worst read -14.8 and -14.1 dB and are refused outright,
-/// but the milder ones from the same rig are exactly what this band is for.
+/// The field session behind this spent an evening on eleven takes whose reference
+/// ran through an interface's direct mixer instead of the wire. Every level
+/// normal, coherence 0.9995, four of four runs accepted, and the two worst records
+/// carried a 34 Hz resonance of Q 38-54 that rang for seconds and put half their
+/// energy before their own arrival. They cleared the compactness floor at 26.0 and
+/// 24.1 dB against 22 and were published without a word. This notice is what was
+/// missing.
 /// <para>
-/// A notice rather than a refusal, because the cost is asymmetric: at this depth
-/// the record is still usable outside the affected band, and the user is the one
-/// who knows whether the channel is worth re-measuring. It also catches the
-/// readings the refusal deliberately hands back — a window holding one discrete
-/// event rather than a ring (see
-/// <see cref="TransferIrDiagnostics.PreArrivalCrestDb"/>), which is a different
-/// fault and gets a different sentence.
+/// A notice and never a refusal. A refusal was built on this reading and
+/// withdrawn: what separates a contaminated reference from a record whose
+/// strongest sample is simply not its arrival is how localized the pre-arrival
+/// energy is, and that separation narrows with the record's own bandwidth until it
+/// is 2.5 dB at the effective width one of the two field faults has. Too thin to
+/// destroy a measurement over, on a calibration set of two records from one rig.
+/// </para>
+/// <para>
+/// So the text names no cause. Both shapes are given, the reference first because
+/// everything is divided by it, and the reader is left to look. Naming one is how
+/// a tuner ends up checking wiring that was correct all along — the failure the
+/// distortion diagnosis was written to end.
 /// </para>
 /// </remarks>
-/// <param name="CanDiagnoseCause">
-/// Whether the excitation was wide enough for <paramref name="CrestDb"/> to say
-/// WHICH of the two shapes the energy is (see
-/// <see cref="TransferIrDiagnostics.MinimumRefusableSpanOctaves"/>). False on a
-/// narrow band, where a single arrival smears until it reads like a ring — and
-/// where naming a cause would send a tuner to fix a reference that is fine.
-/// </param>
-internal sealed record SweepResultCaution(
-    double PreArrivalDb,
-    double CrestDb,
-    bool CanDiagnoseCause)
+internal sealed record SweepResultCaution(double PreArrivalDb)
 {
     /// <summary>User-facing summary for the end-of-measurement notice.</summary>
     public string Describe() =>
         FormattableString.Invariant(
-            $"The measurement was saved, but it carries energy well before its arrival: the stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms AHEAD of the peak reads {PreArrivalDb:0.0} dB against the arrival itself, where a clean field record reads -39 dB or less.\r\n\r\n") +
-        // Three readings, three sentences. Naming a cause the measurement cannot
-        // support is the failure the distortion diagnosis was written to end — a
-        // field session spent checking wiring that was correct all along — and the
-        // narrow-band case would repeat it exactly.
-        DescribeCause();
-
-    private string DescribeCause()
-    {
-        if (!CanDiagnoseCause)
-        {
-            return "What that energy IS cannot be told from this measurement: the " +
-                "sweep is too narrow a band for a single arrival to look any " +
-                "sharper than a ring, so a reference that is cancelling itself " +
-                "and a driver whose direct sound is outweighed by a later " +
-                "reflection read alike here. Nothing is being blamed. A " +
-                "full-range sweep of the same channel would separate the two, " +
-                "and comparing this curve against one that measures cleanly is " +
-                "worth doing before you tune on it.";
-        }
-
-        return CrestDb >= TransferIrDiagnostics.PreArrivalCrestDb
-            ? "That energy is one discrete event rather than a ring, which is what " +
-                "a record whose strongest sample is NOT its direct sound looks " +
-                "like: an obstructed or badly aimed driver, where a later " +
-                "reflection outweighs the arrival. The reference is probably fine. " +
-                "Check what the microphone was pointed at, and read the arrival " +
-                "time on this record with that in mind."
-            : "Nothing physical arrives before the direct sound, and a room cannot " +
-                "ring backwards, so this is not the cabin — it is what the " +
-                "microphone was divided BY. Check that the loopback carries the " +
-                "excitation itself: a wire from the output, not an interface " +
-                "direct-mixer or monitor path with effects, sends or faders in it. " +
-                "The result is still usable away from the affected frequencies, " +
-                "but compare it against a channel that measures cleanly before you " +
-                "tune on this one.";
-    }
+            $"The measurement was saved, but it carries unusual energy well before its arrival: the stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms AHEAD of the peak reads {PreArrivalDb:0.0} dB against the arrival itself, where a clean field record reads -39 dB or less.\r\n\r\n") +
+        "Nothing physical arrives before the direct sound, so this is either the " +
+        "reference — a loopback that is not a clean copy of the excitation cancels " +
+        "itself and divides into a resonance the microphone never heard — or a " +
+        "record whose strongest sample is not its direct sound at all, where a " +
+        "later reflection outweighs an obstructed arrival. This measurement cannot " +
+        "tell which.\r\n\r\n" +
+        "Worth checking that the loopback carries the excitation itself: a wire " +
+        "from the output, not an interface direct-mixer or monitor path with " +
+        "effects, sends or faders in it. The result is still usable away from the " +
+        "affected frequencies, but compare it against a channel that measures " +
+        "cleanly before you tune on this one.";
 }
 
 /// <summary>

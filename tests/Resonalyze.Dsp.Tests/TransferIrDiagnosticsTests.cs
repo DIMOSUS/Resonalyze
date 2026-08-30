@@ -808,12 +808,11 @@ public sealed class TransferIrDiagnosticsTests
         Assert.True(
             TransferIrDiagnostics.CanJudgePreArrival(gate),
             $"a half-octave guard at {lowFullHz}-{highFullHz} Hz must be judgeable");
-        TransferIrPreArrival? preArrival =
-            TransferIrDiagnostics.MeasurePreArrivalDb(ideal, SampleRate);
+        double? preArrival = TransferIrDiagnostics.MeasurePreArrivalDb(ideal, SampleRate);
         Assert.NotNull(preArrival);
         Assert.True(
-            preArrival.Value.LevelDb < TransferIrDiagnostics.MaximumPreArrivalDb - 5,
-            $"ideal {lowFullHz}-{highFullHz} Hz read {preArrival.Value.LevelDb:0.0} dB");
+            preArrival.Value < TransferIrDiagnostics.SuspectPreArrivalDb - 4,
+            $"ideal {lowFullHz}-{highFullHz} Hz read {preArrival.Value:0.0} dB");
     }
 
     // The measure's whole reason to exist, and the reason it is not a second
@@ -845,17 +844,15 @@ public sealed class TransferIrDiagnosticsTests
             clean, z => BiquadResponse(biquad, z));
 
         double cleanPreArrival = TransferIrDiagnostics
-            .MeasurePreArrivalDb(clean, SampleRate)!.Value.LevelDb;
+            .MeasurePreArrivalDb(clean, SampleRate)!.Value;
         double dipPreArrival = TransferIrDiagnostics
-            .MeasurePreArrivalDb(denominatorDip, SampleRate)!.Value.LevelDb;
+            .MeasurePreArrivalDb(denominatorDip, SampleRate)!.Value;
         double cabinPreArrival = TransferIrDiagnostics
-            .MeasurePreArrivalDb(cabinResonance, SampleRate)!.Value.LevelDb;
+            .MeasurePreArrivalDb(cabinResonance, SampleRate)!.Value;
 
-        // The absolute ceiling is calibrated on field records (see
-        // MaximumPreArrivalDb); what a synthetic can prove is the CONTRAST, and
-        // that a fault of this depth is at least reported rather than passed in
-        // silence. The end-to-end refusal is pinned where the reference can be
-        // spoiled for real, in the measurement's own tests.
+        // What a synthetic can prove is the CONTRAST, and that a fault of this
+        // depth is reported rather than passed in silence. The absolute line is
+        // calibrated on field records, not on this.
         Assert.True(
             dipPreArrival > cabinPreArrival + 10,
             $"a zero-phase denominator dip read {dipPreArrival:0.0} dB against " +
@@ -912,85 +909,36 @@ public sealed class TransferIrDiagnosticsTests
         Assert.True(TransferIrDiagnostics.CanJudgePreArrival(ExcitationBandGate.FullBand));
     }
 
-    // The window is placed against the strongest sample, so a record whose direct
-    // path is obstructed and whose strongest sample is a LATER reflection puts its
-    // real direct sound inside that window and reads as acausal. The level alone
-    // cannot tell that from the fault — both are over the ceiling — but what fills
-    // the window can: one arrival with its own decay is a discrete event, the fault
-    // is a ring that fills it evenly.
-    // Two fully causal arrivals, the weaker one first: a record whose strongest
-    // sample is not its direct sound. The level alone reads it as acausal at every
-    // band, and it must never be REFUSED for that — either because the window is
-    // seen to hold one discrete event, or, where the excitation is too narrow for
-    // that reading to mean anything, because the refusal is withheld there.
+    // The measure's known blind spot, pinned so nobody builds a refusal on it
+    // again. The window is placed against the strongest sample, which is normally
+    // the arrival; a record whose direct path is obstructed and whose strongest
+    // sample is a LATER reflection puts its own direct sound inside that window,
+    // and the reading calls it acausal at every band. These records are fully
+    // causal, which is why the verdict here is a report and not a refusal.
     [Theory]
     [InlineData(20.0, 25.0, 0.20)]
     [InlineData(20.0, 50.0, 0.20)]
     [InlineData(20.0, 200.0, 0.20)]
     [InlineData(20.0, 1000.0, 0.20)]
-    [InlineData(20.0, 1000.0, 0.30)]
     [InlineData(20.0, 1000.0, 0.45)]
     [InlineData(20.0, 20000.0, 0.20)]
-    public void MeasurePreArrivalDb_NeverRefusesAnObstructedArrival(
+    public void MeasurePreArrivalDb_IsFooledByAnObstructedArrival(
         double lowFullHz, double highFullHz, double directAmplitude)
     {
         const int FrameLength = 262_144;
         var record = new double[FrameLength];
         AddDecayingArrival(record, atMs: 300.0, amplitude: directAmplitude, decaySeconds: 0.25);
         AddDecayingArrival(record, atMs: 500.0, amplitude: 1.0, decaySeconds: 0.25);
-        ExcitationBandGate gate = ProductionGate(lowFullHz, highFullHz);
-        double[] banded = BandLimit(record, gate);
+        double[] banded = BandLimit(record, ProductionGate(lowFullHz, highFullHz));
 
-        TransferIrPreArrival reading =
-            TransferIrDiagnostics.MeasurePreArrivalDb(banded, SampleRate)!.Value;
-
-        // Whichever way the record is spared, it must be spared: crest says it is
-        // one event, or the band is too narrow for the refusal to be offered.
-        bool refused =
-            reading.LevelDb > TransferIrDiagnostics.MaximumPreArrivalDb &&
-            reading.CrestDb < TransferIrDiagnostics.PreArrivalCrestDb &&
-            TransferIrDiagnostics.CanRefuseOnPreArrival(gate);
-        Assert.False(
-            refused,
-            $"{lowFullHz}-{highFullHz} Hz at {100 * directAmplitude * directAmplitude:0} % " +
-            $"read {reading.LevelDb:0.0} dB with {reading.CrestDb:0.0} dB of crest");
-    }
-
-    // The band rule the case above leans on, stated on its own: crest can only
-    // separate an event from a ring over a wide excitation.
-    [Theory]
-    [InlineData(20.0, 50.0, false)]
-    [InlineData(20.0, 200.0, false)]
-    [InlineData(20.0, 400.0, true)]
-    [InlineData(20.0, 1000.0, true)]
-    [InlineData(0.0, 0.0, true)] // full range
-    public void CanRefuseOnPreArrival_FollowsTheExcitationSpan(
-        double lowFullHz, double highFullHz, bool refusable)
-    {
-        Assert.Equal(
-            refusable,
-            TransferIrDiagnostics.CanRefuseOnPreArrival(
-                ProductionGate(lowFullHz, highFullHz)));
-    }
-
-    // The counterpart, on the shape the refusal exists for: a ring fills the window
-    // evenly and must NOT be excused as a discrete event.
-    [Fact]
-    public void MeasurePreArrivalDb_ARingIsNotADiscreteEvent()
-    {
-        const int FrameLength = 262_144;
-        double[] clean = SyntheticCabinTransfer(
-            FrameLength, delayMs: 12.0, decaySeconds: 0.25, highFullHz: 200.0);
-        BiquadCoefficients biquad = PeakingBiquad.Compute(
-            new PeqBand(34.5, 40.0, 18.0), SampleRate);
-        double[] ringing = ApplySpectrum(clean, z => Complex.Abs(BiquadResponse(biquad, z)));
-
-        TransferIrPreArrival reading =
-            TransferIrDiagnostics.MeasurePreArrivalDb(ringing, SampleRate)!.Value;
+        double reading = TransferIrDiagnostics
+            .MeasurePreArrivalDb(banded, SampleRate)!.Value;
 
         Assert.True(
-            reading.CrestDb < TransferIrDiagnostics.PreArrivalCrestDb,
-            $"a ring must not read as a discrete event; crest was {reading.CrestDb:0.0} dB");
+            reading > TransferIrDiagnostics.SuspectPreArrivalDb,
+            $"{lowFullHz}-{highFullHz} Hz at " +
+            $"{100 * directAmplitude * directAmplitude:0} % read {reading:0.0} dB, " +
+            "so this fixture no longer demonstrates the blind spot");
     }
 
     [Fact]

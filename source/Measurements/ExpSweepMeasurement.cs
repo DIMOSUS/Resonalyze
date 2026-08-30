@@ -2023,7 +2023,6 @@ namespace Resonalyze
                 double.IsFinite(measured.InsideOutsideDb) &&
                 measured.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb)
             {
-                RequireCausalTransferIr(result, transfer);
                 return;
             }
 
@@ -2051,62 +2050,12 @@ namespace Resonalyze
         }
 
         /// <summary>
-        /// Refuses a transfer IR that rings as far BEFORE its arrival as after it.
-        /// </summary>
-        /// <remarks>
-        /// The compactness gate above cannot see this class. Its window is ±100/+500
-        /// ms around the peak, and the ring stays inside that window while filling
-        /// the whole record either side of zero: the field pair this was written for
-        /// read 26.0 and 24.1 dB, over a floor of 22, carrying a 34 Hz resonance of
-        /// Q≈40-54 that rang for seconds — and that every one of the seven array
-        /// positions reported to within 0.7 dB, where a real cabin mode spread the
-        /// same positions over 5-9 dB. A feature every position shares to that
-        /// precision belongs to the shared denominator, not to the room.
-        /// <para>
-        /// The verdict is withheld, not guessed, when the excitation could not open a
-        /// guard band wide enough for the estimator's own kernel to be told apart
-        /// from the fault (see <see cref="TransferIrDiagnostics.CanJudgePreArrival"/>).
-        /// </para>
-        /// </remarks>
-        private void RequireCausalTransferIr(SweepAverageResult result, Complex[] transfer)
-        {
-            if (MeasurePreArrival(transfer) is not { } preArrival ||
-                preArrival.LevelDb <= TransferIrDiagnostics.MaximumPreArrivalDb)
-            {
-                return;
-            }
-
-            // One discrete event in that window is a record whose strongest sample
-            // is not its arrival, not a reference that cancelled itself. It still
-            // gets reported by the caution below — the reading is real either way —
-            // but it must not cost the measurement. And crest can only say which of
-            // the two it is over a wide enough excitation: on a narrow band even a
-            // single arrival smears until it reads like a ring, so there the
-            // refusal is withheld and the caution speaks instead.
-            if (preArrival.CrestDb >= TransferIrDiagnostics.PreArrivalCrestDb ||
-                !TransferIrDiagnostics.CanRefuseOnPreArrival(ExcitationGate()))
-            {
-                return;
-            }
-
-            // A distorting channel produces the same symmetry and has its own,
-            // better diagnosis; it replaces the reference advice rather than
-            // joining it, exactly as it does for the compactness refusal.
-            string distortionDiagnosis = DescribeDistortion(result);
-            string advice = distortionDiagnosis.Length > 0
-                ? distortionDiagnosis
-                : " A cabin cannot do that — its own resonances ring forward — so this is not the room but what the microphone was divided BY, and every channel of the result is divided by that same reference. Check that the loopback carries the excitation itself: a wire from the output, not an interface direct-mixer or monitor path with effects, sends or faders in it. Then measure again.";
-            throw new InvalidOperationException(FormattableString.Invariant(
-                $"The transfer function did not form a credible impulse response: it rings almost as loudly BEFORE its arrival as after it. The stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms ahead of the peak reads {preArrival.LevelDb:0.0} dB against the arrival itself, where a real measurement reads -39 dB or less and even an ideal band-limited transfer stays under {TransferIrDiagnostics.MaximumPreArrivalDb:0} dB. Nothing physical arrives half a second before the direct sound.{advice}"));
-        }
-
-        /// <summary>
         /// The published result's pre-arrival reading, or null when this record
         /// cannot be given one — the excitation opened no guard band wide enough to
         /// tell the estimator's own kernel from the fault, or the record is too
         /// short to hold the window.
         /// </summary>
-        private TransferIrPreArrival? MeasurePreArrival(Complex[] transfer)
+        private double? MeasurePreArrival(Complex[] transfer)
         {
             // Not a fail-closed gate: the compactness check has already refused
             // content that cannot be measured at all, and a record this one cannot
@@ -2128,14 +2077,6 @@ namespace Resonalyze
         /// What the published result has to say about itself short of a refusal, or
         /// null when it has nothing.
         /// </summary>
-        /// <remarks>
-        /// Measured a second time rather than threaded out of
-        /// <see cref="RequireCausalTransferIr"/>: that method's job is to throw, and
-        /// giving it a return value the throwing path never produces reads worse
-        /// than the two passes cost. Two linear passes over the transfer buffer sit
-        /// against the several transforms of the same length the average already
-        /// paid for.
-        /// </remarks>
         private SweepResultCaution? DescribeResultCaution(SweepAverageResult result)
         {
             if (result.TransferImpulseResponse is not { } transfer)
@@ -2143,18 +2084,9 @@ namespace Resonalyze
                 return null;
             }
 
-            // Everything over the suspect line that the refusal did not take: the
-            // band under the ceiling, the readings ABOVE it whose window held one
-            // discrete event rather than a ring, and the ones on a band too narrow
-            // to tell those apart. The notice needs to know which — naming a cause
-            // the band cannot support is how a tuner ends up checking a reference
-            // that was fine.
-            return MeasurePreArrival(transfer) is { } preArrival &&
-                preArrival.LevelDb > TransferIrDiagnostics.SuspectPreArrivalDb
-                ? new SweepResultCaution(
-                    preArrival.LevelDb,
-                    preArrival.CrestDb,
-                    TransferIrDiagnostics.CanRefuseOnPreArrival(ExcitationGate()))
+            return MeasurePreArrival(transfer) is { } preArrivalDb &&
+                preArrivalDb > TransferIrDiagnostics.SuspectPreArrivalDb
+                ? new SweepResultCaution(preArrivalDb)
                 : null;
         }
 

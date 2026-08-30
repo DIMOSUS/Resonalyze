@@ -559,34 +559,27 @@ mode spreads the same positions over 5–9 dB.
 What gives that away is **causality**. Nothing arrives before the direct sound,
 and a cabin's own resonances ring forward, so Resonalyze compares the stretch
 from 100 to 600 ms *ahead* of the arrival against the arrival itself. A clean
-record reads −39 dB or less there. Above −18 dB the measurement is refused:
+record reads −39 dB or less there; the two contaminated ones read −14.8 and
+−14.1 dB. Above −22 dB the measurement is **saved and reported**:
 
-> The transfer function did not form a credible impulse response: it rings almost
-> as loudly BEFORE its arrival as after it. The stretch from 100 to 600 ms ahead
-> of the peak reads −14.1 dB against the arrival itself.
+> The measurement was saved, but it carries unusual energy well before its
+> arrival: the stretch from 100 to 600 ms AHEAD of the peak reads −14.1 dB
+> against the arrival itself, where a clean field record reads −39 dB or less.
 
-Between −22 dB and that ceiling the measurement is **saved and reported** rather
-than refused, with the same explanation — at that depth the record is still
-usable away from the affected frequencies, and whether the channel is worth
-re-measuring is the tuner's call.
+The notice offers both shapes that reading comes in and picks neither. One is a
+reference cancelling itself. The other is a record whose strongest sample is not
+its direct sound at all — an obstructed or badly aimed driver, where a later
+reflection outweighs the arrival puts that arrival inside the window. Telling
+them apart needs how *localized* the early energy is, and that separation
+narrows with the record's own bandwidth until it is worth about 2.5 dB on a
+subwoofer-width channel. That is why the reading never refuses a measurement,
+and why the text names no cause: on the evidence available it cannot, and
+guessing would send a tuner to check wiring that was correct all along.
 
-The window is placed against the strongest sample, which is normally the
-arrival. A record whose direct path is obstructed, and whose strongest sample is
-therefore a reflection more than 100 ms later, puts its own direct sound inside
-that window — a reading over the ceiling for a record that is merely awkward.
-Those two are told apart by what fills the window: one arrival with its decay is
-a single event, the fault is a ring that fills it evenly. A discrete event is
-reported instead of refused, and says so — the reference is probably fine there,
-and what wants checking is where the microphone was pointed.
-
-That reading only means something over a wide excitation. A band-limited record
-cannot hold an event sharper than its own bandwidth allows, so on a narrow band
-even a single arrival smears until it looks like a ring. Below five octaves the
-refusal is therefore withheld and the report speaks instead — the reading is
-still made and still shown, but a band sweep is never refused for it, and the
-report there names no cause at all: it says the energy is unusual and that this
-band cannot tell a reference fault from a late reflection. Re-measuring the same
-channel full-range is what separates them.
+So the reading is a prompt to look, not a verdict. If it appears on a channel
+you have no other reason to doubt, the quickest separation is to check the
+loopback path itself and re-measure — a contaminated reference repeats, an
+awkward microphone position does not.
 
 The check stays silent on a sweep whose duration was too short to open a guard
 band around its requested band (under a third of an octave). The estimator's own

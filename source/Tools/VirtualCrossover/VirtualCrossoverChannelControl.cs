@@ -378,6 +378,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private string spatialAverageTooltip = string.Empty;
     private double delayDistanceMm;
 
+    // Exact by definition, not a measurement.
+    private const double MillimetersPerInch = 25.4;
+
     public void ApplyTooltips(WrappingToolTip toolTip)
     {
         tooltipHost = toolTip;
@@ -407,11 +410,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "Invert the channel polarity — the DSP polarity switch.\r\n" +
             "Also the null test: with polarity flipped, the deepest\r\n" +
             "notch at the crossover frequency marks perfect alignment.");
-        numericDelay.ApplyToolTip(
-            toolTip,
-            "Channel delay (ms) — the value you would dial into\r\n" +
-            "this DSP channel.\r\n" +
-            "The mm readout is the equivalent distance in air.");
+        numericDelay.ApplyToolTip(toolTip, DelayTooltipText(delayDistanceMm));
         toolTip.SetToolTip(
             buttonCollapse,
             "Fold the block down to its header — source, gain, delay\r\n" +
@@ -793,19 +792,25 @@ public partial class VirtualCrossoverChannelControl : UserControl
     {
         double millimeters = (double)numericDelay.Value * Acoustics.SpeedOfSoundAt20CMetersPerSecond;
         delayDistanceMm = millimeters;
-        // The host installs the tooltip after construction (ApplyTooltips), and
-        // the value changes constantly afterwards: whichever comes second applies
-        // the text, so both paths go through here.
+        // The host installs the tooltip after construction (ApplyTooltips) and the
+        // value changes constantly afterwards, so whichever comes second has to
+        // apply the text: this path writes it when the host is already here, and
+        // ApplyTooltips writes the current distance when it is not.
         if (tooltipHost is { } host)
         {
             numericDelay.ApplyToolTip(host, DelayTooltipText(millimeters));
         }
     }
 
+    // Both units, always, on one line. The reader is checking the number against a
+    // tape measure, and which tape they own is not something the app can know —
+    // switching units on a setting would leave the other half of the world doing
+    // arithmetic at the exact moment they wanted a figure to compare.
     private static string DelayTooltipText(double millimeters) =>
         "Channel delay (ms) — the value you would dial into\r\n" +
         "this DSP channel.\r\n" +
-        $"In air that is {millimeters:0.#} mm of path — the ruler check.";
+        $"In air that is {millimeters:0.#} mm ({millimeters / MillimetersPerInch:0.#} in) " +
+        "of path — the ruler check.";
 
     private static CrossoverEdge ReadEdge(
         DarkNumericUpDown frequencyInput,

@@ -517,7 +517,9 @@ internal static class Shots
               .Region(Box(368, 580, 1472, 638), "3", new Point(1436, 609))
               .Region(Box(368, 642, 502, 1014), "4", new Point(435, 800))
               .Region(Box(506, 642, 1472, 1014), "5", new Point(1440, 675))
-              .Region(Box(1490, 384, 1716, 1014), "6", new Point(1516, 988))
+              // The read-out starts high in the column now that Virtual DSP's free
+              // right-hand space is all its own — the box followed it up from 384.
+              .Region(Box(1490, 145, 1716, 1014), "6", new Point(1516, 988))
               .Save(path);
     }
 

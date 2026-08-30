@@ -74,6 +74,45 @@ public sealed class VirtualCrossoverZoneTests
         Assert.Equal("Sub", VirtualCrossoverZones.DisplayName(VirtualCrossoverZone.Sub));
     }
 
+    [Fact]
+    public void TheDelayTooltipCarriesTheDistanceFromTheMomentItIsInstalled()
+    {
+        // The distance readout lost its own label and lives in this tooltip, so the
+        // tooltip IS the feature — and it is installed on two paths that race: the
+        // constructor computes the distance before any tooltip host exists, and the
+        // host arrives later. Whichever runs second has to write the text. This
+        // pins the second one, which is the path a real block always takes and the
+        // one that silently kept a stale string describing a control that is gone.
+        using var control = new VirtualCrossoverChannelControl();
+        using var toolTip = new WrappingToolTip();
+        control.DelayInput.Value = 2.58m;
+
+        control.ApplyTooltips(toolTip);
+
+        string? text = toolTip.GetToolTip(control.DelayInput);
+        // 2.58 ms of air is 885 mm, which is 34.8 inches.
+        Assert.Contains("885", text);
+        Assert.Contains("34", text);
+        Assert.Contains("mm", text);
+        Assert.Contains("in)", text);
+        Assert.DoesNotContain("readout", text);
+    }
+
+    [Fact]
+    public void TheDelayTooltipFollowsTheValueAfterTheHostIsInstalled()
+    {
+        using var control = new VirtualCrossoverChannelControl();
+        using var toolTip = new WrappingToolTip();
+        control.ApplyTooltips(toolTip);
+
+        control.DelayInput.Value = 10.22m;
+
+        // 10.22 ms is 3507 mm — 138.1 inches.
+        string? text = toolTip.GetToolTip(control.DelayInput);
+        Assert.Contains("3507", text);
+        Assert.Contains("138", text);
+    }
+
     [Theory]
     // A stereo pair is the front stage: a v8 file cannot tell a rear pair from it.
     [InlineData(false, CrossoverKind.BandPass, VirtualCrossoverZone.Front)]

@@ -1677,8 +1677,9 @@ Each channel runs through:
 
 - **Gain** (dB) — relative levels are only honest when the measurements share one
   playback chain; compensate any difference here
-- **Delay** (ms) — its tooltip states the same figure as a distance in air, the
-  ruler check against the physical driver offset (343 m/s)
+- **Delay** (ms) — its tooltip states the same figure as a distance in air, in
+  millimetres and inches, the ruler check against the physical driver offset
+  (343 m/s)
 - **Zone** — which part of the installation the block is: **Front**, **Rear**,
   **Center** or **Sub**. It is the one fact the crossover corners cannot give,
   because those three zones can play the *same* band from different places: a

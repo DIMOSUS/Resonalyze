@@ -8,7 +8,7 @@ using Resonalyze.Options;
 namespace Resonalyze;
 
 /// <summary>
-/// The Virtual DSP tool: up to eight measured transfer IRs (as left/right pairs)
+/// The Virtual DSP tool: up to twelve measured transfer IRs (as left/right pairs)
 /// are run through per-channel DSP chains (gain, delay, polarity, crossover, PEQ)
 /// and summed as complex responses, predicting the combined output before
 /// touching the hardware. The acoustic plot shows the raw/processed channels,

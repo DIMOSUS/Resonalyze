@@ -841,6 +841,44 @@ public sealed class AutoAlignmentEngineTests
         Assert.InRange(alignment[mid].DelayMs, 3.0, 9.0);
     }
 
+    [Fact]
+    public void Compute_ArrivalPickedFarUnderItsBandEnergy_CannotVetoTheExtremum()
+    {
+        // The field failure this pins (a 110 Hz sub/midbass junction): the
+        // subwoofer's own direct front is a real arrival, and the detector
+        // finds it 23 dB below the band's energy — the cabin's build-up
+        // arrives 12 ms behind it and dwarfs it. Its neighbour's arrival IS
+        // its band peak, so the pair anchor subtracts a front from an energy
+        // centre and lands a whole lobe away from the whitened extremum, which
+        // reads the energy on both sides. The reach veto then refused that
+        // extremum (r 0.95, the direct-sound cut concurring at 0.93) for
+        // disagreeing with the anchor, and the run parked the midbass half a
+        // period early with its polarity flipped to match.
+        //
+        // Nothing here re-anchors: the pair band's upper half carries the same
+        // two copies as the full band, so the honesty probe agrees with the
+        // read and the arrival stands. The anchor is honest — it is simply not
+        // the read the extremum disagrees with, and that is what withdraws its
+        // veto.
+        var sub = new TestChannel("W", ImpulseWithEcho(0.0, 0.07, 12.0, 1.0));
+        var midbass = new TestChannel("B", DelayedImpulse(12.0));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([sub, midbass], [110], log);
+
+        // Both channels' energy already coincides, so the proposal is the
+        // near-zero relation the extremum reads — not the 12 ms the two
+        // fronts differ by.
+        double relative = alignment.GetValueOrDefault(midbass).DelayMs -
+            alignment.GetValueOrDefault(sub).DelayMs;
+        Assert.InRange(relative, -1.5, 1.5);
+        string text = log.ToString();
+        Assert.Contains("cannot veto it", text);
+        Assert.Contains("-> seed phat", text);
+        Assert.DoesNotContain("(modal latch)", text);
+    }
+
     // The upper channel of the incomparable-probe case: its full band reads
     // the (low-passed) direct front, but its upper half is owned by a strong
     // high-passed late reflection — the half-band probe times a feature far

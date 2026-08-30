@@ -284,6 +284,35 @@ public static class AutoAlignmentEngine
     private const double PhatSeedMinCoefficient = 0.15;
 
     /// <summary>
+    /// How far below its own band's energy a first arrival may be picked and
+    /// still be allowed to VETO a whitened extremum for disagreeing with it
+    /// (<see cref="TimeAlignmentAnalysisResult.FirstArrivalProminenceDecibels"/>,
+    /// which is 0 dB when the arrival IS the band's strongest peak).
+    /// <para>
+    /// The arrival detector searches 25 dB below the band maximum on purpose:
+    /// a soft direct rise sitting under a strong in-room modal build-up is a
+    /// real front, and reading the mode instead would time the channel whole
+    /// periods late. But a pick that deep is not the same KIND of feature the
+    /// whitened correlation reads. The correlation is driven by where the
+    /// band's ENERGY is; an arrival 23.5 dB down sits 14.5 ms ahead of it (a
+    /// field 50-110 Hz subwoofer, its front at 8.7 ms against a body at
+    /// 23.2 ms). Comparing that front against a neighbour whose own arrival IS
+    /// its band peak measures the difference between two questions, not a
+    /// delay — and the reach veto then refuses an extremum at r 0.95, which the
+    /// direct-sound cut confirms at r 0.93, for disagreeing with it.
+    /// </para>
+    /// <para>
+    /// Half the detector's own search depth: a pick in the upper half of the
+    /// range is a shoulder on the band's energy and speaks for it, one in the
+    /// lower half is a separate feature. The gate only ever WITHDRAWS the
+    /// anchor's veto, never moves it — the seed, the window centre, the prior
+    /// and the fallback are untouched, and the extremum still has to pass its
+    /// own trust gates.
+    /// </para>
+    /// </summary>
+    private const double SeedVetoMinProminenceDb = -12.5;
+
+    /// <summary>
     /// The margin by which the seed extremum must beat the SAME-POLARITY rival
     /// one period over before its position is trusted. This is the whole-period
     /// cycle skip — the error the fine window cannot undo, since its reach is
@@ -1670,6 +1699,12 @@ public static class AutoAlignmentEngine
             // (a local function cannot capture a variable declared after it).
             CorrelationAlignmentResult? directPhat = null;
             CorrelationDelayCandidate? directSeed = null;
+            // The weaker of the two sides' picks: the anchor is their
+            // DIFFERENCE, so one side reading a feature the other does not is
+            // enough to make it one.
+            double anchorProminenceDb = Math.Min(
+                lowerRead.FirstArrivalProminenceDecibels,
+                upperRead.FirstArrivalProminenceDecibels);
             Complex[] lowerDirectCut = [];
             Complex[] upperDirectCut = [];
 
@@ -1747,7 +1782,24 @@ public static class AutoAlignmentEngine
                 // the extremum is refused rather than admitted.
                 if (!arrivalReanchored && Math.Abs(seedOffsetMs) >= reachMs)
                 {
-                    return $"{seedLabel} beyond the arrival's reach";
+                    // Unless the anchor is not the same kind of read as the
+                    // extremum it would be vetoing (see
+                    // SeedVetoMinProminenceDb). One side picked deep under its
+                    // own band's energy and the other on top of it: their
+                    // difference is not a delay the reach can grade.
+                    if (anchorProminenceDb >= SeedVetoMinProminenceDb)
+                    {
+                        return $"{seedLabel} beyond the arrival's reach";
+                    }
+
+                    log.AppendLine(
+                        $"  {pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
+                        $"the {seedLabel} sits {Math.Abs(seedOffsetMs):0.000} ms " +
+                        $"from the arrival anchor, past its {reachMs:0.000} ms " +
+                        $"reach — but that anchor was picked " +
+                        $"{-anchorProminenceDb:0.0} dB under its own band's " +
+                        $"energy, so it is not the read the extremum disagrees " +
+                        $"with and cannot veto it");
                 }
                 return null;
             }

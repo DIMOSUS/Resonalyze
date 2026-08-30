@@ -824,14 +824,23 @@ necessary.
 
 The channels are listed under their group — the front stage with its subwoofers, the
 rear fill, the centre — because only a group is a crossover chain; nothing hands a band
-from the front stage to a rear fill, so each group is fitted separately. Inside a group
-the rows are the chain, top to bottom, and each channel hands over to the one below it.
-Two channels may hold the same driver type: a pair of subwoofers splitting the bottom is
-an ordinary install. The order is taken from what each channel measured, narrowed by any
-crossover corner it already has — set one on either sub and that alone says which plays
-lower — and the arrows move a row when the measurement cannot decide. Bands shown in
-amber are the pairs nothing has ordered; Apply asks about those before it writes
-anything.
+from the front stage to a rear fill, so each group is fitted separately.
+
+**Inside a group the rows are the chain, and they must run from the lowest driver to the
+highest.** The rows are numbered for that reason: number 1 plays lowest and hands over
+to number 2, which hands over to number 3. Two channels may hold the same driver type —
+a pair of subwoofers splitting the bottom is an ordinary install — so the type cannot
+put them in order and the row order is what does. Resonalyze fills it in from what each
+channel measured, narrowed by any crossover corner it already has: set a 50 Hz corner on
+either sub and that alone says which of the two plays lower. The **▲▼** arrows move a
+row when the measurement cannot decide, or when you know better than it does.
+
+Two colours flag an order worth a second look. A band in **amber** means the two
+channels measure too much alike for anything to have ordered them — you have to say
+which is which. A band in **red** means the channel measures *lower* than the one above
+it, so the chain runs backwards there; that is usually a row moved one step too far, or
+a driver type set to something the channel does not actually play. Apply names both
+before it writes anything, and you can go ahead if the order shown is the one you want.
 
 A group holding a single driver has nothing to cross, so it gets a protective high-pass
 under its usable band and is levelled onto the front stage. Treat that level as a

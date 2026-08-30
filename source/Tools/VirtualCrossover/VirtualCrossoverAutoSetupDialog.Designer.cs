@@ -59,21 +59,23 @@ namespace Resonalyze
             labelHeader.Name = "labelHeader";
             labelHeader.Size = new Size(320, 15);
             labelHeader.TabIndex = 0;
-            labelHeader.Text = "Confirm the driver types and the order each group crosses in:";
+            labelHeader.Text = "Confirm each driver's type, and put every group in crossover order:\r\n"
+                + "the one at the top plays lowest and hands over to the one below it.";
             //
             // tableChannels
             //
             tableChannels.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             tableChannels.AutoSize = true;
             tableChannels.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            tableChannels.ColumnCount = 5;
+            tableChannels.ColumnCount = 6;
+            tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.GrowStyle = TableLayoutPanelGrowStyle.AddRows;
-            tableChannels.Location = new Point(12, 36);
+            tableChannels.Location = new Point(12, 56);
             tableChannels.Name = "tableChannels";
             tableChannels.Size = new Size(0, 0);
             tableChannels.TabIndex = 1;

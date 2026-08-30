@@ -44,6 +44,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private sealed record ChannelRow(
         int InitIndex,
         AutoSetupWizardChannel Source,
+        Label PositionLabel,
         Label NameLabel,
         Label BandLabel,
         DarkComboBox TypeComboBox,
@@ -108,8 +109,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         {
             toolTip.Dispose();
             foreach (Control control in rows.SelectMany(
-                         row => new Control[] { row.NameLabel, row.BandLabel,
-                             row.TypeComboBox, row.Up, row.Down })
+                         row => new Control[] { row.PositionLabel, row.NameLabel,
+                             row.BandLabel, row.TypeComboBox, row.Up, row.Down })
                      .Concat(groupHeaders.Values)
                      .Where(control => control.Parent == null))
             {
@@ -187,6 +188,16 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
     private ChannelRow BuildRow(int initIndex, AutoSetupWizardChannel channel)
     {
+        // The channel's place in its group's chain, filled in by PopulateTable.
+        // A column of 1, 2, 3 reading down is what makes it read as a sequence at
+        // a glance — the arrows only say a row can move, not what the order means.
+        var positionLabel = new Label
+        {
+            Anchor = AnchorStyles.Left,
+            AutoSize = true,
+            ForeColor = UiPalette.TextDisabled,
+            Margin = new Padding(0, 4, 8, 4)
+        };
         var nameLabel = new Label
         {
             Anchor = AnchorStyles.Left,
@@ -225,7 +236,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         typeComboBox.SelectedIndexChanged += (_, _) => UpdatePreview();
 
         var row = new ChannelRow(
-            initIndex, channel, nameLabel, bandLabel, typeComboBox,
+            initIndex, channel, positionLabel, nameLabel, bandLabel, typeComboBox,
             BuildArrow("▲"), BuildArrow("▼"));
         row.Up.Click += (_, _) => MoveInChain(row, -1);
         row.Down.Click += (_, _) => MoveInChain(row, +1);
@@ -305,26 +316,33 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             if (headers)
             {
                 Label header = GroupHeader(group);
+                header.Text = members.Count > 1
+                    ? VirtualCrossoverAlignmentStages.DisplayName(group) +
+                        "   —   lowest first, handing over downwards"
+                    : VirtualCrossoverAlignmentStages.DisplayName(group);
                 tableChannels.Controls.Add(header, 0, line);
-                tableChannels.SetColumnSpan(header, 5);
+                tableChannels.SetColumnSpan(header, 6);
                 line++;
             }
 
             for (int i = 0; i < members.Count; i++)
             {
                 ChannelRow member = members[i];
-                tableChannels.Controls.Add(member.NameLabel, 0, line);
-                tableChannels.Controls.Add(member.BandLabel, 1, line);
-                tableChannels.Controls.Add(member.TypeComboBox, 2, line);
-                // A group of one has no order to state, so it shows no arrows —
-                // two disabled buttons on every rear-fill row would only ask the
-                // reader to work out that there is nothing to press.
+                // A group of one is not a chain, so it is neither numbered nor
+                // given arrows: a "1." and two dead buttons on every rear-fill row
+                // would only ask the reader to work out that there is nothing to
+                // press and nowhere to go.
+                member.PositionLabel.Text = members.Count > 1 ? $"{i + 1}." : string.Empty;
+                tableChannels.Controls.Add(member.PositionLabel, 0, line);
+                tableChannels.Controls.Add(member.NameLabel, 1, line);
+                tableChannels.Controls.Add(member.BandLabel, 2, line);
+                tableChannels.Controls.Add(member.TypeComboBox, 3, line);
                 if (members.Count > 1)
                 {
                     member.Up.Enabled = i > 0;
                     member.Down.Enabled = i < members.Count - 1;
-                    tableChannels.Controls.Add(member.Up, 3, line);
-                    tableChannels.Controls.Add(member.Down, 4, line);
+                    tableChannels.Controls.Add(member.Up, 4, line);
+                    tableChannels.Controls.Add(member.Down, 5, line);
                 }
 
                 line++;
@@ -346,8 +364,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                 Font = new Font(
                     "Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204),
                 ForeColor = UiPalette.TextHighlight,
-                Margin = new Padding(0, 8, 0, 2),
-                Text = VirtualCrossoverAlignmentStages.DisplayName(group)
+                Margin = new Padding(0, 8, 0, 2)
             };
             groupHeaders[group] = header;
         }
@@ -650,7 +667,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             fits = TryFit(withImpulseResponses: false) ?? fits;
         }
 
-        MarkAmbiguousOrder();
+        MarkChainOrder();
         labelPreview.Text = string.Join(Environment.NewLine, PreviewLines(fits));
     }
 
@@ -753,21 +770,24 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         return $"{family}{edge.SlopeDbPerOctave}";
     }
 
-    // Adjacent pairs whose bands are too alike for the measurement to have put
-    // them in order — the pair of subs the whole grouping exists for, when
-    // neither carries a corner yet.
-    private List<(ChannelRow Lower, ChannelRow Upper)> AmbiguousPairs()
+    // Every adjacent pair of every chain the measurement has something to say
+    // about: the pair of subs the grouping exists for, when neither carries a
+    // corner yet, and any pair a row got moved the wrong way round.
+    private List<(ChannelRow Earlier, ChannelRow Later, VirtualCrossoverChainOrder Verdict)>
+        JudgedPairs()
     {
-        var pairs = new List<(ChannelRow, ChannelRow)>();
+        var pairs =
+            new List<(ChannelRow, ChannelRow, VirtualCrossoverChainOrder)>();
         foreach (VirtualCrossoverAlignmentStage group in GroupsInOrder())
         {
             List<ChannelRow> members = MembersOf(group);
             for (int i = 0; i + 1 < members.Count; i++)
             {
-                if (VirtualCrossoverAutoSetupOrder.IsAmbiguous(
-                        CenterOf(members[i]), CenterOf(members[i + 1])))
+                VirtualCrossoverChainOrder verdict = VirtualCrossoverAutoSetupOrder.Judge(
+                    CenterOf(members[i]), CenterOf(members[i + 1]));
+                if (verdict != VirtualCrossoverChainOrder.AsMeasured)
                 {
-                    pairs.Add((members[i], members[i + 1]));
+                    pairs.Add((members[i], members[i + 1], verdict));
                 }
             }
         }
@@ -779,42 +799,86 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         VirtualCrossoverAutoSetupOrder.CenterHz(
             row.Source.Band, row.Source.HighPassHz, row.Source.LowPassHz);
 
-    private void MarkAmbiguousOrder()
+    // Colours the band of every channel the order is in question over. The two
+    // cases are not the same and must not look the same: amber for "nothing here
+    // says which of these plays lower", red for "this one measures lower than the
+    // channel above it", which is a chain running backwards.
+    private void MarkChainOrder()
     {
-        var doubtful = AmbiguousPairs()
-            .SelectMany(pair => new[] { pair.Lower, pair.Upper })
-            .ToHashSet();
+        var doubtful = new Dictionary<ChannelRow, Color>();
+        foreach ((ChannelRow earlier, ChannelRow later, VirtualCrossoverChainOrder verdict)
+                 in JudgedPairs())
+        {
+            Color color = verdict == VirtualCrossoverChainOrder.Reversed
+                ? UiPalette.WarningRed
+                : UiPalette.WarningAmber;
+            foreach (ChannelRow row in new[] { earlier, later })
+            {
+                if (!doubtful.TryGetValue(row, out Color existing) ||
+                    existing != UiPalette.WarningRed)
+                {
+                    doubtful[row] = color;
+                }
+            }
+        }
+
         foreach (ChannelRow row in rows)
         {
-            row.BandLabel.ForeColor = doubtful.Contains(row)
-                ? UiPalette.WarningAmber
+            row.BandLabel.ForeColor = doubtful.TryGetValue(row, out Color color)
+                ? color
                 : UiPalette.TextSecondarySoft;
         }
     }
 
-    // Stops before writing a chain the measurement did not actually order. The
-    // user may know perfectly well which sub is which — the arrows are there for
-    // exactly that — so this asks rather than refuses.
-    private bool ConfirmAmbiguousOrder()
+    // Stops before writing a chain the measurement did not order, or ordered the
+    // other way. The user may know perfectly well which sub is which — the arrows
+    // are there for exactly that — so this asks rather than refuses.
+    private bool ConfirmChainOrder()
     {
-        List<(ChannelRow Lower, ChannelRow Upper)> doubtful = AmbiguousPairs();
+        List<(ChannelRow Earlier, ChannelRow Later, VirtualCrossoverChainOrder Verdict)>
+            doubtful = JudgedPairs();
         if (doubtful.Count == 0)
         {
             return true;
         }
 
-        string pairs = string.Join(
-            Environment.NewLine,
-            doubtful.Select(pair =>
-                $"    {pair.Lower.Source.Name}  before  {pair.Upper.Source.Name}"));
+        var message = new List<string>();
+        var reversed = doubtful
+            .Where(pair => pair.Verdict == VirtualCrossoverChainOrder.Reversed)
+            .ToList();
+        if (reversed.Count > 0)
+        {
+            message.Add(
+                "A group's chain runs from the lowest driver to the highest, and " +
+                "these are the wrong way round — the second measures LOWER than " +
+                "the one above it:");
+            message.Add(string.Empty);
+            message.AddRange(reversed.Select(pair =>
+                $"    {pair.Earlier.Source.Name}  above  {pair.Later.Source.Name}"));
+            message.Add(string.Empty);
+        }
+
+        var unclear = doubtful
+            .Where(pair => pair.Verdict == VirtualCrossoverChainOrder.Unclear)
+            .ToList();
+        if (unclear.Count > 0)
+        {
+            message.Add(
+                "These measure too much alike for their order to be read off the " +
+                "measurement at all:");
+            message.Add(string.Empty);
+            message.AddRange(unclear.Select(pair =>
+                $"    {pair.Earlier.Source.Name}  above  {pair.Later.Source.Name}"));
+            message.Add(string.Empty);
+        }
+
+        message.Add(
+            "The wizard will cross them in the order shown. Use the ▲▼ arrows to " +
+            "change it, or set a crossover corner on one of them first — either " +
+            "one says which plays lower. Continue anyway?");
         return MessageBox.Show(
             this,
-            "These channels measure too much alike for their order to be read " +
-            "off the measurement:" + Environment.NewLine + Environment.NewLine +
-            pairs + Environment.NewLine + Environment.NewLine +
-            "The wizard will cross them in the order shown. Use the arrows to " +
-            "change it, or set a crossover corner on one of them first — either " +
-            "one says which plays lower. Continue?",
+            string.Join(Environment.NewLine, message),
             "Auto crossover",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning) == DialogResult.Yes;
@@ -868,7 +932,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return;
         }
 
-        if (!ConfirmAmbiguousOrder())
+        if (!ConfirmChainOrder())
         {
             return;
         }

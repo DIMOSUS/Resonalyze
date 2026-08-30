@@ -59,11 +59,53 @@ public static class VirtualCrossoverAutoSetupOrder
     }
 
     /// <summary>
-    /// Whether the two centres are too close together for their order to have
-    /// been read off the measurement rather than guessed.
+    /// What the measurement makes of one adjacent pair of the chain, given the
+    /// centre of the channel placed FIRST and of the one placed after it.
     /// </summary>
-    public static bool IsAmbiguous(double oneCenterHz, double otherCenterHz) =>
-        oneCenterHz > 0 &&
-        otherCenterHz > 0 &&
-        Math.Abs(Math.Log2(otherCenterHz / oneCenterHz)) < AmbiguousSeparationOctaves;
+    public static VirtualCrossoverChainOrder Judge(
+        double earlierCenterHz,
+        double laterCenterHz)
+    {
+        if (!(earlierCenterHz > 0) || !(laterCenterHz > 0))
+        {
+            // A band estimate that collapsed says nothing about the order; a
+            // channel with no usable band is reported on its own terms elsewhere.
+            return VirtualCrossoverChainOrder.AsMeasured;
+        }
+
+        double octaves = Math.Log2(laterCenterHz / earlierCenterHz);
+        if (Math.Abs(octaves) < AmbiguousSeparationOctaves)
+        {
+            return VirtualCrossoverChainOrder.Unclear;
+        }
+
+        return octaves > 0
+            ? VirtualCrossoverChainOrder.AsMeasured
+            : VirtualCrossoverChainOrder.Reversed;
+    }
+}
+
+/// <summary>
+/// What the measurement says about where two neighbours of a chain sit relative
+/// to each other — the chain runs low to high, so the second of a pair should
+/// measure the higher.
+/// </summary>
+public enum VirtualCrossoverChainOrder
+{
+    /// <summary>The later channel measures clearly higher: the order is the measured one.</summary>
+    AsMeasured,
+
+    /// <summary>
+    /// The two measure within half an octave of each other, so nothing read off
+    /// them put one above the other — a pair of subwoofers measured full range.
+    /// The order shown is a guess, and the wizard says so.
+    /// </summary>
+    Unclear,
+
+    /// <summary>
+    /// The later channel measures clearly LOWER — the chain runs backwards here.
+    /// Almost always somebody moved a row the wrong way, or confirmed a driver
+    /// type that does not match what the channel plays.
+    /// </summary>
+    Reversed
 }

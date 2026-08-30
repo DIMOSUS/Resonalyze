@@ -59,40 +59,75 @@ public sealed class VirtualCrossoverAutoSetupOrderTests
             measured, highPassHz: 50, lowPassHz: 110);
 
         Assert.True(rear < front, $"Rear sub at {rear:0} Hz, front at {front:0} Hz.");
-        Assert.False(VirtualCrossoverAutoSetupOrder.IsAmbiguous(rear, front));
+        Assert.Equal(
+            VirtualCrossoverChainOrder.AsMeasured,
+            VirtualCrossoverAutoSetupOrder.Judge(rear, front));
     }
 
     [Fact]
-    public void IsAmbiguous_FlagsTwoDriversNothingHasSeparated()
+    public void Judge_CallsAPairNothingHasSeparatedUnclear()
     {
         // The same two subs before either has a corner: identical bands, so the
         // order shown is a guess and the wizard has to say so.
         double one = VirtualCrossoverAutoSetupOrder.CenterHz(Band(20, 300), null, null);
         double other = VirtualCrossoverAutoSetupOrder.CenterHz(Band(22, 290), null, null);
 
-        Assert.True(VirtualCrossoverAutoSetupOrder.IsAmbiguous(one, other));
+        Assert.Equal(
+            VirtualCrossoverChainOrder.Unclear,
+            VirtualCrossoverAutoSetupOrder.Judge(one, other));
     }
 
     [Fact]
-    public void IsAmbiguous_IsSymmetricAndBoundedByHalfAnOctave()
+    public void Judge_CallsAChainRunningBackwardsReversed()
+    {
+        // A row moved the wrong way, or a driver type confirmed against what the
+        // channel actually plays: the tweeter placed under the midbass. Nothing
+        // ambiguous about it — the measurement says plainly that it is wrong way
+        // round, and that is a different thing to tell the user than "cannot say".
+        double midbass = VirtualCrossoverAutoSetupOrder.CenterHz(Band(60, 900), null, null);
+        double tweeter =
+            VirtualCrossoverAutoSetupOrder.CenterHz(Band(2_200, 20_000), null, null);
+
+        Assert.Equal(
+            VirtualCrossoverChainOrder.Reversed,
+            VirtualCrossoverAutoSetupOrder.Judge(tweeter, midbass));
+        Assert.Equal(
+            VirtualCrossoverChainOrder.AsMeasured,
+            VirtualCrossoverAutoSetupOrder.Judge(midbass, tweeter));
+    }
+
+    [Fact]
+    public void Judge_SplitsAtHalfAnOctaveInBothDirections()
     {
         double lower = 100;
         double justInside = lower * Math.Pow(2.0, 0.49);
         double justOutside = lower * Math.Pow(2.0, 0.51);
 
-        Assert.True(VirtualCrossoverAutoSetupOrder.IsAmbiguous(lower, justInside));
-        Assert.True(VirtualCrossoverAutoSetupOrder.IsAmbiguous(justInside, lower));
-        Assert.False(VirtualCrossoverAutoSetupOrder.IsAmbiguous(lower, justOutside));
-        Assert.False(VirtualCrossoverAutoSetupOrder.IsAmbiguous(justOutside, lower));
+        Assert.Equal(
+            VirtualCrossoverChainOrder.Unclear,
+            VirtualCrossoverAutoSetupOrder.Judge(lower, justInside));
+        Assert.Equal(
+            VirtualCrossoverChainOrder.Unclear,
+            VirtualCrossoverAutoSetupOrder.Judge(justInside, lower));
+        Assert.Equal(
+            VirtualCrossoverChainOrder.AsMeasured,
+            VirtualCrossoverAutoSetupOrder.Judge(lower, justOutside));
+        Assert.Equal(
+            VirtualCrossoverChainOrder.Reversed,
+            VirtualCrossoverAutoSetupOrder.Judge(justOutside, lower));
     }
 
     [Fact]
-    public void IsAmbiguous_SaysNothingAboutAnUnreadableCenter()
+    public void Judge_SaysNothingAboutAnUnreadableCenter()
     {
         // A band estimate that collapsed leaves a zero or NaN centre; that is not
-        // an ambiguity to warn about, it is a channel with no usable band, which
+        // a wrong order to warn about, it is a channel with no usable band, which
         // the wizard reports separately.
-        Assert.False(VirtualCrossoverAutoSetupOrder.IsAmbiguous(0, 100));
-        Assert.False(VirtualCrossoverAutoSetupOrder.IsAmbiguous(100, double.NaN));
+        Assert.Equal(
+            VirtualCrossoverChainOrder.AsMeasured,
+            VirtualCrossoverAutoSetupOrder.Judge(0, 100));
+        Assert.Equal(
+            VirtualCrossoverChainOrder.AsMeasured,
+            VirtualCrossoverAutoSetupOrder.Judge(100, double.NaN));
     }
 }

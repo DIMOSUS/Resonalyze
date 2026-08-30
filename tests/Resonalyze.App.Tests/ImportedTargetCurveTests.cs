@@ -99,6 +99,26 @@ public sealed class ImportedTargetCurveTests
     }
 
     [Fact]
+    public void LevelsThatOverflowTheAnchoringAreRefused()
+    {
+        // Both levels are finite, so the cleaning above accepts them — their
+        // difference is not, and anchoring is a subtraction. An infinite target
+        // would draw as a broken line, hand Auto Tune an infinite goal, and throw
+        // on the way into the settings file, so there is no curve here at all.
+        Assert.Null(ImportedTargetCurve.FromPoints(
+            "overflow.txt",
+            [new OverlayPoint(100, 1e308), new OverlayPoint(1_000, -1e308)]));
+        Assert.Null(ImportedTargetCurve.FromStorage(
+            "overflow.json",
+            [100, 1e308, 1_000, -1e308]));
+        // Large but survivable levels are still read: the refusal is about the
+        // arithmetic overflowing, not about a number being unusually big.
+        Assert.NotNull(ImportedTargetCurve.FromPoints(
+            "loud.txt",
+            [new OverlayPoint(100, 1e30), new OverlayPoint(1_000, -1e30)]));
+    }
+
+    [Fact]
     public void ADenseFileIsThinnedButStillReadsTheSame()
     {
         // A full-resolution export runs to tens of thousands of lines, and the

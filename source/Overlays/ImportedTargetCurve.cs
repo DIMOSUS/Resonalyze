@@ -70,9 +70,10 @@ public sealed class ImportedTargetCurve : IEquatable<ImportedTargetCurve>
     public double HighFrequencyHz => frequencies[^1];
 
     /// <summary>
-    /// The curve the given pairs describe, or <c>null</c> when fewer than two
-    /// usable points survive the cleaning above — one point is a level, not a
-    /// shape. Every path that builds a curve goes through here, including the one
+    /// The curve the given pairs describe, or <c>null</c> when it cannot be a
+    /// target: fewer than two usable points survive the cleaning above (one point
+    /// is a level, not a shape), or the anchoring overflows what a dB level can
+    /// hold. Every path that builds a curve goes through here, including the one
     /// that reads a stored one back: a file is where a NaN or an unordered pair
     /// can enter, and the anchoring is idempotent, so re-running it costs nothing.
     /// </summary>
@@ -129,6 +130,22 @@ public sealed class ImportedTargetCurve : IEquatable<ImportedTargetCurve>
             for (int index = 0; index < gridDb.Length; index++)
             {
                 gridDb[index] -= anchor;
+            }
+        }
+
+        // Anchoring is a subtraction, and a file can hold levels big enough for it
+        // to overflow: ±1e308 is a finite number the reading above accepts, and the
+        // difference of the two is not. What comes out is not a target — it would
+        // draw as a broken line, hand Auto Tune an infinite goal, and the settings
+        // file cannot even write it (that serializer refuses named floating-point
+        // literals, so saving would throw where the curve is only decoration). It
+        // is refused here rather than repaired, because there is nothing left to
+        // repair toward.
+        foreach (double level in gridDb)
+        {
+            if (!double.IsFinite(level))
+            {
+                return null;
             }
         }
 

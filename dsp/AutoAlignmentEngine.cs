@@ -1510,6 +1510,11 @@ public static class AutoAlignmentEngine
 
             double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
             bool arrivalReanchored = false;
+            // A latch the upper-half probe convicted but could NOT replace (the
+            // other side's probe read different physics). The pair keeps the
+            // corrupted diff on purpose — see the re-anchor condition below —
+            // and the prominence exception must not undo that.
+            bool unreplacedLatch = false;
             if (!lowerLatchedByPrediction && !upperLatchedByPrediction &&
                 pair.BandHighHz >=
                 probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
@@ -1576,6 +1581,10 @@ public static class AutoAlignmentEngine
                         lowerArrival = lowerProbe.FirstArrivalDelayMilliseconds;
                         upperArrival = upperProbe.FirstArrivalDelayMilliseconds;
                         arrivalReanchored = true;
+                    }
+                    else
+                    {
+                        unreplacedLatch = true;
                     }
                 }
             }
@@ -1701,10 +1710,18 @@ public static class AutoAlignmentEngine
             CorrelationDelayCandidate? directSeed = null;
             // The weaker of the two sides' picks: the anchor is their
             // DIFFERENCE, so one side reading a feature the other does not is
-            // enough to make it one.
+            // enough to make it one. It describes the anchor only while the
+            // anchor is still those raw reads — a predicted front has replaced
+            // both of them, and a latch convicted without a comparable
+            // replacement is the one case where the corrupted diff is kept
+            // DELIBERATELY, with the reach veto as what stands between it and
+            // the modal extremum measured around it. Both keep the veto.
             double anchorProminenceDb = Math.Min(
                 lowerRead.FirstArrivalProminenceDecibels,
                 upperRead.FirstArrivalProminenceDecibels);
+            bool anchorIsRawReads =
+                !lowerLatchedByPrediction && !upperLatchedByPrediction &&
+                !unreplacedLatch;
             Complex[] lowerDirectCut = [];
             Complex[] upperDirectCut = [];
 
@@ -1787,7 +1804,8 @@ public static class AutoAlignmentEngine
                     // SeedVetoMinProminenceDb). One side picked deep under its
                     // own band's energy and the other on top of it: their
                     // difference is not a delay the reach can grade.
-                    if (anchorProminenceDb >= SeedVetoMinProminenceDb)
+                    if (!anchorIsRawReads ||
+                        anchorProminenceDb >= SeedVetoMinProminenceDb)
                     {
                         return $"{seedLabel} beyond the arrival's reach";
                     }

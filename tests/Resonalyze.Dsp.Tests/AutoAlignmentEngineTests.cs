@@ -947,6 +947,14 @@ public sealed class AutoAlignmentEngineTests
         // The latched side's full-band anchor (~37 ms) stands — no re-anchor
         // onto the probes' mismatched wavefronts.
         Assert.Contains("arrivals 37", pairLine);
+        // And the veto that anchor cannot be talked out of. This pair also
+        // trips the low-prominence exception (the unverified side's front is
+        // picked 17 dB under its own band's energy), and that exception is
+        // exactly what must NOT reach here: a conviction with no comparable
+        // replacement keeps its corrupted diff deliberately, so lifting the
+        // veto would seed from the modal extremum measured around it.
+        Assert.Contains("beyond the arrival's reach", pairLine);
+        Assert.DoesNotContain("cannot veto it", text);
     }
 
     [Fact]

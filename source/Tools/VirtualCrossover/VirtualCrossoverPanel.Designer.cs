@@ -1,4 +1,4 @@
-﻿namespace Resonalyze
+namespace Resonalyze
 {
     partial class VirtualCrossoverPanel
     {

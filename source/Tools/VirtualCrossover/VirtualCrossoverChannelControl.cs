@@ -34,6 +34,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         numericLowPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
         PopulateCrossoverCombos();
         WireEvents();
+        UpdateZoneAvailability();
         UpdateCrossoverAvailability();
         UpdateDelayDistance();
         UpdateTotalGain();
@@ -177,12 +178,13 @@ public partial class VirtualCrossoverChannelControl : UserControl
                 "Click to attach it again, or to detach it.";
         // The tooltip host arrives later (ApplyTooltips) and the status can change at
         // any time, so each side records what it knows and applies whatever is ready.
-        spatialAverageTooltipHost?.SetToolTip(buttonSpatialAverage, spatialAverageTooltip);
+        tooltipHost?.SetToolTip(buttonSpatialAverage, spatialAverageTooltip);
     }
     internal DarkNumericUpDown GainInput => numericGain;
     internal DarkNumericUpDown DelayInput => numericDelay;
     internal CheckBox InvertCheckBox => checkBoxInvert;
     internal CheckBox MonoCheckBox => checkBoxMono;
+    internal DarkComboBox ZoneComboBox => comboBoxZone;
     internal DarkComboBox CrossoverKindComboBox => comboBoxCrossoverKind;
     internal DarkNumericUpDown HighPassFrequencyInput => numericHighPassHz;
     internal DarkComboBox HighPassFamilyComboBox => comboBoxHighPassFamily;
@@ -205,6 +207,11 @@ public partial class VirtualCrossoverChannelControl : UserControl
         comboBoxCrossoverKind.SelectedItem is CrossoverKind kind
             ? kind
             : CrossoverKind.Off;
+
+    public VirtualCrossoverZone SelectedZone =>
+        comboBoxZone.SelectedItem is VirtualCrossoverZone zone
+            ? zone
+            : VirtualCrossoverZone.Front;
 
     public CrossoverEdge HighPassEdge => ReadEdge(
         numericHighPassHz, comboBoxHighPassFamily, comboBoxHighPassSlope, numericHighPassRipple);
@@ -367,12 +374,16 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// block owns the descriptions of its own sub-controls, so the host no longer
     /// reaches through into each input to set them.
     /// </summary>
-    private WrappingToolTip? spatialAverageTooltipHost;
+    private WrappingToolTip? tooltipHost;
     private string spatialAverageTooltip = string.Empty;
+    private double delayDistanceMm;
+
+    // Exact by definition, not a measurement.
+    private const double MillimetersPerInch = 25.4;
 
     public void ApplyTooltips(WrappingToolTip toolTip)
     {
-        spatialAverageTooltipHost = toolTip;
+        tooltipHost = toolTip;
         if (spatialAverageTooltip.Length > 0)
         {
             toolTip.SetToolTip(buttonSpatialAverage, spatialAverageTooltip);
@@ -399,11 +410,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "Invert the channel polarity — the DSP polarity switch.\r\n" +
             "Also the null test: with polarity flipped, the deepest\r\n" +
             "notch at the crossover frequency marks perfect alignment.");
-        numericDelay.ApplyToolTip(
-            toolTip,
-            "Channel delay (ms) — the value you would dial into\r\n" +
-            "this DSP channel.\r\n" +
-            "The mm readout is the equivalent distance in air.");
+        numericDelay.ApplyToolTip(toolTip, DelayTooltipText(delayDistanceMm));
         toolTip.SetToolTip(
             buttonCollapse,
             "Fold the block down to its header — source, gain, delay\r\n" +
@@ -430,6 +437,18 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "L and R views and calculations alike. The stereo Auto\r\n" +
             "delay tunes it with the left side and reports the right\r\n" +
             "junction it pins.");
+        toolTip.SetToolTip(
+            comboBoxZone,
+            "Which part of the installation this block is — the fact\r\n" +
+            "the crossover corners cannot give, because Front, Rear\r\n" +
+            "and Center can play the SAME band from different places.\r\n" +
+            "Center forces Mono: it plays a signal derived from L\r\n" +
+            "and R, so it has no side.\r\n" +
+            "For now the zone only labels the block and travels with\r\n" +
+            "the project. The sum, the metric and Auto delay still\r\n" +
+            "read every channel as one chain along the spectrum;\r\n" +
+            "the grouped views and the staged alignment that act on\r\n" +
+            "the zone come next.");
         toolTip.SetToolTip(
             labelMeasuredPolarity,
             "Acoustic polarity read from the measured IR\r\n" +
@@ -525,6 +544,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             suppressChangeEvents = false;
         }
 
+        UpdateZoneAvailability();
         UpdateCrossoverAvailability();
         UpdateDelayDistance();
         UpdateTotalGain();
@@ -532,6 +552,16 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     private void PopulateCrossoverCombos()
     {
+        comboBoxZone.Items.AddRange([.. VirtualCrossoverZones.All.Cast<object>()]);
+        comboBoxZone.Format += (_, args) =>
+        {
+            if (args.ListItem is VirtualCrossoverZone zone)
+            {
+                args.Value = VirtualCrossoverZones.DisplayName(zone);
+            }
+        };
+        comboBoxZone.SelectedItem = VirtualCrossoverZone.Front;
+
         comboBoxCrossoverKind.Items.AddRange(
         [
             CrossoverKind.Off,
@@ -640,6 +670,11 @@ public partial class VirtualCrossoverChannelControl : UserControl
         };
         checkBoxInvert.CheckedChanged += (_, _) => RaiseSettingsChanged();
         checkBoxMono.CheckedChanged += (_, _) => RaiseSettingsChanged();
+        comboBoxZone.SelectedIndexChanged += (_, _) =>
+        {
+            UpdateZoneAvailability();
+            RaiseSettingsChanged();
+        };
         comboBoxCrossoverKind.SelectedIndexChanged += (_, _) =>
         {
             UpdateCrossoverAvailability();
@@ -678,6 +713,25 @@ public partial class VirtualCrossoverChannelControl : UserControl
         {
             SettingsChanged?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    // A centre channel plays a signal derived from L and R, so it has no side:
+    // Mono is forced on and locked rather than left as a switch the user could
+    // set to a state the zone contradicts. Every other zone leaves it free — a
+    // subwoofer is usually mono and legitimately stereo, and so is a rear pair.
+    // Locking never SILENTLY changes the project: the checkbox is set through
+    // the normal path, so the panel reads and stores the new value like any
+    // other edit.
+    private void UpdateZoneAvailability()
+    {
+        bool forced = VirtualCrossoverZones.RequiresMono(SelectedZone);
+        if (forced)
+        {
+            checkBoxMono.Checked = true;
+        }
+
+        checkBoxMono.Enabled = !forced;
+        UiStyle.SetTextEnabledLook(checkBoxMono, !forced, interactive: true);
     }
 
     // Only the edges the crossover kind uses stay interactive; the rest are
@@ -730,12 +784,33 @@ public partial class VirtualCrossoverChannelControl : UserControl
         labelTotalGain.Text = $"All {totalDb:+0.0;-0.0;0.0}";
     }
 
-    // The ruler-check readout: the delay expressed as a distance in air.
+    // The ruler-check readout: the delay expressed as a distance in air. It lives
+    // in the Delay field's tooltip rather than on a label of its own — a block
+    // now has to carry a zone selector too, and of the two the distance is the
+    // one that is READ occasionally (against a tape measure) rather than set.
     private void UpdateDelayDistance()
     {
         double millimeters = (double)numericDelay.Value * Acoustics.SpeedOfSoundAt20CMetersPerSecond;
-        labelDelayMm.Text = $"= {millimeters:0.#} mm";
+        delayDistanceMm = millimeters;
+        // The host installs the tooltip after construction (ApplyTooltips) and the
+        // value changes constantly afterwards, so whichever comes second has to
+        // apply the text: this path writes it when the host is already here, and
+        // ApplyTooltips writes the current distance when it is not.
+        if (tooltipHost is { } host)
+        {
+            numericDelay.ApplyToolTip(host, DelayTooltipText(millimeters));
+        }
     }
+
+    // Both units, always, on one line. The reader is checking the number against a
+    // tape measure, and which tape they own is not something the app can know —
+    // switching units on a setting would leave the other half of the world doing
+    // arithmetic at the exact moment they wanted a figure to compare.
+    private static string DelayTooltipText(double millimeters) =>
+        "Channel delay (ms) — the value you would dial into\r\n" +
+        "this DSP channel.\r\n" +
+        $"In air that is {millimeters:0.#} mm ({millimeters / MillimetersPerInch:0.#} in) " +
+        "of path — the ruler check.";
 
     private static CrossoverEdge ReadEdge(
         DarkNumericUpDown frequencyInput,

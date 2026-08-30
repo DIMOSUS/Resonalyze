@@ -8,7 +8,7 @@ using Resonalyze.Options;
 namespace Resonalyze;
 
 /// <summary>
-/// The Virtual DSP tool: up to eight measured transfer IRs (as left/right pairs)
+/// The Virtual DSP tool: up to twelve measured transfer IRs (as left/right pairs)
 /// are run through per-channel DSP chains (gain, delay, polarity, crossover, PEQ)
 /// and summed as complex responses, predicting the combined output before
 /// touching the hardware. The acoustic plot shows the raw/processed channels,
@@ -43,7 +43,15 @@ public partial class VirtualCrossoverPanel : UserControl
         OxyColor.FromRgb(80, 210, 220),   // E: cyan
         OxyColor.FromRgb(240, 100, 140),  // F: pink
         OxyColor.FromRgb(210, 200, 90),   // G: yellow
-        OxyColor.FromRgb(140, 200, 90)    // H: lime
+        OxyColor.FromRgb(140, 200, 90),   // H: lime
+        // I–L came with the 12-block ceiling. Each had to stay apart from all
+        // eight above AND carry on the dark plot ground, which rules out the
+        // obvious remaining hues: a saturated red reads as a warning, and
+        // anything darker than these disappears against the background.
+        OxyColor.FromRgb(230, 120, 90),   // I: terracotta
+        OxyColor.FromRgb(150, 175, 215),  // J: slate blue
+        OxyColor.FromRgb(215, 180, 140),  // K: sand
+        OxyColor.FromRgb(90, 180, 175)    // L: teal
     ];
 
     private readonly System.Windows.Forms.Timer saveTimer = new()
@@ -1430,6 +1438,13 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // The zone belongs to the PAIR and no side routing depends on it, so it
+        // is stored BEFORE the mono branch below. That branch can re-apply the
+        // pair's settings to the control, which would otherwise paint the old
+        // zone back over the selection the user just made — and the two arrive
+        // together every time, because picking Center forces Mono on.
+        channel.Pair.Zone = ControlFor(channel).SelectedZone;
+
         // Flipping Mono while the RIGHT side is shown swaps which settings
         // object the control edits (a mono pair always answers with the left
         // side), so the values just read from the control belong to the OLD
@@ -1632,11 +1647,12 @@ public partial class VirtualCrossoverPanel : UserControl
             control.LowPassSlopeComboBox.SelectedItem = settings.LowPassEdge.SlopeDbPerOctave;
             control.LowPassRippleInput.Value = control.LowPassRippleInput
                 .ClampValue(settings.LowPassEdge.RippleDb);
-            // The four block-wide switches come off the PAIR, so the block keeps
+            // The block-wide settings come off the PAIR, so the block keeps
             // showing the same answer whichever side is on screen.
             control.ShowRawCheckBox.Checked = channel.Pair.ShowRawCurve;
             control.ShowProcessedCheckBox.Checked = channel.Pair.ShowProcessedCurve;
             control.BypassCheckBox.Checked = channel.Pair.Bypass;
+            control.ZoneComboBox.SelectedItem = channel.Pair.Zone;
             control.MonoCheckBox.Checked = channel.Pair.Mono;
             control.Muted = !channel.Pair.Enabled;
             control.Collapsed = channel.Pair.Collapsed;
@@ -1660,6 +1676,7 @@ public partial class VirtualCrossoverPanel : UserControl
         channel.Pair.ShowProcessedCurve = control.ShowProcessedCheckBox.Checked;
         channel.Pair.Enabled = !control.Muted;
         channel.Pair.Bypass = control.BypassCheckBox.Checked;
+        channel.Pair.Zone = control.SelectedZone;
         channel.Pair.Mono = control.MonoCheckBox.Checked;
     }
 

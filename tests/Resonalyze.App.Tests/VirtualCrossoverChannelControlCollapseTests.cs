@@ -1,4 +1,4 @@
-using System.Drawing;
+﻿using System.Drawing;
 using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
@@ -17,14 +17,21 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
 
         control.Collapsed = true;
 
-        // Everything down to the polarity row — the row the fold button shares —
+        // Everything down to the zone row — the row the fold button shares —
         // stays inside the shrunken block; the crossover row and below are gone.
+        // The curve toggles are among the kept rows since they moved up under the
+        // source button: which curves a block draws is what a user reaches for
+        // while comparing blocks, which is exactly when they are folded.
         Assert.True(control.InvertCheckBox.Bottom <= control.ClientSize.Height);
+        Assert.True(control.ZoneComboBox.Bottom <= control.ClientSize.Height);
         Assert.True(control.CollapseButton.Bottom <= control.ClientSize.Height);
         Assert.True(control.MuteButton.Bottom <= control.ClientSize.Height);
+        Assert.True(control.BypassCheckBox.Bottom <= control.ClientSize.Height);
+        Assert.True(control.ShowProcessedCheckBox.Visible);
+        Assert.True(control.BypassCheckBox.Visible);
         Assert.True(control.CrossoverKindComboBox.Bottom > control.ClientSize.Height);
         Assert.False(control.CrossoverKindComboBox.Visible);
-        Assert.False(control.BypassCheckBox.Visible);
+        Assert.False(control.PeqMenuButton.Visible);
         Assert.True(control.InvertCheckBox.Visible);
     }
 
@@ -41,7 +48,9 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
         Assert.True(collapsedHeight < expandedHeight);
         Assert.Equal(expandedHeight, control.Height);
         Assert.True(control.CrossoverKindComboBox.Visible);
-        Assert.True(control.BypassCheckBox.Visible);
+        // The PEQ row is the LAST one, so it is the one a short restore would clip;
+        // the curve toggles above the fold never went away to be restored.
+        Assert.True(control.PeqMenuButton.Visible);
     }
 
     [Fact]
@@ -103,14 +112,16 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
         control.Collapsed = false;
 
         Assert.Equal(control.Height, control.MaximumSize.Height);
-        Assert.True(control.BypassCheckBox.Bottom <= control.ClientSize.Height);
-        Assert.True(control.ShowProcessedCheckBox.Bottom <= control.ClientSize.Height);
+        // Measured on the BOTTOM row (the PEQ one): a parked height that drifted
+        // from the scaled rows clips there first.
+        Assert.True(control.PeqMenuButton.Bottom <= control.ClientSize.Height);
+        Assert.True(control.LowPassFrequencyInput.Bottom <= control.ClientSize.Height);
 
         control.Collapsed = true;
         control.Scale(new SizeF(1 / 1.5f, 1 / 1.5f));
         control.Collapsed = false;
 
-        Assert.True(control.BypassCheckBox.Bottom <= control.ClientSize.Height);
+        Assert.True(control.PeqMenuButton.Bottom <= control.ClientSize.Height);
         Assert.Equal(control.Height, control.MaximumSize.Height);
     }
 
@@ -130,14 +141,19 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
     }
 
     [Fact]
-    public void FoldButton_IsReachedWithThePolarityRowRatherThanAfterTheChain()
+    public void FoldButton_IsReachedWithTheZoneRowRatherThanAfterTheChain()
     {
         // It sits at the top of the block, so keyboard focus must not walk the whole
-        // filter chain before coming back up to it.
+        // filter chain before coming back up to it. The button opens the zone row
+        // (it is that row's leftmost control), so the tab order reaches it after the
+        // delay above and before the crossover chain below.
         using var control = new VirtualCrossoverChannelControl();
 
-        Assert.True(control.CollapseButton.TabIndex > control.InvertCheckBox.TabIndex);
-        Assert.True(control.CollapseButton.TabIndex < control.CrossoverKindComboBox.TabIndex);
+        Assert.True(control.CollapseButton.TabIndex > control.DelayInput.TabIndex);
+        Assert.True(control.CollapseButton.TabIndex < control.ZoneComboBox.TabIndex);
+        Assert.True(control.ZoneComboBox.TabIndex < control.MonoCheckBox.TabIndex);
+        Assert.True(control.MonoCheckBox.TabIndex < control.InvertCheckBox.TabIndex);
+        Assert.True(control.InvertCheckBox.TabIndex < control.CrossoverKindComboBox.TabIndex);
     }
 
     [Fact]

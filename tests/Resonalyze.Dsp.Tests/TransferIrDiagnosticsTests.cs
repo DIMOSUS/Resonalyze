@@ -808,11 +808,12 @@ public sealed class TransferIrDiagnosticsTests
         Assert.True(
             TransferIrDiagnostics.CanJudgePreArrival(gate),
             $"a half-octave guard at {lowFullHz}-{highFullHz} Hz must be judgeable");
-        double? preArrival = TransferIrDiagnostics.MeasurePreArrivalDb(ideal, SampleRate);
+        TransferIrPreArrival? preArrival =
+            TransferIrDiagnostics.MeasurePreArrivalDb(ideal, SampleRate);
         Assert.NotNull(preArrival);
         Assert.True(
-            preArrival.Value < TransferIrDiagnostics.MaximumPreArrivalDb - 5,
-            $"ideal {lowFullHz}-{highFullHz} Hz read {preArrival.Value:0.0} dB");
+            preArrival.Value.LevelDb < TransferIrDiagnostics.MaximumPreArrivalDb - 5,
+            $"ideal {lowFullHz}-{highFullHz} Hz read {preArrival.Value.LevelDb:0.0} dB");
     }
 
     // The measure's whole reason to exist, and the reason it is not a second
@@ -844,11 +845,11 @@ public sealed class TransferIrDiagnosticsTests
             clean, z => BiquadResponse(biquad, z));
 
         double cleanPreArrival = TransferIrDiagnostics
-            .MeasurePreArrivalDb(clean, SampleRate)!.Value;
+            .MeasurePreArrivalDb(clean, SampleRate)!.Value.LevelDb;
         double dipPreArrival = TransferIrDiagnostics
-            .MeasurePreArrivalDb(denominatorDip, SampleRate)!.Value;
+            .MeasurePreArrivalDb(denominatorDip, SampleRate)!.Value.LevelDb;
         double cabinPreArrival = TransferIrDiagnostics
-            .MeasurePreArrivalDb(cabinResonance, SampleRate)!.Value;
+            .MeasurePreArrivalDb(cabinResonance, SampleRate)!.Value.LevelDb;
 
         // The absolute ceiling is calibrated on field records (see
         // MaximumPreArrivalDb); what a synthetic can prove is the CONTRAST, and
@@ -909,6 +910,56 @@ public sealed class TransferIrDiagnosticsTests
     public void CanJudgePreArrival_AcceptsAGateWithNoLowEdge()
     {
         Assert.True(TransferIrDiagnostics.CanJudgePreArrival(ExcitationBandGate.FullBand));
+    }
+
+    // The window is placed against the strongest sample, so a record whose direct
+    // path is obstructed and whose strongest sample is a LATER reflection puts its
+    // real direct sound inside that window and reads as acausal. The level alone
+    // cannot tell that from the fault — both are over the ceiling — but what fills
+    // the window can: one arrival with its own decay is a discrete event, the fault
+    // is a ring that fills it evenly.
+    [Theory]
+    [InlineData(0.20)] // the direct at 4 % of the reflection's energy: -18.0 dB
+    [InlineData(0.30)]
+    [InlineData(0.45)]
+    public void MeasurePreArrivalDb_MarksAnObstructedArrivalAsADiscreteEvent(
+        double directAmplitude)
+    {
+        const int FrameLength = 262_144;
+        var record = new double[FrameLength];
+        AddDecayingArrival(record, atMs: 300.0, amplitude: directAmplitude, decaySeconds: 0.25);
+        AddDecayingArrival(record, atMs: 500.0, amplitude: 1.0, decaySeconds: 0.25);
+        double[] banded = BandLimit(record, 20.0, 1000.0);
+
+        TransferIrPreArrival reading =
+            TransferIrDiagnostics.MeasurePreArrivalDb(banded, SampleRate)!.Value;
+
+        Assert.True(
+            reading.LevelDb > TransferIrDiagnostics.MaximumPreArrivalDb,
+            $"the level alone is supposed to be fooled; it read {reading.LevelDb:0.0} dB");
+        Assert.True(
+            reading.CrestDb >= TransferIrDiagnostics.PreArrivalCrestDb,
+            $"a discrete arrival must read as one; crest was {reading.CrestDb:0.0} dB");
+    }
+
+    // The counterpart, on the shape the refusal exists for: a ring fills the window
+    // evenly and must NOT be excused as a discrete event.
+    [Fact]
+    public void MeasurePreArrivalDb_ARingIsNotADiscreteEvent()
+    {
+        const int FrameLength = 262_144;
+        double[] clean = SyntheticCabinTransfer(
+            FrameLength, delayMs: 12.0, decaySeconds: 0.25, highFullHz: 200.0);
+        BiquadCoefficients biquad = PeakingBiquad.Compute(
+            new PeqBand(34.5, 40.0, 18.0), SampleRate);
+        double[] ringing = ApplySpectrum(clean, z => Complex.Abs(BiquadResponse(biquad, z)));
+
+        TransferIrPreArrival reading =
+            TransferIrDiagnostics.MeasurePreArrivalDb(ringing, SampleRate)!.Value;
+
+        Assert.True(
+            reading.CrestDb < TransferIrDiagnostics.PreArrivalCrestDb,
+            $"a ring must not read as a discrete event; crest was {reading.CrestDb:0.0} dB");
     }
 
     [Fact]
@@ -985,6 +1036,38 @@ public sealed class TransferIrDiagnosticsTests
         return TransferFunction.ComputeAveragedRelativeIr(
             [new TransferFunctionFrame(reference, CircularConvolve(reference, room))],
             ProductionGate(20.0, highFullHz)).ImpulseResponse;
+    }
+
+    // One arrival with a decay behind it, which is what a real one looks like and
+    // what makes the crest reading honest — a bare impulse would flatter it.
+    private static void AddDecayingArrival(
+        double[] record,
+        double atMs,
+        double amplitude,
+        double decaySeconds)
+    {
+        int at = (int)Math.Round(atMs * SampleRate / 1000.0);
+        int decay = (int)Math.Round(decaySeconds * SampleRate);
+        double[] tail = StationaryNoise(decay, seed: (uint)(at + 17));
+        record[at] += amplitude;
+        for (int i = 1; i < decay && at + i < record.Length; i++)
+        {
+            record[at + i] += amplitude * 1.2 * tail[i] * Math.Exp(-6.908 * i / decay);
+        }
+    }
+
+    private static double[] BandLimit(double[] record, double lowHz, double highHz)
+    {
+        double nyquist = SampleRate / 2.0;
+        ExcitationBandGate gate = new(
+            lowHz / 1.414 / nyquist,
+            lowHz / nyquist,
+            highHz / nyquist,
+            Math.Min(1.0, highHz * 1.414 / nyquist));
+        double[] reference = StationaryNoise(record.Length, seed: 7);
+        return TransferFunction.ComputeAveragedRelativeIr(
+            [new TransferFunctionFrame(reference, CircularConvolve(reference, record))],
+            gate).ImpulseResponse;
     }
 
     private static double[] CircularConvolve(double[] left, double[] right)

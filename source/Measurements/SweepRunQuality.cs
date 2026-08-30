@@ -144,22 +144,37 @@ internal sealed record SweepRunRejection(
 /// <para>
 /// A notice rather than a refusal, because the cost is asymmetric: at this depth
 /// the record is still usable outside the affected band, and the user is the one
-/// who knows whether the channel is worth re-measuring.
+/// who knows whether the channel is worth re-measuring. It also catches the
+/// readings the refusal deliberately hands back — a window holding one discrete
+/// event rather than a ring (see
+/// <see cref="TransferIrDiagnostics.PreArrivalCrestDb"/>), which is a different
+/// fault and gets a different sentence.
 /// </para>
 /// </remarks>
-internal sealed record SweepResultCaution(double PreArrivalDb)
+internal sealed record SweepResultCaution(double PreArrivalDb, double CrestDb)
 {
     /// <summary>User-facing summary for the end-of-measurement notice.</summary>
     public string Describe() =>
         FormattableString.Invariant(
-            $"The measurement was saved, but it rings before its arrival more than a clean one does: the stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms AHEAD of the peak reads {PreArrivalDb:0.0} dB against the arrival itself, where a clean field record reads -39 dB or less.\r\n\r\n") +
-        "Nothing physical arrives before the direct sound, and a room cannot ring " +
-        "backwards, so this is not the cabin — it is what the microphone was " +
-        "divided BY. Check that the loopback carries the excitation itself: a wire " +
-        "from the output, not an interface direct-mixer or monitor path with " +
-        "effects, sends or faders in it. The result is still usable away from the " +
-        "affected frequencies, but compare it against a channel that measures " +
-        "cleanly before you tune on this one.";
+            $"The measurement was saved, but it carries energy well before its arrival: the stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms AHEAD of the peak reads {PreArrivalDb:0.0} dB against the arrival itself, where a clean field record reads -39 dB or less.\r\n\r\n") +
+        // The two shapes that reading comes in need different sentences: sending a
+        // user to check wiring that is correct is the failure the distortion
+        // diagnosis was written to end, and it would be repeated here.
+        (CrestDb >= TransferIrDiagnostics.PreArrivalCrestDb
+            ? "That energy is one discrete event rather than a ring, which is what " +
+                "a record whose strongest sample is NOT its direct sound looks " +
+                "like: an obstructed or badly aimed driver, where a later " +
+                "reflection outweighs the arrival. The reference is probably fine. " +
+                "Check what the microphone was pointed at, and read the arrival " +
+                "time on this record with that in mind."
+            : "Nothing physical arrives before the direct sound, and a room cannot " +
+                "ring backwards, so this is not the cabin — it is what the " +
+                "microphone was divided BY. Check that the loopback carries the " +
+                "excitation itself: a wire from the output, not an interface " +
+                "direct-mixer or monitor path with effects, sends or faders in it. " +
+                "The result is still usable away from the affected frequencies, " +
+                "but compare it against a channel that measures cleanly before you " +
+                "tune on this one.");
 }
 
 /// <summary>

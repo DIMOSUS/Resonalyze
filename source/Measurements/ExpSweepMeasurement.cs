@@ -2070,8 +2070,17 @@ namespace Resonalyze
         /// </remarks>
         private void RequireCausalTransferIr(SweepAverageResult result, Complex[] transfer)
         {
-            if (MeasurePreArrival(transfer) is not { } preArrivalDb ||
-                preArrivalDb <= TransferIrDiagnostics.MaximumPreArrivalDb)
+            if (MeasurePreArrival(transfer) is not { } preArrival ||
+                preArrival.LevelDb <= TransferIrDiagnostics.MaximumPreArrivalDb)
+            {
+                return;
+            }
+
+            // One discrete event in that window is a record whose strongest sample
+            // is not its arrival, not a reference that cancelled itself. It still
+            // gets reported by the caution below — the reading is real either way —
+            // but it must not cost the measurement.
+            if (preArrival.CrestDb >= TransferIrDiagnostics.PreArrivalCrestDb)
             {
                 return;
             }
@@ -2084,7 +2093,7 @@ namespace Resonalyze
                 ? distortionDiagnosis
                 : " A cabin cannot do that — its own resonances ring forward — so this is not the room but what the microphone was divided BY, and every channel of the result is divided by that same reference. Check that the loopback carries the excitation itself: a wire from the output, not an interface direct-mixer or monitor path with effects, sends or faders in it. Then measure again.";
             throw new InvalidOperationException(FormattableString.Invariant(
-                $"The transfer function did not form a credible impulse response: it rings almost as loudly BEFORE its arrival as after it. The stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms ahead of the peak reads {preArrivalDb:0.0} dB against the arrival itself, where a real measurement reads -39 dB or less and even an ideal band-limited transfer stays under {TransferIrDiagnostics.MaximumPreArrivalDb:0} dB. Nothing physical arrives half a second before the direct sound.{advice}"));
+                $"The transfer function did not form a credible impulse response: it rings almost as loudly BEFORE its arrival as after it. The stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms ahead of the peak reads {preArrival.LevelDb:0.0} dB against the arrival itself, where a real measurement reads -39 dB or less and even an ideal band-limited transfer stays under {TransferIrDiagnostics.MaximumPreArrivalDb:0} dB. Nothing physical arrives half a second before the direct sound.{advice}"));
         }
 
         /// <summary>
@@ -2093,7 +2102,7 @@ namespace Resonalyze
         /// tell the estimator's own kernel from the fault, or the record is too
         /// short to hold the window.
         /// </summary>
-        private double? MeasurePreArrival(Complex[] transfer)
+        private TransferIrPreArrival? MeasurePreArrival(Complex[] transfer)
         {
             ExcitationBandGate gate = Sweep is { } sweep
                 ? BuildExcitationGate(sweep)
@@ -2125,12 +2134,13 @@ namespace Resonalyze
                 return null;
             }
 
-            // The refusal has already run, so anything still here is at or under
-            // MaximumPreArrivalDb; this only picks out the band above the suspect
-            // line.
-            return MeasurePreArrival(transfer) is { } preArrivalDb &&
-                preArrivalDb > TransferIrDiagnostics.SuspectPreArrivalDb
-                ? new SweepResultCaution(preArrivalDb)
+            // Everything over the suspect line that the refusal did not take: the
+            // band under the ceiling, and the readings ABOVE it whose window held
+            // one discrete event rather than a ring, which are reported instead of
+            // refused.
+            return MeasurePreArrival(transfer) is { } preArrival &&
+                preArrival.LevelDb > TransferIrDiagnostics.SuspectPreArrivalDb
+                ? new SweepResultCaution(preArrival.LevelDb, preArrival.CrestDb)
                 : null;
         }
 

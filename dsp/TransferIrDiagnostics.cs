@@ -59,6 +59,19 @@ public readonly record struct TransferIrCompactness(
     double PeakDelayMs);
 
 /// <summary>
+/// What sits in a transfer IR's pre-arrival window (see
+/// <see cref="TransferIrDiagnostics.MeasurePreArrivalDb"/>).
+/// <see cref="LevelDb"/> is how far its per-sample energy stands under the
+/// arrival's own neighbourhood — the verdict figure. <see cref="CrestDb"/> is
+/// the window's own crest factor, which says whether that energy is a stationary
+/// ring or one discrete event that the peak-relative window happened to enclose,
+/// and so whether the level is worth refusing over.
+/// </summary>
+public readonly record struct TransferIrPreArrival(
+    double LevelDb,
+    double CrestDb);
+
+/// <summary>
 /// Record-hygiene diagnostics shared by the manual Time Alignment mode and
 /// the auto-delay launcher: where the driver's energy actually lives in
 /// frequency, and whether the record's head carries a playback-crosstalk
@@ -141,6 +154,39 @@ public static class TransferIrDiagnostics
     /// withholds the pre-arrival verdict.
     /// </summary>
     public const double MinimumJudgeableGuardOctaves = 0.30;
+
+    /// <summary>
+    /// The crest factor at or above which the pre-arrival window is holding a
+    /// discrete EVENT rather than a stationary ring, and a reading over
+    /// <see cref="MaximumPreArrivalDb"/> is reported instead of refused.
+    /// </summary>
+    /// <remarks>
+    /// The window is placed relative to the strongest sample, which every measure
+    /// in this file treats as the arrival. A record whose direct path is obstructed
+    /// and whose strongest sample is therefore a reflection MORE than
+    /// <see cref="PreArrivalStartSeconds"/> later breaks that assumption: its real
+    /// direct sound then sits inside the pre-arrival window and reads as acausal
+    /// energy. Measured, at 48 kHz with a 200 ms gap, a direct carrying 4 % of the
+    /// reflection's energy reads -18.0 dB while clearing the compactness floor at
+    /// 23.1 dB — a refusal for a record that is merely awkward.
+    /// <para>
+    /// The two are told apart by WHAT fills the window. A direct arrival with its
+    /// own decay is one event: measured 20.7-21.9 dB of crest, and 31.0 dB when it
+    /// is a bare band-limited impulse. The fault is a ring that fills the window
+    /// evenly: the two field records read 13.1 and 12.8 dB. 17 dB splits that, 4 dB
+    /// above the fault and 3.7 dB below the awkward record — thinner than the
+    /// margins the refusals here carry, which is exactly why it decides only
+    /// whether to REFUSE or to REPORT. Landing on the wrong side of it costs a
+    /// message, never a measurement.
+    /// </para>
+    /// <para>
+    /// Anchoring on the first credible arrival instead was tried and does not
+    /// work: <see cref="EstimateIrStart"/> answers 500.0 ms on that very record
+    /// (the reflection, not the direct 200 ms ahead of it) and 0.0 ms on both
+    /// field records, where the acausal ring reaches the head of the buffer.
+    /// </para>
+    /// </remarks>
+    public const double PreArrivalCrestDb = 17.0;
 
     /// <summary>
     /// The sharpness floor below which a transfer IR is not a measurement of the
@@ -357,7 +403,7 @@ public static class TransferIrDiagnostics
     /// already, while the field records cleared that gate at 26.0 and 24.1 dB.
     /// </para>
     /// </remarks>
-    public static double? MeasurePreArrivalDb(
+    public static TransferIrPreArrival? MeasurePreArrivalDb(
         IReadOnlyList<Complex> impulseResponse,
         int sampleRate)
     {
@@ -365,7 +411,7 @@ public static class TransferIrDiagnostics
         return MeasurePreArrivalDb(new RealPartsView(impulseResponse), sampleRate);
     }
 
-    internal static double? MeasurePreArrivalDb(
+    internal static TransferIrPreArrival? MeasurePreArrivalDb(
         IReadOnlyList<double> impulseResponse,
         int sampleRate)
     {
@@ -405,10 +451,12 @@ public static class TransferIrDiagnostics
         }
 
         double before = 0;
+        double beforePeak = 0;
         for (int k = -end; k < -start; k++)
         {
             double sample = impulseResponse[((peakIndex + k) % length + length) % length];
             before += sample * sample;
+            beforePeak = Math.Max(beforePeak, Math.Abs(sample));
         }
 
         // Unmeasurable covers "nothing to measure" AND "not a number to measure":
@@ -423,8 +471,12 @@ public static class TransferIrDiagnostics
         double beforePerSample = before / (end - start);
         // A synthetic record with nothing at all before its arrival would divide by
         // zero; the floor caps the reading at -120 dB instead.
-        return 10 * Math.Log10(
+        double levelDb = 10 * Math.Log10(
             Math.Max(beforePerSample, arrivalPerSample * 1e-12) / arrivalPerSample);
+        double crestDb = beforePerSample > 0
+            ? 20 * Math.Log10(beforePeak / Math.Sqrt(beforePerSample))
+            : 0.0;
+        return new TransferIrPreArrival(levelDb, crestDb);
     }
 
     /// <summary>

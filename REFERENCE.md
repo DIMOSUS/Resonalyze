@@ -570,6 +570,15 @@ than refused, with the same explanation — at that depth the record is still
 usable away from the affected frequencies, and whether the channel is worth
 re-measuring is the tuner's call.
 
+The window is placed against the strongest sample, which is normally the
+arrival. A record whose direct path is obstructed, and whose strongest sample is
+therefore a reflection more than 100 ms later, puts its own direct sound inside
+that window — a reading over the ceiling for a record that is merely awkward.
+Those two are told apart by what fills the window: one arrival with its decay is
+a single event, the fault is a ring that fills it evenly. A discrete event is
+reported instead of refused, and says so — the reference is probably fine there,
+and what wants checking is where the microphone was pointed.
+
 The check stays silent on a sweep whose duration was too short to open a guard
 band around its requested band (under a third of an octave). The estimator's own
 band-limiting kernel is symmetric, so it rings both ways too; with the guard the

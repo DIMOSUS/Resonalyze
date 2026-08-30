@@ -366,6 +366,7 @@ public partial class Form1
             if (success)
             {
                 NotifyDegradedSweepAverage();
+                NotifyResultCaution();
             }
         });
     }
@@ -387,6 +388,26 @@ public partial class Form1
             "Measurement",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
+    }
+
+    // The result published, and its own shape says something the user would
+    // otherwise only find by wondering why a tune fought back. A warning rather
+    // than the information icon the run report uses: nothing is wrong with the
+    // capture, but the reference it was divided by is suspect.
+    private void NotifyResultCaution()
+    {
+        SweepResultCaution? caution = expSweepMeasurement.ResultCaution;
+        if (caution == null || closingInProgress)
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            caution.Describe(),
+            "Measurement",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
     }
 
     private void HandleAverageProgressChanged(SweepAverageProgress progress)

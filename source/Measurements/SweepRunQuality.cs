@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -125,6 +126,52 @@ internal static class SweepRunQualityCheck
 internal sealed record SweepRunRejection(
     int Run,
     IReadOnlyList<string> Issues);
+
+/// <summary>
+/// A published measurement whose own shape says something the user would
+/// otherwise only find by wondering why a tune fought back.
+/// </summary>
+/// <remarks>
+/// The field session behind this spent an evening on eleven takes whose reference
+/// ran through an interface's direct mixer instead of the wire. Every level
+/// normal, coherence 0.9995, four of four runs accepted, and the two worst records
+/// carried a 34 Hz resonance of Q 38-54 that rang for seconds and put half their
+/// energy before their own arrival. They cleared the compactness floor at 26.0 and
+/// 24.1 dB against 22 and were published without a word. This notice is what was
+/// missing.
+/// <para>
+/// A notice and never a refusal. A refusal was built on this reading and
+/// withdrawn: what separates a contaminated reference from a record whose
+/// strongest sample is simply not its arrival is how localized the pre-arrival
+/// energy is, and that separation narrows with the record's own bandwidth until it
+/// is 2.5 dB at the effective width one of the two field faults has. Too thin to
+/// destroy a measurement over, on a calibration set of two records from one rig.
+/// </para>
+/// <para>
+/// So the text names no cause. Both shapes are given, the reference first because
+/// everything is divided by it, and the reader is left to look. Naming one is how
+/// a tuner ends up checking wiring that was correct all along — the failure the
+/// distortion diagnosis was written to end.
+/// </para>
+/// </remarks>
+internal sealed record SweepResultCaution(double PreArrivalDb)
+{
+    /// <summary>User-facing summary for the end-of-measurement notice.</summary>
+    public string Describe() =>
+        FormattableString.Invariant(
+            $"The measurement was saved, but it carries unusual energy well before its arrival: the stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms AHEAD of the peak reads {PreArrivalDb:0.0} dB against the arrival itself, where a clean field record reads -39 dB or less.\r\n\r\n") +
+        "Nothing physical arrives before the direct sound, so this is either the " +
+        "reference — a loopback that is not a clean copy of the excitation cancels " +
+        "itself and divides into a resonance the microphone never heard — or a " +
+        "record whose strongest sample is not its direct sound at all, where a " +
+        "later reflection outweighs an obstructed arrival. This measurement cannot " +
+        "tell which.\r\n\r\n" +
+        "Worth checking that the loopback carries the excitation itself: a wire " +
+        "from the output, not an interface direct-mixer or monitor path with " +
+        "effects, sends or faders in it. The result is still usable away from the " +
+        "affected frequencies, but compare it against a channel that measures " +
+        "cleanly before you tune on this one.";
+}
 
 /// <summary>
 /// Outcome of the per-run acceptance over a whole averaged measurement.

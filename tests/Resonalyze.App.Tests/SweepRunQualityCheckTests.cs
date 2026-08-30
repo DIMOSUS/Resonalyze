@@ -149,6 +149,24 @@ public sealed class SweepRunQualityCheckTests
         Assert.DoesNotContain("retry", text);
     }
 
+    // The notice quotes the reading, offers BOTH shapes it can come in, and picks
+    // neither: what separates them cannot be measured reliably enough to say, and
+    // naming one would send a tuner to check wiring that was correct all along.
+    [Fact]
+    public void ResultCautionQuotesTheReadingAndNamesNoSingleCause()
+    {
+        string text = new SweepResultCaution(PreArrivalDb: -19.0).Describe();
+
+        Assert.Contains("-19.0 dB", text);
+        Assert.Contains("100 to 600 ms AHEAD of the peak", text);
+        // Both candidates present, neither asserted.
+        Assert.Contains("either the reference", text);
+        Assert.Contains("strongest sample is not its direct sound", text);
+        Assert.Contains("cannot tell which", text);
+        Assert.Contains("loopback carries the excitation itself", text);
+        Assert.Contains("still usable away from the affected frequencies", text);
+    }
+
     private static float[] Tone(int length, float amplitude)
     {
         var samples = new float[length];

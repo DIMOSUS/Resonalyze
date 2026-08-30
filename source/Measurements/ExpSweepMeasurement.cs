@@ -275,6 +275,11 @@ namespace Resonalyze
         // Per-run acceptance outcome of the last completed measurement; null until
         // a measurement ran (or when the result was restored from a file).
         internal SweepRunQualityReport? QualityReport { get; private set; }
+
+        // What the published result's own shape has to say about itself, or null
+        // when it has nothing. Set alongside QualityReport and cleared with it, so
+        // a restored file never wears the last run's verdict.
+        internal SweepResultCaution? ResultCaution { get; private set; }
         public Exception? LastError { get; private set; }
         internal InputLevelMeterSnapshot CurrentLevels
         {
@@ -367,6 +372,7 @@ namespace Resonalyze
             ProtectiveHighPass = ProtectiveHighPassConfiguration.Normalize(
                 configuration.ProtectiveHighPass);
             QualityReport = null;
+            ResultCaution = null;
             LastError = null;
             CurrentLevels = InputLevelMeterSnapshot.Empty;
 
@@ -431,6 +437,7 @@ namespace Resonalyze
                 MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
                 AcceptedAverageRunCount = 0;
                 QualityReport = null;
+                ResultCaution = null;
                 LastError = null;
                 CurrentLevels = InputLevelMeterSnapshot.Empty;
                 measurementTask = RunCoreAsync(cancellationTokenSource.Token);
@@ -1391,6 +1398,10 @@ namespace Resonalyze
 
                 SweepAverageResult averageResult = accumulator.BuildResult();
                 RequireCredibleTransferIr(averageResult);
+                // After the refusal, never inside it: the other caller of that check
+                // is the total-failure diagnosis, which describes a capture nothing
+                // is going to publish.
+                ResultCaution = DescribeResultCaution(averageResult);
                 ApplyAverageResult(averageResult);
                 success = true;
             }
@@ -2036,6 +2047,47 @@ namespace Resonalyze
                 : " Check the microphone and loopback wiring and levels, then measure again.";
             throw new InvalidOperationException(
                 $"The transfer function did not form a credible impulse response: {shapeDiagnosis}.{levelDiagnosis}{advice}");
+        }
+
+        /// <summary>
+        /// The published result's pre-arrival reading, or null when this record
+        /// cannot be given one — the excitation opened no guard band wide enough to
+        /// tell the estimator's own kernel from the fault, or the record is too
+        /// short to hold the window.
+        /// </summary>
+        private double? MeasurePreArrival(Complex[] transfer)
+        {
+            // Null is "no reading", not "bad record": nothing is refused on this
+            // measure, and content that cannot be measured at all was already
+            // turned away by the compactness check above.
+            return TransferIrDiagnostics.CanJudgePreArrival(ExcitationGate())
+                ? TransferIrDiagnostics.MeasurePreArrivalDb(transfer, SampleRate)
+                : null;
+        }
+
+        /// <summary>
+        /// The gate the current sweep excites through, or the full band when there
+        /// is no sweep to read it off.
+        /// </summary>
+        private ExcitationBandGate ExcitationGate() => Sweep is { } sweep
+            ? BuildExcitationGate(sweep)
+            : ExcitationBandGate.FullBand;
+
+        /// <summary>
+        /// What the published result has to say about itself, or null when it has
+        /// nothing. Never a refusal — see <see cref="SweepResultCaution"/>.
+        /// </summary>
+        private SweepResultCaution? DescribeResultCaution(SweepAverageResult result)
+        {
+            if (result.TransferImpulseResponse is not { } transfer)
+            {
+                return null;
+            }
+
+            return MeasurePreArrival(transfer) is { } preArrivalDb &&
+                preArrivalDb > TransferIrDiagnostics.SuspectPreArrivalDb
+                ? new SweepResultCaution(preArrivalDb)
+                : null;
         }
 
         /// <summary>

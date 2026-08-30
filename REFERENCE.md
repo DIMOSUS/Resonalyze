@@ -544,6 +544,52 @@ only as far as it takes to leave the input's linear region, since a pad
 attenuates the signal and not the input's own noise and a reference driven toward
 the noise floor pays for it in coherence.
 
+### A reference that is not the excitation
+
+Distortion is not the only way a reference can be wrong while every meter reads
+normally. A loopback routed through an interface's own **direct mixer** — a
+monitor mix, an effects send, a fader — is a plausible-looking signal that is no
+longer a copy of what was played, and the transfer function divides the
+microphone by it. The field case this check was written for ran a whole session
+through such a path: eleven takes, every level normal, coherence 0.9995, and the
+two worst records carrying a 34 Hz resonance of Q≈40 that rang for seconds and
+that all seven array positions reported to within 0.7 dB — where a real cabin
+mode spreads the same positions over 5–9 dB.
+
+What gives that away is **causality**. Nothing arrives before the direct sound,
+and a cabin's own resonances ring forward, so Resonalyze compares the stretch
+from 100 to 600 ms *ahead* of the arrival against the arrival itself. A clean
+record reads −39 dB or less there; the two contaminated ones read −14.8 and
+−14.1 dB. Above −22 dB the measurement is **saved and reported**:
+
+> The measurement was saved, but it carries unusual energy well before its
+> arrival: the stretch from 100 to 600 ms AHEAD of the peak reads −14.1 dB
+> against the arrival itself, where a clean field record reads −39 dB or less.
+
+The notice offers both shapes that reading comes in and picks neither. One is a
+reference cancelling itself. The other is a record whose strongest sample is not
+its direct sound at all — an obstructed or badly aimed driver, where a later
+reflection outweighs the arrival puts that arrival inside the window. Telling
+them apart needs how *localized* the early energy is, and that separation
+narrows with the record's own bandwidth until it is worth about 2.5 dB on a
+subwoofer-width channel. That is why the reading never refuses a measurement,
+and why the text names no cause: on the evidence available it cannot, and
+guessing would send a tuner to check wiring that was correct all along.
+
+So the reading is a prompt to look, not a verdict. If it appears on a channel
+you have no other reason to doubt, the quickest separation is to check the
+loopback path itself and re-measure — a contaminated reference repeats, an
+awkward microphone position does not.
+
+The check stays silent on a sweep whose duration was too short to open a guard
+band around its requested band (under a third of an octave). The estimator's own
+band-limiting kernel is symmetric, so it rings both ways too; with the guard the
+sweep generator aims for it stays far below the report line, and without one it
+cannot be told from the fault.
+
+The fix is to take the loopback from the wire: the interface output the sweep is
+played from, straight back into an input, with nothing in between.
+
 ## Live Spectrum
 
 The **Live Spectrum** mode runs in one of two explicitly chosen **Mode**s.

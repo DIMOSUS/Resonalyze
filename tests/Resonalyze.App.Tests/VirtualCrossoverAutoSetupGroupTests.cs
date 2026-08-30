@@ -1,0 +1,214 @@
+using System.Drawing;
+using System.Reflection;
+using Resonalyze;
+using Resonalyze.Dsp;
+
+namespace Resonalyze.App.Tests;
+
+/// <summary>
+/// The crossover wizard driven end to end over a grouped installation: the whole
+/// point of the grouping is what comes back out of Apply, and the split, the
+/// chain order and the per-group levelling only meet there.
+/// </summary>
+public sealed class VirtualCrossoverAutoSetupGroupTests
+{
+    private const double SampleRate = 48_000;
+
+    // A synthetic driver: flat inside the band, 24 dB/octave off each edge.
+    private static List<SignalPoint> BandCurve(double lowHz, double highHz, double levelDb = 0)
+    {
+        var points = new List<SignalPoint>();
+        foreach (double frequency in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
+        {
+            double y = levelDb;
+            if (frequency < lowHz)
+            {
+                y -= 24.0 * Math.Log2(lowHz / frequency);
+            }
+            else if (frequency > highHz)
+            {
+                y -= 24.0 * Math.Log2(frequency / highHz);
+            }
+
+            points.Add(new SignalPoint(frequency, y));
+        }
+
+        return points;
+    }
+
+    private static AutoSetupWizardChannel Channel(
+        string name,
+        VirtualCrossoverAlignmentStage group,
+        double lowHz,
+        double highHz,
+        double levelDb = 0,
+        double? highPassHz = null,
+        double? lowPassHz = null)
+    {
+        List<SignalPoint> curve = BandCurve(lowHz, highHz, levelDb);
+        return new AutoSetupWizardChannel(
+            name,
+            Color.White,
+            group,
+            curve,
+            null,
+            null,
+            CrossoverAutoSetup.EstimateBand(curve),
+            highPassHz,
+            lowPassHz,
+            null);
+    }
+
+    // The reference installation's shape, handed in the panel's order rather than
+    // any sensible one: three front ways, two subwoofers under them, a rear fill
+    // and a centre. Both subs measure the same because they are the same driver;
+    // only the corners already set on them say which plays lower.
+    private static IReadOnlyList<AutoSetupWizardChannel> ReferenceCar() =>
+    [
+        Channel("A tweeter", VirtualCrossoverAlignmentStage.FrontChain, 2_200, 20_000),
+        Channel("B mid", VirtualCrossoverAlignmentStage.FrontChain, 250, 6_000),
+        Channel("C midbass", VirtualCrossoverAlignmentStage.FrontChain, 60, 900),
+        Channel("D rear", VirtualCrossoverAlignmentStage.Rear, 120, 15_000, levelDb: 6),
+        Channel("E center", VirtualCrossoverAlignmentStage.Center, 200, 18_000),
+        Channel(
+            "F front sub", VirtualCrossoverAlignmentStage.FrontChain, 20, 300,
+            highPassHz: 50, lowPassHz: 110),
+        Channel(
+            "G rear sub", VirtualCrossoverAlignmentStage.FrontChain, 20, 300, lowPassHz: 50)
+    ];
+
+    // Apply's handler is async void and, with no impulse responses to rank
+    // against, finishes inside the call — the ranked path is the one that awaits.
+    // Every fixture here must leave the order unambiguous (corners on the subs):
+    // an ambiguous one puts up the confirmation dialog, which nothing here can
+    // answer.
+    private static IReadOnlyList<CrossoverProposal> Apply(
+        IReadOnlyList<AutoSetupWizardChannel> channels)
+    {
+        IReadOnlyList<CrossoverProposal>? result = null;
+        StaTest.Run(() =>
+        {
+            using var dialog = new VirtualCrossoverAutoSetupDialog();
+            dialog.Init(SampleRate, SampleRate, channels);
+            typeof(VirtualCrossoverAutoSetupDialog)
+                .GetMethod("ApplyClick", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(dialog, [null, EventArgs.Empty]);
+            result = dialog.Result;
+        });
+
+        Assert.NotNull(result);
+        return result!;
+    }
+
+    [Fact]
+    public void Apply_ReturnsOneProposalPerChannel_InTheOrderTheyWereHandedIn()
+    {
+        // The dialog reorders its rows into chain order inside each group; the
+        // panel writes the result back by position, so what comes out must be in
+        // the INPUT order however the rows were shuffled to get there.
+        IReadOnlyList<AutoSetupWizardChannel> channels = ReferenceCar();
+
+        IReadOnlyList<CrossoverProposal> proposals = Apply(channels);
+
+        Assert.Equal(channels.Count, proposals.Count);
+        Assert.All(proposals, Assert.NotNull);
+        // Index 0 is the tweeter, the top of the front chain: a high-pass and
+        // nothing above it. Index 2 is the midbass, in the middle of that chain.
+        Assert.Equal(CrossoverKind.HighPass, proposals[0].Kind);
+        Assert.Equal(CrossoverKind.BandPass, proposals[2].Kind);
+    }
+
+    [Fact]
+    public void Apply_CrossesTheFrontChainThroughBothSubwoofers()
+    {
+        IReadOnlyList<CrossoverProposal> proposals = Apply(ReferenceCar());
+
+        // Chain order: rear sub (6), front sub (5), midbass (2), mid (1),
+        // tweeter (0) — the two subs put in that order by their corners alone.
+        int[] chain = [6, 5, 2, 1, 0];
+        for (int i = 0; i + 1 < chain.Length; i++)
+        {
+            CrossoverEdge? lowPass = proposals[chain[i]].LowPassEdge;
+            CrossoverEdge? highPass = proposals[chain[i + 1]].HighPassEdge;
+            Assert.NotNull(lowPass);
+            Assert.NotNull(highPass);
+            Assert.Equal(lowPass!.Value.FrequencyHz, highPass!.Value.FrequencyHz, 3);
+        }
+
+        // And the bottom of the chain is the sub whose corner says it plays
+        // lowest, which is not the one that came first in the input.
+        Assert.Null(proposals[6].HighPassEdge);
+        Assert.Equal(CrossoverKind.LowPass, proposals[6].Kind);
+    }
+
+    [Fact]
+    public void Apply_GivesTheRearAndCentreAProtectiveHighPassAndNoJunction()
+    {
+        IReadOnlyList<CrossoverProposal> proposals = Apply(ReferenceCar());
+
+        foreach (int index in new[] { 3, 4 })
+        {
+            Assert.Equal(CrossoverKind.HighPass, proposals[index].Kind);
+            Assert.Null(proposals[index].LowPassEdge);
+            Assert.NotNull(proposals[index].HighPassEdge);
+        }
+
+        // Nothing in the front chain hands over to either of them: no front
+        // channel's low-pass sits at the rear's or the centre's corner.
+        var frontLowPasses = new[] { 0, 1, 2, 5, 6 }
+            .Select(index => proposals[index].LowPassEdge?.FrequencyHz)
+            .Where(frequency => frequency.HasValue)
+            .Select(frequency => frequency!.Value)
+            .ToList();
+        foreach (int index in new[] { 3, 4 })
+        {
+            double corner = proposals[index].HighPassEdge!.Value.FrequencyHz;
+            Assert.DoesNotContain(frontLowPasses, frequency => Math.Abs(frequency - corner) < 1);
+        }
+    }
+
+    [Fact]
+    public void Apply_CutsALoudRearOntoTheFrontStage()
+    {
+        // The rear measures 6 dB hotter than the front. Left alone it would be
+        // applied at its raw level, which is not a starting point anybody wants.
+        IReadOnlyList<CrossoverProposal> proposals = Apply(ReferenceCar());
+
+        Assert.InRange(proposals[3].GainDb, -7.5, -4.5);
+    }
+
+    [Fact]
+    public void Apply_LeavesAQuietGroupWhereItIs()
+    {
+        // Cut-only: the same rear measured 6 dB UNDER the front is not boosted up
+        // to meet it.
+        List<AutoSetupWizardChannel> channels = ReferenceCar().ToList();
+        channels[3] = Channel(
+            "D rear", VirtualCrossoverAlignmentStage.Rear, 120, 15_000, levelDb: -6);
+
+        IReadOnlyList<CrossoverProposal> proposals = Apply(channels);
+
+        Assert.Equal(0, proposals[3].GainDb);
+    }
+
+    [Fact]
+    public void Apply_WithNoRearOrCentre_IsOneGroupAndOneChain()
+    {
+        // The front-only car, which is what every project was before zones: one
+        // group, so nothing is levelled onto anything and the chain is the whole
+        // system exactly as it always was.
+        List<AutoSetupWizardChannel> channels = ReferenceCar()
+            .Where(channel => channel.Group == VirtualCrossoverAlignmentStage.FrontChain)
+            .ToList();
+
+        IReadOnlyList<CrossoverProposal> proposals = Apply(channels);
+
+        Assert.Equal(5, proposals.Count);
+        Assert.Equal(
+            4,
+            proposals.Count(proposal => proposal.LowPassEdge is not null));
+        Assert.Equal(
+            4,
+            proposals.Count(proposal => proposal.HighPassEdge is not null));
+    }
+}

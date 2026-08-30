@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OxyPlot;
 using Resonalyze.Dsp;
 
@@ -276,6 +276,14 @@ internal static class ProcessedChannels
 
         return pairs;
     }
+
+    /// <summary>
+    /// Whether the set holds a real handover at all. A chain with none has no
+    /// summation loss to state — not a good one, none: the figure describes
+    /// cancellation at a crossover, and there is no crossover here.
+    /// </summary>
+    public static bool HasJunction(IReadOnlyList<ProcessedChannel> channels) =>
+        GetAdjacentPairs(OrderByBand(channels)).Count > 0;
 
     private static bool PlaysWithin(ProcessedChannel channel, double lowHz, double highHz)
     {

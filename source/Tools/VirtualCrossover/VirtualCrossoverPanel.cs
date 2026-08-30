@@ -3198,8 +3198,15 @@ public partial class VirtualCrossoverPanel : UserControl
         // The stereo Δ block and the opposite-side sum read BOTH sides'
         // processed responses; their caches make an unchanged configuration
         // free. Same staleness rule as above.
+        // The Δ block follows the Show selector like everything else in the
+        // frame: a front view listing the rear pair's L/R skew is the read-out
+        // describing a set the plot does not draw, which is the whole class of
+        // mismatch this selector exists to close.
+        List<VirtualCrossoverChannel> shownBlocks =
+            [.. channels.Where(channel =>
+                VirtualCrossoverGroupViews.IsShown(groupView, channel.Pair.Zone))];
         List<VirtualCrossoverMetric.StereoDelta> stereoDeltas =
-            await metrics.ComputeStereoDeltasAsync(channels, revision);
+            await metrics.ComputeStereoDeltasAsync(shownBlocks, revision);
         // What the cross-group views quote instead of a summation loss. Reads the
         // responses this frame already processed, so it adds no render — only the
         // arrival FFTs, on the coordinator's auxiliary path.
@@ -3250,7 +3257,19 @@ public partial class VirtualCrossoverPanel : UserControl
         // so the number would report damage nothing can repair. Those views owe
         // the reader the cross-group arrival and level instead, which
         // UpdateMetric appends.
-        if (VirtualCrossoverGroupViews.LossChainZone(groupView) == null)
+        //
+        // The same silence falls where the chain holds no junction at all, which
+        // a single-group view can still manage: Rear + Sub on the reference car
+        // is subwoofers up to 110 Hz and a rear fill from 290, with nothing
+        // crossing between them. GetAdjacentPairs already declines to invent that
+        // pair, but the loss curve and its total are computed over the window
+        // regardless — and a total summation loss for a chain with no handover
+        // is a figure about a crossover that is not in the car, which is the
+        // thing this view was supposed to stop printing.
+        bool quotesJunctions =
+            VirtualCrossoverGroupViews.LossChainZone(groupView) != null &&
+            ProcessedChannels.HasJunction(summedChannels);
+        if (!quotesJunctions)
         {
             lossCurve = null;
         }
@@ -3302,8 +3321,7 @@ public partial class VirtualCrossoverPanel : UserControl
             // with it.
             UpdateMetric(
                 summedChannels, lossCurve, stereoDeltas, hybrid, groupDeltas,
-                quotesJunctions:
-                    VirtualCrossoverGroupViews.LossChainZone(groupView) != null);
+                quotesJunctions);
         }
 
         using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))

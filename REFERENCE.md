@@ -1823,7 +1823,13 @@ Junctions are read where drivers actually hand over, not merely where they are
 neighbours in the ordering. Two channels with a hole between them — subwoofers
 stopping at 110 Hz beside a rear fill starting at 290 — form no junction, so
 neither a summation loss nor a phase recommendation is printed for a crossover
-that is not in the car.
+that is not in the car. A view whose chain holds no junction at all drops the
+**Sum loss** curve and its total with them: that figure measures cancellation at
+a crossover, and here there is none to measure. The Sum itself is still drawn —
+the drivers do both play, and their combined output is a real thing to look at.
+
+Everything the read-out says follows the selector too, the L/R timing block
+included: a front view does not list the rear pair's Δ.
 
 ### Hybrid: spatial averages under the prediction
 

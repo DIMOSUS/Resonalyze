@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OxyPlot;
 using Resonalyze.Dsp;
 
@@ -91,6 +91,25 @@ public sealed class ProcessedChannelsTests
 
         Assert.Empty(ProcessedChannels.GetAdjacentPairs(
             ProcessedChannels.OrderByBand([sub, rear])));
+    }
+
+    [Fact]
+    public void HasJunction_IsFalseForAChainWithNothingCrossing()
+    {
+        // Rear + Sub on the reference car. Dropping the invented Sub/Rear row is
+        // only half the fix: the loss CURVE and its total are computed over the
+        // whole window regardless, and a total summation loss for a chain with no
+        // handover is still a figure about a crossover that is not in the car.
+        Assert.False(ProcessedChannels.HasJunction(
+            [Channel("Sub", LowPass(110)), Channel("Rear", HighPass(290))]));
+
+        // A lone channel has nothing to cross with either.
+        Assert.False(ProcessedChannels.HasJunction([Channel("Sub", LowPass(110))]));
+
+        // And a real chain still has one, so the rule costs the ordinary case
+        // nothing.
+        Assert.True(ProcessedChannels.HasJunction(
+            [Channel("Sub", LowPass(110)), Channel("Mid", HighPass(110))]));
     }
 
     [Fact]

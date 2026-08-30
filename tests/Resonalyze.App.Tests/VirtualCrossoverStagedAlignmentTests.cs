@@ -67,6 +67,51 @@ public sealed class VirtualCrossoverStagedAlignmentTests
     }
 
     [Fact]
+    public void TheWalkNeverPairsAFrontDriverWithTheRearFill()
+    {
+        // The defect this whole change exists to remove, written as the thing
+        // that used to happen. The reference car's rear pair is high-passed at
+        // 290 Hz, so by band centre it lands between the midrange and the
+        // tweeter — and the walk, which pairs neighbours, declared a midrange
+        // handing over to a rear fill at the midrange's own low-pass corner. No
+        // filter does that.
+        //
+        // Staging is what stops it: the walk set is the front chain, so the rear
+        // is not a neighbour of anything. Run against the unstaged list the same
+        // assertion fails, which is what makes this a falsifier rather than a
+        // restatement.
+        var mid = Block("A", VirtualCrossoverZone.Front);
+        mid.Settings.CrossoverKind = CrossoverKind.BandPass;
+        mid.Settings.HighPassEdge =
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 290, 24);
+        mid.Settings.LowPassEdge =
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_500, 24);
+        var tweeter = Block("B", VirtualCrossoverZone.Front);
+        tweeter.Settings.CrossoverKind = CrossoverKind.HighPass;
+        tweeter.Settings.HighPassEdge =
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_500, 24);
+        var rear = Block("C", VirtualCrossoverZone.Rear);
+        rear.Settings.CrossoverKind = CrossoverKind.HighPass;
+        rear.Settings.HighPassEdge =
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 290, 24);
+
+        (List<VirtualCrossoverChannel> chain, List<VirtualCrossoverChannel> later) =
+            VirtualCrossoverPanel.SplitAlignmentStages([mid, tweeter, rear]);
+
+        Assert.Equal(["A", "B"], chain.Select(item => item.Name));
+        Assert.Equal(["C"], later.Select(item => item.Name));
+
+        // Ordered by band centre the rear sits BETWEEN the two front drivers, so
+        // an unstaged walk would have paired it with both. Pinned here so the
+        // ordering that caused the defect is on record rather than assumed.
+        Assert.Equal(
+            ["A", "C", "B"],
+            new[] { mid, tweeter, rear }
+                .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Settings))
+                .Select(item => item.Name));
+    }
+
+    [Fact]
     public void NormalizeStagedDelays_SlidesEveryChannelAndKeepsEveryRelation()
     {
         // The rear fill was pushed behind the front stage, which asked the front

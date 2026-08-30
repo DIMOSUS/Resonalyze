@@ -1,4 +1,4 @@
-namespace Resonalyze
+﻿namespace Resonalyze
 {
     partial class Form1
     {
@@ -412,10 +412,17 @@ namespace Resonalyze
             virtualDspMetricLabel.BorderStyle = BorderStyle.FixedSingle;
             virtualDspMetricLabel.Font = new Font("Consolas", 9F);
             virtualDspMetricLabel.ForeColor = Color.FromArgb(230, 184, 0);
-            virtualDspMetricLabel.Location = new Point(1268, 389);
+            // High in the column, not beside the plot: Virtual DSP hides the whole
+            // capture block (meters, History, Mode Settings), so everything from the
+            // warning box down is this read-out's to use — and it needs the room. The
+            // text grows with the CHANNEL COUNT (a junction row, a phase row and a
+            // stereo-delta row per block), and at the 12-block ceiling the worst case
+            // measures 856 px against the 431 this label used to get. Clearing the
+            // warning box above (a long one runs to about y=143) buys 239 px of it.
+            virtualDspMetricLabel.Location = new Point(1268, 150);
             virtualDspMetricLabel.Name = "virtualDspMetricLabel";
             virtualDspMetricLabel.Padding = new Padding(8);
-            virtualDspMetricLabel.Size = new Size(214, 431);
+            virtualDspMetricLabel.Size = new Size(214, 670);
             virtualDspMetricLabel.TabIndex = 31;
             virtualDspMetricLabel.Visible = false;
             // 

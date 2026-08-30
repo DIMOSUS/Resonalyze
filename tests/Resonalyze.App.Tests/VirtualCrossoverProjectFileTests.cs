@@ -1714,6 +1714,137 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
+    [Fact]
+    public void LoadOrDefault_V8Project_GuessesEachBlockZoneFromItsMonoFlagAndFilter()
+    {
+        // v9 gave every block a zone. A v8 file records none, so it is guessed from
+        // the two facts such a file does hold — and the three branches are pinned
+        // here because a user's saved tune is what walks through them. Mono meant
+        // "shared subwoofer" for the tool's whole history, so a mono block is a Sub
+        // unless it HIGH-PASSES, which no subwoofer does: that one is a centre.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile().Save(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 8;
+
+            // A stereo pair — the front stage, and the only reading a v8 file
+            // supports (a rear pair is byte-for-byte identical in it).
+            file["pairs"]![0]!["mono"] = false;
+            file["pairs"]![0]!["left"]!["crossoverKind"] = "BandPass";
+
+            // A mono block playing low: the historical shared subwoofer.
+            file["pairs"]![1]!["mono"] = true;
+            file["pairs"]![1]!["left"]!["crossoverKind"] = "LowPass";
+
+            // A mono block high-passed at 290 Hz: a centre, not a sub.
+            file["pairs"]![2]!["mono"] = true;
+            file["pairs"]![2]!["left"]!["crossoverKind"] = "HighPass";
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(VirtualCrossoverProjectFile.CurrentVersion, loaded.Version);
+            Assert.Equal(VirtualCrossoverZone.Front, loaded.Pairs[0].Zone);
+            Assert.Equal(VirtualCrossoverZone.Sub, loaded.Pairs[1].Zone);
+            Assert.Equal(VirtualCrossoverZone.Center, loaded.Pairs[2].Zone);
+            loaded.Validate();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_V8Project_KeepsEveryTunedSettingThroughTheZoneMigration()
+    {
+        // The zone step is purely additive, and that is the promise this test holds
+        // the code to: a user opening a tune saved by the previous version must find
+        // every delay, gain, polarity, crossover corner and PEQ band exactly where
+        // they left it. A mis-guessed zone then costs one combo box, never a tune.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            VirtualCrossoverChannelSettings tuned = original.Pairs[0].Left;
+            tuned.GainDb = -3.5;
+            tuned.DelayMs = 4.87;
+            tuned.InvertPolarity = true;
+            tuned.CrossoverKind = CrossoverKind.BandPass;
+            tuned.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 50, 24);
+            tuned.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 110, 18);
+            tuned.PeqPreampDb = -2.5;
+            tuned.PeqBands.Add(new PeqBand(110, 8, 5.3, PeqBandType.Peaking));
+            tuned.PeqBands.Add(new PeqBand(74, 5.6, -2.7, PeqBandType.Peaking));
+            original.Pairs[0].Mono = true;
+            original.StereoSceneOffsetMs = 0.25;
+            original.Save(root);
+
+            // Back-date the payload to v8 without touching anything else, so the
+            // only difference the loader sees is the version it migrates from.
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 8;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            VirtualCrossoverChannelSettings migrated = loaded.Pairs[0].Left;
+            Assert.Equal(-3.5, migrated.GainDb);
+            Assert.Equal(4.87, migrated.DelayMs);
+            Assert.True(migrated.InvertPolarity);
+            Assert.Equal(CrossoverKind.BandPass, migrated.CrossoverKind);
+            Assert.Equal(50, migrated.HighPassEdge.FrequencyHz);
+            Assert.Equal(24, migrated.HighPassEdge.SlopeDbPerOctave);
+            Assert.Equal(CrossoverFilterFamily.Butterworth, migrated.LowPassEdge.Family);
+            Assert.Equal(110, migrated.LowPassEdge.FrequencyHz);
+            Assert.Equal(18, migrated.LowPassEdge.SlopeDbPerOctave);
+            Assert.Equal(-2.5, migrated.PeqPreampDb);
+            Assert.Equal(2, migrated.PeqBands.Count);
+            Assert.Equal(110, migrated.PeqBands[0].FrequencyHz);
+            Assert.Equal(5.3, migrated.PeqBands[0].GainDb);
+            Assert.Equal(74, migrated.PeqBands[1].FrequencyHz);
+            Assert.True(loaded.Pairs[0].Mono);
+            Assert.Equal(0.25, loaded.StereoSceneOffsetMs);
+            loaded.Validate();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadFrom_ZoneOutsideTheEnum_IsRejectedRatherThanReadAsFront()
+    {
+        // The enum rides the wire as a name, so a typo cannot deserialize — but a
+        // NUMBER can, and would land silently outside the enum. Validate has to
+        // catch it: a block in no zone would be dropped from every grouped view
+        // without a word.
+        string root = CreateTemporaryDirectory();
+        string path = Path.Combine(root, "session.json");
+        try
+        {
+            new VirtualCrossoverProjectFile().SaveTo(path);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["pairs"]![0]!["zone"] = 99;
+            File.WriteAllText(path, file.ToJsonString());
+
+            Assert.Throws<InvalidDataException>(
+                () => VirtualCrossoverProjectFile.LoadFrom(path));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTemporaryDirectory()
     {
         string path = Path.Combine(

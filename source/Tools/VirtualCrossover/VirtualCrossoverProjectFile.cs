@@ -369,6 +369,14 @@ public sealed class VirtualCrossoverChannelPairSettings
     public bool Mono { get; set; }
 
     /// <summary>
+    /// Which part of the installation this block is — see
+    /// <see cref="VirtualCrossoverZone"/>. Shared by both sides: a driver pair
+    /// sits in one place in the car. Absent from files before schema v9, whose
+    /// migration guesses it from the block's mono flag and filter.
+    /// </summary>
+    public VirtualCrossoverZone Zone { get; set; } = VirtualCrossoverZone.Front;
+
+    /// <summary>
     /// View state: the block is folded to its header in the tool. Both sides share
     /// it — the fold belongs to the block on screen, not to a measurement — and it
     /// changes nothing the chain computes. Absent from older files, which therefore
@@ -409,6 +417,11 @@ public sealed class VirtualCrossoverChannelPairSettings
 
     public void Validate()
     {
+        if (!Enum.IsDefined(Zone))
+        {
+            throw new InvalidDataException("The channel zone is invalid.");
+        }
+
         Left.Validate();
         Right.Validate();
     }
@@ -514,8 +527,13 @@ public sealed class VirtualCrossoverProjectFile
     // step in Migrate below. Files from a NEWER version (a downgraded app)
     // are never migrated: LoadOrDefault backs them up and starts fresh,
     // LoadFrom rejects them with an explicit error.
-    public const int CurrentVersion = 8;
-    public const int MaximumChannelCount = 8;
+    public const int CurrentVersion = 9;
+
+    // Raised from 8 for complex installs: a front three-way plus a rear pair, a
+    // centre and two subwoofers already fills seven blocks, and splitting the
+    // rear or the centre into two ways used to hit the ceiling. The channel
+    // letters (A, B, C…) and the plot palette both go up to this count.
+    public const int MaximumChannelCount = 12;
     private const string FileName = "virtual-crossover.json";
 
     /// <summary>
@@ -1249,6 +1267,29 @@ public sealed class VirtualCrossoverProjectFile
             }
 
             file.Version = 8;
+        }
+        if (file.Version == 8)
+        {
+            // v9 gives every block a ZONE (front / rear / centre / sub), because a
+            // complex install is not one chain along the spectrum — see
+            // VirtualCrossoverZone. A v8 file records no such thing, so the zone is
+            // GUESSED from what it does record: the mono flag and the block's
+            // filter.
+            //
+            // This step adds a field and changes nothing else. Delays, polarity,
+            // gains, crossovers, PEQ banks, gates and view state all survive
+            // untouched, which is what makes a wrong guess cheap: the project opens
+            // exactly as it was tuned and the user re-points one combo box. That is
+            // also why a guess is preferred to leaving everything at the Front
+            // default — a shared subwoofer landing in the front stage would be
+            // wrong for every install, while this is right for most.
+            foreach (VirtualCrossoverChannelPairSettings pair in file.Pairs)
+            {
+                pair.Zone = VirtualCrossoverZones.GuessForLegacyPair(
+                    pair.Mono, pair.Left.CrossoverKind);
+            }
+
+            file.Version = 9;
         }
 
         // The scene offset's wire SIGN and the layout flag state one fact

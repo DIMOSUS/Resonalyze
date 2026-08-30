@@ -343,6 +343,19 @@ public static class TransferIrDiagnostics
     /// milliseconds in. A share-of-total measure moves with that delay by tens of
     /// dB (an ideal band-limited kernel at zero delay puts half its energy in
     /// wrapped negative time) and cannot be given a threshold at all.
+    /// <para>
+    /// One way a reference earns this reading is worth naming, because it is what
+    /// an interface's own monitor path does when the direct level is pulled down
+    /// and a delayed return is not: once the delayed component EXCEEDS the direct
+    /// one the reference stops being minimum-phase, and its inverse is anticausal.
+    /// The flip is sharp — measured on a reference of one direct plus one 20 ms
+    /// copy, the inverse holds 0 % of its energy in negative time while the direct
+    /// leads by 1.6 dB and 100 % once it trails by 0.9 dB. It is not the only way,
+    /// and the thresholds here are calibrated on field records rather than on that
+    /// model: a dense reverb mixed hot enough to reach the field pair's reading
+    /// also drives compactness to 12-15 dB, where the shape gate refuses it
+    /// already, while the field records cleared that gate at 26.0 and 24.1 dB.
+    /// </para>
     /// </remarks>
     public static double? MeasurePreArrivalDb(
         IReadOnlyList<Complex> impulseResponse,

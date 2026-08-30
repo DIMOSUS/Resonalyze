@@ -173,27 +173,9 @@ public partial class Form1
             return;
         }
 
-        try
-        {
-            if (await TryOpenLiveCaptureAsync(dialog.FileName))
-            {
-                return;
-            }
-        }
-        catch (Exception exception)
-        {
-            MessageBox.Show(
-                this,
-                $"The capture could not be loaded.\r\n\r\n{exception.Message}",
-                "Load failed",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-            return;
-        }
-
-        // Not a capture, so it belongs to the impulse-response side: that path moves
-        // the application to Frequency Response, the mirror of a capture bringing it
+        // Whichever it is: a capture stays here, an impulse response moves the
+        // application to Frequency Response — the mirror of a capture bringing it
         // here.
-        await LoadImpulseResponseLikeAsync(dialog.FileName);
+        await OpenMeasurementFileAsync(dialog.FileName);
     }
 }

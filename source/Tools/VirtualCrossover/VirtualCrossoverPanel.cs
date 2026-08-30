@@ -155,6 +155,11 @@ public partial class VirtualCrossoverPanel : UserControl
     private VirtualCrossoverAcousticPlot acousticPlot = null!;
     private VirtualCrossoverDspChainPlot dspChainPlot = null!;
     private bool initialized;
+
+    // The stored project's load, so anything that would replace it can wait for it
+    // to finish instead of racing it (see ImportSessionFileAsync). Completed until
+    // the panel is first shown, and never faulted: the load handles its own errors.
+    private Task storedProjectLoad = Task.CompletedTask;
     private bool suppressProjectEvents;
 
     // Single-flight coalescing for the interactive redraw. While a redraw's heavy
@@ -413,14 +418,15 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         initialized = true;
-        LoadProjectSafely();
+        storedProjectLoad = LoadProjectSafelyAsync();
     }
 
     // ---------------------------------------------------------------- project
 
-    // Fire-and-forget with a guard: an exception in the async load would
-    // otherwise vanish into an unobserved task.
-    private async void LoadProjectSafely()
+    // Guarded rather than fire-and-forget: an exception in the async load would
+    // otherwise vanish into an unobserved task, and the task is kept so an import
+    // arriving on the panel's heels can wait for it.
+    private async Task LoadProjectSafelyAsync()
     {
         try
         {
@@ -6800,10 +6806,28 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        await ImportSessionFileAsync(dialog.FileName);
+    }
+
+    /// <summary>
+    /// Imports the session at <paramref name="path"/>, exactly as the panel's own
+    /// Load does. Reports its own failures.
+    /// </summary>
+    /// <remarks>
+    /// The entry point for a session file dropped on the window, which arrives here
+    /// through a tab switch that has only just told the panel to open. That switch
+    /// starts the stored project loading, and a load still in flight would land on
+    /// top of the import and quietly restore the session the user was replacing —
+    /// so this waits for it rather than racing it.
+    /// </remarks>
+    internal async Task ImportSessionFileAsync(string path)
+    {
+        await storedProjectLoad;
+
         VirtualCrossoverProjectFile imported;
         try
         {
-            imported = VirtualCrossoverProjectFile.LoadFrom(dialog.FileName);
+            imported = VirtualCrossoverProjectFile.LoadFrom(path);
         }
         catch (Exception exception)
         {

@@ -696,7 +696,15 @@ public partial class EqWizardPanel
     {
         if (draggedSlot == null)
         {
-            e.Effect = DragDropEffects.None;
+            // Not a strip being moved. It may still be a file dragged in from
+            // Explorer, which the whole window accepts and which is registered on
+            // these same controls: refusing it here would make the bank the one
+            // place a measurement cannot be dropped.
+            if (!FileDropTarget.CarriesFiles(e.Data))
+            {
+                e.Effect = DragDropEffects.None;
+            }
+
             return;
         }
 

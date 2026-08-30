@@ -535,6 +535,16 @@ public sealed class LiveCaptureDocument
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         document = null!;
+        // The marker is read out of the head of the file first, and a file that does
+        // not carry ours is declined without being deserialized: the shared Load path
+        // asks this of EVERY file it opens, and an impulse response is tens of
+        // megabytes that would otherwise be parsed in full — into a capture document
+        // that is thrown away — on its way to the loader it belongs to.
+        if (JsonFormatMarker.Read(path) != CurrentFormat)
+        {
+            return false;
+        }
+
         LiveCaptureDocument? parsed;
         try
         {

@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Numerics;
 using OxyPlot;
 using Resonalyze.Dsp;
@@ -505,5 +505,105 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.Equal("Sub", delta.Channel);
         // One physical driver serving both sides: no right-side arrival or delta.
         Assert.Null(delta.RightMs);
+    }
+
+    [Fact]
+    public void BuildCurves_SumsOnlyTheSubsetItIsGiven_ButStillDrawsEveryChannel()
+    {
+        // The grouped views draw a centre beside the front stage without adding it
+        // to anything, so the drawn set and the summed set differ. Both must come
+        // out right at once: a curve missing from the plot is a channel the user
+        // cannot see, and a channel silently inside the sum is a number they
+        // cannot explain.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var summedSets = new List<int>();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator,
+            (_, _, _, _, _) => EmptyMagnitude,
+            null,
+            (channels, _) =>
+            {
+                summedSets.Add(channels.Count);
+                return EmptyMagnitude;
+            });
+        List<ProcessedChannel> processed =
+        [
+            Processed("A", Impulse(10), 10, 48_000),
+            Processed("B", Impulse(12), 12, 48_000),
+            Processed("C", Impulse(14), 14, 48_000)
+        ];
+
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, _) = metrics.BuildCurves(
+            processed, 12, [processed[0], processed[1]]);
+
+        Assert.Equal(3, magnitudes?.Count);
+        Assert.NotNull(sum);
+        Assert.Equal(2, Assert.Single(summedSets));
+    }
+
+    [Fact]
+    public void BuildCurves_WithFewerThanTwoSummingChannels_StillDrawsThem()
+    {
+        // A front stage of one driver beside an unsummed centre: there is no sum
+        // and no loss to state, but both curves are still what the plot is for.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator,
+            (_, _, _, _, _) => EmptyMagnitude,
+            null,
+            (_, _) => EmptyMagnitude);
+        List<ProcessedChannel> processed =
+        [
+            Processed("A", Impulse(10), 10, 48_000),
+            Processed("B", Impulse(12), 12, 48_000)
+        ];
+
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, List<SignalPoint>? loss) =
+            metrics.BuildCurves(processed, 12, [processed[0]]);
+
+        Assert.Equal(2, magnitudes?.Count);
+        Assert.Null(sum);
+        Assert.Null(loss);
+    }
+
+    [Fact]
+    public async Task ComputeSideSumAsync_HonoursTheZoneFilterItIsGiven()
+    {
+        // The opposite side's sum has to be the same part of the installation as
+        // the side on screen, or the dashed comparison curve reads as an L/R
+        // difference that is really a difference of scope.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator,
+            (_, _, _, _, _) => EmptyMagnitude,
+            null,
+            (_, _) => EmptyMagnitude);
+        VirtualCrossoverChannel front = ResolvedChannel("A", 48_000);
+        front.Pair.Zone = VirtualCrossoverZone.Front;
+        VirtualCrossoverChannel rear = ResolvedChannel("B", 48_000);
+        rear.Pair.Zone = VirtualCrossoverZone.Rear;
+        VirtualCrossoverChannel sub = ResolvedChannel("C", 48_000);
+        sub.Pair.Zone = VirtualCrossoverZone.Sub;
+
+        VirtualCrossoverSideSum? frontAndSub = await metrics.ComputeSideSumAsync(
+            [front, rear, sub],
+            rightSide: false,
+            coordinator.Invalidate(),
+            minimumChannels: 2,
+            includePair: pair => pair.Zone != VirtualCrossoverZone.Rear);
+
+        Assert.NotNull(frontAndSub);
+        Assert.Equal(2, frontAndSub.ChannelCount);
+
+        // And the filter can starve the sum below its minimum, which is a null
+        // rather than a sum of one.
+        VirtualCrossoverSideSum? rearOnly = await metrics.ComputeSideSumAsync(
+            [front, rear, sub],
+            rightSide: false,
+            coordinator.Invalidate(),
+            minimumChannels: 2,
+            includePair: pair => pair.Zone == VirtualCrossoverZone.Rear);
+
+        Assert.Null(rearOnly);
     }
 }

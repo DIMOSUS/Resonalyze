@@ -48,6 +48,8 @@ public partial class VirtualCrossoverPanel
             panel1,
             labelSmoothing,
             comboBoxSmoothing,
+            labelGroupView,
+            comboBoxGroupView,
             buttonPhaseGate,
             buttonDspProcessor,
             buttonAutoSetup,

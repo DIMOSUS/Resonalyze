@@ -583,7 +583,10 @@ That reading only means something over a wide excitation. A band-limited record
 cannot hold an event sharper than its own bandwidth allows, so on a narrow band
 even a single arrival smears until it looks like a ring. Below five octaves the
 refusal is therefore withheld and the report speaks instead — the reading is
-still made and still shown, but a band sweep is never refused for it.
+still made and still shown, but a band sweep is never refused for it, and the
+report there names no cause at all: it says the energy is unusual and that this
+band cannot tell a reference fault from a late reflection. Re-measuring the same
+channel full-range is what separates them.
 
 The check stays silent on a sweep whose duration was too short to open a guard
 band around its requested band (under a third of an octave). The estimator's own

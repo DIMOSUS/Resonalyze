@@ -2144,12 +2144,17 @@ namespace Resonalyze
             }
 
             // Everything over the suspect line that the refusal did not take: the
-            // band under the ceiling, and the readings ABOVE it whose window held
-            // one discrete event rather than a ring, which are reported instead of
-            // refused.
+            // band under the ceiling, the readings ABOVE it whose window held one
+            // discrete event rather than a ring, and the ones on a band too narrow
+            // to tell those apart. The notice needs to know which — naming a cause
+            // the band cannot support is how a tuner ends up checking a reference
+            // that was fine.
             return MeasurePreArrival(transfer) is { } preArrival &&
                 preArrival.LevelDb > TransferIrDiagnostics.SuspectPreArrivalDb
-                ? new SweepResultCaution(preArrival.LevelDb, preArrival.CrestDb)
+                ? new SweepResultCaution(
+                    preArrival.LevelDb,
+                    preArrival.CrestDb,
+                    TransferIrDiagnostics.CanRefuseOnPreArrival(ExcitationGate()))
                 : null;
         }
 

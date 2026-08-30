@@ -149,6 +149,56 @@ public sealed class SweepRunQualityCheckTests
         Assert.DoesNotContain("retry", text);
     }
 
+    // A ring on a band wide enough to recognise one: the reference is the thing to
+    // check, and the notice says so.
+    [Fact]
+    public void ResultCautionBlamesTheReferenceOnlyWhenTheBandCanShowIt()
+    {
+        string text = new SweepResultCaution(
+            PreArrivalDb: -19.0,
+            CrestDb: 12.8,
+            CanDiagnoseCause: true).Describe();
+
+        Assert.Contains("-19.0 dB", text);
+        Assert.Contains("divided BY", text);
+        Assert.Contains("loopback carries the excitation itself", text);
+    }
+
+    // The same reading on a band too narrow to tell a ring from one arrival. The
+    // measurement is kept and reported, but nothing is blamed: at this width a
+    // single arrival smears until it reads like a ring, and sending the tuner to
+    // check a reference that is fine is the failure the distortion diagnosis
+    // exists to avoid.
+    [Fact]
+    public void ResultCautionNamesNoCauseWhenTheBandCannotSeparateThem()
+    {
+        string text = new SweepResultCaution(
+            PreArrivalDb: -19.0,
+            CrestDb: 12.8,
+            CanDiagnoseCause: false).Describe();
+
+        Assert.Contains("-19.0 dB", text);
+        Assert.Contains("cannot be told from this measurement", text);
+        Assert.Contains("Nothing is being blamed", text);
+        Assert.DoesNotContain("loopback carries the excitation itself", text);
+        Assert.DoesNotContain("divided BY", text);
+    }
+
+    // A discrete event on a band that can show it: the reference is exonerated
+    // instead, and the reader is sent to the microphone.
+    [Fact]
+    public void ResultCautionNamesTheArrivalWhenTheWindowHoldsOneEvent()
+    {
+        string text = new SweepResultCaution(
+            PreArrivalDb: -17.0,
+            CrestDb: 21.0,
+            CanDiagnoseCause: true).Describe();
+
+        Assert.Contains("one discrete event", text);
+        Assert.Contains("The reference is probably fine", text);
+        Assert.DoesNotContain("loopback carries the excitation itself", text);
+    }
+
     private static float[] Tone(int length, float amplitude)
     {
         var samples = new float[length];

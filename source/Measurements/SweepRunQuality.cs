@@ -151,16 +151,43 @@ internal sealed record SweepRunRejection(
 /// fault and gets a different sentence.
 /// </para>
 /// </remarks>
-internal sealed record SweepResultCaution(double PreArrivalDb, double CrestDb)
+/// <param name="CanDiagnoseCause">
+/// Whether the excitation was wide enough for <paramref name="CrestDb"/> to say
+/// WHICH of the two shapes the energy is (see
+/// <see cref="TransferIrDiagnostics.MinimumRefusableSpanOctaves"/>). False on a
+/// narrow band, where a single arrival smears until it reads like a ring — and
+/// where naming a cause would send a tuner to fix a reference that is fine.
+/// </param>
+internal sealed record SweepResultCaution(
+    double PreArrivalDb,
+    double CrestDb,
+    bool CanDiagnoseCause)
 {
     /// <summary>User-facing summary for the end-of-measurement notice.</summary>
     public string Describe() =>
         FormattableString.Invariant(
             $"The measurement was saved, but it carries energy well before its arrival: the stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms AHEAD of the peak reads {PreArrivalDb:0.0} dB against the arrival itself, where a clean field record reads -39 dB or less.\r\n\r\n") +
-        // The two shapes that reading comes in need different sentences: sending a
-        // user to check wiring that is correct is the failure the distortion
-        // diagnosis was written to end, and it would be repeated here.
-        (CrestDb >= TransferIrDiagnostics.PreArrivalCrestDb
+        // Three readings, three sentences. Naming a cause the measurement cannot
+        // support is the failure the distortion diagnosis was written to end — a
+        // field session spent checking wiring that was correct all along — and the
+        // narrow-band case would repeat it exactly.
+        DescribeCause();
+
+    private string DescribeCause()
+    {
+        if (!CanDiagnoseCause)
+        {
+            return "What that energy IS cannot be told from this measurement: the " +
+                "sweep is too narrow a band for a single arrival to look any " +
+                "sharper than a ring, so a reference that is cancelling itself " +
+                "and a driver whose direct sound is outweighed by a later " +
+                "reflection read alike here. Nothing is being blamed. A " +
+                "full-range sweep of the same channel would separate the two, " +
+                "and comparing this curve against one that measures cleanly is " +
+                "worth doing before you tune on it.";
+        }
+
+        return CrestDb >= TransferIrDiagnostics.PreArrivalCrestDb
             ? "That energy is one discrete event rather than a ring, which is what " +
                 "a record whose strongest sample is NOT its direct sound looks " +
                 "like: an obstructed or badly aimed driver, where a later " +
@@ -174,7 +201,8 @@ internal sealed record SweepResultCaution(double PreArrivalDb, double CrestDb)
                 "direct-mixer or monitor path with effects, sends or faders in it. " +
                 "The result is still usable away from the affected frequencies, " +
                 "but compare it against a channel that measures cleanly before you " +
-                "tune on this one.");
+                "tune on this one.";
+    }
 }
 
 /// <summary>

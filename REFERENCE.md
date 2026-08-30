@@ -1701,6 +1701,13 @@ Each channel runs through:
   high-passes, which no subwoofer does — that one becomes Center. Nothing else
   about such a project changes, so a wrong guess costs one combo box.
 - **Invert** — the DSP polarity switch
+- **▲▼** — move the block one place up or down the list. A block is lettered by
+  its POSITION, so the ones that move are re-lettered and take the plot colour of
+  their new row; nothing keys off the letter, and the project file does not even
+  store it. Everything the block owns — its sources, its settings, the
+  measurements hanging off them — travels with it.
+  [Auto crossover](#auto-crossover) can sort a whole system into crossover order
+  in one go
 - **Crossover** — Off, low-pass, high-pass, or band-pass; each edge picks
   **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/36/48 dB/oct),
   **Bessel** (6–48 dB/oct, near-constant group delay), or **Chebyshev**
@@ -2317,6 +2324,15 @@ first is then slid as a whole onto the front stage's own reference level,
 cut-only, keeping everything its own fit decided about the balance between its
 members. That is a measured starting point for the balance, not an answer to it
 — where a rear fill finally sits is the ear's decision.
+
+**Reorder the channel blocks to match** (on by default) puts the panel's blocks
+into the same order as the dialog when Apply writes the proposal, so the list
+reads down the spectrum the way the chain does. The blocks the wizard did not
+see — a muted one, one with no source — keep the slots they had. Blocks are
+lettered by position, so the ones that move are re-lettered and take the plot
+colour of their new row; nothing else travels with the letter, and a tuning
+sheet exported earlier names them by the old ones. The **▲▼** buttons on a block
+do the same thing one step at a time, wizard or no wizard.
 
 #### The search and the gains
 

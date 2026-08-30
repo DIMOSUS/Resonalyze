@@ -127,6 +127,15 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     /// <summary>The proposal computed on Apply, in the same order as the Init channels.</summary>
     public IReadOnlyList<CrossoverProposal>? Result { get; private set; }
 
+    /// <summary>
+    /// The Init indices of the channels in the order the wizard crossed them —
+    /// the groups in the order they are staged, and inside each the chain the
+    /// optimizer walked. Null when the user cleared <c>Reorder the channel
+    /// blocks</c>, which is the whole of the request: what reordering the blocks
+    /// MEANS is the panel's to decide.
+    /// </summary>
+    public IReadOnlyList<int>? ChainOrder { get; private set; }
+
     private bool optionsPositioned;
 
     /// <summary>
@@ -431,7 +440,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                  {
                      labelFilters, checkButterworth, checkLinkwitzRiley, checkBessel,
                      labelRange, minCrossover, labelDash, maxCrossover, labelHz,
-                     independentSlopes, labelSubElevation, subElevation,
+                     independentSlopes, reorderBlocks, labelSubElevation, subElevation,
                      labelSubElevationUnit, labelPreview
                  })
         {
@@ -488,6 +497,15 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             "shallow on the other; different drivers may still take different\r\n" +
             "slopes — the textbook crossover.");
         toolTip.SetToolTip(
+            reorderBlocks,
+            "Put the channel blocks in the panel into the same order as this\r\n" +
+            "dialog: the groups one after another, and inside each the chain\r\n" +
+            "from the lowest driver up. The blocks are lettered by position, so\r\n" +
+            "the ones that move are re-lettered and take a new plot colour — and\r\n" +
+            "a tuning sheet exported before this names them by the OLD letters.\r\n" +
+            "Nothing else moves with them: sources, settings and measurements\r\n" +
+            "belong to the block.");
+        toolTip.SetToolTip(
             subElevation,
             "How far the lowest driver (the sub, or the woofer/midbass when no\r\n" +
             "sub is present) sits above the levelled midrange/tweeter. Starts at\r\n" +
@@ -496,6 +514,13 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             "levelled to each other and the remaining drivers are only cut, never\r\n" +
             "boosted, onto the resulting target.");
     }
+
+    // The order the wizard settled on, as Init indices, or null when the user
+    // does not want the blocks touched.
+    private IReadOnlyList<int>? RequestedChainOrder() =>
+        reorderBlocks.Checked
+            ? rows.Select(row => row.InitIndex).ToList()
+            : null;
 
     private DriverType TypeOf(ChannelRow row) =>
         row.TypeComboBox.SelectedItem is DriverType type ? type : DriverType.Woofer;
@@ -905,6 +930,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         yield return minCrossover;
         yield return maxCrossover;
         yield return independentSlopes;
+        yield return reorderBlocks;
         yield return subElevation;
     }
 
@@ -941,6 +967,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         if (plan.All(group => group.ImpulseResponses == null))
         {
             Result = InInitOrder(quick, rows.Count);
+            ChainOrder = RequestedChainOrder();
             DialogResult = DialogResult.OK;
             return;
         }
@@ -949,6 +976,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         // measured IRs) runs off the UI thread; a couple of seconds on a
         // 4-way. The live preview keeps showing the fast magnitude-only
         // proposal until the ranking lands.
+        IReadOnlyList<int>? order = RequestedChainOrder();
         CrossoverAutoSetupOptions primaryOptions = OptionsFor(true);
         CrossoverAutoSetupOptions otherOptions = OptionsFor(false);
         CrossoverAutoSetupOptions Options(bool primary) =>
@@ -968,6 +996,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             }
 
             Result = InInitOrder(ranked, count);
+            ChainOrder = order;
             DialogResult = DialogResult.OK;
         }
         catch (ArgumentException)

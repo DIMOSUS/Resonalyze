@@ -95,6 +95,26 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// </summary>
     public event EventHandler? CollapsedChanged;
 
+    /// <summary>
+    /// Raised when the user asks to move this block one place up or down the
+    /// list. The host owns the order — it is the one that knows the block's
+    /// neighbours, re-letters everything and rewrites the project.
+    /// </summary>
+    public event EventHandler? MoveUpClicked;
+
+    /// <inheritdoc cref="MoveUpClicked"/>
+    public event EventHandler? MoveDownClicked;
+
+    /// <summary>
+    /// Greys the move buttons the block has nowhere to go with — the topmost
+    /// block cannot rise and the bottom one cannot fall.
+    /// </summary>
+    public void SetMoveAvailability(bool canMoveUp, bool canMoveDown)
+    {
+        buttonMoveUp.Enabled = canMoveUp;
+        buttonMoveDown.Enabled = canMoveDown;
+    }
+
     [DefaultValue("A")]
     public string ChannelName
     {
@@ -455,6 +475,18 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "and polarity stay visible, the filter chain is hidden.\r\n" +
             "Nothing is bypassed: a folded channel plays and counts\r\n" +
             "exactly as before.");
+        foreach (Control arrow in new Control[] { buttonMoveUp, buttonMoveDown })
+        {
+            toolTip.SetToolTip(
+                arrow,
+                "Move this block one place up or down the list.\r\n" +
+                "The blocks are lettered by their position, so the ones\r\n" +
+                "that move are re-lettered — and so are their colours.\r\n" +
+                "Nothing else about them changes: sources, settings and\r\n" +
+                "measurements travel with the block.\r\n" +
+                "Auto crossover can sort a whole system into crossover\r\n" +
+                "order in one go.");
+        }
         toolTip.SetToolTip(
             buttonMute,
             "Mute the channel: exclude it from the sum, the loss,\r\n" +
@@ -694,6 +726,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
             RaiseSettingsChanged();
         };
         buttonCollapse.Click += (_, _) => Collapsed = !Collapsed;
+        buttonMoveUp.Click += (_, _) => MoveUpClicked?.Invoke(this, EventArgs.Empty);
+        buttonMoveDown.Click += (_, _) => MoveDownClicked?.Invoke(this, EventArgs.Empty);
         buttonPeqMenu.Click += (_, _) => PeqMenuClicked?.Invoke(this, EventArgs.Empty);
 
         numericGain.ValueChanged += (_, _) =>

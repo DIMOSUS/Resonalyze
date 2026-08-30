@@ -23,8 +23,11 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
     }
 
     // The alignment engine's log identity; the channel letter (A, B, C…) is a
-    // plain string, safe to read off the UI thread.
-    public string Name { get; }
+    // plain string, safe to read off the UI thread. It is the block's POSITION in
+    // the list, not an identity the channel carries — moving a block re-letters
+    // it, and nothing keys off the letter (the project file does not even store
+    // it). The host owns the setter for that reason.
+    public string Name { get; set; }
 
     public VirtualCrossoverChannelPairSettings Pair { get; set; } = new();
     public bool ActiveRight { get; set; }

@@ -852,7 +852,17 @@ Then select:
 - the filter families supported by your real DSP;
 - the overall crossover search range;
 - whether HPF and LPF may use different slopes;
+- whether the channel blocks in the panel should be put into the same order;
 - the desired bass level relative to the mid/high range.
+
+That reordering is on by default, and it is worth leaving on: a panel whose blocks
+read down the spectrum is far easier to work in than one in the order you happened
+to load the files. Blocks are lettered by position, so the ones that move are
+re-lettered and take a new plot colour — everything else about them, sources and
+settings and measurements alike, travels with the block. If you have already
+printed a tuning sheet, note that it names the channels by the OLD letters. The
+**▲▼** buttons on each block do the same thing one step at a time, whenever you
+want it and without the wizard.
 
 The optimizer then searches many combinations of crossover frequencies, slopes, and
 filter families using the **actual measured acoustic responses**, while also

@@ -147,7 +147,7 @@ public partial class EqWizardPanel : UserControl
         buttonAutoTune.Click += (_, _) => AutoTune();
         buttonReturnToDsp.Click += (_, _) => ReturnPeqToVirtualDsp();
         buttonBackToDsp.Click += (_, _) => BackToVirtualDsp();
-        buttonOverlaySettings.Click += (_, _) => OpenTargetSettings();
+        buttonOverlaySettings.Click += (_, _) => ShowTargetMenu();
         buttonImport.Click += (_, _) => ImportPeq();
         buttonExport.Click += (_, _) => ExportPeq();
         buttonResetBands.Click += (_, _) => ResetBands();
@@ -346,8 +346,9 @@ public partial class EqWizardPanel : UserControl
             "clicking the Virtual DSP tab instead keeps this session open for " +
             "coming back.)");
         SetTip(buttonOverlaySettings,
-            "Edit the target curve this mode corrects toward (isolated to the EQ " +
-            "Wizard; not tied to any overlay).");
+            "The target curve this mode corrects toward (isolated to the EQ " +
+            "Wizard; not tied to any overlay): a parametric shape to edit, or a " +
+            "house curve of your own imported from a text file.");
         SetTip(labelCalibration, comboBoxCalibration,
             "Microphone calibration applied to the source curve. \"Own\" re-uses the " +
             "correction stored with an imported curve; unavailable when the curve " +

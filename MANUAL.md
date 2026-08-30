@@ -947,12 +947,16 @@ which one is the odd one out.
 ### Set the target once, in Virtual DSP
 
 The EQ target is shared between Virtual DSP and the EQ Wizard. It is one curve, edited
-from either place through the same **Target...** dialog, so setting it here means every
+from either place through the same **Target...** menu, so setting it here means every
 channel you tune afterwards aims at the same thing.
 
-Tick **Target** under the main graph, open **Target...**, and select one of the Car
-presets. The Car presets mainly differ in bass lift, so this is where the overall tonal
-balance of the system begins to take shape.
+Tick **Target** under the main graph, open **Target... → Parametric shape…**, and
+select one of the Car presets. The Car presets mainly differ in bass lift, so this is
+where the overall tonal balance of the system begins to take shape.
+
+If you already tune to a house curve of your own, **Target... → Import from file…**
+takes it instead — a text file of `frequency level` pairs, read as relative dB and hung
+at the level you set below. Everything after this point works the same way.
 
 ![The shared target editor, with its preview at the bottom](assets/images/manual/eq-target.png)
 

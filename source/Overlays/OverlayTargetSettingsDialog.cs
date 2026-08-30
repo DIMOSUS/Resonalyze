@@ -16,6 +16,14 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     // captured/operation dialogs.
     private readonly bool includePsychoacousticSmoothing;
     private readonly bool initialized;
+    // The shape the dialog opened on when it is a file, and the preset that came
+    // with it. An imported curve is offered as an extra entry in the preset list —
+    // that entry is what keeps it selected while the tolerance, colour or line
+    // style are edited, and picking a real preset is how the user drops it. The
+    // preset itself rides through untouched meanwhile: it names the parametric
+    // shape, which is still there behind the imported one.
+    private readonly ImportedTargetCurve? importedCurve;
+    private readonly TargetPreset incomingPreset;
     private Color selectedColor;
     private bool suppressEvents;
 
@@ -40,6 +48,8 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         this.isolatedTarget = isolatedTarget;
         includePsychoacousticSmoothing = OverlayMath.SupportsAmplitudeSpace(mode);
         selectedColor = color;
+        importedCurve = spec.Imported;
+        incomingPreset = preset;
 
         InitializeComponent();
         // The accent fill is a palette value, not a literal the designer keeps a
@@ -52,7 +62,9 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         suppressEvents = true;
         nameTextBox.Text = name;
         SelectSource(sourceSlot);
-        presetComboBox.SelectedItem = OverlayTargets.ResolvePreset(preset, spec);
+        presetComboBox.SelectedItem = importedCurve != null
+            ? presetComboBox.Items[0]
+            : OverlayTargets.ResolvePreset(preset, spec);
         ApplySpec(spec);
         toleranceInput.Value = ClampToRange(toleranceInput, toleranceDb);
         deviationModeComboBox.SelectedItem = deviationMode;
@@ -67,6 +79,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         UpdateColorButton();
         UpdateOpacityLabel();
         UpdatePresetTooltip();
+        UpdateShapeInputs();
         UpdatePreview();
         initialized = true;
 
@@ -98,7 +111,13 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
     public string OverlayName => nameTextBox.Text.Trim();
     public int SourceSlot => ((TargetSourceOption)sourceComboBox.SelectedItem!).Slot;
-    public TargetPreset Preset => (TargetPreset)presetComboBox.SelectedItem!;
+    // While the imported entry is selected there is no preset to read off the list,
+    // and the one the dialog opened with is the honest answer: it still names the
+    // parametric shape the inputs hold, which is what the user goes back to by
+    // picking a preset here.
+    public TargetPreset Preset => presetComboBox.SelectedItem is TargetPreset preset
+        ? preset
+        : incomingPreset;
     public double ToleranceDb => (double)toleranceInput.Value;
     public TargetDeviationMode DeviationMode =>
         (TargetDeviationMode)deviationModeComboBox.SelectedItem!;
@@ -119,7 +138,13 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         (double)trebleWidthInput.Value,
         (double)presenceGainInput.Value,
         (double)presenceFrequencyInput.Value,
-        (double)presenceWidthInput.Value);
+        (double)presenceWidthInput.Value)
+    {
+        Imported = SelectedImportedCurve
+    };
+
+    private ImportedTargetCurve? SelectedImportedCurve =>
+        presetComboBox.SelectedItem is ImportedShapeOption option ? option.Curve : null;
 
     private void PopulateControls(IReadOnlyList<OverlaySlotOption> availableSources)
     {
@@ -141,6 +166,14 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
             }
         }
 
+        // The imported shape leads the list when there is one, and stays in it for
+        // the dialog's lifetime: a user who tries a preset against their house
+        // curve has to be able to get back to it without importing the file again.
+        if (importedCurve != null)
+        {
+            presetComboBox.Items.Add(new ImportedShapeOption(importedCurve));
+        }
+
         foreach (TargetPreset value in Enum.GetValues<TargetPreset>())
         {
             presetComboBox.Items.Add(value);
@@ -150,6 +183,10 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
             if (args.ListItem is TargetPreset value)
             {
                 args.Value = GetPresetLabel(value);
+            }
+            else if (args.ListItem is ImportedShapeOption option)
+            {
+                args.Value = option.Label;
             }
         };
 
@@ -193,13 +230,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         presetComboBox.SelectedIndexChanged += PresetChanged;
 
         // Editing the curve shape switches the preset to Custom and redraws.
-        foreach (DarkNumericUpDown shape in new[]
-        {
-            tiltInput,
-            bassGainInput, bassFrequencyInput, bassWidthInput,
-            trebleGainInput, trebleFrequencyInput, trebleWidthInput,
-            presenceGainInput, presenceFrequencyInput, presenceWidthInput
-        })
+        foreach (DarkNumericUpDown shape in ShapeInputs)
         {
             shape.ValueChanged += ParameterChanged;
         }
@@ -276,7 +307,36 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         {
             toolTip.SetToolTip(presetComboBox, GetPresetDescription(preset));
         }
+        else if (presetComboBox.SelectedItem is ImportedShapeOption option)
+        {
+            toolTip.SetToolTip(
+                presetComboBox,
+                $"{option.Curve.Describe()}\r\nRelative dB, anchored at " +
+                $"{ImportedTargetCurve.AnchorHz:0} Hz and held flat outside its " +
+                "range. Pick a preset to go back to a parametric shape.");
+        }
     }
+
+    // The ten parametric inputs describe nothing while an imported shape is
+    // selected, so they are disabled rather than left there to be edited into a
+    // curve the plot does not draw. They keep their values: they are what the user
+    // returns to by choosing a preset.
+    private void UpdateShapeInputs()
+    {
+        bool parametric = SelectedImportedCurve == null;
+        foreach (DarkNumericUpDown input in ShapeInputs)
+        {
+            input.Enabled = parametric;
+        }
+    }
+
+    private DarkNumericUpDown[] ShapeInputs =>
+    [
+        tiltInput,
+        bassGainInput, bassFrequencyInput, bassWidthInput,
+        trebleGainInput, trebleFrequencyInput, trebleWidthInput,
+        presenceGainInput, presenceFrequencyInput, presenceWidthInput
+    ];
 
     private void ApplySpec(TargetCurveSpec spec)
     {
@@ -295,6 +355,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     private void PresetChanged(object? sender, EventArgs e)
     {
         UpdatePresetTooltip();
+        UpdateShapeInputs();
         if (suppressEvents ||
             presetComboBox.SelectedItem is not TargetPreset preset ||
             preset == TargetPreset.Custom)
@@ -567,6 +628,17 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     private sealed record TargetSourceOption(int Slot, string Display)
     {
         public override string ToString() => Display;
+    }
+
+    // The imported shape as an entry in the preset list. It is not a preset — a
+    // preset is a set of numbers for the terms below it, and this replaces them —
+    // but it belongs in the same selector, because the list answers the one
+    // question "what shape is this target".
+    private sealed record ImportedShapeOption(ImportedTargetCurve Curve)
+    {
+        public string Label => MenuText.Trim($"Imported: {Curve.Name}");
+
+        public override string ToString() => Label;
     }
 }
 

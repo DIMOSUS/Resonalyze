@@ -1441,6 +1441,57 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void Save_CarriesAnImportedTargetShapeByValue()
+    {
+        // A house curve is stored the way the rest of the target is — as what it
+        // says, not as a path to the file it came from, which the session cannot
+        // promise is still there (or still holds the same numbers) tomorrow.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            ImportedTargetCurve imported = ImportedTargetCurve.FromPoints(
+                "house.txt",
+                [
+                    new OverlayPoint(30, 9),
+                    new OverlayPoint(100, 6),
+                    new OverlayPoint(1_000, 0),
+                    new OverlayPoint(10_000, -3)
+                ])!;
+            var curve = new EqTargetCurve(
+                TargetPreset.Car,
+                TargetCurveSpec.FromPreset(TargetPreset.Car) with { Imported = imported },
+                ToleranceDb: 3,
+                TargetDeviationMode.Deviation,
+                System.Drawing.Color.FromArgb(255, 55, 200, 160),
+                StrokeThickness: 2,
+                OverlayLineStyle.Dash,
+                SmoothingInverseOctaves: 0);
+            var saved = new VirtualCrossoverProjectFile
+            {
+                Target = VirtualCrossoverTargetSettings.FromCurve(curve)
+            };
+            saved.Save(root);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.NotNull(loaded.Target);
+            EqTargetCurve restored = loaded.Target!.ToCurve();
+            Assert.Equal(imported, restored.Spec.Imported);
+            Assert.Equal(curve, restored);
+            // The parametric terms travel beside it: they are what picking a
+            // preset in the target dialog goes back to.
+            Assert.Equal(
+                TargetCurveSpec.FromPreset(TargetPreset.Car).BassShelfGainDb,
+                restored.Spec.BassShelfGainDb);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadOrDefault_ProjectWithoutATarget_CarriesNone()
     {
         // Absence is a real state, and it means "no target of its own" rather

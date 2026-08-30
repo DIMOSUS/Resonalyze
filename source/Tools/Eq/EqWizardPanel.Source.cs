@@ -43,6 +43,7 @@ public partial class EqWizardPanel
     private bool sourceCurveDirty = true;
     private int sourceLoadGeneration;
     private ContextMenuStrip? sourceMenu;
+    private ContextMenuStrip? targetMenu;
 
     private TargetPreset targetPreset = TargetPreset.Flat;
     private TargetCurveSpec targetSpec = TargetCurveSpec.FromPreset(TargetPreset.Flat);
@@ -1124,9 +1125,46 @@ public partial class EqWizardPanel
         targetSmoothingInverseOctaves = value.SmoothingInverseOctaves;
     }
 
+    // Opened from the target button. A target is either a parametric shape or a
+    // curve imported from a file, and this is where that choice is made; the menu
+    // is rebuilt on every click because both the tick and the imported file's name
+    // change with the target itself.
+    private void ShowTargetMenu()
+    {
+        if (targetMenu is { Visible: true })
+        {
+            targetMenu.Close();
+            return;
+        }
+
+        targetMenu?.Dispose();
+        targetMenu = TargetCurveMenu.Build(
+            targetSpec.Imported,
+            OpenTargetSettings,
+            ImportTargetCurve);
+        DropDownMenu.ShowUnder(buttonOverlaySettings, targetMenu);
+    }
+
+    private void ImportTargetCurve()
+    {
+        if (TargetCurveImport.Prompt(FindForm()) is not { } imported)
+        {
+            return;
+        }
+
+        // Through the same door a Virtual DSP edit comes in by, so the import is
+        // drawn, persisted and handed on exactly like any other target change.
+        ApplyTargetCurve(TargetCurve with
+        {
+            Spec = targetSpec with { Imported = imported }
+        });
+    }
+
     // Reuses the overlay target dialog in isolated mode (no source picker, no
     // overlay side effects); its live preview redraws the wizard plot. Cancel
-    // reverts the previewed changes.
+    // reverts the previewed changes. An imported curve rides through the dialog as
+    // an entry in its preset list, so editing the tolerance or the colour does not
+    // silently drop it — see OverlayTargetSettingsDialog.
     private void OpenTargetSettings()
     {
         EqTargetCurve before = TargetCurve;
@@ -1549,7 +1587,16 @@ public partial class EqWizardPanel
                     settings.TrebleShelfWidthOctaves,
                     settings.PresenceGainDb,
                     settings.PresenceFrequencyHz,
-                    settings.PresenceWidthOctaves),
+                    settings.PresenceWidthOctaves)
+                {
+                    // Rebuilt through the importer, which is what makes a stored
+                    // curve safe: the file can hold anything, and what cannot be
+                    // read as a shape comes back as no shape at all — the
+                    // parametric terms beside it.
+                    Imported = ImportedTargetCurve.FromStorage(
+                        settings.TargetImportedName,
+                        settings.TargetImportedCurve)
+                },
                 settings.ToleranceDb,
                 settings.DeviationMode,
                 Color.FromArgb(settings.TargetColorArgb),
@@ -1602,6 +1649,8 @@ public partial class EqWizardPanel
         PresenceGainDb = targetSpec.PresenceGainDb,
         PresenceFrequencyHz = targetSpec.PresenceFrequencyHz,
         PresenceWidthOctaves = targetSpec.PresenceWidthOctaves,
+        TargetImportedName = targetSpec.Imported?.Name,
+        TargetImportedCurve = targetSpec.Imported?.ToStorage(),
         ToleranceDb = targetToleranceDb,
         DeviationMode = targetDeviationMode,
         TargetColorArgb = targetColor.ToArgb(),

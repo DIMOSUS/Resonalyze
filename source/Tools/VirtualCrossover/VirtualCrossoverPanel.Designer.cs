@@ -16,6 +16,10 @@ namespace Resonalyze
             if (disposing)
             {
                 components?.Dispose();
+                // Rebuilt on every open (see ShowTargetMenu), so the last one is not
+                // owned by the designer container and would otherwise leak its handle.
+                targetMenu?.Dispose();
+                targetMenu = null;
             }
 
             base.Dispose(disposing);

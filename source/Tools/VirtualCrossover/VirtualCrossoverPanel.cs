@@ -172,6 +172,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // The shared EQ target, null until the host wires it (and in the designer).
     private EqTargetCurve? targetCurve;
+    private ContextMenuStrip? targetMenu;
 
     // The colour the Target toggle wears while it is live: its curve's own, the
     // way the Sum and Sum loss toggles wear theirs. Seeded from the designer and
@@ -220,7 +221,7 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonCaptureOverlay.Click += async (_, _) => await CaptureSumToOverlayAsync();
         buttonExport.Click += async (_, _) => await ExportTuningSheetAsync();
         buttonPhaseGate.Click += async (_, _) => await OpenPhaseGateDialogAsync();
-        buttonTargetSettings.Click += (_, _) => OpenTargetSettings();
+        buttonTargetSettings.Click += (_, _) => ShowTargetMenu();
         buttonSessionImport.Click += async (_, _) => await ImportSessionAsync();
         buttonSessionExport.Click += (_, _) => ExportSession();
         buttonAudition.Click += async (_, _) => await AuditionTrackAsync();
@@ -2722,11 +2723,12 @@ public partial class VirtualCrossoverPanel : UserControl
             "not with the target, so retuning the shape leaves it where it is.");
         toolTip.SetToolTip(
             buttonTargetSettings,
-            "Shape the target: preset, tilt, bass and treble shelves,\r\n" +
-            "presence, colour and line style, previewed live on this plot\r\n" +
-            "(which switches to the Magnitude view, the only one a dB shape\r\n" +
-            "means anything on). Saving writes the SAME target the EQ Wizard\r\n" +
-            "equalizes towards.");
+            "Shape the target: a parametric shape (preset, tilt, bass and\r\n" +
+            "treble shelves, presence, colour and line style) previewed live\r\n" +
+            "on this plot (which switches to the Magnitude view, the only one\r\n" +
+            "a dB shape means anything on), or a house curve of your own\r\n" +
+            "imported from a text file. Either way it is the SAME target the\r\n" +
+            "EQ Wizard equalizes towards.");
         toolTip.SetToolTip(
             comboBoxCalibration,
             "Microphone calibration applied to the magnitude curves —\r\n" +
@@ -3245,6 +3247,53 @@ public partial class VirtualCrossoverPanel : UserControl
                 target.Color.A, target.Color.R, target.Color.G, target.Color.B),
             target.StrokeThickness,
             OverlayLineStyles.ToOxy(target.LineStyle));
+    }
+
+    // The same two-entry menu the EQ Wizard's Target button drops, over the same
+    // shared target: the shape is either parametric or a curve imported from a
+    // file. Rebuilt per click, because what it ticks is the target itself.
+    private void ShowTargetMenu()
+    {
+        if (targetCurve is not { } current)
+        {
+            return;
+        }
+
+        if (targetMenu is { Visible: true })
+        {
+            targetMenu.Close();
+            return;
+        }
+
+        targetMenu?.Dispose();
+        targetMenu = TargetCurveMenu.Build(
+            current.Spec.Imported,
+            OpenTargetSettings,
+            ImportTargetCurve);
+        DropDownMenu.ShowUnder(buttonTargetSettings, targetMenu);
+    }
+
+    private void ImportTargetCurve()
+    {
+        if (targetCurve is not { } before ||
+            TargetCurveImport.Prompt(FindForm()) is not { } imported)
+        {
+            return;
+        }
+
+        // An imported shape is a target edit like any other made here: it shows on
+        // this plot, so the plot is put where a dB shape means something, and it
+        // reaches the session and the wizard by the same two calls a saved dialog
+        // uses.
+        radioViewMagnitude.Checked = true;
+        checkBoxShowTarget.Checked = true;
+        var edited = before with
+        {
+            Spec = before.Spec with { Imported = imported }
+        };
+        ApplyTargetLocally(edited);
+        StoreTargetInProject(edited);
+        TargetCurveChanged?.Invoke(edited);
     }
 
     // The same isolated target dialog the EQ Wizard opens (no source picker, no

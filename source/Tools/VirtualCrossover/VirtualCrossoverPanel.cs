@@ -4686,11 +4686,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 log);
             if (inner.Count > 0)
             {
-                foreach (VirtualCrossoverSideAlignmentChannel member in members)
-                {
-                    alignment[member] = inner[member];
-                }
-
+                ApplyInnerSettlement(members, inner, alignment);
                 settled = reprocessor.Reprocess(alignment);
                 byChannel = settled.ToDictionary(snapshot => snapshot.Channel);
             }
@@ -4777,11 +4773,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 log);
             if (inner.Count > 0)
             {
-                foreach (VirtualCrossoverSideAlignmentChannel member in centreMembers)
-                {
-                    alignment[member] = inner[member];
-                }
-
+                ApplyInnerSettlement(centreMembers, inner, alignment);
                 settled = reprocessor.Reprocess(alignment);
                 byChannel = settled.ToDictionary(snapshot => snapshot.Channel);
             }
@@ -4929,7 +4921,12 @@ public partial class VirtualCrossoverPanel : UserControl
     //
     // Returns the delay each member ended on relative to the group's own
     // earliest, which the caller adds its group offset to.
-    private static Dictionary<IAlignmentChannel, AlignmentOverride> SettleWithinGroup(
+    /// <returns>
+    /// The engine's own SPARSE map: the member it chose as the group's reference
+    /// has no entry. Compose it with <see cref="ApplyInnerSettlement"/> rather
+    /// than by indexing.
+    /// </returns>
+    internal static Dictionary<IAlignmentChannel, AlignmentOverride> SettleWithinGroup(
         IReadOnlyList<IAlignmentChannel> members,
         Func<IAlignmentChannel, VirtualCrossoverChannelSettings> settingsOf,
         IReadOnlyDictionary<IAlignmentChannel, AlignmentSnapshot> snapshots,
@@ -4969,6 +4966,29 @@ public partial class VirtualCrossoverPanel : UserControl
             inner,
             log);
         return inner;
+    }
+
+    /// <summary>
+    /// Copies a group's internally settled delays onto the run's override map.
+    /// </summary>
+    /// <remarks>
+    /// One line, and it earns a name because of what it must NOT be: an indexer
+    /// lookup. The engine's map is sparse by contract — its reference channel
+    /// gets no entry at all, since absence means "nothing proposed" — so the
+    /// obvious <c>inner[member]</c> throws the moment a later group is a two-way
+    /// and the walk inside it picks one of the two as its reference. That is the
+    /// same convention the normalization pass respects, one function away, and
+    /// writing it out three times is how the two came to disagree.
+    /// </remarks>
+    internal static void ApplyInnerSettlement(
+        IEnumerable<IAlignmentChannel> members,
+        IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> inner,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment)
+    {
+        foreach (IAlignmentChannel member in members)
+        {
+            alignment[member] = inner.GetValueOrDefault(member);
+        }
     }
 
     // What the REPORT is told about a placement. The diagnostic log gets the
@@ -5042,11 +5062,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 log);
             if (inner.Count > 0)
             {
-                foreach (VirtualCrossoverChannel member in members)
-                {
-                    alignment[member] = inner[member];
-                }
-
+                ApplyInnerSettlement(members, inner, alignment);
                 settled = reprocessor.Reprocess(alignment);
                 byChannel = settled.ToDictionary(snapshot => snapshot.Channel);
             }

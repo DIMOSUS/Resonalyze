@@ -306,6 +306,11 @@ public partial class Form1
         buttonCompare.Click += (_, _) => ShowCompareMenu();
         FormClosing += Form1_FormClosing;
         Shown += Form1_Shown;
+        // Files dragged in from Explorer, which the window accepts anywhere on it
+        // (see Form1.FileDrop). Last in construction, so the controls the shell has
+        // built are all there to be registered; the ones it builds later register
+        // themselves as they are added.
+        EnableFileDrop();
     }
 
     private void HandleMeasurementCompleted(bool success)

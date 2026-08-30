@@ -117,31 +117,50 @@ public partial class Form1
                 return;
             }
 
-            // A stored capture knows which mode it belongs to, so opening one here
-            // takes the application there rather than refusing it for not being an
-            // impulse response. A file that CLAIMS to be a capture and then fails to
-            // parse is reported as the broken capture it is, not handed on to the
-            // impulse-response loader to be misdiagnosed as a bad format.
-            try
+            await OpenMeasurementFileAsync(dialog.FileName);
+        }
+    }
+
+    /// <summary>
+    /// Opens a measurement file: a stored capture goes to the mode it was taken in,
+    /// anything else to the impulse-response side.
+    /// </summary>
+    /// <remarks>
+    /// A stored capture knows which mode it belongs to, so opening one takes the
+    /// application there rather than refusing it for not being an impulse response.
+    /// A file that CLAIMS to be a capture and then fails to parse is reported as the
+    /// broken capture it is, not handed on to the impulse-response loader to be
+    /// misdiagnosed as a bad format.
+    /// <para>
+    /// Shared by both Load buttons and by a file dropped on the window, so all three
+    /// open the same file in the same way.
+    /// </para>
+    /// </remarks>
+    private async Task OpenMeasurementFileAsync(string path)
+    {
+        // Idempotent, and needed by only one of the three callers: the buttons stop
+        // the analyzer before they open their dialog, a drop has stopped nothing.
+        await StopLiveCaptureAsync();
+
+        try
+        {
+            if (await TryOpenLiveCaptureAsync(path))
             {
-                if (await TryOpenLiveCaptureAsync(dialog.FileName))
-                {
-                    return;
-                }
-            }
-            catch (Exception exception)
-            {
-                MessageBox.Show(
-                    this,
-                    $"The capture could not be loaded.\r\n\r\n{exception.Message}",
-                    "Load failed",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
                 return;
             }
-
-            await LoadImpulseResponseLikeAsync(dialog.FileName);
         }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                $"The capture could not be loaded.\r\n\r\n{exception.Message}",
+                "Load failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        await LoadImpulseResponseLikeAsync(path);
     }
 
     /// <summary>
@@ -156,10 +175,12 @@ public partial class Form1
     /// </remarks>
     private async Task LoadImpulseResponseLikeAsync(string path)
     {
-        // An impulse response has nowhere to be shown in a live capture mode, so go
-        // where it belongs first — the mirror of a capture taking the application to
-        // Live Spectrum.
-        if (CurrentMode == Mode.LiveSpectrum)
+        // An impulse response has nowhere to be shown in the live analyzer, nor in a
+        // tool that reads sources of its own, so go where it belongs first — the
+        // mirror of a capture taking the application to Live Spectrum. The Load
+        // button is hidden in the tools; a file dropped on the window is not, so the
+        // question is asked of the mode rather than of Live Spectrum by name.
+        if (!GetActiveModeDescriptor().ShowsLoadedMeasurement)
         {
             await SelectModeAsync(ModeTab.Frequency);
         }

@@ -218,5 +218,17 @@ public partial class Form1
             is not MainContentKind.EqWizard
             and not MainContentKind.SignalGenerator
             and not MainContentKind.VirtualCrossover;
+
+        /// <summary>
+        /// Whether the mode draws the measurement that is loaded — true of every
+        /// analyzer, Time Alignment included, since they all read the same impulse
+        /// response. False of Live Spectrum, which shows what the microphone hears
+        /// right now, and of the Tools modes, which resolve sources of their own. It
+        /// is what decides whether an impulse response arriving from a file has
+        /// anywhere to be shown, or has to take the application to Frequency Response
+        /// first.
+        /// </summary>
+        public bool ShowsLoadedMeasurement =>
+            HasCaptureControls && Tab != ModeTab.LiveSpectrum;
     }
 }

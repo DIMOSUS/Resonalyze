@@ -30,6 +30,7 @@ read-out refuses rather than guesses, what a number was measured against.
 - [Time Alignment](#time-alignment)
 - [Saving and Loading Impulse Responses](#saving-and-loading-impulse-responses)
   - [Importing a sweep recorded elsewhere](#importing-a-sweep-recorded-elsewhere)
+  - [Dropping a file on the window](#dropping-a-file-on-the-window)
 - [Plot Overlays](#plot-overlays)
   - [Target curves](#target-curves)
   - [Import and export](#import-and-export)
@@ -619,7 +620,9 @@ the capture, not on the impulse response the rest of the application carries —
 and either Load button opens either kind of measurement, because which one a file
 holds is the file's business rather than the button's: a capture opened from any
 other mode takes the application to the mode it belongs to, and an impulse
-response opened from MMM takes it to Frequency Response.
+response opened from MMM takes it to Frequency Response. Dragging the file onto
+the window does the same without the dialog (see
+[Dropping a file on the window](#dropping-a-file-on-the-window)).
 
 An **SPL anchor is not required**. Without one the title says `MMM, relative (no
 SPL anchor)` and the levels sit on an arbitrary but internally consistent
@@ -950,6 +953,31 @@ measurement into the saved `.json` and the history, so everything comparing one
 arrival against another refuses it by name: [Time Alignment](#time-alignment)
 declines it as a source and as a Compare partner, and
 [Virtual DSP](#virtual-dsp) will not sum it with another measurement.
+
+### Dropping a file on the window
+
+A file dragged onto the Resonalyze window from Explorer opens exactly as it would
+through the button that owns it, and takes the application to the mode it belongs
+to. An impulse response — or a `.wav` sweep recording, or a REW impulse-response
+`.txt` export — lands in the analysis modes, on Frequency Response when the mode
+in front of you has nowhere to show it. A [moving-mic capture](#live-spectrum)
+goes to Live Spectrum, under its own recipe. A [Virtual DSP](#virtual-dsp) session
+opens the tool and imports it as **Load session...** does, the offer to relink
+missing measurements included.
+
+Which of them a file holds is read from the file, not from its name or its folder:
+each JSON document declares its format at the top, and that marker is all that is
+read — an impulse response is tens of megabytes, and nothing waits for one to be
+parsed to find out where it is going. A file Resonalyze does
+not write says so plainly instead of being mis-opened, and an overlay slot file is
+refused by name: overlays are loaded into a slot you choose, from the overlay
+panel beside the graph.
+
+The whole window takes the drop, wherever the pointer is over it. One file at a
+time — the shell holds one measurement, so a drag carrying several is refused
+while it hovers, the cursor showing that no drop will happen. The same refusal
+covers a drag arriving while a sweep is running, or while a dialog is up: a file
+opened underneath one would replace the very measurement it is asking about.
 
 ## Plot Overlays
 
@@ -2281,7 +2309,9 @@ The remaining buttons in the column beside the plots:
   the convention does to a band's width, and which processors are known to read Q
   that way.
   **Save session... / Load session...** export and import the complete session
-  JSON for sharing or archiving.
+  JSON for sharing or archiving; a session file dragged onto the window opens
+  here too, whichever mode was in front (see
+  [Dropping a file on the window](#dropping-a-file-on-the-window)).
 
 The tool's autosaved state persists in `tools/virtual-crossover.json` and
 survives restarts. Accuracy holds within the usual physics: one microphone

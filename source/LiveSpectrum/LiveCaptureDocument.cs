@@ -527,24 +527,39 @@ public sealed class LiveCaptureDocument
     /// The question "whose file is this?" is answered by the file, so a capture opened
     /// through the shared Load button can be routed to the mode it belongs to instead
     /// of being refused for not being an impulse response. Only the FORMAT decides
-    /// that: a file that says it is a capture and then fails validation throws, since
-    /// a corrupt capture is a real error and must not be silently offered to the next
+    /// that: false means the file declares another one (or none), and a file that says
+    /// it is a capture and then fails — to parse or to validate — throws, since a
+    /// corrupt capture is a real error and must not be silently offered to the next
     /// reader as something else.
     /// </remarks>
     public static bool TryLoad(string path, out LiveCaptureDocument document)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         document = null!;
+        // The marker is read out of the head of the file first, and a file that does
+        // not carry ours is declined without being deserialized: the shared Load path
+        // asks this of EVERY file it opens, and an impulse response is tens of
+        // megabytes that would otherwise be parsed in full — into a capture document
+        // that is thrown away — on its way to the loader it belongs to.
+        if (JsonFormatMarker.Read(path) != CurrentFormat)
+        {
+            return false;
+        }
+
         LiveCaptureDocument? parsed;
         try
         {
             using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             parsed = JsonSerializer.Deserialize<LiveCaptureDocument>(stream, SerializerOptions);
         }
-        catch (JsonException)
+        catch (JsonException exception)
         {
-            // Not JSON we can read at all, so certainly not ours to claim.
-            return false;
+            // The marker above already said this file is ours, so a document that
+            // then fails to parse is a DAMAGED capture, not somebody else's file.
+            // Returning false here would disown it to the impulse-response loader,
+            // which is the very misdiagnosis a failed validation is thrown for below.
+            throw new InvalidDataException(
+                $"The capture file could not be read: {exception.Message}", exception);
         }
 
         if (parsed == null ||

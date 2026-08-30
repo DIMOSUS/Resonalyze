@@ -2057,9 +2057,9 @@ namespace Resonalyze
         /// </summary>
         private double? MeasurePreArrival(Complex[] transfer)
         {
-            // Not a fail-closed gate: the compactness check has already refused
-            // content that cannot be measured at all, and a record this one cannot
-            // judge must not be refused twice for the same silence.
+            // Null is "no reading", not "bad record": nothing is refused on this
+            // measure, and content that cannot be measured at all was already
+            // turned away by the compactness check above.
             return TransferIrDiagnostics.CanJudgePreArrival(ExcitationGate())
                 ? TransferIrDiagnostics.MeasurePreArrivalDb(transfer, SampleRate)
                 : null;
@@ -2074,8 +2074,8 @@ namespace Resonalyze
             : ExcitationBandGate.FullBand;
 
         /// <summary>
-        /// What the published result has to say about itself short of a refusal, or
-        /// null when it has nothing.
+        /// What the published result has to say about itself, or null when it has
+        /// nothing. Never a refusal — see <see cref="SweepResultCaution"/>.
         /// </summary>
         private SweepResultCaution? DescribeResultCaution(SweepAverageResult result)
         {

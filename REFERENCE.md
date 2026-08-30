@@ -584,7 +584,7 @@ awkward microphone position does not.
 The check stays silent on a sweep whose duration was too short to open a guard
 band around its requested band (under a third of an octave). The estimator's own
 band-limiting kernel is symmetric, so it rings both ways too; with the guard the
-sweep generator aims for it stays far below the ceiling, and without one it
+sweep generator aims for it stays far below the report line, and without one it
 cannot be told from the fault.
 
 The fix is to take the loopback from the wire: the interface output the sweep is

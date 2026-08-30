@@ -787,7 +787,8 @@ public sealed class TransferIrDiagnosticsTests
     // measurement builds it (half-octave guard bands), through the PRODUCTION
     // estimator. The kernel it turns an ideal H(f)=1 into is symmetric, so it is
     // the one legitimate shape that can look acausal — and it must stay clear of
-    // the ceiling at every band, or a band sweep would be refused for being one.
+    // the report line at every band, or a band sweep would be reported for
+    // being one.
     [Theory]
     [InlineData(20.0, 25.0)]
     [InlineData(20.0, 50.0)]
@@ -820,9 +821,9 @@ public sealed class TransferIrDiagnosticsTests
     // magnitude alone, which rings both directions, and once as the minimum-phase
     // filter a cabin would be, which rings forward only. Compactness reads one
     // number for both — so its floor has to sit low enough to keep a genuinely
-    // resonant cabin, and a fault hiding above that floor cannot be refused on
-    // shape. This measure sees only the first, which is what lets it carry a
-    // threshold at all.
+    // resonant cabin, and a fault hiding above that floor goes unremarked. This
+    // measure sees only the first, which is what lets it carry a threshold at
+    // all.
     [Fact]
     public void MeasurePreArrivalDb_SeparatesADenominatorDipFromACabinResonance()
     {

@@ -325,8 +325,8 @@ public static class TransferIrDiagnostics
     /// the same depth does not, because it rings forward only. Compactness reads
     /// those two as the same record (measured: 24.68 against 24.65 dB). A cabin's
     /// own resonances are minimum-phase, so this measure ignores them and can carry
-    /// a threshold a reverberant cabin cannot trip — which is what lets it refuse
-    /// where the compactness floor has to stay low enough to keep such a cabin.
+    /// a threshold a reverberant cabin cannot trip — which is what lets it report a
+    /// fault the compactness floor has to stay low enough to let through.
     /// </para>
     /// </summary>
     /// <remarks>

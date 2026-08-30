@@ -4616,6 +4616,7 @@ public partial class VirtualCrossoverPanel : UserControl
         IReadOnlyList<VirtualCrossoverSideAlignmentChannel> later,
         AlignmentReprocessor reprocessor,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        Dictionary<IAlignmentChannel, AlignmentDecision> decisions,
         double sceneOffsetMs,
         double rearFillOffsetMs,
         bool rightHandDrive,
@@ -4647,7 +4648,13 @@ public partial class VirtualCrossoverPanel : UserControl
         // settled reads the responses as they now stand.
         Complex[] referenceSum = SumOf(chainReference);
         Complex[] farSum = SumOf(chainFar);
-        (double chainLow, double chainHigh) = BandOf(chainReference);
+        // Each side's OWN band. The two sides can carry different crossover
+        // corners - the tool has always allowed it, and the stereo bridge
+        // already intersects them rather than assuming they match - so timing a
+        // far-side group inside the reference side's band would measure it over
+        // frequencies it may not play.
+        (double referenceLow, double referenceHigh) = BandOf(chainReference);
+        (double farLow, double farHigh) = BandOf(chainFar);
         int sampleRate = chainReference[0].SampleRate;
 
         // The rear fill, one side at a time against the front stage of the SAME
@@ -4690,8 +4697,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
             string name = string.Join("+", members.Select(item => item.Name));
             (double sideLow, double sideHigh) = BandOf(members);
-            double lowHz = Math.Max(chainLow, sideLow);
-            double highHz = Math.Min(chainHigh, sideHigh);
+            double lowHz = Math.Max(far ? farLow : referenceLow, sideLow);
+            double highHz = Math.Min(far ? farHigh : referenceHigh, sideHigh);
             GroupPlacement? placement = VirtualCrossoverGroupPlacement.Place(
                 far ? farSum : referenceSum,
                 SumOf(members),
@@ -4707,6 +4714,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 {
                     alignment[member] = new AlignmentOverride(
                         member.Settings.DelayMs, member.Settings.InvertPolarity);
+                    decisions[member] = new AlignmentDecision(
+                        AlignmentDecisionKind.Locked,
+                        null,
+                        $"not placed: no reliable arrival in {lowHz:0}-{highHz:0} Hz " +
+                        "against this side's front stage, so the current delay stands");
                 }
 
                 continue;
@@ -4733,6 +4745,14 @@ public partial class VirtualCrossoverPanel : UserControl
                     flip.InvertPolarity;
                 alignment[member] = new AlignmentOverride(
                     innerMs + delayMs, innerInvert ^ invert);
+                decisions[member] = PlacementDecision(
+                    placement.Coefficient,
+                    corroborated: true,
+                    "placed as a rear group against this side's front stage in " +
+                    $"{lowHz:0}-{highHz:0} Hz, r {placement.Coefficient:0.00}" +
+                    (rearFillOffsetMs != 0
+                        ? $", held back {rearFillOffsetMs:0.##} ms"
+                        : string.Empty));
             }
         }
 
@@ -4768,9 +4788,13 @@ public partial class VirtualCrossoverPanel : UserControl
 
             string centreName =
                 string.Join("+", centreMembers.Select(item => item.Name));
+            // The centre is read against BOTH sides and the two readings are
+            // averaged and compared, so they have to be taken over the SAME band:
+            // the intersection of what both front stages play, narrowed to what
+            // the centre plays.
             (double centreLow, double centreHigh) = BandOf(centreMembers);
-            double lowHz = Math.Max(chainLow, centreLow);
-            double highHz = Math.Min(chainHigh, centreHigh);
+            double lowHz = Math.Max(Math.Max(referenceLow, farLow), centreLow);
+            double highHz = Math.Min(Math.Min(referenceHigh, farHigh), centreHigh);
             Complex[] centreIr = SumOf(centreMembers);
             GroupPlacement? againstReference = VirtualCrossoverGroupPlacement.Place(
                 referenceSum, centreIr, sampleRate, lowHz, highHz);
@@ -4787,6 +4811,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 {
                     alignment[member] = new AlignmentOverride(
                         member.Settings.DelayMs, member.Settings.InvertPolarity);
+                    decisions[member] = new AlignmentDecision(
+                        AlignmentDecisionKind.Locked,
+                        null,
+                        $"not placed: no reliable arrival in {lowHz:0}-{highHz:0} Hz " +
+                        "against both front stages, so the current delay stands");
                 }
 
                 return;
@@ -4816,6 +4845,15 @@ public partial class VirtualCrossoverPanel : UserControl
                     flip.InvertPolarity;
                 alignment[member] = new AlignmentOverride(
                     innerMs + delayMs, innerInvert ^ inverted);
+                decisions[member] = PlacementDecision(
+                    Math.Min(againstReference.Coefficient, againstFar.Coefficient),
+                    confident,
+                    "placed midway between the two front stages in " +
+                    $"{lowHz:0}-{highHz:0} Hz" +
+                    (confident
+                        ? " - the two sides corroborate each other"
+                        : " - the two sides DISAGREE by more than the scene offset, " +
+                            "so this placement is a best guess"));
             }
         }
     }
@@ -4933,6 +4971,29 @@ public partial class VirtualCrossoverPanel : UserControl
         return inner;
     }
 
+    // What the REPORT is told about a placement. The diagnostic log gets the
+    // whole story, but the dialog shows the report, and a placement the run does
+    // not trust has to arrive there marked - otherwise a doubtful centre reads as
+    // an ordinary proposal and gets applied on the strength of looking like one.
+    private static AlignmentDecision PlacementDecision(
+        double coefficient,
+        bool corroborated,
+        string detail)
+    {
+        AlignmentConfidence confidence =
+            !corroborated || coefficient < VirtualCrossoverGroupPlacement.MinimumTrustedCoefficient
+                ? AlignmentConfidence.Low
+                : coefficient >= StrongPlacementCoefficient
+                    ? AlignmentConfidence.High
+                    : AlignmentConfidence.Medium;
+        return new AlignmentDecision(AlignmentDecisionKind.Search, confidence, detail);
+    }
+
+    // Above this the groups share a feature clean enough to time against with
+    // confidence. Two groups playing one band from different places never
+    // correlate like a crossover, so the bar is well below a junction's.
+    private const double StrongPlacementCoefficient = 0.6;
+
     // Stages 2 and 3, on the responses the front-chain walk has already settled.
     // Each later group gets ONE delay for all its members: the placement is a
     // property of where the group sits in the car, and it is applied to the group
@@ -4942,6 +5003,7 @@ public partial class VirtualCrossoverPanel : UserControl
         IReadOnlyList<VirtualCrossoverChannel> later,
         AlignmentReprocessor reprocessor,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        Dictionary<IAlignmentChannel, AlignmentDecision> decisions,
         double rearFillOffsetMs,
         System.Text.StringBuilder log)
     {
@@ -5007,6 +5069,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 {
                     alignment[member] = new AlignmentOverride(
                         member.Settings.DelayMs, member.Settings.InvertPolarity);
+                    decisions[member] = new AlignmentDecision(
+                        AlignmentDecisionKind.Locked,
+                        null,
+                        $"not placed: no reliable arrival in {lowHz:0}-{highHz:0} Hz " +
+                        "against the front stage, so the current delay stands");
                 }
 
                 continue;
@@ -5041,6 +5108,12 @@ public partial class VirtualCrossoverPanel : UserControl
                     flip.InvertPolarity;
                 alignment[member] = new AlignmentOverride(
                     innerMs + delayMs, innerInvert ^ invert);
+                decisions[member] = PlacementDecision(
+                    placement.Coefficient,
+                    corroborated: true,
+                    $"placed as a {stage} group against the front stage in " +
+                    $"{lowHz:0}-{highHz:0} Hz, r {placement.Coefficient:0.00}" +
+                    (offsetMs != 0 ? $", held back {offsetMs:0.##} ms" : string.Empty));
             }
         }
     }
@@ -5050,16 +5123,27 @@ public partial class VirtualCrossoverPanel : UserControl
     // a processor can dial - a rear fill pushed back past the front asks the front
     // to go negative - so nothing is dialable until this pass, and after it every
     // relation is preserved with the whole set made dialable.
+    //
+    // It takes the SCOPE rather than working off the map's keys, because the map
+    // is sparse by design: the engine documents absence as "nothing proposed"
+    // and deliberately leaves its reference channel out (see
+    // AutoAlignmentEngine.NormalizeAndVerifyFeasibility). Shifting only the keys
+    // would leave that reference standing at zero while its own siblings moved
+    // around it - a rigid-body shift that is not rigid, and the one relation in
+    // the whole run that must not change. So every participant is read here, an
+    // absent one as zero, and every participant is written back.
     internal static void NormalizeStagedDelays(
+        IReadOnlyList<IAlignmentChannel> scope,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         System.Text.StringBuilder log)
     {
-        if (alignment.Count == 0)
+        if (scope.Count == 0)
         {
             return;
         }
 
-        double minimum = alignment.Values.Min(over => over.DelayMs);
+        double minimum = scope.Min(
+            channel => alignment.GetValueOrDefault(channel).DelayMs);
         if (minimum >= 0)
         {
             return;
@@ -5068,9 +5152,9 @@ public partial class VirtualCrossoverPanel : UserControl
         log.AppendLine(
             $"  normalization: every channel shifted +{-minimum:0.00} ms so the " +
             "earliest sits at zero.");
-        foreach (IAlignmentChannel channel in alignment.Keys.ToList())
+        foreach (IAlignmentChannel channel in scope)
         {
-            AlignmentOverride over = alignment[channel];
+            AlignmentOverride over = alignment.GetValueOrDefault(channel);
             alignment[channel] = over with { DelayMs = over.DelayMs - minimum };
         }
     }
@@ -5109,8 +5193,10 @@ public partial class VirtualCrossoverPanel : UserControl
             {
                 // Stages 2 and 3, then the shift that makes the lot dialable.
                 PlaceLaterStages(
-                    chain, later, reprocessor, alignment, request.RearFillOffsetMs, log);
-                NormalizeStagedDelays(alignment, log);
+                    chain, later, reprocessor, alignment, decisions,
+                    request.RearFillOffsetMs, log);
+                NormalizeStagedDelays(
+                    [.. participants.Cast<IAlignmentChannel>()], alignment, log);
             }
 
             // The "before" snapshots carry the CURRENT delays and polarities —
@@ -5727,11 +5813,13 @@ public partial class VirtualCrossoverPanel : UserControl
                     later,
                     reprocessor,
                     engineAlignment,
+                    decisions,
                     request.SceneOffsetMs,
                     request.RearFillOffsetMs,
                     request.RightHandDrive,
                     log);
-                NormalizeStagedDelays(engineAlignment, log);
+                NormalizeStagedDelays(
+                    [.. union.Cast<IAlignmentChannel>()], engineAlignment, log);
             }
 
             // The "before" snapshots carry the CURRENT delays and polarities —

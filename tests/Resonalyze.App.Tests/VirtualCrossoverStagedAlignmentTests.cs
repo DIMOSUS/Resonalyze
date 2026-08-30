@@ -144,7 +144,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
         };
         var log = new System.Text.StringBuilder();
 
-        VirtualCrossoverPanel.NormalizeStagedDelays(alignment, log);
+        VirtualCrossoverPanel.NormalizeStagedDelays([front, sub, rear], alignment, log);
 
         Assert.Equal(0.0, alignment[front].DelayMs, 6);
         Assert.Equal(2.5, alignment[sub].DelayMs, 6);
@@ -160,6 +160,67 @@ public sealed class VirtualCrossoverStagedAlignmentTests
     }
 
     [Fact]
+    public void NormalizeStagedDelays_MovesTheANCHOR_ThoughItHasNoEntryOfItsOwn()
+    {
+        // The map is SPARSE by design: the alignment engine documents absence as
+        // "nothing proposed" and deliberately leaves its reference channel out
+        // rather than manufacture a zero-delay proposal for it
+        // (AutoAlignmentEngine.NormalizeAndVerifyFeasibility says so in as many
+        // words). A shift driven off the map's KEYS therefore skipped exactly
+        // that channel: the anchor stayed at zero while its own siblings moved
+        // around it, so the "rigid-body" shift silently rewrote the one relation
+        // in the whole run that must not change — the front chain's internal
+        // alignment the engine had just settled.
+        //
+        // The earlier version of this test put the anchor in the dictionary by
+        // hand and so could never have caught it.
+        var anchor = Block("A", VirtualCrossoverZone.Front);
+        var sibling = Block("B", VirtualCrossoverZone.Front);
+        var rear = Block("C", VirtualCrossoverZone.Rear);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            // No entry for the anchor at all — it sits at an implied zero.
+            [sibling] = new AlignmentOverride(2.5, false),
+            [rear] = new AlignmentOverride(-3.0, false)
+        };
+
+        VirtualCrossoverPanel.NormalizeStagedDelays(
+            [anchor, sibling, rear], alignment, new System.Text.StringBuilder());
+
+        // Everything moved by the same +3, the anchor included, so the front
+        // chain's 2.5 ms gap is still 2.5 ms.
+        Assert.Equal(3.0, alignment[anchor].DelayMs, 6);
+        Assert.Equal(5.5, alignment[sibling].DelayMs, 6);
+        Assert.Equal(0.0, alignment[rear].DelayMs, 6);
+        Assert.Equal(
+            2.5,
+            alignment[sibling].DelayMs - alignment[anchor].DelayMs,
+            6);
+    }
+
+    [Fact]
+    public void NormalizeStagedDelays_ReadsAnAbsentAnchorAsTheEarliestChannel()
+    {
+        // And the minimum has to see it too. With every proposed delay positive
+        // but the implied-zero anchor below them all, there is nothing to shift:
+        // the set already starts at zero.
+        var anchor = Block("A", VirtualCrossoverZone.Front);
+        var rear = Block("B", VirtualCrossoverZone.Rear);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [rear] = new AlignmentOverride(12.0, false)
+        };
+
+        VirtualCrossoverPanel.NormalizeStagedDelays(
+            [anchor, rear], alignment, new System.Text.StringBuilder());
+
+        Assert.Equal(12.0, alignment[rear].DelayMs, 6);
+        // Untouched: materializing a zero for it would be harmless here, but the
+        // pass must not invent proposals it was not asked for.
+        Assert.False(alignment.ContainsKey(anchor));
+    }
+
+    [Fact]
     public void NormalizeStagedDelays_LeavesADialableSetAlone()
     {
         // No shift where none is needed: moving a set that already starts at a
@@ -172,7 +233,8 @@ public sealed class VirtualCrossoverStagedAlignmentTests
             [rear] = new AlignmentOverride(16.0, false)
         };
 
-        VirtualCrossoverPanel.NormalizeStagedDelays(alignment, new System.Text.StringBuilder());
+        VirtualCrossoverPanel.NormalizeStagedDelays(
+            [front, rear], alignment, new System.Text.StringBuilder());
 
         Assert.Equal(1.0, alignment[front].DelayMs, 6);
         Assert.Equal(16.0, alignment[rear].DelayMs, 6);

@@ -1,4 +1,4 @@
-# Professional Car Audio Tuning with Resonalyze
+﻿# Professional Car Audio Tuning with Resonalyze
 
 **A complete step-by-step guide**
 
@@ -649,8 +649,9 @@ The zone is what the **Show** selector under the plot sorts by, so on a front-on
 you can set every block to Front and Sub and forget it — that is the default view and
 what this chapter's four-way looks like throughout. On a larger install the zone is how
 you look at one part at a time: the front stage with its subwoofers, then the rear fill,
-then the centre. Auto delay does not read the zone yet, so on such a system treat its
-proposal as a starting point for the front stage only.
+then the centre. **Auto delay** reads the zone as well: it settles the front chain first
+and then places the rear fill and the centre against it, so on a larger install the zones
+are what make its proposal mean anything.
 
 So seven RAW measurements become four Virtual DSP channels:
 

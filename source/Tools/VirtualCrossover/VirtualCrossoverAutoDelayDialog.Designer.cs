@@ -1,4 +1,4 @@
-namespace Resonalyze
+﻿namespace Resonalyze
 {
     partial class VirtualCrossoverAutoDelayDialog
     {
@@ -34,6 +34,9 @@ namespace Resonalyze
             radioRightHandDrive = new ReleaseClickRadioButton();
             labelSceneOffset = new Label();
             numericSceneOffset = new DarkNumericUpDown();
+            labelRearFill = new Label();
+            numericRearFill = new DarkNumericUpDown();
+            labelRearFillHint = new Label();
             checkBoxGains = new ReleaseClickCheckBox();
             labelNearSideCut = new Label();
             numericNearSideCut = new DarkNumericUpDown();
@@ -43,6 +46,7 @@ namespace Resonalyze
             buttonApply = new ReleaseClickButton();
             buttonCancel = new ReleaseClickButton();
             (numericSceneOffset).BeginInit();
+            (numericRearFill).BeginInit();
             (numericNearSideCut).BeginInit();
             SuspendLayout();
             // 
@@ -133,13 +137,48 @@ namespace Resonalyze
             numericNearSideCut.ThousandsSeparator = false;
             numericNearSideCut.Value = new decimal(new int[] { 1, 0, 0, 0 });
             numericNearSideCut.ValueSuffix = "dB";
+            //
+            // labelRearFill
+            //
+            labelRearFill.AutoSize = true;
+            labelRearFill.ForeColor = Color.FromArgb(210, 214, 222);
+            labelRearFill.Location = new Point(12, 50);
+            labelRearFill.Name = "labelRearFill";
+            labelRearFill.Size = new Size(78, 15);
+            labelRearFill.Text = "Rear fill ms";
+            //
+            // numericRearFill
+            //
+            numericRearFill.BackColor = Color.FromArgb(55, 60, 72);
+            numericRearFill.DecimalPlaces = 1;
+            numericRearFill.ForeColor = Color.White;
+            numericRearFill.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
+            numericRearFill.Location = new Point(100, 46);
+            numericRearFill.Maximum = new decimal(new int[] { 30, 0, 0, 0 });
+            numericRearFill.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
+            numericRearFill.MinimumSize = new Size(36, 19);
+            numericRearFill.Name = "numericRearFill";
+            numericRearFill.Size = new Size(66, 19);
+            numericRearFill.TextAlign = HorizontalAlignment.Right;
+            numericRearFill.ThousandsSeparator = false;
+            numericRearFill.Value = new decimal(new int[] { 15, 0, 0, 0 });
+            //
+            // labelRearFillHint
+            //
+            labelRearFillHint.AutoSize = true;
+            labelRearFillHint.ForeColor = Color.FromArgb(170, 176, 190);
+            labelRearFillHint.Location = new Point(176, 50);
+            labelRearFillHint.Name = "labelRearFillHint";
+            labelRearFillHint.Size = new Size(470, 15);
+            labelRearFillHint.Text =
+                "how far behind the front the rear arrives - 10-20 ms holds the image; 0 co-arrives";
             // 
             // buttonRun
             // 
             buttonRun.BackColor = Color.FromArgb(46, 51, 67);
             buttonRun.FlatStyle = FlatStyle.Popup;
             buttonRun.ForeColor = Color.White;
-            buttonRun.Location = new Point(12, 44);
+            buttonRun.Location = new Point(12, 78);
             buttonRun.Name = "buttonRun";
             buttonRun.Size = new Size(120, 26);
             buttonRun.TabIndex = 8;
@@ -150,7 +189,7 @@ namespace Resonalyze
             // 
             labelStatus.AutoSize = true;
             labelStatus.ForeColor = Color.FromArgb(185, 190, 200);
-            labelStatus.Location = new Point(144, 50);
+            labelStatus.Location = new Point(144, 84);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(0, 15);
             labelStatus.TabIndex = 9;
@@ -162,7 +201,7 @@ namespace Resonalyze
             textBoxReport.BorderStyle = BorderStyle.FixedSingle;
             textBoxReport.Font = new Font("Consolas", 9F);
             textBoxReport.ForeColor = Color.FromArgb(210, 214, 222);
-            textBoxReport.Location = new Point(12, 80);
+            textBoxReport.Location = new Point(12, 114);
             textBoxReport.Multiline = true;
             textBoxReport.Name = "textBoxReport";
             textBoxReport.ReadOnly = true;
@@ -202,11 +241,14 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(40, 44, 54);
-            ClientSize = new Size(776, 681);
+            ClientSize = new Size(776, 715);
             Controls.Add(radioLeftHandDrive);
             Controls.Add(radioRightHandDrive);
             Controls.Add(labelSceneOffset);
             Controls.Add(numericSceneOffset);
+            Controls.Add(labelRearFill);
+            Controls.Add(numericRearFill);
+            Controls.Add(labelRearFillHint);
             Controls.Add(checkBoxGains);
             Controls.Add(labelNearSideCut);
             Controls.Add(numericNearSideCut);
@@ -224,6 +266,7 @@ namespace Resonalyze
             StartPosition = FormStartPosition.CenterParent;
             Text = "Auto delay";
             (numericSceneOffset).EndInit();
+            (numericRearFill).EndInit();
             (numericNearSideCut).EndInit();
             ResumeLayout(false);
             PerformLayout();
@@ -235,6 +278,9 @@ namespace Resonalyze
         private ReleaseClickRadioButton radioRightHandDrive;
         private Label labelSceneOffset;
         private DarkNumericUpDown numericSceneOffset;
+        private Label labelRearFill;
+        private DarkNumericUpDown numericRearFill;
+        private Label labelRearFillHint;
         private ReleaseClickCheckBox checkBoxGains;
         private Label labelNearSideCut;
         private DarkNumericUpDown numericNearSideCut;

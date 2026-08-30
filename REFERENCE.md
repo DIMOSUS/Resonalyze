@@ -1694,10 +1694,8 @@ Each channel runs through:
   The zone decides what the main plot is about — see
   [Show](#show-which-part-of-the-installation-the-plot-is-about), which sorts the
   blocks by it and takes the curves, the Sum, the loss and the read-out with it.
-  Auto delay does not read it yet: it still walks every channel as one chain
-  along the spectrum, ordered by band centre, so on an installation with a rear
-  fill or a centre its proposal is not to be trusted until the staged alignment
-  lands. Projects saved
+  [Auto delay](#auto-delay) reads it too: the front chain is settled first and
+  the other groups are placed against it. Projects saved
   before zones existed are given one on load, guessed from what those files do
   record: a stereo pair becomes Front, and a mono block becomes Sub unless it
   high-passes, which no subwoofer does — that one becomes Center. Nothing else
@@ -2299,6 +2297,41 @@ actually achievable after the best per-junction delay.
 
 ### Auto delay
 
+#### Staging: the front chain first, then the groups against it
+
+An installation with a rear fill or a centre is not one crossover chain, so
+**Auto delay** does not walk it as one. It settles the **front chain** — the
+front stage and the subwoofers under it — with the search described below,
+unchanged. Then it places each further group against that result: one reading
+per group, and no re-tuning of anything already settled. Walked as one chain
+those groups produce junctions that do not exist, which on a car with a rear
+fill means a front midrange "handing over" to it at the midrange's own low-pass
+corner.
+
+The later groups are placed rather than searched, because there is nothing
+between them and the front stage to search: no filter hands a band from one to
+the other. A **rear fill** is read against the front stage of its own side (its
+left and right are different drivers at different distances, so each gets its
+own delay) and then pushed back by the **Rear fill** offset in the dialog. A
+**centre** has no side at all, so it is read against BOTH front sums and placed
+at the midpoint; the two readings are each other's witness, since they should
+differ by the scene offset, and a disagreement is reported instead of averaged
+away. Relative polarity comes out of the same correlation as its sign — but it
+is only applied where no fill offset is in play, because past a few
+milliseconds the two groups no longer sum in any way the ear resolves.
+
+A group the run cannot measure keeps the delay it had, and says so in the trace.
+
+Every delay is relative until the last pass, which slides the whole set until
+the earliest channel sits at zero — a rear fill pushed back past the front stage
+asks the front to go negative, and nothing is dialable until that shift. Every
+relation the stages computed survives it.
+
+A project with no rear and no centre never enters any of this: it takes the
+single-stage path, which is the same engine call it always took.
+
+#### The search
+
 **Auto delay** aligns in two stages: band-limited first arrivals, refined by a
 GCC-PHAT cross-correlation whose dominant extremum of either polarity seeds the
 junction (an inverted junction — a subwoofer against its midbass is the classic
@@ -2380,6 +2413,22 @@ sides of a pair by one shared delta to recover what the pin cost. Each far-side
 channel may also leave its own scene position by up to 0.03 ms to buy back its
 junction's summation — below what the scene can resolve, and enough to close the
 skew the arithmetic bridge leaves behind.
+
+**Rear fill** sets how far behind the front stage the rear arrives, and is off
+unless the project has a block in the Rear zone. Ten to twenty milliseconds
+(the default is fifteen) is where the precedence effect keeps the image on the
+dash while the rear adds room; zero co-arrives them, which is what a second row
+of listeners wants and what collapses the image for the front seats. Note that
+rear speakers are often CLOSER to your ears than the front, so some delay is
+needed just to reach zero and this offset sits on top of that. The setting is
+stored with the tune, since a car tuned for its front seats and one tuned for
+its second row want different answers.
+
+The rear's LEVEL is not set here. It usually sits 6-12 dB under the front —
+raise it until you notice it as a separate source, then take 2-3 dB back — and
+the last word belongs to the ear; the read-out's
+[vs Front block](#show-which-part-of-the-installation-the-plot-is-about) gives
+the current figure to adjust against.
 
 A run only proposes: the dialog answers with a report and nothing is written
 until **Apply**. It carries a row per channel — a value the run changes reads

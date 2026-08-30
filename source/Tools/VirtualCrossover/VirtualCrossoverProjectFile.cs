@@ -746,6 +746,15 @@ public sealed class VirtualCrossoverProjectFile
         VirtualCrossoverGroupView.FrontAndSub;
 
     /// <summary>
+    /// How far behind the front stage Auto delay places the rear fill, in ms.
+    /// Part of the tune rather than a dialog default: a car tuned for its front
+    /// seats and one tuned for its second row want different answers, and the
+    /// next run should start from the one this car settled on.
+    /// </summary>
+    public double RearFillOffsetMs { get; set; } =
+        VirtualCrossoverAutoDelayDialog.DefaultRearFillOffsetMs;
+
+    /// <summary>
     /// Whether the magnitude view draws the hybrid — each channel from its spatial
     /// average — rather than the impulse responses alone.
     /// </summary>
@@ -1458,6 +1467,11 @@ public sealed class VirtualCrossoverProjectFile
         {
             throw new InvalidDataException(
                 "The virtual crossover group view is invalid.");
+        }
+        if (!double.IsFinite(RearFillOffsetMs) || RearFillOffsetMs is < 0 or > 30)
+        {
+            throw new InvalidDataException(
+                "The virtual crossover rear fill offset is invalid.");
         }
         if (CorrelationPairIndex is < 0 or >= MaximumChannelCount)
         {

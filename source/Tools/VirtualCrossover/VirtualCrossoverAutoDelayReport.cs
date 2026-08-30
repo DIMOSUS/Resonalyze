@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using Resonalyze.Dsp;
 
@@ -50,7 +50,12 @@ internal sealed record AutoDelayRunRequest(
     double SceneOffsetMs,
     bool RightHandDrive,
     bool AdjustGains,
-    double NearSideCutDb)
+    double NearSideCutDb,
+    // How far BEHIND the front stage the rear fill should arrive. Zero sums the
+    // two coherently, which is what a second row of listeners wants; the default
+    // is the precedence-effect offset that keeps the image on the dash for the
+    // front seats while the rear adds room. Ignored by a project with no rear.
+    double RearFillOffsetMs = 0)
 {
     /// <summary>
     /// The tilt in the gain engine's LEFT-minus-RIGHT convention: the near
@@ -108,6 +113,23 @@ internal static class VirtualCrossoverAutoDelayReport
                     ? FormattableString.Invariant(
                         $", near-side cut {Math.Abs(GainBalanceEngine.LevelDifferenceDb(request.LevelDifferenceDb)):0.0} dB")
                     : ""));
+        }
+        if (outcomes.Any(outcome =>
+            outcome.Runtime.Pair.Zone == VirtualCrossoverZone.Rear))
+        {
+            // The single most consequential number in a rear-fill tune: without
+            // it a saved proposal cannot say whether the rear was co-arrived or
+            // held back, which is the difference between a front image and a
+            // collapsed one.
+            //
+            // Printed whenever there IS a rear, zero included. Zero is a
+            // deliberate choice — the second row wants co-arrival — and hiding
+            // it left the report silent about exactly the case the line was
+            // added to disambiguate.
+            text.AppendLine(request.RearFillOffsetMs > 0
+                ? FormattableString.Invariant(
+                    $"Rear fill {request.RearFillOffsetMs:0.0} ms behind the front stage.")
+                : "Rear fill 0.0 ms: co-arriving with the front stage.");
         }
         if (!request.AdjustGains)
         {

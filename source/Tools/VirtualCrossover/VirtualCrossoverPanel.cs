@@ -1201,7 +1201,6 @@ public partial class VirtualCrossoverPanel : UserControl
         var control = new VirtualCrossoverChannelControl
         {
             BackColor = Color.FromArgb(46, 51, 62),
-            BorderStyle = BorderStyle.FixedSingle,
             Font = new Font("Segoe UI", 9F),
             ForeColor = Color.White,
             Margin = new Padding(0, 0, 0, 6),

@@ -186,8 +186,8 @@ public sealed class OverlayCollection
         toolTip.AutoPopDelay = 6_000;
         toolTip.ShowAlways = true;
 
-        Panel templatePanel = container.Controls
-            .OfType<Panel>()
+        RoundedPanel templatePanel = container.Controls
+            .OfType<RoundedPanel>()
             .FirstOrDefault()
             ?? throw new InvalidOperationException(
                 "Overlay template panel is missing.");
@@ -228,7 +228,7 @@ public sealed class OverlayCollection
         var random = new Random(3);
         for (int index = 2; index <= OverlayFile.MaximumSlotCount; index++)
         {
-            Panel panel = CreatePanel(templatePanel, index, random);
+            RoundedPanel panel = CreatePanel(templatePanel, index, random);
             CheckBox checkBox = CreateCheckBox(templateCheckBox, index);
             DarkNumericUpDown offset = CreateOffset(templateOffset, index);
             Button captureButton = CreateCaptureButton(templateCaptureButton, index);
@@ -570,17 +570,19 @@ public sealed class OverlayCollection
         };
     }
 
-    private static Panel CreatePanel(
-        Panel template,
+    private static RoundedPanel CreatePanel(
+        RoundedPanel template,
         int index,
         Random random)
     {
-        return new Panel
+        return new RoundedPanel
         {
             BackColor = Color.FromArgb(
                 random.Next(255),
                 random.Next(255),
                 random.Next(255)),
+            BorderColor = template.BorderColor,
+            CornerRadius = template.CornerRadius,
             Location = new Point(
                 template.Location.X,
                 template.Location.Y +

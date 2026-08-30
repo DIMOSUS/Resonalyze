@@ -352,11 +352,11 @@
             // 
             // labelPeqInfo
             // 
-            labelPeqInfo.AutoSize = true;
+            labelPeqInfo.AutoEllipsis = true;
             labelPeqInfo.ForeColor = Color.FromArgb(170, 176, 190);
             labelPeqInfo.Location = new Point(152, 183);
             labelPeqInfo.Name = "labelPeqInfo";
-            labelPeqInfo.Size = new Size(48, 15);
+            labelPeqInfo.Size = new Size(167, 15);
             labelPeqInfo.TabIndex = 21;
             labelPeqInfo.Text = "No PEQ";
             // 
@@ -485,7 +485,6 @@
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(46, 51, 62);
-            BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(labelTotalGain);
             Controls.Add(numericLowPassRipple);
             Controls.Add(numericHighPassRipple);

@@ -1,4 +1,4 @@
-namespace Resonalyze
+﻿namespace Resonalyze
 {
     partial class VirtualCrossoverPanel
     {
@@ -67,7 +67,7 @@ namespace Resonalyze
             buttonSessionImport = new ReleaseClickButton();
             buttonSessionExport = new ReleaseClickButton();
             buttonAudition = new ReleaseClickButton();
-            dspModePanel = new Panel();
+            dspModePanel = new RoundedPanel();
             labelDspMode = new Label();
             radioDspMagnitude = new ReleaseClickRadioButton();
             radioDspPhase = new ReleaseClickRadioButton();
@@ -75,8 +75,8 @@ namespace Resonalyze
             radioDspCorrelation = new ReleaseClickRadioButton();
             radioDspCoherence = new ReleaseClickRadioButton();
             comboBoxCorrelationPair = new DarkComboBox();
-            panel1 = new Panel();
-            panel2 = new Panel();
+            panel1 = new RoundedPanel();
+            panel2 = new RoundedPanel();
             (numericTargetLevel).BeginInit();
             sideSelectorPanel.SuspendLayout();
             dspModePanel.SuspendLayout();
@@ -503,11 +503,11 @@ namespace Resonalyze
             // 
             dspModePanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             dspModePanel.BackColor = Color.FromArgb(40, 44, 54);
-            dspModePanel.BorderStyle = BorderStyle.FixedSingle;
             dspModePanel.Controls.Add(labelDspMode);
             dspModePanel.Controls.Add(radioDspMagnitude);
             dspModePanel.Controls.Add(radioDspPhase);
             dspModePanel.Controls.Add(radioDspGroupDelay);
+            dspModePanel.CornerRadius = 4;
             dspModePanel.Location = new Point(490, 733);
             dspModePanel.Name = "dspModePanel";
             dspModePanel.Size = new Size(302, 23);
@@ -599,10 +599,10 @@ namespace Resonalyze
             // 
             // panel1
             // 
-            panel1.BorderStyle = BorderStyle.FixedSingle;
             panel1.Controls.Add(radioViewMagnitude);
             panel1.Controls.Add(radioViewImpulse);
             panel1.Controls.Add(radioViewPhase);
+            panel1.CornerRadius = 4;
             panel1.Location = new Point(399, 437);
             panel1.Name = "panel1";
             panel1.Size = new Size(233, 23);
@@ -611,10 +611,10 @@ namespace Resonalyze
             // panel2
             // 
             panel2.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            panel2.BorderStyle = BorderStyle.FixedSingle;
             panel2.Controls.Add(radioDspCorrelation);
             panel2.Controls.Add(radioDspCoherence);
             panel2.Controls.Add(comboBoxCorrelationPair);
+            panel2.CornerRadius = 4;
             panel2.Location = new Point(798, 733);
             panel2.Name = "panel2";
             panel2.Size = new Size(255, 23);
@@ -710,7 +710,7 @@ namespace Resonalyze
         private ReleaseClickButton buttonSessionImport;
         private ReleaseClickButton buttonSessionExport;
         private ReleaseClickButton buttonAudition;
-        private Panel dspModePanel;
+        private RoundedPanel dspModePanel;
         private Label labelDspMode;
         private ReleaseClickRadioButton radioDspMagnitude;
         private ReleaseClickRadioButton radioDspPhase;
@@ -718,7 +718,7 @@ namespace Resonalyze
         private ReleaseClickRadioButton radioDspCorrelation;
         private ReleaseClickRadioButton radioDspCoherence;
         private DarkComboBox comboBoxCorrelationPair;
-        private Panel panel1;
-        private Panel panel2;
+        private RoundedPanel panel1;
+        private RoundedPanel panel2;
     }
 }

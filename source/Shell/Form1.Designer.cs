@@ -33,8 +33,8 @@
             var resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
             buttonRecord = new ReleaseClickButton();
             plotView1 = new OxyPlot.WindowsForms.PlotView();
-            overlays = new Panel();
-            overlayPanel1 = new Panel();
+            overlays = new RoundedPanel();
+            overlayPanel1 = new RoundedPanel();
             buttonSaveOverlay = new ReleaseClickButton();
             labelOverlay1 = new Label();
             numericUpDown1 = new DarkNumericUpDown();
@@ -46,7 +46,7 @@
             buttonOverlayShowAll = new ReleaseClickButton();
             buttonOverlayHideAll = new ReleaseClickButton();
             buttonCurrentModeSettings = new ReleaseClickButton();
-            panel1 = new Panel();
+            panel1 = new RoundedPanel();
             buttonCompare = new ReleaseClickButton();
             inputLevelMeterPanel = new InputLevelMeterPanel();
             buttonHistory = new ReleaseClickButton();
@@ -96,7 +96,6 @@
             // overlays
             // 
             overlays.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            overlays.BorderStyle = BorderStyle.FixedSingle;
             overlays.Controls.Add(overlayPanel1);
             overlays.Location = new Point(1264, 479);
             overlays.Name = "overlays";
@@ -106,10 +105,12 @@
             // overlayPanel1
             // 
             overlayPanel1.BackColor = Color.OrangeRed;
+            overlayPanel1.BorderColor = Color.Transparent;
             overlayPanel1.Controls.Add(buttonSaveOverlay);
             overlayPanel1.Controls.Add(labelOverlay1);
             overlayPanel1.Controls.Add(numericUpDown1);
             overlayPanel1.Controls.Add(checkBox1);
+            overlayPanel1.CornerRadius = 3;
             overlayPanel1.Location = new Point(3, 3);
             overlayPanel1.Name = "overlayPanel1";
             overlayPanel1.Size = new Size(206, 25);
@@ -273,7 +274,6 @@
             // panel1
             // 
             panel1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            panel1.BorderStyle = BorderStyle.FixedSingle;
             panel1.Controls.Add(buttonCompare);
             panel1.Controls.Add(buttonRecord);
             panel1.Controls.Add(buttonRecordOpt);
@@ -483,11 +483,11 @@
 
         private ReleaseClickButton buttonRecord;
         private OxyPlot.WindowsForms.PlotView plotView1;
-        private Panel overlays;
+        private RoundedPanel overlays;
         private ReleaseClickButton buttonSaveOverlay;
         private Label labelOverlay1;
         private ReleaseClickCheckBox checkBox1;
-        private Panel overlayPanel1;
+        private RoundedPanel overlayPanel1;
         private ReleaseClickButton buttonRecordOpt;
         private ReleaseClickButton buttonSave;
         private ReleaseClickButton buttonLoad;
@@ -495,7 +495,7 @@
         private ReleaseClickButton buttonOverlayShowAll;
         private ReleaseClickButton buttonCurrentModeSettings;
         private ReleaseClickButton buttonOverlayHideAll;
-        private Panel panel1;
+        private RoundedPanel panel1;
         private InputLevelMeterPanel inputLevelMeterPanel;
         private DarkNumericUpDown numericUpDown1;
         private ReleaseClickButton buttonHistory;

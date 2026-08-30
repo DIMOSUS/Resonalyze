@@ -22,6 +22,16 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     public VirtualCrossoverChannelControl()
     {
+        // The block is one of the app's cards, and the flow list stacks a dozen of
+        // them: it paints its own rounded surface and outline in place of the
+        // framework's square border. ResizeRedraw because collapsing resizes it.
+        SetStyle(
+            ControlStyles.AllPaintingInWmPaint |
+            ControlStyles.OptimizedDoubleBuffer |
+            ControlStyles.ResizeRedraw |
+            ControlStyles.UserPaint,
+            true);
+
         InitializeComponent();
         // The designer pins the block to one size (MinimumSize == MaximumSize) so the
         // flow list cannot stretch it; collapsing moves that pin, so the expanded
@@ -283,6 +293,20 @@ public partial class VirtualCrossoverChannelControl : UserControl
     // current DPI (AutoScaleMode.Dpi) and a pixel literal would cut the wrong one.
     private int FoldLine => comboBoxCrossoverKind.Top;
 
+    // The gap the expanded block leaves under its lowest row. Measured rather than
+    // stated for the same reason as the fold line, and off ALL the children: the ones
+    // below the fold are hidden while folded, but they never move.
+    private int BottomMargin()
+    {
+        int content = 0;
+        foreach (Control child in Controls)
+        {
+            content = Math.Max(content, child.Bottom);
+        }
+
+        return Math.Max(0, expandedHeight - content);
+    }
+
     private void ApplyCollapsedState()
     {
         buttonCollapse.Text = collapsed ? "+" : "−";
@@ -302,9 +326,12 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
 
         ResumeLayout(false);
-        // The border sits outside the client area, hence the Height/ClientSize term.
+        // The block paints its own border INSIDE its client area, so a folded height
+        // measured to the last kept row draws that border ON the fold button. The
+        // expanded block leaves a margin under its lowest row; a folded one leaves
+        // the same, which is also what keeps the bottom corners round.
         int height = collapsed
-            ? keptBottom + (Height - ClientSize.Height)
+            ? keptBottom + BottomMargin()
             : expandedHeight;
         // The whole move runs inside one suspended parent layout: each size assignment
         // below asks the flow list to reflow, and a list laid out against a half-moved
@@ -350,6 +377,17 @@ public partial class VirtualCrossoverChannelControl : UserControl
         {
             expandedHeight = (int)Math.Round(expandedHeight * factor.Height);
         }
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        RoundedSurface.Paint(
+            this,
+            e.Graphics,
+            RoundedSurface.DefaultCornerRadius,
+            UiPalette.DialogBorder);
+
+        base.OnPaint(e);
     }
 
     /// <summary>

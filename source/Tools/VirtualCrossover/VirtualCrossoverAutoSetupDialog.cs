@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -100,8 +100,22 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         buttonApply.Click += ApplyClick;
         WireOptionControls();
         // The designer file owns Dispose; the manually created tooltip is not in
-        // its components container, so release it here.
-        Disposed += (_, _) => toolTip.Dispose();
+        // its components container, so release it here. Neither is a row control
+        // that never reached the table — the arrows of a group of one, which have
+        // no order to change and so are never parented by anything that would
+        // dispose them.
+        Disposed += (_, _) =>
+        {
+            toolTip.Dispose();
+            foreach (Control control in rows.SelectMany(
+                         row => new Control[] { row.NameLabel, row.BandLabel,
+                             row.TypeComboBox, row.Up, row.Down })
+                     .Concat(groupHeaders.Values)
+                     .Where(control => control.Parent == null))
+            {
+                control.Dispose();
+            }
+        };
         toolTip.SetToolTip(
             labelPreview,
             "The proposal that Apply writes into the channels: crossover\r\n" +
@@ -408,10 +422,18 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
 
         // The preview shows one line per channel plus a heading and a summary for
-        // every group; size it to the real font line height so it fits at any DPI,
-        // then grow the client area to clear the bottom-anchored buttons.
-        labelPreview.Height =
-            PreviewLineCount() * labelPreview.Font.Height + LogicalToDeviceUnits(6);
+        // every group, and a summary long enough wraps onto a second line — so it
+        // is measured as laid out rather than counted, with the structural count
+        // as the floor. Both are in the real font's line height, so it fits at any
+        // DPI; then the client area grows to clear the bottom-anchored buttons.
+        labelPreview.Height = Math.Max(
+                PreviewLineCount() * labelPreview.Font.Height,
+                TextRenderer.MeasureText(
+                    labelPreview.Text,
+                    labelPreview.Font,
+                    new Size(labelPreview.Width, int.MaxValue),
+                    TextFormatFlags.WordBreak).Height)
+            + LogicalToDeviceUnits(6);
         ClientSize = new Size(
             ClientSize.Width,
             labelPreview.Bottom + LogicalToDeviceUnits(12) + buttonApply.Height
@@ -503,17 +525,23 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         return plan;
     }
 
-    // Fits every group and levels the later ones onto the primary's flat top.
+    // Fits every group and levels the others onto the primary's flat top.
     // Pure — no control is touched — so Apply can run it off the UI thread.
     private static List<GroupFit> Fit(
         IReadOnlyList<GroupPlan> plan,
         Func<bool, CrossoverAutoSetupOptions> options,
         double sampleRateHz)
     {
-        var fits = new List<GroupFit>();
+        var fitted = new IReadOnlyList<CrossoverProposal>[plan.Count];
         double? reference = null;
-        foreach (GroupPlan group in plan)
+        // The primary group is fitted FIRST whatever position the plan lists it
+        // in: the others are levelled onto its reference, and nothing can be
+        // levelled onto a fit that has not happened yet. The sort is stable, so
+        // the rest keep their order, and the result stays in plan order.
+        foreach (int index in Enumerable.Range(0, plan.Count)
+                     .OrderByDescending(index => plan[index].IsPrimary))
         {
+            GroupPlan group = plan[index];
             CrossoverAutoSetupOptions groupOptions = options(group.IsPrimary);
             IReadOnlyList<CrossoverProposal> proposals = group.Sources.Count == 1
                 ? [CrossoverAutoSetup.ProposeSingle(group.Sources[0], groupOptions)]
@@ -533,10 +561,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                     group.Sources, proposals, sampleRateHz, level);
             }
 
-            fits.Add(new GroupFit(group, proposals));
+            fitted[index] = proposals;
         }
 
-        return fits;
+        return plan.Select((group, index) => new GroupFit(group, fitted[index])).ToList();
     }
 
     // The fitted proposals scattered back into the order the channels came in.
@@ -629,6 +657,16 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private IEnumerable<string> PreviewLines(IReadOnlyList<GroupFit> fits)
     {
         bool headers = fits.Count > 1;
+        // What the other groups were levelled onto. Usually the front chain, and
+        // then "the front stage" says it in fewer words than the group's own
+        // name; a project without one levels onto whichever group runs first, and
+        // that one has to be named.
+        VirtualCrossoverAlignmentStage primary =
+            fits.FirstOrDefault(fit => fit.Plan.IsPrimary)?.Plan.Group
+            ?? VirtualCrossoverAlignmentStage.FrontChain;
+        string anchor = primary == VirtualCrossoverAlignmentStage.FrontChain
+            ? "front stage"
+            : LowerFirst(VirtualCrossoverAlignmentStages.DisplayName(primary));
         foreach (GroupFit fit in fits)
         {
             if (headers)
@@ -643,23 +681,29 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                 yield return FormatProposal(row, fit.Proposals[i], headers);
             }
 
-            yield return FormatSummary(fit, headers);
+            yield return FormatSummary(fit, headers, anchor);
         }
     }
+
+    private static string LowerFirst(string text) =>
+        text.Length == 0 ? text : char.ToLowerInvariant(text[0]) + text[1..];
 
     // The span of the predicted summed response and the sub elevation applied —
     // with the target-curve gains the sum is an intentional downslope (bass
     // lifted), not a flat line, so this reports the span rather than a defect. A
     // group of one has no sum to speak of, so it says what it was levelled to
     // instead.
-    private string FormatSummary(GroupFit fit, bool indent)
+    private string FormatSummary(GroupFit fit, bool indent, string anchor)
     {
         string prefix = indent ? "   " : string.Empty;
+        string levelled = fit.Plan.IsPrimary
+            ? string.Empty
+            : $"  ·  levelled to the {anchor}";
         if (fit.Plan.Sources.Count == 1)
         {
             return prefix + (fit.Plan.IsPrimary
                 ? "One driver, so nothing to cross: a protective high-pass only."
-                : "Levelled to the front stage — set the balance by ear from there.");
+                : $"Protective high-pass, levelled to the {anchor} — balance by ear.");
         }
 
         IReadOnlyList<AutoSetupSource> sources = fit.Plan.Sources;
@@ -679,7 +723,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             ? $"  ·  bass +{(double)subElevation.Value:0.0} dB over mid/treble"
             : string.Empty;
         return $"{prefix}Predicted sum spans {span:0.0} dB over " +
-            $"{FormatHz(low.LowHz)}–{FormatHz(high.HighHz)}{elevation}";
+            $"{FormatHz(low.LowHz)}–{FormatHz(high.HighHz)}{elevation}{levelled}";
     }
 
     private static string FormatProposal(ChannelRow row, CrossoverProposal proposal, bool indent)

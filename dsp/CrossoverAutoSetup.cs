@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Numerics;
 
 namespace Resonalyze.Dsp;
@@ -990,9 +990,11 @@ public static class CrossoverAutoSetup
     }
 
     /// <summary>
-    /// The level (dB) the given chain's flat top was fitted to — the quietest
-    /// non-subwoofer driver over its own passband. It is the one number another
-    /// group can be levelled against; see <see cref="OffsetToReferenceLevel"/>.
+    /// The level (dB) the given chain's flat top was fitted to: the quietest
+    /// driver that is not a subwoofer, measured over its own passband (or simply
+    /// the quietest, in a chain that is nothing but subwoofers). It is the one
+    /// number another group can be levelled against; see
+    /// <see cref="OffsetToReferenceLevel"/>.
     /// </summary>
     public static double ReferenceLevelDb(
         IReadOnlyList<AutoSetupSource> channels,
@@ -1115,13 +1117,19 @@ public static class CrossoverAutoSetup
         var highPass = new CrossoverEdge(family, Math.Round(corner), slope);
 
         // The same brickwall the chain's topmost driver gets when the user pulls
-        // the window in below where it still plays.
-        CrossoverEdge? lowPass = options.MaxCrossoverHz < band.HighHz / Math.Pow(2.0, 1.0 / 12.0)
-            ? new CrossoverEdge(
-                family,
-                Math.Round(options.MaxCrossoverHz),
-                ProtectiveSlope(family, options.MaxCrossoverHz, options.ProcessorSampleRateHz))
-            : null;
+        // the window in below where it still plays — but only where it leaves the
+        // driver something to play: a low-pass at or under the protective
+        // high-pass is not a band-pass, it is silence, and nobody asks a window
+        // for silence.
+        CrossoverEdge? lowPass =
+            options.MaxCrossoverHz < band.HighHz / Math.Pow(2.0, 1.0 / 12.0) &&
+            options.MaxCrossoverHz > corner
+                ? new CrossoverEdge(
+                    family,
+                    Math.Round(options.MaxCrossoverHz),
+                    ProtectiveSlope(
+                        family, options.MaxCrossoverHz, options.ProcessorSampleRateHz))
+                : null;
 
         return new CrossoverProposal(
             lowPass is null ? CrossoverKind.HighPass : CrossoverKind.BandPass,

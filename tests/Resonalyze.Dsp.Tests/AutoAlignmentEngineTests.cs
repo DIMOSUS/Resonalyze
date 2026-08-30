@@ -901,6 +901,90 @@ public sealed class AutoAlignmentEngineTests
         }
     }
 
+    // The reach veto's stand-down policy, asserted as a policy. An acoustic
+    // fixture can only reach these cells by luck of the numbers a synthetic IR
+    // happens to produce; the predicate can be asked directly.
+    private static CorrelationDelayCandidate Seed(
+        double coefficient, double delayMs = 0.0, bool invert = false) =>
+        new(delayMs, coefficient, invert);
+
+    [Theory]
+    // Below the direct cut's own frequency the extremum's strength is the whole
+    // of it — and 0.15, the floor a SEED needs, is not enough to move a lobe.
+    [InlineData(110.0, -20.0, true, 0.21, false)]
+    [InlineData(110.0, -20.0, true, 0.49, false)]
+    [InlineData(110.0, -20.0, true, 0.50, true)]
+    [InlineData(110.0, -20.0, true, 0.95, true)]
+    // A trough carries the same weight as a peak; the seed uses position only.
+    [InlineData(110.0, -20.0, true, -0.95, true)]
+    // A pick in the upper half of the detector's search depth speaks for the
+    // band's energy and keeps its veto however strong the extremum is.
+    [InlineData(110.0, -12.4, true, 0.95, false)]
+    [InlineData(110.0, 0.0, true, 0.95, false)]
+    // The boundary itself belongs to the veto, as every other gate here reads it.
+    [InlineData(110.0, -12.5, true, 0.95, false)]
+    [InlineData(110.0, -12.51, true, 0.95, true)]
+    // An anchor that is no longer the raw reads — a predicted front replaced
+    // it, or a latch was convicted with no comparable replacement.
+    [InlineData(110.0, -20.0, false, 0.95, false)]
+    public void MayWithdrawSeedReachVeto_BelowTheDirectCutsFrequency(
+        double crossoverHz,
+        double anchorProminenceDb,
+        bool anchorIsRawReads,
+        double seedCoefficient,
+        bool expected)
+    {
+        bool asked = false;
+        bool withdraw = AutoAlignmentEngine.MayWithdrawSeedReachVeto(
+            anchorProminenceDb,
+            anchorIsRawReads,
+            Seed(seedCoefficient),
+            crossoverHz,
+            () =>
+            {
+                asked = true;
+                return null;
+            });
+
+        Assert.Equal(expected, withdraw);
+        // The cut costs an FFT pair; below its frequency it is never taken.
+        Assert.False(asked, "the direct cut was taken below its own frequency");
+    }
+
+    [Theory]
+    // At and above it the cut has the last word: same lobe, same polarity.
+    [InlineData(0.0, false, true)]
+    [InlineData(0.124, false, true)]   // a quarter period at 2 kHz is 0.125 ms
+    [InlineData(0.126, false, false)]
+    [InlineData(-0.124, false, true)]
+    [InlineData(0.0, true, false)]     // the same position, opposite polarity
+    public void MayWithdrawSeedReachVeto_AtTheDirectCutsFrequency(
+        double corroborationDelayMs, bool corroborationInverted, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            AutoAlignmentEngine.MayWithdrawSeedReachVeto(
+                anchorProminenceDb: -20.0,
+                anchorIsRawReads: true,
+                Seed(0.95),
+                crossoverHz: 2_000.0,
+                () => Seed(0.9, corroborationDelayMs, corroborationInverted)));
+    }
+
+    [Fact]
+    public void MayWithdrawSeedReachVeto_WithNoUsableDirectCut_KeepsTheVeto()
+    {
+        // The cut ran and failed its own trust gates (edge-pinned, too weak, or
+        // tied against its own rival): there is nothing to pass the veto to.
+        Assert.False(
+            AutoAlignmentEngine.MayWithdrawSeedReachVeto(
+                anchorProminenceDb: -20.0,
+                anchorIsRawReads: true,
+                Seed(0.95),
+                crossoverHz: 2_000.0,
+                () => null));
+    }
+
     [Fact]
     public void Compute_DeepArrivalPickWithAContradictingDirectCut_KeepsTheReachVeto()
     {

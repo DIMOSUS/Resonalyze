@@ -350,15 +350,63 @@ public static class AutoAlignmentEngine
     /// (<see cref="DirectSeedMinCoefficient"/>) rather than the floor a seed
     /// needs (<see cref="PhatSeedMinCoefficient"/>, which a coincidence
     /// clears). That is a weaker footing than the high junctions get, and it is
-    /// taken because at a LOW junction the dominant full-record |PHAT| extremum
-    /// is the owner's own ground truth — his hand tunes land on it, and an Auto
-    /// delay that does not is the defect. The field junction reads r 0.950 with
-    /// its same-sign rival 0.418 behind; what this gate refuses is a lobe that
-    /// wins by a hair.
+    /// taken because the intended target at a LOW junction is the dominant
+    /// full-record extremum: across the archived cabins the hand tunes land on
+    /// it, and an Auto delay that does not is the defect. The field junction
+    /// reads r 0.950 with its same-sign rival 0.418 behind; what this gate
+    /// refuses is a lobe that wins by a hair.
     /// </para>
     /// </summary>
     private const double SeedVetoMinProminenceDb =
         -TimeAlignmentAnalysisOptions.DefaultFirstPeakThresholdBelowMaxDb / 2.0;
+
+    /// <summary>
+    /// Whether the seed reach veto may stand down for this junction — the whole
+    /// policy of <see cref="SeedVetoMinProminenceDb"/> in one place, so it can
+    /// be read and tested as a policy rather than inferred from an acoustic
+    /// fixture that happens to produce the right numbers.
+    /// <para>
+    /// Called ONLY where the veto would otherwise fire, and false is the
+    /// default: every clause has to say yes. The anchor must still be the raw
+    /// measured reads, its pick must sit in the lower half of the detector's
+    /// search depth, and the extremum must clear the bar a direct seed clears
+    /// rather than the floor a seed needs. Above
+    /// <see cref="DirectSeedMinCrossoverHz"/> the direct-sound cut then has the
+    /// last word on the lobe; below it there is no wavefront witness to ask, and
+    /// the three clauses above are the whole of it.
+    /// </para>
+    /// <para>
+    /// <paramref name="directCorroboration"/> is a delegate rather than a value
+    /// so the cut is taken only when the cheap clauses have already passed — and
+    /// so a test can assert it is never taken when they have not.
+    /// </para>
+    /// </summary>
+    internal static bool MayWithdrawSeedReachVeto(
+        double anchorProminenceDb,
+        bool anchorIsRawReads,
+        CorrelationDelayCandidate seed,
+        double crossoverHz,
+        Func<CorrelationDelayCandidate?> directCorroboration)
+    {
+        ArgumentNullException.ThrowIfNull(seed);
+        ArgumentNullException.ThrowIfNull(directCorroboration);
+        if (!anchorIsRawReads ||
+            anchorProminenceDb >= SeedVetoMinProminenceDb ||
+            Math.Abs(seed.Coefficient) < DirectSeedMinCoefficient)
+        {
+            return false;
+        }
+
+        if (crossoverHz < DirectSeedMinCrossoverHz)
+        {
+            return true;
+        }
+
+        return directCorroboration() is { } corroboration &&
+            corroboration.InvertPolarity == seed.InvertPolarity &&
+            Math.Abs(corroboration.DelayMs - seed.DelayMs) <=
+                DirectCorroborationPeriods * 1000.0 / crossoverHz;
+    }
 
     /// <summary>
     /// How close the direct-sound witness must sit to the full-record extremum
@@ -1926,21 +1974,12 @@ public static class AutoAlignmentEngine
                     // polarity, which is a lobe test the arrival could not
                     // perform and the extremum's own quality gates do not
                     // attempt.
-                    if (!anchorIsRawReads ||
-                        anchorProminenceDb >= SeedVetoMinProminenceDb ||
-                        Math.Abs(seed.Coefficient) < DirectSeedMinCoefficient)
-                    {
-                        return $"{seedLabel} beyond the arrival's reach";
-                    }
-
-                    // And where the cut is a wavefront read, it has the last
-                    // word on the lobe.
-                    if (pair.CrossoverHz >= DirectSeedMinCrossoverHz &&
-                        (DirectCorroboration() is not { } corroboration ||
-                            corroboration.InvertPolarity != seed.InvertPolarity ||
-                            Math.Abs(corroboration.DelayMs - seed.DelayMs) >
-                                DirectCorroborationPeriods * 1000.0 /
-                                    pair.CrossoverHz))
+                    if (!MayWithdrawSeedReachVeto(
+                        anchorProminenceDb,
+                        anchorIsRawReads,
+                        seed,
+                        pair.CrossoverHz,
+                        DirectCorroboration))
                     {
                         return $"{seedLabel} beyond the arrival's reach";
                     }

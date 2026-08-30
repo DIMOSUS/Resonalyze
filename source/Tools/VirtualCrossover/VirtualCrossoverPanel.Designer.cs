@@ -1,4 +1,4 @@
-namespace Resonalyze
+﻿namespace Resonalyze
 {
     partial class VirtualCrossoverPanel
     {
@@ -44,6 +44,8 @@ namespace Resonalyze
             buttonCopyLeftToRight = new ReleaseClickButton();
             buttonCopyRightToLeft = new ReleaseClickButton();
             labelView = new Label();
+            labelGroupView = new Label();
+            comboBoxGroupView = new DarkComboBox();
             labelCurves = new Label();
             checkBoxShowTarget = new ReleaseClickCheckBox();
             numericTargetLevel = new DarkNumericUpDown();
@@ -221,6 +223,25 @@ namespace Resonalyze
             labelView.Size = new Size(33, 15);
             labelView.TabIndex = 6;
             labelView.Text = "View";
+            // 
+            // labelGroupView
+            // 
+            labelGroupView.AutoSize = true;
+            labelGroupView.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelGroupView.ForeColor = Color.FromArgb(210, 214, 222);
+            labelGroupView.Location = new Point(945, 441);
+            labelGroupView.Name = "labelGroupView";
+            labelGroupView.Size = new Size(35, 15);
+            labelGroupView.Text = "Show";
+            // 
+            // comboBoxGroupView
+            // 
+            comboBoxGroupView.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxGroupView.ForeColor = Color.White;
+            comboBoxGroupView.Location = new Point(988, 439);
+            comboBoxGroupView.MinimumSize = new Size(36, 19);
+            comboBoxGroupView.Name = "comboBoxGroupView";
+            comboBoxGroupView.Size = new Size(130, 19);
             // 
             // labelCurves
             // 
@@ -630,6 +651,8 @@ namespace Resonalyze
             Controls.Add(panel2);
             Controls.Add(panel1);
             Controls.Add(labelView);
+            Controls.Add(labelGroupView);
+            Controls.Add(comboBoxGroupView);
             Controls.Add(labelCurves);
             Controls.Add(checkBoxShowTarget);
             Controls.Add(numericTargetLevel);
@@ -687,6 +710,8 @@ namespace Resonalyze
         private ReleaseClickButton buttonCopyLeftToRight;
         private ReleaseClickButton buttonCopyRightToLeft;
         private Label labelView;
+        private Label labelGroupView;
+        private DarkComboBox comboBoxGroupView;
         private Label labelCurves;
         private ReleaseClickCheckBox checkBoxShowTarget;
         private DarkNumericUpDown numericTargetLevel;

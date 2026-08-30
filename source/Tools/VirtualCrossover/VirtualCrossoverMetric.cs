@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -219,6 +219,88 @@ internal static class VirtualCrossoverMetric
     /// channel's name (the one the recommended extra delay applies to), the
     /// crossover and overlap band it was read over, and the analysis result.
     /// </summary>
+    /// <summary>
+    /// One listening GROUP measured against the front stage, in the band they
+    /// share: how much later it arrives and how much quieter it is. These are
+    /// the two numbers a tuner sets between groups, and they replace the
+    /// summation loss in views that span more than one — a rear fill and a front
+    /// stage comb whatever their tune, so a loss figure there would report
+    /// damage nothing can repair.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="DelayMs"/> is the group's arrival minus the front's, so
+    /// POSITIVE means it arrives later — which is what a rear fill wants (the
+    /// precedence effect keeps the image forward) and what a centre does not.
+    /// <see cref="LevelDb"/> is likewise the group minus the front, so negative
+    /// means quieter. Either is null when the band holds no reliable arrival.
+    /// </remarks>
+    internal readonly record struct GroupDelta(
+        VirtualCrossoverZone Zone,
+        double? DelayMs,
+        double? LevelDb,
+        double LowHz,
+        double HighHz);
+
+    /// <summary>
+    /// The cross-group block for the read-out panel: one row per compared group.
+    /// </summary>
+    public static string FormatGroupDeltasCompact(IReadOnlyList<GroupDelta> deltas)
+    {
+        if (deltas.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        const string Header = "vs Front\r\n       Δt ms    ΔdB\r\n\r\n";
+        var builder = new System.Text.StringBuilder(Header);
+        foreach (GroupDelta delta in deltas)
+        {
+            string name = VirtualCrossoverZones.DisplayName(delta.Zone).PadRight(7);
+            string time = delta.DelayMs is { } ms ? $"{ms,7:+0.00;-0.00;0.00}" : "      —";
+            string level = delta.LevelDb is { } db ? $"{db,7:+0.0;-0.0;0.0}" : "      —";
+            builder.AppendLine($"{name}{time}{level}");
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    /// <summary>The same block spelled out, for the read-out's tooltip.</summary>
+    public static string FormatGroupDeltasDetail(IReadOnlyList<GroupDelta> deltas)
+    {
+        if (deltas.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder(
+            "Each group against the front stage, measured on their summed " +
+            "responses in the band they share. No summation loss is quoted " +
+            "across groups: they play the same band from different places with " +
+            "no crossover between them, so their sum combs however well each " +
+            "one is tuned.");
+        foreach (GroupDelta delta in deltas)
+        {
+            builder.AppendLine();
+            builder.AppendLine();
+            builder.Append(VirtualCrossoverZones.DisplayName(delta.Zone));
+            builder.Append($" ({delta.LowHz:0}-{delta.HighHz:0} Hz): ");
+            builder.Append(delta.DelayMs is { } ms
+                ? ms >= 0
+                    ? $"arrives {ms:0.00} ms after the front"
+                    : $"arrives {-ms:0.00} ms BEFORE the front"
+                : "no reliable arrival in this band");
+            if (delta.LevelDb is { } db)
+            {
+                builder.Append($", {Math.Abs(db):0.0} dB ");
+                builder.Append(db < 0 ? "quieter" : "louder");
+            }
+
+            builder.Append('.');
+        }
+
+        return builder.ToString();
+    }
+
     internal readonly record struct PhaseEntry(
         string Junction,
         string LowerChannel,

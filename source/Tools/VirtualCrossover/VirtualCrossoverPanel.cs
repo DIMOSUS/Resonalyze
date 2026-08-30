@@ -224,6 +224,7 @@ public partial class VirtualCrossoverPanel : UserControl
         dspChainPlot = new VirtualCrossoverDspChainPlot(dspPlotView, CurrentDspPlotMode());
         mainPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-main");
         dspPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-dsp");
+        InitializeGroupViewComboBox();
         InitializeSmoothingComboBox();
         WirePanelEvents();
         InitializeToolTips();
@@ -595,6 +596,16 @@ public partial class VirtualCrossoverPanel : UserControl
                 OverlaySmoothing.IsValid(project.SmoothingCode)
                     ? project.SmoothingCode
                     : 12;
+            comboBoxGroupView.SelectedItem = project.GroupView;
+            // A project can open ON a grouped view, and its selector event is
+            // suppressed while these are applied — so the controls that view
+            // mutes (the hybrid, the Sum and loss toggles, the phase and impulse
+            // radios) are refreshed explicitly. Without this a session saved in
+            // the Groups view reopened with every one of them bright and inert.
+            if (VirtualCrossoverGroupViews.DrawsGroupSums(project.GroupView))
+            {
+                radioViewMagnitude.Checked = true;
+            }
             radioDspMagnitude.Checked =
                 project.EffectiveDspPlotMode == DspPlotMode.Magnitude;
             radioDspPhase.Checked =
@@ -619,6 +630,13 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             suppressProjectEvents = false;
         }
+
+        // Outside the suppressed block, because everything above was applied with
+        // the selectors' own events silenced: the controls a view mutes (the
+        // hybrid, the Sum and loss toggles, the phase and impulse radios) are
+        // refreshed once here from the state that landed. A session saved in the
+        // Groups view used to reopen with every one of them bright and inert.
+        UpdateViewDependentControls();
 
         BindCalibrationSelection(imported, previousCalibrationId, previousSession);
 
@@ -963,6 +981,24 @@ public partial class VirtualCrossoverPanel : UserControl
             if (radioViewImpulse.Checked) OnViewModeChanged();
         };
         comboBoxSmoothing.SelectedIndexChanged += (_, _) => OnViewChanged();
+        comboBoxGroupView.SelectedIndexChanged += (_, _) =>
+        {
+            // Groups is a MAGNITUDE view: it draws one summed line per zone, and
+            // there is no group phase or group impulse to offer. Rather than let
+            // the phase view quietly fall back to per-driver curves under a
+            // selector that promises group sums, picking Groups moves the view
+            // radio — visibly, so nothing is drawn that the selector denies.
+            if (VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView) &&
+                !radioViewMagnitude.Checked)
+            {
+                radioViewMagnitude.Checked = true;
+            }
+
+            // The hybrid's availability depends on the view, so it has to be
+            // re-judged here as it is on a magnitude/phase switch.
+            UpdateViewDependentControls();
+            OnViewChanged();
+        };
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
         // The DSP-mode radios span TWO containers (the chain trio on
         // dspModePanel, Correlation on its own panel beside the pair
@@ -1546,8 +1582,25 @@ public partial class VirtualCrossoverPanel : UserControl
         // memorizes the colour it mutes — is safe for them.
         Ui.UiStyle.SetTextEnabledLook(
             checkBoxShowSum, !radioViewImpulse.Checked, interactive: true);
+        // No loss is quoted where the view spans more than one group, so its
+        // toggle would be a switch with nothing behind it.
         Ui.UiStyle.SetTextEnabledLook(
-            checkBoxShowLoss, radioViewMagnitude.Checked, interactive: true);
+            checkBoxShowLoss,
+            radioViewMagnitude.Checked &&
+                VirtualCrossoverGroupViews.LossChainZone(SelectedGroupView) != null,
+            interactive: true);
+        // Groups always draws its per-zone sums — they ARE its curves — so the Sum
+        // toggle has nothing to turn off there either. And the view has no phase or
+        // impulse form, so those radios are muted while it is selected rather than
+        // silently falling back to per-driver curves.
+        bool groupSums = VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
+        if (groupSums)
+        {
+            Ui.UiStyle.SetTextEnabledLook(checkBoxShowSum, false, interactive: true);
+        }
+
+        Ui.UiStyle.SetTextEnabledLook(radioViewPhase, !groupSums, interactive: true);
+        Ui.UiStyle.SetTextEnabledLook(radioViewImpulse, !groupSums, interactive: true);
         // Magnitude-only for the same reason the loss is, and it also carries the
         // coverage answer, so it owns its own refresh.
         RefreshHybridAvailability();
@@ -1617,6 +1670,7 @@ public partial class VirtualCrossoverPanel : UserControl
         project.SetSmoothingCode(comboBoxSmoothing.SelectedItem is int value
             ? value
             : 12);
+        project.GroupView = SelectedGroupView;
         ScheduleSave();
         RedrawAll();
     }
@@ -2654,6 +2708,30 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawDspPlot();
     }
 
+    /// <summary>
+    /// Which part of the installation the plot, the sum and the read-out are
+    /// about. Read from the control rather than the project so a redraw mid-edit
+    /// draws what the user just picked, exactly as the view radios do.
+    /// </summary>
+    private VirtualCrossoverGroupView SelectedGroupView =>
+        comboBoxGroupView.SelectedItem is VirtualCrossoverGroupView view
+            ? view
+            : VirtualCrossoverGroupView.FrontAndSub;
+
+    private void InitializeGroupViewComboBox()
+    {
+        comboBoxGroupView.Items.AddRange(
+            [.. VirtualCrossoverGroupViews.All.Cast<object>()]);
+        comboBoxGroupView.Format += (_, args) =>
+        {
+            if (args.ListItem is VirtualCrossoverGroupView view)
+            {
+                args.Value = VirtualCrossoverGroupViews.DisplayName(view);
+            }
+        };
+        comboBoxGroupView.SelectedItem = VirtualCrossoverGroupView.FrontAndSub;
+    }
+
     private void InitializeSmoothingComboBox()
     {
         foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
@@ -2700,6 +2778,22 @@ public partial class VirtualCrossoverPanel : UserControl
             "Show each channel's processed impulse response around\r\n" +
             "the phase gate, every trace normalized to its own peak.\r\n" +
             "Well-aligned drivers start together.");
+        toolTip.SetToolTip(
+            comboBoxGroupView,
+            "Which part of the installation the plot is about — the\r\n" +
+            "curves, the Sum, the loss and the read-out all follow it.\r\n" +
+            "Blocks are sorted by their Zone.\r\n" +
+            "Front + Sub is the crossover chain, and what a front-only\r\n" +
+            "car always showed.\r\n" +
+            "Groups draws one summed line per zone instead of the\r\n" +
+            "drivers, for setting the rear fill against the front.\r\n" +
+            "A centre is drawn but never summed: it plays a signal\r\n" +
+            "synthesised from L and R, so how much of the programme\r\n" +
+            "reaches it belongs to the track, not to the tune.\r\n" +
+            "Views spanning more than one group quote no summation\r\n" +
+            "loss — with no crossover between them the sum combs\r\n" +
+            "whatever the tune — and report each group's arrival and\r\n" +
+            "level against the front instead.");
         toolTip.SetToolTip(
             comboBoxSmoothing,
             "Fractional-octave smoothing of the magnitude curves —\r\n" +
@@ -3074,14 +3168,50 @@ public partial class VirtualCrossoverPanel : UserControl
 
         // The correlation view of the lower plot reads the same processed
         // snapshot the acoustic plot draws; the redraw loop calls
-        // RedrawDspPlot right after this method, so the capture is fresh.
+        // RedrawDspPlot right after this method, so the capture is fresh. It
+        // keeps the WHOLE set on purpose — that view answers about a junction the
+        // user picks by name, which the main plot's grouping has no say over.
         lastProcessedRender = render;
+
+        // From here down the frame is about the view's part of the installation,
+        // not the whole of it. Filtering once, here, is what keeps the curves, the
+        // sum, the loss and the read-out describing the same thing: four places
+        // deciding separately is how a plot ends up summing a channel it does not
+        // draw.
+        VirtualCrossoverGroupView groupView = SelectedGroupView;
+        List<ProcessedChannel> shown = ChannelsShownBy(processed, groupView);
+        List<ProcessedChannel> summedChannels = ChannelsSummedBy(shown, groupView);
+        if (shown.Count == 0)
+        {
+            // The view is empty rather than broken — a rear view of a front-only
+            // car. Say so instead of drawing the whole system as if nothing had
+            // been asked for.
+            acousticPlot.Draw(new AcousticRender(EmptyViewHint(groupView), [], null));
+            MetricChanged?.Invoke(string.Empty, string.Empty);
+            // And the warning with it: a gate or calibration complaint left
+            // standing beside an empty plot is about channels the user can no
+            // longer see, which reads as a fault in the view they just opened.
+            HideWarning();
+            return;
+        }
 
         // The stereo Δ block and the opposite-side sum read BOTH sides'
         // processed responses; their caches make an unchanged configuration
         // free. Same staleness rule as above.
+        // The Δ block follows the Show selector like everything else in the
+        // frame: a front view listing the rear pair's L/R skew is the read-out
+        // describing a set the plot does not draw, which is the whole class of
+        // mismatch this selector exists to close.
+        List<VirtualCrossoverChannel> shownBlocks =
+            [.. channels.Where(channel =>
+                VirtualCrossoverGroupViews.IsShown(groupView, channel.Pair.Zone))];
         List<VirtualCrossoverMetric.StereoDelta> stereoDeltas =
-            await metrics.ComputeStereoDeltasAsync(channels, revision);
+            await metrics.ComputeStereoDeltasAsync(shownBlocks, revision);
+        // What the cross-group views quote instead of a summation loss. Reads the
+        // responses this frame already processed, so it adds no render — only the
+        // arrival FFTs, on the coordinator's auxiliary path.
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas =
+            await metrics.ComputeGroupDeltasAsync(shown, groupView, revision);
         // The side sum comes from metrics (shared coordinator cache); the CURVE
         // is built here so it windows through the OPPOSITE side's gate
         // placement — the active side's pin must not gate the other side.
@@ -3093,7 +3223,12 @@ public partial class VirtualCrossoverPanel : UserControl
         if (checkBoxShowSum.Checked && radioViewMagnitude.Checked)
         {
             oppositeSide = await metrics.ComputeSideSumAsync(
-                channels, !project.ActiveSideRight, revision, minimumChannels: 2);
+                channels, !project.ActiveSideRight, revision, minimumChannels: 2,
+                // The other side's sum is a comparison of the two TUNES, so it has
+                // to be the same part of the system this side is showing.
+                includePair: pair =>
+                    VirtualCrossoverGroupViews.ParticipatesInTotalSum(
+                        SelectedGroupView, pair.Zone));
         }
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
@@ -3113,7 +3248,30 @@ public partial class VirtualCrossoverPanel : UserControl
         using (AppProfiler.Zone("VirtualDSP.BuildCurves"))
         {
             (magnitudes, sumCurve, lossCurve) = metrics.BuildCurves(
-                processed, magnitudeGate.SmoothingInverseOctaves);
+                shown, magnitudeGate.SmoothingInverseOctaves, summedChannels);
+        }
+
+        // A view spanning more than one listening group withholds the loss
+        // entirely — curve and figure alike. Front against rear combs however
+        // well either is tuned (no filter hands one band from one to the other),
+        // so the number would report damage nothing can repair. Those views owe
+        // the reader the cross-group arrival and level instead, which
+        // UpdateMetric appends.
+        //
+        // The same silence falls where the chain holds no junction at all, which
+        // a single-group view can still manage: Rear + Sub on the reference car
+        // is subwoofers up to 110 Hz and a rear fill from 290, with nothing
+        // crossing between them. GetAdjacentPairs already declines to invent that
+        // pair, but the loss curve and its total are computed over the window
+        // regardless — and a total summation loss for a chain with no handover
+        // is a figure about a crossover that is not in the car, which is the
+        // thing this view was supposed to stop printing.
+        bool quotesJunctions =
+            VirtualCrossoverGroupViews.LossChainZone(groupView) != null &&
+            ProcessedChannels.HasJunction(summedChannels);
+        if (!quotesJunctions)
+        {
+            lossCurve = null;
         }
 
         // Before the warnings and the render alike: both read it. The warning is
@@ -3126,7 +3284,7 @@ public partial class VirtualCrossoverPanel : UserControl
             using (AppProfiler.Zone("VirtualDSP.BuildHybrid"))
             {
                 hybrid = BuildHybridMagnitudes(
-                    processed,
+                    shown,
                     magnitudes,
                     project.ActiveSideRight,
                     magnitudeGate.SmoothingInverseOctaves);
@@ -3156,7 +3314,14 @@ public partial class VirtualCrossoverPanel : UserControl
 
         using (AppProfiler.Zone("VirtualDSP.UpdateMetric"))
         {
-            UpdateMetric(processed, lossCurve, stereoDeltas, hybrid);
+            // The junction read-outs go with the channels that SUM, not the ones
+            // drawn: the loss curve was divided out of exactly those, and pairing
+            // a drawn-but-unsummed centre with its neighbouring front driver
+            // would invent a crossover between them and label a front-only figure
+            // with it.
+            UpdateMetric(
+                summedChannels, lossCurve, stereoDeltas, hybrid, groupDeltas,
+                quotesJunctions);
         }
 
         using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))
@@ -3171,7 +3336,8 @@ public partial class VirtualCrossoverPanel : UserControl
         using (AppProfiler.Zone("VirtualDSP.BuildAcousticRender"))
         {
             acousticRender = BuildAcousticRender(
-                processed, magnitudes, sumCurve, lossCurve, oppositeSum, hybrid);
+                shown, summedChannels, magnitudes, sumCurve, lossCurve,
+                oppositeSum, hybrid);
         }
 
         using (AppProfiler.Zone("VirtualDSP.AcousticPlotDraw"))
@@ -3184,8 +3350,36 @@ public partial class VirtualCrossoverPanel : UserControl
     // loads, interim redraws (the calibration combo refresh, etc.) run before the
     // sources resolve, so processed is empty then; keep the loading note instead
     // of flashing the "no sources" hint.
+    // ------------------------------------------------------------ grouped views
+
+    // The channels this view puts on the plot. A muted or sourceless block never
+    // reached here, so the only question left is the zone.
+    private static List<ProcessedChannel> ChannelsShownBy(
+        IReadOnlyList<ProcessedChannel> processed,
+        VirtualCrossoverGroupView view) =>
+        [.. processed.Where(item =>
+            VirtualCrossoverGroupViews.IsShown(view, item.Channel.Pair.Zone))];
+
+    // Of those, the ones whose responses are added together. Drawn and summed
+    // differ wherever a centre is on screen: it is there to be compared, not
+    // added (see VirtualCrossoverGroupViews.ParticipatesInTotalSum).
+    private static List<ProcessedChannel> ChannelsSummedBy(
+        IReadOnlyList<ProcessedChannel> shown,
+        VirtualCrossoverGroupView view) =>
+        [.. shown.Where(item =>
+            VirtualCrossoverGroupViews.ParticipatesInTotalSum(view, item.Channel.Pair.Zone))];
+
+    // Why a view is empty, in the words of what the user would have to change.
+    // "No sources" would be a lie here: the project is full, this corner of it
+    // is not.
+    private static string EmptyViewHint(VirtualCrossoverGroupView view) =>
+        $"No channels in {VirtualCrossoverGroupViews.DisplayName(view)}." +
+        Environment.NewLine +
+        "Set a block's Zone to bring it into this view.";
+
     private AcousticRender BuildAcousticRender(
         List<ProcessedChannel> processed,
+        IReadOnlyList<ProcessedChannel> summed,
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
@@ -3201,11 +3395,20 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         if (radioViewPhase.Checked)
         {
-            return new AcousticRender(hint, BuildPhaseCurves(processed), null);
+            // Drawn set for the traces, summed subset for the Sum — or the phase
+            // view would answer a different question from the magnitude view
+            // under the same selector, with a centre inside one Sum and not the
+            // other.
+            return new AcousticRender(hint, BuildPhaseCurves(processed, summed), null);
         }
         if (radioViewImpulse.Checked)
         {
             return new AcousticRender(hint, [], BuildImpulseRender(processed));
+        }
+
+        if (VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView))
+        {
+            return new AcousticRender(hint, BuildGroupSumCurves(processed), null);
         }
 
         return new AcousticRender(
@@ -3214,6 +3417,60 @@ public partial class VirtualCrossoverPanel : UserControl
                 processed, magnitudes, sumCurve, lossCurve, oppositeSum, hybrid),
             null);
     }
+
+    // The Groups view: one summed line per zone and nothing else. A dozen driver
+    // traces would bury the only thing this view is for — how the groups sit
+    // against each other — and the relation is between their SUMS, since that is
+    // what each group puts into the cabin.
+    //
+    // Every line is gated on ONE anchor, taken across all the shown channels
+    // rather than per group: the whole point is to read the groups' relative
+    // timing off the plot, and per-group anchors would each hide their own group's
+    // delay by construction.
+    private List<AcousticCurve> BuildGroupSumCurves(List<ProcessedChannel> shown)
+    {
+        using var _ = AppProfiler.Zone("VirtualDSP.BuildGroupSumCurves");
+        int anchor = ProcessedChannels.SharedStartAnchorIndex(shown);
+        var curves = new List<AcousticCurve>();
+        foreach (VirtualCrossoverZone zone in VirtualCrossoverZones.All)
+        {
+            List<ProcessedChannel> members =
+                [.. shown.Where(item => item.Channel.Pair.Zone == zone)];
+            if (members.Count == 0)
+            {
+                continue;
+            }
+
+            curves.Add(new AcousticCurve(
+                VirtualCrossoverZones.DisplayName(zone),
+                BuildMeasuredSumCurve(members, anchor).Display.Points,
+                GroupColor(zone),
+                2.0,
+                LineStyle.Solid));
+        }
+
+        // The target belongs here as much as anywhere: judging a rear fill's level
+        // against the house curve is half of what this view is for. (The hybrid
+        // does not — a spatial average is per DRIVER, and there is no honest way
+        // to hang one on a group's sum, so the checkbox is greyed out in this view
+        // rather than left as a switch that does nothing.)
+        if (BuildTargetCurve() is { } target)
+        {
+            curves.Insert(0, target);
+        }
+
+        return curves;
+    }
+
+    // Semantic rather than positional: in this view a line IS a zone, so the
+    // colour has to say which one whatever else the project contains.
+    private static OxyColor GroupColor(VirtualCrossoverZone zone) => zone switch
+    {
+        VirtualCrossoverZone.Rear => OxyColor.FromRgb(255, 150, 64),
+        VirtualCrossoverZone.Center => OxyColor.FromRgb(96, 210, 120),
+        VirtualCrossoverZone.Sub => OxyColor.FromRgb(200, 130, 255),
+        _ => OxyColor.FromRgb(86, 156, 255)
+    };
 
     // The target travels with the session. It is handed to the HOST rather than
     // kept here, because the app aims at one target: the EQ Wizard owns and
@@ -3536,8 +3793,11 @@ public partial class VirtualCrossoverPanel : UserControl
         List<ProcessedChannel> processed,
         List<SignalPoint>? lossCurve,
         IReadOnlyList<VirtualCrossoverMetric.StereoDelta>? stereoDeltas = null,
-        HybridMagnitudes? hybrid = null)
+        HybridMagnitudes? hybrid = null,
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta>? crossGroup = null,
+        bool quotesJunctions = true)
     {
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas = crossGroup ?? [];
         // The read-out lives in the host's right-side panel (where overlays sit in
         // analysis modes), as a compact per-junction column with the full banded
         // breakdown on hover. The stereo Δ block (final L−R envelope arrival
@@ -3552,10 +3812,21 @@ public partial class VirtualCrossoverPanel : UserControl
 
         // The junction phase block is informative only: it renders alongside
         // the sum loss but feeds nothing back into the alignment engine.
-        List<VirtualCrossoverMetric.PhaseEntry> phaseEntries;
-        using (AppProfiler.Zone("VirtualDSP.BuildPhaseEntries"))
+        //
+        // It is withheld under the same condition as the loss, and for the same
+        // reason rather than a related one: both describe JUNCTIONS, and it
+        // builds them by pairing channels that are adjacent along the spectrum.
+        // Across groups those pairs do not exist — on the reference installation
+        // that pairing declares a front midrange handing over to a rear fill at
+        // its own low-pass corner, which no filter does — so every row it
+        // produced there would be about a crossover that is not in the car.
+        List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
+        if (quotesJunctions)
         {
-            phaseEntries = metrics.BuildPhaseEntries(processed);
+            using (AppProfiler.Zone("VirtualDSP.BuildPhaseEntries"))
+            {
+                phaseEntries = metrics.BuildPhaseEntries(processed);
+            }
         }
 
         string compact = VirtualCrossoverMetric.FormatCompact(entries);
@@ -3566,6 +3837,16 @@ public partial class VirtualCrossoverPanel : UserControl
                 VirtualCrossoverMetric.FormatPhaseCompact(phaseEntries);
             detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
                 VirtualCrossoverMetric.FormatPhaseDetail(phaseEntries);
+        }
+        // Directly under the sum-loss column, because in a cross-group view it is
+        // what STANDS IN for it: the loss is withheld there, and these two numbers
+        // are what a tuner sets between groups instead.
+        if (groupDeltas.Count > 0)
+        {
+            compact += (compact.Length > 0 ? "\r\n\r\n" : string.Empty) +
+                VirtualCrossoverMetric.FormatGroupDeltasCompact(groupDeltas);
+            detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
+                VirtualCrossoverMetric.FormatGroupDeltasDetail(groupDeltas);
         }
         if (stereoDeltas is { Count: > 0 })
         {
@@ -5389,8 +5670,11 @@ public partial class VirtualCrossoverPanel : UserControl
         return new GatedMagnitude(display, unsmoothed);
     }
 
-    private List<AcousticCurve> BuildPhaseCurves(List<ProcessedChannel> processed)
+    private List<AcousticCurve> BuildPhaseCurves(
+        List<ProcessedChannel> processed,
+        IReadOnlyList<ProcessedChannel>? summed = null)
     {
+        summed ??= processed;
         // The gate's own path: every shown channel is gated and FFT'd here, one
         // after another, plus one more for the sum.
         using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseCurves");
@@ -5413,11 +5697,17 @@ public partial class VirtualCrossoverPanel : UserControl
         // before: the per-impulse cache serializes lookup and insert but not
         // the bank computation itself, so a channel job and the Sum job racing
         // on a cold cache could each run the same FFTs. The Sum needs every
-        // processed channel (hidden or not, matching the magnitude Sum); with
-        // the Sum off, hidden channels' banks are skipped entirely.
-        bool includeSum = processed.Count >= 2 && checkBoxShowSum.Checked;
+        // SUMMING channel (hidden or not, matching the magnitude Sum); with the
+        // Sum off, hidden channels' banks are skipped entirely.
+        //
+        // Summing and drawn differ in the grouped views, and the two Sums have to
+        // agree: a centre is drawn beside the front stage and enters neither, or
+        // the same selector would describe one system on the magnitude view and
+        // another on this one.
+        bool includeSum = summed.Count >= 2 && checkBoxShowSum.Checked;
         List<ProcessedChannel> gatedChannels = processed
-            .Where(item => includeSum || item.Channel.Pair.ShowProcessedCurve)
+            .Where(item => (includeSum && summed.Contains(item)) ||
+                item.Channel.Pair.ShowProcessedCurve)
             .ToList();
 
         // Read the gate and project state ONCE, here on the UI thread; the
@@ -5467,11 +5757,17 @@ public partial class VirtualCrossoverPanel : UserControl
             // Summing the spectra keeps superposition exact by construction,
             // and with one shared window reduces to the gated summed IR by
             // linearity.
-            int targetExtractionStart = gated.Min(part => part.ExtractionStart);
-            Complex[] combined = DataHelper.SumGatedSpectra(
-                gated.Select(part => (part.Spectrum, part.ExtractionStart)).ToList(),
-                targetExtractionStart);
-            jobs.Add(("Sum", SumColor, 2.4, combined, targetExtractionStart));
+            List<(ProcessedChannel Item, Complex[] Spectrum, int ExtractionStart)>
+                summedParts = [.. gated.Where(part => summed.Contains(part.Item))];
+            if (summedParts.Count >= 2)
+            {
+                int targetExtractionStart =
+                    summedParts.Min(part => part.ExtractionStart);
+                Complex[] combined = DataHelper.SumGatedSpectra(
+                    [.. summedParts.Select(part => (part.Spectrum, part.ExtractionStart))],
+                    targetExtractionStart);
+                jobs.Add(("Sum", SumColor, 2.4, combined, targetExtractionStart));
+            }
         }
 
         // One phase read per curve over the spectra built above — every curve

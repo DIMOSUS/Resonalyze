@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OxyPlot;
 using Resonalyze.Dsp;
 
@@ -75,6 +75,85 @@ public sealed class ProcessedChannelsTests
     public void GetAdjacentPairs_IsEmptyForFewerThanTwoChannels()
     {
         Assert.Empty(ProcessedChannels.GetAdjacentPairs([Channel("Sub", LowPass(100))]));
+    }
+
+    [Fact]
+    public void GetAdjacentPairs_RefusesNeighboursWithAHoleBetweenThem()
+    {
+        // The Rear + Sub view of the reference car: subwoofers stopping at 110 Hz
+        // beside a rear fill high-passed at 290. They are neighbours in the
+        // ordering and nothing hands a band from one to the other — the octave
+        // around the would-be junction (55-220 Hz) is a band the rear does not
+        // play at all. Reported as a junction it produced a summation loss and a
+        // phase recommendation for a crossover that is not in the car.
+        ProcessedChannel sub = Channel("Sub", LowPass(110));
+        ProcessedChannel rear = Channel("Rear", HighPass(290));
+
+        Assert.Empty(ProcessedChannels.GetAdjacentPairs(
+            ProcessedChannels.OrderByBand([sub, rear])));
+    }
+
+    [Fact]
+    public void HasJunction_IsFalseForAChainWithNothingCrossing()
+    {
+        // Rear + Sub on the reference car. Dropping the invented Sub/Rear row is
+        // only half the fix: the loss CURVE and its total are computed over the
+        // whole window regardless, and a total summation loss for a chain with no
+        // handover is still a figure about a crossover that is not in the car.
+        Assert.False(ProcessedChannels.HasJunction(
+            [Channel("Sub", LowPass(110)), Channel("Rear", HighPass(290))]));
+
+        // A lone channel has nothing to cross with either.
+        Assert.False(ProcessedChannels.HasJunction([Channel("Sub", LowPass(110))]));
+
+        // And a real chain still has one, so the rule costs the ordinary case
+        // nothing.
+        Assert.True(ProcessedChannels.HasJunction(
+            [Channel("Sub", LowPass(110)), Channel("Mid", HighPass(110))]));
+    }
+
+    [Fact]
+    public void IsContinuousChain_SeparatesOneChainFromAChainWithAHoleInIt()
+    {
+        // The reference car's Rear + Sub view, which the two-channel case above is
+        // too simple to represent: TWO subwoofers that genuinely cross (below
+        // 50 Hz into 50-110) and then a rear fill from 290 with a hole in front of
+        // it. "Has a junction" is true here — Sub1/Sub2 is real — so that
+        // predicate alone still let a total summation loss through for a set that
+        // is not one chain.
+        ProcessedChannel deep = Channel("Sub1", LowPass(50));
+        ProcessedChannel sub = Channel("Sub2", BandPass(50, 110));
+        ProcessedChannel rear = Channel("Rear", HighPass(290));
+
+        Assert.True(ProcessedChannels.HasJunction([deep, sub, rear]));
+        Assert.False(ProcessedChannels.IsContinuousChain([deep, sub, rear]));
+        // The real junction inside it survives — losing the two subwoofers'
+        // handover would cost information the tuner wants.
+        AdjacentPair pair = Assert.Single(ProcessedChannels.GetAdjacentPairs(
+            ProcessedChannels.OrderByBand([deep, sub, rear])));
+        Assert.Equal(("Sub1", "Sub2"), (pair.Lower.Channel.Name, pair.Upper.Channel.Name));
+
+        // Drop the rear fill and the same two subwoofers ARE one chain.
+        Assert.True(ProcessedChannels.IsContinuousChain([deep, sub]));
+        // As is the front stage they normally sit under.
+        Assert.True(ProcessedChannels.IsContinuousChain(
+            [deep, sub, Channel("MB", BandPass(110, 290)), Channel("Mid", HighPass(290))]));
+    }
+
+    [Fact]
+    public void GetAdjacentPairs_KeepsDriversCrossedALittleApart()
+    {
+        // The gap test must not be stricter than the measurement it guards: two
+        // drivers deliberately crossed a third of an octave apart still hand over,
+        // and both reach well into the octave-each-way window the junction is read
+        // across. Only a hole wide enough that one of them is silent there counts.
+        ProcessedChannel woofer = Channel("W", LowPass(250));
+        ProcessedChannel mid = Channel("M", HighPass(315));
+
+        AdjacentPair pair = Assert.Single(ProcessedChannels.GetAdjacentPairs(
+            ProcessedChannels.OrderByBand([woofer, mid])));
+
+        Assert.Equal(("W", "M"), (pair.Lower.Channel.Name, pair.Upper.Channel.Name));
     }
 
     [Fact]

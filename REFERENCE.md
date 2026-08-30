@@ -1,4 +1,4 @@
-# Resonalyze Reference
+﻿# Resonalyze Reference
 
 Every mode, panel, setting and graph gesture, with the reasoning behind the ones
 whose behaviour is not obvious — why a window is anchored where it is, why a
@@ -1691,10 +1691,13 @@ Each channel runs through:
   is a routing fact, and one car can carry two mono subwoofers in different
   bands beside a mono centre.
 
-  Today the zone only labels the block and travels with the project. The sum,
-  the sum loss, the metric read-out and Auto delay still read every channel as
-  one chain along the spectrum, ordered by band centre — the grouped views and
-  the staged alignment that act on the zone are still to come. Projects saved
+  The zone decides what the main plot is about — see
+  [Show](#show-which-part-of-the-installation-the-plot-is-about), which sorts the
+  blocks by it and takes the curves, the Sum, the loss and the read-out with it.
+  Auto delay does not read it yet: it still walks every channel as one chain
+  along the spectrum, ordered by band centre, so on an installation with a rear
+  fill or a centre its proposal is not to be trusted until the staged alignment
+  lands. Projects saved
   before zones existed are given one on load, guessed from what those files do
   record: a stereo pair becomes Front, and a mono block becomes Sub unless it
   high-passes, which no subwoofer does — that one becomes Center. Nothing else
@@ -1768,6 +1771,72 @@ level, so it is drawn against its own amber **Sum loss (dB)** axis on the right
 (0 dB near the top, 6 dB steps, deepening to hold a notch) that appears only
 while the curve is shown; it zooms and pans on its own, separately from the
 left dB scale.
+
+### Show: which part of the installation the plot is about
+
+A car with a rear fill and a centre has more drivers playing one band than a
+single set of curves can say anything about — a front three-way, a rear pair and
+a centre all cover 290 Hz upward from different places, and drawn together they
+are seven overlapping traces whose sum describes no listening position. The
+**Show** selector picks a subset that is a coherent question, sorting the blocks
+by their [Zone](#the-channel-blocks):
+
+| Show | draws | sums |
+| --- | --- | --- |
+| **Front + Sub** | the front stage and the subwoofers | all of them |
+| **Rear + Sub** | the rear fill and the subwoofers | all of them |
+| **Front + Center** | the front stage and the centre | the front stage only |
+| **Groups** | one summed line per zone, no driver curves | each zone separately |
+| **Everything** | every driver | everything but the centre |
+
+Front + Sub is the default and is what a front-only car has always shown, so a
+project with no rear or centre never meets the rest of this.
+
+**A centre is drawn but never summed, in any view.** It plays a signal
+synthesised from L and R — the correlated content pulled out of both — so how
+much of the programme reaches it is a property of the track, not of the tune.
+Its measured response is an honest acoustic path, but adding that path to the
+front stage's would state a division of signal between them that no measurement
+can know and that changes from one recording to the next.
+
+**A view spanning more than one group quotes no summation loss.** That number
+measures cancellation at a crossover, where the dip is real and the delay that
+removes it is the tune. Front against rear is not that: they play the same band
+from opposite ends of the cabin with no filter between them, so their complex sum
+combs however well either is tuned, and a loss figure would report several
+decibels of damage that nothing can repair on a system that is correct. Those
+views report the two numbers a tuner does set between groups instead — a **vs
+Front** block giving each group's arrival difference (Δt ms, positive when it
+arrives later) and level difference (ΔdB, negative when it is quieter), measured
+on the groups' summed responses in the band they share. The Groups view exists
+for exactly that adjustment, which is why it draws the sums rather than the
+drivers: all its lines are gated on one shared anchor, so their relative timing
+is readable off the plot. The target is drawn there too — judging a rear fill's
+level against the house curve is half of what the view is for — but **Hybrid**
+is muted in it, because a spatial average belongs to one driver and there is
+nothing to hang one on when the plot shows only group sums. Groups is a
+magnitude view: it has no phase or impulse form, so picking it moves the view
+to **Magnitude** and mutes the other two rather than quietly falling back to
+per-driver curves under a selector that promises group sums.
+
+Junctions are read where drivers actually hand over, not merely where they are
+neighbours in the ordering. Two channels with a hole between them — subwoofers
+stopping at 110 Hz beside a rear fill starting at 290 — form no junction, so
+neither a summation loss nor a phase recommendation is printed for a crossover
+that is not in the car. A view whose chain holds no junction at all drops the
+**Sum loss** curve with them: that figure measures cancellation at a crossover,
+and here there is none to measure. The Sum itself is still drawn — the drivers
+do both play, and their combined output is a real thing to look at.
+
+The **total** needs more than one junction somewhere: it needs the set to be one
+unbroken chain. Rear + Sub on a car with two subwoofers is the case that
+separates the two — the subwoofers cross each other for real, so their junction
+row is shown, but the rear fill sits above a hole and a single figure over the
+whole span would average that real handover with a range only one member plays
+in. The per-junction rows stay; the total does not appear.
+
+Everything the read-out says follows the selector too, the L/R timing block
+included: a front view does not list the rear pair's Δ.
 
 ### Hybrid: spatial averages under the prediction
 

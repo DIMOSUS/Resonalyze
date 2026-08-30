@@ -574,7 +574,15 @@ public partial class VirtualCrossoverPanel
     // Whether this redraw should draw the hybrid. Both halves matter: the tick
     // survives a view switch, and a ticked toggle with no coverage behind it must not
     // put a half-built hybrid on the plot.
-    private bool HybridRequested => checkBoxHybrid.Checked && hybridAvailable;
+    // Intent, coverage AND a view that can show it. The last clause is not
+    // cosmetic: muting the toggle only changed how it looks, so with the hybrid
+    // ticked before the switch the Groups view went on computing it — drawing
+    // plain point-measured group sums while the read-out reported a spatial
+    // average offset for curves that were not on the plot.
+    private bool HybridRequested =>
+        checkBoxHybrid.Checked &&
+        hybridAvailable &&
+        !VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
 
     private void RefreshHybridAvailability()
     {
@@ -592,13 +600,24 @@ public partial class VirtualCrossoverPanel
         // look at another view must not cost the tick. Through the shared helper
         // rather than Enabled, because a CheckBox WinForms disables paints its text
         // in a system grey that reads as near-black on this theme.
-        bool live = hybridAvailable && radioViewMagnitude.Checked;
+        // The Groups view is muted for a third reason: it draws no channel curves
+        // at all, only one summed line per zone, and a spatial average is a
+        // property of one DRIVER. There is no honest way to hang one on a group's
+        // sum, so the toggle says so rather than sitting there doing nothing.
+        bool groupSums =
+            VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
+        bool live = hybridAvailable && radioViewMagnitude.Checked && !groupSums;
         UiStyle.SetTextEnabledLook(checkBoxHybrid, live, interactive: true);
         toolTip.SetToolTip(
             checkBoxHybrid,
             !hybridAvailable
                 ? verdict.Reason ?? "Needs a spatial average on every channel that " +
                     "plays. Attach one per channel with the MMM button."
+                : groupSums && radioViewMagnitude.Checked
+                ? "The Groups view draws one summed line per zone rather than the " +
+                    "drivers, and a spatial average belongs to a driver — there is " +
+                    "nothing to hang one on here. Pick another Show view for the " +
+                    "hybrid."
                 : !radioViewMagnitude.Checked
                 ? "The hybrid is a magnitude view: a spatial average carries no " +
                     "phase, so the phase and impulse views keep reading the impulse " +

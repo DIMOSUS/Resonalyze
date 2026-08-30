@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OxyPlot;
 using Resonalyze.Dsp;
 
@@ -61,13 +61,26 @@ internal sealed class VirtualCrossoverMetrics
     // drawn like any other. Withholding them was what made the hybrid view stop
     // working when every channel but one was muted, in the panel and in the EQ
     // handoff alike, both of which gate on these being present.
+    /// <param name="summed">
+    /// The subset of <paramref name="processed"/> that enters the SUM, when the
+    /// two differ — a grouped view draws a centre beside the front stage without
+    /// adding it to anything. Null means every drawn channel sums, which is what
+    /// a single-stage project always did. Both share one window anchor, taken
+    /// from the drawn set: a sum anchored differently from the curves it is drawn
+    /// over stops being their vector sum.
+    /// </param>
     public (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum, List<SignalPoint>? Loss)
-        BuildCurves(List<ProcessedChannel> processed, int smoothingInverseOctaves)
+        BuildCurves(
+            List<ProcessedChannel> processed,
+            int smoothingInverseOctaves,
+            IReadOnlyList<ProcessedChannel>? summed = null)
     {
         if (processed.Count == 0)
         {
             return (null, null, null);
         }
+
+        summed ??= processed;
 
         // Every curve — the channels AND the sum — shares one window anchor
         // (the earliest arrival): with per-channel anchors the gates capture
@@ -102,10 +115,17 @@ internal sealed class VirtualCrossoverMetrics
                 item.MeasuredBand,
                 channelCalibration(item)))
             .ToList();
-        if (processed.Count < 2)
+        // The METRIC needs two summing channels; the drawn curves do not, and a
+        // view showing one driver beside an unsummed centre still draws both.
+        List<int> summedIndices = [.. Enumerable.Range(0, processed.Count)
+            .Where(index => summed.Contains(processed[index]))];
+        if (summedIndices.Count < 2)
         {
             return (magnitudes.Select(curve => curve.Display).ToList(), null, null);
         }
+
+        List<ProcessedChannel> summedChannels =
+            [.. summedIndices.Select(index => processed[index])];
 
         // Each channel contributing only where it measured, then added as phasors,
         // each through its OWN microphone correction. Without a builder — a caller
@@ -115,17 +135,20 @@ internal sealed class VirtualCrossoverMetrics
         // not overlap. That fallback sums impulse responses in the time domain, so it
         // has nowhere to put a per-channel correction and takes none; it is not a
         // path the panel uses.
-        GatedMagnitude sumCurve = buildSumCurve?.Invoke(processed, anchor)
+        GatedMagnitude sumCurve = buildSumCurve?.Invoke(summedChannels, anchor)
             ?? buildMagnitudeCurve(
                 VirtualCrossoverAnalysis.SumImpulseResponses(
-                    processed.Select(item => item.ImpulseResponse).ToList()),
+                    summedChannels.Select(item => item.ImpulseResponse).ToList()),
                 anchor,
-                processed[0].SampleRate,
-                ProcessedChannels.UnionOfMeasuredBands(processed),
+                summedChannels[0].SampleRate,
+                ProcessedChannels.UnionOfMeasuredBands(summedChannels),
                 null)
-                .MeasuredBySomeChannel(processed);
-        List<IReadOnlyList<SignalPoint>> operands = magnitudes
-            .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
+                .MeasuredBySomeChannel(summedChannels);
+        // The loss divides the complex sum by the incoherent sum of the very
+        // channels that built it — a drawn-but-unsummed curve in the denominator
+        // would report a cancellation that the sum never suffered.
+        List<IReadOnlyList<SignalPoint>> operands = summedIndices
+            .Select(index => (IReadOnlyList<SignalPoint>)magnitudes[index].Unsmoothed.Points)
             .ToList();
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
             sumCurve.Unsmoothed.Points, operands, smoothingInverseOctaves);
@@ -172,6 +195,16 @@ internal sealed class VirtualCrossoverMetrics
                     pair.BandHighHz,
                     IsTotal: false));
             }
+        }
+
+        // A total only where the set IS one chain. With a hole in it — the
+        // reference car's two subwoofers and then a rear fill from 290 Hz — the
+        // per-junction rows above are still real and worth reading, but a single
+        // figure over the whole window would average them with a span only one
+        // member plays in, and present that as the chain's summation loss.
+        if (!ProcessedChannels.IsContinuousChain(processed))
+        {
+            return entries;
         }
 
         (double minHz, double maxHz) = ProcessedChannels.GetCrossoverWindow(processed);
@@ -257,6 +290,140 @@ internal sealed class VirtualCrossoverMetrics
     /// its own band with "—" for the right side and the delta; a stereo pair
     /// needs both sides present and unbypassed.
     /// </summary>
+    /// <summary>
+    /// Each compared group against the front stage, on the ALREADY PROCESSED
+    /// responses this frame is drawing: their summed impulse responses give one
+    /// arrival and one level per group, and the difference is what the read-out
+    /// quotes where a summation loss would be meaningless.
+    /// </summary>
+    /// <remarks>
+    /// Cheaper than the stereo block by construction — nothing has to be
+    /// re-rendered, because a group's response is the sum of channels this frame
+    /// already computed. The arrival analysis still costs FFTs, so it runs on the
+    /// coordinator's auxiliary path and drops silently when superseded, exactly
+    /// as the stereo deltas do.
+    /// </remarks>
+    public async Task<IReadOnlyList<VirtualCrossoverMetric.GroupDelta>> ComputeGroupDeltasAsync(
+        IReadOnlyList<ProcessedChannel> shown,
+        VirtualCrossoverGroupView view,
+        long revision)
+    {
+        IReadOnlyList<VirtualCrossoverZone> compared =
+            VirtualCrossoverGroupViews.ComparedAgainstFront(view);
+        if (compared.Count == 0)
+        {
+            return [];
+        }
+
+        List<ProcessedChannel> front = ZoneMembers(shown, VirtualCrossoverZone.Front);
+        if (front.Count == 0)
+        {
+            // Nothing to compare against. A rear-only project is a legitimate
+            // thing to look at; it just has no front stage to be late relative to.
+            return [];
+        }
+
+        var jobs = new List<(VirtualCrossoverZone Zone, List<ProcessedChannel> Members)>();
+        foreach (VirtualCrossoverZone zone in compared)
+        {
+            List<ProcessedChannel> members = ZoneMembers(shown, zone);
+            if (members.Count > 0)
+            {
+                jobs.Add((zone, members));
+            }
+        }
+
+        if (jobs.Count == 0)
+        {
+            return [];
+        }
+
+        (double frontLow, double frontHigh) = GroupBand(front);
+        int sampleRate = front[0].SampleRate;
+        List<VirtualCrossoverMetric.GroupDelta>? deltas =
+            await coordinator.RunAuxiliaryAsync(revision, cancellationToken =>
+            {
+                Complex[] frontIr = VirtualCrossoverAnalysis.SumImpulseResponses(
+                    [.. front.Select(item => item.ImpulseResponse)]);
+                var results = new List<VirtualCrossoverMetric.GroupDelta>();
+                foreach ((VirtualCrossoverZone zone, List<ProcessedChannel> members) in jobs)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return null;
+                    }
+
+                    (double zoneLow, double zoneHigh) = GroupBand(members);
+                    double lowHz = Math.Max(frontLow, zoneLow);
+                    double highHz = Math.Min(frontHigh, zoneHigh);
+                    if (highHz < lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+                    {
+                        // Too little overlap to time anything — a rear pair crossed
+                        // entirely above the front stage would land here. Reported as
+                        // an unmeasurable row rather than dropped, so the group does
+                        // not silently vanish from the read-out.
+                        results.Add(new VirtualCrossoverMetric.GroupDelta(
+                            zone, null, null, lowHz, highHz));
+                        continue;
+                    }
+
+                    Complex[] zoneIr = VirtualCrossoverAnalysis.SumImpulseResponses(
+                        [.. members.Select(item => item.ImpulseResponse)]);
+                    TimeAlignmentAnalysisResult frontArrival =
+                        VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                            frontIr, sampleRate, lowHz, highHz);
+                    TimeAlignmentAnalysisResult zoneArrival =
+                        VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                            zoneIr, sampleRate, lowHz, highHz);
+                    bool timed = Reliable(frontArrival) && Reliable(zoneArrival);
+                    results.Add(new VirtualCrossoverMetric.GroupDelta(
+                        zone,
+                        timed
+                            ? zoneArrival.FirstArrivalDelayMilliseconds -
+                                frontArrival.FirstArrivalDelayMilliseconds
+                            : null,
+                        VirtualCrossoverAnalysis.MeasureBandLevelDb(
+                            zoneIr, sampleRate, lowHz, highHz) -
+                            VirtualCrossoverAnalysis.MeasureBandLevelDb(
+                                frontIr, sampleRate, lowHz, highHz),
+                        lowHz,
+                        highHz));
+                }
+
+                return results;
+            });
+        return deltas ?? [];
+
+        static bool Reliable(TimeAlignmentAnalysisResult arrival) =>
+            arrival.IsValid &&
+            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb;
+    }
+
+    private static List<ProcessedChannel> ZoneMembers(
+        IReadOnlyList<ProcessedChannel> shown,
+        VirtualCrossoverZone zone) =>
+        [.. shown.Where(item => item.Channel.Pair.Zone == zone)];
+
+    // The span a group actually plays: the union of its members' crossover bands.
+    // The subwoofers are not in it — they belong to whichever stage is on screen,
+    // and dragging a group's low edge down to 20 Hz would hand the comparison a
+    // band where only one side plays.
+    private static (double LowHz, double HighHz) GroupBand(
+        IReadOnlyList<ProcessedChannel> members)
+    {
+        double low = double.MaxValue;
+        double high = double.MinValue;
+        foreach (ProcessedChannel member in members)
+        {
+            (double memberLow, double memberHigh) =
+                VirtualCrossoverJunctions.GetChannelBand(member.Channel.Settings);
+            low = Math.Min(low, memberLow);
+            high = Math.Max(high, memberHigh);
+        }
+
+        return (low, high);
+    }
+
     public async Task<List<VirtualCrossoverMetric.StereoDelta>> ComputeStereoDeltasAsync(
         IReadOnlyList<VirtualCrossoverChannel> channels,
         long revision)
@@ -532,11 +699,18 @@ internal sealed class VirtualCrossoverMetrics
     /// render went stale. Uses the coordinator cache, so it shares processed
     /// responses and staleness handling with the main redraw.
     /// </summary>
+    /// <param name="includePair">
+    /// Which blocks the sum is of, or null for all of them. The grouped views use
+    /// it so the opposite side's sum is the SAME part of the installation as the
+    /// one on screen — comparing a front stage against the other side's whole
+    /// system would read as an L/R difference that is really a scope difference.
+    /// </param>
     public async Task<VirtualCrossoverSideSum?> ComputeSideSumAsync(
         IReadOnlyList<VirtualCrossoverChannel> channels,
         bool rightSide,
         long revision,
-        int minimumChannels)
+        int minimumChannels,
+        Func<VirtualCrossoverChannelPairSettings, bool>? includePair = null)
     {
         var jobs = new List<SideProcessJob>();
         int nextId = 0;
@@ -547,6 +721,7 @@ internal sealed class VirtualCrossoverMetrics
                 channel.SideSettings(rightSide);
             VirtualCrossoverChannelState state = channel.SideState(rightSide);
             if (!channel.Pair.Enabled ||
+                includePair?.Invoke(channel.Pair) == false ||
                 state.ProcessingSource is not { } source)
             {
                 continue;

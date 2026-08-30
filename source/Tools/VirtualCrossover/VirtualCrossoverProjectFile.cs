@@ -736,6 +736,16 @@ public sealed class VirtualCrossoverProjectFile
     public bool ShowLossCurve { get; set; }
 
     /// <summary>
+    /// Which part of the installation the main plot describes — see
+    /// <see cref="VirtualCrossoverGroupView"/>. Additive: a file written before
+    /// the views existed carries none and opens on
+    /// <see cref="VirtualCrossoverGroupView.FrontAndSub"/>, which draws exactly
+    /// what such a file always drew (its blocks all migrate into Front and Sub).
+    /// </summary>
+    public VirtualCrossoverGroupView GroupView { get; set; } =
+        VirtualCrossoverGroupView.FrontAndSub;
+
+    /// <summary>
     /// Whether the magnitude view draws the hybrid — each channel from its spatial
     /// average — rather than the impulse responses alone.
     /// </summary>
@@ -1443,6 +1453,11 @@ public sealed class VirtualCrossoverProjectFile
         {
             throw new InvalidDataException(
                 "The virtual crossover DSP plot mode is invalid.");
+        }
+        if (!Enum.IsDefined(GroupView))
+        {
+            throw new InvalidDataException(
+                "The virtual crossover group view is invalid.");
         }
         if (CorrelationPairIndex is < 0 or >= MaximumChannelCount)
         {

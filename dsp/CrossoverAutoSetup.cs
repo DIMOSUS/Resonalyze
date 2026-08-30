@@ -730,10 +730,18 @@ public static class CrossoverAutoSetup
             2.0, TweeterFsAttenuationTargetDb / highPassSlopeDbPerOctave);
 
     /// <summary>
-    /// Builds the crossover proposal for the given channels, honouring the wizard
-    /// <paramref name="options"/>. Results are in the input order. Every channel
-    /// must carry a distinct driver type — with two identical drivers there is no
-    /// crossover to propose.
+    /// Builds the crossover proposal for one chain of drivers, honouring the
+    /// wizard <paramref name="options"/>. Results are in the input order.
+    /// <para>
+    /// <paramref name="channels"/> IS the chain, in spectral order, lowest first:
+    /// channel i hands over to channel i+1 and to nobody else. Two channels may
+    /// share a driver type — a pair of subwoofers or midbasses splitting the same
+    /// class is an ordinary car install — so the order comes from the caller
+    /// rather than from <see cref="DriverType"/>, which stays a per-class prior on
+    /// where a handover may sensibly sit. Drivers that do not cross each other at
+    /// all (a rear fill, a centre) are not part of this chain and must be proposed
+    /// for separately; see <see cref="ProposeSingle"/>.
+    /// </para>
     /// </summary>
     public static IReadOnlyList<CrossoverProposal> Propose(
         IReadOnlyList<AutoSetupSource> channels,
@@ -745,12 +753,6 @@ public static class CrossoverAutoSetup
         {
             throw new ArgumentException(
                 "At least two channels are required.",
-                nameof(channels));
-        }
-        if (channels.Select(channel => channel.Type).Distinct().Count() != channels.Count)
-        {
-            throw new ArgumentException(
-                "Every channel needs a distinct driver type.",
                 nameof(channels));
         }
 
@@ -813,6 +815,9 @@ public static class CrossoverAutoSetup
             centers[i] = Math.Sqrt(low * high);
         }
 
+        // The FIRST channel of a class, which is its lowest: the input is the
+        // chain in spectral order, so with two drivers of one class this picks
+        // the one nearer the bottom.
         int Find(DriverType type)
         {
             for (int i = 0; i < n; i++)
@@ -826,17 +831,11 @@ public static class CrossoverAutoSetup
             return -1;
         }
 
-        int mid = Find(DriverType.Midrange);
-        int tweeter = Find(DriverType.Tweeter);
-        var reference = new List<int>();
-        if (mid >= 0)
-        {
-            reference.Add(mid);
-        }
-        if (tweeter >= 0)
-        {
-            reference.Add(tweeter);
-        }
+        // Every midrange and tweeter, not one of each: the flat top is levelled
+        // across all of them.
+        var reference = Enumerable.Range(0, n)
+            .Where(i => channels[i].Type is DriverType.Midrange or DriverType.Tweeter)
+            .ToList();
 
         // The bass anchor: the subwoofer when present, else the lowest
         // woofer/midbass. A sub-less system's bass driver carries the cabin's
@@ -846,7 +845,6 @@ public static class CrossoverAutoSetup
         // real cabin gain all the way down to the tweeter (field case:
         // −24 dB) while the control sat dead at zero.
         int bass = Find(DriverType.Subwoofer);
-        bool subAnchor = bass >= 0;
         if (bass < 0)
         {
             bass = Find(DriverType.Woofer);
@@ -857,29 +855,37 @@ public static class CrossoverAutoSetup
         }
 
         // The reference (flat-top) level is the quietest driver apart from the
-        // sub, so the whole system is cut to it and the sub is lifted on top.
-        // Only a SUBWOOFER anchor is excluded: it is a separately amped,
-        // lifted way, and a quiet one must not drag the whole flat-top down.
-        // A woofer/midbass anchor stays a member of the levelled system, so
-        // when it measures QUIETER than the mid/tweeter the system is still
-        // cut down to it (its measured elevation is then simply zero).
+        // subs, so the whole system is cut to it and the bass is lifted on top.
+        // SUBWOOFERS are excluded: a sub is a separately amped, lifted way, and a
+        // quiet one must not drag the whole flat-top down — which holds for EVERY
+        // sub in the chain, not just the one anchoring the bass, or a second sub
+        // splitting the bottom would set the level the rest of the system is cut
+        // to. A woofer/midbass anchor stays a member of the levelled system, so
+        // when it measures QUIETER than the mid/tweeter the system is still cut
+        // down to it (its measured elevation is then simply zero).
         double referenceLevel = double.PositiveInfinity;
         for (int i = 0; i < n; i++)
         {
-            if ((i != bass || !subAnchor) && levels[i] < referenceLevel)
+            if (channels[i].Type != DriverType.Subwoofer && levels[i] < referenceLevel)
             {
                 referenceLevel = levels[i];
             }
         }
 
+        if (double.IsPositiveInfinity(referenceLevel))
+        {
+            // A chain of nothing but subs (two of them splitting the bottom, with
+            // the rest of the car in other groups). There is no flat top to cut
+            // to, so they level to each other and the elevation collapses to zero.
+            referenceLevel = levels.Min();
+        }
+
         // The slope runs up to where the flat top begins — the lowest reference
         // member (the midrange when present, else the tweeter); with neither, the
-        // highest non-sub driver.
+        // topmost non-bass driver, which the chain order names.
         int slopeTop = reference.Count > 0
             ? reference.MinBy(index => centers[index])
-            : Enumerable.Range(0, n)
-                .Where(i => i != bass)
-                .MaxBy(i => channels[i].Type);
+            : Enumerable.Range(0, n).Where(i => i != bass).DefaultIfEmpty(bass).Max();
 
         double measuredElevation = bass < 0
             ? 0
@@ -984,6 +990,184 @@ public static class CrossoverAutoSetup
     }
 
     /// <summary>
+    /// The level (dB) the given chain's flat top was fitted to — the quietest
+    /// non-subwoofer driver over its own passband. It is the one number another
+    /// group can be levelled against; see <see cref="OffsetToReferenceLevel"/>.
+    /// </summary>
+    public static double ReferenceLevelDb(
+        IReadOnlyList<AutoSetupSource> channels,
+        IReadOnlyList<CrossoverProposal> proposals,
+        double sampleRateHz)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(proposals);
+        if (proposals.Count != channels.Count)
+        {
+            throw new ArgumentException(
+                "One proposal per channel is required.", nameof(proposals));
+        }
+
+        return BuildTargetCurveContext(channels, proposals, sampleRateHz).ReferenceLevelDb;
+    }
+
+    /// <summary>
+    /// Slides a whole group's gains so its own flat top lands on
+    /// <paramref name="referenceLevelDb"/> — the level of the group that carries
+    /// the front stage. The shift is rigid, so everything the group's own fit
+    /// decided about the balance BETWEEN its drivers survives, and cut-only, so a
+    /// group already quieter than the reference is left where it is rather than
+    /// boosted into the amplifier's headroom.
+    /// <para>
+    /// A rear fill or a centre is not part of the front stage's sum, so no
+    /// crossover fit can place it: what its level should be is a mix decision the
+    /// ear makes (a rear fill usually ends up well under the front). Matching the
+    /// front is the measured starting point that decision is made FROM, not the
+    /// answer to it.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<CrossoverProposal> OffsetToReferenceLevel(
+        IReadOnlyList<AutoSetupSource> channels,
+        IReadOnlyList<CrossoverProposal> proposals,
+        double sampleRateHz,
+        double referenceLevelDb)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(proposals);
+        if (proposals.Count != channels.Count)
+        {
+            throw new ArgumentException(
+                "One proposal per channel is required.", nameof(proposals));
+        }
+        if (channels.Count == 0)
+        {
+            return proposals;
+        }
+
+        double own = BuildTargetCurveContext(channels, proposals, sampleRateHz).ReferenceLevelDb;
+        if (!double.IsFinite(own) || !double.IsFinite(referenceLevelDb))
+        {
+            return proposals;
+        }
+
+        double offset = Math.Min(0, referenceLevelDb - own);
+        return proposals
+            .Select(proposal => proposal with { GainDb = Math.Round(proposal.GainDb + offset, 1) })
+            .ToList();
+    }
+
+    /// <summary>
+    /// The proposal for a driver that crosses over with nobody: a rear fill, a
+    /// centre, a lone sub. There is no junction to search, so
+    /// <see cref="Propose"/> — which needs two channels to have anything to
+    /// optimize — has nothing to say about it. What such a driver still needs is
+    /// the protection a chain member gets for free from the driver under it: a
+    /// high-pass that keeps out the content it cannot play cleanly.
+    /// <para>
+    /// The corner is the same bound the optimizer holds an upper driver to at a
+    /// junction — an octave above its measured low edge — raised further by
+    /// whatever the driver's own measurement says: a tweeter's resonance (its
+    /// high-pass must attenuate Fs by <see cref="TweeterFsAttenuationTargetDb"/>)
+    /// and, for any class, the frequency below which its harmonic distortion says
+    /// it stops being clean. The gain is left at zero; levelling this group
+    /// against the front stage is <see cref="OffsetToReferenceLevel"/>'s job.
+    /// </para>
+    /// </summary>
+    public static CrossoverProposal ProposeSingle(
+        AutoSetupSource channel,
+        CrossoverAutoSetupOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+        ArgumentNullException.ThrowIfNull(options);
+        options = Normalize(options);
+
+        DriverBandEstimate band = EstimateBand(
+            channel.MagnitudeDb, channel.Coherence, channel.DistortionDb);
+        CrossoverFilterFamily family = PreferredFamily(options.Families);
+        double margin = Math.Pow(2.0, CrossoverMarginOctaves);
+
+        // The high-pass may not climb so far that it swallows the driver: at most
+        // an octave under its measured top, and inside the user's window.
+        double ceiling = Math.Min(
+            options.MaxCrossoverHz, Math.Max(options.MinCrossoverHz, band.HighHz / margin));
+        double corner = Math.Clamp(band.LowHz * margin, options.MinCrossoverHz, ceiling);
+
+        // The slope is chosen at the driver's natural corner and the protective
+        // floors are then applied at that slope. Those floors only ever RAISE the
+        // corner, and a higher corner only ever admits more slopes, so the slope
+        // re-chosen at the end can be steeper but never invalid — a filter steeper
+        // than the floor demanded over-protects, which is the safe direction.
+        int slope = ProtectiveSlope(family, corner, options.ProcessorSampleRateHz);
+        if (channel.Type == DriverType.Tweeter)
+        {
+            corner = Math.Max(
+                corner, TweeterMinCrossoverHz(TweeterResonanceHz(band.LowHz), slope));
+        }
+        if (double.IsFinite(band.DistortionLowHz))
+        {
+            corner = Math.Max(corner, band.DistortionLowHz);
+        }
+
+        corner = Math.Clamp(RoundToLattice(
+            Math.Clamp(corner, options.MinCrossoverHz, ceiling)),
+            options.MinCrossoverHz,
+            ceiling);
+        slope = ProtectiveSlope(family, corner, options.ProcessorSampleRateHz);
+        var highPass = new CrossoverEdge(family, Math.Round(corner), slope);
+
+        // The same brickwall the chain's topmost driver gets when the user pulls
+        // the window in below where it still plays.
+        CrossoverEdge? lowPass = options.MaxCrossoverHz < band.HighHz / Math.Pow(2.0, 1.0 / 12.0)
+            ? new CrossoverEdge(
+                family,
+                Math.Round(options.MaxCrossoverHz),
+                ProtectiveSlope(family, options.MaxCrossoverHz, options.ProcessorSampleRateHz))
+            : null;
+
+        return new CrossoverProposal(
+            lowPass is null ? CrossoverKind.HighPass : CrossoverKind.BandPass,
+            highPass,
+            lowPass,
+            0);
+    }
+
+    // Prefer the family an engineer would reach for first: Linkwitz-Riley, then
+    // Bessel, then whatever is left.
+    private static CrossoverFilterFamily PreferredFamily(
+        IReadOnlyList<CrossoverFilterFamily> families) =>
+        families.Contains(CrossoverFilterFamily.LinkwitzRiley)
+            ? CrossoverFilterFamily.LinkwitzRiley
+            : families.Contains(CrossoverFilterFamily.Bessel)
+                ? CrossoverFilterFamily.Bessel
+                : families[0];
+
+    // The slope one standalone protective filter takes: the practical slope
+    // nearest the 24 dB/oct standard whose group delay fits the budget at this
+    // corner, falling back to the family's gentlest — which, as at a junction, is
+    // always admitted, because a gentler filter would not protect at all.
+    private static int ProtectiveSlope(
+        CrossoverFilterFamily family,
+        double cornerHz,
+        double processorSampleRateHz)
+    {
+        IReadOnlyList<int> slopes = PracticalSlopes(family);
+        if (slopes.Count == 0)
+        {
+            return MinPracticalSlopeDbPerOctave;
+        }
+
+        return slopes
+            .Where(slope => CrossoverFilter.MaxGroupDelaySeconds(
+                    new CrossoverEdge(family, cornerHz, slope),
+                    highPass: true,
+                    processorSampleRateHz)
+                <= MaxCrossoverGroupDelaySeconds)
+            .OrderBy(slope => Math.Abs(
+                Math.Log2((double)slope / PreferredSlopeDbPerOctave)))
+            .DefaultIfEmpty(slopes.Min())
+            .First();
+    }
+
+    /// <summary>
     /// The ranked wizard search: expands a pool of up to
     /// <paramref name="candidateCount"/> near-optimal candidates (always
     /// including a conventional all-24 dB/oct one), and — when the channels'
@@ -993,6 +1177,8 @@ public static class CrossoverAutoSetup
     /// crop of the IRs. The conventional candidate wins unless a challenger
     /// beats it by more than a small margin. Returns the candidates best
     /// first; <c>[0].Proposals</c> is the recommended setup.
+    /// <para><paramref name="channels"/> is one chain in spectral order, as for
+    /// <see cref="Propose"/>.</para>
     /// </summary>
     public static IReadOnlyList<RankedCrossoverProposal> ProposeRanked(
         IReadOnlyList<AutoSetupSource> channels,
@@ -1006,12 +1192,6 @@ public static class CrossoverAutoSetup
         {
             throw new ArgumentException(
                 "At least two channels are required.",
-                nameof(channels));
-        }
-        if (channels.Select(channel => channel.Type).Distinct().Count() != channels.Count)
-        {
-            throw new ArgumentException(
-                "Every channel needs a distinct driver type.",
                 nameof(channels));
         }
         if (impulseResponses != null &&
@@ -1066,18 +1246,16 @@ public static class CrossoverAutoSetup
         {
             int sampleRate = (int)Math.Round(options.SampleRateHz);
             int processorRate = (int)Math.Round(options.ProcessorSampleRateHz);
-            int[] orderedIndex = Enumerable.Range(0, channels.Count)
-                .OrderBy(index => channels[index].Type)
-                .ToArray();
-            Complex[][] cropped = CropSharedDirectSoundWindow(
-                orderedIndex.Select(index => impulseResponses[index]).ToArray());
+            // The post-check walks adjacent pairs, so it needs the chain order —
+            // which the input already is.
+            Complex[][] cropped = CropSharedDirectSoundWindow(impulseResponses.ToArray());
             var arrivalCache =
                 new ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)>();
             penalties = pool
                 .AsParallel().AsOrdered()
                 .Select(candidate => AchievabilityPenaltyDb(
                     cropped,
-                    orderedIndex.Select(index => candidate.Proposals[index]).ToArray(),
+                    candidate.Proposals.ToArray(),
                     arrivalCache,
                     sampleRate,
                     processorRate))
@@ -1490,7 +1668,6 @@ public static class CrossoverAutoSetup
     {
         private readonly CrossoverAutoSetupOptions options;
         private readonly int channelCount;
-        private readonly int[] inputIndex;
         private readonly IReadOnlyList<SignalPoint>[] curves;
         private readonly DriverBandEstimate[] bands;
         private readonly DriverType[] types;
@@ -1543,17 +1720,17 @@ public static class CrossoverAutoSetup
             this.forcedSlope = forcedSlope;
             channelCount = channels.Count;
 
-            var ordered = channels
-                .Select((channel, index) => (channel, index))
-                .OrderBy(item => item.channel.Type)
+            // The chain is the caller's order, not a sort of the driver types:
+            // two drivers of the SAME class (a pair of subwoofers, a pair of
+            // midbasses) are a legitimate chain, and nothing in the type can say
+            // which of them plays lower. The caller — the wizard dialog, seeded
+            // from the measured bands and overridable there — states the order.
+            curves = channels.Select(channel => channel.MagnitudeDb).ToArray();
+            bands = channels
+                .Select(channel => EstimateBand(
+                    channel.MagnitudeDb, channel.Coherence, channel.DistortionDb))
                 .ToArray();
-            inputIndex = ordered.Select(item => item.index).ToArray();
-            curves = ordered.Select(item => item.channel.MagnitudeDb).ToArray();
-            bands = ordered
-                .Select(item => EstimateBand(
-                    item.channel.MagnitudeDb, item.channel.Coherence, item.channel.DistortionDb))
-                .ToArray();
-            types = ordered.Select(item => item.channel.Type).ToArray();
+            types = channels.Select(channel => channel.Type).ToArray();
 
             grid = BuildGrid(options.SampleRateHz);
             driverAmplitude = new double[channelCount][];
@@ -1897,19 +2074,8 @@ public static class CrossoverAutoSetup
             InitializeGains();
         }
 
-        // Prefer the family an engineer would reach for first: Linkwitz-Riley, then
-        // Bessel, then whatever is left.
-        private CrossoverFilterFamily PreferredFamily()
-        {
-            if (options.Families.Contains(CrossoverFilterFamily.LinkwitzRiley))
-            {
-                return CrossoverFilterFamily.LinkwitzRiley;
-            }
-
-            return options.Families.Contains(CrossoverFilterFamily.Bessel)
-                ? CrossoverFilterFamily.Bessel
-                : options.Families[0];
-        }
+        private CrossoverFilterFamily PreferredFamily() =>
+            CrossoverAutoSetup.PreferredFamily(options.Families);
 
         // The slopes the search may actually try at this junction frequency: the
         // family's practical slopes, minus any whose filter group delay exceeds
@@ -2434,6 +2600,18 @@ public static class CrossoverAutoSetup
                 double fc = crossoverHz[j];
                 total += EarSensitivityWeightDb * EarSensitivityBump(fc);
 
+                // Every prior below answers "which of these two CLASSES should
+                // own the region they share" — and a junction between two drivers
+                // of one class (a pair of subwoofers splitting the bottom, a pair
+                // of midbasses) has no such question to answer. Where the split
+                // falls is then a matter of what the two actually measure, which
+                // the flatness score and the achievability post-check already
+                // judge; a prior here would only push it somewhere arbitrary.
+                if (types[j] == types[j + 1])
+                {
+                    continue;
+                }
+
                 // The band the two drivers share, and how far above its bottom
                 // this junction sits — both in octaves. A narrow overlap barely
                 // pulls; a wide one pulls firmly toward the low edge. Skipped for
@@ -2686,7 +2864,7 @@ public static class CrossoverAutoSetup
                     _ => CrossoverKind.LowPass
                 };
 
-                results[inputIndex[i]] = new CrossoverProposal(
+                results[i] = new CrossoverProposal(
                     kind,
                     highPass,
                     lowPass,

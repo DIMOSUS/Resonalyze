@@ -1949,16 +1949,23 @@ public sealed class AutoAlignmentEngineTests
     }
 
     // The arbitration's other verdict, and the fleet's common one. The witness
-    // is the pair's SHARED content, so what denies it is content only one of
-    // them carries: here the woofer rings at 90 Hz, where the sub is 48 dB/oct
-    // down and cannot answer. The comb then finds nothing at the predicted
-    // family worth trusting — it reads r ≈ 0.3 against the 0.6 floor, not a
-    // photo finish with the measured family — and a conviction-strength
-    // discrepancy may not be acted on with no second witness. The pair
-    // withdraws from the predictor exactly as it did before the arbitration
-    // existed, and the woofer's own read still verifies: only one side is in
-    // dispute, which is what keeps this the arbitration's case and not a
-    // two-sided mess.
+    // is the pair's SHARED content, so it is denied by content that pulls that
+    // agreement AWAY from the prediction: here the woofer rings at 90 Hz, where
+    // the sub is 48 dB/oct down and answers only with its own front. The comb
+    // reads r 0.85 at the predicted family against 0.98 at the MEASURED one —
+    // the prediction is not merely un-corroborated, it is out-voted, and a
+    // conviction-strength discrepancy may not be acted on against a witness
+    // pointing the other way.
+    //
+    // Note WHICH bar refuses it: 0.85 clears the 0.6 floor comfortably, so this
+    // case is held by the advantage arm alone. Lowering the floor leaves the
+    // test green; only removing the advantage flips it, which is the falsifier
+    // this fixture was checked against.
+    //
+    // The pair withdraws from the predictor exactly as it did before the
+    // arbitration existed, and the woofer's own read still verifies: only one
+    // side is in dispute, which is what keeps this the arbitration's case and
+    // not a two-sided mess.
     [Fact]
     public void Compute_DeadZoneLatch_ArbitrationStandsDownWithoutASecondWitness()
     {
@@ -1999,6 +2006,27 @@ public sealed class AutoAlignmentEngineTests
             sub, subBypassed, subChain, woofer, wooferBypassed, wooferChain);
 
         Assert.Contains("latch arbitration stood down for SUB/W", trace);
+        // Which ARM refuses it, not merely that it refused: a fixture that
+        // failed the FLOOR instead would satisfy every other assertion here
+        // while encoding a different case, and re-posing this test is exactly
+        // when that substitution happens. Read off the trace rather than
+        // matched as text — the engine formats in the machine's culture, so the
+        // separator is a comma on some of them (the session battery pins
+        // InvariantCulture for the same reason).
+        Match combReading = Regex.Match(
+            trace,
+            @"comb r ([-0-9]+[.,][0-9]+) at the predicted family vs ([-0-9]+[.,][0-9]+)");
+        Assert.True(combReading.Success, trace);
+        static double Reading(Group group) => double.Parse(
+            group.Value.Replace(',', '.'), CultureInfo.InvariantCulture);
+        double atPredicted = Reading(combReading.Groups[1]);
+        double atMeasured = Reading(combReading.Groups[2]);
+        // Clears LatchArbitrationMinR (0.6) — so the floor is not what refuses
+        // it — and loses to the measured family, which is what does.
+        Assert.True(atPredicted >= 0.6, $"{atPredicted} should clear the floor");
+        Assert.True(
+            atPredicted < atMeasured,
+            $"{atPredicted} should lose to {atMeasured}");
         Assert.DoesNotContain("convicted by arbitration", trace);
         Assert.DoesNotContain("modal latch behind the crossover", trace);
     }

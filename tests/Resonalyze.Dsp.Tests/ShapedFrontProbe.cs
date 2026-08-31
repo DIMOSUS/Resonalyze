@@ -129,14 +129,17 @@ public sealed class ShapedFrontProbe
     // transfer, and the prediction can be several milliseconds out. That is a
     // real limit of the estimator, so what has to hold is the safety
     // property: such a shortfall may never be mistaken for a modal latch.
-    // (This row is the review's own counterexample, which lands ~5 ms out.)
+    // (The BW24 row is the review's own counterexample, which lands ~5 ms
+    // out; the BW48 row doubles the source's steepness so the property is
+    // held by two poses rather than standing on one.)
     [Theory]
-    [InlineData("BW24 LP 80 over 40-160", 40, 160)]
+    [InlineData("BW24 LP 80 over 40-160", 24, 40, 160)]
+    [InlineData("BW48 LP 80 over 40-160", 48, 40, 160)]
     public void PredictedArrival_NeverConvictsForSourceShapingAlone(
-        string caseName, double lowHz, double highHz)
+        string caseName, int sourceSlope, double lowHz, double highHz)
     {
         (AlignmentSnapshot snapshot, double measuredMs) = Shaped(
-            LowPass(80, 24),
+            LowPass(80, sourceSlope),
             HighPass(80, 48, CrossoverFilterFamily.LinkwitzRiley),
             lowHz, highHz);
 

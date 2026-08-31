@@ -901,6 +901,70 @@ public sealed class AutoAlignmentEngineTests
         }
     }
 
+    // The reach credit's instrument, pinned where it can be asked directly:
+    // the NON-COMMON part of the pair's chain shifts is a property of the
+    // CHAINS alone (a synthetic impulse through the real ApplyChain — no room
+    // in it), so a bass pair whose lower side carries a steep low-pass reads
+    // a lobe-scale skew, identical chains cancel to zero exactly, a pair
+    // whose band sits inside both passbands reads microseconds, and one side
+    // the predictor could not read (no bypassed response, no chain) withdraws
+    // the WHOLE credit — the partner's shift is unknown there, not zero, and
+    // this cell is what caught an earlier draft crediting the readable
+    // side's full 20 ms against an unmeasured partner.
+    [Fact]
+    public void PairChainArrivalSkew_ReadsTheChainsAlone()
+    {
+        const int Length = 32_768;
+        var subChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 48)));
+        var wooferChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 24),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 24)));
+        AlignmentSnapshot sub = PredictableSnapshot(
+            "SUB", SingleImpulse(Length, BasePosition), subChain);
+        AlignmentSnapshot woofer = PredictableSnapshot(
+            "W", SingleImpulse(Length, BasePosition), wooferChain);
+
+        // Lobe-scale: a period at 55 Hz is 18.2 ms, and the steep low-pass
+        // alone drags the sub's band arrival most of one.
+        double skew = AutoAlignmentEngine.PairChainArrivalSkewMs(
+            new AlignmentJunction(sub, woofer, 55, 27.5, 110));
+        Assert.InRange(skew, 10.0, 20.0);
+
+        AlignmentSnapshot subTwin = PredictableSnapshot(
+            "SUB2", SingleImpulse(Length, BasePosition), subChain);
+        Assert.Equal(
+            0.0,
+            AutoAlignmentEngine.PairChainArrivalSkewMs(
+                new AlignmentJunction(sub, subTwin, 55, 27.5, 110)));
+
+        var midChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 2_000, 24)));
+        var tweeterChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.HighPass,
+            HighPassEdge: new CrossoverEdge(
+                CrossoverFilterFamily.Butterworth, 2_000, 24)));
+        double highSkew = AutoAlignmentEngine.PairChainArrivalSkewMs(
+            new AlignmentJunction(
+                PredictableSnapshot(
+                    "M", SingleImpulse(Length, BasePosition), midChain),
+                PredictableSnapshot(
+                    "T", SingleImpulse(Length, BasePosition), tweeterChain),
+                2_000, 1_000, 4_000));
+        Assert.InRange(highSkew, 0.0, 0.3);
+
+        Complex[] bareIr = SingleImpulse(Length, BasePosition);
+        var bare = new AlignmentSnapshot(
+            new TestChannel("X", bareIr), bareIr, BasePosition);
+        Assert.Equal(
+            0.0,
+            AutoAlignmentEngine.PairChainArrivalSkewMs(
+                new AlignmentJunction(bare, sub, 55, 27.5, 110)));
+    }
+
     // The reach veto's stand-down policy, asserted as a policy. An acoustic
     // fixture can only reach these cells by luck of the numbers a synthetic IR
     // happens to produce; the predicate can be asked directly.

@@ -921,14 +921,20 @@ public static class AutoAlignmentEngine
     // how far apart their own chains drag the band arrivals the junction's
     // anchor is a diff of. Measured the way the predictor measures its chain
     // term (a synthetic impulse through the real ApplyChain, so no room enters
-    // it), and available exactly when the predictor is: a side without a
-    // bypassed response or a chain contributes zero rather than a guess.
-    private static double PairChainArrivalSkewMs(AlignmentJunction pair) =>
-        Math.Abs(
-            SideChainArrivalShiftMs(pair.Lower, pair.BandLowHz, pair.BandHighHz) -
-            SideChainArrivalShiftMs(pair.Upper, pair.BandLowHz, pair.BandHighHz));
+    // it), and available exactly when the predictor is on BOTH sides: a skew
+    // is a difference, so one unmeasurable side (no bypassed response, no
+    // chain) withdraws the whole credit — the partner's shift is unknown
+    // there, not zero, and crediting the readable side's full shift against
+    // it would hand the credit exactly the guess it exists to avoid.
+    internal static double PairChainArrivalSkewMs(AlignmentJunction pair) =>
+        SideChainArrivalShiftMs(pair.Lower, pair.BandLowHz, pair.BandHighHz)
+            is { } lower &&
+        SideChainArrivalShiftMs(pair.Upper, pair.BandLowHz, pair.BandHighHz)
+            is { } upper
+            ? Math.Abs(lower - upper)
+            : 0.0;
 
-    private static double SideChainArrivalShiftMs(
+    private static double? SideChainArrivalShiftMs(
         AlignmentSnapshot side,
         double bandLowHz,
         double bandHighHz)
@@ -936,7 +942,7 @@ public static class AutoAlignmentEngine
         if (side.BypassedImpulseResponse is not { } bypassed ||
             side.ProcessingChain is not { } chain)
         {
-            return 0.0;
+            return null;
         }
 
         int contentLength = side.BypassedValidRange.IsKnown

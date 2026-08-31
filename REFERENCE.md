@@ -967,7 +967,10 @@ first, rejects files below `44100 Hz`, restores the measurement metadata into th
 active record, and redraws the current view from the loaded data — without
 rewriting the audio-device configuration. Saving and loading are disabled while a
 measurement is running. The current file format identifier is
-`resonalyze-impulse-response`, version `8`.
+`resonalyze-impulse-response`, version `8`. A file declaring a LATER version than
+the build knows is refused by that version, up front — a newer version exists to
+change how something is stored, and reading on would report a broken file where
+"made by a newer Resonalyze" is the answer.
 
 ### Importing a sweep recorded elsewhere
 

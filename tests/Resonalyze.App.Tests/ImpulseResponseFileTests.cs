@@ -232,6 +232,46 @@ public sealed class ImpulseResponseFileTests
         }
     }
 
+    // The whole point of the version bump: a later version exists to change how
+    // something is represented, so this build must refuse it by its DECLARED
+    // version, up front — not trip over the representation mid-parse the way a
+    // v7 build does on v8's base64 sample strings.
+    [Fact]
+    public async Task Load_RefusesAFutureVersionByVersionNotByParseError()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"resonalyze-ir-{Guid.NewGuid():N}.json");
+        // Samples in a representation this build does not know how to read.
+        const string json = """
+            {
+              "format": "resonalyze-impulse-response",
+              "version": 9,
+              "sampleRate": 48000,
+              "bits": 24,
+              "octaves": 10,
+              "sweepDurationSeconds": 1.0,
+              "playChannel": "Mono",
+              "measurementMode": "SweepDeconvolution",
+              "sweepDeconvolutionPeakIndex": 0,
+              "sweepDeconvolutionRealSamples": { "codec": "zstd", "block": "AAAAAA==" }
+            }
+            """;
+
+        try
+        {
+            await File.WriteAllTextAsync(path, json);
+
+            InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(
+                () => ImpulseResponseFile.LoadAsync(path));
+            Assert.Contains("version 9", exception.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public async Task Load_RejectsBase64SampleBlockOfPartialFloats()
     {

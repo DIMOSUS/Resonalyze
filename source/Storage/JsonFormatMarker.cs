@@ -28,6 +28,7 @@ namespace Resonalyze;
 internal static class JsonFormatMarker
 {
     private const string MarkerProperty = "format";
+    private const string VersionProperty = "version";
 
     /// <summary>
     /// How much of the file is held at a time. Our own documents declare the marker
@@ -60,7 +61,19 @@ internal static class JsonFormatMarker
     /// its own, and every one of those answers that question with "no"; the loader
     /// that can say more never gets the file.
     /// </remarks>
-    internal static string? Read(string path)
+    internal static string? Read(string path) => Read(path, wantVersion: false).Format;
+
+    /// <summary>
+    /// The <c>format</c> AND the <c>version</c> the root object declares, either being
+    /// null when there is none to read. For a loader's preflight: a file from a future
+    /// format version must be refused by its declared version before deserialization,
+    /// because past that point the reader trips over a representation it does not know
+    /// and reports a parse error where the version is the answer.
+    /// </summary>
+    internal static (string? Format, int? Version) ReadWithVersion(string path) =>
+        Read(path, wantVersion: true);
+
+    private static (string? Format, int? Version) Read(string path, bool wantVersion)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         try
@@ -69,26 +82,30 @@ internal static class JsonFormatMarker
             // asking what it is must not fail for holding a lock nobody asked for.
             using var stream = new FileStream(
                 path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            return Scan(stream);
+            return Scan(stream, wantVersion);
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or NotSupportedException
                 or ArgumentException or JsonException)
         {
-            return null;
+            return (null, null);
         }
     }
 
-    private static string? Scan(FileStream stream)
+    private static (string? Format, int? Version) Scan(FileStream stream, bool wantVersion)
     {
         SkipByteOrderMark(stream);
 
         var buffer = new byte[ChunkBytes];
         int filled = 0;
         bool rootSeen = false;
-        // Set once the marker's property name has been read, so the value can still be
-        // picked up when the two fall either side of a chunk boundary.
-        bool expectingValue = false;
+        // Which marker's property name was just read, so its value can still be picked
+        // up when the two fall either side of a chunk boundary.
+        bool expectingFormat = false;
+        bool expectingVersion = false;
+        string? format = null;
+        int? version = null;
+        bool versionSeen = !wantVersion;
         JsonReaderState state = new(ProbeOptions);
         while (true)
         {
@@ -98,9 +115,36 @@ internal static class JsonFormatMarker
             var reader = new Utf8JsonReader(buffer.AsSpan(0, filled), finalBlock, state);
             while (reader.Read())
             {
-                if (expectingValue)
+                if (expectingFormat)
                 {
-                    return reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
+                    // A format that is not a string declares nothing, and nothing that
+                    // asks for the version cares about it without the format.
+                    format = reader.TokenType == JsonTokenType.String
+                        ? reader.GetString()
+                        : null;
+                    if (format == null || versionSeen)
+                    {
+                        return (format, version);
+                    }
+
+                    expectingFormat = false;
+                    continue;
+                }
+
+                if (expectingVersion)
+                {
+                    version = reader.TokenType == JsonTokenType.Number &&
+                        reader.TryGetInt32(out int value)
+                            ? value
+                            : null;
+                    versionSeen = true;
+                    if (format != null)
+                    {
+                        return (format, version);
+                    }
+
+                    expectingVersion = false;
+                    continue;
                 }
 
                 if (!rootSeen)
@@ -108,7 +152,7 @@ internal static class JsonFormatMarker
                     // A document whose root is not an object declares nothing.
                     if (reader.TokenType != JsonTokenType.StartObject)
                     {
-                        return null;
+                        return (null, null);
                     }
 
                     rootSeen = true;
@@ -117,20 +161,26 @@ internal static class JsonFormatMarker
 
                 if (reader.TokenType == JsonTokenType.EndObject && reader.CurrentDepth == 0)
                 {
-                    return null;
+                    return (format, version);
                 }
 
                 if (reader.TokenType == JsonTokenType.PropertyName &&
-                    reader.CurrentDepth == 1 &&
-                    reader.ValueTextEquals(MarkerProperty))
+                    reader.CurrentDepth == 1)
                 {
-                    expectingValue = true;
+                    if (reader.ValueTextEquals(MarkerProperty))
+                    {
+                        expectingFormat = true;
+                    }
+                    else if (wantVersion && reader.ValueTextEquals(VersionProperty))
+                    {
+                        expectingVersion = true;
+                    }
                 }
             }
 
             if (finalBlock)
             {
-                return null;
+                return (format, version);
             }
 
             state = reader.CurrentState;
@@ -141,7 +191,7 @@ internal static class JsonFormatMarker
             {
                 // One token longer than the whole buffer, which no document of ours
                 // carries near its head. Nothing left to do but decline it.
-                return null;
+                return (format, version);
             }
         }
     }

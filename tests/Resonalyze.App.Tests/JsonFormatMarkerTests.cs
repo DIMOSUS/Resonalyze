@@ -116,10 +116,47 @@ public sealed class JsonFormatMarkerTests : IDisposable
     public void AFileThatIsNotThereReadsAsNothing() =>
         Assert.Null(JsonFormatMarker.Read(Path.Combine(directory, "gone.json")));
 
+    // The version-aware probe exists for a loader's preflight: a file from a future
+    // format version must be refused by its declared version BEFORE deserialization,
+    // where the reader would only trip over the representation it does not know.
+
+    [Fact]
+    public void TheVersionTravelsWithTheFormat() =>
+        Assert.Equal(
+            ("resonalyze-impulse-response", 9),
+            WithVersion("{\"format\": \"resonalyze-impulse-response\", \"version\": 9}"));
+
+    [Fact]
+    public void AVersionDeclaredBeforeTheFormatStillBinds() =>
+        Assert.Equal(
+            ("resonalyze-impulse-response", 9),
+            WithVersion("{\"version\": 9, \"format\": \"resonalyze-impulse-response\"}"));
+
+    [Fact]
+    public void OnlyTheRootObjectsOwnVersionCounts() =>
+        // Same rule as the format: a nested version numbers a PART of the document.
+        Assert.Equal(
+            ("resonalyze-overlay", 3),
+            WithVersion("{\"recipe\": {\"version\": 12}, " +
+                "\"format\": \"resonalyze-overlay\", \"version\": 3}"));
+
+    [Theory]
+    [InlineData("{\"format\": \"resonalyze-overlay\"}")]
+    [InlineData("{\"format\": \"resonalyze-overlay\", \"version\": \"nine\"}")]
+    public void AMissingOrNonNumericVersionReadsAsNoVersion(string json) =>
+        Assert.Equal(("resonalyze-overlay", null), WithVersion(json));
+
     private string Marker(string json, Encoding? encoding = null)
     {
         string path = Path.Combine(directory, $"probe-{Guid.NewGuid():N}.json");
         File.WriteAllText(path, json, encoding ?? new UTF8Encoding(false));
         return JsonFormatMarker.Read(path)!;
+    }
+
+    private (string? Format, int? Version) WithVersion(string json)
+    {
+        string path = Path.Combine(directory, $"probe-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, json, new UTF8Encoding(false));
+        return JsonFormatMarker.ReadWithVersion(path);
     }
 }

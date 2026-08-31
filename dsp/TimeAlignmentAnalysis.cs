@@ -104,13 +104,36 @@ public static class TimeAlignmentAnalysis
         double[]? kernelEnvelope = null;
         if (options.UseBandpassWindow)
         {
+            // Filtered on a ZERO-PADDED buffer of the next power of two, then
+            // trimmed back, so every index below is in the caller's own frame.
+            // BandpassWindow.Apply says why in its own words: the transform is
+            // circular, and this signal is normally a CUT of a longer record (a
+            // channel's valid range), so an unpadded filter wraps the tail onto
+            // the head — worst exactly where the kernel is longest, a narrow low
+            // band. Padding also buys the fast transform: MathNet is quick only
+            // on an exact power of two, and a crop lands one sample past one by
+            // construction (ChainValidRange rounds outward) — measured 20 ms at
+            // 262144 samples against 317 ms at 262145. A signal already a power
+            // of two long is filtered exactly as it was before, to the bit.
+            int transformLength = DspMath.NextPowerOfTwo(impulseResponse.Count);
+            var padded = new double[transformLength];
+            for (int i = 0; i < impulseResponse.Count; i++)
+            {
+                padded[i] = impulseResponse[i];
+            }
+
             double[] window = BandpassWindow.Create(
-                impulseResponse.Count,
+                transformLength,
                 sampleRate,
                 options.BandpassCenterHz,
                 options.BandpassPassOctaves,
                 options.BandpassFadeOctaves);
-            analysisSignal = BandpassWindow.Apply(impulseResponse, window);
+            double[] filtered = BandpassWindow.Apply(padded, window);
+            analysisSignal = filtered.Length == impulseResponse.Count
+                ? filtered
+                : filtered[..impulseResponse.Count];
+            // Indexed by DISTANCE from the kernel's centre, so the padded window's
+            // longer, finer curve answers the same question the short one did.
             kernelEnvelope = BuildKernelEnvelope(window);
         }
         else

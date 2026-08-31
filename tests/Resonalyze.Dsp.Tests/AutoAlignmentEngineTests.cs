@@ -1726,12 +1726,14 @@ public sealed class AutoAlignmentEngineTests
             CrossoverKind.BandPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 180, 36),
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
-        Complex[] subBypassed = LowFrontUnderCabinBuildUp(Length, 2.0, 0.02);
+        Complex[] subBypassed = LowFrontUnderCabinBuildUp(Length, 4.0, 0.02);
         // The woofer fires 23 ms after the sub's front, which only re-centres
         // the correlation window (a pure delay moves a channel's read and its
-        // prediction together, so the pair's disagreement is untouched) — far
-        // enough from the window edge that the seed's neighbouring lobe is
-        // measured rather than edge-pinned.
+        // prediction together, so the pair's disagreement is untouched). The
+        // offset is not what poses this case: every value swept from 8 to 35 ms
+        // keeps the conservative path. What poses it is the build-up's LENGTH —
+        // it is what leaves the seed without an interior neighbour to measure a
+        // lobe spacing from.
         Complex[] wooferBypassed = SingleImpulse(
             Length, BasePosition + 23 * SampleRate / 1000);
 
@@ -1833,6 +1835,8 @@ public sealed class AutoAlignmentEngineTests
         return ir;
     }
 
+
+
     private static (string Trace, AlignmentOverride Woofer) RunDeadZonePair(
         AlignmentSnapshot sub, Complex[] subBypassed, DspChannelChain subChain,
         AlignmentSnapshot woofer, Complex[] wooferBypassed,
@@ -1882,12 +1886,17 @@ public sealed class AutoAlignmentEngineTests
     }
 
     // The archived Passat v2 defect: the sub's band read latched onto a mode
-    // 1.7 allowances past its prediction — inside the conviction dead zone,
+    // 1.9 allowances past its prediction — inside the conviction dead zone,
     // where the predictor may not convict alone (its own shaping error can
     // reach 1.2 allowances) — and the silently withdrawn pair anchored the
     // junction a period late. The whitened comb is the second witness: the
     // pair's shared content sits with the prediction, so the read is
     // convicted and the junction lands on the true front family.
+    //
+    // What conviction buys is measured, not assumed: this very sub, paired with
+    // a woofer that denies the comb its witness (the stand-down case below),
+    // ends at 30.0 ms INVERTED — the late family. Convicted, it ends at 18.0 ms
+    // upright. The two answers are what the arbitration decides between.
     [Fact]
     public void Compute_DeadZoneLatch_IsConvictedByTheWhitenedCombArbitration()
     {
@@ -1899,7 +1908,7 @@ public sealed class AutoAlignmentEngineTests
             CrossoverKind.BandPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 48),
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 48)));
-        Complex[] subBypassed = FrontUnderShortMode(Length, 40.0, 4.0, 0.10);
+        Complex[] subBypassed = FrontUnderShortMode(Length, 30.0, 14.0, 0.03);
         Complex[] wooferBypassed = SingleImpulse(Length, BasePosition);
         AlignmentSnapshot sub = PredictableSnapshot("SUB", subBypassed, subChain);
         AlignmentSnapshot woofer = PredictableSnapshot(
@@ -1932,18 +1941,24 @@ public sealed class AutoAlignmentEngineTests
         Assert.Contains("convicted by arbitration", trace);
         Assert.Contains("modal latch behind the crossover", trace);
         Assert.Contains("seed phat", trace);
-        // The junction lands on the true front family (the clean-sum optimum
-        // sits at ~8 ms, the latched family a lobe later at ~14+ ms inv).
+        // The junction lands on the true front family: upright, and far ahead of
+        // the 30.0 ms inverted answer the same sub gets when the arbitration is
+        // denied its witness.
         Assert.False(over.InvertPolarity);
-        Assert.InRange(over.DelayMs, 6.0, 10.0);
+        Assert.InRange(over.DelayMs, 16.0, 20.0);
     }
 
-    // The arbitration's other verdict, and the fleet's common one: when the
-    // woofer carries its own late build-up, the comb reads as strongly at the
-    // measured family as at the predicted one — the two are indistinguishable,
-    // so there is no second witness and the conviction-strength discrepancy
-    // may not be acted on. The pair withdraws from the predictor exactly as
-    // it did before the arbitration existed.
+    // The arbitration's other verdict, and the fleet's common one. The witness
+    // is the pair's SHARED content, so what denies it is content only one of
+    // them carries: here the woofer rings at 90 Hz, where the sub is 48 dB/oct
+    // down and cannot answer. The comb then finds nothing at the predicted
+    // family worth trusting — it reads r ≈ 0.3 against the 0.6 floor, not a
+    // photo finish with the measured family — and a conviction-strength
+    // discrepancy may not be acted on with no second witness. The pair
+    // withdraws from the predictor exactly as it did before the arbitration
+    // existed, and the woofer's own read still verifies: only one side is in
+    // dispute, which is what keeps this the arbitration's case and not a
+    // two-sided mess.
     [Fact]
     public void Compute_DeadZoneLatch_ArbitrationStandsDownWithoutASecondWitness()
     {
@@ -1955,8 +1970,8 @@ public sealed class AutoAlignmentEngineTests
             CrossoverKind.BandPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 24),
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 24)));
-        Complex[] subBypassed = FrontUnderShortMode(Length, 40.0, 4.0, 0.06);
-        Complex[] wooferBypassed = FrontUnderShortMode(Length, 70.0, 4.0, 0.35);
+        Complex[] subBypassed = FrontUnderShortMode(Length, 30.0, 14.0, 0.03);
+        Complex[] wooferBypassed = FrontUnderShortMode(Length, 90.0, 14.0, 0.40);
         AlignmentSnapshot sub = PredictableSnapshot("SUB", subBypassed, subChain);
         AlignmentSnapshot woofer = PredictableSnapshot(
             "W", wooferBypassed, wooferChain);

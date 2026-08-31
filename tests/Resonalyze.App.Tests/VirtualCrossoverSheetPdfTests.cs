@@ -430,7 +430,7 @@ public sealed class VirtualCrossoverSheetPdfTests
             VirtualCrossoverSheetTests.GroupedProject(), null, 48_000);
 
         // The walk of the document in order: every group heading (the only
-        // 19 pt paragraphs on the sheet) and every graph image. Each zone's
+        // group-heading-sized paragraphs on the sheet) and every graph image. Each zone's
         // name must be followed by its graph — Sub first, the order a tune is
         // typed into a DSP — regardless of whether the banner image loaded.
         List<string> walk = HeadingsAndImages(sheet.Document);
@@ -439,6 +439,39 @@ public sealed class VirtualCrossoverSheetPdfTests
         Assert.Equal(
             ["Sub", "image", "Front", "image", "Rear", "image", "Center", "image"],
             walk.Skip(start));
+    }
+
+    [Fact]
+    public void Build_GroupedProject_StartsEveryGroupAfterTheFirstOnItsOwnPage()
+    {
+        // The sheet is read standing at the DSP one group at a time, so each
+        // group opens a page of its own — except the first, which stays on the
+        // title page rather than leaving it holding nothing but the banner.
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(
+            VirtualCrossoverSheetTests.GroupedProject(), null, 48_000);
+
+        List<Paragraph> headings = GroupHeadings(sheet.Document);
+        Assert.Equal(4, headings.Count);
+        Assert.False(headings[0].Format.PageBreakBefore);
+        Assert.All(headings.Skip(1), heading =>
+            Assert.True(heading.Format.PageBreakBefore));
+    }
+
+    // The group headings in reading order — the only group-heading-sized paragraphs on the sheet.
+    private static List<Paragraph> GroupHeadings(Document document)
+    {
+        var headings = new List<Paragraph>();
+        DocumentElements elements = document.LastSection.Elements;
+        for (int i = 0; i < elements.Count; i++)
+        {
+            if (elements[i] is Paragraph paragraph &&
+                paragraph.Format.Font.Size == Unit.FromPoint(VirtualCrossoverSheetPdf.GroupHeadingPointSize))
+            {
+                headings.Add(paragraph);
+            }
+        }
+
+        return headings;
     }
 
     [Fact]
@@ -574,7 +607,7 @@ public sealed class VirtualCrossoverSheetPdfTests
     }
 
     // The document in reading order, reduced to what the grouped layout is
-    // about: each group heading (the only 19 pt paragraphs on the sheet) as its
+    // about: each group heading (the only group-heading-sized paragraphs on the sheet) as its
     // text, and each image as "image".
     private static List<string> HeadingsAndImages(Document document)
     {
@@ -601,7 +634,7 @@ public sealed class VirtualCrossoverSheetPdfTests
             {
                 walk.Add("image");
             }
-            else if (paragraph.Format.Font.Size == Unit.FromPoint(19))
+            else if (paragraph.Format.Font.Size == Unit.FromPoint(VirtualCrossoverSheetPdf.GroupHeadingPointSize))
             {
                 var builder = new StringBuilder();
                 AppendParagraphText(paragraph, builder);

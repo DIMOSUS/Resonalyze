@@ -105,10 +105,21 @@ internal static class VirtualCrossoverSheetPdf
         List<SheetEntry> subwooferMembers = [.. sections
             .Where(section => section.Zone == VirtualCrossoverZone.Sub)
             .SelectMany(section => Participants(project, section.PairIndices))];
+        bool firstGroup = true;
         foreach ((VirtualCrossoverZone zone, IReadOnlyList<int> pairIndices)
             in sections)
         {
-            AddGroupHeading(sheet.Section, VirtualCrossoverZones.DisplayName(zone));
+            // Every group after the first starts a page of its own: the sheet
+            // is read standing at the DSP one group at a time, and a page that
+            // begins with the group's name and graph needs no scrolling back to
+            // see which zone the values belong to. The first group stays on the
+            // title page — breaking before it would leave that page holding
+            // nothing but the banner.
+            AddGroupHeading(
+                sheet.Section,
+                VirtualCrossoverZones.DisplayName(zone),
+                newPage: !firstGroup);
+            firstGroup = false;
             sheet.AddImage(
                 RenderPng(BuildChainsModel(
                     GroupCurves(
@@ -174,13 +185,21 @@ internal static class VirtualCrossoverSheetPdf
         }
     }
 
+    // The size of a group heading: well above the channel headings (15 pt) and
+    // just under the document title (24 pt), so a page's first glance says
+    // which zone it belongs to. A named constant because the tests find the
+    // group headings BY this size — a literal changed in one place would make
+    // them silently find nothing.
+    internal const int GroupHeadingPointSize = 22;
+
     // The zone's name above its run of channel sections — a tier above the
-    // channel headings (15 pt), so the sheet's two levels read at a glance.
-    private static void AddGroupHeading(Section section, string title)
+    // channel headings, so the sheet's two levels read at a glance.
+    private static void AddGroupHeading(Section section, string title, bool newPage)
     {
         Paragraph heading = section.AddParagraph(title);
         heading.Format.Font.Bold = true;
-        heading.Format.Font.Size = 19;
+        heading.Format.Font.Size = GroupHeadingPointSize;
+        heading.Format.PageBreakBefore = newPage;
         heading.Format.SpaceBefore = Unit.FromMillimeter(7);
         heading.Format.SpaceAfter = Unit.FromMillimeter(1);
         // Never break between the group's name and the graph it introduces.

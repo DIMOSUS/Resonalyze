@@ -1423,7 +1423,7 @@ When you are satisfied, press **Export...** and generate the final **PDF tuning 
 It lists the crossover settings, gains, delays, polarities, and PEQ needed to reproduce
 the virtual system in the real DSP. On an install that spans several zones the sheet
 prints by group, in the order you would enter it — Sub, then Front, then Rear, then
-Center — each group under its own heading with a graph of its filters, and the front
+Center — each group on a page of its own, under its heading and a graph of its filters, and the front
 group's graph shows the subwoofers' summed filter shape in a pale tone, so the bass
 handover is visible where you dial it in. Blocks keep their panel letters; only the
 order of the sections changes.

@@ -2578,8 +2578,8 @@ The remaining buttons in the column beside the plots:
   An installation spanning several zones prints **by group**, in the order a
   tune is typed into a DSP — Sub, then Front, then Rear, then Center — each
   group led by its name and (on the PDF) a graph of its own DSP chains instead
-  of one combined tangle; blocks keep their panel letters, only the section
-  order changes. A group's graph adds the design sum of its chains per side
+  of one combined tangle, every group after the first opening a page of its
+  own; blocks keep their panel letters, only the section order changes. A group's graph adds the design sum of its chains per side
   (left solid, right dashed; one line for a group of mono blocks) where a side
   has at least two chains to sum — never for the centre, whose derived signal
   makes any sum involving it a fiction — and the front group's graph carries

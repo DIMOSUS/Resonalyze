@@ -12,7 +12,15 @@ namespace Resonalyze;
 public sealed class ImpulseResponseFile
 {
     public const string CurrentFormat = "resonalyze-impulse-response";
-    public const int CurrentVersion = 7;
+    // Version 8: the bulk sample arrays became base64 float32 strings (see
+    // Float32SampleArrayJsonConverter). A representational change to existing
+    // fields, unlike the additive metadata below, so it IS a bump. Builds up to
+    // v7 validate the version only AFTER deserializing and cannot be changed
+    // now, so on a v8 file they still fail with a parse error; what the bump
+    // buys is the future — LoadAsync now refuses a LATER version up front, so
+    // from this build on a format change reads as "unsupported version 9",
+    // never as a broken file.
+    public const int CurrentVersion = 8;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -141,18 +149,27 @@ public sealed class ImpulseResponseFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ArrayMicrophonesFileEntry? ArrayMicrophones { get; set; }
 
+    // The bulk of the file lives in these five arrays, so they alone are stored
+    // as base64 float32 (little-endian) rather than JSON numbers; pre-v8 number
+    // arrays are still read, at their full double precision. In memory they are
+    // double[] either way — all analysis after a load runs in double as before.
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[] SweepDeconvolutionRealSamples { get; set; } = Array.Empty<double>();
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[]? SweepDeconvolutionImaginarySamples { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[]? TransferRealSamples { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[]? TransferImaginarySamples { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[]? TransferCoherence { get; set; }
 
     public static ImpulseResponseFile Capture(ExpSweepMeasurement measurement)
@@ -307,6 +324,21 @@ public sealed class ImpulseResponseFile
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        // A file from a FUTURE format version is refused by its declared version
+        // BEFORE deserialization. Waiting for Validate() is too late: a later
+        // version exists to change how something is represented, and this
+        // build's reader would trip over that representation first and report a
+        // parse error where the version is the answer — exactly what a v7 build
+        // does on v8's base64 sample strings. Anything else falls through to the
+        // full read: the errors it produces are already right for those files.
+        (string? format, int? version) = JsonFormatMarker.ReadWithVersion(path);
+        if (string.Equals(format, CurrentFormat, StringComparison.Ordinal) &&
+            version is > CurrentVersion)
+        {
+            throw new InvalidDataException(
+                $"Unsupported impulse response version {version}.");
+        }
 
         await using FileStream stream = new(
             path,

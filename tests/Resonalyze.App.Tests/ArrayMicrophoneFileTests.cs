@@ -166,9 +166,11 @@ public sealed class ArrayMicrophoneFileTests
 
         // Both sections are additive and optional. Bumping the version would make
         // every file this build writes unreadable to an older one, over metadata
-        // that older one would have ignored.
-        Assert.Equal(7, file.Version);
-        Assert.Equal(7, ImpulseResponseFile.CurrentVersion);
+        // that older one would have ignored. (Version 8 was minted later by the
+        // base64 float32 sample representation — a change to existing fields, so
+        // it DID have to bump — not by these sections.)
+        Assert.Equal(8, file.Version);
+        Assert.Equal(8, ImpulseResponseFile.CurrentVersion);
     }
 
     [Fact]

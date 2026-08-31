@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json;
 using Resonalyze.Audio;
 
 namespace Resonalyze.App.Tests;
@@ -131,7 +132,174 @@ public sealed class ImpulseResponseFileTests
                 ],
                 transferSamples);
             Assert.NotNull(loaded.TransferCoherence);
+            // Bulk arrays are stored as float32, so a round trip keeps each
+            // value to float precision, not the original double.
+            Assert.Equal([(float)0.91, (float)0.82, (float)0.73], loaded.TransferCoherence);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // The five bulk arrays are the megabytes of the file; version 8 stores them
+    // as base64 float32 (little-endian) strings instead of JSON number arrays.
+    [Fact]
+    public async Task Save_StoresBulkSampleArraysAsBase64Float32()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"resonalyze-ir-{Guid.NewGuid():N}.json");
+        double[] samples = [0.125, 0.5, 1.0, -0.25];
+        var original = new ImpulseResponseFile
+        {
+            SampleRate = 48_000,
+            Bits = 24,
+            Octaves = 10,
+            SweepDurationSeconds = 1.0,
+            PlayChannel = PlaybackChannel.Mono,
+            SweepDeconvolutionRealSamples = samples
+        };
+
+        try
+        {
+            await original.SaveAsync(path);
+
+            string json = await File.ReadAllTextAsync(path);
+            byte[] bytes = new byte[samples.Length * sizeof(float)];
+            for (int i = 0; i < samples.Length; i++)
+            {
+                System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(
+                    bytes.AsSpan(i * sizeof(float)), (float)samples[i]);
+            }
+            Assert.Contains(
+                $"\"sweepDeconvolutionRealSamples\": \"{Convert.ToBase64String(bytes)}\"",
+                json);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // Files written before version 8 carry the sample arrays as JSON numbers.
+    // They must still load, and at their FULL double precision — the legacy
+    // read path must not inherit the float32 rounding of the new one.
+    [Fact]
+    public async Task Load_ReadsLegacyNumberArraysAtFullDoublePrecision()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"resonalyze-ir-{Guid.NewGuid():N}.json");
+        const double exact = 0.12345678901234567;
+        Assert.NotEqual(exact, (float)exact);
+        const string json = """
+            {
+              "format": "resonalyze-impulse-response",
+              "version": 7,
+              "sampleRate": 48000,
+              "bits": 24,
+              "octaves": 10,
+              "sweepDurationSeconds": 1.0,
+              "playChannel": "Mono",
+              "measurementMode": "LoopbackTransfer",
+              "sweepDeconvolutionPeakIndex": 0,
+              "sweepDeconvolutionRealSamples": [0.12345678901234567, 1.0],
+              "transferPeakIndex": 1,
+              "transferRealSamples": [0.25, 1.0, -0.5, 0.125],
+              "transferImaginarySamples": [0, 0.12345678901234567, 0, 0],
+              "transferCoherence": [0.91, 0.82, 0.73]
+            }
+            """;
+
+        try
+        {
+            await File.WriteAllTextAsync(path, json);
+
+            ImpulseResponseFile loaded = await ImpulseResponseFile.LoadAsync(path);
+
+            Assert.NotNull(loaded.TransferRealSamples);
+            Assert.NotNull(loaded.TransferImaginarySamples);
+            Assert.NotNull(loaded.TransferCoherence);
+            Assert.Equal([exact, 1.0], loaded.SweepDeconvolutionRealSamples);
+            Assert.Equal([0.25, 1.0, -0.5, 0.125], loaded.TransferRealSamples);
+            Assert.Equal([0, exact, 0, 0], loaded.TransferImaginarySamples);
             Assert.Equal([0.91, 0.82, 0.73], loaded.TransferCoherence);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // The whole point of the version bump: a later version exists to change how
+    // something is represented, so this build must refuse it by its DECLARED
+    // version, up front — not trip over the representation mid-parse the way a
+    // v7 build does on v8's base64 sample strings.
+    [Fact]
+    public async Task Load_RefusesAFutureVersionByVersionNotByParseError()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"resonalyze-ir-{Guid.NewGuid():N}.json");
+        // Samples in a representation this build does not know how to read.
+        const string json = """
+            {
+              "format": "resonalyze-impulse-response",
+              "version": 9,
+              "sampleRate": 48000,
+              "bits": 24,
+              "octaves": 10,
+              "sweepDurationSeconds": 1.0,
+              "playChannel": "Mono",
+              "measurementMode": "SweepDeconvolution",
+              "sweepDeconvolutionPeakIndex": 0,
+              "sweepDeconvolutionRealSamples": { "codec": "zstd", "block": "AAAAAA==" }
+            }
+            """;
+
+        try
+        {
+            await File.WriteAllTextAsync(path, json);
+
+            InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(
+                () => ImpulseResponseFile.LoadAsync(path));
+            Assert.Contains("version 9", exception.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task Load_RejectsBase64SampleBlockOfPartialFloats()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"resonalyze-ir-{Guid.NewGuid():N}.json");
+        // "AAAA" is three bytes — not a whole number of float32 values.
+        const string json = """
+            {
+              "format": "resonalyze-impulse-response",
+              "version": 8,
+              "sampleRate": 48000,
+              "bits": 24,
+              "octaves": 10,
+              "sweepDurationSeconds": 1.0,
+              "playChannel": "Mono",
+              "measurementMode": "SweepDeconvolution",
+              "sweepDeconvolutionPeakIndex": 0,
+              "sweepDeconvolutionRealSamples": "AAAA"
+            }
+            """;
+
+        try
+        {
+            await File.WriteAllTextAsync(path, json);
+
+            await Assert.ThrowsAsync<JsonException>(
+                () => ImpulseResponseFile.LoadAsync(path));
         }
         finally
         {

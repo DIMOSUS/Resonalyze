@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Text;
 using OxyPlot;
 using Resonalyze.Dsp;

@@ -1,4 +1,4 @@
-﻿namespace Resonalyze
+namespace Resonalyze
 {
     partial class VirtualCrossoverPanel
     {
@@ -79,8 +79,8 @@
             comboBoxCorrelationPair = new DarkComboBox();
             panel1 = new RoundedPanel();
             panel2 = new RoundedPanel();
-            (numericTargetLevel).BeginInit();
             sideSelectorPanel.SuspendLayout();
+            (numericTargetLevel).BeginInit();
             dspModePanel.SuspendLayout();
             panel1.SuspendLayout();
             panel2.SuspendLayout();
@@ -231,7 +231,8 @@
             labelGroupView.ForeColor = Color.FromArgb(210, 214, 222);
             labelGroupView.Location = new Point(945, 441);
             labelGroupView.Name = "labelGroupView";
-            labelGroupView.Size = new Size(35, 15);
+            labelGroupView.Size = new Size(37, 15);
+            labelGroupView.TabIndex = 26;
             labelGroupView.Text = "Show";
             // 
             // comboBoxGroupView
@@ -242,6 +243,7 @@
             comboBoxGroupView.MinimumSize = new Size(36, 19);
             comboBoxGroupView.Name = "comboBoxGroupView";
             comboBoxGroupView.Size = new Size(130, 19);
+            comboBoxGroupView.TabIndex = 27;
             // 
             // labelCurves
             // 
@@ -306,18 +308,6 @@
             labelCalibration.TabIndex = 30;
             labelCalibration.Text = "Mic cal";
             // 
-            // checkBoxHybrid
-            // 
-            checkBoxHybrid.AutoSize = true;
-            checkBoxHybrid.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            checkBoxHybrid.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxHybrid.Location = new Point(980, 409);
-            checkBoxHybrid.Name = "checkBoxHybrid";
-            checkBoxHybrid.Size = new Size(63, 19);
-            checkBoxHybrid.TabIndex = 30;
-            checkBoxHybrid.Text = "Hybrid";
-            checkBoxHybrid.UseVisualStyleBackColor = true;
-            // 
             // checkBoxShowSum
             // 
             checkBoxShowSum.AutoSize = true;
@@ -331,6 +321,18 @@
             checkBoxShowSum.TabIndex = 7;
             checkBoxShowSum.Text = "Sum";
             checkBoxShowSum.UseVisualStyleBackColor = true;
+            // 
+            // checkBoxHybrid
+            // 
+            checkBoxHybrid.AutoSize = true;
+            checkBoxHybrid.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxHybrid.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxHybrid.Location = new Point(980, 409);
+            checkBoxHybrid.Name = "checkBoxHybrid";
+            checkBoxHybrid.Size = new Size(62, 19);
+            checkBoxHybrid.TabIndex = 30;
+            checkBoxHybrid.Text = "Hybrid";
+            checkBoxHybrid.UseVisualStyleBackColor = true;
             // 
             // checkBoxShowLoss
             // 
@@ -495,21 +497,9 @@
             buttonSessionImport.TabIndex = 17;
             buttonSessionImport.Text = "Load session...";
             buttonSessionImport.UseVisualStyleBackColor = true;
-            //
-            // buttonAudition
-            //
-            buttonAudition.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            buttonAudition.FlatStyle = FlatStyle.Popup;
-            buttonAudition.ForeColor = Color.White;
-            buttonAudition.Location = new Point(358, 612);
-            buttonAudition.Name = "buttonAudition";
-            buttonAudition.Size = new Size(125, 24);
-            buttonAudition.TabIndex = 21;
-            buttonAudition.Text = "Audition track...";
-            buttonAudition.UseVisualStyleBackColor = true;
-            //
+            // 
             // buttonSessionExport
-            //
+            // 
             buttonSessionExport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonSessionExport.FlatStyle = FlatStyle.Popup;
             buttonSessionExport.ForeColor = Color.White;
@@ -519,6 +509,18 @@
             buttonSessionExport.TabIndex = 18;
             buttonSessionExport.Text = "Save session...";
             buttonSessionExport.UseVisualStyleBackColor = true;
+            // 
+            // buttonAudition
+            // 
+            buttonAudition.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            buttonAudition.FlatStyle = FlatStyle.Popup;
+            buttonAudition.ForeColor = Color.White;
+            buttonAudition.Location = new Point(358, 612);
+            buttonAudition.Name = "buttonAudition";
+            buttonAudition.Size = new Size(125, 24);
+            buttonAudition.TabIndex = 21;
+            buttonAudition.Text = "Audition track...";
+            buttonAudition.UseVisualStyleBackColor = true;
             // 
             // dspModePanel
             // 
@@ -594,15 +596,15 @@
             radioDspCorrelation.TabIndex = 3;
             radioDspCorrelation.Text = "Correlation";
             radioDspCorrelation.UseVisualStyleBackColor = true;
-            //
+            // 
             // radioDspCoherence
-            //
+            // 
             radioDspCoherence.AutoSize = true;
             radioDspCoherence.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             radioDspCoherence.ForeColor = Color.FromArgb(210, 214, 222);
             radioDspCoherence.Location = new Point(88, 1);
             radioDspCoherence.Name = "radioDspCoherence";
-            radioDspCoherence.Size = new Size(82, 19);
+            radioDspCoherence.Size = new Size(81, 19);
             radioDspCoherence.TabIndex = 4;
             radioDspCoherence.Text = "Coherence";
             radioDspCoherence.UseVisualStyleBackColor = true;
@@ -612,7 +614,7 @@
             comboBoxCorrelationPair.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxCorrelationPair.Enabled = false;
             comboBoxCorrelationPair.ForeColor = Color.White;
-            comboBoxCorrelationPair.Location = new Point(178, 1);
+            comboBoxCorrelationPair.Location = new Point(178, 2);
             comboBoxCorrelationPair.MinimumSize = new Size(36, 19);
             comboBoxCorrelationPair.Name = "comboBoxCorrelationPair";
             comboBoxCorrelationPair.Size = new Size(74, 19);
@@ -685,9 +687,9 @@
             Name = "VirtualCrossoverPanel";
             Padding = new Padding(6);
             Size = new Size(1246, 770);
-            (numericTargetLevel).EndInit();
             sideSelectorPanel.ResumeLayout(false);
             sideSelectorPanel.PerformLayout();
+            (numericTargetLevel).EndInit();
             dspModePanel.ResumeLayout(false);
             dspModePanel.PerformLayout();
             panel1.ResumeLayout(false);

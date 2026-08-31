@@ -2067,6 +2067,22 @@ public static class AutoAlignmentEngine
 
                 // At the boundary itself the two lobes are equidistant, so
                 // the extremum is refused rather than admitted.
+                //
+                // The gate reads the RAW offset deliberately, and the skew
+                // correction below opens only ADMITTANCE doors behind it —
+                // it never re-vetoes an extremum the raw anchor accepts. The
+                // symmetric alternative (gate everything by offset+skew) reads
+                // cleaner and was reviewed twice, but the corrected anchor is
+                // a bounded estimate, not a truth coordinate: the skew is the
+                // chains' full envelope shift where the honest correction is
+                // its group-minus-phase part, and on the archived v2
+                // woofer/mid junction the owner's own lobe sits 1.9 periods
+                // from the corrected anchor while agreeing with the raw one.
+                // Gating by the corrected offset there re-vetoes the tune the
+                // panel's metric measures 0.5 dB better. Raw-offset gating is
+                // also the pre-correction semantics every archived cabin was
+                // calibrated against; narrowing it needs its own field case,
+                // not an arithmetic symmetry.
                 if (!arrivalReanchored && Math.Abs(seedOffsetMs) >= reachMs)
                 {
                     // The anchor is a diff of two band-ENVELOPE arrivals, and
@@ -2099,7 +2115,8 @@ public static class AutoAlignmentEngine
                             "non-common shift, and against the corrected anchor " +
                             $"the extremum (r {Math.Abs(seed.Coefficient):0.000}) " +
                             $"sits {Math.Abs(seedOffsetMs + chainSkewMs.Value):0.000} ms " +
-                            "off, inside the reach; it stands");
+                            "off, inside the reach; the veto is corrected away " +
+                            "and the extremum stands");
                         return null;
                     }
 
@@ -2124,8 +2141,9 @@ public static class AutoAlignmentEngine
                             $"chains displace that anchor by " +
                             $"{chainSkewMs!.Value:+0.000;-0.000} ms, the full " +
                             $"{reachMs:0.000} ms reach and more, so the anchor " +
-                            "cannot grade lobes at all; the extremum stands on " +
-                            $"its own strength (r {Math.Abs(seed.Coefficient):0.000})");
+                            "cannot grade lobes and its veto stands down; the " +
+                            "extremum stands on its own strength " +
+                            $"(r {Math.Abs(seed.Coefficient):0.000})");
                         return null;
                     }
 

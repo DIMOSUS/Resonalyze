@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using OxyPlot;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
@@ -1763,6 +1764,71 @@ public sealed class PlotModelFactoryTests
         Assert.True(anyFinite, "the synthetic HD2 packet produced no usable points");
     }
 
+    // The amber "packet overlaps its neighbour" warning used to fire on the
+    // CLEANEST captures: a harmonic below the noise floor leaves a windowful of
+    // flat noise, which the peak-relative edge test misreads as a leak. Such
+    // orders get a neutral gray note now — never the amber warning.
+    [Fact]
+    public void CreateFrequencyResponse_HarmonicsBelowTheNoiseFloor_GetANeutralNote()
+    {
+        using ExpSweepMeasurement measurement = CreateSweepWithNoiseFloorOnly();
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        OxyPlot.PlotModel model = CreateFactory(measurement, noise)
+            .CreateFrequencyResponse(includeCurves: true);
+
+        Assert.DoesNotContain(
+            model.Series.OfType<LineSeries>(),
+            item => item.Tag is CurveTag
+            {
+                Kind: AnalysisCurveKind.SecondHarmonic
+                    or AnalysisCurveKind.ThirdHarmonic
+                    or AnalysisCurveKind.FourthHarmonic
+            });
+        OverlayTextAnnotation note =
+            Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
+        Assert.Contains("below the measurement noise floor", note.Text);
+        Assert.DoesNotContain("overlaps", note.Text);
+        Assert.Equal(OxyColors.Gray, note.TextColor);
+    }
+
+    // The counterpart: a packet that genuinely leaks into its neighbour — a
+    // visible curve, far above the noise floor — keeps the amber warning, while
+    // the orders that really are buried in the same record's noise get the gray
+    // note beside it, each bucket naming only its own curves.
+    [Fact]
+    public void CreateFrequencyResponse_AGenuineOverlap_KeepsTheAmberWarning()
+    {
+        EssSweepMetadata sweep = NoiseFixtureSweep();
+        HarmonicWindowDefinition h2 = EssHarmonicAnalysis.BuildWindow(sweep, 2, 0.5);
+
+        Complex[] deconvolution = NoisyCleanDeconvolution(sweep);
+        // HD2 content persisting at full level to its window edge: the real leak.
+        for (int i = h2.PeakSample; i <= h2.EndSample && i < deconvolution.Length; i++)
+        {
+            deconvolution[i] = new Complex(0.3 * Math.Cos(0.3 * (i - h2.PeakSample)), 0.0);
+        }
+
+        using ExpSweepMeasurement measurement = CreateSweepMeasurement(deconvolution, sweep);
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        OxyPlot.PlotModel model = CreateFactory(measurement, noise)
+            .CreateFrequencyResponse(includeCurves: true);
+
+        List<OverlayTextAnnotation> notes =
+            model.Annotations.OfType<OverlayTextAnnotation>().ToList();
+        Assert.Equal(2, notes.Count);
+        OverlayTextAnnotation amber =
+            Assert.Single(notes, n => n.TextColor == OxyColors.Goldenrod);
+        Assert.Contains("HD2", amber.Text);
+        Assert.Contains("overlaps its neighbour", amber.Text);
+        Assert.DoesNotContain("HD3", amber.Text);
+        OverlayTextAnnotation gray = Assert.Single(notes, n => n.TextColor == OxyColors.Gray);
+        Assert.Contains("HD3", gray.Text);
+        Assert.Contains("HD4", gray.Text);
+        Assert.Contains("below the measurement noise floor", gray.Text);
+    }
+
     [Fact]
     public void CreateFrequencyResponse_InRelativeMode_LeavesRoomForAPaddedLoopback()
     {
@@ -1975,6 +2041,62 @@ public sealed class PlotModelFactoryTests
         measurement.RestoreLevelSnapshot(new InputLevelMeterSnapshot(
             new InputLevelMeterEntry(true, -3, -6, false, false),
             new InputLevelMeterEntry(true, -6, -9, false, false)));
+        return measurement;
+    }
+
+    private static EssSweepMetadata NoiseFixtureSweep() =>
+        EssSweepMetadata.FromExponentialSweep(
+            sampleRate: 48_000, octaves: 10, sweepSampleCount: 200_000,
+            deconvolutionPeakIndex: 150_000);
+
+    // The deconvolution every clean capture approximates: a linear delta over a
+    // deterministic broadband noise floor, with no harmonic content at all.
+    private static Complex[] NoisyCleanDeconvolution(EssSweepMetadata sweep)
+    {
+        var random = new Random(9241);
+        var deconvolution = new Complex[sweep.SweepSampleCount];
+        for (int i = 0; i < deconvolution.Length; i++)
+        {
+            // Sum of 12 uniforms minus 6: zero-mean, unit-variance, deterministic.
+            double gaussian = -6.0;
+            for (int k = 0; k < 12; k++)
+            {
+                gaussian += random.NextDouble();
+            }
+            deconvolution[i] = new Complex(1e-4 * gaussian, 0.0);
+        }
+
+        deconvolution[sweep.DeconvolutionPeakIndex] = Complex.One;
+        return deconvolution;
+    }
+
+    private static ExpSweepMeasurement CreateSweepWithNoiseFloorOnly()
+    {
+        EssSweepMetadata sweep = NoiseFixtureSweep();
+        return CreateSweepMeasurement(NoisyCleanDeconvolution(sweep), sweep);
+    }
+
+    private static ExpSweepMeasurement CreateSweepMeasurement(
+        Complex[] deconvolution, EssSweepMetadata sweep)
+    {
+        var transferImpulse = new Complex[2048];
+        transferImpulse[64] = Complex.One;
+
+        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            lowFrequencyHz: sweep.StartFrequencyHz,
+            highFrequencyHz: sweep.EndFrequencyHz,
+            sampleRate: (int)sweep.SampleRateHz,
+            bits: 24,
+            sweepDurationSeconds: sweep.DurationSeconds,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: deconvolution,
+            sweepDeconvolutionPeakIndex: sweep.DeconvolutionPeakIndex,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: transferImpulse,
+            transferPeakIndex: 64,
+            achievedLowFrequencyHz: sweep.StartFrequencyHz,
+            achievedHighFrequencyHz: sweep.EndFrequencyHz);
         return measurement;
     }
 

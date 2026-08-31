@@ -155,6 +155,14 @@ internal sealed class MeasurementPlotContext
     /// </summary>
     public IReadOnlyList<string> DistortionWarnings { get; private set; } = Array.Empty<string>();
 
+    /// <summary>
+    /// Per-order packet validity from the last frequency-response build. The plot
+    /// layer uses it to tell a genuinely problematic drop (overlap — amber warning)
+    /// from a benign one (harmonic below the noise floor — neutral note).
+    /// </summary>
+    public IReadOnlyList<HarmonicPacketValidity> DistortionPacketValidity
+    { get; private set; } = Array.Empty<HarmonicPacketValidity>();
+
     public IReadOnlyList<AnalysisCurve> CreateFrequencyResponseCurves(
         FrequencyResponseOptions options,
         CalibrationFile? calibration,
@@ -177,6 +185,7 @@ internal sealed class MeasurementPlotContext
         SpectrumCurves curves)
     {
         DistortionWarnings = Array.Empty<string>();
+        DistortionPacketValidity = Array.Empty<HarmonicPacketValidity>();
         // The geometry of the sweep behind THIS result: for a restored measurement
         // that is what the file recorded, not what the sweep rebuilt on load spans
         // (its generation is length-capped, and legacy edges are unreachable).
@@ -225,6 +234,7 @@ internal sealed class MeasurementPlotContext
                 options.UseCalibration ? calibration : null,
                 curves & SpectrumCurves.Distortion);
         DistortionWarnings = distortion.Warnings;
+        DistortionPacketValidity = distortion.PacketValidity;
         return distortion.Curves;
     }
 }

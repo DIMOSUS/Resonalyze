@@ -2,7 +2,7 @@
 
 **A complete step-by-step guide**
 
-This guide tracks the repository's `main` branch. Everything in it is in **v0.7.3**.
+This guide tracks the repository's `main` branch. Everything in it is in **v0.7.5**.
 
 > **Author's note.** I wrote Resonalyze. It is free and open-source (MIT) — nothing to
 > buy, nothing to sign up for. If you go through this guide, successfully or not,

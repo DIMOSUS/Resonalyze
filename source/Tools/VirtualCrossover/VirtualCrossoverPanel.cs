@@ -3308,7 +3308,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 // to be the same part of the system this side is showing.
                 includePair: pair =>
                     VirtualCrossoverGroupViews.ParticipatesInTotalSum(
-                        SelectedGroupView, pair.Zone));
+                        groupView, pair.Zone));
         }
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
@@ -3416,7 +3416,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using (AppProfiler.Zone("VirtualDSP.BuildAcousticRender"))
         {
             acousticRender = BuildAcousticRender(
-                shown, summedChannels, magnitudes, sumCurve, lossCurve,
+                shown, summedChannels, groupView, magnitudes, sumCurve, lossCurve,
                 oppositeSum, hybrid);
         }
 
@@ -3460,6 +3460,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private AcousticRender BuildAcousticRender(
         List<ProcessedChannel> processed,
         IReadOnlyList<ProcessedChannel> summed,
+        VirtualCrossoverGroupView view,
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
@@ -3486,7 +3487,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return new AcousticRender(hint, [], BuildImpulseRender(processed));
         }
 
-        if (VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView))
+        if (VirtualCrossoverGroupViews.DrawsGroupSums(view))
         {
             return new AcousticRender(hint, BuildGroupSumCurves(processed), null);
         }

@@ -727,4 +727,35 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             Peq: new EqualizationCurve(
                 [new PeqBand(1_000, 1.4, bandGainDb)],
                 preampDb));
+
+    [Fact]
+    public async Task ProcessAsync_HandsBackTheVerySameArrayFromItsCache()
+    {
+        // Two caches upstream — the stereo block's arrival cache and the group Δ
+        // read-out — recognise "nothing that feeds this moved" by comparing the
+        // processed array BY REFERENCE, because that is the exact question: a
+        // changed chain makes ApplyChain allocate a new one. Copying a cached
+        // response on the way out would be a reasonable-looking defensive change
+        // that silently turns both of those into permanent misses, and nothing
+        // else in the suite would notice.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, _, _) => source.Apply(chain, sampleRate, sampleRate));
+        var snapshot = new VirtualCrossoverProcessingSnapshot(
+            coordinator.Invalidate(),
+            [
+                new VirtualCrossoverChannelSnapshot(
+                    1,
+                    new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0)),
+                    48_000,
+                    48_000,
+                    DspChannelChain.Identity)
+            ]);
+
+        VirtualCrossoverRenderResult? first = await coordinator.ProcessAsync(snapshot);
+        VirtualCrossoverRenderResult? second = await coordinator.ProcessAsync(snapshot);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Same(first.Channels[0].ImpulseResponse, second.Channels[0].ImpulseResponse);
+    }
 }

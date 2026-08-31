@@ -22,7 +22,7 @@ public enum VirtualCrossoverGroupView
 
     /// <summary>
     /// The front stage beside the centre. Drawn together and compared, never
-    /// summed — see <see cref="VirtualCrossoverGroupViews.ParticipatesInSum"/>.
+    /// summed — see <see cref="VirtualCrossoverGroupViews.ParticipatesInTotalSum"/>.
     /// </summary>
     FrontAndCenter,
 
@@ -144,7 +144,11 @@ public static class VirtualCrossoverGroupViews
             VirtualCrossoverGroupView.FrontAndSub => VirtualCrossoverZone.Front,
             VirtualCrossoverGroupView.RearAndSub => VirtualCrossoverZone.Rear,
             // The centre is not in the sum, so the loss still describes the front
-            // chain alone — the same number this view's Front + Sub sibling shows.
+            // chain alone. Not the same figures its Front + Sub sibling shows,
+            // though: this view does not draw the subwoofers either, so they are
+            // out of the sum as well — the handover between the lowest front
+            // driver and the subs has no row here, and the total is taken over a
+            // chain that stops where that driver's high-pass does.
             VirtualCrossoverGroupView.FrontAndCenter => VirtualCrossoverZone.Front,
             _ => null
         };

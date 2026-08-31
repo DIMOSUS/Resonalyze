@@ -32,6 +32,25 @@ internal sealed class VirtualCrossoverMetrics
     private readonly Func<IReadOnlyList<ProcessedChannel>, int, GatedMagnitude>?
         buildSumCurve;
 
+    // The last group Δ read-out and the inputs it was computed from. Without it
+    // every frame rebuilds the set from scratch, and a view switch IS a frame:
+    // Front + Center ran its arrival FFTs again on each magnitude/phase/impulse
+    // toggle — hundreds of milliseconds per switch on a full installation, and
+    // the whole redraw waits on them — while Front + Sub, which quotes no group
+    // Δ, switched instantly off the coordinator's processed-response cache. The
+    // stereo block next to it already remembered its arrivals this way; this is
+    // the same bargain for the group ones, and it is written on the UI thread
+    // only, in the continuation after the auxiliary run, exactly as ArrivalCache
+    // is.
+    //
+    // The price is that it holds the processed responses it was measured from
+    // alive: one generation of the front stage and the compared groups, no more,
+    // and only for as long as a view quoting no group Δ stays on screen. The
+    // alternative is dropping the answer the moment the user looks away, which
+    // is the complaint this exists to close.
+    private (GroupDeltaKey Key, IReadOnlyList<VirtualCrossoverMetric.GroupDelta> Deltas)?
+        groupDeltas;
+
     public VirtualCrossoverMetrics(
         VirtualCrossoverProcessingCoordinator coordinator,
         Func<Complex[], int, int, MeasuredBand, CalibrationFile?, GatedMagnitude>
@@ -282,15 +301,6 @@ internal sealed class VirtualCrossoverMetrics
     }
 
     /// <summary>
-    /// The final per-pair L−R timing: both sides' fully processed responses
-    /// (current delays included) get their band-limited envelope arrival read
-    /// in the pair's shared band, and the difference (positive: right leads —
-    /// the scene-offset convention) feeds the metric read-out. A mono channel
-    /// (the shared sub) has one response, so it reports that single arrival in
-    /// its own band with "—" for the right side and the delta; a stereo pair
-    /// needs both sides present and unbypassed.
-    /// </summary>
-    /// <summary>
     /// Each compared group against the front stage, on the ALREADY PROCESSED
     /// responses this frame is drawing: their summed impulse responses give one
     /// arrival and one level per group, and the difference is what the read-out
@@ -300,8 +310,9 @@ internal sealed class VirtualCrossoverMetrics
     /// Cheaper than the stereo block by construction — nothing has to be
     /// re-rendered, because a group's response is the sum of channels this frame
     /// already computed. The arrival analysis still costs FFTs, so it runs on the
-    /// coordinator's auxiliary path and drops silently when superseded, exactly
-    /// as the stereo deltas do.
+    /// coordinator's auxiliary path, drops silently when superseded exactly as
+    /// the stereo deltas do, and is remembered between frames by
+    /// <see cref="groupDeltas"/> exactly as their arrivals are.
     /// </remarks>
     public async Task<IReadOnlyList<VirtualCrossoverMetric.GroupDelta>> ComputeGroupDeltasAsync(
         IReadOnlyList<ProcessedChannel> shown,
@@ -323,13 +334,22 @@ internal sealed class VirtualCrossoverMetrics
             return [];
         }
 
-        var jobs = new List<(VirtualCrossoverZone Zone, List<ProcessedChannel> Members)>();
+        (double frontLow, double frontHigh) = GroupBand(front);
+        var jobs = new List<GroupDeltaJob>();
         foreach (VirtualCrossoverZone zone in compared)
         {
             List<ProcessedChannel> members = ZoneMembers(shown, zone);
             if (members.Count > 0)
             {
-                jobs.Add((zone, members));
+                // The band is settled here rather than inside the worker so the
+                // cache key below can carry it: two groups timed over different
+                // spans are two different answers even from the same responses.
+                (double zoneLow, double zoneHigh) = GroupBand(members);
+                jobs.Add(new GroupDeltaJob(
+                    zone,
+                    members,
+                    Math.Max(frontLow, zoneLow),
+                    Math.Min(frontHigh, zoneHigh)));
             }
         }
 
@@ -338,24 +358,39 @@ internal sealed class VirtualCrossoverMetrics
             return [];
         }
 
-        (double frontLow, double frontHigh) = GroupBand(front);
         int sampleRate = front[0].SampleRate;
+        var key = new GroupDeltaKey(front, jobs, sampleRate);
+        if (groupDeltas is { } cached && cached.Key.Matches(key))
+        {
+            // A superseded frame is answered exactly as it was before the set was
+            // remembered — with nothing. The cache changes what a CURRENT frame
+            // costs, not which frames get an answer, and the auxiliary path this
+            // replaces made the same refusal one line further in.
+            return coordinator.IsCurrent(revision) ? cached.Deltas : [];
+        }
+
         List<VirtualCrossoverMetric.GroupDelta>? deltas =
             await coordinator.RunAuxiliaryAsync(revision, cancellationToken =>
             {
                 Complex[] frontIr = VirtualCrossoverAnalysis.SumImpulseResponses(
                     [.. front.Select(item => item.ImpulseResponse)]);
+                // The front stage is the reference for every compared group, and
+                // the views that compare two of them (Groups, Everything) usually
+                // time both over the same span — so its arrival and level are read
+                // once per BAND rather than once per group.
+                var frontByBand =
+                    new Dictionary<(double LowHz, double HighHz),
+                        (TimeAlignmentAnalysisResult Arrival, double? LevelDb)>();
                 var results = new List<VirtualCrossoverMetric.GroupDelta>();
-                foreach ((VirtualCrossoverZone zone, List<ProcessedChannel> members) in jobs)
+                foreach (GroupDeltaJob job in jobs)
                 {
                     if (cancellationToken.IsCancellationRequested)
                     {
                         return null;
                     }
 
-                    (double zoneLow, double zoneHigh) = GroupBand(members);
-                    double lowHz = Math.Max(frontLow, zoneLow);
-                    double highHz = Math.Min(frontHigh, zoneHigh);
+                    double lowHz = job.LowHz;
+                    double highHz = job.HighHz;
                     if (highHz < lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
                     {
                         // Too little overlap to time anything — a rear pair crossed
@@ -363,40 +398,147 @@ internal sealed class VirtualCrossoverMetrics
                         // an unmeasurable row rather than dropped, so the group does
                         // not silently vanish from the read-out.
                         results.Add(new VirtualCrossoverMetric.GroupDelta(
-                            zone, null, null, lowHz, highHz));
+                            job.Zone, null, null, lowHz, highHz));
                         continue;
                     }
 
+                    if (!frontByBand.TryGetValue(
+                            (lowHz, highHz),
+                            out (TimeAlignmentAnalysisResult Arrival, double? LevelDb) frontRead))
+                    {
+                        frontRead = (
+                            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                                frontIr, sampleRate, lowHz, highHz),
+                            VirtualCrossoverAnalysis.MeasureBandLevelDb(
+                                frontIr, sampleRate, lowHz, highHz));
+                        frontByBand[(lowHz, highHz)] = frontRead;
+                    }
+
                     Complex[] zoneIr = VirtualCrossoverAnalysis.SumImpulseResponses(
-                        [.. members.Select(item => item.ImpulseResponse)]);
-                    TimeAlignmentAnalysisResult frontArrival =
-                        VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                            frontIr, sampleRate, lowHz, highHz);
+                        [.. job.Members.Select(item => item.ImpulseResponse)]);
                     TimeAlignmentAnalysisResult zoneArrival =
                         VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                             zoneIr, sampleRate, lowHz, highHz);
-                    bool timed = Reliable(frontArrival) && Reliable(zoneArrival);
+                    bool timed = Reliable(frontRead.Arrival) && Reliable(zoneArrival);
                     results.Add(new VirtualCrossoverMetric.GroupDelta(
-                        zone,
+                        job.Zone,
                         timed
                             ? zoneArrival.FirstArrivalDelayMilliseconds -
-                                frontArrival.FirstArrivalDelayMilliseconds
+                                frontRead.Arrival.FirstArrivalDelayMilliseconds
                             : null,
                         VirtualCrossoverAnalysis.MeasureBandLevelDb(
-                            zoneIr, sampleRate, lowHz, highHz) -
-                            VirtualCrossoverAnalysis.MeasureBandLevelDb(
-                                frontIr, sampleRate, lowHz, highHz),
+                            zoneIr, sampleRate, lowHz, highHz) - frontRead.LevelDb,
                         lowHz,
                         highHz));
                 }
 
                 return results;
             });
-        return deltas ?? [];
+        if (deltas == null)
+        {
+            // Superseded: remember nothing, or the next frame would answer with
+            // a set that was never finished against inputs it never saw.
+            return [];
+        }
+
+        // Read-only from here on: the same instance now answers many frames, and
+        // a caller that cast it back to its List would be editing the cache.
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> remembered = deltas.AsReadOnly();
+        groupDeltas = (key, remembered);
+        return remembered;
 
         static bool Reliable(TimeAlignmentAnalysisResult arrival) =>
             arrival.IsValid &&
             arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb;
+    }
+
+    private sealed record GroupDeltaJob(
+        VirtualCrossoverZone Zone,
+        List<ProcessedChannel> Members,
+        double LowHz,
+        double HighHz);
+
+    /// <summary>
+    /// What a set of group Δs is a function of: which processed responses each
+    /// group holds, in order, the band each comparison is timed over, and the
+    /// rate they were processed at. Nothing else in a frame can move the answer.
+    /// </summary>
+    /// <remarks>
+    /// Responses are compared by REFERENCE, the way the stereo block's
+    /// <c>ArrivalCache</c> compares its own: the coordinator hands back the very
+    /// same array while nothing feeding a channel has changed, and manufactures a
+    /// new one as soon as anything has. So reference equality is not an
+    /// optimization over a value comparison here — it is the exact question.
+    /// </remarks>
+    private sealed class GroupDeltaKey
+    {
+        private readonly Complex[][] front;
+        private readonly JobKey[] jobs;
+        private readonly int sampleRate;
+
+        public GroupDeltaKey(
+            IReadOnlyList<ProcessedChannel> front,
+            IReadOnlyList<GroupDeltaJob> jobs,
+            int sampleRate)
+        {
+            this.front = Responses(front);
+            this.jobs =
+            [
+                .. jobs.Select(job => new JobKey(
+                    job.Zone, Responses(job.Members), job.LowHz, job.HighHz))
+            ];
+            this.sampleRate = sampleRate;
+        }
+
+        public bool Matches(GroupDeltaKey other)
+        {
+            if (sampleRate != other.sampleRate ||
+                jobs.Length != other.jobs.Length ||
+                !SameResponses(front, other.front))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < jobs.Length; i++)
+            {
+                if (jobs[i].Zone != other.jobs[i].Zone ||
+                    jobs[i].LowHz != other.jobs[i].LowHz ||
+                    jobs[i].HighHz != other.jobs[i].HighHz ||
+                    !SameResponses(jobs[i].Members, other.jobs[i].Members))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private sealed record JobKey(
+            VirtualCrossoverZone Zone,
+            Complex[][] Members,
+            double LowHz,
+            double HighHz);
+
+        private static Complex[][] Responses(IReadOnlyList<ProcessedChannel> members) =>
+            [.. members.Select(item => item.ImpulseResponse)];
+
+        private static bool SameResponses(Complex[][] left, Complex[][] right)
+        {
+            if (left.Length != right.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < left.Length; i++)
+            {
+                if (!ReferenceEquals(left[i], right[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 
     private static List<ProcessedChannel> ZoneMembers(
@@ -424,6 +566,15 @@ internal sealed class VirtualCrossoverMetrics
         return (low, high);
     }
 
+    /// <summary>
+    /// The final per-pair L−R timing: both sides' fully processed responses
+    /// (current delays included) get their band-limited envelope arrival read
+    /// in the pair's shared band, and the difference (positive: right leads —
+    /// the scene-offset convention) feeds the metric read-out. A mono channel
+    /// (the shared sub) has one response, so it reports that single arrival in
+    /// its own band with "—" for the right side and the delta; a stereo pair
+    /// needs both sides present and unbypassed.
+    /// </summary>
     public async Task<List<VirtualCrossoverMetric.StereoDelta>> ComputeStereoDeltasAsync(
         IReadOnlyList<VirtualCrossoverChannel> channels,
         long revision)

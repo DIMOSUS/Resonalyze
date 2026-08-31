@@ -648,4 +648,135 @@ public sealed class VirtualCrossoverMetricsTests
 
         Assert.Null(rearOnly);
     }
+
+    // A channel whose processed response is a lone impulse at a known sample,
+    // long enough for the band-limited arrival analysis to have something to
+    // work with, tagged with the zone the grouped views sort it by.
+    private static ProcessedChannel Zoned(
+        string name,
+        VirtualCrossoverZone zone,
+        int peak,
+        Complex[]? ir = null)
+    {
+        var channel = new VirtualCrossoverChannel(name) { SampleRate = 48_000 };
+        channel.Pair.Zone = zone;
+        ir ??= LongImpulse(peak);
+        return new ProcessedChannel(channel, ir, peak, 48_000, OxyColors.White);
+    }
+
+    private static Complex[] LongImpulse(int peak)
+    {
+        var ir = new Complex[4096];
+        ir[peak] = Complex.One;
+        return ir;
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_ReusesTheReadOutWhileTheResponsesStand()
+    {
+        // The group Δ read-out costs arrival FFTs over the summed groups, and the
+        // whole redraw waits on them. A view switch rebuilds the frame without
+        // touching a single response, so it must be answered from memory the way
+        // the coordinator answers for the responses themselves — otherwise
+        // Front + Center pays for those FFTs again on every magnitude/phase/
+        // impulse toggle while Front + Sub, which quotes no group Δ, is instant.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        List<ProcessedChannel> shown =
+        [
+            Zoned("Front", VirtualCrossoverZone.Front, 100),
+            Zoned("Centre", VirtualCrossoverZone.Center, 150)
+        ];
+
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> first =
+            await metrics.ComputeGroupDeltasAsync(
+                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.CurrentRevision);
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> second =
+            await metrics.ComputeGroupDeltasAsync(
+                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.CurrentRevision);
+
+        Assert.Single(first);
+        Assert.Equal(VirtualCrossoverZone.Center, first[0].Zone);
+        // The same instance: a recompute builds a new list, so identity is what
+        // says the arrival analysis did not run a second time.
+        Assert.Same(first, second);
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_RecomputesWhenAResponseIsReplaced()
+    {
+        // The other half of the bargain. The coordinator manufactures a NEW array
+        // for a channel the moment anything feeding it moves, so a remembered
+        // read-out must be answered for by the very arrays it was measured from.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        ProcessedChannel front = Zoned("Front", VirtualCrossoverZone.Front, 100);
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> first =
+            await metrics.ComputeGroupDeltasAsync(
+                [front, Zoned("Centre", VirtualCrossoverZone.Center, 150)],
+                VirtualCrossoverGroupView.FrontAndCenter,
+                coordinator.CurrentRevision);
+
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> second =
+            await metrics.ComputeGroupDeltasAsync(
+                [front, Zoned("Centre", VirtualCrossoverZone.Center, 260)],
+                VirtualCrossoverGroupView.FrontAndCenter,
+                coordinator.CurrentRevision);
+
+        Assert.NotSame(first, second);
+        Assert.Single(second);
+        // And the answer moved with the response: the centre now arrives later.
+        Assert.NotNull(first[0].DelayMs);
+        Assert.NotNull(second[0].DelayMs);
+        Assert.True(second[0].DelayMs > first[0].DelayMs);
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_StaySilentInASingleGroupView()
+    {
+        // Front + Sub spans one listening group, so it quotes a summation loss
+        // and no group Δ at all — which is why it was the fast view to begin with.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+
+        Assert.Empty(await metrics.ComputeGroupDeltasAsync(
+            [
+                Zoned("Front", VirtualCrossoverZone.Front, 100),
+                Zoned("Sub", VirtualCrossoverZone.Sub, 150)
+            ],
+            VirtualCrossoverGroupView.FrontAndSub,
+            coordinator.CurrentRevision));
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_ReportOneRowPerComparedGroup()
+    {
+        // Everything compares two groups against the front, and both are timed
+        // over the same span here — the path where the front stage's own arrival
+        // is read once for the band rather than once per group. The rows must
+        // still be the two the view promises, each against the same reference.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> deltas =
+            await metrics.ComputeGroupDeltasAsync(
+                [
+                    Zoned("Front", VirtualCrossoverZone.Front, 100),
+                    Zoned("Rear", VirtualCrossoverZone.Rear, 200),
+                    Zoned("Centre", VirtualCrossoverZone.Center, 150)
+                ],
+                VirtualCrossoverGroupView.Everything,
+                coordinator.CurrentRevision);
+
+        Assert.Equal(2, deltas.Count);
+        Assert.Equal(VirtualCrossoverZone.Rear, deltas[0].Zone);
+        Assert.Equal(VirtualCrossoverZone.Center, deltas[1].Zone);
+        // 100 samples at 48 kHz is 2.083 ms behind the front, 50 is 1.042 ms.
+        Assert.Equal(100.0 / 48.0, deltas[0].DelayMs!.Value, 2);
+        Assert.Equal(50.0 / 48.0, deltas[1].DelayMs!.Value, 2);
+    }
 }

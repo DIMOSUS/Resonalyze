@@ -1036,18 +1036,20 @@ covers a drag arriving while a sweep is running, or while a dialog is up: a file
 opened underneath one would replace the very measurement it is asking about.
 ### Sending a measurement to REW
 
-**Right-click Save** to open a short menu with **Send to REW...**, which imports the
-current measurement's loopback transfer function into a running
-[REW](https://www.roomeqwizard.com/) over its HTTP API. The menu asks REW whether it
-is there before it opens, so a REW that is not running says so in the item's caption
-instead of failing after the click.
+**Export** imports the current measurement's loopback transfer function into a
+running [REW](https://www.roomeqwizard.com/) over its HTTP API. The button is
+available exactly when **Save** is, minus the cases only this export cares about: a
+measurement with no transfer response, a sweep still running, and a moving-mic
+capture, whose Save belongs to that mode rather than to the impulse response this
+sends.
 
 The dialog names the measurement as it will appear in REW and holds the one setting,
 the address REW's API server listens on (`http://localhost:4735/` unless it has been
-moved; the server is switched on in REW's *Preferences -> API*). The address stays
-editable when REW did not answer, because it is the setting that would fix that.
-Nothing is reported when the send succeeds — the measurement is in REW, which is
-where you are looking.
+moved; the server is switched on in REW's *Preferences -> API*). REW is asked whether
+it is there as the dialog opens, so a REW that is not running is a line in the dialog
+rather than a failure after a click, and the address stays editable in that state
+because it is the setting that would fix it. Nothing is reported when the send
+succeeds — the measurement is in REW, which is where you are looking.
 
 **What arrives.** The transfer impulse response as measured, with t = 0 on the
 loopback reference. Its samples are sent unchanged and unresampled; the buffer is
@@ -1061,9 +1063,18 @@ reference of its own**: the shape and the internal delays are real, but REW cann
 compare its arrival with another REW measurement's. Level is sent only when the
 measurement carries an [SPL anchor](#sound-pressure-level-db-spl) — its own offset,
 combining the anchor with this measurement's loopback level. Without one, no offset is
-sent at all rather than a placeholder. REW then fills in a default of its own, which
-looks like a calibration and is not: nothing measured it, and the levels shown there
-are relative.
+sent at all rather than a placeholder. REW then fills in a default of its own (75 dB
+on 5.40 Beta 132), which looks like a calibration and is not: nothing measured it, and
+the levels shown there are relative.
+
+**And it carries no calibration**, which is worth knowing when one is selected here.
+An impulse response is stored raw — a [microphone calibration](#calibration)
+is applied when a curve is drawn, never baked into the samples — so what arrives in REW
+is the uncalibrated response, not the curve on the screen it was sent from. Resonalyze
+also tells REW **not** to apply a calibration of its own. REW would otherwise correct
+the arriving data by whichever calibration file is loaded in REW at the time, which
+belongs to REW's input rather than to the microphone that made this measurement. To see
+the calibrated curve in REW, load the same calibration file there.
 
 **What is checked.** After the import, Resonalyze reads the new measurement's summary
 back from REW and compares the arrival REW reports with the one the payload was framed

@@ -135,21 +135,26 @@ public sealed class RewMeasurementExportTests
         // cleanup thrown from a finally block replaces the assertion that matters
         // with the news that a leftover could not be removed.
         string? cleanup = await DeleteMeasurementsAddedSinceAsync(
-            http, baseAddress!, client, before);
+            http, baseAddress!, client, before, identifier);
 
         Assert.Null(result.Problem);
         Assert.Null(cleanup);
     }
 
     /// <summary>
-    /// Leaves the user's REW as it was found. Rule of the house for anything that
-    /// touches a live REW: it may be mid-session, so put back everything you added.
+    /// Removes what THIS test added, and nothing else. Rule of the house for anything
+    /// that touches a live REW: it may be mid-session, so put back everything you
+    /// added — and, just as strictly, touch nothing you did not. "New since the
+    /// snapshot" is not that test: a measurement the user makes while this runs is
+    /// also new, and deleting it would destroy their work. The identifier this test
+    /// invented is unique, so it names its own import exactly.
     /// </summary>
     private static async Task<string?> DeleteMeasurementsAddedSinceAsync(
         HttpClient http,
         Uri baseAddress,
         RewApiClient client,
-        IReadOnlyDictionary<string, RewMeasurementSummary> before)
+        IReadOnlyDictionary<string, RewMeasurementSummary> before,
+        string identifier)
     {
         var known = new HashSet<string>(StringComparer.Ordinal);
         foreach (RewMeasurementSummary summary in before.Values)
@@ -164,7 +169,9 @@ public sealed class RewMeasurementExportTests
             await client.GetMeasurementsAsync(CancellationToken.None);
         foreach (RewMeasurementSummary summary in after.Values)
         {
-            if (string.IsNullOrEmpty(summary.Uuid) || known.Contains(summary.Uuid))
+            if (string.IsNullOrEmpty(summary.Uuid) ||
+                known.Contains(summary.Uuid) ||
+                !string.Equals(summary.Title, identifier, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -201,6 +208,70 @@ public sealed class RewMeasurementExportTests
         }
 
         return $"REW refused to delete the measurement this test created ({uuid}): {status}.";
+    }
+
+    [Fact]
+    public async Task ProbeAsync_ReadsTheVersionRewAnnounces()
+    {
+        using var http = new HttpClient(new FakeRew());
+        var export = new RewMeasurementExport(
+            new RewApiClient(http, new Uri("http://localhost:4735/")));
+
+        string? version = await export.ProbeAsync(
+            TimeSpan.FromSeconds(2),
+            CancellationToken.None);
+
+        Assert.Equal(Version, version);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_TreatsItsOwnDeadlineAsNotAnswering()
+    {
+        // The case a refused connection does not cover. Before this, the probe's own
+        // timeout cancelled the token it was watching, so the cancellation was not
+        // read as "unreachable" and escaped through an async void handler.
+        using var http = new HttpClient(new FakeRew { Silent = true });
+        var export = new RewMeasurementExport(
+            new RewApiClient(http, new Uri("http://localhost:4735/")));
+
+        string? version = await export.ProbeAsync(
+            TimeSpan.FromMilliseconds(50),
+            CancellationToken.None);
+
+        Assert.Null(version);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_StillPropagatesTheCallersOwnCancellation()
+    {
+        // The other half of the same fix: a caller who gives up must not be told
+        // "REW is not answering", which is a different fact about a different thing.
+        using var http = new HttpClient(new FakeRew { Silent = true });
+        var export = new RewMeasurementExport(
+            new RewApiClient(http, new Uri("http://localhost:4735/")));
+        using var caller = new CancellationTokenSource();
+        await caller.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => export.ProbeAsync(TimeSpan.FromMinutes(5), caller.Token));
+    }
+
+    [Fact]
+    public async Task SendAsync_IgnoresAMeasurementTheUserMadeWhileThisOneWasFiling()
+    {
+        // REW stays usable during a send. A measurement that appears meanwhile is new
+        // since the snapshot exactly as ours is, so UUID alone would let this export
+        // verify a stranger's timing — and report a fault that belongs to neither.
+        var rew = new FakeRew
+        {
+            Concurrent = new FakeMeasurement(
+                "the user's own sweep", "someone-elses-uuid", PeakSeconds(PeakIndex + 500))
+        };
+
+        RewExportResult result = await SendAsync(rew, PeakSeconds(PeakIndex));
+
+        Assert.True(result.Verified);
+        Assert.Null(result.Problem);
     }
 
     private static Task<RewExportResult> SendAsync(FakeRew rew, double reportedPeakSeconds)
@@ -244,7 +315,16 @@ public sealed class RewMeasurementExportTests
         public string? ImportBody { get; private set; }
         public double ReportedPeakSeconds { get; set; }
         public bool Unreachable { get; set; }
+
+        /// <summary>
+        /// An address that accepts the connection and then says nothing — a firewall
+        /// that drops packets, or a machine that is up with REW closed. This is the
+        /// case a refused connection does NOT cover: nothing throws, the wait simply
+        /// runs to whatever deadline is watching it.
+        /// </summary>
+        public bool Silent { get; set; }
         public HttpStatusCode ImportStatus { get; set; } = HttpStatusCode.Accepted;
+        public FakeMeasurement? Concurrent { get; set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -253,6 +333,11 @@ public sealed class RewMeasurementExportTests
             if (Unreachable)
             {
                 throw new HttpRequestException("Connection refused.");
+            }
+
+            if (Silent)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
             }
 
             string path = request.RequestUri!.AbsolutePath;
@@ -297,6 +382,13 @@ public sealed class RewMeasurementExportTests
                 entries.Add(Entry(
                     (Existing.Count + 1).ToString(),
                     new FakeMeasurement("probe", "new-uuid", ReportedPeakSeconds)));
+            }
+
+            // Someone at the keyboard in REW while this send was being filed. New
+            // since the snapshot, exactly like ours, and nothing to do with us.
+            if (Concurrent is { } concurrent)
+            {
+                entries.Add(Entry((Existing.Count + 2).ToString(), concurrent));
             }
 
             return "{" + string.Join(",", entries) + "}";

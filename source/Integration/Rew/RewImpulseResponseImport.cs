@@ -37,9 +37,22 @@ internal sealed class RewImpulseResponseData
     public double? SplOffset { get; init; }
 
     /// <summary>
-    /// Always false. The samples already passed through this session's microphone
-    /// calibration, and REW applying its own on top would count it twice.
+    /// Always false, and the reason is REW's calibration rather than ours. Measured
+    /// against 5.40 Beta 132 / API 0.9.6: <c>true</c> makes REW correct the arriving
+    /// data by whichever microphone calibration is loaded in REW at the time. The
+    /// same flat impulse sent twice came back differing by exactly the negative of
+    /// that curve, to 0.06 dB across the band — a subtraction in dB, which is to say
+    /// the linear magnitude divided by the calibration. That curve belongs to REW's
+    /// own input, not to the microphone this measurement was made with, so applying
+    /// it would be a correction with nothing behind it.
     /// </summary>
+    /// <remarks>
+    /// The samples themselves are raw: an <c>ImpulseResponseFile</c> never has a
+    /// calibration baked into it, and this application applies one only when a curve
+    /// is rendered. So what lands in REW is the uncalibrated response, which is not
+    /// the curve on screen whenever a calibration is selected — REFERENCE.md says so
+    /// under "Sending a measurement to REW".
+    /// </remarks>
     [JsonPropertyName("applyCal")]
     public bool ApplyCal { get; init; }
 

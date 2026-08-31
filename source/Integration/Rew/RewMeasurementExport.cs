@@ -58,12 +58,37 @@ internal sealed class RewMeasurementExport
     }
 
     /// <summary>
-    /// The version REW announces, or null when it is not answering. Asked before the
-    /// menu offers the export, so a REW that is not running is a caption rather than
-    /// an exception after the click.
+    /// The version REW announces, or null when it is not answering, within
+    /// <paramref name="timeout"/>. Asked before the export dialog opens, so a REW
+    /// that is not running is a line the user can act on rather than an exception
+    /// after the click.
     /// </summary>
-    public Task<string?> ProbeAsync(CancellationToken cancellationToken) =>
-        client.TryGetVersionAsync(cancellationToken);
+    /// <remarks>
+    /// The deadline is owned here rather than by the caller for a reason. An address
+    /// that drops packets instead of refusing the connection reaches the timeout, and
+    /// a caller-supplied token that has just been cancelled is indistinguishable from
+    /// the caller having given up — so the cancellation escaped as an unhandled
+    /// exception on the UI thread. Cancelling a token this method owns keeps the two
+    /// apart: the caller's own cancellation still propagates, as it should.
+    /// </remarks>
+    public async Task<string?> ProbeAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        using var deadline =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
+        try
+        {
+            return await client.TryGetVersionAsync(deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Our deadline, not the caller's: a REW that neither answers nor refuses
+            // in the time allowed is a REW that is not answering.
+            return null;
+        }
+    }
 
     public async Task<RewExportResult> SendAsync(
         RewExportRequest request,
@@ -96,6 +121,7 @@ internal sealed class RewMeasurementExport
 
         RewMeasurementSummary? filed = await WaitForNewMeasurementAsync(
             known,
+            request.Identifier,
             cancellationToken).ConfigureAwait(false);
         if (filed == null)
         {
@@ -141,8 +167,16 @@ internal sealed class RewMeasurementExport
             $"with, so delays read from it are not this session's. (REW reported: {version}.)";
     }
 
+    /// <summary>
+    /// The measurement this send produced: new since the snapshot AND filed under the
+    /// name it was sent with. Both halves are load-bearing. The UUID alone would pick
+    /// up a measurement the user made in REW while this one was being filed — REW
+    /// stays usable throughout — and verify its timing instead. The title alone would
+    /// pick the older of two measurements sharing a name.
+    /// </summary>
     private async Task<RewMeasurementSummary?> WaitForNewMeasurementAsync(
         HashSet<string> known,
+        string identifier,
         CancellationToken cancellationToken)
     {
         DateTime deadline = DateTime.UtcNow + FilingTimeout;
@@ -152,7 +186,9 @@ internal sealed class RewMeasurementExport
                 await client.GetMeasurementsAsync(cancellationToken).ConfigureAwait(false);
             foreach (RewMeasurementSummary summary in current.Values)
             {
-                if (!string.IsNullOrEmpty(summary.Uuid) && !known.Contains(summary.Uuid))
+                if (!string.IsNullOrEmpty(summary.Uuid) &&
+                    !known.Contains(summary.Uuid) &&
+                    string.Equals(summary.Title, identifier, StringComparison.Ordinal))
                 {
                     return summary;
                 }

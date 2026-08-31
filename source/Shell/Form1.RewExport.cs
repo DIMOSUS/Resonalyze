@@ -8,7 +8,7 @@ public partial class Form1
     // One client for the whole session, as the update checker keeps one: a new
     // HttpClient per send would leak sockets. The timeout is the transport's own
     // ceiling; the probe imposes a much shorter one of its own, because a REW that
-    // is not there must not make a menu wait.
+    // is not there must not make the button wait.
     private static readonly HttpClient RewHttpClient = new()
     {
         Timeout = TimeSpan.FromSeconds(30)
@@ -21,36 +21,17 @@ public partial class Form1
             ? RewApiClient.DefaultBaseUrl
             : measurementSettings.RewApiBaseUrl;
 
-    private async void buttonSave_MouseUp(object? sender, MouseEventArgs e)
-    {
-        if (e.Button != MouseButtons.Right)
-        {
-            return;
-        }
-
-        await ShowRewExportMenuAsync();
-    }
-
     /// <summary>
-    /// Opens the Save button's secondary menu, having first asked REW whether it is
-    /// there. The question is asked BEFORE the menu appears so an absent REW is a
-    /// caption the user reads, not an exception after the click; on localhost the
-    /// answer — including a refused connection — comes back in milliseconds.
+    /// Sends the current measurement to REW, having first asked REW whether it is
+    /// there. The question is asked here rather than behind the button, so a REW
+    /// that is not running is a line in the dialog the user can act on — the
+    /// address that would fix it is the setting that dialog holds.
     /// </summary>
-    private async Task ShowRewExportMenuAsync()
+    private async void buttonRewExport_Click(object? sender, EventArgs e)
     {
-        // In MMM the Save/Load pair belongs to that mode's own capture, not to the
-        // impulse response this export sends (see Form1.LiveCapture).
-        if (LiveCaptureOwnsSaveLoad)
-        {
-            return;
-        }
-
-        // Nothing to offer without a transfer response. The Save button is frozen
-        // in that state anyway, so this is the guard rather than a caption: an item
-        // saying why would be one nobody can reach.
-        if (expSweepMeasurement.Transfer is not { ImpulseResponse.Length: > 0 } ||
-            expSweepMeasurement.InProgress)
+        // The button is frozen in every state this cannot serve, so these are
+        // assertions rather than the guards they were when the gesture was hidden.
+        if (!CanExportToRew)
         {
             return;
         }
@@ -58,9 +39,19 @@ public partial class Form1
         string? version = null;
         if (RewApiClient.TryParseBaseAddress(RewBaseUrl, out Uri? baseAddress))
         {
-            using var probeTimeout = new CancellationTokenSource(RewProbeTimeout);
-            version = await CreateRewExport(baseAddress!)
-                .ProbeAsync(probeTimeout.Token);
+            UseWaitCursor = true;
+            try
+            {
+                version = await CreateRewExport(baseAddress!)
+                    .ProbeAsync(RewProbeTimeout, CancellationToken.None);
+            }
+            finally
+            {
+                if (!IsDisposed && !Disposing)
+                {
+                    UseWaitCursor = false;
+                }
+            }
         }
 
         if (IsDisposed || Disposing)
@@ -68,27 +59,19 @@ public partial class Form1
             return;
         }
 
-        rewExportMenu?.Dispose();
-        rewExportMenu = new ContextMenuStrip
-        {
-            BackColor = UiPalette.ButtonBackground,
-            ForeColor = UiPalette.TextPrimary,
-            ShowImageMargin = false
-        };
-
-        // The probe's answer is a caption, not a gate: the address that would fix a
-        // REW nobody can reach is the setting the dialog behind this item holds.
-        var sendItem = new ToolStripMenuItem(
-            version == null
-                ? "Send to REW... (not answering)"
-                : "Send to REW...")
-        {
-            ForeColor = UiPalette.TextPrimary
-        };
-        sendItem.Click += async (_, _) => await SendToRewAsync(version);
-        rewExportMenu.Items.Add(sendItem);
-        rewExportMenu.Show(buttonSave, new Point(0, buttonSave.Height));
+        await SendToRewAsync(version);
     }
+
+    /// <summary>
+    /// Whether this measurement can go to REW at all: a finished transfer response
+    /// that the impulse-response side of the shell owns. In MMM the Save/Load pair
+    /// belongs to that mode's own capture, not to the response this sends (see
+    /// Form1.LiveCapture).
+    /// </summary>
+    internal bool CanExportToRew =>
+        !LiveCaptureOwnsSaveLoad &&
+        !expSweepMeasurement.InProgress &&
+        expSweepMeasurement.Transfer is { ImpulseResponse.Length: > 0 };
 
     private async Task SendToRewAsync(string? version)
     {
@@ -162,7 +145,10 @@ public partial class Form1
         }
         finally
         {
-            UseWaitCursor = false;
+            if (!IsDisposed && !Disposing)
+            {
+                UseWaitCursor = false;
+            }
         }
     }
 
@@ -181,11 +167,24 @@ public partial class Form1
             : Path.GetFileNameWithoutExtension(fileName);
     }
 
-    private void ReportRewProblem(string message) =>
+    /// <summary>
+    /// Reports a problem, unless the window it would be shown over has gone. A send
+    /// lives up to thirty seconds and the form stays interactive throughout, so
+    /// closing the application inside that window would otherwise turn a message
+    /// into a crash on a disposed handle.
+    /// </summary>
+    private void ReportRewProblem(string message)
+    {
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
         MessageBox.Show(
             this,
             message,
             "Send to REW",
             MessageBoxButtons.OK,
             MessageBoxIcon.Warning);
+    }
 }

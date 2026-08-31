@@ -48,6 +48,7 @@
             buttonCurrentModeSettings = new ReleaseClickButton();
             panel1 = new RoundedPanel();
             buttonCompare = new ReleaseClickButton();
+            buttonRewExport = new ReleaseClickButton();
             inputLevelMeterPanel = new InputLevelMeterPanel();
             buttonHistory = new ReleaseClickButton();
             chromeTitleBar = new ChromeTitleBar();
@@ -199,7 +200,7 @@
             buttonSave.Size = new Size(102, 23);
             buttonSave.TabIndex = 18;
             buttonSave.Text = "Save";
-            toolTip1.SetToolTip(buttonSave, "Save Impulse Response\r\nRight-click to send it to REW");
+            toolTip1.SetToolTip(buttonSave, "Save Impulse Response");
             buttonSave.UseCompatibleTextRendering = true;
             buttonSave.UseVisualStyleBackColor = false;
             buttonSave.Click += buttonSave_Click;
@@ -275,13 +276,14 @@
             // 
             panel1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             panel1.Controls.Add(buttonCompare);
+            panel1.Controls.Add(buttonRewExport);
             panel1.Controls.Add(buttonRecord);
             panel1.Controls.Add(buttonRecordOpt);
             panel1.Controls.Add(buttonSave);
             panel1.Controls.Add(buttonLoad);
             panel1.Location = new Point(1264, 146);
             panel1.Name = "panel1";
-            panel1.Size = new Size(218, 119);
+            panel1.Size = new Size(218, 148);
             panel1.TabIndex = 23;
             // 
             // buttonCompare
@@ -298,6 +300,23 @@
             buttonCompare.Text = "Compare";
             buttonCompare.UseCompatibleTextRendering = true;
             buttonCompare.UseVisualStyleBackColor = false;
+            // 
+            // buttonRewExport
+            // 
+            buttonRewExport.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonRewExport.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRewExport.FlatStyle = FlatStyle.Popup;
+            buttonRewExport.Font = new Font("Segoe UI", 10F);
+            buttonRewExport.ForeColor = Color.White;
+            buttonRewExport.Location = new Point(3, 120);
+            buttonRewExport.Name = "buttonRewExport";
+            buttonRewExport.Size = new Size(210, 23);
+            buttonRewExport.TabIndex = 32;
+            buttonRewExport.Text = "Export";
+            toolTip1.SetToolTip(buttonRewExport, "Send the impulse response to REW");
+            buttonRewExport.UseCompatibleTextRendering = true;
+            buttonRewExport.UseVisualStyleBackColor = false;
+            buttonRewExport.Click += buttonRewExport_Click;
             // 
             // inputLevelMeterPanel
             // 
@@ -508,5 +527,6 @@
         private Label virtualDspMetricLabel;
         private Label virtualDspWarningLabel;
         private ReleaseClickButton buttonCompare;
+        private ReleaseClickButton buttonRewExport;
     }
 }

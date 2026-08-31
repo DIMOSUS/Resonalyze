@@ -447,12 +447,10 @@ internal static class VirtualCrossoverSheetPdf
     }
 
     /// <summary>
-    /// One line on a chains graph: the magnitude of the SUM of its chains — a
-    /// channel's own curve is a sum of one. Every chain is taken as its
-    /// DESIGN: delay and polarity stripped (neither moves a single chain's
-    /// magnitude, and folded into a sum they would mix the cabin's timing
-    /// compensation into what this graph shows, which is the filters as typed
-    /// into the DSP — the acoustic summation lives in the app's plot).
+    /// One line on a chains graph: the magnitude of the complex SUM of its
+    /// chains — a channel's own curve is a sum of one. The chains carry
+    /// everything the DSP is told except the delay (see
+    /// <see cref="DesignChain"/>).
     /// </summary>
     internal sealed record ChainCurve(
         string Title,
@@ -470,9 +468,20 @@ internal static class VirtualCrossoverSheetPdf
     private const double CurveThickness = 2;
     private const double SumThickness = 2.5;
 
+    // The chain as the DSP realizes it, less the time compensation. Only the
+    // delay is stripped: it exists to mirror the cabin's path differences, and
+    // folded into a sum it would bury the filter graph in combing. Polarity
+    // STAYS — it is a design term like any filter phase (an LR2 crossover
+    // knits flat only through its deliberate inversion), and the complex sum
+    // already carries every other phase term the chain has (crossover, PEQ,
+    // all-pass), so dropping this one 180° would make the sum neither the
+    // electrical answer nor an envelope. A junction inverted for ACOUSTIC
+    // reasons therefore shows an electrical notch here — honestly: that
+    // junction knits through timing this graph does not model, and the
+    // acoustic summation lives on the panel's plot.
     private static DspChannelChain DesignChain(
         VirtualCrossoverChannelSettings channel) =>
-        channel.ToChain() with { DelayMs = 0, InvertPolarity = false };
+        channel.ToChain() with { DelayMs = 0 };
 
     private static ChainCurve ChannelCurve(SheetEntry entry) =>
         new(

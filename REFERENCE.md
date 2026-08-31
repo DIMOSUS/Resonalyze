@@ -2584,11 +2584,16 @@ The remaining buttons in the column beside the plots:
   has at least two chains to sum — never for the centre, whose derived signal
   makes any sum involving it a fiction — and the front group's graph carries
   the subwoofer group's sum in a pale tone, so the bass handover shows both of
-  its sides. These sums are the *filters as designed*, delay and polarity
-  stripped: the acoustic summation already lives on the panel's plot, and
-  folding the cabin's timing compensation into a filter graph would show combs
-  no DSP screen shows. A single-zone project keeps the flat sheet it always
-  had. It
+  its sides. These sums are complex, carrying every phase term the chains
+  hold — crossover, PEQ, all-pass and polarity alike, since an LR2-style knit
+  exists only through its deliberate inversion — with just the delays
+  stripped: folding the cabin's timing compensation into a filter graph would
+  bury it in combs no DSP screen shows, and the acoustic summation already
+  lives on the panel's plot. The flip side is stated rather than hidden: a
+  junction inverted to fix the cabin's phase shows an electrical dip here
+  that the car does not have, because that junction knits through timing this
+  graph does not model — the panel's plot is where it is judged. A
+  single-zone project keeps the flat sheet it always had. It
   states the PEQ columns in the [Q convention](#dsp-q-convention) of the project's
   [DSP processor](#dsp-processor): a named model answers for itself and the export
   asks nothing. A **Custom** processor has only what was typed into that dialog, so

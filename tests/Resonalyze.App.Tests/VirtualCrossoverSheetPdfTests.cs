@@ -571,10 +571,16 @@ public sealed class VirtualCrossoverSheetPdfTests
     public void GroupCurves_AGroupOfMonoMembers_GetsOneSumRatherThanTwoCopies()
     {
         // Two mono subs dividing the bottom: both feed both sides identically,
-        // so the left and right "sums" would be the same line twice.
+        // so the left and right "sums" would be the same line twice. One of
+        // them is inverted — a design fact the sum's chains must carry: the
+        // first cut of this graph quietly un-inverted every chain, and two
+        // subs knitting THROUGH an inversion summed as if they fought it.
+        VirtualCrossoverChannelSettings rearSub = Loaded("rear sub");
+        rearSub.InvertPolarity = true;
+        rearSub.DelayMs = 5.73;
         (int, string, bool, VirtualCrossoverChannelSettings)[] subs =
         [
-            (3, VirtualCrossoverSheet.MonoSuffix, false, Loaded("rear sub")),
+            (3, VirtualCrossoverSheet.MonoSuffix, false, rearSub),
             (4, VirtualCrossoverSheet.MonoSuffix, false, Loaded("front sub"))
         ];
 
@@ -585,6 +591,10 @@ public sealed class VirtualCrossoverSheetPdfTests
         VirtualCrossoverSheetPdf.ChainCurve sum =
             Assert.Single(curves, curve => curve.Title == "Sum");
         Assert.Equal(2, sum.Chains.Count);
+        Assert.Single(sum.Chains, chain => chain.InvertPolarity);
+        // The delay, by contrast, IS stripped: it mirrors the cabin's path
+        // differences, which this graph deliberately does not model.
+        Assert.All(sum.Chains, chain => Assert.Equal(0, chain.DelayMs));
     }
 
     [Fact]
@@ -604,6 +614,32 @@ public sealed class VirtualCrossoverSheetPdfTests
 
         var series = (OxyPlot.Series.LineSeries)Assert.Single(model.Series);
         Assert.All(series.Points, point => Assert.Equal(6.0206, point.Y, 3));
+    }
+
+    [Fact]
+    public void BuildChainsModel_ASumCurve_HonorsAnInvertedChain()
+    {
+        // Polarity is a design term like any filter phase — an LR2 crossover
+        // knits flat only through its deliberate inversion — so the sum must
+        // carry it. A flat chain plus an inverted one at -6 dB is 1 - 0.5:
+        // -6.02 dB, where a sum that quietly un-inverted the chain would
+        // report 1 + 0.5 = +3.52 dB.
+        var flat = new VirtualCrossoverChannelSettings().ToChain()
+            with { DelayMs = 0 };
+        var inverted = new VirtualCrossoverChannelSettings
+        {
+            GainDb = -6.0206,
+            InvertPolarity = true
+        }.ToChain() with { DelayMs = 0 };
+        var curve = new VirtualCrossoverSheetPdf.ChainCurve(
+            "Sum", OxyPlot.OxyColors.Black, OxyPlot.LineStyle.Solid, 2,
+            [flat, inverted]);
+
+        OxyPlot.PlotModel model =
+            VirtualCrossoverSheetPdf.BuildChainsModel([curve], 48_000);
+
+        var series = (OxyPlot.Series.LineSeries)Assert.Single(model.Series);
+        Assert.All(series.Points, point => Assert.Equal(-6.0206, point.Y, 3));
     }
 
     // The document in reading order, reduced to what the grouped layout is

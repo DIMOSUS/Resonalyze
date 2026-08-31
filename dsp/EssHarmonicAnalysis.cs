@@ -148,13 +148,19 @@ public sealed record HarmonicPacket(
 /// polluted by — the neighbour. <see cref="LeadingEdgeEnergyDb"/> is the edge
 /// toward the higher harmonic (earlier in time), <see cref="TrailingEdgeEnergyDb"/>
 /// toward the lower harmonic (the packet's own decay, later in time).
+/// <see cref="IsBelowNoiseFloor"/> marks the opposite of a leak: the window holds
+/// no packet at all, only the record's own noise floor — the harmonic is too small
+/// to resolve, which is a property of a CLEAN capture, not a fault. Such an order
+/// is still not drawable (its "curve" would be the noise floor), so it stays
+/// unreliable, but it carries no warning.
 /// </summary>
 public sealed record HarmonicPacketValidity(
     int Order,
     double LeadingEdgeEnergyDb,
     double TrailingEdgeEnergyDb,
     bool IsReliable,
-    string? Warning);
+    string? Warning,
+    bool IsBelowNoiseFloor = false);
 
 /// <summary>
 /// Per-order isolation quality for a decomposition, plus the human-readable
@@ -256,6 +262,24 @@ public static class EssHarmonicAnalysis
     // Fraction of the window, at each boundary, treated as the "edge" region whose
     // residual energy signals overlap with the adjacent packet.
     private const double EdgeRegionFraction = 0.15;
+
+    // The edge test above is RELATIVE to the packet's own peak, so on its own it
+    // cannot tell a leaking packet from no packet at all: a harmonic that fell
+    // below the noise floor leaves a windowful of flat noise, whose plateau
+    // maximum (sigma·sqrt(2·ln M) over M plateau samples, ~3–4 sigma for the
+    // lengths in play) reads ~10–12 dB above the edge RMS — squarely inside the
+    // "overlaps its neighbour" verdict. A plateau peak within this margin of the
+    // record's own tail-noise RMS is therefore read as noise, not as a packet:
+    // 16 dB covers the noise crest factor up to M ≈ 10^7 samples, while a genuine
+    // leak — a visible curve — sits far above the floor and is untouched.
+    private const double BelowNoisePlateauDb = 16.0;
+
+    // Tail-noise chunking: the quiet region is split into equal chunks whose RMS
+    // values are combined by a median, so one stray thump in the tail cannot
+    // inflate the noise estimate. Below the minimum chunk length the tail is too
+    // short to trust and the below-noise test is skipped entirely.
+    private const int TailNoiseChunkCount = 8;
+    private const int MinTailNoiseChunkLength = 128;
 
     /// <summary>
     /// The time advance of harmonic <paramref name="harmonicOrder"/> relative to
@@ -625,6 +649,9 @@ public static class EssHarmonicAnalysis
             256,
             options.MaxFftLength);
 
+        double tailNoiseAmplitude =
+            EstimateTailNoiseAmplitude(deconvolvedImpulse, windows[0]);
+
         var packets = new HarmonicPacket[options.MaxHarmonic];
         var validities = new HarmonicPacketValidity[options.MaxHarmonic - 1];
         var warnings = new List<string>();
@@ -643,7 +670,7 @@ public static class EssHarmonicAnalysis
             if (order >= 2)
             {
                 HarmonicPacketValidity validity =
-                    EvaluatePacketOverlap(deconvolvedImpulse, definition);
+                    EvaluatePacketOverlap(deconvolvedImpulse, definition, tailNoiseAmplitude);
                 validities[order - 2] = validity;
                 if (validity.Warning != null)
                 {
@@ -662,12 +689,58 @@ public static class EssHarmonicAnalysis
                 warnings));
     }
 
+    // A robust time-domain noise amplitude read from the quiet tail after the
+    // linear packet and its reverb guard — the same region EssNoise draws its
+    // spectral estimate from. Returns 0 when the record has no usable tail;
+    // callers then skip the below-noise classification and fall back to the
+    // plain overlap verdict.
+    private static double EstimateTailNoiseAmplitude(
+        ReadOnlySpan<double> impulse,
+        HarmonicWindowDefinition linearWindow)
+    {
+        int linearStart = Math.Max(0, linearWindow.StartSample);
+        int linearEnd = Math.Min(impulse.Length - 1, linearWindow.EndSample);
+        int linearLength = Math.Max(1, linearEnd - linearStart + 1);
+
+        int guard = Math.Max(linearLength, linearLength / 2 + 1);
+        int regionStart = Math.Min(
+            Math.Max(0, linearWindow.EndSample) + guard,
+            impulse.Length);
+        int regionLength = impulse.Length - regionStart;
+
+        int chunkLength = regionLength / TailNoiseChunkCount;
+        if (chunkLength < MinTailNoiseChunkLength)
+        {
+            return 0.0;
+        }
+
+        var chunkRms = new double[TailNoiseChunkCount];
+        for (int chunk = 0; chunk < TailNoiseChunkCount; chunk++)
+        {
+            int start = regionStart + chunk * chunkLength;
+            double sumSquares = 0.0;
+            for (int i = start; i < start + chunkLength; i++)
+            {
+                sumSquares += impulse[i] * impulse[i];
+            }
+            chunkRms[chunk] = Math.Sqrt(sumSquares / chunkLength);
+        }
+
+        Array.Sort(chunkRms);
+        double median = 0.5 * (
+            chunkRms[TailNoiseChunkCount / 2 - 1] + chunkRms[TailNoiseChunkCount / 2]);
+        return double.IsFinite(median) ? median : 0.0;
+    }
+
     // Compares the residual energy at each window edge with the packet peak. A
     // contained (fast-decaying) packet reads far below its peak at both edges; a
-    // packet that has not decayed by the edge is leaking into its neighbour.
+    // packet that has not decayed by the edge is leaking into its neighbour — but
+    // a packet whose plateau never rises above the record's tail noise holds no
+    // harmonic at all and is classified below-noise instead of overlapping.
     private static HarmonicPacketValidity EvaluatePacketOverlap(
         ReadOnlySpan<double> impulse,
-        HarmonicWindowDefinition window)
+        HarmonicWindowDefinition window,
+        double tailNoiseAmplitude)
     {
         int start = Math.Max(0, window.StartSample);
         int end = Math.Min(impulse.Length - 1, window.EndSample);
@@ -696,6 +769,18 @@ public static class EssHarmonicAnalysis
         int edgeLength = Math.Max(1, (int)Math.Round(EdgeRegionFraction * length));
         double leadingDb = EdgeEnergyDb(impulse, start, edgeLength, peakEnergy);
         double trailingDb = EdgeEnergyDb(impulse, end - edgeLength + 1, edgeLength, peakEnergy);
+
+        // No packet stands above the record's own noise here: whatever the edges
+        // read, there is nothing to leak and nothing to draw. Dropped like an
+        // overlap, but without a warning — an unresolvably small harmonic is the
+        // mark of a clean capture, not a measurement fault.
+        if (tailNoiseAmplitude > 0.0 &&
+            peakEnergy <= tailNoiseAmplitude * Math.Pow(10.0, BelowNoisePlateauDb / 20.0))
+        {
+            return new HarmonicPacketValidity(
+                window.Order, leadingDb, trailingDb,
+                IsReliable: false, Warning: null, IsBelowNoiseFloor: true);
+        }
 
         double worst = Math.Max(leadingDb, trailingDb);
         bool reliable = worst <= InvalidEdgeDb;

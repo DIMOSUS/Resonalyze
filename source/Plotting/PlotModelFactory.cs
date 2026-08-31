@@ -2865,10 +2865,13 @@ internal sealed class PlotModelFactory
     }
 
     // A harmonic order the user asked for can be missing from the plot: its packet
-    // overlapped a neighbour and was dropped (so it is also left out of THD), or the
-    // measurement carries no sweep to derive harmonics from. Silently dropping the
-    // curve leaves the ticked checkbox unexplained, so a short note at the top names
-    // the missing curves and — where the DSP said why — the reason.
+    // overlapped a neighbour and was dropped (so it is also left out of THD), the
+    // harmonic sits below the measurement noise floor, or the measurement carries
+    // no sweep to derive harmonics from. Silently dropping the curve leaves the
+    // ticked checkbox unexplained, so a short note at the top names the missing
+    // curves and — where the DSP said why — the reason. A below-noise order is the
+    // mark of a clean capture, so it gets a neutral gray note, never the amber
+    // warning that used to scold users for their quietest measurements.
     private void AddHiddenHarmonicAnnotation(
         PlotModel model, IReadOnlyList<AnalysisCurve> curves)
     {
@@ -2878,38 +2881,73 @@ internal sealed class PlotModelFactory
             present.Add(curve.Kind);
         }
 
-        var missing = new List<string>();
-        void Check(bool requested, AnalysisCurveKind kind, string label)
+        var missing = new List<(int Order, string Label)>();
+        void Check(bool requested, AnalysisCurveKind kind, int order, string label)
         {
             if (requested && !present.Contains(kind))
             {
-                missing.Add(label);
+                missing.Add((order, label));
             }
         }
 
-        Check(frequencyResponseVisibility.ShowHd2, AnalysisCurveKind.SecondHarmonic, "HD2");
-        Check(frequencyResponseVisibility.ShowHd3, AnalysisCurveKind.ThirdHarmonic, "HD3");
-        Check(frequencyResponseVisibility.ShowHd4, AnalysisCurveKind.FourthHarmonic, "HD4");
+        Check(frequencyResponseVisibility.ShowHd2, AnalysisCurveKind.SecondHarmonic, 2, "HD2");
+        Check(frequencyResponseVisibility.ShowHd3, AnalysisCurveKind.ThirdHarmonic, 3, "HD3");
+        Check(frequencyResponseVisibility.ShowHd4, AnalysisCurveKind.FourthHarmonic, 4, "HD4");
         if (missing.Count == 0)
         {
             return;
         }
 
-        IReadOnlyList<string> warnings = measurementContext.DistortionWarnings;
-        string reason = warnings.Count > 0
-            ? string.Join("\n", warnings)
-            : "no sweep distortion data — record a sweep, or use a longer one so the "
-                + "harmonic packet clears its neighbour";
-        string plural = missing.Count > 1 ? "curves" : "curve";
-        model.Annotations.Add(new OverlayTextAnnotation
+        var belowNoiseOrders = new HashSet<int>(
+            measurementContext.DistortionPacketValidity
+                .Where(packet => packet.IsBelowNoiseFloor)
+                .Select(packet => packet.Order));
+        List<string> problem = missing
+            .Where(m => !belowNoiseOrders.Contains(m.Order))
+            .Select(m => m.Label)
+            .ToList();
+        List<string> belowNoise = missing
+            .Where(m => belowNoiseOrders.Contains(m.Order))
+            .Select(m => m.Label)
+            .ToList();
+
+        int nextLine = 0;
+        if (problem.Count > 0)
         {
-            Text = $"{string.Join(", ", missing)} {plural} not shown\n{reason}",
-            TextPosition = new DataPoint(0.5, 0),
-            TextFlowDirection = TextFlowDirection.TopDown,
-            FontSize = 12,
-            TextColor = OxyColors.Goldenrod,
-            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
-        });
+            // The advice clause goes to its own line so the widest line stays
+            // readable in a narrow window instead of running past the plot edge.
+            IReadOnlyList<string> warnings = measurementContext.DistortionWarnings;
+            string reason = warnings.Count > 0
+                ? string.Join("\n", warnings.Select(w => w.Replace("; ", ";\n")))
+                : "no sweep distortion data — record a sweep,\n"
+                    + "or use a longer one so the harmonic packet clears its neighbour";
+            string plural = problem.Count > 1 ? "curves" : "curve";
+            string text = $"{string.Join(", ", problem)} {plural} not shown\n{reason}";
+            model.Annotations.Add(new OverlayTextAnnotation
+            {
+                Text = text,
+                TextPosition = new DataPoint(0.5, 0),
+                TextFlowDirection = TextFlowDirection.TopDown,
+                FontSize = 12,
+                TextColor = OxyColors.Goldenrod,
+                TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
+            });
+            nextLine = text.Split('\n').Length;
+        }
+
+        if (belowNoise.Count > 0)
+        {
+            model.Annotations.Add(new OverlayTextAnnotation
+            {
+                Text = $"{string.Join(", ", belowNoise)} below the measurement noise floor\n"
+                    + "distortion too low to resolve — a clean capture, not a fault",
+                TextPosition = new DataPoint(0.5, nextLine),
+                TextFlowDirection = TextFlowDirection.TopDown,
+                FontSize = 12,
+                TextColor = OxyColors.Gray,
+                TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
+            });
+        }
     }
 
     // Phase and group delay need loopback timing; without a transfer IR the plot would

@@ -901,10 +901,23 @@ precision wherever its own peak is trustworthy.
 
 The first-arrival search rejects **pre-ringing sidelobes** by testing every
 candidate against the analysis kernel's own envelope — an arrival can pre-ring no
-louder than that allows at a given distance, so a candidate above the ceiling is
-a genuine arrival no matter how the surroundings look (which keeps weak direct
-sound alive in reverberant bass), and one at or below it is confirmed as pre-ring
-by its mirror twin.
+louder than that allows at a given distance, so a candidate above the ceiling
+cannot be any single peak's pre-ring (which keeps weak direct sound alive in
+reverberant bass), and one at or below it is confirmed as pre-ring by its mirror
+twin.
+
+Clearing that ceiling is necessary but no longer sufficient: a first arrival
+must also **rise out of its own approach** — stand 3 dB above the quietest
+envelope level within a kernel's core reach behind it. Ahead of the first real
+arrival, a zero-phase analysis kernel lays down the summed backward skirt of
+everything the record plays later: a flat shelf that no single peak's ceiling
+can price (it is a superposition, measured 4.7 dB above the ceiling on a field
+subwoofer band), and whose micro-ripples would otherwise be reported as
+arrivals before the driver made a sound. A genuine front climbs whole decibels
+out of the floor it approaches over; ripple on a shelf climbs by hundredths.
+The approach window is sized by the kernel itself, so it scales with the band's
+rise time, and the strongest peak is exempt — nothing later could have
+manufactured it.
 
 It also refuses to read a **ripple on the foot of a wave packet** as that
 packet's arrival. A cabin's comb interference leaves small bumps a fraction of a
@@ -2441,7 +2454,16 @@ the two channels' **direct sound alone**: across a whole record a mid/tweeter
 handover's strongest extremum is often a reflection three to five periods from
 the arrival, and cutting to the wavefronts first is what keeps the seed on the
 right lobe. A seeding extremum that lands far from the coarse arrival is
-refused as a cycle skip, and that distance check has one exception: an arrival
+refused as a cycle skip. The distance itself is measured honestly first: each
+side's own chain drags its band arrival without moving the wavefront the tune
+aligns (a subwoofer's low-pass alone shifts its band arrival by a dozen
+milliseconds where its partner's chain shifts half that), so the non-common
+part of the two chains' shifts — each measured by running a reference impulse
+through the real chain, with no room in it — sits inside the pair's arrival
+difference as chain, not geometry, and is credited to the check's reach before
+an extremum can be refused for exceeding it. Junctions whose band lies inside
+both passbands see microsecond skews and are untouched. Past that credit the
+check has one exception: an arrival
 picked deep below its own band's energy. A subwoofer's direct front can sit
 20-odd dB under the cabin build-up arriving behind it — a real front, and the
 right one to time the channel by — while the correlation reads where the energy

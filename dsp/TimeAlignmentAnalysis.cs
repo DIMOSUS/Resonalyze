@@ -82,9 +82,17 @@ public readonly record struct TimeAlignmentArrivalProbe(
 public static class TimeAlignmentAnalysis
 {
     // Periods of the kernel's lowest frequency to keep clear beside the
-    // signal (see BandpassGuardSamples), and the ceiling on that guard.
+    // signal (see BandpassGuardSamples), and the ceiling on that guard — in
+    // SECONDS, so a higher record rate cannot silently shrink the guard below
+    // its own stated need. A fixed sample count looked equivalent at 48 kHz
+    // and starved the same band at 384 kHz, where 262,144 samples buys only
+    // 9.4 of the ~15 cycles the 27.5-110 Hz kernel needs. Two seconds is the
+    // full twenty cycles at 10 Hz — the lowest fade start a band-limited read
+    // can produce (its low edge clamps at 20 Hz, and the octave fade halves
+    // it) — so only a caller asking directly for a band below that meets the
+    // cap, which is what keeps a pathological transform bounded.
     private const double BandpassGuardCycles = 20.0;
-    private const int MaxBandpassGuardSamples = 262_144;
+    private const double MaxBandpassGuardSeconds = 2.0;
 
     public static TimeAlignmentAnalysisResult Analyze(
         IReadOnlyList<double> impulseResponse,
@@ -479,14 +487,17 @@ public static class TimeAlignmentAnalysis
     /// window, the kernel needs 13 to 18 of those periods to decay past −120 dB
     /// (20 Hz–110 Hz: 13.2, 27.5–110: 14.9, 110–290: 17.2, 3.5 k–20 k: 17.9), so
     /// twenty of them carries margin at every band the analysis is asked for.
-    /// The floor and the cap mirror <see cref="VirtualCrossoverAnalysis"/>'s own
-    /// filter-tail padding, for the same reason: a pathological band may not
-    /// size the transform without bound.
+    /// The cap exists for the same reason <see cref="VirtualCrossoverAnalysis"/>
+    /// caps its own filter-tail padding — a pathological band may not size the
+    /// transform without bound — and it is stated in seconds so it can never
+    /// undercut the cycle count at a high record rate (see
+    /// <see cref="MaxBandpassGuardSeconds"/>).
     /// </remarks>
     private static int BandpassGuardSamples(
         int sampleRate,
         TimeAlignmentAnalysisOptions options)
     {
+        int maxSamples = (int)(MaxBandpassGuardSeconds * sampleRate);
         (double fadeStartHz, double passStartHz, _, _) = BandpassWindow.BandAround(
             options.BandpassCenterHz,
             options.BandpassPassOctaves,
@@ -497,12 +508,12 @@ public static class TimeAlignmentAnalysis
         double lowestHz = fadeStartHz > 0 ? fadeStartHz : passStartHz;
         if (!double.IsFinite(lowestHz) || lowestHz <= 0)
         {
-            return MaxBandpassGuardSamples;
+            return maxSamples;
         }
 
         double samples = BandpassGuardCycles * sampleRate / lowestHz;
-        return samples >= MaxBandpassGuardSamples
-            ? MaxBandpassGuardSamples
+        return samples >= maxSamples
+            ? maxSamples
             : (int)Math.Ceiling(samples);
     }
 

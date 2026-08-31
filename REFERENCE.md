@@ -2239,6 +2239,13 @@ Mosconi, ESX, miniDSP and JL Audio — and its **processing rate** and
 [**Q convention**](#dsp-q-convention) come with it, locked. Pick **Custom** and
 state both by hand.
 
+A catalog line may also state the model's **per-channel delay ceiling**, read
+from its manual. Automatic delay proposals are judged against it — a spread the
+device cannot dial refuses with the reason — while a model whose manual has not
+been entered yet, and a Custom profile, keep the engine's long-standing 50 ms
+feasibility gate. The manual delay fields deliberately keep their wider range,
+since the Virtual DSP may model any hardware.
+
 The processing rate is the rate every simulated filter is **built** at, and it is
 deliberately independent of the rate the channels were measured at. A digital
 filter's corner is warped by the rate it was designed for, so designing at the
@@ -2384,7 +2391,14 @@ A group the run cannot measure keeps the delay it had, and says so in the trace.
 Every delay is relative until the last pass, which slides the whole set until
 the earliest channel sits at zero — a rear fill pushed back past the front stage
 asks the front to go negative, and nothing is dialable until that shift. Every
-relation the stages computed survives it.
+relation the stages computed survives it. The finished figure is then judged
+against the processor's own delay ceiling (see
+[DSP processor](#dsp-processor)); a set that does not fit refuses with the
+reason rather than clamping a channel, and when the rear fill is what pushes it
+past the range — the rear often sits *closer* than the front, so the whole gap
+plus the fill lands on the front stage's delays — the refusal also names the
+largest fill that *would* fit, so one rerun with the dialog turned down settles
+it instead of a bisection.
 
 A project with no rear and no centre never enters any of this: it takes the
 single-stage path, which is the same engine call it always took.
@@ -2560,7 +2574,26 @@ The remaining buttons in the column beside the plots:
   sides, not a binaural head simulation.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
   text): for every side of every pair (a mono pair prints once) the gain, delay in
-  ms and mm, polarity, crossover filters, and PEQ bands down to the all-pass. It
+  ms and mm, polarity, crossover filters, and PEQ bands down to the all-pass.
+  An installation spanning several zones prints **by group**, in the order a
+  tune is typed into a DSP — Sub, then Front, then Rear, then Center — each
+  group led by its name and (on the PDF) a graph of its own DSP chains instead
+  of one combined tangle, every group after the first opening a page of its
+  own; blocks keep their panel letters, only the section order changes. A group's graph adds the design sum of its chains per side
+  (left solid, right dashed; one line for a group of mono blocks) where a side
+  has at least two chains to sum — never for the centre, whose derived signal
+  makes any sum involving it a fiction — and the front group's graph carries
+  the subwoofer group's sum in a pale tone, so the bass handover shows both of
+  its sides. These sums are complex, carrying every phase term the chains
+  hold — crossover, PEQ, all-pass and polarity alike, since an LR2-style knit
+  exists only through its deliberate inversion — with just the delays
+  stripped: folding the cabin's timing compensation into a filter graph would
+  bury it in combs no DSP screen shows, and the acoustic summation already
+  lives on the panel's plot. The flip side is stated rather than hidden: a
+  junction inverted to fix the cabin's phase shows an electrical dip here
+  that the car does not have, because that junction knits through timing this
+  graph does not model — the panel's plot is where it is judged. A
+  single-zone project keeps the flat sheet it always had. It
   states the PEQ columns in the [Q convention](#dsp-q-convention) of the project's
   [DSP processor](#dsp-processor): a named model answers for itself and the export
   asks nothing. A **Custom** processor has only what was typed into that dialog, so

@@ -32,65 +32,95 @@ internal static class VirtualCrossoverSheet
             builder.AppendLine(metricLine);
         }
 
-        for (int i = 0; i < project.Pairs.Count; i++)
+        // One run of sections per zone, in the order a tune is typed into a DSP
+        // (Sub, Front, Rear, Center) — with the zone named above its run. A
+        // single-zone project skips the headings and keeps the flat sheet it
+        // always had: a heading that names the only group there is would be
+        // scaffolding around nothing.
+        IReadOnlyList<(VirtualCrossoverZone Zone, IReadOnlyList<int> PairIndices)>
+            sections = VirtualCrossoverSheetGroups.Sections(project);
+        bool grouped = sections.Count > 1;
+        foreach ((VirtualCrossoverZone zone, IReadOnlyList<int> pairIndices)
+            in sections)
         {
-            foreach ((VirtualCrossoverChannelSettings channel, string sideSuffix)
-                in SideSections(project.Pairs[i]))
+            if (grouped)
             {
-                if (!channel.HasSource)
-                {
-                    continue;
-                }
-
                 builder.AppendLine();
                 builder.AppendLine(
-                    $"Channel {ChannelName(i)}{sideSuffix} — {channel.DisplayName}");
-                // Many DSPs have no separate preamp for their equalizer, so the PEQ preamp
-                // has to be folded into the channel gain when the tune is typed in. The
-                // combined figure rides along on the same line, where it cannot be
-                // mistaken for a second, independent gain to enter.
-                string gainLine = $"  Gain       {Signed(channel.GainDb)} dB";
-                if (channel.PeqPreampDb != 0)
-                {
-                    gainLine +=
-                        $"  (with PEQ preamp: {Signed(channel.GainDb + channel.PeqPreampDb)} dB)";
-                }
+                    $"=== {VirtualCrossoverZones.DisplayName(zone)} ===");
+            }
 
-                builder.AppendLine(gainLine);
-                builder.AppendLine(
-                    $"  Delay      {Number(channel.DelayMs, "0.00")} ms" +
-                    $"  (= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm)");
-                builder.AppendLine(
-                    $"  Polarity   {(channel.InvertPolarity ? "Inverted" : "Normal")}");
-                builder.AppendLine($"  Crossover  {DescribeCrossover(channel)}");
-                if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
-                {
-                    builder.AppendLine(
-                        $"  PEQ        {channel.PeqSourceName ?? "custom"}, " +
-                        $"preamp {Signed(channel.PeqPreampDb)} dB");
-                    for (int band = 0; band < channel.PeqBands.Count; band++)
-                    {
-                        PeqBand peq = PeqQConventions.ToConvention(
-                            channel.PeqBands[band], qConvention);
-                        // The keyword comes from the profile writer rather than being
-                        // spelled here: a shelf printed as PK is an instruction to
-                        // dial in the wrong filter. An all-pass line carries no gain
-                        // (the filter has none) and drops the Q on a first order,
-                        // which has no Q to dial in.
-                        string tail = peq.Type.IsAllPass()
-                            ? peq.Type == PeqBandType.AllPassFirstOrder
-                                ? string.Empty
-                                : $" Q {Number(peq.Q, "0.0#")}"
-                            : $" Gain {Signed(peq.GainDb)} dB Q {Number(peq.Q, "0.0#")}";
-                        builder.AppendLine(
-                            $"    Filter {band + 1}: ON {PeqTextFile.TypeToken(peq.Type)} " +
-                            $"Fc {Number(peq.FrequencyHz, "0.###")} Hz{tail}");
-                    }
-                }
+            foreach (int i in pairIndices)
+            {
+                AppendPairSections(builder, project, i, qConvention);
             }
         }
 
         return builder.ToString();
+    }
+
+    // The body of one pair's printed sections, shared by the grouped and flat
+    // layouts above so the two cannot come to print a channel differently.
+    private static void AppendPairSections(
+        StringBuilder builder,
+        VirtualCrossoverProjectFile project,
+        int i,
+        PeqQConvention qConvention)
+    {
+        foreach ((VirtualCrossoverChannelSettings channel, string sideSuffix)
+            in SideSections(project.Pairs[i]))
+        {
+            if (!channel.HasSource)
+            {
+                continue;
+            }
+
+            builder.AppendLine();
+            builder.AppendLine(
+                $"Channel {ChannelName(i)}{sideSuffix} — {channel.DisplayName}");
+            // Many DSPs have no separate preamp for their equalizer, so the PEQ preamp
+            // has to be folded into the channel gain when the tune is typed in. The
+            // combined figure rides along on the same line, where it cannot be
+            // mistaken for a second, independent gain to enter.
+            string gainLine = $"  Gain       {Signed(channel.GainDb)} dB";
+            if (channel.PeqPreampDb != 0)
+            {
+                gainLine +=
+                    $"  (with PEQ preamp: {Signed(channel.GainDb + channel.PeqPreampDb)} dB)";
+            }
+
+            builder.AppendLine(gainLine);
+            builder.AppendLine(
+                $"  Delay      {Number(channel.DelayMs, "0.00")} ms" +
+                $"  (= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm)");
+            builder.AppendLine(
+                $"  Polarity   {(channel.InvertPolarity ? "Inverted" : "Normal")}");
+            builder.AppendLine($"  Crossover  {DescribeCrossover(channel)}");
+            if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
+            {
+                builder.AppendLine(
+                    $"  PEQ        {channel.PeqSourceName ?? "custom"}, " +
+                    $"preamp {Signed(channel.PeqPreampDb)} dB");
+                for (int band = 0; band < channel.PeqBands.Count; band++)
+                {
+                    PeqBand peq = PeqQConventions.ToConvention(
+                        channel.PeqBands[band], qConvention);
+                    // The keyword comes from the profile writer rather than being
+                    // spelled here: a shelf printed as PK is an instruction to
+                    // dial in the wrong filter. An all-pass line carries no gain
+                    // (the filter has none) and drops the Q on a first order,
+                    // which has no Q to dial in.
+                    string tail = peq.Type.IsAllPass()
+                        ? peq.Type == PeqBandType.AllPassFirstOrder
+                            ? string.Empty
+                            : $" Q {Number(peq.Q, "0.0#")}"
+                        : $" Gain {Signed(peq.GainDb)} dB Q {Number(peq.Q, "0.0#")}";
+                    builder.AppendLine(
+                        $"    Filter {band + 1}: ON {PeqTextFile.TypeToken(peq.Type)} " +
+                        $"Fc {Number(peq.FrequencyHz, "0.###")} Hz{tail}");
+                }
+            }
+        }
     }
 
     public static string ChannelName(int index) => ((char)('A' + index)).ToString();

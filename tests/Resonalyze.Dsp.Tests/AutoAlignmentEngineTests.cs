@@ -2120,4 +2120,34 @@ public sealed class AutoAlignmentEngineTests
                 [earlySnapshot, lateSnapshot], alignment, new StringBuilder()));
         Assert.Contains("does not fit", error.Message);
     }
+
+    [Fact]
+    public void NormalizeAndVerifyFeasibility_JudgesAgainstTheDeviceOwnCeiling()
+    {
+        // The 50 ms gate is the DEFAULT, standing in for a device whose manual
+        // has not been read: a catalog entry that states its real ceiling
+        // tightens the same check, and the refusal quotes the figure it was
+        // judged against so the user knows which limit refused them.
+        var early = new TestChannel("E", DelayedImpulse(0.0));
+        var late = new TestChannel("L", DelayedImpulse(1.0));
+        var earlySnapshot = new AlignmentSnapshot(early, early.InitialIr, BasePosition);
+        var lateSnapshot = new AlignmentSnapshot(late, late.InitialIr, BasePosition);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [early] = new AlignmentOverride(0.0, false),
+            [late] = new AlignmentOverride(12.0, false)
+        };
+
+        // Fits the default gate…
+        AutoAlignmentEngine.NormalizeAndVerifyFeasibility(
+            [earlySnapshot, lateSnapshot], alignment, new StringBuilder());
+
+        // …and the same span refuses on a device that holds only 10 ms.
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => AutoAlignmentEngine.NormalizeAndVerifyFeasibility(
+                [earlySnapshot, lateSnapshot], alignment, new StringBuilder(),
+                maxDelayMs: 10.0));
+        Assert.Contains("does not fit", error.Message);
+        Assert.Contains("10 ms", error.Message);
+    }
 }

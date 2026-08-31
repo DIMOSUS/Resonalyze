@@ -423,6 +423,264 @@ public sealed class VirtualCrossoverSheetPdfTests
         return builder.ToString();
     }
 
+    [Fact]
+    public void Build_GroupedProject_LeadsEachZoneWithItsNameAndItsOwnGraph()
+    {
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(
+            VirtualCrossoverSheetTests.GroupedProject(), null, 48_000);
+
+        // The walk of the document in order: every group heading (the only
+        // group-heading-sized paragraphs on the sheet) and every graph image. Each zone's
+        // name must be followed by its graph — Sub first, the order a tune is
+        // typed into a DSP — regardless of whether the banner image loaded.
+        List<string> walk = HeadingsAndImages(sheet.Document);
+        int start = walk.IndexOf("Sub");
+        Assert.True(start >= 0, "the Sub group heading is missing");
+        Assert.Equal(
+            ["Sub", "image", "Front", "image", "Rear", "image", "Center", "image"],
+            walk.Skip(start));
+    }
+
+    [Fact]
+    public void Build_GroupedProject_StartsEveryGroupAfterTheFirstOnItsOwnPage()
+    {
+        // The sheet is read standing at the DSP one group at a time, so each
+        // group opens a page of its own — except the first, which stays on the
+        // title page rather than leaving it holding nothing but the banner.
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(
+            VirtualCrossoverSheetTests.GroupedProject(), null, 48_000);
+
+        List<Paragraph> headings = GroupHeadings(sheet.Document);
+        Assert.Equal(4, headings.Count);
+        Assert.False(headings[0].Format.PageBreakBefore);
+        Assert.All(headings.Skip(1), heading =>
+            Assert.True(heading.Format.PageBreakBefore));
+    }
+
+    // The group headings in reading order — the only group-heading-sized paragraphs on the sheet.
+    private static List<Paragraph> GroupHeadings(Document document)
+    {
+        var headings = new List<Paragraph>();
+        DocumentElements elements = document.LastSection.Elements;
+        for (int i = 0; i < elements.Count; i++)
+        {
+            if (elements[i] is Paragraph paragraph &&
+                paragraph.Format.Font.Size == Unit.FromPoint(VirtualCrossoverSheetPdf.GroupHeadingPointSize))
+            {
+                headings.Add(paragraph);
+            }
+        }
+
+        return headings;
+    }
+
+    [Fact]
+    public void Build_SingleZoneProject_KeepsTheFlatSheetItAlwaysHad()
+    {
+        var project = new VirtualCrossoverProjectFile();
+        project.Pairs[0].Left.SourceFilePath = "l.json";
+        project.Pairs[0].Left.DisplayName = "L";
+        project.Pairs[0].Right.SourceFilePath = "r.json";
+        project.Pairs[0].Right.DisplayName = "R";
+
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
+
+        List<string> walk = HeadingsAndImages(sheet.Document);
+        // No group headings, and one combined graph (any image before it is
+        // the product banner, which renders only when its asset is present).
+        Assert.DoesNotContain("Sub", walk);
+        Assert.DoesNotContain("Front", walk);
+        Assert.InRange(walk.Count(item => item == "image"), 1, 2);
+    }
+
+    private static VirtualCrossoverChannelSettings Loaded(
+        string name, double gainDb = 0)
+        => new() { SourceFilePath = name, DisplayName = name, GainDb = gainDb };
+
+    [Fact]
+    public void GroupCurves_SumsPerSide_AndPutsTheSubContextOnTheFrontGraph()
+    {
+        // Two stereo front pairs: each side has two chains to sum, so the
+        // group gets a solid left sum and a dashed right sum — and, being the
+        // front group, the subwoofer group's sum rides along in a pale tone.
+        (int, string, bool, VirtualCrossoverChannelSettings)[] front =
+        [
+            (0, VirtualCrossoverSheet.LeftSuffix, false, Loaded("mid L")),
+            (0, VirtualCrossoverSheet.RightSuffix, true, Loaded("mid R")),
+            (1, VirtualCrossoverSheet.LeftSuffix, false, Loaded("tw L")),
+            (1, VirtualCrossoverSheet.RightSuffix, true, Loaded("tw R"))
+        ];
+        (int, string, bool, VirtualCrossoverChannelSettings)[] subs =
+        [
+            (3, VirtualCrossoverSheet.MonoSuffix, false, Loaded("sub"))
+        ];
+
+        IReadOnlyList<VirtualCrossoverSheetPdf.ChainCurve> curves =
+            VirtualCrossoverSheetPdf.GroupCurves(
+                VirtualCrossoverZone.Front, front, subs);
+
+        Assert.Equal(4, curves.Count(curve => curve.Title.StartsWith("Channel")));
+        VirtualCrossoverSheetPdf.ChainCurve sumLeft =
+            Assert.Single(curves, curve => curve.Title == "Sum L");
+        VirtualCrossoverSheetPdf.ChainCurve sumRight =
+            Assert.Single(curves, curve => curve.Title == "Sum R");
+        Assert.Equal(2, sumLeft.Chains.Count);
+        Assert.Equal(2, sumRight.Chains.Count);
+        Assert.Equal(OxyPlot.LineStyle.Solid, sumLeft.Style);
+        Assert.Equal(OxyPlot.LineStyle.Dash, sumRight.Style);
+
+        // The lone mono sub still shows on the front graph — it is context for
+        // the bass handover, not a member — visibly paler than the group's own
+        // sum so it cannot compete with the channels the graph is about.
+        VirtualCrossoverSheetPdf.ChainCurve subContext =
+            Assert.Single(curves, curve => curve.Title == "Sub sum");
+        Assert.Single(subContext.Chains);
+        Assert.True(subContext.Color.R > sumLeft.Color.R,
+            "the sub context must be paler than the group sum");
+    }
+
+    [Fact]
+    public void GroupCurves_DrawsNoSum_ForTheCentreOrForASumOfOne()
+    {
+        // The centre's signal is derived from L and R, so no sum involving it
+        // is honest — even a two-way centre's graph shows chains only.
+        (int, string, bool, VirtualCrossoverChannelSettings)[] centre =
+        [
+            (2, VirtualCrossoverSheet.MonoSuffix, false, Loaded("centre lo")),
+            (3, VirtualCrossoverSheet.MonoSuffix, false, Loaded("centre hi"))
+        ];
+        Assert.DoesNotContain(
+            VirtualCrossoverSheetPdf.GroupCurves(
+                VirtualCrossoverZone.Center, centre, []),
+            curve => curve.Title.Contains("Sum"));
+
+        // And a rear of one stereo pair has one chain per side: its "sum"
+        // would retrace the channel, so none is drawn.
+        (int, string, bool, VirtualCrossoverChannelSettings)[] rear =
+        [
+            (1, VirtualCrossoverSheet.LeftSuffix, false, Loaded("rear L")),
+            (1, VirtualCrossoverSheet.RightSuffix, true, Loaded("rear R"))
+        ];
+        Assert.DoesNotContain(
+            VirtualCrossoverSheetPdf.GroupCurves(
+                VirtualCrossoverZone.Rear, rear, []),
+            curve => curve.Title.Contains("Sum"));
+    }
+
+    [Fact]
+    public void GroupCurves_AGroupOfMonoMembers_GetsOneSumRatherThanTwoCopies()
+    {
+        // Two mono subs dividing the bottom: both feed both sides identically,
+        // so the left and right "sums" would be the same line twice. One of
+        // them is inverted — a design fact the sum's chains must carry: the
+        // first cut of this graph quietly un-inverted every chain, and two
+        // subs knitting THROUGH an inversion summed as if they fought it.
+        VirtualCrossoverChannelSettings rearSub = Loaded("rear sub");
+        rearSub.InvertPolarity = true;
+        rearSub.DelayMs = 5.73;
+        (int, string, bool, VirtualCrossoverChannelSettings)[] subs =
+        [
+            (3, VirtualCrossoverSheet.MonoSuffix, false, rearSub),
+            (4, VirtualCrossoverSheet.MonoSuffix, false, Loaded("front sub"))
+        ];
+
+        IReadOnlyList<VirtualCrossoverSheetPdf.ChainCurve> curves =
+            VirtualCrossoverSheetPdf.GroupCurves(
+                VirtualCrossoverZone.Sub, subs, subs);
+
+        VirtualCrossoverSheetPdf.ChainCurve sum =
+            Assert.Single(curves, curve => curve.Title == "Sum");
+        Assert.Equal(2, sum.Chains.Count);
+        Assert.Single(sum.Chains, chain => chain.InvertPolarity);
+        // The delay, by contrast, IS stripped: it mirrors the cabin's path
+        // differences, which this graph deliberately does not model.
+        Assert.All(sum.Chains, chain => Assert.Equal(0, chain.DelayMs));
+    }
+
+    [Fact]
+    public void BuildChainsModel_ASumCurve_IsTheComplexSumOfItsChains()
+    {
+        // Two identical flat chains sum to double the pressure: +6.02 dB, not
+        // the +3 dB a power sum would claim. Pinned numerically so the sum
+        // stays a COMPLEX sum of the chain responses.
+        var chain = new VirtualCrossoverChannelSettings().ToChain()
+            with { DelayMs = 0 };
+        var curve = new VirtualCrossoverSheetPdf.ChainCurve(
+            "Sum", OxyPlot.OxyColors.Black, OxyPlot.LineStyle.Solid, 2,
+            [chain, chain]);
+
+        OxyPlot.PlotModel model =
+            VirtualCrossoverSheetPdf.BuildChainsModel([curve], 48_000);
+
+        var series = (OxyPlot.Series.LineSeries)Assert.Single(model.Series);
+        Assert.All(series.Points, point => Assert.Equal(6.0206, point.Y, 3));
+    }
+
+    [Fact]
+    public void BuildChainsModel_ASumCurve_HonorsAnInvertedChain()
+    {
+        // Polarity is a design term like any filter phase — an LR2 crossover
+        // knits flat only through its deliberate inversion — so the sum must
+        // carry it. A flat chain plus an inverted one at -6 dB is 1 - 0.5:
+        // -6.02 dB, where a sum that quietly un-inverted the chain would
+        // report 1 + 0.5 = +3.52 dB.
+        var flat = new VirtualCrossoverChannelSettings().ToChain()
+            with { DelayMs = 0 };
+        var inverted = new VirtualCrossoverChannelSettings
+        {
+            GainDb = -6.0206,
+            InvertPolarity = true
+        }.ToChain() with { DelayMs = 0 };
+        var curve = new VirtualCrossoverSheetPdf.ChainCurve(
+            "Sum", OxyPlot.OxyColors.Black, OxyPlot.LineStyle.Solid, 2,
+            [flat, inverted]);
+
+        OxyPlot.PlotModel model =
+            VirtualCrossoverSheetPdf.BuildChainsModel([curve], 48_000);
+
+        var series = (OxyPlot.Series.LineSeries)Assert.Single(model.Series);
+        Assert.All(series.Points, point => Assert.Equal(-6.0206, point.Y, 3));
+    }
+
+    // The document in reading order, reduced to what the grouped layout is
+    // about: each group heading (the only group-heading-sized paragraphs on the sheet) as its
+    // text, and each image as "image".
+    private static List<string> HeadingsAndImages(Document document)
+    {
+        var walk = new List<string>();
+        DocumentElements elements = document.LastSection.Elements;
+        for (int i = 0; i < elements.Count; i++)
+        {
+            if (elements[i] is not Paragraph paragraph)
+            {
+                continue;
+            }
+
+            bool holdsImage = false;
+            for (int j = 0; j < paragraph.Elements.Count; j++)
+            {
+                if (paragraph.Elements[j]
+                    is MigraDoc.DocumentObjectModel.Shapes.Image)
+                {
+                    holdsImage = true;
+                }
+            }
+
+            if (holdsImage)
+            {
+                walk.Add("image");
+            }
+            else if (paragraph.Format.Font.Size == Unit.FromPoint(VirtualCrossoverSheetPdf.GroupHeadingPointSize))
+            {
+                var builder = new StringBuilder();
+                AppendParagraphText(paragraph, builder);
+                walk.Add(builder.ToString());
+            }
+        }
+
+        return walk;
+    }
+
     private static IEnumerable<Table> PairTables(Document document)
     {
         DocumentElements elements = document.LastSection.Elements;

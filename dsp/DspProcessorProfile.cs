@@ -24,11 +24,21 @@ namespace Resonalyze.Dsp;
 /// costs something.
 /// </para>
 /// </remarks>
+/// <param name="MaxDelayMs">
+/// The device's per-channel delay ceiling from its maker's manual, or null where it
+/// has not been looked up yet. Null does NOT mean unlimited: an unknown ceiling reads
+/// as <see cref="AutoAlignmentEngine.DefaultMaxDelayMs"/>, the engine's long-standing
+/// feasibility gate, so an unfilled line keeps exactly the behavior it always had.
+/// The catalog is filled from the manuals gradually; a wrong entry here turns a
+/// dialable tune into a refusal (or the reverse), so a line states a number only
+/// when the manual does.
+/// </param>
 public sealed record DspProcessorPreset(
     string Manufacturer,
     string ModelName,
     int SampleRateHz,
-    PeqQConvention QConvention)
+    PeqQConvention QConvention,
+    double? MaxDelayMs = null)
 {
     /// <summary>Stable file identity, e.g. <c>helix-dsp-ultra-s</c>.</summary>
     public string Id { get; } = MakeId(Manufacturer, ModelName);
@@ -106,6 +116,18 @@ public sealed record DspProcessorProfile(
 
     public string DisplayName =>
         DspProcessorCatalog.Preset(ModelId)?.DisplayName ?? "Custom";
+
+    /// <summary>
+    /// The per-channel delay ceiling an automatic proposal must fit for this
+    /// processor. A catalog entry that states its own figure answers with it; a
+    /// Custom profile — and every entry whose manual has not been read yet —
+    /// answers with the engine's <see cref="AutoAlignmentEngine.DefaultMaxDelayMs"/>,
+    /// so an unknown device keeps the behavior every device had before the
+    /// catalog learned this fact.
+    /// </summary>
+    public double MaxDelayMs =>
+        DspProcessorCatalog.Preset(ModelId)?.MaxDelayMs
+            ?? AutoAlignmentEngine.DefaultMaxDelayMs;
 }
 
 /// <summary>

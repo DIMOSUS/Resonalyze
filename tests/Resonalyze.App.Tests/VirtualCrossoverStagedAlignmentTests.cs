@@ -239,4 +239,105 @@ public sealed class VirtualCrossoverStagedAlignmentTests
         Assert.Equal(1.0, alignment[front].DelayMs, 6);
         Assert.Equal(16.0, alignment[rear].DelayMs, 6);
     }
+
+    [Fact]
+    public void NormalizeStagedDelays_RefusesACeilingBreach_EvenWithoutAShift()
+    {
+        // The ceiling verdict must not ride on whether a shift happened: a rear
+        // fill pushes the LATEST channel out while every delay stays positive,
+        // so a check placed inside the shift branch would wave exactly the case
+        // it exists for straight through to a device that cannot dial it.
+        var front = Block("A", VirtualCrossoverZone.Front);
+        var rear = Block("B", VirtualCrossoverZone.Rear);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [front] = new AlignmentOverride(0.0, false),
+            [rear] = new AlignmentOverride(23.0, false)
+        };
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => VirtualCrossoverPanel.NormalizeStagedDelays(
+                [front, rear], alignment, new System.Text.StringBuilder(),
+                maxDelayMs: 20.0, rearFillOffsetMs: 15.0, rearFillCarriers: [rear]));
+
+        // The refusal names the culprit and the answer: the rear delay is
+        // 8 ms of physics plus 15 ms of preference, and a 20 ms device holds
+        // exactly 12 ms of that preference.
+        Assert.Contains("does not fit", error.Message);
+        Assert.Contains("20 ms", error.Message);
+        Assert.Contains("15 ms rear fill", error.Message);
+        Assert.Contains("up to 12 ms of fill fits", error.Message);
+    }
+
+    [Fact]
+    public void NormalizeStagedDelays_FillSuggestion_SurvivesANonMonotoneSpan()
+    {
+        // The span is NOT monotone in the fill. Here the rear's co-arrival
+        // placement came out at -4 ms (the rear physically farther), so the
+        // fill first lifts it toward zero — CLOSING the dialable span — and
+        // only past +4 starts widening it. A closed-form "subtract the excess"
+        // would land on 11 ms and still not fit; the walk down the DSP's own
+        // grid finds the true largest fill.
+        var front = Block("A", VirtualCrossoverZone.Front);
+        var rear = Block("B", VirtualCrossoverZone.Rear);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [front] = new AlignmentOverride(0.0, false),
+            // -4 ms co-arrival + 15 ms requested fill.
+            [rear] = new AlignmentOverride(11.0, false)
+        };
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => VirtualCrossoverPanel.NormalizeStagedDelays(
+                [front, rear], alignment, new System.Text.StringBuilder(),
+                maxDelayMs: 10.0, rearFillOffsetMs: 15.0, rearFillCarriers: [rear]));
+
+        // At 14 ms of fill the rear needs -4 + 14 = 10 ms — exactly the ceiling.
+        Assert.Contains("up to 14 ms of fill fits", error.Message);
+    }
+
+    [Fact]
+    public void NormalizeStagedDelays_WithoutAFillInPlay_RefusesWithoutBlamingIt()
+    {
+        // A spread the device cannot realize with no rear fill involved — the
+        // honest message is the engine's own, not a suggestion to lower a knob
+        // that is already at zero.
+        var front = Block("A", VirtualCrossoverZone.Front);
+        var centre = Block("B", VirtualCrossoverZone.Center);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [front] = new AlignmentOverride(0.0, false),
+            [centre] = new AlignmentOverride(26.0, false)
+        };
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => VirtualCrossoverPanel.NormalizeStagedDelays(
+                [front, centre], alignment, new System.Text.StringBuilder(),
+                maxDelayMs: 20.0));
+
+        Assert.Contains("does not fit", error.Message);
+        Assert.DoesNotContain("rear fill", error.Message);
+        Assert.Contains("wider than the DSP can realize", error.Message);
+    }
+
+    [Fact]
+    public void NormalizeStagedDelays_KeepsAFittingSetUnderATightCeiling()
+    {
+        // The device ceiling is a gate, not a scaler: a set that fits a tight
+        // ceiling passes through untouched, fill and all.
+        var front = Block("A", VirtualCrossoverZone.Front);
+        var rear = Block("B", VirtualCrossoverZone.Rear);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [front] = new AlignmentOverride(1.0, false),
+            [rear] = new AlignmentOverride(18.0, false)
+        };
+
+        VirtualCrossoverPanel.NormalizeStagedDelays(
+            [front, rear], alignment, new System.Text.StringBuilder(),
+            maxDelayMs: 18.0, rearFillOffsetMs: 15.0, rearFillCarriers: [rear]);
+
+        Assert.Equal(1.0, alignment[front].DelayMs, 6);
+        Assert.Equal(18.0, alignment[rear].DelayMs, 6);
+    }
 }

@@ -153,7 +153,8 @@ A one-minute tour of the main features:
 
 ## Download
 
-Download the latest ready-to-run build from[GitHub Releases](https://github.com/DIMOSUS/Resonalyze/releases/latest):
+Download the latest ready-to-run build from
+[GitHub Releases](https://github.com/DIMOSUS/Resonalyze/releases/latest):
 
 - `Resonalyze-Setup-vX.Y.Z-win-x64.exe` — the recommended installed build
 - `Resonalyze-vX.Y.Z-win-x64.zip` — for most Windows computers

@@ -143,6 +143,52 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     }
 
     [Fact]
+    public void MovingTheBassAnchor_MovesTheCeilingOnTheElevationWithIt()
+    {
+        // The elevation is measured at the chain's LOWEST bass driver, and the
+        // arrows can change which one that is. Here the two subwoofers differ by
+        // 8 dB: with the quiet one at the bottom there is no elevation to offer
+        // and the field is capped at zero, and if that cap were read once and
+        // kept, swapping them could never open it again — the user would be
+        // locked out of an elevation the measurement now supports.
+        var channels = new List<AutoSetupWizardChannel>
+        {
+            Channel("quiet sub", VirtualCrossoverAlignmentStage.FrontChain, 20, 50, lowPassHz: 50),
+            Channel(
+                "loud sub", VirtualCrossoverAlignmentStage.FrontChain, 25, 62, levelDb: 8,
+                highPassHz: 50),
+            Channel("midbass", VirtualCrossoverAlignmentStage.FrontChain, 60, 900),
+            Channel("mid", VirtualCrossoverAlignmentStage.FrontChain, 250, 6_000),
+            Channel("tweeter", VirtualCrossoverAlignmentStage.FrontChain, 2_200, 20_000)
+        };
+
+        StaTest.Run(() =>
+        {
+            using var dialog = new VirtualCrossoverAutoSetupDialog();
+            dialog.Init(SampleRate, SampleRate, channels);
+
+            var field = (DarkNumericUpDown)typeof(VirtualCrossoverAutoSetupDialog)
+                .GetField("subElevation", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetValue(dialog)!;
+            // Not exactly zero: the quiet sub averages a hair over the reference.
+            Assert.True(field.Maximum <= 1m, $"capped at {field.Maximum} dB to begin with");
+
+            // Bring the loud sub to the bottom of the chain: it is the anchor now.
+            var rows = (System.Collections.IList)typeof(VirtualCrossoverAutoSetupDialog)
+                .GetField("rows", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetValue(dialog)!;
+            typeof(VirtualCrossoverAutoSetupDialog)
+                .GetMethod("MoveInChain", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(dialog, [rows[1]!, -1]);
+
+            Assert.True(
+                field.Maximum >= 7m,
+                $"The elevation is still capped at {field.Maximum} dB after the driver " +
+                "carrying it moved to the bottom of the chain.");
+        });
+    }
+
+    [Fact]
     public void Apply_ReturnsOneProposalPerChannel_InTheOrderTheyWereHandedIn()
     {
         // The dialog reorders its rows into chain order inside each group; the

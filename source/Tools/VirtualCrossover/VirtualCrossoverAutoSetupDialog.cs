@@ -641,14 +641,29 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
     }
 
-    // Pre-fills the sub-elevation field once, the first time the channels form a
-    // valid proposal: its default and upper limit are the measured elevation of
-    // the lowest driver over the levelled mid/tweeter reference, read off the
-    // group that carries the bass.
-    private void TryInitializeSubElevation(IReadOnlyList<GroupFit> fits)
+    /// <summary>
+    /// Keeps the sub-elevation field's ceiling on the elevation currently
+    /// measured, and pre-fills its value the first time there is one.
+    /// </summary>
+    /// <remarks>
+    /// The ceiling is a fact about the measurement — the bass at its own level,
+    /// which the control may only trim DOWN from — so it cannot be read once and
+    /// kept. Which driver the elevation is measured at is the chain's lowest bass
+    /// one, and both the arrows and the type combos can change that: swap two subs
+    /// of different levels and the number moves. Left stale it goes wrong in both
+    /// directions — a value above the new ceiling is silently clamped by the DSP
+    /// while the preview still prints the old one, and a field capped at 0 dB by
+    /// the first fit can never reach an elevation a later order makes real.
+    /// <para>
+    /// The VALUE is only ever set here on the first fit: after that it is the
+    /// user's, and is left alone except where the new ceiling is below it, which
+    /// the numeric field itself resolves.
+    /// </para>
+    /// </remarks>
+    private void UpdateSubElevationRange(IReadOnlyList<GroupFit> fits)
     {
         GroupFit? primary = fits.FirstOrDefault(fit => fit.Plan.IsPrimary);
-        if (subElevationInitialized || primary == null || primary.Plan.Sources.Count < 2)
+        if (primary == null || primary.Plan.Sources.Count < 2)
         {
             return;
         }
@@ -657,8 +672,11 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             primary.Plan.Sources, primary.Proposals, sampleRateHz);
         decimal max = (decimal)Math.Max(0, Math.Round(measured, 1));
         subElevation.Maximum = Math.Max(max, subElevation.Minimum);
-        subElevationInitialized = true;
-        subElevation.Value = max;
+        if (!subElevationInitialized)
+        {
+            subElevationInitialized = true;
+            subElevation.Value = max;
+        }
     }
 
     private void UpdatePreview()
@@ -687,11 +705,13 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return;
         }
 
-        // The elevation control changes the gains, so re-fit once it is filled in
-        // rather than previewing the pre-fill run's numbers.
-        bool wasInitialized = subElevationInitialized;
-        TryInitializeSubElevation(fits);
-        if (!wasInitialized && subElevationInitialized)
+        // The elevation control changes the gains, so re-fit whenever this run
+        // moved it — on the first fill, and on any later one where a new ceiling
+        // pulled the value down with it. Previewing the numbers from before that
+        // is what would print an elevation the proposal does not have.
+        decimal before = subElevation.Value;
+        UpdateSubElevationRange(fits);
+        if (subElevation.Value != before)
         {
             fits = TryFit(withImpulseResponses: false) ?? fits;
         }

@@ -53,15 +53,41 @@ public sealed class VirtualCrossoverDelaySpreadWarningTests
             Block("D", VirtualCrossoverZone.Rear, 30.0)
         ];
 
-        (string Name, double SpreadMs, bool PlacedGroups)? warning =
+        (string Name, double SpreadMs, IReadOnlyList<VirtualCrossoverZone> Placed)? warning =
             VirtualCrossoverPanel.CrossoverSpreadWarning(channels);
 
         Assert.NotNull(warning);
-        Assert.Equal("A", warning!.Value.Name);
+        string note = VirtualCrossoverPanel.ExcludedGroupsNote(warning!.Value.Placed);
+        Assert.Equal("A", warning.Value.Name);
         // 18.0, not the 30.0 the rear block would make of it.
         Assert.Equal(18.0, warning.Value.SpreadMs, 3);
         // ...and the detail says so, because the delay table shows that 30.
-        Assert.True(warning.Value.PlacedGroups);
+        Assert.Equal([VirtualCrossoverZone.Rear], warning.Value.Placed);
+        Assert.Contains("The rear fill is not counted", note);
+        Assert.DoesNotContain("centre", note);
+    }
+
+    [Fact]
+    public void TheNoteNamesOnlyTheGroupsTheProjectHas()
+    {
+        // A car with a centre and no rear should not be told about a rear fill
+        // it does not own - and the sentence about a fill offset belongs to the
+        // rear alone, so it goes with it.
+        VirtualCrossoverChannel[] channels =
+        [
+            Block("A", VirtualCrossoverZone.Front, 0.0),
+            Block("B", VirtualCrossoverZone.Front, 18.0),
+            Block("C", VirtualCrossoverZone.Center, 4.0)
+        ];
+
+        (string Name, double SpreadMs, IReadOnlyList<VirtualCrossoverZone> Placed)? warning =
+            VirtualCrossoverPanel.CrossoverSpreadWarning(channels);
+
+        Assert.NotNull(warning);
+        string note = VirtualCrossoverPanel.ExcludedGroupsNote(warning!.Value.Placed);
+        Assert.Contains("The centre is not counted", note);
+        Assert.DoesNotContain("rear", note);
+        Assert.DoesNotContain("fill offset", note);
     }
 
     [Fact]
@@ -77,13 +103,16 @@ public sealed class VirtualCrossoverDelaySpreadWarningTests
             Block("B", VirtualCrossoverZone.Rear, 20.0)
         ];
 
-        (string Name, double SpreadMs, bool PlacedGroups)? warning =
+        (string Name, double SpreadMs, IReadOnlyList<VirtualCrossoverZone> Placed)? warning =
             VirtualCrossoverPanel.CrossoverSpreadWarning(channels);
 
         Assert.NotNull(warning);
         Assert.Equal("A", warning!.Value.Name);
         // Nothing was left out, so the detail keeps the wording it always had.
-        Assert.False(warning.Value.PlacedGroups);
+        Assert.Empty(warning.Value.Placed);
+        Assert.Equal(
+            string.Empty,
+            VirtualCrossoverPanel.ExcludedGroupsNote(warning.Value.Placed));
     }
 
     [Fact]

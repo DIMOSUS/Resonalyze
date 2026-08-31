@@ -4468,7 +4468,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private void UpdateCrossoverWarning(List<ProcessedChannel> processed)
     {
         if (CrossoverSpreadWarning([.. processed.Select(item => item.Channel)])
-            is not (string name, double spread, bool placedGroups))
+            is not (string name, double spread, IReadOnlyList<VirtualCrossoverZone> placed))
         {
             HideWarning();
             return;
@@ -4483,21 +4483,41 @@ public partial class VirtualCrossoverPanel : UserControl
             // Said only where it applies, so a front-only car reads the same
             // two paragraphs it always did — and where it does apply, it
             // answers the question the figure raises: the rear block standing
-            // 15 ms out in the delay table is not part of this number.
-            (placedGroups
-                ? "\r\n\r\nThe rear fill and the centre are not counted. They are placed " +
-                    "against the front stage rather than tuned with it, and the rear sits " +
-                    "its fill offset behind by design."
-                : string.Empty),
+            // 15 ms out in the delay table is not part of this number. It
+            // names the groups the project actually has, since a car with a
+            // centre and no rear should not be told about a rear fill.
+            ExcludedGroupsNote(placed),
             CrossoverWarningColor);
     }
 
-    // The channel the spread names, how wide it is, and whether the project
-    // holds groups the spread had to leave out - or null when there is nothing
-    // to say. Pure so the rule can be read off a set of channels without a
-    // processing run behind it.
-    internal static (string Name, double SpreadMs, bool PlacedGroups)? CrossoverSpreadWarning(
-        IReadOnlyList<VirtualCrossoverChannel> channels)
+    // The sentence naming the groups the spread left out, empty when it left
+    // out none.
+    internal static string ExcludedGroupsNote(IReadOnlyList<VirtualCrossoverZone> placed)
+    {
+        bool rear = placed.Contains(VirtualCrossoverZone.Rear);
+        bool centre = placed.Contains(VirtualCrossoverZone.Center);
+        return (rear, centre) switch
+        {
+            (true, true) =>
+                "\r\n\r\nThe rear fill and the centre are not counted. They are placed " +
+                    "against the front stage rather than tuned with it, and the rear sits " +
+                    "its fill offset behind by design.",
+            (true, false) =>
+                "\r\n\r\nThe rear fill is not counted. It is placed against the front stage " +
+                    "rather than tuned with it, and sits its fill offset behind by design.",
+            (false, true) =>
+                "\r\n\r\nThe centre is not counted. It is placed against the front stage " +
+                    "rather than tuned with it.",
+            _ => string.Empty
+        };
+    }
+
+    // The channel the spread names, how wide it is, and the zones of the groups
+    // the spread had to leave out - or null when there is nothing to say. Pure
+    // so the rule can be read off a set of channels without a processing run
+    // behind it.
+    internal static (string Name, double SpreadMs, IReadOnlyList<VirtualCrossoverZone> Placed)?
+        CrossoverSpreadWarning(IReadOnlyList<VirtualCrossoverChannel> channels)
     {
         // Only the front chain. The spread is read as "Auto delay had to push
         // everyone out to catch this driver up", and that sentence is true of
@@ -4524,7 +4544,7 @@ public partial class VirtualCrossoverPanel : UserControl
         double earliestDelay = active.Max(channel => channel.Settings.DelayMs);
         double spread = earliestDelay - latest.Settings.DelayMs;
         return spread > CrossoverGroupDelayWarningMs
-            ? (latest.Name, spread, placed.Count > 0)
+            ? (latest.Name, spread, [.. placed.Select(channel => channel.Pair.Zone).Distinct()])
             : null;
     }
 

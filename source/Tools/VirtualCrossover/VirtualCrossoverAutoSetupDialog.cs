@@ -407,7 +407,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     }
 
     // Slides the whole options block just below the auto-sized channel table and
-    // grows the client area so the bottom-anchored buttons clear the preview.
+    // grows the client area so the table clears the right edge and the
+    // bottom-anchored buttons clear the preview.
     // Runs once, after the form has been scaled, so every measurement here is
     // already in device pixels — no hand-computed 96-DPI coordinates survive.
     private void LayoutBelowChannelTable()
@@ -435,7 +436,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
 
         tableChannels.PerformLayout();
-        int shift = tableChannels.Bottom + LogicalToDeviceUnits(12) - labelFilters.Top;
+        int outsideMargin = LogicalToDeviceUnits(12);
+        int shift = tableChannels.Bottom + outsideMargin - labelFilters.Top;
         foreach (Control control in new Control[]
                  {
                      labelFilters, checkButterworth, checkLinkwitzRiley, checkBessel,
@@ -446,6 +448,14 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         {
             control.Top += shift;
         }
+
+        // The table is AutoSize because names and measured bands are data. It can
+        // therefore be wider than the designed client area even at 100% DPI, and
+        // the last Down arrow used to be painted outside the dialog. Give the
+        // table its real width plus the same right margin as the left one, and let
+        // the anchored action buttons follow the new edge.
+        int clientWidth = Math.Max(ClientSize.Width, tableChannels.Right + outsideMargin);
+        labelPreview.Width = clientWidth - labelPreview.Left - outsideMargin;
 
         // The preview shows one line per channel plus a heading and a summary for
         // every group, and a summary long enough wraps onto a second line — so it
@@ -461,9 +471,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                     TextFormatFlags.WordBreak).Height)
             + LogicalToDeviceUnits(6);
         ClientSize = new Size(
-            ClientSize.Width,
-            labelPreview.Bottom + LogicalToDeviceUnits(12) + buttonApply.Height
-                + LogicalToDeviceUnits(12));
+            clientWidth,
+            labelPreview.Bottom + outsideMargin + buttonApply.Height + outsideMargin);
     }
 
     // The tallest the preview can get: every channel, plus a heading and a

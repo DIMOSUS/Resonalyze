@@ -640,18 +640,59 @@ For a three-way front stage with a subwoofer:
 Load the saved `.json` measurements for the **Left** and **Right** sides of each stereo
 band. For a shared subwoofer, enable **Mono** and load its single measurement.
 
-Set each block's **Zone** while you are there — **Front** for the stereo bands of the
-front stage, **Sub** for the subwoofer, and **Rear** or **Center** for the blocks a
-larger install adds. Picking **Center** switches **Mono** on and locks it, because a
-centre channel plays a signal derived from L and R and has no side of its own.
+### One channel card
 
-The zone is what the **Show** selector under the plot sorts by, so on a front-only car
-you can set every block to Front and Sub and forget it — that is the default view and
-what this chapter's four-way looks like throughout. On a larger install the zone is how
-you look at one part at a time: the front stage with its subwoofers, then the rear fill,
-then the centre. **Auto delay** reads the zone as well: it settles the front chain first
-and then places the rear fill and the centre against it, so on a larger install the zones
-are what make its proposal mean anything.
+The same controls repeat on every block. This enlarged card is the useful map when the
+full-panel figure above is too small to read:
+
+![One Virtual DSP channel card, with its six control rows marked](assets/images/manual/channel-card.png)
+
+1. **Source** — the measurement loaded for the side currently selected below the card
+   list; **MMM / Array** attaches or selects its spatial average, and the speaker button
+   excludes this block from the plots, Sum, metrics and Auto Delay.
+2. **Curves** — show the raw measurement, the processed result, or bypass the whole
+   virtual chain for this block.
+3. **Level and time** — channel gain, total gain after PEQ preamp, and delay.
+4. **Group and order** — **Zone**, **Mono**, polarity inversion, and the **▲▼** buttons
+   that move the entire block in the list.
+5. **Crossover** — kind, HP/LP corners, family, slope, and ripple where the selected
+   family has one.
+6. **PEQ** — hand the processed channel to the EQ Wizard, load or clear its bank, and
+   read back how many bands and how much preamp it carries.
+
+### Assign channel groups
+
+Set each block's **Zone** as soon as its source is loaded. A zone does not reroute audio
+or change a filter; it tells the plot and the two optimizers which physical part of the
+installation the block belongs to:
+
+- **Sub** — every subwoofer block. Sub is its own display and tuning-sheet section, but
+  it is the bottom of the **front crossover chain** for Auto Crossover and Auto Delay,
+  not a fourth independent alignment stage.
+- **Front** — the stereo woofer/midbass, midrange and tweeter bands of the front stage.
+- **Rear** — the rear fill. A multi-way rear remains one group: its own drivers are
+  crossed and aligned with each other before the complete rear group is placed against
+  the front.
+- **Center** — the centre speaker, including every band of a multi-way centre. Picking
+  Center switches **Mono** on and locks it, because the centre has no left or right side
+  of its own.
+
+The **Show** selector below the main plot then turns those zones into useful views:
+
+| Show | What it draws | What its Sum contains |
+| --- | --- | --- |
+| **Front + Sub** | front-stage and subwoofer driver curves | all of them |
+| **Rear + Sub** | rear-fill and subwoofer driver curves | all of them |
+| **Front + Center** | front-stage and centre curves for comparison | front only |
+| **Groups** | one summed line per zone, with no driver curves | each zone separately |
+| **Everything** | every driver | everything except the centre |
+
+**Front + Sub** is the default and the only view a front-only install normally needs.
+Use **Rear + Sub** to inspect the rear's own crossover chain, **Front + Center** to
+compare the centre without inventing a programme-dependent sum, and **Groups** to set
+the rear and centre's arrival and level against the front. The read-out follows the
+view: across groups it reports **vs Front** arrival and level differences instead of
+calling the inevitable front/rear combing a crossover loss.
 
 So seven RAW measurements become four Virtual DSP channels:
 
@@ -1252,6 +1293,32 @@ the processed system, not on the RAW drivers.**
 Press **Auto delay...** in Virtual DSP.
 
 Select **LHD** or **RHD** according to the steering-wheel position.
+
+### How Auto Delay uses the groups
+
+Auto Delay does not pretend the whole car is one crossover chain. It works in stages:
+
+1. It aligns **Front + Sub** first, walking each real crossover junction from the
+   lowest subwoofer to the highest front driver.
+2. It aligns the drivers inside a multi-way **Rear** or **Center** group with each
+   other, so the group is settled before it is moved.
+3. It places each rear side against the front stage on that same side, and places the
+   mono centre between the two front sums. Nothing in the already settled front chain
+   is retuned during this step.
+
+When the project contains a Rear block, the dialog enables **Rear fill ms**. This is how
+far *behind* the front stage the rear should arrive, on top of the delay needed merely
+to make the nearer rear speakers co-arrive with it. Start at the 15 ms default; roughly
+10–20 ms usually lets the rear add space while the precedence effect keeps the image on
+the dashboard. Use **0 ms** when co-arrival for second-row listeners matters more.
+
+After Apply, choose **Show → Groups**. Its **vs Front** read-out is the practical check:
+the rear's `Δt` should reflect the offset you requested, while its `ΔdB` lets you set
+level by ear. A useful starting method is to put the rear roughly 6–12 dB below the
+front, raise it until it becomes audible as a separate source, then take it back by
+2–3 dB. The centre is compared the same way, but its final level depends on how the
+processor derives centre content from the programme, so the measurement cannot choose
+that balance for you.
 
 ### Stereo-image positioning
 

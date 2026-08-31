@@ -51,10 +51,10 @@ internal static class Shots
                       "backend to draw the dialog for, which no measurement records"
                     : null)),
         new("manual", ShotSession.ManualWindowSize,
-            ["manual/virtual-dsp", "manual/eq-wizard-handoff", "manual/eq-wizard-tuned",
-             "manual/dsp-processor", "manual/dsp-processor-model", "manual/eq-target",
-             "manual/auto-crossover", "manual/auto-delay", "manual/tuning-sheet-q",
-             "manual/audition-track"],
+            ["manual/virtual-dsp", "manual/channel-card", "manual/eq-wizard-handoff",
+             "manual/eq-wizard-tuned", "manual/dsp-processor",
+             "manual/dsp-processor-model", "manual/eq-target", "manual/auto-crossover",
+             "manual/auto-delay", "manual/tuning-sheet-q", "manual/audition-track"],
             Manual)
     ];
 
@@ -340,6 +340,17 @@ internal static class Shots
             AnnotateVirtualDsp(session.Config.Resolve("manual/virtual-dsp"));
         }
 
+        if (wanted("manual/channel-card"))
+        {
+            var list = Reflect.Field<FlowLayoutPanel>(panel, "channelListPanel");
+            Control card = list.Controls.Count > 1
+                ? list.Controls[1]
+                : throw new InvalidOperationException(
+                    "manual/channel-card: the session has no second channel block.");
+            session.Capture(card, "manual/channel-card");
+            AnnotateChannelCard(session.Config.Resolve("manual/channel-card"));
+        }
+
         // The wizard first, and every modal after it: a modal loop of its own is the
         // one thing that has ever disturbed the wizard's async Auto Tune here.
         if (wanted("manual/eq-wizard-handoff") || wanted("manual/eq-wizard-tuned"))
@@ -520,6 +531,28 @@ internal static class Shots
               // The read-out starts high in the column now that Virtual DSP's free
               // right-hand space is all its own — the box followed it up from 384.
               .Region(Box(1490, 145, 1716, 1014), "6", new Point(1516, 988))
+              .Save(path);
+    }
+
+    private static void AnnotateChannelCard(string path)
+    {
+        // A narrow gutter keeps every number off the controls. The smaller badges
+        // are deliberate: six 19-26 px rows have to remain individually readable
+        // on a card only 204 px tall, while the legend itself stays in Markdown.
+        using Annotate figure = Annotate.Open(path);
+        figure.Gutter(40, onLeft: true, sample: new Point(318, 100))
+              .Region(Box(3, 3, 319, 30), "1", new Point(20, 16),
+                  leader: true, badgeRadius: 10)
+              .Region(Box(3, 31, 319, 53), "2", new Point(20, 42),
+                  leader: true, badgeRadius: 10)
+              .Region(Box(3, 53, 319, 75), "3", new Point(20, 64),
+                  leader: true, badgeRadius: 10)
+              .Region(Box(3, 75, 319, 100), "4", new Point(20, 87),
+                  leader: true, badgeRadius: 10)
+              .Region(Box(3, 101, 319, 178), "5", new Point(20, 139),
+                  leader: true, badgeRadius: 10)
+              .Region(Box(3, 179, 319, 203), "6", new Point(20, 191),
+                  leader: true, badgeRadius: 10)
               .Save(path);
     }
 

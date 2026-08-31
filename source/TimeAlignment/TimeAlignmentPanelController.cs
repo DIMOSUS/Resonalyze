@@ -286,8 +286,18 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AnalysisOutcome outcome,
         int version)
     {
-        if (disposed || !reads.Accept(request, version))
+        if (disposed)
         {
+            return;
+        }
+
+        // A read the controls have left is not drawn at all — the panel would
+        // otherwise stand there stating an alignment for a band nobody is
+        // looking at — but its slot on the pool frees here, so what IS wanted
+        // starts either way.
+        if (!reads.Complete(request, version))
+        {
+            StartDesiredAnalysis();
             return;
         }
 
@@ -299,7 +309,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             SetStatusText(message);
             ClearEnvelopePreview();
-            StartQueuedAnalysis();
+            StartDesiredAnalysis();
             return;
         }
 
@@ -317,16 +327,15 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             outcome.MainResult,
             outcome.MainSource.SampleRate,
             outcome.Compare?.Result);
-        StartQueuedAnalysis();
+        StartDesiredAnalysis();
     }
 
-    // The read asked for while this one was running, if it still asks for
-    // something this one did not answer.
-    private void StartQueuedAnalysis()
+    // What the controls are still waiting for, now that the pool is free.
+    private void StartDesiredAnalysis()
     {
-        if (reads.TakeQueued(out AnalysisRequest queued) is { } version)
+        if (reads.TakeDesired(out AnalysisRequest desired) is { } version)
         {
-            StartAnalysis(queued, version);
+            StartAnalysis(desired, version);
         }
     }
 
@@ -1378,8 +1387,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     {
         AppendSignalQuality(title, result);
         AppendAlignmentConfidence(result);
-        AppendArrivalHonesty(result, honestyProbe);
-        AppendCrosstalkFlag(crosstalk);
+        AppendArrivalHonesty(bandMode, result, honestyProbe);
+        AppendCrosstalkFlag(bandMode, crosstalk);
         AppendLevelsLine(levels);
         AppendSeparator();
         AppendDelayTable(result, reference);
@@ -1409,14 +1418,21 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // a fixed early sample in every record of a session; on band-limited
     // drivers it sits within the first-peak threshold and the FULL-BAND
     // First Arrival confidently times it instead of the sound.
-    private void AppendCrosstalkFlag(CrosstalkHeadGate? crosstalk)
+    private void AppendCrosstalkFlag(
+        TimeAlignmentBandMode bandMode,
+        CrosstalkHeadGate? crosstalk)
     {
         if (crosstalk is not { } gate)
         {
             return;
         }
 
-        if (options.BandMode == TimeAlignmentBandMode.FullBand)
+        // The mode the READ was taken in, never the one the controls have
+        // reached since: "removed from this analysis" is a statement about
+        // which record these very figures came off, and a bypass read whose
+        // panel has moved to Auto would otherwise claim a cleaning it never
+        // had.
+        if (bandMode == TimeAlignmentBandMode.FullBand)
         {
             // Bypass shows the record as-is, so the figures above may time
             // the click; the banded modes analyze it removed.
@@ -1443,10 +1459,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // produces a confident wrong number exactly where this tool is used most
     // (subwoofer and midbass bands).
     private void AppendArrivalHonesty(
+        TimeAlignmentBandMode bandMode,
         TimeAlignmentAnalysisResult result,
         TimeAlignmentArrivalProbe? probe)
     {
-        if (options.BandMode == TimeAlignmentBandMode.FullBand)
+        if (bandMode == TimeAlignmentBandMode.FullBand)
         {
             return;
         }

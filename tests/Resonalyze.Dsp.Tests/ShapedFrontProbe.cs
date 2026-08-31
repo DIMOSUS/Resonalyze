@@ -129,11 +129,9 @@ public sealed class ShapedFrontProbe
     // transfer, and the prediction can be several milliseconds out. That is a
     // real limit of the estimator, so what has to hold is the safety
     // property: such a shortfall may never be mistaken for a modal latch.
-    // (The first row is the review's own counterexample, which lands ~5 ms
-    // out.)
+    // (This row is the review's own counterexample, which lands ~5 ms out.)
     [Theory]
     [InlineData("BW24 LP 80 over 40-160", 40, 160)]
-    [InlineData("BW24 LP 80 over 100-400", 100, 400)]
     public void PredictedArrival_NeverConvictsForSourceShapingAlone(
         string caseName, double lowHz, double highHz)
     {
@@ -150,6 +148,42 @@ public sealed class ShapedFrontProbe
             state != AutoAlignmentEngine.PredictionState.Latched,
             $"{caseName}: source shaping alone convicted the read " +
             $"(measured {measuredMs:0.000}, predicted {predictedMs:0.000} ms)");
+    }
+
+    // The same source graded a band higher used to sit in the theory above,
+    // and it passed on an artifact: the arrival detector read the processed
+    // front at 169.91 ms — 0.76 ms BEFORE the source impulse at 170.67 — off
+    // a ripple of the analysis kernel's acausal pedestal (see
+    // AcausalPedestalTests), and the acausal read graded Inconsistent by
+    // luck. With the front-rise gate the measured read is the honest band
+    // envelope peak, and for a channel this deep under its own roll-off
+    // (an LP 80 graded at 100-400 is tens of dB down across the band) the
+    // estimator's shortfall honestly passes the conviction factor.
+    //
+    // What holds instead is that the conviction is CORRECTIVE: the prediction
+    // the pair would re-anchor to sits at the bypassed front, ahead of the
+    // measured envelope peak — so acting on it moves the anchor toward the
+    // wavefront, never away from it.
+    [Fact]
+    public void PredictedArrival_ExtremeShapingConviction_PullsTowardTheFront()
+    {
+        (AlignmentSnapshot snapshot, double measuredMs) = Shaped(
+            LowPass(80, 24),
+            HighPass(80, 48, CrossoverFilterFamily.LinkwitzRiley),
+            100, 400);
+        double bareMs = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+            snapshot.BypassedImpulseResponse!, SampleRate, 100, 400,
+            snapshot.BypassedValidRange).FirstArrivalDelayMilliseconds;
+
+        AutoAlignmentEngine.PredictionState state =
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                snapshot, measuredMs, 100, 400, out double predictedMs);
+
+        Assert.Equal(AutoAlignmentEngine.PredictionState.Latched, state);
+        Assert.True(
+            predictedMs < measuredMs && Math.Abs(predictedMs - bareMs) < 2.5,
+            $"the conviction must pull toward the front: bare {bareMs:0.000}, " +
+            $"predicted {predictedMs:0.000}, measured {measuredMs:0.000} ms");
     }
 
     [Fact]

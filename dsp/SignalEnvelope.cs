@@ -179,7 +179,7 @@ public static class SignalEnvelope
     }
 
     // A measurement chain with real processing latency (a DSP or amplifier
-    // buffering the playback longer than the search window — a field chain ran
+    // buffering the playback longer than the search window вЂ” a field chain ran
     // ~163 ms) parks the whole IR beyond the start-anchored window's reach, and
     // the "strongest peak" that window can offer is whatever residue leads the
     // buffer: the analysis then reports a confident zero. So the window
@@ -194,7 +194,7 @@ public static class SignalEnvelope
     // the post-peak data the mirror/sidelobe checks read stays available through
     // the rotated view regardless of the window edge.
     //
-    // The re-anchor is deliberately conservative — it fires only when NOTHING in
+    // The re-anchor is deliberately conservative вЂ” it fires only when NOTHING in
     // the start-anchored window sits within the first-arrival search depth of the
     // global peak AND above the noise gate, i.e. when by the tool's own physics
     // the true arrival cannot be inside that window. Depth alone is not enough:
@@ -252,21 +252,21 @@ public static class SignalEnvelope
     // distributed, and the RMS of its lowest quartile is ~0.370 of the full
     // envelope RMS. The quartile floor is deliberately robust (reverb decay
     // must not count as noise), but reported as-is it would flatter the SNR
-    // by ~8.6 dB — so the REPORTED figure compensates the known bias back to
+    // by ~8.6 dB вЂ” so the REPORTED figure compensates the known bias back to
     // the full-envelope noise RMS. The first-arrival threshold keeps the raw
     // robust floor: there under-estimating noise is the safe direction.
     private const double RayleighLowestQuartileRmsRatio = 0.370;
 
     // A transfer IR deconvolved over a long FFT carries a contiguous "tail" of
-    // numerical silence — 100+ dB below the peak, far under any real acoustic or
+    // numerical silence вЂ” 100+ dB below the peak, far under any real acoustic or
     // electronic noise floor. On a clean cabin sweep it can fill a third of the
-    // record near −140 dB; left in, the quietest-quartile estimate lands entirely
+    // record near в€’140 dB; left in, the quietest-quartile estimate lands entirely
     // in it and inflates the reported SNR by tens of dB (an envelope showing ~65
     // dB read 123). So the confidence figure measures noise only over the VALID
-    // region — samples within this many dB of the peak — the same intent as the
+    // region вЂ” samples within this many dB of the peak вЂ” the same intent as the
     // ValidSampleRange the Auto-delay path already crops the FFT tail with (there
     // the envelope arrives pre-cropped, so this bound is a no-op). FindPeak keeps
-    // the raw full-envelope floor: it gates on max(noise, −25 dB-below-peak), so
+    // the raw full-envelope floor: it gates on max(noise, в€’25 dB-below-peak), so
     // the tail never reaches its threshold and the measured arrival is unaffected.
     private const double DeconvolutionFloorDropDb = 100.0;
 
@@ -295,13 +295,13 @@ public static class SignalEnvelope
     // window and the discrete Hilbert transform's own 1/t skirt), so every
     // arrival drags an exactly symmetric train of pre-ringing lobes in front of
     // it. The stronger ones clear the first-arrival threshold and used to read
-    // as earlier "arrivals" milliseconds before the true wavefront — the cleaner
+    // as earlier "arrivals" milliseconds before the true wavefront вЂ” the cleaner
     // the measurement, the more of them survived the noise gate. The kernel that
     // makes the ringing is known, so a candidate is tested against physics, not
     // heuristics: an arrival of height H can produce at offset d a lobe no
     // higher than H times the kernel envelope at d. A candidate above that
     // ceiling (with a 6 dB superposition margin) cannot be pre-ring and is a
-    // genuine arrival; a candidate at or below it is corroborated by symmetry —
+    // genuine arrival; a candidate at or below it is corroborated by symmetry вЂ”
     // an exactly even kernel puts an equal lobe at the mirrored position after
     // the peak, and decay/reflections only add energy on the late side, so the
     // mirror cannot hide a lobe. Level-and-mirror together keep genuine early
@@ -311,17 +311,25 @@ public static class SignalEnvelope
     private const double SidelobeSymmetryRatio = 0.5;
     private const int SidelobeMirrorNeighborhood = 2;
 
+    // The rise a first arrival must show over its approach floor (see
+    // RisesOutOfItsApproach), and the kernel-envelope decay that bounds how far
+    // back that floor is read (see ApproachSpanSamples). The acausal pedestal's
+    // ripples rise by hundredths of a dB; a genuine front climbs by whole ones
+    // - 3 dB separates them with margin on both sides.
+    private const double FrontApproachRiseRatio = 1.41;
+    private const double ApproachWindowKernelLevel = 0.1;
+
     // How long after a candidate a stronger peak still belongs to the SAME wave
-    // packet rather than being a separate arrival — the complement of
+    // packet rather than being a separate arrival вЂ” the complement of
     // <see cref="TimeAlignmentAnalysis"/>'s separate-arrival rule, and the same
     // 1 ms, so the two never disagree about what one arrival is.
     internal const double ArrivalPacketMilliseconds = 1.0;
 
     // The share of its own packet's peak amplitude a candidate must reach to be
     // read as that packet's front rather than a ripple on its foot. A wave
-    // packet's leading edge carries interference structure — a comb null a
+    // packet's leading edge carries interference structure вЂ” a comb null a
     // fraction of a millisecond before the front leaves a small bump above the
-    // search threshold — and taking that bump as "the arrival" reports a time
+    // search threshold вЂ” and taking that bump as "the arrival" reports a time
     // that depends on the record's ripple, not on its path: two identical
     // drivers in opposite doors then read one arrival at its packet peak and the
     // other 20 dB down its own foot, and the level difference enters the
@@ -332,12 +340,12 @@ public static class SignalEnvelope
     // (<see cref="VirtualCrossoverAnalysis.EstimateBroadbandOnset"/>) calls the
     // onset level, and it is deliberately LOCAL: the packet window is one
     // millisecond, so a soft direct arrival buried under a room mode
-    // milliseconds later — what the 25 dB search depth exists to find — is
+    // milliseconds later вЂ” what the 25 dB search depth exists to find вЂ” is
     // nobody's foot ripple and stays selected.
     private const double ArrivalPacketRiseRatio = 0.25;
 
     // How deep the envelope must null between a candidate and a later stronger
-    // sample for the two to be RESOLVED events rather than one packet — the
+    // sample for the two to be RESOLVED events rather than one packet вЂ” the
     // same 20 dB <see cref="TimeAlignmentAnalysis"/> calls a resolved valley,
     // because destructive interference nulls faster than an envelope rises. The
     // packet ends at the first such null: past it the record belongs to another
@@ -350,7 +358,7 @@ public static class SignalEnvelope
 
     // Walks the threshold-passing local maxima from the latest to the earliest,
     // dropping every candidate that reads as a pre-ringing sidelobe of an
-    // already-accepted later peak — a weak first arrival is itself a sidelobe
+    // already-accepted later peak вЂ” a weak first arrival is itself a sidelobe
     // reference, so its own pre-ring cannot masquerade as an even earlier
     // arrival. Returns the earliest surviving candidate that also rises far
     // enough within its own packet, or -1 when none pass. A dwarfed candidate
@@ -366,7 +374,7 @@ public static class SignalEnvelope
     {
         // Beyond this offset not even the strongest peak can ring above the
         // candidate threshold, so no threshold-passing candidate can be anyone's
-        // sidelobe there — it bounds the peak-comparison loop.
+        // sidelobe there вЂ” it bounds the peak-comparison loop.
         int ringReachLimit = 0;
         int reachCap = envelope.Count / 2;
         for (int d = 1; d <= reachCap; d++)
@@ -378,6 +386,8 @@ public static class SignalEnvelope
             }
         }
 
+        int approachSpanSamples = ApproachSpanSamples(
+            kernelEnvelope, packetSpanSamples, reachCap);
         var accepted = new List<int>();
         int firstArrival = -1;
         for (int k = candidates.Count - 1; k >= 0; k--)
@@ -403,7 +413,11 @@ public static class SignalEnvelope
             if (!isSidelobe)
             {
                 accepted.Add(candidate);
-                if (RisesWithinItsPacket(envelope, candidate, packetSpanSamples))
+                // The strongest peak needs no rise witness: it outranks
+                // everything, so nothing later could have manufactured it.
+                if (envelope[candidate] >= strongestPeak ||
+                    (RisesWithinItsPacket(envelope, candidate, packetSpanSamples) &&
+                     RisesOutOfItsApproach(envelope, candidate, approachSpanSamples)))
                 {
                     firstArrival = candidate;
                 }
@@ -413,11 +427,73 @@ public static class SignalEnvelope
         return firstArrival;
     }
 
+    // A genuine front RISES: the driver's energy is added to whatever the
+    // envelope held before it, so the candidate must stand above the floor of
+    // its own approach вЂ” the quietest sample within a kernel's core reach
+    // before it. What fails this test is the texture on the analysis kernel's
+    // own acausal pedestal: a zero-phase kernel spreads the whole later record
+    // backwards, and ahead of the first real arrival that superposition forms
+    // a FLAT shelf (measured on a field subwoofer at 32.5-130 Hz: -20 dB
+    // against a per-peak ring ceiling of -24.7 dB, so the level gate above
+    // reads its micro-ripples - local maxima a few hundredths of a dB proud -
+    // as genuine early arrivals). No single-peak ceiling can price that shelf,
+    // because it is the sum of every later sample's skirt; the rise test reads
+    // the shelf itself instead of predicting it.
+    private static bool RisesOutOfItsApproach(
+        IReadOnlyList<double> envelope,
+        int candidateIndex,
+        int approachSpanSamples)
+    {
+        if (candidateIndex <= 0)
+        {
+            return true;
+        }
+
+        int first = Math.Max(0, candidateIndex - approachSpanSamples);
+        double floor = double.MaxValue;
+        for (int i = first; i < candidateIndex; i++)
+        {
+            floor = Math.Min(floor, envelope[i]);
+        }
+
+        return envelope[candidateIndex] >= floor * FrontApproachRiseRatio;
+    }
+
+    // How far back the approach floor is read: the analysis kernel's own core
+    // - out to where its envelope has decayed by the window level - so the
+    // window scales with the band's rise time (a 32.5-130 Hz front takes
+    // milliseconds to climb; a broadband one is done in a fraction of one).
+    // Never shorter than the arrival packet, which is the no-kernel fallback.
+    private static int ApproachSpanSamples(
+        IReadOnlyList<double>? kernelEnvelope,
+        int packetSpanSamples,
+        int reachCap)
+    {
+        if (kernelEnvelope == null || kernelEnvelope.Count == 0 ||
+            kernelEnvelope[0] <= 0.0)
+        {
+            return packetSpanSamples;
+        }
+
+        double coreLevel = kernelEnvelope[0] * ApproachWindowKernelLevel;
+        int span = packetSpanSamples;
+        int last = Math.Min(kernelEnvelope.Count - 1, reachCap);
+        for (int d = 1; d <= last; d++)
+        {
+            if (kernelEnvelope[d] >= coreLevel)
+            {
+                span = Math.Max(span, d);
+            }
+        }
+
+        return span;
+    }
+
     // Whether the candidate is the front of its own wave packet rather than a
     // ripple on its foot: the strongest envelope sample of THAT PACKET may stand
     // no more than the rise ratio above it. The packet runs one span forward and
     // ends early at a null deep enough to resolve two events, so a genuine
-    // earlier arrival is never dwarfed by whatever rises after the null — the
+    // earlier arrival is never dwarfed by whatever rises after the null вЂ” the
     // separate-arrival case, which keeps its own timing. The strongest peak of
     // the record always passes (nothing outranks it inside its own packet), so
     // the walk can never come back empty because of this test.
@@ -447,7 +523,7 @@ public static class SignalEnvelope
     // The analysis kernel's envelope level at |offset| samples from its centre,
     // relative to the centre peak. With no explicit kernel the only zero-phase
     // ringing left is the discrete Hilbert transform's skirt, whose envelope
-    // pedestal is 2/(pi*n) — the delta worst case; smoother arrivals ring less.
+    // pedestal is 2/(pi*n) вЂ” the delta worst case; smoother arrivals ring less.
     private static double KernelRingLevel(
         IReadOnlyList<double>? kernelEnvelope,
         int offset)
@@ -484,7 +560,7 @@ public static class SignalEnvelope
         }
 
         // The peak's integer index is up to half a sample off the true lobe
-        // centre, so read the mirror as the maximum over a small neighbourhood —
+        // centre, so read the mirror as the maximum over a small neighbourhood вЂ”
         // a deep null one sample off the exact mirror must not disguise a
         // sidelobe as a genuine arrival. Clamp the neighbourhood so it never
         // touches the peak's own lobe.
@@ -529,7 +605,7 @@ public static class SignalEnvelope
         int requestedSamples = (int)Math.Round(
             Math.Max(1, searchWindowMilliseconds) * sampleRate / 1000.0);
         // The floor of 3 exists for the parabolic refinement, but it must never
-        // exceed the envelope itself — a 1–2 sample input would otherwise be
+        // exceed the envelope itself вЂ” a 1вЂ“2 sample input would otherwise be
         // read past its end.
         int cap = Math.Min(envelopeLength, Math.Max(3, envelopeLength / 2));
         return Math.Clamp(requestedSamples, Math.Min(3, cap), cap);
@@ -540,8 +616,8 @@ public static class SignalEnvelope
     private const double NoiseFloorQuantile = 0.25;
 
     // Noise floor as the RMS of the quietest quarter of the envelope. An
-    // acoustic IR's remainder is NOT noise — it is reflections, modal decay and
-    // driver ringing — so a mean over everything-but-the-peak (the previous
+    // acoustic IR's remainder is NOT noise вЂ” it is reflections, modal decay and
+    // driver ringing вЂ” so a mean over everything-but-the-peak (the previous
     // estimate) read reverberation as noise: it misgraded clean reverberant
     // recordings and, worse, inflated the noise-based first-arrival threshold
     // until a genuine weak direct sound was cut out of the candidate list. The
@@ -587,7 +663,7 @@ public sealed class PeakSearchOptions
     /// samples from the kernel centre; entry 0 is the kernel peak and the scale
     /// is arbitrary. The first-arrival search uses it as the exact ceiling of
     /// pre-ringing sidelobe levels at each distance. Null when the signal was
-    /// not filtered — only the Hilbert transform's own skirt is assumed then.
+    /// not filtered вЂ” only the Hilbert transform's own skirt is assumed then.
     /// </summary>
     public IReadOnlyList<double>? AnalysisKernelEnvelope { get; init; }
 }
@@ -598,7 +674,7 @@ public sealed class PeakSearchOptions
 /// maximum (a chain latency beyond the window's reach): the window then covered
 /// [SearchRotation, SearchRotation + window) circularly, and a consumer
 /// measuring distances between the returned indices must measure them in that
-/// window's frame — <c>(index - SearchRotation) mod length</c> — or a pair
+/// window's frame вЂ” <c>(index - SearchRotation) mod length</c> вЂ” or a pair
 /// straddling the buffer seam reads as a buffer-length separation.
 /// </summary>
 public readonly record struct PeakSearchResult(
@@ -607,3 +683,5 @@ public readonly record struct PeakSearchResult(
     double StrongestPeak,
     bool FallbackUsed,
     int SearchRotation = 0);
+
+

@@ -216,7 +216,7 @@
             buttonApply.DialogResult = DialogResult.OK;
             buttonApply.FlatStyle = FlatStyle.Popup;
             buttonApply.ForeColor = Color.White;
-            buttonApply.Location = new Point(590, 643);
+            buttonApply.Location = new Point(590, 677);
             buttonApply.Name = "buttonApply";
             buttonApply.Size = new Size(84, 26);
             buttonApply.TabIndex = 11;
@@ -229,7 +229,7 @@
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
             buttonCancel.ForeColor = Color.White;
-            buttonCancel.Location = new Point(680, 643);
+            buttonCancel.Location = new Point(680, 677);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
             buttonCancel.TabIndex = 12;

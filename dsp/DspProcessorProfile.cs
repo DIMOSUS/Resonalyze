@@ -195,7 +195,9 @@ public static class DspProcessorCatalog
         new("miniDSP", "Harmony 8x12 DSP", 48_000, PeqQConvention.Rbj),
 
         new("JL Audio", "TwK 88", 48_000, PeqQConvention.Classic),
-        new("JL Audio", "TwK D8", 48_000, PeqQConvention.Classic)
+        new("JL Audio", "TwK D8", 48_000, PeqQConvention.Classic),
+
+        new("ARC Audio", "ARC 1000.6 + IPS8.8", 96_000, PeqQConvention.Rbj)
     ];
 
     // Ids are derived from the names, so two entries that differ only in punctuation

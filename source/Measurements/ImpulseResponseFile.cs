@@ -12,7 +12,12 @@ namespace Resonalyze;
 public sealed class ImpulseResponseFile
 {
     public const string CurrentFormat = "resonalyze-impulse-response";
-    public const int CurrentVersion = 7;
+    // Version 8: the bulk sample arrays became base64 float32 strings (see
+    // Float32SampleArrayJsonConverter). A representational change to existing
+    // fields, unlike the additive metadata below, so it IS a bump: an older
+    // build finding a string where it expects an array must fail by version,
+    // not by parse error.
+    public const int CurrentVersion = 8;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -141,18 +146,27 @@ public sealed class ImpulseResponseFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ArrayMicrophonesFileEntry? ArrayMicrophones { get; set; }
 
+    // The bulk of the file lives in these five arrays, so they alone are stored
+    // as base64 float32 (little-endian) rather than JSON numbers; pre-v8 number
+    // arrays are still read, at their full double precision. In memory they are
+    // double[] either way — all analysis after a load runs in double as before.
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[] SweepDeconvolutionRealSamples { get; set; } = Array.Empty<double>();
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[]? SweepDeconvolutionImaginarySamples { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[]? TransferRealSamples { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[]? TransferImaginarySamples { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[]? TransferCoherence { get; set; }
 
     public static ImpulseResponseFile Capture(ExpSweepMeasurement measurement)

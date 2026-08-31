@@ -954,14 +954,20 @@ its duration and sample count; the playback channel and measurement mode; the
 sweep-deconvolution samples plus the optional loopback transfer-function samples;
 optional coherence (γ²) data with the run counts; the stored meter values; an
 optional [SPL calibration anchor](#sound-pressure-level-db-spl); and embedded
-preview frequency-response data for the History panel.
+preview frequency-response data for the History panel. The bulk sample arrays —
+the megabytes of the file — are stored as base64-encoded little-endian float32
+rather than JSON numbers, which roughly quarters the file; float32 keeps about
+seven significant digits (−140 dB relative), far below any measured noise floor,
+and everything after a load still computes in double precision. Every other field
+stays readable text, and files written by earlier versions, with their plain
+number arrays, still load — at the full precision they were saved with.
 
 Click **Load** to open a previously saved response. Resonalyze validates the file
 first, rejects files below `44100 Hz`, restores the measurement metadata into the
 active record, and redraws the current view from the loaded data — without
 rewriting the audio-device configuration. Saving and loading are disabled while a
 measurement is running. The current file format identifier is
-`resonalyze-impulse-response`, version `7`.
+`resonalyze-impulse-response`, version `8`.
 
 ### Importing a sweep recorded elsewhere
 

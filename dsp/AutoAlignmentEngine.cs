@@ -917,6 +917,41 @@ public static class AutoAlignmentEngine
         return filtered - bare;
     }
 
+    // The NON-COMMON part of the two sides' chain shifts in the pair band —
+    // how far apart their own chains drag the band arrivals the junction's
+    // anchor is a diff of. Measured the way the predictor measures its chain
+    // term (a synthetic impulse through the real ApplyChain, so no room enters
+    // it), and available exactly when the predictor is: a side without a
+    // bypassed response or a chain contributes zero rather than a guess.
+    private static double PairChainArrivalSkewMs(AlignmentJunction pair) =>
+        Math.Abs(
+            SideChainArrivalShiftMs(pair.Lower, pair.BandLowHz, pair.BandHighHz) -
+            SideChainArrivalShiftMs(pair.Upper, pair.BandLowHz, pair.BandHighHz));
+
+    private static double SideChainArrivalShiftMs(
+        AlignmentSnapshot side,
+        double bandLowHz,
+        double bandHighHz)
+    {
+        if (side.BypassedImpulseResponse is not { } bypassed ||
+            side.ProcessingChain is not { } chain)
+        {
+            return 0.0;
+        }
+
+        int contentLength = side.BypassedValidRange.IsKnown
+            ? side.BypassedValidRange.EndSample - side.BypassedValidRange.StartSample
+            : bypassed.Length;
+        return ChainArrivalShiftMs(
+            chain,
+            side.Channel.SampleRate,
+            side.Channel.ProcessorSampleRate,
+            bandLowHz,
+            bandHighHz,
+            contentLength,
+            side.PeakIndex);
+    }
+
     /// <summary>
     /// The arrival honesty probe's dispersion allowance for ONE side: how much
     /// later than its own upper-half read the full-band read may sit before
@@ -1977,6 +2012,36 @@ public static class AutoAlignmentEngine
                 // the extremum is refused rather than admitted.
                 if (!arrivalReanchored && Math.Abs(seedOffsetMs) >= reachMs)
                 {
+                    // The anchor is a diff of two band-ENVELOPE arrivals, and
+                    // each side's own chain drags that envelope without moving
+                    // the wavefront the tune actually aligns — a subwoofer
+                    // low-pass alone shifts its band arrival by 12.8 ms on a
+                    // field cabin while its woofer partner moves 6.1. The
+                    // NON-COMMON part of those shifts sits inside the measured
+                    // diff as chain, not as geometry, so the reach test must
+                    // credit it before it spends it as lobe distance: an
+                    // extremum within reach-plus-skew of the anchor is a
+                    // disagreement the anchor cannot grade, not a cycle skip.
+                    // The skew is measured on the predictor's own synthetic
+                    // impulse (ChainArrivalShiftMs) — no room in it — and is
+                    // microseconds wherever the pair band sits inside both
+                    // passbands, leaving those junctions exactly as before.
+                    double chainSkewMs = PairChainArrivalSkewMs(pair);
+                    if (Math.Abs(seedOffsetMs) < reachMs + chainSkewMs)
+                    {
+                        log.AppendLine(
+                            $"  {pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
+                            $"the {seedLabel} sits {Math.Abs(seedOffsetMs):0.000} ms " +
+                            $"from the arrival anchor, past its {reachMs:0.000} ms " +
+                            $"reach — but the pair's own chains displace their " +
+                            $"band arrivals by {chainSkewMs:0.000} ms of " +
+                            "non-common shift, so that much of the anchor's diff " +
+                            "is chain, not geometry; the reach is credited and " +
+                            $"the extremum (r {Math.Abs(seed.Coefficient):0.000}) " +
+                            "stands");
+                        return null;
+                    }
+
                     // Unless the anchor is not the same kind of read as the
                     // extremum it would be vetoing AND a better witness puts the
                     // pair on that extremum's lobe (see

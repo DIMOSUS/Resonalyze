@@ -340,4 +340,146 @@ public sealed class VirtualCrossoverStagedAlignmentTests
         Assert.Equal(1.0, alignment[front].DelayMs, 6);
         Assert.Equal(18.0, alignment[rear].DelayMs, 6);
     }
+
+    // A stereo channel pair with a synthetic measurement on each side; a mono
+    // one carries a single (left) side. Deltas at distinct offsets are all the
+    // engine needs: every stage reads band-limited arrivals and correlations,
+    // and a clean impulse has both.
+    private static VirtualCrossoverChannel Measured(
+        string name,
+        VirtualCrossoverZone zone,
+        bool mono,
+        Action<VirtualCrossoverChannelSettings> crossover,
+        int leftDelaySamples,
+        int rightDelaySamples = 0)
+    {
+        var channel = new VirtualCrossoverChannel(name);
+        channel.Pair.Zone = zone;
+        channel.Pair.Mono = mono;
+        crossover(channel.Pair.Left);
+        channel.Pair.Left.SourceFilePath = $"{name}-l.json";
+        channel.SideState(false).TransferImpulseResponse =
+            Impulse(leftDelaySamples);
+        channel.SideState(false).SampleRate = 48_000;
+        if (!mono)
+        {
+            crossover(channel.Pair.Right);
+            channel.Pair.Right.SourceFilePath = $"{name}-r.json";
+            channel.SideState(true).TransferImpulseResponse =
+                Impulse(rightDelaySamples);
+            channel.SideState(true).SampleRate = 48_000;
+        }
+
+        return channel;
+    }
+
+    private static System.Numerics.Complex[] Impulse(int delaySamples)
+    {
+        var ir = new System.Numerics.Complex[16_384];
+        ir[delaySamples] = 1.0;
+        return ir;
+    }
+
+    [Theory]
+    // Both layouts: the engine's guard demands the monos live in its
+    // REFERENCE walk, and a right-hand drive swaps which cabin side that is -
+    // the fix holds on both only because a mono side is ONE instance shared
+    // by both cabin lists.
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ComputeStereoAlignment_WalksTheChain_WithAMonoCentreLeftToItsOwnStage(
+        bool rightHandDrive)
+    {
+        // The reference car's refusal, as a fixture. A staged stereo run
+        // narrows the engine's walks to the front chain but hands it the
+        // UNION's mono channels - and the centre is mono by definition while
+        // belonging to stage 3, so the engine's own validity guard ("every
+        // mono channel must be part of the left walk that tunes it") refused
+        // the plan the panel assembled. The guard is right; the plan was
+        // wrong. The mono channels the engine may be given are the ones its
+        // walk tunes: the front chain's shared subwoofer, not the centre.
+        StaTest.Run(() =>
+        {
+            using var panel = new VirtualCrossoverPanel();
+            VirtualCrossoverChannel sub = Measured(
+                "A", VirtualCrossoverZone.Sub, mono: true,
+                settings =>
+                {
+                    settings.CrossoverKind = CrossoverKind.LowPass;
+                    settings.LowPassEdge = new CrossoverEdge(
+                        CrossoverFilterFamily.LinkwitzRiley, 120, 24);
+                },
+                leftDelaySamples: 520);
+            VirtualCrossoverChannel woofer = Measured(
+                "B", VirtualCrossoverZone.Front, mono: false,
+                settings =>
+                {
+                    settings.CrossoverKind = CrossoverKind.BandPass;
+                    settings.HighPassEdge = new CrossoverEdge(
+                        CrossoverFilterFamily.LinkwitzRiley, 120, 24);
+                    settings.LowPassEdge = new CrossoverEdge(
+                        CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
+                },
+                leftDelaySamples: 480,
+                rightDelaySamples: 468);
+            VirtualCrossoverChannel tweeter = Measured(
+                "C", VirtualCrossoverZone.Front, mono: false,
+                settings =>
+                {
+                    settings.CrossoverKind = CrossoverKind.HighPass;
+                    settings.HighPassEdge = new CrossoverEdge(
+                        CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
+                },
+                leftDelaySamples: 500,
+                rightDelaySamples: 462);
+            VirtualCrossoverChannel centre = Measured(
+                "D", VirtualCrossoverZone.Center, mono: true,
+                settings =>
+                {
+                    settings.CrossoverKind = CrossoverKind.HighPass;
+                    settings.HighPassEdge = new CrossoverEdge(
+                        CrossoverFilterFamily.LinkwitzRiley, 290, 24);
+                },
+                leftDelaySamples: 505);
+
+            // The exact shapes RunStereoProposalAsync hands over: the walks
+            // narrowed to the front chain, the union carrying everything for
+            // the reprocessor (stages 2-3 render their snapshots through it).
+            var subSide = new VirtualCrossoverSideAlignmentChannel(sub, false);
+            var woofL = new VirtualCrossoverSideAlignmentChannel(woofer, false);
+            var woofR = new VirtualCrossoverSideAlignmentChannel(woofer, true);
+            var twL = new VirtualCrossoverSideAlignmentChannel(tweeter, false);
+            var twR = new VirtualCrossoverSideAlignmentChannel(tweeter, true);
+            var centreSide = new VirtualCrossoverSideAlignmentChannel(centre, false);
+            List<VirtualCrossoverSideAlignmentChannel> chainLeft =
+                [subSide, woofL, twL];
+            List<VirtualCrossoverSideAlignmentChannel> chainRight =
+                [subSide, woofR, twR];
+            List<VirtualCrossoverSideAlignmentChannel> union =
+                [subSide, woofL, twL, woofR, twR, centreSide];
+
+            var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+            var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
+            var log = new System.Text.StringBuilder();
+            panel.ComputeStereoAlignment(
+                chainLeft, chainRight, union, twL, twR,
+                bridgeBandLowHz: 2_000, bridgeBandHighHz: 20_000,
+                sceneOffsetMs: 0.0, rightHandDrive,
+                alignment, decisions, log);
+
+            // Stage 1 does not touch the centre - it has no junctions and is
+            // placed by its own stage against both settled sides.
+            Assert.DoesNotContain(centreSide, alignment.Keys);
+            // The chain WAS walked: the engine writes an override for every
+            // walked channel except (at most) its own reference - the map is
+            // sparse by contract, so exactly one absence is legitimate.
+            List<IAlignmentChannel> chain = [subSide, woofL, twL, woofR, twR];
+            Assert.True(
+                chain.Count(member => !alignment.ContainsKey(member)) <= 1,
+                "the front chain was not walked: " + string.Join(
+                    ", ",
+                    chain.Where(member => !alignment.ContainsKey(member))
+                        .Select(member => member.Name)));
+        });
+    }
 }

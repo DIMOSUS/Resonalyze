@@ -380,9 +380,9 @@
             // 
             labelPeqInfo.AutoEllipsis = true;
             labelPeqInfo.ForeColor = Color.FromArgb(170, 176, 190);
-            labelPeqInfo.Location = new Point(152, 183);
+            labelPeqInfo.Location = new Point(152, 181);
             labelPeqInfo.Name = "labelPeqInfo";
-            labelPeqInfo.Size = new Size(167, 15);
+            labelPeqInfo.Size = new Size(167, 19);
             labelPeqInfo.TabIndex = 21;
             labelPeqInfo.Text = "No PEQ";
             // 

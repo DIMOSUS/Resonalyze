@@ -75,9 +75,9 @@ namespace Resonalyze
             labelSourceFile.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             labelSourceFile.AutoEllipsis = true;
             labelSourceFile.ForeColor = Color.FromArgb(185, 190, 200);
-            labelSourceFile.Location = new Point(224, 19);
+            labelSourceFile.Location = new Point(224, 17);
             labelSourceFile.Name = "labelSourceFile";
-            labelSourceFile.Size = new Size(360, 15);
+            labelSourceFile.Size = new Size(360, 19);
             labelSourceFile.TabIndex = 2;
             labelSourceFile.Text = "no file chosen";
             // 
@@ -108,9 +108,9 @@ namespace Resonalyze
             labelTargetFile.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             labelTargetFile.AutoEllipsis = true;
             labelTargetFile.ForeColor = Color.FromArgb(185, 190, 200);
-            labelTargetFile.Location = new Point(224, 51);
+            labelTargetFile.Location = new Point(224, 49);
             labelTargetFile.Name = "labelTargetFile";
-            labelTargetFile.Size = new Size(360, 15);
+            labelTargetFile.Size = new Size(360, 19);
             labelTargetFile.TabIndex = 5;
             labelTargetFile.Text = "no file chosen";
             // 

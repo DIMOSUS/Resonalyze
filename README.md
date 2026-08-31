@@ -32,6 +32,12 @@
   <a href="#building-from-source"><strong>Build from source</strong></a>
 </p>
 
+<p align="center">
+  <a href="https://buymeacoffee.com/dimosus">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Support Resonalyze on Buy Me a Coffee" width="170">
+  </a>
+</p>
+
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://www.microsoft.com/windows)
 [![UI](https://img.shields.io/badge/UI-WinForms-5C2D91)](https://learn.microsoft.com/dotnet/desktop/winforms/)
@@ -147,8 +153,7 @@ A one-minute tour of the main features:
 
 ## Download
 
-Download the latest ready-to-run build from
-[GitHub Releases](https://github.com/DIMOSUS/Resonalyze/releases/latest):
+Download the latest ready-to-run build from[GitHub Releases](https://github.com/DIMOSUS/Resonalyze/releases/latest):
 
 - `Resonalyze-Setup-vX.Y.Z-win-x64.exe` — the recommended installed build
 - `Resonalyze-vX.Y.Z-win-x64.zip` — for most Windows computers
@@ -253,7 +258,7 @@ Virtual DSP, the EQ Wizard, and Time Alignment are shown in the
       without re-measuring.</p>
     </td>
     <td width="50%">
-      <img src="assets/images/gd.png" alt="Group delay plot">
+      <img src="assets/images/gd.png" alt="Group Delay plot">
       <p><strong>Group Delay</strong> — timing from the transfer IR, with a
       millisecond gate, gate offset, and a live impulse-window preview.</p>
     </td>

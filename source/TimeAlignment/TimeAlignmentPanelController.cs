@@ -44,22 +44,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // questions ("where this driver plays" against "where these two meet").
     private bool lastAutoBandIsShared;
     private bool disposed;
-    // The read that is drawn, and the one being computed. This panel is
-    // refreshed from more places than there are changes to draw: a mode switch
-    // asks twice (the tab shows the panel, then the redraw that follows asks
-    // again), and a compare change, a loaded file and a restored history entry
-    // each arrive through two paths of their own. Every one of those used to
-    // re-run the whole band-limited analysis of a record that had not moved.
-    private AnalysisRequest? renderedRequest;
-    private AnalysisRequest? pendingRequest;
-    // The read asked for while another was still running. One read at a time:
-    // holding the band's up arrow fires a request per click, and starting each
-    // of them puts four analyses of the same record on the thread pool to have
-    // three of them thrown away.
-    private AnalysisRequest? queuedRequest;
-    // Bumped by every refresh: an analysis whose version has moved on has been
-    // superseded, and its result is dropped rather than drawn over the newer one.
-    private int analysisVersion;
+    // What is drawn, what is running, what waits. This panel is refreshed from
+    // more places than there are changes to draw: a mode switch asks twice (the
+    // tab shows the panel, then the redraw that follows asks again), and a
+    // compare change, a loaded file and a restored history entry each arrive
+    // through two paths of their own. Every one of those used to re-run the
+    // whole band-limited analysis of a record that had not moved.
+    private readonly AnalysisReadSchedule<AnalysisRequest> reads = new();
     // Per-record derivations, kept so that a band edit — which changes neither
     // the record nor its hygiene — stops paying for them again. One slot per
     // role; the entry is swapped as a whole, so a reader never sees a verdict
@@ -216,10 +207,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         if (!TryGetMainSource(out TimeAlignmentAnalysisSource mainSource, out string noDataMessage))
         {
-            analysisVersion++;
-            pendingRequest = null;
-            queuedRequest = null;
-            renderedRequest = null;
+            reads.Clear();
             lastAutoBand = null;
             UpdateAutoBandLabel();
             UpdateBandpassPreview();
@@ -248,14 +236,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             options.FirstPeakThresholdBelowMaxDb,
             options.FirstPeakMinimumSnrDb,
             options.PeakSearchWindowMilliseconds);
-        if ((renderedRequest is { } drawn && drawn == request) ||
-            (pendingRequest is { } running && running == request))
+        if (reads.Submit(request) is { } version)
         {
-            // Already drawn, or already on its way: the answer cannot differ.
-            return;
+            StartAnalysis(request, version);
         }
-
-        StartAnalysis(request);
     }
 
     // Starts the read, off the UI thread wherever there is a message loop to
@@ -263,16 +247,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // milliseconds, and it used to be spent inside the click that asked for it:
     // that is what made a nudge of the band boxes feel like a hang, and what
     // held the shell still for a moment after every sweep.
-    private void StartAnalysis(AnalysisRequest request)
+    private void StartAnalysis(AnalysisRequest request, int version)
     {
-        if (pendingRequest != null)
-        {
-            queuedRequest = request;
-            return;
-        }
-
-        int version = ++analysisVersion;
-        pendingRequest = request;
         if (!owner.IsHandleCreated || owner.IsDisposed || owner.InvokeRequired)
         {
             // Nothing to come back to: the controllers are built and refreshed
@@ -310,13 +286,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AnalysisOutcome outcome,
         int version)
     {
-        if (disposed || version != analysisVersion)
+        if (disposed || !reads.Accept(request, version))
         {
             return;
         }
 
-        pendingRequest = null;
-        renderedRequest = request;
         lastAutoBand = outcome.AutoBand;
         lastAutoBandIsShared = outcome.AutoBandShared;
         UpdateAutoBandLabel();
@@ -325,7 +299,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             SetStatusText(message);
             ClearEnvelopePreview();
-            StartQueuedAnalysis(request);
+            StartQueuedAnalysis();
             return;
         }
 
@@ -343,22 +317,16 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             outcome.MainResult,
             outcome.MainSource.SampleRate,
             outcome.Compare?.Result);
-        StartQueuedAnalysis(request);
+        StartQueuedAnalysis();
     }
 
-    // The last request made while this one was running, if it asks for anything
-    // this read did not answer.
-    private void StartQueuedAnalysis(AnalysisRequest rendered)
+    // The read asked for while this one was running, if it still asks for
+    // something this one did not answer.
+    private void StartQueuedAnalysis()
     {
-        if (queuedRequest is not { } queued)
+        if (reads.TakeQueued(out AnalysisRequest queued) is { } version)
         {
-            return;
-        }
-
-        queuedRequest = null;
-        if (queued != rendered)
-        {
-            StartAnalysis(queued);
+            StartAnalysis(queued, version);
         }
     }
 

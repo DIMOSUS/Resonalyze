@@ -1,3 +1,6 @@
+using System.Numerics;
+using MathNet.Numerics.IntegralTransforms;
+
 namespace Resonalyze.Dsp.Tests;
 
 public sealed class SignalEnvelopeTests
@@ -570,6 +573,66 @@ public sealed class SignalEnvelopeTests
         // The −60 dB floor minus the Rayleigh compensation (≈ 8.64 dB), the same
         // as the reverb-tail case — NOT the ~131 dB the raw quartile would read.
         Assert.InRange(confidence, 51.2, 51.5);
+    }
+
+    // The premise of the band-limited read's single transform: a caller that
+    // already holds the forward spectrum gets exactly the envelope it would have
+    // got by transforming back and asking for it, and its spectrum survives the
+    // call (the analysis reads that same array again for the correlation).
+    [Fact]
+    public void EnvelopeFromSpectrum_MatchesTheEnvelopeOfTheSignalItCameFrom()
+    {
+        const int length = 512;
+        double[] signal = CreateSine(length, 11, 0.8);
+        for (int i = 0; i < length; i++)
+        {
+            signal[i] += 0.3 * Math.Cos(2.0 * Math.PI * 37 * i / length);
+        }
+
+        var spectrum = new Complex[length];
+        for (int i = 0; i < length; i++)
+        {
+            spectrum[i] = new Complex(signal[i], 0.0);
+        }
+
+        Fourier.Forward(spectrum, FourierOptions.Matlab);
+        Complex[] untouched = (Complex[])spectrum.Clone();
+
+        double[] expected = SignalEnvelope.Envelope(signal);
+        double[] actual = SignalEnvelope.EnvelopeFromSpectrum(spectrum);
+
+        Assert.Equal(expected.Length, actual.Length);
+        for (int i = 0; i < expected.Length; i++)
+        {
+            Assert.Equal(expected[i], actual[i], precision: 12);
+        }
+
+        Assert.Equal(untouched, spectrum);
+    }
+
+    // An odd length takes the other half of the analytic mask, so it is pinned
+    // on both sides of that branch.
+    [Fact]
+    public void EnvelopeFromSpectrum_MatchesForAnOddLength()
+    {
+        const int length = 255;
+        double[] signal = CreateSine(length, 9, 1.1);
+
+        var spectrum = new Complex[length];
+        for (int i = 0; i < length; i++)
+        {
+            spectrum[i] = new Complex(signal[i], 0.0);
+        }
+
+        Fourier.Forward(spectrum, FourierOptions.Matlab);
+
+        double[] expected = SignalEnvelope.Envelope(signal);
+        double[] actual = SignalEnvelope.EnvelopeFromSpectrum(spectrum);
+
+        for (int i = 0; i < expected.Length; i++)
+        {
+            Assert.Equal(expected[i], actual[i], precision: 12);
+        }
     }
 
     private static double[] CreateSine(int length, int bin, double amplitude)

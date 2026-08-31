@@ -684,6 +684,44 @@ public sealed class TransferFunctionTests
         return impulse;
     }
 
+    // The other half of that premise: the whitened correlation off a spectrum
+    // the caller already holds is the one it would have got from the signal.
+    [Fact]
+    public void ComputePhaseTransformFromSpectrum_MatchesTheResponseOverload()
+    {
+        const int length = 1_024;
+        var response = new double[length];
+        var random = new Random(4711);
+        for (int i = 0; i < 64; i++)
+        {
+            response[200 + i] = Math.Exp(-i / 12.0) * Math.Sin(2.0 * Math.PI * i / 9.0);
+        }
+
+        for (int i = 0; i < length; i++)
+        {
+            response[i] += (random.NextDouble() - 0.5) * 1e-3;
+        }
+
+        var spectrum = new Complex[length];
+        for (int i = 0; i < length; i++)
+        {
+            spectrum[i] = new Complex(response[i], 0.0);
+        }
+
+        Fourier.Forward(spectrum, FourierOptions.Matlab);
+
+        PhaseTransformDelay expected = TransferFunction
+            .ComputePhaseTransformFromResponse(response)
+            .RefineAround(200, 8);
+        PhaseTransformDelay actual = TransferFunction
+            .ComputePhaseTransformFromSpectrum(spectrum)
+            .RefineAround(200, 8);
+
+        Assert.Equal(expected.Refined, actual.Refined);
+        Assert.Equal(expected.LagSamples, actual.LagSamples, precision: 10);
+        Assert.Equal(expected.PeakCorrelation, actual.PeakCorrelation, precision: 10);
+    }
+
     private static double[] Delay(double[] input, int delay)
     {
         var output = new double[input.Length];

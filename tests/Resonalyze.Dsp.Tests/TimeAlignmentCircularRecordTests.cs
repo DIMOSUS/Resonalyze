@@ -102,9 +102,15 @@ public sealed class TimeAlignmentCircularRecordTests
             options.BandpassFadeOctaves);
         double[] circular = SignalEnvelope.Envelope(
             BandpassWindow.Apply(record, window));
+        // To a tolerance rather than to the bit: the reference filters and
+        // transforms back before taking its envelope, while the read masks the
+        // record's own spectrum and reads the envelope off it — the same
+        // arithmetic with one round trip fewer, so the two agree to sixteen
+        // significant digits and not always to the seventeenth. What this test
+        // falsifies is padding, which moves these samples by tens of percent.
         for (int i = 0; i < circular.Length; i++)
         {
-            Assert.Equal(circular[i], result.EnvelopeSamples[i], precision: 12);
+            Assert.Equal(circular[i], result.EnvelopeSamples[i], tolerance: 1e-12);
         }
     }
 

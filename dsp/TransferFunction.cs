@@ -566,9 +566,29 @@ public static class TransferFunction
         // power-of-two, and zero-padding does not move the correlation peak: the
         // lag axis stays index-aligned with the impulse response.
         int fftLength = DspMath.NextPowerOfTwo(impulseResponse.Count);
-        Complex[] spectrum = RealForwardSpectrum(impulseResponse, fftLength);
-        var gateReference = new double[fftLength];
-        for (int bin = 0; bin < fftLength; bin++)
+        return ComputePhaseTransformFromSpectrum(
+            RealForwardSpectrum(impulseResponse, fftLength), referenceGate, coherence);
+    }
+
+    /// <summary>
+    /// The same correlation for a caller that ALREADY holds the response's
+    /// forward spectrum on the correlation's own grid — a band-limited analysis
+    /// that transformed the record once and band-limited it in place. The
+    /// spectrum is read, never written.
+    /// </summary>
+    internal static PhaseTransformCorrelation ComputePhaseTransformFromSpectrum(
+        Complex[] spectrum,
+        double referenceGate = 0.02,
+        IReadOnlyList<double>? coherence = null)
+    {
+        ArgumentNullException.ThrowIfNull(spectrum);
+        if (spectrum.Length == 0)
+        {
+            throw new ArgumentException("Spectrum must not be empty.");
+        }
+
+        var gateReference = new double[spectrum.Length];
+        for (int bin = 0; bin < spectrum.Length; bin++)
         {
             gateReference[bin] = spectrum[bin].Magnitude;
         }

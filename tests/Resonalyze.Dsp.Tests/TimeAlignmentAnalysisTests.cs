@@ -21,6 +21,43 @@ public sealed class TimeAlignmentAnalysisTests
         Assert.InRange(result.StrongestPeakSeparationMilliseconds, 8.0, 8.7);
     }
 
+    // A COMPLETE record whose length is not a power of two. Its transforms run
+    // at that length — circular is exact for it — but the whitened correlation
+    // pads to the next power of two, a grid the record's own spectrum is not
+    // on, so the read reconstructs the band-limited signal for it instead of
+    // sharing that spectrum. Both routes have to place the same arrival.
+    [Fact]
+    public void Analyze_PlacesTheSameArrivalWhenTheLengthIsNotAPowerOfTwo()
+    {
+        var options = new TimeAlignmentAnalysisOptions
+        {
+            UseBandpassWindow = true,
+            BandpassCenterHz = 1_000,
+            BandpassPassOctaves = 2,
+            BandpassFadeOctaves = 0.5,
+            WrapPeakPositions = true
+        };
+        var padded = new double[8_192];
+        padded[300] = 1.0;
+        var odd = new double[8_193];
+        odd[300] = 1.0;
+
+        TimeAlignmentAnalysisResult power = TimeAlignmentAnalysis.Analyze(
+            padded, SampleRate, options);
+        TimeAlignmentAnalysisResult notPower = TimeAlignmentAnalysis.Analyze(
+            odd, SampleRate, options);
+
+        Assert.True(power.IsValid);
+        Assert.True(notPower.IsValid);
+        // Not bit for bit: the two lengths put the zero-phase mask on different
+        // bin grids, which is worth about a twentieth of a microsecond here —
+        // a four-hundredth of a sample at this rate.
+        Assert.Equal(
+            power.FirstArrivalDelayMilliseconds,
+            notPower.FirstArrivalDelayMilliseconds,
+            precision: 3);
+    }
+
     [Fact]
     public void Analyze_DoesNotFlagACleanSingleArrival()
     {

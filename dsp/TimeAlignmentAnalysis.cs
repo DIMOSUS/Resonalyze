@@ -130,77 +130,74 @@ public static class TimeAlignmentAnalysis
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
 
-        double[] analysisSignal;
+        // The whitened correlation below reads the analysis SPECTRUM on the
+        // complete-record path, where every stage runs at the record's own
+        // length, and the filtered SIGNAL on the cut path, whose stages run at
+        // three lengths of their own with a trim back to the caller's frame
+        // between them.
+        Complex[]? recordSpectrum = null;
+        double[]? cutSignal = null;
+        double[] envelope;
         double[]? kernelEnvelope = null;
-        if (options.UseBandpassWindow)
+        if (options.WrapPeakPositions)
         {
-            // Filtered on a ZERO-PADDED buffer, then trimmed back, so every
-            // index below is in the caller's own frame. BandpassWindow.Apply
-            // says why in its own words: the transform is circular, and this
-            // signal is normally a CUT of a longer record (a channel's valid
-            // range), so an unpadded filter wraps the tail onto the head. Not a
-            // rounding artifact — a lone impulse 64 samples from the end of a
-            // 32768-sample buffer puts 93 % of its own peak into the first
-            // 40 ms, which the arrival search then reads as a front (see
-            // BandpassWrapTests).
+            // A COMPLETE record (see the flag's doc) is the one signal that must
+            // NOT be padded: it is circular by construction, so the unpadded
+            // transform is exact for it and the padding's seam transient is what
+            // reads as a fabricated arrival.
             //
-            // The padding is sized by the KERNEL, never by rounding alone: a
-            // guard first, and only then the rise to a power of two. Rounding
-            // alone would leave a length that is already a power of two — what
-            // ChainValidRange hands out whenever the chain delay is a whole
-            // number of samples, zero included — with no guard at all, and a
-            // length one short of one with a single sample of it.
-            //
-            // Landing on a power of two is worth doing anyway: MathNet is quick
-            // only there and falls back to Bluestein otherwise, measured 20 ms
-            // at 262144 samples against 317 ms at 262145.
-            //
-            // A COMPLETE record (WrapPeakPositions — see its doc) is the one
-            // signal that must NOT be padded: it is circular by construction,
-            // the unpadded transform is exact for it, and the padding's seam
-            // transient is what reads as a fabricated arrival.
-            int transformLength = options.WrapPeakPositions
-                ? impulseResponse.Count
-                : DspMath.NextPowerOfTwo(
-                    impulseResponse.Count +
-                        BandpassGuardSamples(sampleRate, options));
-            var padded = new double[transformLength];
-            for (int i = 0; i < impulseResponse.Count; i++)
+            // At that one length a SINGLE forward transform serves the whole
+            // read: the band mask multiplies the spectrum in place, and the
+            // envelope, the whitened correlation and the mask's own ringing all
+            // come off it. The band-limited SIGNAL is never materialized —
+            // building it and transforming it back twice (once for the
+            // envelope, once for the correlation) was five transforms of the
+            // full record length that returned the spectrum already in hand.
+            // The Time Alignment panel is this caller, and a megabyte of
+            // transfer IR is where it shows: 741 ms a read against 477.
+            recordSpectrum = new Complex[impulseResponse.Count];
+            for (int i = 0; i < recordSpectrum.Length; i++)
             {
-                padded[i] = impulseResponse[i];
+                recordSpectrum[i] = new Complex(impulseResponse[i], 0.0);
             }
 
-            double[] window = BandpassWindow.Create(
-                transformLength,
-                sampleRate,
-                options.BandpassCenterHz,
-                options.BandpassPassOctaves,
-                options.BandpassFadeOctaves);
-            double[] filtered = BandpassWindow.Apply(padded, window);
-            analysisSignal = filtered.Length == impulseResponse.Count
-                ? filtered
-                : filtered[..impulseResponse.Count];
-            // Indexed by DISTANCE from the kernel's centre, so the padded window's
-            // longer, finer curve answers the same question the short one did.
-            kernelEnvelope = BuildKernelEnvelope(window);
+            Fourier.Forward(recordSpectrum, FourierOptions.Matlab);
+            if (options.UseBandpassWindow)
+            {
+                double[] window = BandpassWindow.Create(
+                    recordSpectrum.Length,
+                    sampleRate,
+                    options.BandpassCenterHz,
+                    options.BandpassPassOctaves,
+                    options.BandpassFadeOctaves);
+                for (int bin = 0; bin < recordSpectrum.Length; bin++)
+                {
+                    recordSpectrum[bin] *= window[bin];
+                }
+
+                kernelEnvelope = BuildKernelEnvelope(window);
+            }
+
+            envelope = SignalEnvelope.EnvelopeFromSpectrum(recordSpectrum);
         }
         else
         {
-            analysisSignal = impulseResponse.ToArray();
+            cutSignal = options.UseBandpassWindow
+                ? FilterCut(impulseResponse, sampleRate, options, out kernelEnvelope)
+                : impulseResponse.ToArray();
+            // The analytic signal is a spectral operation too, and just as
+            // circular: an unpadded Hilbert transform folds the crop's tail onto
+            // its own head exactly as the bandpass does, and it is the ENVELOPE
+            // the first-arrival search walks. Padded here rather than inside
+            // SignalEnvelope.Envelope, which has a real contract for a signal
+            // periodic in its window (a bin-centred cosine must come back with a
+            // flat envelope, and padding would break that correctly) — this
+            // caller is the one that knows whether it holds a CUT or a complete
+            // circular record, which keeps its envelope exactly as circular as
+            // the record is.
+            envelope = EnvelopeOfCrop(cutSignal);
         }
 
-        // The analytic signal is a spectral operation too, and just as circular:
-        // an unpadded Hilbert transform folds the crop's tail onto its own head
-        // exactly as the bandpass does, and it is the ENVELOPE the first-arrival
-        // search walks. Padded here rather than inside SignalEnvelope.Envelope,
-        // which has a real contract for a signal periodic in its window (a
-        // bin-centred cosine must come back with a flat envelope, and padding
-        // would break that correctly) — this caller is the one that knows
-        // whether it holds a CUT or a complete circular record, which keeps
-        // its envelope exactly as circular as the record is.
-        double[] envelope = options.WrapPeakPositions
-            ? SignalEnvelope.Envelope(analysisSignal)
-            : EnvelopeOfCrop(analysisSignal);
         PeakSearchResult peakSearchResult = SignalEnvelope.FindPeak(
             envelope,
             sampleRate,
@@ -234,9 +231,10 @@ public static class TimeAlignmentAnalysis
         // cross-phase). The envelope peak stays the robust coarse anchor; the
         // whitened correlation sharpens its position, independent of the driver's
         // magnitude shape, and falls back to the envelope parabola when weak.
-        PhaseTransformCorrelation phaseTransform =
-            TransferFunction.ComputePhaseTransformFromResponse(
-                analysisSignal, coherence: coherence);
+        PhaseTransformCorrelation phaseTransform = recordSpectrum is { } spectrum
+            ? ComputePhaseTransform(spectrum, coherence)
+            : TransferFunction.ComputePhaseTransformFromResponse(
+                cutSignal!, coherence: coherence);
         int refineRadius = ComputePhatSearchRadius(sampleRate);
         RefinedArrival firstArrival = RefineArrivalSample(
             phaseTransform, envelope, envelopePeakIndex, refineRadius);
@@ -482,6 +480,90 @@ public static class TimeAlignmentAnalysis
     }
 
 
+    // The band-limited signal of a CUT, in the caller's own frame.
+    //
+    // Filtered on a ZERO-PADDED buffer, then trimmed back, so every index the
+    // read produces is in that frame. BandpassWindow.Apply says why in its own
+    // words: the transform is circular, and this signal is a CUT of a longer
+    // record (a channel's valid range), so an unpadded filter wraps the tail
+    // onto the head. Not a rounding artifact — a lone impulse 64 samples from
+    // the end of a 32768-sample buffer puts 93 % of its own peak into the first
+    // 40 ms, which the arrival search then reads as a front (see
+    // BandpassWrapTests).
+    //
+    // The padding is sized by the KERNEL, never by rounding alone: a guard
+    // first, and only then the rise to a power of two. Rounding alone would
+    // leave a length that is already a power of two — what ChainValidRange
+    // hands out whenever the chain delay is a whole number of samples, zero
+    // included — with no guard at all, and a length one short of one with a
+    // single sample of it.
+    //
+    // Landing on a power of two is worth doing anyway: MathNet is quick only
+    // there and falls back to Bluestein otherwise, measured 20 ms at 262144
+    // samples against 317 ms at 262145.
+    //
+    // Three lengths live in this path on purpose — the mask's, the envelope's
+    // (EnvelopeOfCrop) and the correlation's — with a trim back to the caller's
+    // frame between them, which is why a cut cannot share one spectrum the way
+    // a complete record does.
+    private static double[] FilterCut(
+        IReadOnlyList<double> impulseResponse,
+        int sampleRate,
+        TimeAlignmentAnalysisOptions options,
+        out double[] kernelEnvelope)
+    {
+        int transformLength = DspMath.NextPowerOfTwo(
+            impulseResponse.Count + BandpassGuardSamples(sampleRate, options));
+        var padded = new double[transformLength];
+        for (int i = 0; i < impulseResponse.Count; i++)
+        {
+            padded[i] = impulseResponse[i];
+        }
+
+        double[] window = BandpassWindow.Create(
+            transformLength,
+            sampleRate,
+            options.BandpassCenterHz,
+            options.BandpassPassOctaves,
+            options.BandpassFadeOctaves);
+        double[] filtered = BandpassWindow.Apply(padded, window);
+        // Indexed by DISTANCE from the kernel's centre, so the padded window's
+        // longer, finer curve answers the same question the short one did.
+        kernelEnvelope = BuildKernelEnvelope(window);
+        return filtered.Length == impulseResponse.Count
+            ? filtered
+            : filtered[..impulseResponse.Count];
+    }
+
+    // The whitened correlation the arrivals are refined against. On the
+    // complete-record path it shares the forward transform the read already
+    // made, whenever the record's length is the one the correlation runs at; a
+    // length that is not a power of two makes the correlation pad to the next
+    // one — a DIFFERENT bin grid — so that case reconstructs the band-limited
+    // signal and takes the padded route it always did.
+    private static PhaseTransformCorrelation ComputePhaseTransform(
+        Complex[] recordSpectrum,
+        IReadOnlyList<double>? coherence)
+    {
+        int length = recordSpectrum.Length;
+        if (DspMath.NextPowerOfTwo(length) == length)
+        {
+            return TransferFunction.ComputePhaseTransformFromSpectrum(
+                recordSpectrum, coherence: coherence);
+        }
+
+        var filtered = (Complex[])recordSpectrum.Clone();
+        Fourier.Inverse(filtered, FourierOptions.Matlab);
+        var signal = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            signal[i] = filtered[i].Real;
+        }
+
+        return TransferFunction.ComputePhaseTransformFromResponse(
+            signal, coherence: coherence);
+    }
+
     // The magnitude envelope of a CUT: computed on a zero-padded copy and
     // trimmed back, so the Hilbert transform's own circularity cannot carry the
     // tail round to the head. Half a buffer of silence is ample — the analytic
@@ -553,21 +635,16 @@ public static class TimeAlignmentAnalysis
     // earlier arrival.
     private static double[] BuildKernelEnvelope(double[] window)
     {
+        // The kernel's forward spectrum IS the mask — it is real and even — so
+        // the envelope reads straight off it, instead of transforming the mask
+        // into a kernel only to transform that kernel back.
         var spectrum = new Complex[window.Length];
         for (int i = 0; i < window.Length; i++)
         {
             spectrum[i] = new Complex(window[i], 0.0);
         }
 
-        Fourier.Inverse(spectrum, FourierOptions.Matlab);
-
-        var kernel = new double[window.Length];
-        for (int i = 0; i < kernel.Length; i++)
-        {
-            kernel[i] = spectrum[i].Real;
-        }
-
-        return SignalEnvelope.Envelope(kernel);
+        return SignalEnvelope.EnvelopeFromSpectrum(spectrum);
     }
 
     private static double FindFractionalPeakOffset(

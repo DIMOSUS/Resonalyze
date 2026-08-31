@@ -44,7 +44,37 @@ public static class SignalEnvelope
         }
 
         Fourier.Forward(spectrum, FourierOptions.Matlab);
+        return AnalyticMagnitude(spectrum);
+    }
 
+    /// <summary>
+    /// The same envelope for a caller that ALREADY holds the signal's forward
+    /// spectrum on the length it wants the envelope at. A complete record's
+    /// band-limited read transforms once and then wants the envelope, the
+    /// whitened correlation and the band mask's own ringing off that one
+    /// spectrum; going back through <see cref="Envelope"/> would pay an inverse
+    /// and a forward transform of the full record length to arrive at the array
+    /// it was handed. The argument is left untouched.
+    /// </summary>
+    internal static double[] EnvelopeFromSpectrum(Complex[] spectrum)
+    {
+        ArgumentNullException.ThrowIfNull(spectrum);
+        if (spectrum.Length == 0)
+        {
+            throw new ArgumentException(
+                "Spectrum must not be empty.",
+                nameof(spectrum));
+        }
+
+        return AnalyticMagnitude((Complex[])spectrum.Clone());
+    }
+
+    // The analytic signal's magnitude: keep DC (and Nyquist), double the
+    // positive frequencies, drop the negative ones, transform back. Consumes
+    // the array it is given.
+    private static double[] AnalyticMagnitude(Complex[] spectrum)
+    {
+        int length = spectrum.Length;
         if ((length & 1) == 0)
         {
             for (int bin = 1; bin < length / 2; bin++)

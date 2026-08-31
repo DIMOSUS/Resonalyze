@@ -896,6 +896,71 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    public void Propose_AChainOfNothingButSubs_LevelsThemToEachOtherEitherWayRound()
+    {
+        // Two subs and no mid or treble anywhere in the group — the rest of the
+        // car is in other groups. There is no flat top for an elevation to be
+        // measured over, so the pair simply levels to its quieter member. Read
+        // off the chain's first driver instead, the answer would depend on which
+        // of the two happens to be the loud one: the same drivers levelled one
+        // way round and left 8 dB apart the other.
+        List<SignalPoint> lowCurve = BandCurve(20, 60, 8);
+        List<SignalPoint> highCurve = BandCurve(35, 120, 0);
+        var loudLow = new AutoSetupSource(lowCurve, DriverType.Subwoofer);
+        var quietHigh = new AutoSetupSource(highCurve, DriverType.Subwoofer);
+
+        IReadOnlyList<CrossoverProposal> loudFirst = CrossoverAutoSetup.Propose(
+            [loudLow, quietHigh], Options());
+
+        // The loud one comes down to the quiet one; the quiet one is not boosted.
+        // Not exactly 8 dB: each level is averaged over that driver's own
+        // passband, and the two passbands are different stretches of the curve.
+        Assert.InRange(loudFirst[0].GainDb, -10, -6.5);
+        Assert.Equal(0, loudFirst[1].GainDb, 1);
+
+        // And the mirror image: the same pair with the levels swapped over cuts
+        // the other member by the same amount, rather than keeping a downslope.
+        IReadOnlyList<CrossoverProposal> quietFirst = CrossoverAutoSetup.Propose(
+            [
+                new AutoSetupSource(BandCurve(20, 60, 0), DriverType.Subwoofer),
+                new AutoSetupSource(BandCurve(35, 120, 8), DriverType.Subwoofer)
+            ],
+            Options());
+
+        Assert.Equal(0, quietFirst[0].GainDb, 1);
+        Assert.InRange(quietFirst[1].GainDb, -10, -6.5);
+    }
+
+    [Fact]
+    public void ProposeSingle_RefusesRatherThanCrossUnderTheDriversOwnSafetyFloor()
+    {
+        // A tweeter's high-pass has to attenuate its resonance, which for this one
+        // lands around 2.3 kHz. Told the crossover window stops at 1.5 kHz, the
+        // honest answer is that there is no protective filter to be had inside it
+        // — not a 1.5 kHz corner with the word "protective" on it.
+        var tweeter = new AutoSetupSource(BandCurve(880, 20_000, 0), DriverType.Tweeter);
+
+        ArgumentException refused = Assert.Throws<ArgumentException>(
+            () => CrossoverAutoSetup.ProposeSingle(tweeter, Options(maxHz: 1_500)));
+
+        Assert.Contains("protective high-pass", refused.Message);
+    }
+
+    [Fact]
+    public void ProposeSingle_SqueezesTheHeadroomMarginForANarrowDriver()
+    {
+        // The octave of headroom over the measured edge is a preference, not
+        // safety: a driver narrower than two octaves cannot be given it, and a
+        // corner inside its own band is the right answer rather than a refusal.
+        var narrow = new AutoSetupSource(BandCurve(1_000, 1_500, 0), DriverType.Midrange);
+
+        CrossoverProposal proposal = CrossoverAutoSetup.ProposeSingle(narrow, Options());
+
+        DriverBandEstimate band = CrossoverAutoSetup.EstimateBand(narrow.MagnitudeDb);
+        Assert.InRange(proposal.HighPassEdge!.Value.FrequencyHz, band.LowHz, band.HighHz);
+    }
+
+    [Fact]
     public void ProposeSingle_KeepsTheCornerInsideTheUsersWindow()
     {
         // The window is the user's, and it binds a protective filter as it binds

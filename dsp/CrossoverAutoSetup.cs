@@ -872,11 +872,13 @@ public static class CrossoverAutoSetup
             }
         }
 
-        if (double.IsPositiveInfinity(referenceLevel))
+        // A chain of nothing but subs (two of them splitting the bottom, with the
+        // rest of the car in other groups). There is no flat top to cut to, so
+        // they level to each OTHER: the quietest sets the level and the rest come
+        // down to it, cut-only.
+        bool allSubwoofers = double.IsPositiveInfinity(referenceLevel);
+        if (allSubwoofers)
         {
-            // A chain of nothing but subs (two of them splitting the bottom, with
-            // the rest of the car in other groups). There is no flat top to cut
-            // to, so they level to each other and the elevation collapses to zero.
             referenceLevel = levels.Min();
         }
 
@@ -887,7 +889,14 @@ public static class CrossoverAutoSetup
             ? reference.MinBy(index => centers[index])
             : Enumerable.Range(0, n).Where(i => i != bass).DefaultIfEmpty(bass).Max();
 
-        double measuredElevation = bass < 0
+        // An elevation is the bass raised over a levelled MID/TREBLE reference,
+        // and a chain of nothing but subs has none — so there is nothing to raise
+        // it over and the elevation is zero, whichever of the subs is the louder.
+        // Read off levels[bass] instead it would come out as +8 dB when the lower
+        // sub happens to be the loud one and 0 dB when it is the quiet one, which
+        // is the same pair of drivers levelled two different ways depending on
+        // which end of the chain you started from.
+        double measuredElevation = bass < 0 || allSubwoofers
             ? 0
             : Math.Max(0, levels[bass] - referenceLevel);
         return new TargetCurveContext(
@@ -1099,18 +1108,41 @@ public static class CrossoverAutoSetup
         // re-chosen at the end can be steeper but never invalid — a filter steeper
         // than the floor demanded over-protects, which is the safe direction.
         int slope = ProtectiveSlope(family, corner, options.ProcessorSampleRateHz);
+
+        // The two floors are not the same kind of thing, and only one of them may
+        // be squeezed. The octave of headroom above the measured edge is a
+        // PREFERENCE: a driver narrower than two octaves cannot have it, and
+        // giving it a corner inside its own band is the right answer there. A
+        // tweeter's resonance and a distortion knee are SAFETY, and the rest of
+        // this file is built on protection tightening and never relaxing — so
+        // where the window cannot hold them, this refuses instead of quietly
+        // handing back a corner under the floor it just computed, with the word
+        // "protective" on it.
+        double safetyFloor = 0;
         if (channel.Type == DriverType.Tweeter)
         {
-            corner = Math.Max(
-                corner, TweeterMinCrossoverHz(TweeterResonanceHz(band.LowHz), slope));
+            safetyFloor = TweeterMinCrossoverHz(TweeterResonanceHz(band.LowHz), slope);
         }
         if (double.IsFinite(band.DistortionLowHz))
         {
-            corner = Math.Max(corner, band.DistortionLowHz);
+            safetyFloor = Math.Max(safetyFloor, band.DistortionLowHz);
         }
 
-        corner = Math.Clamp(RoundToLattice(
-            Math.Clamp(corner, options.MinCrossoverHz, ceiling)),
+        if (safetyFloor > ceiling)
+        {
+            throw new ArgumentException(
+                "A protective high-pass for this driver has to sit at " +
+                $"{RoundUpToLattice(safetyFloor):0} Hz or above, which the crossover " +
+                "window does not reach.",
+                nameof(options));
+        }
+
+        // Snapped UP, not to the nearest: a lattice step down is small but it is
+        // still under the floor, and the floor is the point. Landing over the
+        // ceiling is then clamped back to it, which the guard above has already
+        // established is at or above the floor.
+        corner = Math.Clamp(RoundUpToLattice(
+            Math.Clamp(Math.Max(corner, safetyFloor), options.MinCrossoverHz, ceiling)),
             options.MinCrossoverHz,
             ceiling);
         slope = ProtectiveSlope(family, corner, options.ProcessorSampleRateHz);

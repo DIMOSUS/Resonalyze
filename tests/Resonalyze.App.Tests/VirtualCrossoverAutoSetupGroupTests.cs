@@ -241,18 +241,23 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
             Assert.NotNull(proposals[index].HighPassEdge);
         }
 
-        // Nothing in the front chain hands over to either of them: no front
-        // channel's low-pass sits at the rear's or the centre's corner.
-        var frontLowPasses = new[] { 0, 1, 2, 5, 6 }
-            .Select(index => proposals[index].LowPassEdge?.FrequencyHz)
-            .Where(frequency => frequency.HasValue)
-            .Select(frequency => frequency!.Value)
-            .ToList();
+        // Their corners come from their own measured band, not from a handover:
+        // an octave over where each of them starts playing.
         foreach (int index in new[] { 3, 4 })
         {
-            double corner = proposals[index].HighPassEdge!.Value.FrequencyHz;
-            Assert.DoesNotContain(frontLowPasses, frequency => Math.Abs(frequency - corner) < 1);
+            double measured = CrossoverAutoSetup
+                .EstimateBand(ReferenceCar()[index].MagnitudeDb).LowHz;
+            Assert.InRange(
+                proposals[index].HighPassEdge!.Value.FrequencyHz,
+                measured * 1.8,
+                measured * 2.3);
         }
+
+        // What says they are not in the chain is that the chain pairs up without
+        // them — asserted where the chain is walked, above — and NOT that their
+        // corners differ from its junctions. Two unrelated filters are perfectly
+        // free to land on the same frequency, and these two do: the rear's
+        // protective corner and the midbass-to-midrange handover are both 200 Hz.
     }
 
     [Fact]

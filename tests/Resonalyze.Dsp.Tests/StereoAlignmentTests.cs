@@ -1023,7 +1023,7 @@ public sealed class StereoAlignmentTests
         var log = new StringBuilder();
 
         AutoAlignmentEngine.ComoveMonoChannels(
-            plan, Reprocess, alignment, log, snapshots, decisions);
+            plan, Reprocess, alignment, log, snapshots, decisions: decisions);
 
         Assert.Contains("Co-move sub:", log.ToString());
         AlignmentDecision decision = decisions[sub];
@@ -1226,7 +1226,7 @@ public sealed class StereoAlignmentTests
         var log = new StringBuilder();
         AutoAlignmentEngine.PolishFarSideJunctions(
             plan, snapshots, snapshots, Reprocess, alignment, log,
-            decisions: null);
+            AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null);
         return (alignment[farMid].DelayMs, alignment[farTwr].DelayMs, log.ToString());
     }
 

@@ -1397,6 +1397,15 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </summary>
     private int ProcessorSampleRateHz => ProcessorProfile.SampleRateHz;
 
+    /// <summary>
+    /// The per-channel delay ceiling of the processor being designed for: a catalog
+    /// entry that states its manual's figure answers with it, everything else with
+    /// the engine's long-standing default. Read wherever an automatic proposal
+    /// judges whether it can be dialed in; the MANUAL delay fields deliberately
+    /// keep their wider range, since the Virtual DSP may model any hardware.
+    /// </summary>
+    private double ProcessorMaxDelayMs => ProcessorProfile.MaxDelayMs;
+
     private bool ProcessorRateFollowsMeasurements =>
         project.DspProcessorRateFollowsMeasurements;
 
@@ -4681,7 +4690,10 @@ public partial class VirtualCrossoverPanel : UserControl
     // timed against its own side's front stage, so the rear inherits the front's
     // L/R relation rather than being forced to one delay. The centre has no side
     // and is placed between both.
-    private void PlaceLaterStagesStereo(
+    // Returns the channels that CARRY the rear-fill offset — the placed members
+    // of the rear stage — so the normalization pass can work out how much fill
+    // would fit when the finished figure does not.
+    private IReadOnlyCollection<IAlignmentChannel> PlaceLaterStagesStereo(
         IReadOnlyList<VirtualCrossoverSideAlignmentChannel> chainReference,
         IReadOnlyList<VirtualCrossoverSideAlignmentChannel> chainFar,
         IReadOnlyList<VirtualCrossoverSideAlignmentChannel> later,
@@ -4693,6 +4705,7 @@ public partial class VirtualCrossoverPanel : UserControl
         bool rightHandDrive,
         System.Text.StringBuilder log)
     {
+        var fillCarriers = new List<IAlignmentChannel>();
         IReadOnlyList<AlignmentSnapshot> settled = reprocessor.Reprocess(alignment);
         Dictionary<IAlignmentChannel, AlignmentSnapshot> byChannel =
             settled.ToDictionary(snapshot => snapshot.Channel);
@@ -4791,6 +4804,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
+            fillCarriers.AddRange(members);
             double delayMs = placement.CoArrivalDelayMs + rearFillOffsetMs;
             bool invert = rearFillOffsetMs < HaasPolarityIrrelevantMs &&
                 placement.Inverted;
@@ -4881,7 +4895,7 @@ public partial class VirtualCrossoverPanel : UserControl
                         "against both front stages, so the current delay stands");
                 }
 
-                return;
+                return fillCarriers;
             }
 
             (double delayMs, bool inverted, bool confident) =
@@ -4919,6 +4933,8 @@ public partial class VirtualCrossoverPanel : UserControl
                             "so this placement is a best guess"));
             }
         }
+
+        return fillCarriers;
     }
 
     /// <summary>
@@ -5089,7 +5105,10 @@ public partial class VirtualCrossoverPanel : UserControl
     // Each later group gets ONE delay for all its members: the placement is a
     // property of where the group sits in the car, and it is applied to the group
     // as a rigid body so nothing inside it is re-tuned by this pass.
-    private void PlaceLaterStages(
+    // Returns the channels that CARRY the rear-fill offset — the placed members
+    // of the rear stage — so the normalization pass can work out how much fill
+    // would fit when the finished figure does not.
+    private IReadOnlyCollection<IAlignmentChannel> PlaceLaterStages(
         IReadOnlyList<VirtualCrossoverChannel> chain,
         IReadOnlyList<VirtualCrossoverChannel> later,
         AlignmentReprocessor reprocessor,
@@ -5098,6 +5117,7 @@ public partial class VirtualCrossoverPanel : UserControl
         double rearFillOffsetMs,
         System.Text.StringBuilder log)
     {
+        var fillCarriers = new List<IAlignmentChannel>();
         IReadOnlyList<AlignmentSnapshot> settled = reprocessor.Reprocess(alignment);
         Dictionary<IAlignmentChannel, AlignmentSnapshot> byChannel =
             settled.ToDictionary(snapshot => snapshot.Channel);
@@ -5172,6 +5192,11 @@ public partial class VirtualCrossoverPanel : UserControl
             double offsetMs = stage == VirtualCrossoverAlignmentStage.Rear
                 ? rearFillOffsetMs
                 : 0.0;
+            if (stage == VirtualCrossoverAlignmentStage.Rear)
+            {
+                fillCarriers.AddRange(members);
+            }
+
             double delayMs = placement.CoArrivalDelayMs + offsetMs;
             bool invert = offsetMs < HaasPolarityIrrelevantMs && placement.Inverted;
             log.AppendLine(
@@ -5203,6 +5228,8 @@ public partial class VirtualCrossoverPanel : UserControl
                     (offsetMs != 0 ? $", held back {offsetMs:0.##} ms" : string.Empty));
             }
         }
+
+        return fillCarriers;
     }
 
     // Every channel slid together until the earliest sits at zero. The stages
@@ -5219,31 +5246,110 @@ public partial class VirtualCrossoverPanel : UserControl
     // around it - a rigid-body shift that is not rigid, and the one relation in
     // the whole run that must not change. So every participant is read here, an
     // absent one as zero, and every participant is written back.
+    //
+    // The ceiling verdict after the shift is unconditional — a rear fill can push
+    // the LATEST channel past the processor's range without any channel having
+    // gone negative, so it cannot ride on whether a shift happened. And because
+    // the fill is the one number in the whole proposal that is preference rather
+    // than physics, a refusal works out the largest fill that WOULD fit and says
+    // so, instead of leaving the user to bisect it by rerunning.
     internal static void NormalizeStagedDelays(
         IReadOnlyList<IAlignmentChannel> scope,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        System.Text.StringBuilder log)
+        System.Text.StringBuilder log,
+        double maxDelayMs = AutoAlignmentEngine.DefaultMaxDelayMs,
+        double rearFillOffsetMs = 0,
+        IReadOnlyCollection<IAlignmentChannel>? rearFillCarriers = null)
     {
         if (scope.Count == 0)
         {
             return;
         }
 
-        double minimum = scope.Min(
+        // The raw placements, kept from before the shift: the fill scan below
+        // judges each trial span with min(0, minimum) folded in, which a uniform
+        // shift already applied to the map would double-count.
+        Dictionary<IAlignmentChannel, double> raw = scope.Distinct().ToDictionary(
+            channel => channel,
             channel => alignment.GetValueOrDefault(channel).DelayMs);
-        if (minimum >= 0)
+
+        double minimum = raw.Values.Min();
+        if (minimum < 0)
+        {
+            log.AppendLine(
+                $"  normalization: every channel shifted +{-minimum:0.00} ms so the " +
+                "earliest sits at zero.");
+            foreach (IAlignmentChannel channel in raw.Keys)
+            {
+                AlignmentOverride over = alignment.GetValueOrDefault(channel);
+                alignment[channel] = over with { DelayMs = over.DelayMs - minimum };
+            }
+        }
+
+        IAlignmentChannel widest = raw.Keys.MaxBy(
+            channel => alignment.GetValueOrDefault(channel).DelayMs)!;
+        double widestDelayMs = alignment.GetValueOrDefault(widest).DelayMs;
+        if (widestDelayMs <= maxDelayMs + 0.005)
         {
             return;
         }
 
-        log.AppendLine(
-            $"  normalization: every channel shifted +{-minimum:0.00} ms so the " +
-            "earliest sits at zero.");
-        foreach (IAlignmentChannel channel in scope)
+        string message =
+            "The staged alignment does not fit the DSP delay range: " +
+            $"{widest.Name} needs {widestDelayMs:0.00} ms with the earliest " +
+            $"channel at 0, but the limit is {maxDelayMs:0.##} ms.";
+        message += LargestFittingRearFill(
+                raw, rearFillCarriers, rearFillOffsetMs, maxDelayMs)
+            is double fittingMs
+            ? $" The {rearFillOffsetMs:0.##} ms rear fill is what pushes it past " +
+                $"the range: up to {fittingMs:0.##} ms of fill fits — lower " +
+                "Rear fill in the dialog and rerun."
+            : " The spread between the earliest and latest channels is wider " +
+                "than the DSP can realize.";
+        throw new InvalidOperationException(message);
+    }
+
+    // The largest rear fill the processor's delay range can hold, on the DSP's
+    // own 0.01 ms grid. Found by walking DOWN from the requested fill rather
+    // than solved in closed form, because the dialable span is not monotone in
+    // the fill: a rear group whose co-arrival placement came out negative first
+    // CLOSES the span as the fill grows (the fill lifts it toward zero) and only
+    // then widens it. Null when no fill was in play, or when even a fill of zero
+    // leaves the spread past the ceiling — then the fill is not the story and
+    // the refusal must not pretend lowering it would help.
+    private static double? LargestFittingRearFill(
+        IReadOnlyDictionary<IAlignmentChannel, double> raw,
+        IReadOnlyCollection<IAlignmentChannel>? carriers,
+        double requestedFillMs,
+        double maxDelayMs)
+    {
+        if (carriers == null || carriers.Count == 0 || requestedFillMs <= 0)
         {
-            AlignmentOverride over = alignment.GetValueOrDefault(channel);
-            alignment[channel] = over with { DelayMs = over.DelayMs - minimum };
+            return null;
         }
+
+        for (double fillMs = Math.Floor(requestedFillMs * 100) / 100;
+            fillMs >= 0;
+            fillMs = Math.Round(fillMs - 0.01, 2))
+        {
+            double minMs = double.MaxValue;
+            double maxMs = double.MinValue;
+            foreach ((IAlignmentChannel channel, double delayMs) in raw)
+            {
+                double trialMs = carriers.Contains(channel)
+                    ? delayMs - requestedFillMs + fillMs
+                    : delayMs;
+                minMs = Math.Min(minMs, trialMs);
+                maxMs = Math.Max(maxMs, trialMs);
+            }
+
+            if (maxMs - Math.Min(0, minMs) <= maxDelayMs + 0.005)
+            {
+                return fillMs;
+            }
+        }
+
+        return null;
     }
 
     private async Task<AutoDelayRunResult> RunSingleSideProposalAsync(
@@ -5278,12 +5384,15 @@ public partial class VirtualCrossoverPanel : UserControl
                 walkSet: later.Count > 0 ? chain : null);
             if (later.Count > 0)
             {
-                // Stages 2 and 3, then the shift that makes the lot dialable.
-                PlaceLaterStages(
-                    chain, later, reprocessor, alignment, decisions,
-                    request.RearFillOffsetMs, log);
+                // Stages 2 and 3, then the shift that makes the lot dialable —
+                // judged against the processor's own delay ceiling.
+                IReadOnlyCollection<IAlignmentChannel> fillCarriers =
+                    PlaceLaterStages(
+                        chain, later, reprocessor, alignment, decisions,
+                        request.RearFillOffsetMs, log);
                 NormalizeStagedDelays(
-                    [.. participants.Cast<IAlignmentChannel>()], alignment, log);
+                    [.. participants.Cast<IAlignmentChannel>()], alignment, log,
+                    ProcessorMaxDelayMs, request.RearFillOffsetMs, fillCarriers);
             }
 
             // The "before" snapshots carry the CURRENT delays and polarities —
@@ -5638,7 +5747,8 @@ public partial class VirtualCrossoverPanel : UserControl
             reprocessor.Reprocess,
             alignment,
             log,
-            decisions);
+            decisions,
+            maxDelayMs: ProcessorMaxDelayMs);
         return reprocessor;
     }
 
@@ -5894,19 +6004,21 @@ public partial class VirtualCrossoverPanel : UserControl
                 // Stages 2 and 3 read the sides in the engine's own ROLES, so a
                 // right-hand-drive run places its groups against the same
                 // reference the walk settled rather than against the mirror.
-                PlaceLaterStagesStereo(
-                    request.RightHandDrive ? chainRight : chainLeft,
-                    request.RightHandDrive ? chainLeft : chainRight,
-                    later,
-                    reprocessor,
-                    engineAlignment,
-                    decisions,
-                    request.SceneOffsetMs,
-                    request.RearFillOffsetMs,
-                    request.RightHandDrive,
-                    log);
+                IReadOnlyCollection<IAlignmentChannel> fillCarriers =
+                    PlaceLaterStagesStereo(
+                        request.RightHandDrive ? chainRight : chainLeft,
+                        request.RightHandDrive ? chainLeft : chainRight,
+                        later,
+                        reprocessor,
+                        engineAlignment,
+                        decisions,
+                        request.SceneOffsetMs,
+                        request.RearFillOffsetMs,
+                        request.RightHandDrive,
+                        log);
                 NormalizeStagedDelays(
-                    [.. union.Cast<IAlignmentChannel>()], engineAlignment, log);
+                    [.. union.Cast<IAlignmentChannel>()], engineAlignment, log,
+                    ProcessorMaxDelayMs, request.RearFillOffsetMs, fillCarriers);
             }
 
             // The "before" snapshots carry the CURRENT delays and polarities —
@@ -6092,7 +6204,8 @@ public partial class VirtualCrossoverPanel : UserControl
             reprocessor.Reprocess,
             alignment,
             log,
-            decisions);
+            decisions,
+            maxDelayMs: ProcessorMaxDelayMs);
         return reprocessor;
     }
 

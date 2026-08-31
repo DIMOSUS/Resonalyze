@@ -224,13 +224,19 @@ public static class AutoAlignmentEngine
     /// </summary>
     private const double SeedPartnerMaxReachPeriods = 0.75;
 
-    // The delay ceiling an AUTO DELAY proposal may reach — tighter than the
-    // manual UI range (100 ms, since the Virtual DSP may model any hardware).
-    // Car processors cap per-channel delay in the tens of milliseconds (~17 m
-    // of path here), so a proposal past this could never be transferred to a
-    // device. Real cabin spans run well under 10 ms: this is the feasibility
-    // gate, not an operating region.
-    private const double MaxDelayMs = 50;
+    /// <summary>
+    /// The delay ceiling an AUTO DELAY proposal may reach when the target device's
+    /// own figure is unknown — tighter than the manual UI range (100 ms, since the
+    /// Virtual DSP may model any hardware). Car processors cap per-channel delay
+    /// in the tens of milliseconds (~17 m of path here), so a proposal past this
+    /// could never be transferred to a device. Real cabin spans run well under
+    /// 10 ms: this is the feasibility gate, not an operating region. A catalog
+    /// entry that states its device's real ceiling
+    /// (<see cref="DspProcessorPreset.MaxDelayMs"/>) tightens or widens the gate
+    /// per run through the <c>maxDelayMs</c> parameter of
+    /// <see cref="Compute"/> / <see cref="ComputeStereo"/>.
+    /// </summary>
+    public const double DefaultMaxDelayMs = 50;
 
     // A deliberately wide fine-search window (many periods at a high crossover,
     // ~one at a low one). Its candidates are always logged, surfacing summation
@@ -709,16 +715,23 @@ public static class AutoAlignmentEngine
     /// settings play no part: the caller produces the initial snapshots with
     /// zero overrides and the engine computes an absolute proposal.
     /// </summary>
+    /// <param name="maxDelayMs">
+    /// The target device's per-channel delay ceiling: the feasibility gate and
+    /// every polish pass bound the proposal by it. Defaults to
+    /// <see cref="DefaultMaxDelayMs"/> for a device whose figure is unknown.
+    /// </param>
     public static void Compute(
         IReadOnlyList<AlignmentSnapshot> channelsByBand,
         IReadOnlyList<AlignmentJunction> pairs,
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        double maxDelayMs = DefaultMaxDelayMs)
     {
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(alignment);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDelayMs);
         RequireOneSampleRate(channelsByBand);
         // An absolute proposal, per the contract: stale entries would otherwise
         // leak into the neighbor-base and reprocess reads and skew the result.
@@ -726,7 +739,8 @@ public static class AutoAlignmentEngine
         decisions?.Clear();
         Compute(channelsByBand, pairs, reprocess, alignment, log,
             onsetLocks: null, decisions);
-        NormalizeAndVerifyFeasibility(channelsByBand.ToList(), alignment, log);
+        NormalizeAndVerifyFeasibility(
+            channelsByBand.ToList(), alignment, log, maxDelayMs);
         NormalizePolarityPresentation(channelsByBand, alignment, log);
     }
 
@@ -3084,7 +3098,7 @@ public static class AutoAlignmentEngine
                 newDelay = 0;
             }
 
-            // Unclamped above zero: a value past MaxDelayMs stays honest here —
+            // Unclamped above zero: a value past the delay ceiling stays honest here —
             // relations are what matter mid-run, and the final feasibility
             // check refuses the proposal if the span truly does not fit.
             alignment[channel] = new AlignmentOverride(
@@ -3405,17 +3419,24 @@ public static class AutoAlignmentEngine
     /// zero. Every uniform shift spans BOTH sides, preserving the scene offset
     /// the bridge established.
     /// </summary>
+    /// <param name="maxDelayMs">
+    /// The target device's per-channel delay ceiling: the feasibility gate and
+    /// every polish pass bound the proposal by it. Defaults to
+    /// <see cref="DefaultMaxDelayMs"/> for a device whose figure is unknown.
+    /// </param>
     public static void ComputeStereo(
         StereoAlignmentPlan plan,
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        double maxDelayMs = DefaultMaxDelayMs)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(reprocess);
         ArgumentNullException.ThrowIfNull(alignment);
         ArgumentNullException.ThrowIfNull(log);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDelayMs);
         List<AlignmentSnapshot> rightByBand = plan.RightChannelsByBand.ToList();
         if (rightByBand.Count == 0 ||
             plan.RightPairs.Count != rightByBand.Count - 1)
@@ -4140,7 +4161,7 @@ public static class AutoAlignmentEngine
         // pair by one shared delta keeps the pair's L-R timing (the scene)
         // untouched while trading junction loss between the sides.
         RebalancePairsKeepingScene(
-            plan, reprocess, alignment, log, onsetLocks, decisions);
+            plan, reprocess, alignment, log, onsetLocks, maxDelayMs, decisions);
 
         // A mono channel's own final polish: its delay (and polarity) is
         // scene-invariant by construction — one shared channel moves both
@@ -4148,15 +4169,17 @@ public static class AutoAlignmentEngine
         // best compromise across its left AND right junctions is searched
         // directly. This is the only pass where the right junction gets a
         // vote on the mono channel at all.
-        ComoveMonoChannels(plan, reprocess, alignment, log, allChannels, decisions);
+        ComoveMonoChannels(
+            plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions);
 
         // The far side's own last word: every far channel may leave its scene
         // position by at most FarSideJunctionPolishMs to buy its own junction
         // summation back — see the method for why the scene can afford it.
         PolishFarSideJunctions(
-            plan, rightByBand, allChannels, reprocess, alignment, log, decisions);
+            plan, rightByBand, allChannels, reprocess, alignment, log,
+            maxDelayMs, decisions);
 
-        NormalizeAndVerifyFeasibility(allChannels, alignment, log);
+        NormalizeAndVerifyFeasibility(allChannels, alignment, log, maxDelayMs);
 
         // The invariant the user requires of automatic delay: no driver is ever
         // inverted on one side of a pair alone.
@@ -4177,7 +4200,8 @@ public static class AutoAlignmentEngine
     internal static void NormalizeAndVerifyFeasibility(
         IReadOnlyList<AlignmentSnapshot> scope,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log)
+        StringBuilder log,
+        double maxDelayMs = DefaultMaxDelayMs)
     {
         // Always rebase (even a sub-hundredth minimum: a tiny negative left in
         // the map would be an unrealizable delay), round onto the DSP's 0.01 ms
@@ -4208,12 +4232,12 @@ public static class AutoAlignmentEngine
         AlignmentSnapshot widest = scope.MaxBy(
             item => alignment.GetValueOrDefault(item.Channel).DelayMs)!;
         double widestDelayMs = alignment.GetValueOrDefault(widest.Channel).DelayMs;
-        if (widestDelayMs > MaxDelayMs + 0.005)
+        if (widestDelayMs > maxDelayMs + 0.005)
         {
             throw new InvalidOperationException(
                 "The proposed alignment does not fit the DSP delay range: " +
                 $"{widest.Channel.Name} needs {widestDelayMs:0.00} ms with the " +
-                $"earliest channel at 0, but the limit is {MaxDelayMs:0} ms. " +
+                $"earliest channel at 0, but the limit is {maxDelayMs:0.##} ms. " +
                 "The measured spread between the earliest and latest channels " +
                 "is wider than the DSP can realize.");
         }
@@ -4528,6 +4552,7 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         IReadOnlyDictionary<AlignmentJunction, OnsetLockState> onsetLocks,
+        double maxDelayMs,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         if (plan.PairLinks == null)
@@ -4745,9 +4770,9 @@ public static class AutoAlignmentEngine
                 double minOtherMs = fieldOthers.Min(
                     channel => alignment.GetValueOrDefault(channel).DelayMs);
                 minDelta = Math.Max(
-                    minDelta, -pairMinMs - (MaxDelayMs - maxOtherMs));
+                    minDelta, -pairMinMs - (maxDelayMs - maxOtherMs));
                 maxDelta = Math.Min(
-                    maxDelta, MaxDelayMs - pairMaxMs + minOtherMs);
+                    maxDelta, maxDelayMs - pairMaxMs + minOtherMs);
             }
             // The neighbor lobes can, in principle, exclude zero (a settled
             // neighbor a hair over half a period away); never let the window
@@ -4846,6 +4871,7 @@ public static class AutoAlignmentEngine
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
+        double maxDelayMs,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions)
     {
         foreach (AlignmentSnapshot entry in rightByBand
@@ -4953,7 +4979,7 @@ public static class AutoAlignmentEngine
                 double trialMs = current.DelayMs + delta;
                 if (trialMs < 0 ||
                     Math.Max(othersMaxMs, trialMs) -
-                        Math.Min(othersMinMs, trialMs) > MaxDelayMs)
+                        Math.Min(othersMinMs, trialMs) > maxDelayMs)
                 {
                     // Delays are non-negative and a polish never earns a
                     // uniform shift of the whole field. Nor may it widen the
@@ -5020,6 +5046,7 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         IReadOnlyList<AlignmentSnapshot> shiftScope,
+        double maxDelayMs = DefaultMaxDelayMs,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         foreach (IAlignmentChannel mono in plan.MonoChannels)
@@ -5139,9 +5166,9 @@ public static class AutoAlignmentEngine
             double minOtherMs = others.Min(
                 channel => alignment.GetValueOrDefault(channel).DelayMs);
             double minDelta = Math.Max(
-                -reachMs, -over.DelayMs - (MaxDelayMs - maxOtherMs));
+                -reachMs, -over.DelayMs - (maxDelayMs - maxOtherMs));
             double maxDelta = Math.Min(
-                reachMs, MaxDelayMs - over.DelayMs + minOtherMs);
+                reachMs, maxDelayMs - over.DelayMs + minOtherMs);
 
             double Score(double deltaMs, bool flip)
             {
@@ -5339,11 +5366,11 @@ public static class AutoAlignmentEngine
                     ShiftAllExcept(shiftScope, mono, -newDelayMs, alignment, log);
                     newDelayMs = 0;
                 }
-                else if (newDelayMs > MaxDelayMs)
+                else if (newDelayMs > maxDelayMs)
                 {
                     ShiftAllExcept(
-                        shiftScope, mono, MaxDelayMs - newDelayMs, alignment, log);
-                    newDelayMs = MaxDelayMs;
+                        shiftScope, mono, maxDelayMs - newDelayMs, alignment, log);
+                    newDelayMs = maxDelayMs;
                 }
 
                 alignment[mono] = new AlignmentOverride(

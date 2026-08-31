@@ -2239,6 +2239,13 @@ Mosconi, ESX, miniDSP and JL Audio — and its **processing rate** and
 [**Q convention**](#dsp-q-convention) come with it, locked. Pick **Custom** and
 state both by hand.
 
+A catalog line may also state the model's **per-channel delay ceiling**, read
+from its manual. Automatic delay proposals are judged against it — a spread the
+device cannot dial refuses with the reason — while a model whose manual has not
+been entered yet, and a Custom profile, keep the engine's long-standing 50 ms
+feasibility gate. The manual delay fields deliberately keep their wider range,
+since the Virtual DSP may model any hardware.
+
 The processing rate is the rate every simulated filter is **built** at, and it is
 deliberately independent of the rate the channels were measured at. A digital
 filter's corner is warped by the rate it was designed for, so designing at the
@@ -2384,7 +2391,14 @@ A group the run cannot measure keeps the delay it had, and says so in the trace.
 Every delay is relative until the last pass, which slides the whole set until
 the earliest channel sits at zero — a rear fill pushed back past the front stage
 asks the front to go negative, and nothing is dialable until that shift. Every
-relation the stages computed survives it.
+relation the stages computed survives it. The finished figure is then judged
+against the processor's own delay ceiling (see
+[DSP processor](#dsp-processor)); a set that does not fit refuses with the
+reason rather than clamping a channel, and when the rear fill is what pushes it
+past the range — the rear often sits *closer* than the front, so the whole gap
+plus the fill lands on the front stage's delays — the refusal also names the
+largest fill that *would* fit, so one rerun with the dialog turned down settles
+it instead of a bisection.
 
 A project with no rear and no centre never enters any of this: it takes the
 single-stage path, which is the same engine call it always took.

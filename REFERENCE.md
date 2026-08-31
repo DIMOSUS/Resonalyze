@@ -240,7 +240,7 @@ neighbouring order, so the curve is dropped from the plot and from THD and an
 amber warning names the order and the cure: a longer sweep, or a narrower
 analysed range (marginal isolation keeps the curve and just carries the
 caveat). If instead the whole window holds **nothing above the record's own
-noise floor** — plateau and edges alike — there is no harmonic to draw at all:
+noise floor** — anywhere in it — there is no harmonic to draw at all:
 the curve is dropped the same way, but the note is a neutral gray *"below the
 measurement noise floor"*, because distortion too low for the capture to
 resolve is the mark of a clean measurement, not a fault. A longer sweep or more

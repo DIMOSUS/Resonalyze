@@ -154,6 +154,41 @@ public sealed class EssHarmonicBelowNoiseTests
     }
 
     [Fact]
+    public void ASignalInTheShoulder_BetweenPlateauAndEdge_IsNotBlessedAsBelowNoise()
+    {
+        // The below-noise verdict must survey the WHOLE window. A burst in the
+        // shoulder between the central plateau and the trailing edge leaves both
+        // the plateau maximum and the edge RMS values at the noise floor — the
+        // only regions the verdict used to consult — yet the window plainly
+        // holds a packet, so blessing it as a clean capture would be a lie.
+        var sweep = Sweep();
+        HarmonicWindowDefinition h2 = EssHarmonicAnalysis.BuildWindow(sweep, 2, 0.5);
+        double[] impulse = NoisyCleanImpulse();
+        int length = h2.EndSample - h2.StartSample + 1;
+        int plateauTo = Math.Min(h2.EndSample, h2.PeakSample + length / 8);
+        int trailingEdgeStart =
+            h2.EndSample - Math.Max(1, (int)Math.Round(0.15 * length)) + 1;
+        const int burstLength = 500;
+        int burstStart = plateauTo + (trailingEdgeStart - plateauTo - burstLength) / 2;
+        // The burst must sit strictly between the plateau and the edge region,
+        // or this test would degenerate into one of the already-covered cases.
+        Assert.True(burstStart > plateauTo);
+        Assert.True(burstStart + burstLength < trailingEdgeStart);
+        for (int i = burstStart; i < burstStart + burstLength; i++)
+        {
+            impulse[i] = 0.01;
+        }
+
+        EssHarmonicDecomposition decomposition = EssHarmonicAnalysis.AnalyzeEssHarmonics(
+            impulse, sweep, new HarmonicAnalysisOptions(MaxHarmonic: 4));
+
+        HarmonicPacketValidity h2Validity =
+            decomposition.Validity.Packets.Single(p => p.Order == 2);
+        Assert.False(h2Validity.IsBelowNoiseFloor);
+        Assert.NotNull(h2Validity.Warning);
+    }
+
+    [Fact]
     public void WithoutAUsableTail_TheOldOverlapVerdictIsKept()
     {
         // The noise stops right after the linear window, leaving a silent tail

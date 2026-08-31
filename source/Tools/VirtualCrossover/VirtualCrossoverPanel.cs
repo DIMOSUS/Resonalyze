@@ -4467,34 +4467,65 @@ public partial class VirtualCrossoverPanel : UserControl
     // truth). Bypassed channels carry the raw signal and are excluded.
     private void UpdateCrossoverWarning(List<ProcessedChannel> processed)
     {
-        List<ProcessedChannel> active = processed
-            .Where(item => !item.Channel.Pair.Bypass)
-            .ToList();
-        if (active.Count < 2)
+        if (CrossoverSpreadWarning([.. processed.Select(item => item.Channel)])
+            is not (string name, double spread, bool placedGroups))
         {
             HideWarning();
             return;
         }
 
-        // The latest driver holds the smallest delay (everyone else is delayed
-        // toward it); the spread is how far ahead the earliest driver sits.
-        ProcessedChannel latest = active.MinBy(item => item.Channel.Settings.DelayMs)!;
-        double earliestDelay = active.Max(item => item.Channel.Settings.DelayMs);
-        double spread = earliestDelay - latest.Channel.Settings.DelayMs;
-        if (spread <= CrossoverGroupDelayWarningMs)
-        {
-            HideWarning();
-            return;
-        }
-
-        string name = latest.Channel.Name;
         ShowWarning(
             $"⚠ {name} lags the others by ~{spread:0} ms — check its crossover.",
             $"{name} arrives ~{spread:0} ms after the other drivers, so Auto delay pushes " +
             "them out by that much to match it.\r\n\r\n" +
             "This is usually excessive crossover group delay — a narrow or steep low-frequency " +
-            "band-pass. Reduce its slope or widen its band to bring the alignment delays down.",
+            "band-pass. Reduce its slope or widen its band to bring the alignment delays down." +
+            // Said only where it applies, so a front-only car reads the same
+            // two paragraphs it always did — and where it does apply, it
+            // answers the question the figure raises: the rear block standing
+            // 15 ms out in the delay table is not part of this number.
+            (placedGroups
+                ? "\r\n\r\nThe rear fill and the centre are not counted. They are placed " +
+                    "against the front stage rather than tuned with it, and the rear sits " +
+                    "its fill offset behind by design."
+                : string.Empty),
             CrossoverWarningColor);
+    }
+
+    // The channel the spread names, how wide it is, and whether the project
+    // holds groups the spread had to leave out - or null when there is nothing
+    // to say. Pure so the rule can be read off a set of channels without a
+    // processing run behind it.
+    internal static (string Name, double SpreadMs, bool PlacedGroups)? CrossoverSpreadWarning(
+        IReadOnlyList<VirtualCrossoverChannel> channels)
+    {
+        // Only the front chain. The spread is read as "Auto delay had to push
+        // everyone out to catch this driver up", and that sentence is true of
+        // the chain alone: it is the one stage whose junctions are SEARCHED,
+        // so its members do drag each other. The later stages are PLACED
+        // against a chain already settled and drag nothing — a rear fill
+        // deliberately sits the Rear fill offset behind, which at the default
+        // 15 ms is the warning threshold itself, and a centre carries whatever
+        // its own path costs. Reading either into the spread makes Auto delay's
+        // own output trip the warning, on the very installation the staged run
+        // was built for. The split is the run's own, so a rear-only project —
+        // walked as its own chain, since there is nothing to place it against —
+        // keeps the warning it always had.
+        (List<VirtualCrossoverChannel> active, List<VirtualCrossoverChannel> placed) =
+            SplitAlignmentStages([.. channels.Where(channel => !channel.Pair.Bypass)]);
+        if (active.Count < 2)
+        {
+            return null;
+        }
+
+        // The latest driver holds the smallest delay (everyone else is delayed
+        // toward it); the spread is how far ahead the earliest driver sits.
+        VirtualCrossoverChannel latest = active.MinBy(channel => channel.Settings.DelayMs)!;
+        double earliestDelay = active.Max(channel => channel.Settings.DelayMs);
+        double spread = earliestDelay - latest.Settings.DelayMs;
+        return spread > CrossoverGroupDelayWarningMs
+            ? (latest.Name, spread, placed.Count > 0)
+            : null;
     }
 
     // The two alignment stages, their tuning constants and the selection

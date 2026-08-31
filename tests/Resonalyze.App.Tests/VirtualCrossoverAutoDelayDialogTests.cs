@@ -37,15 +37,25 @@ public sealed class VirtualCrossoverAutoDelayDialogTests
         Assert.Contains("Run again", Field<Label>(dialog, "labelStatus").Text);
     });
 
-    [Theory]
-    [InlineData(715)]
-    [InlineData(360)]
-    [InlineData(1100)]
-    public void TheActionButtonsStayVisibleAtEveryHeight(int clientHeight) => StaTest.Run(() =>
+    [Fact]
+    public void TheActionButtonsStayVisibleAtEveryHeight() => StaTest.Run(() =>
     {
         using var dialog = new VirtualCrossoverAutoDelayDialog();
-        dialog.ClientSize = dialog.ClientSize with { Height = clientHeight };
+        AssertNothingCoversTheActionButtons(dialog);
 
+        // The smallest window the dialog can be. Asked for one pixel it clamps
+        // to MinimumSize, which is the form's OUTER size - so the client area
+        // that leaves is a number the test must not repeat, only observe.
+        dialog.Size = dialog.Size with { Height = 1 };
+        Assert.Equal(dialog.MinimumSize.Height, dialog.Height);
+        AssertNothingCoversTheActionButtons(dialog);
+
+        dialog.ClientSize = dialog.ClientSize with { Height = 1_100 };
+        AssertNothingCoversTheActionButtons(dialog);
+    });
+
+    private static void AssertNothingCoversTheActionButtons(Form dialog)
+    {
         foreach (string name in new[] { "buttonApply", "buttonCancel" })
         {
             Button button = Field<Button>(dialog, name);
@@ -74,7 +84,7 @@ public sealed class VirtualCrossoverAutoDelayDialogTests
                     $"{sibling.Name} {sibling.Bounds} covers {name} {button.Bounds}.");
             }
         }
-    });
+    }
 
     private static T Field<T>(object target, string name) where T : class =>
         (T)target.GetType()

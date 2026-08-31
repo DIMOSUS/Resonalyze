@@ -311,6 +311,14 @@ public static class SignalEnvelope
     private const double SidelobeSymmetryRatio = 0.5;
     private const int SidelobeMirrorNeighborhood = 2;
 
+    // The rise a first arrival must show over its approach floor (see
+    // RisesOutOfItsApproach), and the kernel-envelope decay that bounds how far
+    // back that floor is read (see ApproachSpanSamples). The acausal pedestal's
+    // ripples rise by hundredths of a dB; a genuine front climbs by whole ones
+    // - 3 dB separates them with margin on both sides.
+    private const double FrontApproachRiseRatio = 1.41;
+    private const double ApproachWindowKernelLevel = 0.1;
+
     // How long after a candidate a stronger peak still belongs to the SAME wave
     // packet rather than being a separate arrival — the complement of
     // <see cref="TimeAlignmentAnalysis"/>'s separate-arrival rule, and the same
@@ -378,6 +386,8 @@ public static class SignalEnvelope
             }
         }
 
+        int approachSpanSamples = ApproachSpanSamples(
+            kernelEnvelope, packetSpanSamples, reachCap);
         var accepted = new List<int>();
         int firstArrival = -1;
         for (int k = candidates.Count - 1; k >= 0; k--)
@@ -403,7 +413,11 @@ public static class SignalEnvelope
             if (!isSidelobe)
             {
                 accepted.Add(candidate);
-                if (RisesWithinItsPacket(envelope, candidate, packetSpanSamples))
+                // The strongest peak needs no rise witness: it outranks
+                // everything, so nothing later could have manufactured it.
+                if (envelope[candidate] >= strongestPeak ||
+                    (RisesWithinItsPacket(envelope, candidate, packetSpanSamples) &&
+                     RisesOutOfItsApproach(envelope, candidate, approachSpanSamples)))
                 {
                     firstArrival = candidate;
                 }
@@ -411,6 +425,68 @@ public static class SignalEnvelope
         }
 
         return firstArrival;
+    }
+
+    // A genuine front RISES: the driver's energy is added to whatever the
+    // envelope held before it, so the candidate must stand above the floor of
+    // its own approach — the quietest sample within a kernel's core reach
+    // before it. What fails this test is the texture on the analysis kernel's
+    // own acausal pedestal: a zero-phase kernel spreads the whole later record
+    // backwards, and ahead of the first real arrival that superposition forms
+    // a FLAT shelf (measured on a field subwoofer at 32.5-130 Hz: -20 dB
+    // against a per-peak ring ceiling of -24.7 dB, so the level gate above
+    // reads its micro-ripples - local maxima a few hundredths of a dB proud -
+    // as genuine early arrivals). No single-peak ceiling can price that shelf,
+    // because it is the sum of every later sample's skirt; the rise test reads
+    // the shelf itself instead of predicting it.
+    private static bool RisesOutOfItsApproach(
+        IReadOnlyList<double> envelope,
+        int candidateIndex,
+        int approachSpanSamples)
+    {
+        if (candidateIndex <= 0)
+        {
+            return true;
+        }
+
+        int first = Math.Max(0, candidateIndex - approachSpanSamples);
+        double floor = double.MaxValue;
+        for (int i = first; i < candidateIndex; i++)
+        {
+            floor = Math.Min(floor, envelope[i]);
+        }
+
+        return envelope[candidateIndex] >= floor * FrontApproachRiseRatio;
+    }
+
+    // How far back the approach floor is read: the analysis kernel's own core
+    // - out to where its envelope has decayed by the window level - so the
+    // window scales with the band's rise time (a 32.5-130 Hz front takes
+    // milliseconds to climb; a broadband one is done in a fraction of one).
+    // Never shorter than the arrival packet, which is the no-kernel fallback.
+    private static int ApproachSpanSamples(
+        IReadOnlyList<double>? kernelEnvelope,
+        int packetSpanSamples,
+        int reachCap)
+    {
+        if (kernelEnvelope == null || kernelEnvelope.Count == 0 ||
+            kernelEnvelope[0] <= 0.0)
+        {
+            return packetSpanSamples;
+        }
+
+        double coreLevel = kernelEnvelope[0] * ApproachWindowKernelLevel;
+        int span = packetSpanSamples;
+        int last = Math.Min(kernelEnvelope.Count - 1, reachCap);
+        for (int d = 1; d <= last; d++)
+        {
+            if (kernelEnvelope[d] >= coreLevel)
+            {
+                span = Math.Max(span, d);
+            }
+        }
+
+        return span;
     }
 
     // Whether the candidate is the front of its own wave packet rather than a
@@ -607,3 +683,5 @@ public readonly record struct PeakSearchResult(
     double StrongestPeak,
     bool FallbackUsed,
     int SearchRotation = 0);
+
+

@@ -23,6 +23,23 @@ public sealed class TimeAlignmentAnalysisOptions
         DefaultFirstPeakThresholdBelowMaxDb;
     public double FirstPeakMinimumSnrDb { get; init; } = 12;
     public double PeakSearchWindowMilliseconds { get; init; } = 80;
+
+    /// <summary>
+    /// The caller's statement that the signal is a COMPLETE deconvolved record
+    /// — circular by construction, its tail continuous with its head — rather
+    /// than a CUT of a longer one. It does two things that must stay together:
+    /// peak positions may wrap around the buffer, and the spectral transforms
+    /// (the bandpass, the Hilbert envelope) run at the record's own length,
+    /// because circular convolution is EXACT for a circular signal. Zero
+    /// padding such a record would manufacture a discontinuity at the seam
+    /// and its edge transient reads as structure: on a field subwoofer whose
+    /// transfer IR carries a DC shelf, the padded envelope dipped 9 dB at the
+    /// record start and "rose" back — a climb the first-arrival search rightly
+    /// accepted as a front, at 0.2 ms on a record whose driver first played at
+    /// 13 ms. A cut (the default) is the opposite case: its tail is NOT its
+    /// head's past, and filtering it unpadded wraps the tail onto the head —
+    /// see the padding note in <see cref="TimeAlignmentAnalysis.Analyze"/>.
+    /// </summary>
     public bool WrapPeakPositions { get; init; }
 }
 
@@ -81,6 +98,19 @@ public readonly record struct TimeAlignmentArrivalProbe(
 
 public static class TimeAlignmentAnalysis
 {
+    // Periods of the kernel's lowest frequency to keep clear beside the
+    // signal (see BandpassGuardSamples), and the ceiling on that guard — in
+    // SECONDS, so a higher record rate cannot silently shrink the guard below
+    // its own stated need. A fixed sample count looked equivalent at 48 kHz
+    // and starved the same band at 384 kHz, where 262,144 samples buys only
+    // 9.4 of the ~15 cycles the 27.5-110 Hz kernel needs. Two seconds is the
+    // full twenty cycles at 10 Hz — the lowest fade start a band-limited read
+    // can produce (its low edge clamps at 20 Hz, and the octave fade halves
+    // it) — so only a caller asking directly for a band below that meets the
+    // cap, which is what keeps a pathological transform bounded.
+    private const double BandpassGuardCycles = 20.0;
+    private const double MaxBandpassGuardSeconds = 2.0;
+
     public static TimeAlignmentAnalysisResult Analyze(
         IReadOnlyList<double> impulseResponse,
         int sampleRate,
@@ -104,13 +134,54 @@ public static class TimeAlignmentAnalysis
         double[]? kernelEnvelope = null;
         if (options.UseBandpassWindow)
         {
+            // Filtered on a ZERO-PADDED buffer, then trimmed back, so every
+            // index below is in the caller's own frame. BandpassWindow.Apply
+            // says why in its own words: the transform is circular, and this
+            // signal is normally a CUT of a longer record (a channel's valid
+            // range), so an unpadded filter wraps the tail onto the head. Not a
+            // rounding artifact — a lone impulse 64 samples from the end of a
+            // 32768-sample buffer puts 93 % of its own peak into the first
+            // 40 ms, which the arrival search then reads as a front (see
+            // BandpassWrapTests).
+            //
+            // The padding is sized by the KERNEL, never by rounding alone: a
+            // guard first, and only then the rise to a power of two. Rounding
+            // alone would leave a length that is already a power of two — what
+            // ChainValidRange hands out whenever the chain delay is a whole
+            // number of samples, zero included — with no guard at all, and a
+            // length one short of one with a single sample of it.
+            //
+            // Landing on a power of two is worth doing anyway: MathNet is quick
+            // only there and falls back to Bluestein otherwise, measured 20 ms
+            // at 262144 samples against 317 ms at 262145.
+            //
+            // A COMPLETE record (WrapPeakPositions — see its doc) is the one
+            // signal that must NOT be padded: it is circular by construction,
+            // the unpadded transform is exact for it, and the padding's seam
+            // transient is what reads as a fabricated arrival.
+            int transformLength = options.WrapPeakPositions
+                ? impulseResponse.Count
+                : DspMath.NextPowerOfTwo(
+                    impulseResponse.Count +
+                        BandpassGuardSamples(sampleRate, options));
+            var padded = new double[transformLength];
+            for (int i = 0; i < impulseResponse.Count; i++)
+            {
+                padded[i] = impulseResponse[i];
+            }
+
             double[] window = BandpassWindow.Create(
-                impulseResponse.Count,
+                transformLength,
                 sampleRate,
                 options.BandpassCenterHz,
                 options.BandpassPassOctaves,
                 options.BandpassFadeOctaves);
-            analysisSignal = BandpassWindow.Apply(impulseResponse, window);
+            double[] filtered = BandpassWindow.Apply(padded, window);
+            analysisSignal = filtered.Length == impulseResponse.Count
+                ? filtered
+                : filtered[..impulseResponse.Count];
+            // Indexed by DISTANCE from the kernel's centre, so the padded window's
+            // longer, finer curve answers the same question the short one did.
             kernelEnvelope = BuildKernelEnvelope(window);
         }
         else
@@ -118,7 +189,18 @@ public static class TimeAlignmentAnalysis
             analysisSignal = impulseResponse.ToArray();
         }
 
-        double[] envelope = SignalEnvelope.Envelope(analysisSignal);
+        // The analytic signal is a spectral operation too, and just as circular:
+        // an unpadded Hilbert transform folds the crop's tail onto its own head
+        // exactly as the bandpass does, and it is the ENVELOPE the first-arrival
+        // search walks. Padded here rather than inside SignalEnvelope.Envelope,
+        // which has a real contract for a signal periodic in its window (a
+        // bin-centred cosine must come back with a flat envelope, and padding
+        // would break that correctly) — this caller is the one that knows
+        // whether it holds a CUT or a complete circular record, which keeps
+        // its envelope exactly as circular as the record is.
+        double[] envelope = options.WrapPeakPositions
+            ? SignalEnvelope.Envelope(analysisSignal)
+            : EnvelopeOfCrop(analysisSignal);
         PeakSearchResult peakSearchResult = SignalEnvelope.FindPeak(
             envelope,
             sampleRate,
@@ -399,6 +481,68 @@ public static class TimeAlignmentAnalysis
             refinedByPhat);
     }
 
+
+    // The magnitude envelope of a CUT: computed on a zero-padded copy and
+    // trimmed back, so the Hilbert transform's own circularity cannot carry the
+    // tail round to the head. Half a buffer of silence is ample — the analytic
+    // signal's kernel is 1/(pi*n), decayed to -80 dB within a few thousand
+    // samples, unlike the bandpass mask above whose reach is set by its lowest
+    // frequency.
+    private static double[] EnvelopeOfCrop(double[] signal)
+    {
+        int transformLength = DspMath.NextPowerOfTwo(signal.Length + signal.Length / 2);
+        if (transformLength == signal.Length)
+        {
+            return SignalEnvelope.Envelope(signal);
+        }
+
+        var padded = new double[transformLength];
+        Array.Copy(signal, padded, signal.Length);
+        double[] envelope = SignalEnvelope.Envelope(padded);
+        return envelope[..signal.Length];
+    }
+
+    /// <summary>
+    /// How much silence the bandpass kernel needs beside the signal so its own
+    /// skirt decays inside the transform instead of around it.
+    /// </summary>
+    /// <remarks>
+    /// The kernel reaches out by periods of the frequency its lower fade STARTS
+    /// at — an octave under the passband when a fade is asked for — so the guard
+    /// is counted in those periods rather than in samples: the same crop wraps
+    /// harmlessly at 3.5 kHz and catastrophically at 27.5 Hz. Measured on this
+    /// window, the kernel needs 13 to 18 of those periods to decay past −120 dB
+    /// (20 Hz–110 Hz: 13.2, 27.5–110: 14.9, 110–290: 17.2, 3.5 k–20 k: 17.9), so
+    /// twenty of them carries margin at every band the analysis is asked for.
+    /// The cap exists for the same reason <see cref="VirtualCrossoverAnalysis"/>
+    /// caps its own filter-tail padding — a pathological band may not size the
+    /// transform without bound — and it is stated in seconds so it can never
+    /// undercut the cycle count at a high record rate (see
+    /// <see cref="MaxBandpassGuardSeconds"/>).
+    /// </remarks>
+    private static int BandpassGuardSamples(
+        int sampleRate,
+        TimeAlignmentAnalysisOptions options)
+    {
+        int maxSamples = (int)(MaxBandpassGuardSeconds * sampleRate);
+        (double fadeStartHz, double passStartHz, _, _) = BandpassWindow.BandAround(
+            options.BandpassCenterHz,
+            options.BandpassPassOctaves,
+            options.BandpassFadeOctaves);
+        // With no fade the mask starts at the passband edge, and a brick wall
+        // rings longer than a faded one rather than shorter — so the guard is
+        // taken from whichever edge is lower, never from a zero.
+        double lowestHz = fadeStartHz > 0 ? fadeStartHz : passStartHz;
+        if (!double.IsFinite(lowestHz) || lowestHz <= 0)
+        {
+            return maxSamples;
+        }
+
+        double samples = BandpassGuardCycles * sampleRate / lowestHz;
+        return samples >= maxSamples
+            ? maxSamples
+            : (int)Math.Ceiling(samples);
+    }
 
     // The time response of the zero-phase bandpass mask, as an analytic
     // envelope indexed by |offset| from the kernel centre. The kernel is real

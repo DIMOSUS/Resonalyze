@@ -901,6 +901,135 @@ public sealed class AutoAlignmentEngineTests
         }
     }
 
+    // The anchor correction's instrument, pinned where it can be asked
+    // directly: the NON-COMMON part of the pair's chain shifts is a property
+    // of the CHAINS alone (a synthetic impulse through the real ApplyChain —
+    // no room in it), SIGNED in the anchor's own convention — so a bass pair
+    // whose LOWER side carries the steep low-pass reads a lobe-scale POSITIVE
+    // skew (the anchor overstates the delay to add to the upper channel),
+    // identical chains cancel to zero exactly, a pair whose band sits inside
+    // both passbands reads microseconds, and one side the predictor could not
+    // read (no bypassed response, no chain) returns null — the partner's
+    // shift is unknown there, not zero, and this cell is what caught an
+    // earlier draft crediting the readable side's full 20 ms against an
+    // unmeasured partner.
+    [Fact]
+    public void PairChainArrivalSkew_ReadsTheChainsAlone()
+    {
+        const int Length = 32_768;
+        var subChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 48)));
+        var wooferChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 24),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 24)));
+        AlignmentSnapshot sub = PredictableSnapshot(
+            "SUB", SingleImpulse(Length, BasePosition), subChain);
+        AlignmentSnapshot woofer = PredictableSnapshot(
+            "W", SingleImpulse(Length, BasePosition), wooferChain);
+
+        // Lobe-scale and positive: a period at 55 Hz is 18.2 ms, and the
+        // steep low-pass drags the LOWER side's band arrival most of one.
+        double? skew = AutoAlignmentEngine.PairChainArrivalSkewMs(
+            new AlignmentJunction(sub, woofer, 55, 27.5, 110));
+        Assert.NotNull(skew);
+        Assert.InRange(skew.Value, 10.0, 20.0);
+
+        AlignmentSnapshot subTwin = PredictableSnapshot(
+            "SUB2", SingleImpulse(Length, BasePosition), subChain);
+        Assert.Equal(
+            0.0,
+            AutoAlignmentEngine.PairChainArrivalSkewMs(
+                new AlignmentJunction(sub, subTwin, 55, 27.5, 110)));
+
+        var midChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 2_000, 24)));
+        var tweeterChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.HighPass,
+            HighPassEdge: new CrossoverEdge(
+                CrossoverFilterFamily.Butterworth, 2_000, 24)));
+        double? highSkew = AutoAlignmentEngine.PairChainArrivalSkewMs(
+            new AlignmentJunction(
+                PredictableSnapshot(
+                    "M", SingleImpulse(Length, BasePosition), midChain),
+                PredictableSnapshot(
+                    "T", SingleImpulse(Length, BasePosition), tweeterChain),
+                2_000, 1_000, 4_000));
+        Assert.NotNull(highSkew);
+        Assert.InRange(Math.Abs(highSkew.Value), 0.0, 0.3);
+
+        Complex[] bareIr = SingleImpulse(Length, BasePosition);
+        var bare = new AlignmentSnapshot(
+            new TestChannel("X", bareIr), bareIr, BasePosition);
+        Assert.Null(
+            AutoAlignmentEngine.PairChainArrivalSkewMs(
+                new AlignmentJunction(bare, sub, 55, 27.5, 110)));
+    }
+
+    // The correction's no-cycle-skip guarantee, asserted as a policy. The
+    // reach is half a period — the bound past which the next same-polarity
+    // lobe lives — and the skew must CORRECT the anchor inside it, never
+    // widen it: the review's counterexample was an 80 Hz junction (reach
+    // 6.25 ms) with the field's 6.7 ms skew, where a symmetric
+    // reach-plus-skew allowance reached 12.95 ms and admitted the lobe a
+    // full period out. Rows are (offset, reach, skew, verdict); the field
+    // cell is the Passat v2 junction that motivated the correction.
+    [Theory]
+    // Passat v2: offset −11.19, skew +6.74, reach 9.09 → corrected −4.45.
+    [InlineData(-11.193, 9.09, 6.74, true)]
+    // The same disagreement with the OPPOSITE skew is not explained — a
+    // symmetric allowance cannot tell these two rows apart.
+    [InlineData(-11.193, 9.09, -6.74, false)]
+    // The review's 80 Hz counterexample: the extremum a full period
+    // (12.5 ms) from the corrected anchor stays refused however the skew
+    // stacks with it...
+    [InlineData(-19.2, 6.25, 6.7, false)]
+    // ...while the extremum ON the corrected anchor's own lobe is admitted.
+    [InlineData(-8.5, 6.25, 6.7, true)]
+    // The boundary belongs to the veto, as everywhere else in the search.
+    [InlineData(-12.9, 6.25, 6.74, true)]
+    [InlineData(-13.0, 6.25, 6.75, false)]
+    // No measured skew, no correction — never a guess.
+    [InlineData(-11.193, 9.09, double.NaN, false)]
+    public void ChainSkewExplainsSeedOffset_CorrectsTheAnchor_NeverWidensTheReach(
+        double seedOffsetMs, double reachMs, double skewMs, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            AutoAlignmentEngine.ChainSkewExplainsSeedOffset(
+                seedOffsetMs,
+                reachMs,
+                double.IsNaN(skewMs) ? null : skewMs));
+    }
+
+    // The skew door's second case: a displacement the size of the reach
+    // itself disqualifies the anchor — its every verdict is smaller than its
+    // own known error — and the veto stands down to the deep-pick door's own
+    // policy (raw anchor, a direct seed's r bar, the cut's last word above
+    // its frequency), never to the disqualification alone. Rows are
+    // (reach, skew, verdict); the first is the field woofer/mid cell whose
+    // admitted extremum sat a period from the raw anchor and measured 0.5 dB
+    // better, the fifth is the Passat v2 sub cell where the anchor is still
+    // capable and the signed correction is the door that opens.
+    [Theory]
+    [InlineData(3.0, 3.864, true)]
+    [InlineData(3.0, -3.864, true)]
+    [InlineData(3.0, 2.99, false)]
+    [InlineData(3.0, 3.0, true)]
+    [InlineData(7.692, 6.739, false)]
+    [InlineData(3.0, double.NaN, false)]
+    public void ChainSkewDisqualifiesTheAnchor_AtTheReachItself(
+        double reachMs, double skewMs, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            AutoAlignmentEngine.ChainSkewDisqualifiesTheAnchor(
+                reachMs,
+                double.IsNaN(skewMs) ? null : skewMs));
+    }
+
     // The reach veto's stand-down policy, asserted as a policy. An acoustic
     // fixture can only reach these cells by luck of the numbers a synthetic IR
     // happens to produce; the predicate can be asked directly.
@@ -1726,12 +1855,14 @@ public sealed class AutoAlignmentEngineTests
             CrossoverKind.BandPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 180, 36),
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
-        Complex[] subBypassed = LowFrontUnderCabinBuildUp(Length, 2.0, 0.02);
+        Complex[] subBypassed = LowFrontUnderCabinBuildUp(Length, 4.0, 0.02);
         // The woofer fires 23 ms after the sub's front, which only re-centres
         // the correlation window (a pure delay moves a channel's read and its
-        // prediction together, so the pair's disagreement is untouched) — far
-        // enough from the window edge that the seed's neighbouring lobe is
-        // measured rather than edge-pinned.
+        // prediction together, so the pair's disagreement is untouched). The
+        // offset is not what poses this case: every value swept from 8 to 35 ms
+        // keeps the conservative path. What poses it is the build-up's LENGTH —
+        // it is what leaves the seed without an interior neighbour to measure a
+        // lobe spacing from.
         Complex[] wooferBypassed = SingleImpulse(
             Length, BasePosition + 23 * SampleRate / 1000);
 
@@ -1833,6 +1964,8 @@ public sealed class AutoAlignmentEngineTests
         return ir;
     }
 
+
+
     private static (string Trace, AlignmentOverride Woofer) RunDeadZonePair(
         AlignmentSnapshot sub, Complex[] subBypassed, DspChannelChain subChain,
         AlignmentSnapshot woofer, Complex[] wooferBypassed,
@@ -1882,12 +2015,17 @@ public sealed class AutoAlignmentEngineTests
     }
 
     // The archived Passat v2 defect: the sub's band read latched onto a mode
-    // 1.7 allowances past its prediction — inside the conviction dead zone,
+    // 1.9 allowances past its prediction — inside the conviction dead zone,
     // where the predictor may not convict alone (its own shaping error can
     // reach 1.2 allowances) — and the silently withdrawn pair anchored the
     // junction a period late. The whitened comb is the second witness: the
     // pair's shared content sits with the prediction, so the read is
     // convicted and the junction lands on the true front family.
+    //
+    // What conviction buys is measured, not assumed: this very sub, paired with
+    // a woofer that denies the comb its witness (the stand-down case below),
+    // ends at 30.0 ms INVERTED — the late family. Convicted, it ends at 18.0 ms
+    // upright. The two answers are what the arbitration decides between.
     [Fact]
     public void Compute_DeadZoneLatch_IsConvictedByTheWhitenedCombArbitration()
     {
@@ -1899,7 +2037,7 @@ public sealed class AutoAlignmentEngineTests
             CrossoverKind.BandPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 48),
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 48)));
-        Complex[] subBypassed = FrontUnderShortMode(Length, 40.0, 4.0, 0.10);
+        Complex[] subBypassed = FrontUnderShortMode(Length, 30.0, 14.0, 0.03);
         Complex[] wooferBypassed = SingleImpulse(Length, BasePosition);
         AlignmentSnapshot sub = PredictableSnapshot("SUB", subBypassed, subChain);
         AlignmentSnapshot woofer = PredictableSnapshot(
@@ -1932,18 +2070,31 @@ public sealed class AutoAlignmentEngineTests
         Assert.Contains("convicted by arbitration", trace);
         Assert.Contains("modal latch behind the crossover", trace);
         Assert.Contains("seed phat", trace);
-        // The junction lands on the true front family (the clean-sum optimum
-        // sits at ~8 ms, the latched family a lobe later at ~14+ ms inv).
+        // The junction lands on the true front family: upright, and far ahead of
+        // the 30.0 ms inverted answer the same sub gets when the arbitration is
+        // denied its witness.
         Assert.False(over.InvertPolarity);
-        Assert.InRange(over.DelayMs, 6.0, 10.0);
+        Assert.InRange(over.DelayMs, 16.0, 20.0);
     }
 
-    // The arbitration's other verdict, and the fleet's common one: when the
-    // woofer carries its own late build-up, the comb reads as strongly at the
-    // measured family as at the predicted one — the two are indistinguishable,
-    // so there is no second witness and the conviction-strength discrepancy
-    // may not be acted on. The pair withdraws from the predictor exactly as
-    // it did before the arbitration existed.
+    // The arbitration's other verdict, and the fleet's common one. The witness
+    // is the pair's SHARED content, so it is denied by content that pulls that
+    // agreement AWAY from the prediction: here the woofer rings at 90 Hz, where
+    // the sub is 48 dB/oct down and answers only with its own front. The comb
+    // reads r 0.85 at the predicted family against 0.98 at the MEASURED one —
+    // the prediction is not merely un-corroborated, it is out-voted, and a
+    // conviction-strength discrepancy may not be acted on against a witness
+    // pointing the other way.
+    //
+    // Note WHICH bar refuses it: 0.85 clears the 0.6 floor comfortably, so this
+    // case is held by the advantage arm alone. Lowering the floor leaves the
+    // test green; only removing the advantage flips it, which is the falsifier
+    // this fixture was checked against.
+    //
+    // The pair withdraws from the predictor exactly as it did before the
+    // arbitration existed, and the woofer's own read still verifies: only one
+    // side is in dispute, which is what keeps this the arbitration's case and
+    // not a two-sided mess.
     [Fact]
     public void Compute_DeadZoneLatch_ArbitrationStandsDownWithoutASecondWitness()
     {
@@ -1955,8 +2106,8 @@ public sealed class AutoAlignmentEngineTests
             CrossoverKind.BandPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 300, 24),
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 24)));
-        Complex[] subBypassed = FrontUnderShortMode(Length, 40.0, 4.0, 0.06);
-        Complex[] wooferBypassed = FrontUnderShortMode(Length, 70.0, 4.0, 0.35);
+        Complex[] subBypassed = FrontUnderShortMode(Length, 30.0, 14.0, 0.03);
+        Complex[] wooferBypassed = FrontUnderShortMode(Length, 90.0, 14.0, 0.40);
         AlignmentSnapshot sub = PredictableSnapshot("SUB", subBypassed, subChain);
         AlignmentSnapshot woofer = PredictableSnapshot(
             "W", wooferBypassed, wooferChain);
@@ -1984,6 +2135,27 @@ public sealed class AutoAlignmentEngineTests
             sub, subBypassed, subChain, woofer, wooferBypassed, wooferChain);
 
         Assert.Contains("latch arbitration stood down for SUB/W", trace);
+        // Which ARM refuses it, not merely that it refused: a fixture that
+        // failed the FLOOR instead would satisfy every other assertion here
+        // while encoding a different case, and re-posing this test is exactly
+        // when that substitution happens. Read off the trace rather than
+        // matched as text — the engine formats in the machine's culture, so the
+        // separator is a comma on some of them (the session battery pins
+        // InvariantCulture for the same reason).
+        Match combReading = Regex.Match(
+            trace,
+            @"comb r ([-0-9]+[.,][0-9]+) at the predicted family vs ([-0-9]+[.,][0-9]+)");
+        Assert.True(combReading.Success, trace);
+        static double Reading(Group group) => double.Parse(
+            group.Value.Replace(',', '.'), CultureInfo.InvariantCulture);
+        double atPredicted = Reading(combReading.Groups[1]);
+        double atMeasured = Reading(combReading.Groups[2]);
+        // Clears LatchArbitrationMinR (0.6) — so the floor is not what refuses
+        // it — and loses to the measured family, which is what does.
+        Assert.True(atPredicted >= 0.6, $"{atPredicted} should clear the floor");
+        Assert.True(
+            atPredicted < atMeasured,
+            $"{atPredicted} should lose to {atMeasured}");
         Assert.DoesNotContain("convicted by arbitration", trace);
         Assert.DoesNotContain("modal latch behind the crossover", trace);
     }

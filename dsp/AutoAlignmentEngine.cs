@@ -396,8 +396,25 @@ public static class AutoAlignmentEngine
     {
         ArgumentNullException.ThrowIfNull(seed);
         ArgumentNullException.ThrowIfNull(directCorroboration);
+        return anchorProminenceDb < SeedVetoMinProminenceDb &&
+            ExtremumMayStandOnItsOwn(
+                anchorIsRawReads, seed, crossoverHz, directCorroboration);
+    }
+
+    // The shared tail of the reach veto's stand-down doors: whatever
+    // disqualified the anchor (a pick deep under the band's energy, or a
+    // chain displacement past the reach itself), the extremum never stands on
+    // the disqualification alone — the anchor must still be the raw measured
+    // reads, the extremum must clear the bar a direct seed clears, and at or
+    // above the direct cut's frequency the cut has the last word on the lobe.
+    // The delegate is taken only after the cheap clauses pass.
+    private static bool ExtremumMayStandOnItsOwn(
+        bool anchorIsRawReads,
+        CorrelationDelayCandidate seed,
+        double crossoverHz,
+        Func<CorrelationDelayCandidate?> directCorroboration)
+    {
         if (!anchorIsRawReads ||
-            anchorProminenceDb >= SeedVetoMinProminenceDb ||
             Math.Abs(seed.Coefficient) < DirectSeedMinCoefficient)
         {
             return false;
@@ -413,6 +430,22 @@ public static class AutoAlignmentEngine
             Math.Abs(corroboration.DelayMs - seed.DelayMs) <=
                 DirectCorroborationPeriods * 1000.0 / crossoverHz;
     }
+
+    // The chain-skew door's OTHER case: the displacement itself reaches the
+    // veto's own bound. A reach veto grades lobe distance by the anchor, and
+    // an anchor the pair's chains displace by the reach or more cannot tell
+    // one lobe from the next any better than the extremum it would refuse —
+    // its every verdict is smaller than its own known error. The anchor is
+    // then disqualified exactly as a deep-under-the-energy pick is, and the
+    // same stand-down policy applies (ExtremumMayStandOnItsOwn): measured on
+    // a field cabin, the woofer/mid junction this door exists for read a
+    // 3.9 ms skew against a 3.0 ms reach, and the dominant extremum it
+    // admitted sat a period from the raw anchor — on the lobe the panel's
+    // metric then measured 0.5 dB better.
+    internal static bool ChainSkewDisqualifiesTheAnchor(
+        double reachMs,
+        double? chainSkewMs) =>
+        chainSkewMs is { } skew && Math.Abs(skew) >= reachMs;
 
     /// <summary>
     /// How close the direct-sound witness must sit to the full-record extremum
@@ -915,6 +948,65 @@ public static class AutoAlignmentEngine
             filteredResponse, sampleRate, bandLowHz, bandHighHz, filteredRange)
             .FirstArrivalDelayMilliseconds;
         return filtered - bare;
+    }
+
+    // The NON-COMMON part of the two sides' chain shifts in the pair band —
+    // how far the two chains drag the band arrivals APART, signed in the
+    // anchor's own convention: the anchor is lowerArrival − upperArrival (the
+    // delay to add to the upper channel), so a positive skew means the
+    // anchor overstates that delay by this much chain. Measured the way the
+    // predictor measures its chain term (a synthetic impulse through the real
+    // ApplyChain, so no room enters it), and available exactly when the
+    // predictor is on BOTH sides: a skew is a difference, so one unmeasurable
+    // side (no bypassed response, no chain) returns null — the partner's
+    // shift is unknown there, not zero, and treating it as zero would hand
+    // the correction exactly the guess it exists to avoid.
+    internal static double? PairChainArrivalSkewMs(AlignmentJunction pair) =>
+        SideChainArrivalShiftMs(pair.Lower, pair.BandLowHz, pair.BandHighHz)
+            is { } lower &&
+        SideChainArrivalShiftMs(pair.Upper, pair.BandLowHz, pair.BandHighHz)
+            is { } upper
+            ? lower - upper
+            : null;
+
+    // Whether the pair's own measured chain displacement explains the seed
+    // extremum's distance from the arrival anchor: with the signed skew
+    // subtracted from the anchor (the anchor is lowerArrival − upperArrival
+    // and the offset is extremum − anchor, so the correction ADDS the skew to
+    // the offset), the extremum must sit inside the ORIGINAL reach. The
+    // half-period reach is the no-cycle-skip guarantee, so it is corrected,
+    // never widened: however large the skew, the admitted extremum lies
+    // within half a period of the corrected anchor, and the same-polarity
+    // lobe a full period out stays refused.
+    internal static bool ChainSkewExplainsSeedOffset(
+        double seedOffsetMs,
+        double reachMs,
+        double? chainSkewMs) =>
+        chainSkewMs is { } skew &&
+        Math.Abs(seedOffsetMs + skew) < reachMs;
+
+    private static double? SideChainArrivalShiftMs(
+        AlignmentSnapshot side,
+        double bandLowHz,
+        double bandHighHz)
+    {
+        if (side.BypassedImpulseResponse is not { } bypassed ||
+            side.ProcessingChain is not { } chain)
+        {
+            return null;
+        }
+
+        int contentLength = side.BypassedValidRange.IsKnown
+            ? side.BypassedValidRange.EndSample - side.BypassedValidRange.StartSample
+            : bypassed.Length;
+        return ChainArrivalShiftMs(
+            chain,
+            side.Channel.SampleRate,
+            side.Channel.ProcessorSampleRate,
+            bandLowHz,
+            bandHighHz,
+            contentLength,
+            side.PeakIndex);
     }
 
     /// <summary>
@@ -1975,8 +2067,86 @@ public static class AutoAlignmentEngine
 
                 // At the boundary itself the two lobes are equidistant, so
                 // the extremum is refused rather than admitted.
+                //
+                // The gate reads the RAW offset deliberately, and the skew
+                // correction below opens only ADMITTANCE doors behind it —
+                // it never re-vetoes an extremum the raw anchor accepts. The
+                // symmetric alternative (gate everything by offset+skew) reads
+                // cleaner and was reviewed twice, but the corrected anchor is
+                // a bounded estimate, not a truth coordinate: the skew is the
+                // chains' full envelope shift where the honest correction is
+                // its group-minus-phase part, and on the archived v2
+                // woofer/mid junction the owner's own lobe sits 1.9 periods
+                // from the corrected anchor while agreeing with the raw one.
+                // Gating by the corrected offset there re-vetoes the tune the
+                // panel's metric measures 0.5 dB better. Raw-offset gating is
+                // also the pre-correction semantics every archived cabin was
+                // calibrated against; narrowing it needs its own field case,
+                // not an arithmetic symmetry.
                 if (!arrivalReanchored && Math.Abs(seedOffsetMs) >= reachMs)
                 {
+                    // The anchor is a diff of two band-ENVELOPE arrivals, and
+                    // each side's own chain drags that envelope without moving
+                    // the wavefront the tune actually aligns — a subwoofer
+                    // low-pass alone shifts its band arrival by 12.8 ms on a
+                    // field cabin while its woofer partner moves 6.1. The
+                    // NON-COMMON part of those shifts sits inside the measured
+                    // diff as chain, not as geometry — a SIGNED, measured
+                    // displacement (the predictor's own synthetic impulse
+                    // through each chain, no room in it), so it is SUBTRACTED
+                    // from the disagreement rather than added to the reach:
+                    // the half-period bound is the no-cycle-skip guarantee and
+                    // is never widened (a symmetric reach-plus-skew allowance
+                    // was reviewed out — at an 80 Hz junction the field's
+                    // 6.7 ms skew would have stretched it past the
+                    // same-polarity lobe a full period out). The skew is
+                    // microseconds wherever the pair band sits inside both
+                    // passbands, leaving those junctions exactly as before.
+                    double? chainSkewMs = PairChainArrivalSkewMs(pair);
+                    if (ChainSkewExplainsSeedOffset(
+                        seedOffsetMs, reachMs, chainSkewMs))
+                    {
+                        log.AppendLine(
+                            $"  {pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
+                            $"the {seedLabel} sits {Math.Abs(seedOffsetMs):0.000} ms " +
+                            $"from the arrival anchor, past its {reachMs:0.000} ms " +
+                            $"reach — but the pair's own chains displace that " +
+                            $"anchor by {chainSkewMs!.Value:+0.000;-0.000} ms of " +
+                            "non-common shift, and against the corrected anchor " +
+                            $"the extremum (r {Math.Abs(seed.Coefficient):0.000}) " +
+                            $"sits {Math.Abs(seedOffsetMs + chainSkewMs.Value):0.000} ms " +
+                            "off, inside the reach; the veto is corrected away " +
+                            "and the extremum stands");
+                        return null;
+                    }
+
+                    // A displacement the size of the reach itself disqualifies
+                    // the anchor outright — every verdict it could give is
+                    // smaller than its own known error — and the veto then
+                    // stands down to the SAME policy the deep-pick door uses,
+                    // never to the disqualification alone: the extremum must
+                    // clear a direct seed's bar, and above the cut's frequency
+                    // the cut has the last word (unreachable there in
+                    // practice: in-band chain skews are microseconds once the
+                    // pair band sits inside both passbands).
+                    if (ChainSkewDisqualifiesTheAnchor(reachMs, chainSkewMs) &&
+                        ExtremumMayStandOnItsOwn(
+                            anchorIsRawReads, seed, pair.CrossoverHz,
+                            DirectCorroboration))
+                    {
+                        log.AppendLine(
+                            $"  {pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
+                            $"the {seedLabel} sits {Math.Abs(seedOffsetMs):0.000} ms " +
+                            $"from the arrival anchor — but the pair's own " +
+                            $"chains displace that anchor by " +
+                            $"{chainSkewMs!.Value:+0.000;-0.000} ms, the full " +
+                            $"{reachMs:0.000} ms reach and more, so the anchor " +
+                            "cannot grade lobes and its veto stands down; the " +
+                            "extremum stands on its own strength " +
+                            $"(r {Math.Abs(seed.Coefficient):0.000})");
+                        return null;
+                    }
+
                     // Unless the anchor is not the same kind of read as the
                     // extremum it would be vetoing AND a better witness puts the
                     // pair on that extremum's lobe (see

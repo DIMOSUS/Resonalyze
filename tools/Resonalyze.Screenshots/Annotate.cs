@@ -79,20 +79,27 @@ internal sealed class Annotate : IDisposable
     }
 
     /// <summary>A numbered region, with an optional leader to a badge outside it.</summary>
-    public Annotate Region(Rectangle box, string number, Point badgeAt, bool leader = false)
+    public Annotate Region(
+        Rectangle box,
+        string number,
+        Point badgeAt,
+        bool leader = false,
+        int badgeRadius = 17)
     {
         Rectangle shifted = Shift(box);
         Point badge = new(badgeAt.X + (badgeAt.X < offsetX ? 0 : offsetX), badgeAt.Y);
         DrawRounded(shifted, Amber, 3, 9);
         if (leader)
         {
-            int fromX = badge.X < shifted.Left ? badge.X + 17 : badge.X - 17;
+            int fromX = badge.X < shifted.Left
+                ? badge.X + badgeRadius
+                : badge.X - badgeRadius;
             int toX = badge.X < shifted.Left ? shifted.Left : shifted.Right;
             using var pen = new Pen(Amber, 3);
             graphics.DrawLine(pen, fromX, badge.Y, toX, badge.Y);
         }
 
-        DrawBadge(badge, number);
+        DrawBadge(badge, number, badgeRadius);
         return this;
     }
 
@@ -172,7 +179,8 @@ internal sealed class Annotate : IDisposable
     {
         using var fill = new SolidBrush(Amber);
         graphics.FillEllipse(fill, centre.X - radius, centre.Y - radius, radius * 2, radius * 2);
-        using Font font = new("Segoe UI", 21, FontStyle.Bold, GraphicsUnit.Pixel);
+        int fontSize = radius == 17 ? 21 : Math.Max(12, radius + 4);
+        using Font font = new("Segoe UI", fontSize, FontStyle.Bold, GraphicsUnit.Pixel);
         SizeF size = graphics.MeasureString(text, font);
         using var ink = new SolidBrush(Ink);
         graphics.DrawString(

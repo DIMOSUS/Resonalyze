@@ -78,6 +78,41 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
             "G rear sub", VirtualCrossoverAlignmentStage.FrontChain, 20, 300, lowPassHz: 50)
     ];
 
+    [Fact]
+    public void ChannelOrderControlsRemainInsideTheClientArea()
+    {
+        // These are ordinary imported filenames, not pathological labels. At the
+        // designed fixed width their table reaches past the right edge and clips
+        // the Down arrow, exactly where the user needs it to reorder the chain.
+        string[] names =
+        [
+            "A — f R TWEET.json",
+            "B — f RT Mid.json",
+            "C — f R MB.json",
+            "D — f FRONT Sub.json",
+            "E — f REAR Sub.json",
+            "F — f R fill.json",
+            "G — f R center.json"
+        ];
+        IReadOnlyList<AutoSetupWizardChannel> channels = ReferenceCar()
+            .Select((channel, index) => channel with { Name = names[index] })
+            .ToList();
+
+        StaTest.Run(() =>
+        {
+            using var dialog = new VirtualCrossoverAutoSetupDialog();
+            dialog.Init(SampleRate, SampleRate, channels);
+            dialog.Show();
+
+            var table = (TableLayoutPanel)typeof(VirtualCrossoverAutoSetupDialog)
+                .GetField("tableChannels", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetValue(dialog)!;
+            Assert.True(
+                table.Right < dialog.ClientSize.Width,
+                $"channel table ends at {table.Right} in a {dialog.ClientSize.Width}px client");
+        });
+    }
+
     // Apply's handler is async void and, with no impulse responses to rank
     // against, finishes inside the call — the ranked path is the one that awaits.
     // Every fixture here must leave the order unambiguous (corners on the subs):

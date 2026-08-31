@@ -42,6 +42,7 @@ namespace Resonalyze
             maxCrossover = new DarkNumericUpDown();
             labelHz = new Label();
             independentSlopes = new ReleaseClickCheckBox();
+            reorderBlocks = new ReleaseClickCheckBox();
             labelSubElevation = new Label();
             subElevation = new DarkNumericUpDown();
             labelSubElevationUnit = new Label();
@@ -59,19 +60,23 @@ namespace Resonalyze
             labelHeader.Name = "labelHeader";
             labelHeader.Size = new Size(320, 15);
             labelHeader.TabIndex = 0;
-            labelHeader.Text = "Confirm the detected driver types (usable band shown):";
+            labelHeader.Text = "Confirm each driver's type, and put every group in crossover order:\r\n"
+                + "the one at the top plays lowest and hands over to the one below it.";
             //
             // tableChannels
             //
             tableChannels.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             tableChannels.AutoSize = true;
             tableChannels.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            tableChannels.ColumnCount = 3;
+            tableChannels.ColumnCount = 6;
+            tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tableChannels.GrowStyle = TableLayoutPanelGrowStyle.AddRows;
-            tableChannels.Location = new Point(12, 36);
+            tableChannels.Location = new Point(12, 56);
             tableChannels.Name = "tableChannels";
             tableChannels.Size = new Size(0, 0);
             tableChannels.TabIndex = 1;
@@ -192,11 +197,23 @@ namespace Resonalyze
             independentSlopes.TabIndex = 19;
             independentSlopes.Text = "Independent slopes per side";
             //
+            // reorderBlocks
+            //
+            reorderBlocks.AutoSize = true;
+            reorderBlocks.Checked = true;
+            reorderBlocks.CheckState = CheckState.Checked;
+            reorderBlocks.ForeColor = Color.White;
+            reorderBlocks.Location = new Point(12, 210);
+            reorderBlocks.Name = "reorderBlocks";
+            reorderBlocks.Size = new Size(232, 19);
+            reorderBlocks.TabIndex = 20;
+            reorderBlocks.Text = "Reorder the channel blocks to match";
+            //
             // labelSubElevation
             //
             labelSubElevation.AutoSize = true;
             labelSubElevation.ForeColor = Color.FromArgb(185, 190, 200);
-            labelSubElevation.Location = new Point(12, 214);
+            labelSubElevation.Location = new Point(12, 240);
             labelSubElevation.Name = "labelSubElevation";
             labelSubElevation.Size = new Size(160, 15);
             labelSubElevation.TabIndex = 20;
@@ -204,7 +221,7 @@ namespace Resonalyze
             //
             // subElevation
             //
-            subElevation.Location = new Point(196, 210);
+            subElevation.Location = new Point(196, 236);
             subElevation.Minimum = 0m;
             subElevation.Maximum = 60m;
             subElevation.Increment = 1m;
@@ -219,7 +236,7 @@ namespace Resonalyze
             //
             labelSubElevationUnit.AutoSize = true;
             labelSubElevationUnit.ForeColor = Color.FromArgb(185, 190, 200);
-            labelSubElevationUnit.Location = new Point(276, 214);
+            labelSubElevationUnit.Location = new Point(276, 240);
             labelSubElevationUnit.Name = "labelSubElevationUnit";
             labelSubElevationUnit.Size = new Size(20, 15);
             labelSubElevationUnit.TabIndex = 22;
@@ -228,7 +245,7 @@ namespace Resonalyze
             // labelPreview
             //
             labelPreview.ForeColor = Color.FromArgb(230, 184, 0);
-            labelPreview.Location = new Point(12, 240);
+            labelPreview.Location = new Point(12, 266);
             labelPreview.Name = "labelPreview";
             labelPreview.Size = new Size(444, 62);
             labelPreview.TabIndex = 23;
@@ -279,6 +296,7 @@ namespace Resonalyze
             Controls.Add(maxCrossover);
             Controls.Add(labelHz);
             Controls.Add(independentSlopes);
+            Controls.Add(reorderBlocks);
             Controls.Add(labelSubElevation);
             Controls.Add(subElevation);
             Controls.Add(labelSubElevationUnit);
@@ -312,6 +330,7 @@ namespace Resonalyze
         private DarkNumericUpDown maxCrossover;
         private Label labelHz;
         private ReleaseClickCheckBox independentSlopes;
+        private ReleaseClickCheckBox reorderBlocks;
         private Label labelSubElevation;
         private DarkNumericUpDown subElevation;
         private Label labelSubElevationUnit;

@@ -575,26 +575,45 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
-    public void Propose_ThreeWay_GivesTheMiddleChannelABandPass_InInputOrder()
+    public void Propose_ThreeWay_GivesTheMiddleChannelABandPass()
     {
-        // Input deliberately out of band order; results come back in input order.
-        var tweeter = new AutoSetupSource(BandCurve(2_500, 20_000, 0), DriverType.Tweeter);
         var woofer = new AutoSetupSource(BandCurve(30, 500, 0), DriverType.Woofer);
         var midrange = new AutoSetupSource(BandCurve(200, 5_000, 0), DriverType.Midrange);
+        var tweeter = new AutoSetupSource(BandCurve(2_500, 20_000, 0), DriverType.Tweeter);
 
         IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
-            [tweeter, woofer, midrange],
+            [woofer, midrange, tweeter],
             Options());
 
-        Assert.Equal(CrossoverKind.HighPass, proposals[0].Kind);
-        Assert.Equal(CrossoverKind.LowPass, proposals[1].Kind);
-        Assert.Equal(CrossoverKind.BandPass, proposals[2].Kind);
+        Assert.Equal(CrossoverKind.LowPass, proposals[0].Kind);
+        Assert.Equal(CrossoverKind.BandPass, proposals[1].Kind);
+        Assert.Equal(CrossoverKind.HighPass, proposals[2].Kind);
 
-        double lowSplit = proposals[1].LowPassEdge!.Value.FrequencyHz;
-        double highSplit = proposals[0].HighPassEdge!.Value.FrequencyHz;
-        Assert.Equal(lowSplit, proposals[2].HighPassEdge!.Value.FrequencyHz);
-        Assert.Equal(highSplit, proposals[2].LowPassEdge!.Value.FrequencyHz);
+        double lowSplit = proposals[0].LowPassEdge!.Value.FrequencyHz;
+        double highSplit = proposals[2].HighPassEdge!.Value.FrequencyHz;
+        Assert.Equal(lowSplit, proposals[1].HighPassEdge!.Value.FrequencyHz);
+        Assert.Equal(highSplit, proposals[1].LowPassEdge!.Value.FrequencyHz);
         Assert.True(lowSplit < highSplit);
+    }
+
+    [Fact]
+    public void Propose_WalksTheCallersOrder_NotTheDriverTypes()
+    {
+        // The chain is the order it was given in, and nothing else: a caller that
+        // hands over the channels shuffled gets a chain walked in THAT order — the
+        // tweeter first, handing down to the woofer — not a quietly re-sorted one.
+        // Which is the whole point: with two drivers of one class (the case this
+        // exists for) the type cannot say which plays lower, so the caller must.
+        var tweeter = new AutoSetupSource(BandCurve(2_500, 20_000, 0), DriverType.Tweeter);
+        var woofer = new AutoSetupSource(BandCurve(30, 500, 0), DriverType.Woofer);
+
+        IReadOnlyList<CrossoverProposal> shuffled = CrossoverAutoSetup.Propose(
+            [tweeter, woofer], Options());
+
+        // Position 0 is the chain's BOTTOM, so it takes the low-pass — even though
+        // the driver sitting there is the tweeter.
+        Assert.Equal(CrossoverKind.LowPass, shuffled[0].Kind);
+        Assert.Equal(CrossoverKind.HighPass, shuffled[1].Kind);
     }
 
     [Fact]
@@ -714,14 +733,305 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
-    public void Propose_RejectsDuplicateTypesAndTooFewChannels()
+    public void Propose_RejectsTooFewChannels()
     {
         var a = new AutoSetupSource(BandCurve(40, 2_000, 0), DriverType.Woofer);
-        var b = new AutoSetupSource(BandCurve(50, 2_500, 0), DriverType.Woofer);
 
         Assert.Throws<ArgumentException>(
-            () => CrossoverAutoSetup.Propose([a, b], Options()));
-        Assert.Throws<ArgumentException>(
             () => CrossoverAutoSetup.Propose([a], Options()));
+    }
+
+    [Fact]
+    public void Propose_SplitsTwoSubwoofersBetweenThemselves()
+    {
+        // The case the wizard used to refuse outright: two drivers of one class,
+        // here a pair of subwoofers dividing the bottom, which is an ordinary car
+        // install and not a mistake in the type assignment.
+        var lower = new AutoSetupSource(BandCurve(20, 60, 0), DriverType.Subwoofer);
+        var upper = new AutoSetupSource(BandCurve(35, 120, 0), DriverType.Subwoofer);
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            [lower, upper], Options());
+
+        Assert.Equal(CrossoverKind.LowPass, proposals[0].Kind);
+        Assert.Equal(CrossoverKind.HighPass, proposals[1].Kind);
+        double split = proposals[0].LowPassEdge!.Value.FrequencyHz;
+        Assert.Equal(split, proposals[1].HighPassEdge!.Value.FrequencyHz);
+        // Inside the band the two actually share, not shoved to the top of the
+        // subwoofer class's range by the hand-over-up bias.
+        Assert.InRange(split, 35, 60);
+    }
+
+    [Fact]
+    public void Propose_SameClassJunction_CarriesNoClassPlacementBias()
+    {
+        // "A sub hands over where it stops being localizable (~80 Hz)" answers
+        // which of two CLASSES owns the region they share. Between two subs there
+        // is no such question, and the bias applied anyway would drag their split
+        // toward 80 Hz for no reason at all.
+        //
+        // The two runs below differ ONLY in the upper driver's class, and the
+        // 40 Hz lower limit pins them to the same search window: the measured
+        // edges put the floor under 40 either way, and the ceiling is the
+        // subwoofer class's own 80 Hz in both. So the whole difference in where
+        // the split lands is the bias — present across classes, absent within one.
+        var lower = new AutoSetupSource(BandCurve(20, 100, 0), DriverType.Subwoofer);
+        var curve = BandCurve(25, 500, 0);
+        CrossoverAutoSetupOptions options = Options(minHz: 40);
+
+        double Split(DriverType upperType) => CrossoverAutoSetup
+            .Propose([lower, new AutoSetupSource(curve, upperType)], options)[0]
+            .LowPassEdge!.Value.FrequencyHz;
+
+        double sameClass = Split(DriverType.Subwoofer);
+        double acrossClasses = Split(DriverType.Woofer);
+
+        Assert.True(
+            sameClass < acrossClasses - 20,
+            $"A sub-to-sub split was biased up like a sub-to-woofer one: " +
+            $"{sameClass:0} Hz against {acrossClasses:0} Hz.");
+    }
+
+    [Fact]
+    public void Propose_FiveWayWithTwoSubwoofers_OrdersEveryHandover()
+    {
+        // The installation this whole grouping exists for: a pair of subs
+        // splitting the bottom under a three-way front. Five channels, four
+        // junctions, two of the five sharing a driver type — which the wizard
+        // used to refuse outright.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 55, 0), DriverType.Subwoofer),
+            new(BandCurve(40, 130, 0), DriverType.Subwoofer),
+            new(BandCurve(60, 900, 0), DriverType.Midbass),
+            new(BandCurve(250, 6_000, 0), DriverType.Midrange),
+            new(BandCurve(2_200, 20_000, 0), DriverType.Tweeter)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            sources, Options());
+
+        Assert.Equal(CrossoverKind.LowPass, proposals[0].Kind);
+        Assert.Equal(CrossoverKind.HighPass, proposals[4].Kind);
+        double[] splits = proposals
+            .Take(4)
+            .Select(proposal => proposal.LowPassEdge!.Value.FrequencyHz)
+            .ToArray();
+        Assert.Equal(splits.OrderBy(frequency => frequency), splits);
+
+        // Each handover inside the band its two drivers actually share, the
+        // sub-to-sub one included — no junction invented where nothing overlaps.
+        for (int j = 0; j < splits.Length; j++)
+        {
+            Assert.InRange(
+                splits[j],
+                CrossoverAutoSetup.EstimateBand(sources[j + 1].MagnitudeDb).LowHz,
+                CrossoverAutoSetup.EstimateBand(sources[j].MagnitudeDb).HighHz);
+        }
+
+        // Every channel between the two ends is a band-pass: the second sub is a
+        // chain member like any other, not an appendage.
+        Assert.All(
+            proposals.Skip(1).Take(3),
+            proposal => Assert.Equal(CrossoverKind.BandPass, proposal.Kind));
+    }
+
+    [Fact]
+    public void Propose_SecondSubwoofer_DoesNotSetTheLevelTheSystemIsCutTo()
+    {
+        // The flat top is fitted to the quietest driver that is not a sub, because
+        // a sub is separately amped and a quiet one must not drag the whole system
+        // down to it. That holds for EVERY sub in the chain: with the upper sub 10
+        // dB down, the midrange and tweeter must still level to each other.
+        var lowSub = new AutoSetupSource(BandCurve(20, 60, 0), DriverType.Subwoofer);
+        var highSub = new AutoSetupSource(BandCurve(35, 120, -10), DriverType.Subwoofer);
+        var midrange = new AutoSetupSource(BandCurve(150, 4_000, 0), DriverType.Midrange);
+        var tweeter = new AutoSetupSource(BandCurve(2_500, 20_000, 0), DriverType.Tweeter);
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            [lowSub, highSub, midrange, tweeter], Options());
+
+        Assert.Equal(proposals[2].GainDb, proposals[3].GainDb, 1);
+        Assert.Equal(0, proposals[2].GainDb, 1);
+    }
+
+    [Fact]
+    public void ProposeSingle_ProtectsTheDriverBelowWhereItPlays()
+    {
+        // A rear fill measured down to ~90 Hz (the -8 dB edge of an 110 Hz
+        // driver): the high-pass goes an octave above that, which is the same
+        // bound the optimizer holds the upper driver of a junction to. Nothing
+        // low-passes it — there is nothing above it to hand over to — and the
+        // gain stays put, because levelling this group is a separate step.
+        var rear = new AutoSetupSource(BandCurve(110, 15_000, 0), DriverType.Midrange);
+
+        CrossoverProposal proposal = CrossoverAutoSetup.ProposeSingle(rear, Options());
+
+        Assert.Equal(CrossoverKind.HighPass, proposal.Kind);
+        Assert.Null(proposal.LowPassEdge);
+        Assert.Equal(0, proposal.GainDb);
+        Assert.InRange(proposal.HighPassEdge!.Value.FrequencyHz, 160, 200);
+    }
+
+    [Fact]
+    public void ProposeSingle_HoldsATweeterAboveItsResonance()
+    {
+        // A tweeter measured well down into its own roll-off: an octave above the
+        // measured edge (~700 Hz → 1.4 kHz) would sit barely above the resonance
+        // floor, so the excursion rule takes over and lifts the corner to where
+        // the filter attenuates Fs by the target.
+        var tweeter = new AutoSetupSource(BandCurve(880, 20_000, 0), DriverType.Tweeter);
+
+        CrossoverProposal proposal = CrossoverAutoSetup.ProposeSingle(tweeter, Options());
+
+        double corner = proposal.HighPassEdge!.Value.FrequencyHz;
+        double required = CrossoverAutoSetup.TweeterMinCrossoverHz(
+            CrossoverAutoSetup.TweeterResonanceHz(
+                CrossoverAutoSetup.EstimateBand(tweeter.MagnitudeDb).LowHz),
+            proposal.HighPassEdge!.Value.SlopeDbPerOctave);
+        Assert.True(
+            corner >= required - 25,
+            $"A standalone tweeter was crossed at {corner:0} Hz, under the " +
+            $"{required:0} Hz its resonance asks for.");
+    }
+
+    [Fact]
+    public void Propose_AChainOfNothingButSubs_LevelsThemToEachOtherEitherWayRound()
+    {
+        // Two subs and no mid or treble anywhere in the group — the rest of the
+        // car is in other groups. There is no flat top for an elevation to be
+        // measured over, so the pair simply levels to its quieter member. Read
+        // off the chain's first driver instead, the answer would depend on which
+        // of the two happens to be the loud one: the same drivers levelled one
+        // way round and left 8 dB apart the other.
+        List<SignalPoint> lowCurve = BandCurve(20, 60, 8);
+        List<SignalPoint> highCurve = BandCurve(35, 120, 0);
+        var loudLow = new AutoSetupSource(lowCurve, DriverType.Subwoofer);
+        var quietHigh = new AutoSetupSource(highCurve, DriverType.Subwoofer);
+
+        IReadOnlyList<CrossoverProposal> loudFirst = CrossoverAutoSetup.Propose(
+            [loudLow, quietHigh], Options());
+
+        // The loud one comes down to the quiet one; the quiet one is not boosted.
+        // Not exactly 8 dB: each level is averaged over that driver's own
+        // passband, and the two passbands are different stretches of the curve.
+        Assert.InRange(loudFirst[0].GainDb, -10, -6.5);
+        Assert.Equal(0, loudFirst[1].GainDb, 1);
+
+        // And the mirror image: the same pair with the levels swapped over cuts
+        // the other member by the same amount, rather than keeping a downslope.
+        IReadOnlyList<CrossoverProposal> quietFirst = CrossoverAutoSetup.Propose(
+            [
+                new AutoSetupSource(BandCurve(20, 60, 0), DriverType.Subwoofer),
+                new AutoSetupSource(BandCurve(35, 120, 8), DriverType.Subwoofer)
+            ],
+            Options());
+
+        Assert.Equal(0, quietFirst[0].GainDb, 1);
+        Assert.InRange(quietFirst[1].GainDb, -10, -6.5);
+    }
+
+    [Fact]
+    public void ProposeSingle_RefusesRatherThanCrossUnderTheDriversOwnSafetyFloor()
+    {
+        // A tweeter's high-pass has to attenuate its resonance, which for this one
+        // lands around 2.3 kHz. Told the crossover window stops at 1.5 kHz, the
+        // honest answer is that there is no protective filter to be had inside it
+        // — not a 1.5 kHz corner with the word "protective" on it.
+        var tweeter = new AutoSetupSource(BandCurve(880, 20_000, 0), DriverType.Tweeter);
+
+        ArgumentException refused = Assert.Throws<ArgumentException>(
+            () => CrossoverAutoSetup.ProposeSingle(tweeter, Options(maxHz: 1_500)));
+
+        Assert.Contains("protective high-pass", refused.Message);
+    }
+
+    [Fact]
+    public void ProposeSingle_SqueezesTheHeadroomMarginForANarrowDriver()
+    {
+        // The octave of headroom over the measured edge is a preference, not
+        // safety: a driver narrower than two octaves cannot be given it, and a
+        // corner inside its own band is the right answer rather than a refusal.
+        var narrow = new AutoSetupSource(BandCurve(1_000, 1_500, 0), DriverType.Midrange);
+
+        CrossoverProposal proposal = CrossoverAutoSetup.ProposeSingle(narrow, Options());
+
+        DriverBandEstimate band = CrossoverAutoSetup.EstimateBand(narrow.MagnitudeDb);
+        Assert.InRange(proposal.HighPassEdge!.Value.FrequencyHz, band.LowHz, band.HighHz);
+    }
+
+    [Fact]
+    public void ProposeSingle_KeepsTheCornerInsideTheUsersWindow()
+    {
+        // The window is the user's, and it binds a protective filter as it binds
+        // a junction — including the brickwall the topmost driver of a chain gets
+        // when the window is pulled in below where it still plays.
+        var rear = new AutoSetupSource(BandCurve(110, 15_000, 0), DriverType.Midrange);
+
+        CrossoverProposal proposal = CrossoverAutoSetup.ProposeSingle(
+            rear, Options(minHz: 300, maxHz: 8_000));
+
+        Assert.Equal(CrossoverKind.BandPass, proposal.Kind);
+        Assert.True(proposal.HighPassEdge!.Value.FrequencyHz >= 300);
+        Assert.Equal(8_000, proposal.LowPassEdge!.Value.FrequencyHz, 0);
+    }
+
+    [Fact]
+    public void OffsetToReferenceLevel_CutsALoudGroupOntoTheFrontStage_Rigidly()
+    {
+        // A two-way rear fitted on its own, then levelled against a front stage
+        // 6 dB quieter. The whole group slides; what its own fit decided about
+        // the balance between its two drivers must survive untouched.
+        var midbass = new AutoSetupSource(BandCurve(80, 2_000, 6), DriverType.Midbass);
+        var tweeter = new AutoSetupSource(BandCurve(2_000, 20_000, 4), DriverType.Tweeter);
+        var group = new List<AutoSetupSource> { midbass, tweeter };
+        IReadOnlyList<CrossoverProposal> own = CrossoverAutoSetup.Propose(group, Options());
+        double ownReference = CrossoverAutoSetup.ReferenceLevelDb(group, own, SampleRate);
+
+        IReadOnlyList<CrossoverProposal> levelled = CrossoverAutoSetup.OffsetToReferenceLevel(
+            group, own, SampleRate, ownReference - 6);
+
+        Assert.Equal(-6, levelled[0].GainDb - own[0].GainDb, 1);
+        Assert.Equal(-6, levelled[1].GainDb - own[1].GainDb, 1);
+        Assert.Equal(
+            own[0].GainDb - own[1].GainDb,
+            levelled[0].GainDb - levelled[1].GainDb,
+            1);
+    }
+
+    [Fact]
+    public void OffsetToReferenceLevel_LeavesAQuietGroupAlone()
+    {
+        // Cut-only, as everywhere else in the wizard: a group already under the
+        // front stage is not boosted into the amplifier's headroom to meet it.
+        var midbass = new AutoSetupSource(BandCurve(80, 2_000, -8), DriverType.Midbass);
+        var tweeter = new AutoSetupSource(BandCurve(2_000, 20_000, -8), DriverType.Tweeter);
+        var group = new List<AutoSetupSource> { midbass, tweeter };
+        IReadOnlyList<CrossoverProposal> own = CrossoverAutoSetup.Propose(group, Options());
+        double ownReference = CrossoverAutoSetup.ReferenceLevelDb(group, own, SampleRate);
+
+        IReadOnlyList<CrossoverProposal> levelled = CrossoverAutoSetup.OffsetToReferenceLevel(
+            group, own, SampleRate, ownReference + 10);
+
+        Assert.Equal(own[0].GainDb, levelled[0].GainDb, 1);
+        Assert.Equal(own[1].GainDb, levelled[1].GainDb, 1);
+    }
+
+    [Fact]
+    public void OffsetToReferenceLevel_LevelsAGroupOfOne()
+    {
+        // The rear fill and the centre are groups of one, and they are levelled
+        // by the same call as a two-way rear — a lone channel is not a special
+        // case, it is a group whose internal fit had nothing to decide.
+        var rear = new AutoSetupSource(BandCurve(110, 15_000, 5), DriverType.Midrange);
+        CrossoverProposal single = CrossoverAutoSetup.ProposeSingle(rear, Options());
+
+        IReadOnlyList<CrossoverProposal> levelled = CrossoverAutoSetup.OffsetToReferenceLevel(
+            [rear], [single], SampleRate, 0);
+
+        // Not exactly -5: the level is read over the passband the high-pass
+        // leaves, whose top edge runs a little way into the driver's own roll-off.
+        Assert.InRange(levelled[0].GainDb, -5.3, -4.7);
+        Assert.Equal(single.HighPassEdge, levelled[0].HighPassEdge);
     }
 }

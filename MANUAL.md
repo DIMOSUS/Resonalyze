@@ -822,12 +822,47 @@ Resonalyze analyzes the measurements, estimates the usable bandwidth of each cha
 and assigns a likely driver type. Check these classifications and correct them if
 necessary.
 
+The channels are listed under their group — the front stage with its subwoofers, the
+rear fill, the centre — because only a group is a crossover chain; nothing hands a band
+from the front stage to a rear fill, so each group is fitted separately.
+
+**Inside a group the rows are the chain, and they must run from the lowest driver to the
+highest.** The rows are numbered for that reason: number 1 plays lowest and hands over
+to number 2, which hands over to number 3. Two channels may hold the same driver type —
+a pair of subwoofers splitting the bottom is an ordinary install — so the type cannot
+put them in order and the row order is what does. Resonalyze fills it in from what each
+channel measured, narrowed by any crossover corner it already has: set a 50 Hz corner on
+either sub and that alone says which of the two plays lower. The **▲▼** arrows move a
+row when the measurement cannot decide, or when you know better than it does.
+
+Two colours flag an order worth a second look. A band in **amber** means the two
+channels measure too much alike for anything to have ordered them — you have to say
+which is which. A band in **red** means the channel measures *lower* than the one above
+it, so the chain runs backwards there; that is usually a row moved one step too far, or
+a driver type set to something the channel does not actually play. Apply names both
+before it writes anything, and you can go ahead if the order shown is the one you want.
+
+A group holding a single driver has nothing to cross, so it gets a protective high-pass
+under its usable band and is levelled onto the front stage. Treat that level as a
+starting point: how far a rear fill sits under the front is a decision for your ears,
+not for the measurement.
+
 Then select:
 
 - the filter families supported by your real DSP;
 - the overall crossover search range;
 - whether HPF and LPF may use different slopes;
+- whether the channel blocks in the panel should be put into the same order;
 - the desired bass level relative to the mid/high range.
+
+That reordering is on by default, and it is worth leaving on: a panel whose blocks
+read down the spectrum is far easier to work in than one in the order you happened
+to load the files. Blocks are lettered by position, so the ones that move are
+re-lettered and take a new plot colour — everything else about them, sources and
+settings and measurements alike, travels with the block. If you have already
+printed a tuning sheet, note that it names the channels by the OLD letters. The
+**▲▼** buttons on each block do the same thing one step at a time, whenever you
+want it and without the wizard.
 
 The optimizer then searches many combinations of crossover frequencies, slopes, and
 filter families using the **actual measured acoustic responses**, while also

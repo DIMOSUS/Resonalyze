@@ -40,6 +40,8 @@
             checkBoxInvert = new ReleaseClickCheckBox();
             checkBoxMono = new ReleaseClickCheckBox();
             comboBoxZone = new DarkComboBox();
+            buttonMoveUp = new ReleaseClickButton();
+            buttonMoveDown = new ReleaseClickButton();
             labelCrossover = new Label();
             comboBoxCrossoverKind = new DarkComboBox();
             labelMeasuredPolarity = new Label();
@@ -170,7 +172,7 @@
             comboBoxZone.Location = new Point(70, 77);
             comboBoxZone.MinimumSize = new Size(36, 19);
             comboBoxZone.Name = "comboBoxZone";
-            comboBoxZone.Size = new Size(90, 19);
+            comboBoxZone.Size = new Size(68, 19);
             comboBoxZone.TabIndex = 10;
             // 
             // checkBoxInvert
@@ -178,7 +180,7 @@
             checkBoxInvert.AutoSize = true;
             checkBoxInvert.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxInvert.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxInvert.Location = new Point(234, 77);
+            checkBoxInvert.Location = new Point(208, 77);
             checkBoxInvert.Name = "checkBoxInvert";
             checkBoxInvert.Size = new Size(57, 19);
             checkBoxInvert.TabIndex = 12;
@@ -190,15 +192,39 @@
             checkBoxMono.AutoSize = true;
             checkBoxMono.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxMono.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxMono.Location = new Point(168, 77);
+            checkBoxMono.Location = new Point(144, 77);
             checkBoxMono.Name = "checkBoxMono";
             checkBoxMono.Size = new Size(58, 19);
             checkBoxMono.TabIndex = 11;
             checkBoxMono.Text = "Mono";
             checkBoxMono.UseVisualStyleBackColor = true;
-            // 
+            //
+            // buttonMoveUp
+            //
+            buttonMoveUp.FlatStyle = FlatStyle.Popup;
+            buttonMoveUp.ForeColor = Color.White;
+            buttonMoveUp.Location = new Point(268, 77);
+            buttonMoveUp.Name = "buttonMoveUp";
+            buttonMoveUp.Size = new Size(23, 20);
+            buttonMoveUp.TabIndex = 23;
+            buttonMoveUp.Text = "▲";
+            buttonMoveUp.UseCompatibleTextRendering = true;
+            buttonMoveUp.UseVisualStyleBackColor = true;
+            //
+            // buttonMoveDown
+            //
+            buttonMoveDown.FlatStyle = FlatStyle.Popup;
+            buttonMoveDown.ForeColor = Color.White;
+            buttonMoveDown.Location = new Point(293, 77);
+            buttonMoveDown.Name = "buttonMoveDown";
+            buttonMoveDown.Size = new Size(23, 20);
+            buttonMoveDown.TabIndex = 24;
+            buttonMoveDown.Text = "▼";
+            buttonMoveDown.UseCompatibleTextRendering = true;
+            buttonMoveDown.UseVisualStyleBackColor = true;
+            //
             // labelCrossover
-            // 
+            //
             labelCrossover.AutoSize = true;
             labelCrossover.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelCrossover.ForeColor = Color.FromArgb(210, 214, 222);
@@ -354,9 +380,9 @@
             // 
             labelPeqInfo.AutoEllipsis = true;
             labelPeqInfo.ForeColor = Color.FromArgb(170, 176, 190);
-            labelPeqInfo.Location = new Point(152, 183);
+            labelPeqInfo.Location = new Point(152, 181);
             labelPeqInfo.Name = "labelPeqInfo";
-            labelPeqInfo.Size = new Size(167, 15);
+            labelPeqInfo.Size = new Size(167, 19);
             labelPeqInfo.TabIndex = 21;
             labelPeqInfo.Text = "No PEQ";
             // 
@@ -500,6 +526,8 @@
             Controls.Add(checkBoxInvert);
             Controls.Add(checkBoxMono);
             Controls.Add(comboBoxZone);
+            Controls.Add(buttonMoveUp);
+            Controls.Add(buttonMoveDown);
             Controls.Add(labelCrossover);
             Controls.Add(comboBoxCrossoverKind);
             Controls.Add(labelMeasuredPolarity);
@@ -547,6 +575,8 @@
         private ReleaseClickCheckBox checkBoxInvert;
         private ReleaseClickCheckBox checkBoxMono;
         private DarkComboBox comboBoxZone;
+        private ReleaseClickButton buttonMoveUp;
+        private ReleaseClickButton buttonMoveDown;
         private Label labelCrossover;
         private DarkComboBox comboBoxCrossoverKind;
         private Label labelMeasuredPolarity;

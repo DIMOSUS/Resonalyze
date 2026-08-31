@@ -1265,7 +1265,72 @@ public partial class VirtualCrossoverPanel : UserControl
         control.SpatialAverageClicked += (_, _) => ShowSpatialAverageMenu(channel);
         control.PeqMenuClicked += (_, _) => ShowPeqMenu(channel);
         control.CollapsedChanged += (_, _) => OnChannelCollapsedChanged(channel);
+        control.MoveUpClicked += (_, _) => MoveChannel(channel, -1);
+        control.MoveDownClicked += (_, _) => MoveChannel(channel, +1);
         return channel;
+    }
+
+    // Moves one block a place up or down the list. The channel OBJECT moves, so
+    // its resolved measurements — tens of megabytes of impulse response — come
+    // along untouched; what is rewritten is everything derived from the position:
+    // the letter, the accent colour, and the order of the project's pairs.
+    private void MoveChannel(VirtualCrossoverChannel channel, int delta)
+    {
+        int at = channels.IndexOf(channel);
+        int to = at + delta;
+        if (at < 0 || to < 0 || to >= channels.Count)
+        {
+            return;
+        }
+
+        var order = Enumerable.Range(0, channels.Count).ToList();
+        (order[at], order[to]) = (order[to], order[at]);
+        ApplyChannelOrder(order);
+        ScheduleSave();
+        RedrawAll();
+    }
+
+    /// <summary>
+    /// Rewrites everything the block list's ORDER decides. <paramref name="order"/>
+    /// is a permutation of the current positions — <c>order[newIndex]</c> is where
+    /// that block sits now.
+    /// </summary>
+    /// <remarks>
+    /// The project's pair list is permuted BY THE SAME INDICES rather than rebuilt
+    /// from the channels' own pairs, because the two are only bound to each other
+    /// once a project has been applied: a panel that has just been constructed
+    /// holds three default pairs on one side and three unrelated ones on the
+    /// other, and rebuilding there would quietly throw the project's away. The
+    /// pair list is the whole of the persisted order — the file stores no letter.
+    /// </remarks>
+    private void ApplyChannelOrder(IReadOnlyList<int> order)
+    {
+        List<VirtualCrossoverChannel> reordered =
+            order.Select(index => channels[index]).ToList();
+        channels.Clear();
+        channels.AddRange(reordered);
+        if (project.Pairs.Count == order.Count)
+        {
+            List<VirtualCrossoverChannelPairSettings> pairs =
+                order.Select(index => project.Pairs[index]).ToList();
+            project.Pairs.Clear();
+            project.Pairs.AddRange(pairs);
+        }
+
+        channelListPanel.SuspendLayout();
+        for (int i = 0; i < channels.Count; i++)
+        {
+            VirtualCrossoverChannel channel = channels[i];
+            VirtualCrossoverChannelControl control = ControlFor(channel);
+            channel.Name = ChannelNameFor(i);
+            control.ChannelName = channel.Name;
+            OxyColor color = ChannelColors[i];
+            control.SetAccentColor(Color.FromArgb(color.R, color.G, color.B));
+            channelListPanel.Controls.SetChildIndex(control, i);
+        }
+
+        channelListPanel.ResumeLayout(performLayout: true);
+        UpdateChannelButtons();
     }
 
     // The control bound to a runtime channel. Only the WinForms binding methods
@@ -1408,6 +1473,13 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         buttonAddChannel.Enabled = channels.Count < MaxChannelCount;
         buttonRemoveChannel.Enabled = channels.Count > MinChannelCount;
+        // The move arrows are positional: the top block cannot rise and the
+        // bottom one cannot fall. Updated here rather than at each move, so a
+        // list that grew, shrank or arrived with a project is right too.
+        for (int i = 0; i < channels.Count; i++)
+        {
+            ControlFor(channels[i]).SetMoveAvailability(i > 0, i < channels.Count - 1);
+        }
     }
 
     // Appends a channel pair: a fresh block and a matching empty project entry,
@@ -7647,9 +7719,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // Band/type detection reads the raw (unprocessed) responses with a fixed
         // 1/3-octave smoothing, independent of the display smoothing.
         var wizardOptions = new FrequencyResponseOptions { SmoothingInverseOctaves = 3 };
-        var dialogChannels = new List<(string Name, Color Accent,
-            IReadOnlyList<SignalPoint> MagnitudeDb, IReadOnlyList<double>? Coherence,
-            IReadOnlyList<SignalPoint>? Distortion, DriverBandEstimate Band)>();
+        var dialogChannels = new List<AutoSetupWizardChannel>();
         try
         {
             foreach (VirtualCrossoverChannel channel in participating)
@@ -7682,13 +7752,26 @@ public partial class VirtualCrossoverPanel : UserControl
                 // sweep deconvolution.
                 IReadOnlyList<SignalPoint>? distortion = channel.DistortionCurve;
                 OxyColor accent = ChannelColors[channels.IndexOf(channel)];
-                dialogChannels.Add((
+                // The corners already on the channel: with two similar drivers
+                // they are what says which plays lower, so the wizard orders its
+                // chain by the band each one is left contributing.
+                VirtualCrossoverChannelSettings settings =
+                    channel.SideSettings(project.ActiveSideRight);
+                dialogChannels.Add(new AutoSetupWizardChannel(
                     $"{channel.Name} — {channel.Settings.DisplayName}",
                     Color.FromArgb(accent.R, accent.G, accent.B),
+                    VirtualCrossoverAlignmentStages.StageOf(channel.Pair.Zone),
                     curve.Points,
                     coherence,
                     distortion,
-                    CrossoverAutoSetup.EstimateBand(curve.Points, coherence, distortion)));
+                    CrossoverAutoSetup.EstimateBand(curve.Points, coherence, distortion),
+                    settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
+                        ? settings.HighPassEdge.FrequencyHz
+                        : null,
+                    settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
+                        ? settings.LowPassEdge.FrequencyHz
+                        : null,
+                    channel.TransferImpulseResponse));
             }
         }
         catch (ArgumentException exception)
@@ -7701,8 +7784,7 @@ public partial class VirtualCrossoverPanel : UserControl
         dialog.Init(
             participating[0].SampleRate,
             ProcessorSampleRateHz,
-            dialogChannels,
-            participating.Select(channel => channel.TransferImpulseResponse!).ToList());
+            dialogChannels);
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } proposals)
         {
@@ -7740,8 +7822,39 @@ public partial class VirtualCrossoverPanel : UserControl
             ApplySettingsToControl(channel);
         }
 
+        if (dialog.ChainOrder is { } chainOrder)
+        {
+            IReadOnlyList<VirtualCrossoverChannel> sorted = ReorderIntoSlots(
+                channels,
+                chainOrder.Select(index => participating[index]).ToList());
+            ApplyChannelOrder(
+                sorted.Select(channel => channels.IndexOf(channel)).ToList());
+        }
+
         ScheduleSave();
         RedrawAll();
+    }
+
+    /// <summary>
+    /// Puts <paramref name="reordered"/> back into the list, using only the
+    /// positions its members already occupied. Everything else — a disabled block,
+    /// one with no source — keeps the slot it had, because the wizard never
+    /// looked at it and has nothing to say about where it belongs.
+    /// </summary>
+    internal static IReadOnlyList<T> ReorderIntoSlots<T>(
+        IReadOnlyList<T> all,
+        IReadOnlyList<T> reordered)
+        where T : class
+    {
+        var slots = new HashSet<T>(reordered);
+        var result = new List<T>(all.Count);
+        int next = 0;
+        foreach (T item in all)
+        {
+            result.Add(slots.Contains(item) ? reordered[next++] : item);
+        }
+
+        return result;
     }
 
     // Averages a measurement's per-bin coherence (γ², a linear FFT grid over

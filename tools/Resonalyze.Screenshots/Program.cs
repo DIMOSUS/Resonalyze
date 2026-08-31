@@ -73,6 +73,14 @@ static int Run(string[] args)
 
     Application.EnableVisualStyles();
     Application.SetHighDpiMode(HighDpiMode.SystemAware);
+    // The whole point of this tool is that the figures are of the application the
+    // user runs, and text rendering is not a detail of that. Program.cs gets this
+    // from ApplicationConfiguration.Initialize(); without it every control here is
+    // built for GDI+ instead of GDI, which measures differently — a fixed-size
+    // AutoEllipsis label whose box is a pixel under its line height then draws
+    // NOTHING (StringFormatFlags.LineLimit), and the figure quietly loses a
+    // read-out the application shows. Must precede the first window.
+    Application.SetCompatibleTextRenderingDefault(false);
     Console.WriteLine($"Writing to {config.OutputRoot}");
 
     bool failed = false;

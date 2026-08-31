@@ -23,6 +23,23 @@ public sealed class TimeAlignmentAnalysisOptions
         DefaultFirstPeakThresholdBelowMaxDb;
     public double FirstPeakMinimumSnrDb { get; init; } = 12;
     public double PeakSearchWindowMilliseconds { get; init; } = 80;
+
+    /// <summary>
+    /// The caller's statement that the signal is a COMPLETE deconvolved record
+    /// — circular by construction, its tail continuous with its head — rather
+    /// than a CUT of a longer one. It does two things that must stay together:
+    /// peak positions may wrap around the buffer, and the spectral transforms
+    /// (the bandpass, the Hilbert envelope) run at the record's own length,
+    /// because circular convolution is EXACT for a circular signal. Zero
+    /// padding such a record would manufacture a discontinuity at the seam
+    /// and its edge transient reads as structure: on a field subwoofer whose
+    /// transfer IR carries a DC shelf, the padded envelope dipped 9 dB at the
+    /// record start and "rose" back — a climb the first-arrival search rightly
+    /// accepted as a front, at 0.2 ms on a record whose driver first played at
+    /// 13 ms. A cut (the default) is the opposite case: its tail is NOT its
+    /// head's past, and filtering it unpadded wraps the tail onto the head —
+    /// see the padding note in <see cref="TimeAlignmentAnalysis.Analyze"/>.
+    /// </summary>
     public bool WrapPeakPositions { get; init; }
 }
 
@@ -137,9 +154,16 @@ public static class TimeAlignmentAnalysis
             // Landing on a power of two is worth doing anyway: MathNet is quick
             // only there and falls back to Bluestein otherwise, measured 20 ms
             // at 262144 samples against 317 ms at 262145.
-            int transformLength = DspMath.NextPowerOfTwo(
-                impulseResponse.Count +
-                    BandpassGuardSamples(sampleRate, options));
+            //
+            // A COMPLETE record (WrapPeakPositions — see its doc) is the one
+            // signal that must NOT be padded: it is circular by construction,
+            // the unpadded transform is exact for it, and the padding's seam
+            // transient is what reads as a fabricated arrival.
+            int transformLength = options.WrapPeakPositions
+                ? impulseResponse.Count
+                : DspMath.NextPowerOfTwo(
+                    impulseResponse.Count +
+                        BandpassGuardSamples(sampleRate, options));
             var padded = new double[transformLength];
             for (int i = 0; i < impulseResponse.Count; i++)
             {
@@ -171,9 +195,12 @@ public static class TimeAlignmentAnalysis
         // search walks. Padded here rather than inside SignalEnvelope.Envelope,
         // which has a real contract for a signal periodic in its window (a
         // bin-centred cosine must come back with a flat envelope, and padding
-        // would break that correctly) — this caller is the one that knows it
-        // holds a CUT.
-        double[] envelope = EnvelopeOfCrop(analysisSignal);
+        // would break that correctly) — this caller is the one that knows
+        // whether it holds a CUT or a complete circular record, which keeps
+        // its envelope exactly as circular as the record is.
+        double[] envelope = options.WrapPeakPositions
+            ? SignalEnvelope.Envelope(analysisSignal)
+            : EnvelopeOfCrop(analysisSignal);
         PeakSearchResult peakSearchResult = SignalEnvelope.FindPeak(
             envelope,
             sampleRate,

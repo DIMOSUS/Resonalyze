@@ -575,9 +575,24 @@ internal sealed class VirtualCrossoverMetrics
     /// its own band with "—" for the right side and the delta; a stereo pair
     /// needs both sides present and unbypassed.
     /// </summary>
+    /// <param name="channels">
+    /// EVERY channel of the project, never a pre-filtered subset. A block's
+    /// position in this list is its identity in the processing coordinator's
+    /// cache, and a filtered list renumbers the blocks after the first one it
+    /// drops — so the read-out would claim slots belonging to other channels and
+    /// evict the responses the frame had just processed, on every frame. Narrow
+    /// the set with <paramref name="includePair"/> instead, the way
+    /// <see cref="ComputeSideSumAsync"/> does.
+    /// </param>
+    /// <param name="includePair">
+    /// Which blocks the read-out covers, or null for all of them. The panel
+    /// passes the current view's zones: a front view listing the rear pair's L/R
+    /// skew is the read-out describing a set the plot does not draw.
+    /// </param>
     public async Task<List<VirtualCrossoverMetric.StereoDelta>> ComputeStereoDeltasAsync(
         IReadOnlyList<VirtualCrossoverChannel> channels,
-        long revision)
+        long revision,
+        Func<VirtualCrossoverChannelPairSettings, bool>? includePair = null)
     {
         var jobs = new List<StereoDeltaJob>();
         int nextId = 0;
@@ -588,7 +603,8 @@ internal sealed class VirtualCrossoverMetrics
 
             // Mute and Bypass belong to the block, so they answer for both sides at
             // once; only the measurements are per side.
-            if (!channel.Pair.Enabled || channel.Pair.Bypass)
+            if (!channel.Pair.Enabled || channel.Pair.Bypass ||
+                includePair?.Invoke(channel.Pair) == false)
             {
                 continue;
             }

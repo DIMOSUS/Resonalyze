@@ -779,4 +779,60 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.Equal(100.0 / 48.0, deltas[0].DelayMs!.Value, 2);
         Assert.Equal(50.0 / 48.0, deltas[1].DelayMs!.Value, 2);
     }
+
+    [Fact]
+    public async Task ComputeStereoDeltas_DoesNotEvictTheFramesProcessedResponses()
+    {
+        // A block's POSITION in the list handed to the stereo Δ read-out is its
+        // identity in the coordinator's cache. Hand over a filtered list and every
+        // block after the first omission is renumbered onto a slot belonging to
+        // another channel: the read-out overwrites responses the frame had just
+        // processed, the next frame misses on them, reprocesses, overwrites the
+        // read-out's in turn — and the two thrash each other for as long as the
+        // view stays open. On the reference car that is every view except the one
+        // whose blocks happen to sit at the head of the list.
+        int processCount = 0;
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, _, _) =>
+            {
+                Interlocked.Increment(ref processCount);
+                return source.Apply(chain, sampleRate, sampleRate);
+            });
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        // Three mono blocks: the read-out below covers the LAST one only, so with
+        // a shortened list it would take slot 0 — the first block's.
+        List<VirtualCrossoverChannel> channels =
+            [ResolvedMono("A"), ResolvedMono("B"), ResolvedMono("C")];
+        long revision = coordinator.Invalidate();
+        VirtualCrossoverProcessingSnapshot frame = new(
+            revision,
+            channels.Select((channel, index) => new VirtualCrossoverChannelSnapshot(
+                index,
+                new ProcessingSlotId(index, false),
+                channel.SideState(false).ProcessingSource!,
+                48_000,
+                48_000,
+                channel.Settings.ToChain())));
+
+        Assert.NotNull(await coordinator.ProcessAsync(frame));
+        int afterFirstFrame = processCount;
+
+        await metrics.ComputeStereoDeltasAsync(
+            channels, revision, includePair: pair => ReferenceEquals(pair, channels[2].Pair));
+        // The frame runs again with nothing changed, exactly as a view or mode
+        // toggle makes it: every response must still be in the cache.
+        Assert.NotNull(await coordinator.ProcessAsync(frame));
+
+        Assert.Equal(3, afterFirstFrame);
+        Assert.Equal(3, processCount);
+    }
+
+    // A mono block with a resolved source on the side the panel draws.
+    private static VirtualCrossoverChannel ResolvedMono(string name)
+    {
+        VirtualCrossoverChannel channel = ResolvedChannel(name, 48_000);
+        channel.Pair.Mono = true;
+        return channel;
+    }
 }

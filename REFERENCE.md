@@ -2458,12 +2458,20 @@ refused as a cycle skip. The distance itself is measured honestly first: each
 side's own chain drags its band arrival without moving the wavefront the tune
 aligns (a subwoofer's low-pass alone shifts its band arrival by a dozen
 milliseconds where its partner's chain shifts half that), so the non-common
-part of the two chains' shifts — each measured by running a reference impulse
-through the real chain, with no room in it — sits inside the pair's arrival
-difference as chain, not geometry, and is credited to the check's reach before
-an extremum can be refused for exceeding it. Junctions whose band lies inside
-both passbands see microsecond skews and are untouched. Past that credit the
-check has one exception: an arrival
+part of the two chains' shifts — a signed displacement, each side measured by
+running a reference impulse through the real chain, with no room in it — sits
+inside the pair's arrival difference as chain, not geometry, and is subtracted
+from the anchor before the extremum's distance is measured. The half-period
+bound itself never widens: whatever the skew, an admitted extremum lies within
+half a period of the corrected anchor, so the same-polarity lobe a full period
+out stays refused. A displacement as large as the bound itself instead
+disqualifies the anchor outright — every verdict it could give is smaller than
+its own known error — and the check then stands down the same way it does for
+a deep-picked arrival (below), to the extremum's own strength rather than to
+the disqualification alone. Junctions whose band lies inside both passbands
+see microsecond skews and are untouched, and a pair with one side the
+estimator cannot read gets no correction rather than a guess. Past that
+correction the check has one exception: an arrival
 picked deep below its own band's energy. A subwoofer's direct front can sit
 20-odd dB under the cabin build-up arriving behind it — a real front, and the
 right one to time the channel by — while the correlation reads where the energy

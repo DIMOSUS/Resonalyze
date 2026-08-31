@@ -901,16 +901,18 @@ public sealed class AutoAlignmentEngineTests
         }
     }
 
-    // The reach credit's instrument, pinned where it can be asked directly:
-    // the NON-COMMON part of the pair's chain shifts is a property of the
-    // CHAINS alone (a synthetic impulse through the real ApplyChain — no room
-    // in it), so a bass pair whose lower side carries a steep low-pass reads
-    // a lobe-scale skew, identical chains cancel to zero exactly, a pair
-    // whose band sits inside both passbands reads microseconds, and one side
-    // the predictor could not read (no bypassed response, no chain) withdraws
-    // the WHOLE credit — the partner's shift is unknown there, not zero, and
-    // this cell is what caught an earlier draft crediting the readable
-    // side's full 20 ms against an unmeasured partner.
+    // The anchor correction's instrument, pinned where it can be asked
+    // directly: the NON-COMMON part of the pair's chain shifts is a property
+    // of the CHAINS alone (a synthetic impulse through the real ApplyChain —
+    // no room in it), SIGNED in the anchor's own convention — so a bass pair
+    // whose LOWER side carries the steep low-pass reads a lobe-scale POSITIVE
+    // skew (the anchor overstates the delay to add to the upper channel),
+    // identical chains cancel to zero exactly, a pair whose band sits inside
+    // both passbands reads microseconds, and one side the predictor could not
+    // read (no bypassed response, no chain) returns null — the partner's
+    // shift is unknown there, not zero, and this cell is what caught an
+    // earlier draft crediting the readable side's full 20 ms against an
+    // unmeasured partner.
     [Fact]
     public void PairChainArrivalSkew_ReadsTheChainsAlone()
     {
@@ -927,11 +929,12 @@ public sealed class AutoAlignmentEngineTests
         AlignmentSnapshot woofer = PredictableSnapshot(
             "W", SingleImpulse(Length, BasePosition), wooferChain);
 
-        // Lobe-scale: a period at 55 Hz is 18.2 ms, and the steep low-pass
-        // alone drags the sub's band arrival most of one.
-        double skew = AutoAlignmentEngine.PairChainArrivalSkewMs(
+        // Lobe-scale and positive: a period at 55 Hz is 18.2 ms, and the
+        // steep low-pass drags the LOWER side's band arrival most of one.
+        double? skew = AutoAlignmentEngine.PairChainArrivalSkewMs(
             new AlignmentJunction(sub, woofer, 55, 27.5, 110));
-        Assert.InRange(skew, 10.0, 20.0);
+        Assert.NotNull(skew);
+        Assert.InRange(skew.Value, 10.0, 20.0);
 
         AlignmentSnapshot subTwin = PredictableSnapshot(
             "SUB2", SingleImpulse(Length, BasePosition), subChain);
@@ -947,22 +950,84 @@ public sealed class AutoAlignmentEngineTests
             CrossoverKind.HighPass,
             HighPassEdge: new CrossoverEdge(
                 CrossoverFilterFamily.Butterworth, 2_000, 24)));
-        double highSkew = AutoAlignmentEngine.PairChainArrivalSkewMs(
+        double? highSkew = AutoAlignmentEngine.PairChainArrivalSkewMs(
             new AlignmentJunction(
                 PredictableSnapshot(
                     "M", SingleImpulse(Length, BasePosition), midChain),
                 PredictableSnapshot(
                     "T", SingleImpulse(Length, BasePosition), tweeterChain),
                 2_000, 1_000, 4_000));
-        Assert.InRange(highSkew, 0.0, 0.3);
+        Assert.NotNull(highSkew);
+        Assert.InRange(Math.Abs(highSkew.Value), 0.0, 0.3);
 
         Complex[] bareIr = SingleImpulse(Length, BasePosition);
         var bare = new AlignmentSnapshot(
             new TestChannel("X", bareIr), bareIr, BasePosition);
-        Assert.Equal(
-            0.0,
+        Assert.Null(
             AutoAlignmentEngine.PairChainArrivalSkewMs(
                 new AlignmentJunction(bare, sub, 55, 27.5, 110)));
+    }
+
+    // The correction's no-cycle-skip guarantee, asserted as a policy. The
+    // reach is half a period — the bound past which the next same-polarity
+    // lobe lives — and the skew must CORRECT the anchor inside it, never
+    // widen it: the review's counterexample was an 80 Hz junction (reach
+    // 6.25 ms) with the field's 6.7 ms skew, where a symmetric
+    // reach-plus-skew allowance reached 12.95 ms and admitted the lobe a
+    // full period out. Rows are (offset, reach, skew, verdict); the field
+    // cell is the Passat v2 junction that motivated the correction.
+    [Theory]
+    // Passat v2: offset −11.19, skew +6.74, reach 9.09 → corrected −4.45.
+    [InlineData(-11.193, 9.09, 6.74, true)]
+    // The same disagreement with the OPPOSITE skew is not explained — a
+    // symmetric allowance cannot tell these two rows apart.
+    [InlineData(-11.193, 9.09, -6.74, false)]
+    // The review's 80 Hz counterexample: the extremum a full period
+    // (12.5 ms) from the corrected anchor stays refused however the skew
+    // stacks with it...
+    [InlineData(-19.2, 6.25, 6.7, false)]
+    // ...while the extremum ON the corrected anchor's own lobe is admitted.
+    [InlineData(-8.5, 6.25, 6.7, true)]
+    // The boundary belongs to the veto, as everywhere else in the search.
+    [InlineData(-12.9, 6.25, 6.74, true)]
+    [InlineData(-13.0, 6.25, 6.75, false)]
+    // No measured skew, no correction — never a guess.
+    [InlineData(-11.193, 9.09, double.NaN, false)]
+    public void ChainSkewExplainsSeedOffset_CorrectsTheAnchor_NeverWidensTheReach(
+        double seedOffsetMs, double reachMs, double skewMs, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            AutoAlignmentEngine.ChainSkewExplainsSeedOffset(
+                seedOffsetMs,
+                reachMs,
+                double.IsNaN(skewMs) ? null : skewMs));
+    }
+
+    // The skew door's second case: a displacement the size of the reach
+    // itself disqualifies the anchor — its every verdict is smaller than its
+    // own known error — and the veto stands down to the deep-pick door's own
+    // policy (raw anchor, a direct seed's r bar, the cut's last word above
+    // its frequency), never to the disqualification alone. Rows are
+    // (reach, skew, verdict); the first is the field woofer/mid cell whose
+    // admitted extremum sat a period from the raw anchor and measured 0.5 dB
+    // better, the fifth is the Passat v2 sub cell where the anchor is still
+    // capable and the signed correction is the door that opens.
+    [Theory]
+    [InlineData(3.0, 3.864, true)]
+    [InlineData(3.0, -3.864, true)]
+    [InlineData(3.0, 2.99, false)]
+    [InlineData(3.0, 3.0, true)]
+    [InlineData(7.692, 6.739, false)]
+    [InlineData(3.0, double.NaN, false)]
+    public void ChainSkewDisqualifiesTheAnchor_AtTheReachItself(
+        double reachMs, double skewMs, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            AutoAlignmentEngine.ChainSkewDisqualifiesTheAnchor(
+                reachMs,
+                double.IsNaN(skewMs) ? null : skewMs));
     }
 
     // The reach veto's stand-down policy, asserted as a policy. An acoustic

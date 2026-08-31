@@ -121,19 +121,23 @@ public sealed class EssHarmonicBelowNoiseTests
         Assert.True(h2Validity.IsReliable);
     }
 
-    [Fact]
-    public void AContaminatedEdgeOverANoisePlateau_IsNotBlessedAsBelowNoise()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AContaminatedEdgeOverANoisePlateau_IsNotBlessedAsBelowNoise(bool leading)
     {
-        // A neighbour's undecayed tail sits in the LEADING edge region of HD2's
-        // window while the plateau itself holds nothing above the noise floor.
-        // The below-noise verdict must not swallow that: the window is polluted,
-        // which is exactly what the edge-based overlap warning exists to say.
+        // A neighbour's undecayed tail sits in ONE edge region of HD2's window
+        // while the plateau itself holds nothing above the noise floor. The
+        // below-noise verdict must not swallow that on either side: the window
+        // is polluted, which is exactly what the edge-based overlap warning
+        // exists to say.
         var sweep = Sweep();
         HarmonicWindowDefinition h2 = EssHarmonicAnalysis.BuildWindow(sweep, 2, 0.5);
         double[] impulse = NoisyCleanImpulse();
         int windowLength = h2.EndSample - h2.StartSample + 1;
-        int edgeEnd = h2.StartSample + (int)(0.15 * windowLength);
-        for (int i = h2.StartSample; i < edgeEnd; i++)
+        int edgeLength = (int)(0.15 * windowLength);
+        int edgeStart = leading ? h2.StartSample : h2.EndSample - edgeLength + 1;
+        for (int i = edgeStart; i < edgeStart + edgeLength; i++)
         {
             impulse[i] = 0.01;
         }

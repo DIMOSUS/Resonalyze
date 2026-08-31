@@ -691,16 +691,46 @@ public sealed class VirtualCrossoverMetricsTests
 
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> first =
             await metrics.ComputeGroupDeltasAsync(
-                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.CurrentRevision);
+                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate());
+        // The second frame is asked the way a real toggle asks: RequestRedraw
+        // invalidates first and the frame then carries the NEW revision, so a
+        // repeat call at the old one would prove nothing about the path the user
+        // takes.
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> second =
             await metrics.ComputeGroupDeltasAsync(
-                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.CurrentRevision);
+                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate());
 
         Assert.Single(first);
         Assert.Equal(VirtualCrossoverZone.Center, first[0].Zone);
         // The same instance: a recompute builds a new list, so identity is what
         // says the arrival analysis did not run a second time.
         Assert.Same(first, second);
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_AnswerNothingForASupersededFrame()
+    {
+        // The other half of remembering the set: a frame the user has already
+        // overtaken is answered as it was before the cache existed — with
+        // nothing. Cheap to get wrong, because a cache hit is tempting to serve
+        // unconditionally, and then a stale frame carries a read-out the caller
+        // was supposed to drop.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        List<ProcessedChannel> shown =
+        [
+            Zoned("Front", VirtualCrossoverZone.Front, 100),
+            Zoned("Centre", VirtualCrossoverZone.Center, 150)
+        ];
+
+        long superseded = coordinator.Invalidate();
+        Assert.Single(await metrics.ComputeGroupDeltasAsync(
+            shown, VirtualCrossoverGroupView.FrontAndCenter, superseded));
+        coordinator.Invalidate();
+
+        Assert.Empty(await metrics.ComputeGroupDeltasAsync(
+            shown, VirtualCrossoverGroupView.FrontAndCenter, superseded));
     }
 
     [Fact]

@@ -6089,7 +6089,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // Bridges the pair/side model to the stereo engine on a background thread,
     // sharing the same AlignmentReprocessor (run-scoped FFT cache) as the
     // single-side run.
-    private AlignmentReprocessor ComputeStereoAlignment(
+    internal AlignmentReprocessor ComputeStereoAlignment(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
         List<VirtualCrossoverSideAlignmentChannel> rightSide,
         List<VirtualCrossoverSideAlignmentChannel> union,
@@ -6192,7 +6192,17 @@ public partial class VirtualCrossoverPanel : UserControl
                 Pairs(referenceByBand),
                 farByBand,
                 Pairs(farByBand),
-                union.Where(side => side.Runtime.Pair.Mono)
+                // The engine's mono channels are the ones ITS walk tunes - the
+                // front chain's shared subwoofers, read off the walked left
+                // side. NOT off the union: a staged run keeps a mono centre
+                // (or a mono rear) in the union for the reprocessor while the
+                // walks are narrowed to the chain, and handing those to the
+                // engine trips its own "every mono channel must be part of the
+                // left walk" guard - the refusal the reference car produced.
+                // The guard is right; they belong to stages 2-3. An unstaged
+                // run's left side holds exactly the union's monos, so this
+                // reads the same set it always did there.
+                leftSide.Where(side => side.Runtime.Pair.Mono)
                     .Cast<IAlignmentChannel>()
                     .ToList(),
                 rightHandDrive ? bridgeRight : bridgeLeft,

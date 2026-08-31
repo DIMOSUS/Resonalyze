@@ -2574,7 +2574,21 @@ The remaining buttons in the column beside the plots:
   sides, not a binaural head simulation.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
   text): for every side of every pair (a mono pair prints once) the gain, delay in
-  ms and mm, polarity, crossover filters, and PEQ bands down to the all-pass. It
+  ms and mm, polarity, crossover filters, and PEQ bands down to the all-pass.
+  An installation spanning several zones prints **by group**, in the order a
+  tune is typed into a DSP — Sub, then Front, then Rear, then Center — each
+  group led by its name and (on the PDF) a graph of its own DSP chains instead
+  of one combined tangle; blocks keep their panel letters, only the section
+  order changes. A group's graph adds the design sum of its chains per side
+  (left solid, right dashed; one line for a group of mono blocks) where a side
+  has at least two chains to sum — never for the centre, whose derived signal
+  makes any sum involving it a fiction — and the front group's graph carries
+  the subwoofer group's sum in a pale tone, so the bass handover shows both of
+  its sides. These sums are the *filters as designed*, delay and polarity
+  stripped: the acoustic summation already lives on the panel's plot, and
+  folding the cabin's timing compensation into a filter graph would show combs
+  no DSP screen shows. A single-zone project keeps the flat sheet it always
+  had. It
   states the PEQ columns in the [Q convention](#dsp-q-convention) of the project's
   [DSP processor](#dsp-processor): a named model answers for itself and the export
   asks nothing. A **Custom** processor has only what was typed into that dialog, so

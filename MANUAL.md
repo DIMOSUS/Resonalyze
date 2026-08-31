@@ -1421,7 +1421,12 @@ channel's PEQ. After changing a crossover or a bank — an all-pass band include
 
 When you are satisfied, press **Export...** and generate the final **PDF tuning sheet**.
 It lists the crossover settings, gains, delays, polarities, and PEQ needed to reproduce
-the virtual system in the real DSP.
+the virtual system in the real DSP. On an install that spans several zones the sheet
+prints by group, in the order you would enter it — Sub, then Front, then Rear, then
+Center — each group under its own heading with a graph of its filters, and the front
+group's graph shows the subwoofers' summed filter shape in a pale tone, so the bass
+handover is visible where you dial it in. Blocks keep their panel letters; only the
+order of the sections changes.
 
 If the project names a **Custom** processor, Resonalyze first asks which Q convention
 the PEQ columns should be stated in:

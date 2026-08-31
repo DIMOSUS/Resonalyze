@@ -199,4 +199,83 @@ public sealed class VirtualCrossoverSheetTests
             "Low-pass Butterworth 6 dB/oct @ 3000 Hz",
             VirtualCrossoverSheet.DescribeCrossover(channel));
     }
+
+    // A project spanning several zones, laid out like the reference car: a
+    // front stereo pair, a rear stereo pair, a mono centre and a mono sub —
+    // deliberately in PANEL order (front first, sub last), so a sheet that
+    // groups correctly must visibly reorder the sections.
+    internal static VirtualCrossoverProjectFile GroupedProject()
+    {
+        var project = new VirtualCrossoverProjectFile();
+        while (project.Pairs.Count < 4)
+        {
+            project.Pairs.Add(new VirtualCrossoverChannelPairSettings());
+        }
+
+        project.Pairs[0].Zone = VirtualCrossoverZone.Front;
+        project.Pairs[0].Left.SourceFilePath = "front-l.json";
+        project.Pairs[0].Left.DisplayName = "front L";
+        project.Pairs[0].Right.SourceFilePath = "front-r.json";
+        project.Pairs[0].Right.DisplayName = "front R";
+        project.Pairs[1].Zone = VirtualCrossoverZone.Rear;
+        project.Pairs[1].Left.SourceFilePath = "rear-l.json";
+        project.Pairs[1].Left.DisplayName = "rear L";
+        project.Pairs[1].Right.SourceFilePath = "rear-r.json";
+        project.Pairs[1].Right.DisplayName = "rear R";
+        project.Pairs[2].Zone = VirtualCrossoverZone.Center;
+        project.Pairs[2].Mono = true;
+        project.Pairs[2].Left.SourceFilePath = "centre.json";
+        project.Pairs[2].Left.DisplayName = "centre";
+        project.Pairs[3].Zone = VirtualCrossoverZone.Sub;
+        project.Pairs[3].Mono = true;
+        project.Pairs[3].Left.SourceFilePath = "sub.json";
+        project.Pairs[3].Left.DisplayName = "sub";
+        return project;
+    }
+
+    [Fact]
+    public void FormatText_GroupsSectionsByZone_InTheOrderATuneIsTyped()
+    {
+        string text = VirtualCrossoverSheet.FormatText(GroupedProject(), null);
+
+        // Sub first, then the front stage, then the groups placed against it —
+        // the order the values are entered into a DSP, not the panel's order.
+        int sub = text.IndexOf("=== Sub ===", StringComparison.Ordinal);
+        int front = text.IndexOf("=== Front ===", StringComparison.Ordinal);
+        int rear = text.IndexOf("=== Rear ===", StringComparison.Ordinal);
+        int centre = text.IndexOf("=== Center ===", StringComparison.Ordinal);
+        Assert.True(sub >= 0, "the Sub heading is missing");
+        Assert.True(front > sub, "Front must follow Sub");
+        Assert.True(rear > front, "Rear must follow Front");
+        Assert.True(centre > rear, "Center must follow Rear");
+
+        // Grouping moves SECTIONS, never names: the sub is the panel's block D
+        // and its section — printed first — still says so.
+        int subChannel = text.IndexOf(
+            "Channel D (mono) — sub", StringComparison.Ordinal);
+        Assert.InRange(subChannel, sub, front);
+    }
+
+    [Fact]
+    public void SheetSectionOrder_CoversEveryZone()
+    {
+        // The grouping walks SectionOrder and keeps only zones it names, so a
+        // zone added to the enum but forgotten here would silently DROP its
+        // channels from the sheet — the worst possible failure for a document
+        // whose whole job is completeness.
+        Assert.Equal(
+            VirtualCrossoverZones.All.Order(),
+            VirtualCrossoverSheetGroups.SectionOrder.Order());
+    }
+
+    [Fact]
+    public void FormatText_SingleZoneProject_KeepsTheFlatSheetItAlwaysHad()
+    {
+        // One zone means one group, and a heading naming the only group there
+        // is would be scaffolding around nothing — the classic project's sheet
+        // must not change shape because zones now exist.
+        string text = VirtualCrossoverSheet.FormatText(CreateProject(), null);
+
+        Assert.DoesNotContain("===", text);
+    }
 }

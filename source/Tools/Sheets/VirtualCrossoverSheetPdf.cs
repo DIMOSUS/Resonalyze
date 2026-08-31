@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.DocumentObjectModel.Tables;
 using OxyPlot;
@@ -8,6 +9,9 @@ using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
 // Disambiguates against System.Drawing.Color, which the WinForms implicit usings pull in.
 using Color = MigraDoc.DocumentObjectModel.Color;
+// One printed side of a channel pair, as the graphs consume it.
+using SheetEntry = (int Index, string SideSuffix, bool Dashed,
+    Resonalyze.VirtualCrossoverChannelSettings Channel);
 
 namespace Resonalyze;
 
@@ -67,56 +71,120 @@ internal static class VirtualCrossoverSheetPdf
 
         var sheet = new PdfSheet("Virtual DSP", subtitleText, qConvention);
 
-        // Both sides of every pair print in one sheet; a mono pair prints
-        // once. On the graph the right side reuses the pair's hue dashed.
-        var participating =
-            new List<(int Index, string SideSuffix, bool Dashed,
-                VirtualCrossoverChannelSettings Channel)>();
-        for (int i = 0; i < project.Pairs.Count; i++)
+        // One run of sections per zone, in the order a tune is typed into a DSP
+        // (Sub, Front, Rear, Center), each run led by the zone's name and a
+        // graph of ITS chains — a system of a dozen channels on one graph is a
+        // tangle, and a group's is readable. A single-zone project keeps the
+        // flat sheet it always had: one combined graph, no group scaffolding.
+        IReadOnlyList<(VirtualCrossoverZone Zone, IReadOnlyList<int> PairIndices)>
+            sections = VirtualCrossoverSheetGroups.Sections(project);
+        if (sections.Count <= 1)
+        {
+            List<SheetEntry> participating = Participants(
+                project,
+                [.. sections.SelectMany(section => section.PairIndices)]);
+            if (participating.Count > 0)
+            {
+                sheet.AddImage(
+                    RenderPng(BuildChainsModel(
+                        [.. participating.Select(ChannelCurve)], sampleRate)),
+                    Unit.FromCentimeter(17));
+            }
+
+            foreach (int i in sections.SelectMany(section => section.PairIndices))
+            {
+                AddPairOrChannelSections(sheet, project, i);
+            }
+
+            return sheet;
+        }
+
+        // The subwoofer group's chains reappear pale on the FRONT group's graph:
+        // the front chain hands its bass over to those subs, and the handover
+        // cannot be judged on a graph that shows only one side of it.
+        List<SheetEntry> subwooferMembers = [.. sections
+            .Where(section => section.Zone == VirtualCrossoverZone.Sub)
+            .SelectMany(section => Participants(project, section.PairIndices))];
+        foreach ((VirtualCrossoverZone zone, IReadOnlyList<int> pairIndices)
+            in sections)
+        {
+            AddGroupHeading(sheet.Section, VirtualCrossoverZones.DisplayName(zone));
+            sheet.AddImage(
+                RenderPng(BuildChainsModel(
+                    GroupCurves(
+                        zone, Participants(project, pairIndices), subwooferMembers),
+                    sampleRate)),
+                Unit.FromCentimeter(17));
+            foreach (int i in pairIndices)
+            {
+                AddPairOrChannelSections(sheet, project, i);
+            }
+        }
+
+        return sheet;
+    }
+
+    // Both sides of every pair print in one sheet; a mono pair prints once. On
+    // the graphs the right side reuses the pair's hue dashed.
+    private static List<SheetEntry> Participants(
+        VirtualCrossoverProjectFile project,
+        IReadOnlyList<int> pairIndices)
+    {
+        var participants = new List<SheetEntry>();
+        foreach (int i in pairIndices)
         {
             foreach ((VirtualCrossoverChannelSettings channel, string sideSuffix)
                 in VirtualCrossoverSheet.SideSections(project.Pairs[i]))
             {
                 if (channel.HasSource)
                 {
-                    participating.Add(
+                    participants.Add(
                         (i, sideSuffix,
                          sideSuffix == VirtualCrossoverSheet.RightSuffix, channel));
                 }
             }
         }
 
-        if (participating.Count > 0)
+        return participants;
+    }
+
+    // A stereo pair with both sides loaded prints as ONE section with an
+    // L/R value table — the two sides of a pair are dialed in together,
+    // so their numbers belong side by side. A mono pair (or a pair with
+    // one loaded side) keeps the single-channel layout.
+    private static void AddPairOrChannelSections(
+        PdfSheet sheet,
+        VirtualCrossoverProjectFile project,
+        int i)
+    {
+        VirtualCrossoverChannelPairSettings pair = project.Pairs[i];
+        if (!pair.Mono && pair.Left.HasSource && pair.Right.HasSource)
         {
-            sheet.AddImage(
-                RenderChainsGraph(participating, sampleRate),
-                Unit.FromCentimeter(17));
+            AddPairSection(sheet, i, pair.Left, pair.Right);
+            return;
         }
 
-        // A stereo pair with both sides loaded prints as ONE section with an
-        // L/R value table — the two sides of a pair are dialed in together,
-        // so their numbers belong side by side. A mono pair (or a pair with
-        // one loaded side) keeps the single-channel layout.
-        for (int i = 0; i < project.Pairs.Count; i++)
+        foreach ((VirtualCrossoverChannelSettings channel, string sideSuffix)
+            in VirtualCrossoverSheet.SideSections(pair))
         {
-            VirtualCrossoverChannelPairSettings pair = project.Pairs[i];
-            if (!pair.Mono && pair.Left.HasSource && pair.Right.HasSource)
+            if (channel.HasSource)
             {
-                AddPairSection(sheet, i, pair.Left, pair.Right);
-                continue;
-            }
-
-            foreach ((VirtualCrossoverChannelSettings channel, string sideSuffix)
-                in VirtualCrossoverSheet.SideSections(pair))
-            {
-                if (channel.HasSource)
-                {
-                    AddChannelSection(sheet, i, sideSuffix, channel);
-                }
+                AddChannelSection(sheet, i, sideSuffix, channel);
             }
         }
+    }
 
-        return sheet;
+    // The zone's name above its run of channel sections — a tier above the
+    // channel headings (15 pt), so the sheet's two levels read at a glance.
+    private static void AddGroupHeading(Section section, string title)
+    {
+        Paragraph heading = section.AddParagraph(title);
+        heading.Format.Font.Bold = true;
+        heading.Format.Font.Size = 19;
+        heading.Format.SpaceBefore = Unit.FromMillimeter(7);
+        heading.Format.SpaceAfter = Unit.FromMillimeter(1);
+        // Never break between the group's name and the graph it introduces.
+        heading.Format.KeepWithNext = true;
     }
 
     private static void AddPairSection(
@@ -359,12 +427,119 @@ internal static class VirtualCrossoverSheetPdf
         WriteValue(row.Cells[1], value, valueColor);
     }
 
-    // A compact white graph of every participating channel side's DSP chain
-    // magnitude (gain + crossover + PEQ; the delay has no magnitude effect).
+    /// <summary>
+    /// One line on a chains graph: the magnitude of the SUM of its chains — a
+    /// channel's own curve is a sum of one. Every chain is taken as its
+    /// DESIGN: delay and polarity stripped (neither moves a single chain's
+    /// magnitude, and folded into a sum they would mix the cabin's timing
+    /// compensation into what this graph shows, which is the filters as typed
+    /// into the DSP — the acoustic summation lives in the app's plot).
+    /// </summary>
+    internal sealed record ChainCurve(
+        string Title,
+        OxyColor Color,
+        LineStyle Style,
+        double Thickness,
+        IReadOnlyList<DspChannelChain> Chains);
+
+    // The neutral tones of the sum curves: dark for the group's own sum, pale
+    // for the subwoofer context on the front graph — context must never compete
+    // with the channels the graph is about.
+    private static readonly OxyColor SumColor = OxyColor.FromRgb(0x38, 0x38, 0x38);
+    private static readonly OxyColor SubContextColor =
+        OxyColor.FromRgb(0xB4, 0xB4, 0xB4);
+    private const double CurveThickness = 2;
+    private const double SumThickness = 2.5;
+
+    private static DspChannelChain DesignChain(
+        VirtualCrossoverChannelSettings channel) =>
+        channel.ToChain() with { DelayMs = 0, InvertPolarity = false };
+
+    private static ChainCurve ChannelCurve(SheetEntry entry) =>
+        new(
+            $"Channel {VirtualCrossoverSheet.ChannelName(entry.Index)}{entry.SideSuffix}",
+            ChainColors[entry.Index % ChainColors.Length],
+            entry.Dashed ? LineStyle.Dash : LineStyle.Solid,
+            CurveThickness,
+            [DesignChain(entry.Channel)]);
+
+    /// <summary>
+    /// The curves of ONE group's graph: every member's own chain; the group's
+    /// design sum per side — drawn only where a side has at least two chains
+    /// to sum (a sum of one would retrace the channel), and never for the
+    /// centre, whose signal is derived from L and R so no sum involving it is
+    /// honest; and, on the front group, the subwoofer group's sum in a pale
+    /// tone as context for the bass handover.
+    /// </summary>
+    internal static IReadOnlyList<ChainCurve> GroupCurves(
+        VirtualCrossoverZone zone,
+        IReadOnlyList<SheetEntry> members,
+        IReadOnlyList<SheetEntry> subwooferMembers)
+    {
+        var curves = new List<ChainCurve>(members.Select(ChannelCurve));
+        if (zone != VirtualCrossoverZone.Center)
+        {
+            AddSumCurves(curves, members, "Sum", SumColor, requireTwo: true);
+        }
+
+        if (zone == VirtualCrossoverZone.Front)
+        {
+            AddSumCurves(
+                curves, subwooferMembers, "Sub sum", SubContextColor,
+                requireTwo: false);
+        }
+
+        return curves;
+    }
+
+    // A sum is per SIDE — left and right carry different programs, so one line
+    // through both would be the comb-filter fiction this tool refuses
+    // everywhere. Mono members feed both sides identically; a group of nothing
+    // but mono members has one sum, not two copies of it.
+    private static void AddSumCurves(
+        List<ChainCurve> curves,
+        IReadOnlyList<SheetEntry> members,
+        string title,
+        OxyColor color,
+        bool requireTwo)
+    {
+        List<DspChannelChain> SideChains(string excludedSuffix) =>
+            [.. members
+                .Where(member => member.SideSuffix != excludedSuffix)
+                .Select(member => DesignChain(member.Channel))];
+
+        List<DspChannelChain> left = SideChains(VirtualCrossoverSheet.RightSuffix);
+        List<DspChannelChain> right = SideChains(VirtualCrossoverSheet.LeftSuffix);
+        int floor = requireTwo ? 2 : 1;
+        if (members.All(member =>
+            member.SideSuffix == VirtualCrossoverSheet.MonoSuffix))
+        {
+            if (left.Count >= floor)
+            {
+                curves.Add(new ChainCurve(
+                    title, color, LineStyle.Solid, SumThickness, left));
+            }
+
+            return;
+        }
+
+        if (left.Count >= floor)
+        {
+            curves.Add(new ChainCurve(
+                $"{title} L", color, LineStyle.Solid, SumThickness, left));
+        }
+
+        if (right.Count >= floor)
+        {
+            curves.Add(new ChainCurve(
+                $"{title} R", color, LineStyle.Dash, SumThickness, right));
+        }
+    }
+
+    // A compact white graph of DSP chain magnitudes (gain + crossover + PEQ).
     // Left and right sides of one pair share a hue; the right side is dashed.
-    private static byte[] RenderChainsGraph(
-        IReadOnlyList<(int Index, string SideSuffix, bool Dashed,
-            VirtualCrossoverChannelSettings Channel)> channels,
+    internal static PlotModel BuildChainsModel(
+        IReadOnlyList<ChainCurve> curves,
         int sampleRate)
     {
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 200);
@@ -378,9 +553,15 @@ internal static class VirtualCrossoverSheetPdf
         };
         // OxyPlot 2.x renders no legend unless one is explicitly added; the
         // per-series channel titles were invisible in the exported sheet.
+        // The legend lives OUTSIDE the plot area, laid out in rows below it:
+        // inside it is an opaque box, and on a real car's front group it sat
+        // exactly where the tweeters and the sums run (~0 dB, upper right),
+        // hiding everything above the last crossover corner.
         model.Legends.Add(new OxyPlot.Legends.Legend
         {
-            LegendPosition = OxyPlot.Legends.LegendPosition.TopRight,
+            LegendPlacement = OxyPlot.Legends.LegendPlacement.Outside,
+            LegendPosition = OxyPlot.Legends.LegendPosition.BottomCenter,
+            LegendOrientation = OxyPlot.Legends.LegendOrientation.Horizontal,
             LegendTextColor = OxyColors.Black,
             LegendBorder = OxyColors.Gray,
             LegendBackground = OxyColors.White
@@ -388,21 +569,24 @@ internal static class VirtualCrossoverSheetPdf
 
         double minDb = -6;
         double maxDb = 6;
-        foreach ((int index, string sideSuffix, bool dashed,
-            VirtualCrossoverChannelSettings channel) in channels)
+        foreach (ChainCurve curve in curves)
         {
-            DspChannelChain chain = channel.ToChain() with { DelayMs = 0 };
             var series = new LineSeries
             {
-                Color = ChainColors[index % ChainColors.Length],
-                StrokeThickness = 2,
-                LineStyle = dashed ? LineStyle.Dash : LineStyle.Solid,
-                Title = $"Channel {VirtualCrossoverSheet.ChannelName(index)}{sideSuffix}"
+                Color = curve.Color,
+                StrokeThickness = curve.Thickness,
+                LineStyle = curve.Style,
+                Title = curve.Title
             };
             foreach (double frequency in grid)
             {
-                double db = DataHelper.AmplitudeToDecibels(
-                    chain.Response(frequency, sampleRate).Magnitude);
+                Complex response = Complex.Zero;
+                foreach (DspChannelChain chain in curve.Chains)
+                {
+                    response += chain.Response(frequency, sampleRate);
+                }
+
+                double db = DataHelper.AmplitudeToDecibels(response.Magnitude);
                 series.Points.Add(new DataPoint(frequency, db));
                 if (db > -70)
                 {
@@ -437,7 +621,14 @@ internal static class VirtualCrossoverSheetPdf
             Unit = "dB"
         });
 
-        var exporter = new PngExporter { Width = 900, Height = 280 };
+        return model;
+    }
+
+    private static byte[] RenderPng(PlotModel model)
+    {
+        // A little taller than the old 280: the legend now takes rows under
+        // the plot area rather than a box inside it.
+        var exporter = new PngExporter { Width = 900, Height = 330 };
         using var stream = new MemoryStream();
         exporter.Export(model, stream);
         return stream.ToArray();

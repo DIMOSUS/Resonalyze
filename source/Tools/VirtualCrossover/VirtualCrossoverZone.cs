@@ -54,8 +54,10 @@ public enum VirtualCrossoverZone
 public static class VirtualCrossoverZones
 {
     /// <summary>
-    /// The zones in the order the UI lists them and the tuning sheet sections
-    /// follow — up the spectrum, then outward from the front stage.
+    /// The zones in the order the UI lists them — up the spectrum, then outward
+    /// from the front stage. The tuning sheet deliberately does NOT follow this:
+    /// its sections run in the order a tune is typed into a DSP
+    /// (<see cref="VirtualCrossoverSheetGroups.SectionOrder"/>).
     /// </summary>
     public static readonly IReadOnlyList<VirtualCrossoverZone> All =
     [

@@ -44,6 +44,24 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // questions ("where this driver plays" against "where these two meet").
     private bool lastAutoBandIsShared;
     private bool disposed;
+    // What is drawn, what is running, what waits. This panel is refreshed from
+    // more places than there are changes to draw: a mode switch asks twice (the
+    // tab shows the panel, then the redraw that follows asks again), and a
+    // compare change, a loaded file and a restored history entry each arrive
+    // through two paths of their own. Every one of those used to re-run the
+    // whole band-limited analysis of a record that had not moved.
+    private readonly AnalysisReadSchedule<AnalysisRequest> reads = new();
+    // Per-record derivations, kept so that a band edit — which changes neither
+    // the record nor its hygiene — stops paying for them again. One slot per
+    // role; the entry is swapped as a whole, so a reader never sees a verdict
+    // paired with another record's samples.
+    private ProjectionEntry? mainProjection;
+    private ProjectionEntry? compareProjection;
+    private HygieneEntry? mainHygiene;
+    private HygieneEntry? compareHygiene;
+    // Guards those four slots: a superseded read can still be running on its own
+    // thread when the next one starts, and both reach for them.
+    private readonly object recordDerivations = new();
 
     // The fade the Auto mode puts around the detected pass band.
     private const double AutoBandFadeOctaves = 0.5;
@@ -189,6 +207,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         if (!TryGetMainSource(out TimeAlignmentAnalysisSource mainSource, out string noDataMessage))
         {
+            reads.Clear();
             lastAutoBand = null;
             UpdateAutoBandLabel();
             UpdateBandpassPreview();
@@ -197,8 +216,138 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
+        // The window preview and its caption follow the CONTROLS, so an edit
+        // moves them at once instead of at the end of the read behind it. In the
+        // Auto mode the caption still names the band of the last finished read
+        // until the new one lands, which is what "detected" has always meant.
+        UpdateAutoBandLabel();
+        UpdateBandpassPreview();
+
+        // The band is FROZEN into the request here. The read runs off the UI
+        // thread, where the shared options object can be edited under it, and a
+        // number on screen has to state the band it was actually taken in.
+        var request = new AnalysisRequest(
+            mainSource,
+            getCompareMeasurement(),
+            options.BandMode,
+            options.BandpassCenterHz,
+            options.BandpassPassOctaves,
+            options.BandpassFadeOctaves,
+            options.FirstPeakThresholdBelowMaxDb,
+            options.FirstPeakMinimumSnrDb,
+            options.PeakSearchWindowMilliseconds);
+        if (reads.Submit(request) is { } version)
+        {
+            StartAnalysis(request, version);
+        }
+    }
+
+    // Starts the read, off the UI thread wherever there is a message loop to
+    // come back to. At a megabyte of transfer IR one read is a few hundred
+    // milliseconds, and it used to be spent inside the click that asked for it:
+    // that is what made a nudge of the band boxes feel like a hang, and what
+    // held the shell still for a moment after every sweep.
+    private void StartAnalysis(AnalysisRequest request, int version)
+    {
+        if (!owner.IsHandleCreated || owner.IsDisposed || owner.InvokeRequired)
+        {
+            // Nothing to come back to: the controllers are built and refreshed
+            // before the shell has a window, and the panel tests never open one.
+            CompleteAnalysis(request, RunAnalysis(request), version);
+            return;
+        }
+
+        _ = RunAnalysisAsync(request, version);
+    }
+
+    private async Task RunAnalysisAsync(AnalysisRequest request, int version)
+    {
+        AnalysisOutcome outcome;
         try
         {
+            outcome = await Task.Run(() => RunAnalysis(request));
+        }
+        catch (Exception exception)
+        {
+            outcome = AnalysisOutcome.Failed(exception.Message);
+        }
+
+        if (!disposed && !owner.IsDisposed)
+        {
+            CompleteAnalysis(request, outcome, version);
+        }
+    }
+
+    // Draws a finished read — unless a newer one has been asked for since, in
+    // which case this one is stale and drawing it would put the previous band's
+    // numbers under the band the user is now looking at.
+    private void CompleteAnalysis(
+        AnalysisRequest request,
+        AnalysisOutcome outcome,
+        int version)
+    {
+        if (disposed)
+        {
+            return;
+        }
+
+        // A read the controls have left is not drawn at all — the panel would
+        // otherwise stand there stating an alignment for a band nobody is
+        // looking at — but its slot on the pool frees here, so what IS wanted
+        // starts either way.
+        if (!reads.Complete(request, version))
+        {
+            StartDesiredAnalysis();
+            return;
+        }
+
+        lastAutoBand = outcome.AutoBand;
+        lastAutoBandIsShared = outcome.AutoBandShared;
+        UpdateAutoBandLabel();
+        UpdateBandpassPreview();
+        if (outcome.Message is { } message)
+        {
+            SetStatusText(message);
+            ClearEnvelopePreview();
+            StartDesiredAnalysis();
+            return;
+        }
+
+        SetMeasurementResultStatus(
+            request.BandMode,
+            outcome.MainSource,
+            outcome.MainResult,
+            outcome.MainProbe,
+            outcome.MainCrosstalk,
+            outcome.Compare,
+            outcome.CompareProbe,
+            outcome.CompareCrosstalk,
+            outcome.CompareWarning);
+        UpdateEnvelopePreview(
+            outcome.MainResult,
+            outcome.MainSource.SampleRate,
+            outcome.Compare?.Result);
+        StartDesiredAnalysis();
+    }
+
+    // What the controls are still waiting for, now that the pool is free.
+    private void StartDesiredAnalysis()
+    {
+        if (reads.TakeDesired(out AnalysisRequest desired) is { } version)
+        {
+            StartAnalysis(desired, version);
+        }
+    }
+
+    // The read itself. Nothing here touches a control or the shared options
+    // object: it works from the request alone, so it is safe on a worker thread
+    // and it states the band it was given rather than the band the boxes have
+    // reached by the time it lands.
+    private AnalysisOutcome RunAnalysis(AnalysisRequest request)
+    {
+        try
+        {
+            TimeAlignmentAnalysisSource mainSource = request.MainSource;
             // Crosstalk hygiene first: detection always runs on the RAW
             // record, then the banded modes analyze the CLEANED record —
             // the same order the Auto delay engine uses. A broadband click
@@ -206,10 +355,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             // alike, so analyzing the raw record could green-light
             // ("verified") an arrival that times the click. The bypass mode
             // keeps the raw record and flags the contamination instead.
-            CrosstalkHeadGate? mainCrosstalk = TransferIrDiagnostics.DetectCrosstalkHead(
-                mainSource.TransferImpulseResponse, mainSource.SampleRate);
-            TimeAlignmentAnalysisSource mainAnalysisSource =
-                CleanForAnalysis(mainSource, mainCrosstalk);
+            HygieneEntry mainHygieneEntry = Hygiene(ref mainHygiene, mainSource);
+            TimeAlignmentAnalysisSource mainAnalysisSource = CleanForAnalysis(
+                mainSource, mainHygieneEntry, request.BandMode);
 
             // The Compare record is resolved and cleaned BEFORE the band is
             // chosen: in the Auto mode the band is the one both records share,
@@ -217,17 +365,20 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             // which of the two was loaded as Main (a field mid pair: 32.7-7671
             // Hz one way, 75.5-4695 Hz the other, and 0.3 ms of delta with it).
             TimeAlignmentAnalysisSource? compareSource = TryGetCompareSource(
+                request,
                 mainSource,
                 out string? compareWarning,
                 out CrosstalkHeadGate? compareCrosstalk);
 
-            // One options object per refresh, and the Compare measurement is
+            // One options object per read, and the Compare measurement is
             // analyzed in the same band, so the delta column compares like with
             // like.
             TimeAlignmentAnalysisOptions analysisOptions = CreateAnalysisOptions(
-                mainAnalysisSource, compareSource, wrapPeakPositions: true);
-            UpdateAutoBandLabel();
-            UpdateBandpassPreview();
+                request,
+                mainAnalysisSource,
+                compareSource,
+                out DominantBand? autoBand,
+                out bool autoBandShared);
 
             TimeAlignmentAnalysisResult mainResult = TimeAlignmentAnalysis.Analyze(
                 mainAnalysisSource.TransferImpulseResponse,
@@ -236,13 +387,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 mainAnalysisSource.TransferCoherence);
             if (!mainResult.IsValid)
             {
-                SetStatusText(
+                return AnalysisOutcome.Failed(
                     "No signal in the analysis band.\r\n" +
                     "The transfer IR carries no energy inside the current " +
                     "band-pass window — widen or move the band, or check " +
-                    "that the measurement actually captured the driver.");
-                ClearEnvelopePreview();
-                return;
+                    "that the measurement actually captured the driver.",
+                    autoBand,
+                    autoBandShared);
             }
 
             TimeAlignmentArrivalProbe? mainProbe = TimeAlignmentAnalysis.ProbeArrivalHonesty(
@@ -261,39 +412,141 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                     analysisOptions,
                     compareAnalysis.Value.Result,
                     compareAnalysis.Value.Source.TransferCoherence);
-            SetMeasurementResultStatus(
+            return new AnalysisOutcome(
                 mainSource,
+                autoBand,
+                autoBandShared,
                 mainResult,
                 mainProbe,
-                mainCrosstalk,
+                mainHygieneEntry.Crosstalk,
                 compareAnalysis,
                 compareProbe,
                 compareCrosstalk,
-                compareWarning);
-            UpdateEnvelopePreview(
-                mainResult,
-                mainSource.SampleRate,
-                compareAnalysis?.Result);
+                compareWarning,
+                Message: null);
         }
         catch (Exception exception)
         {
-            SetStatusText(exception.Message);
-            ClearEnvelopePreview();
+            return AnalysisOutcome.Failed(exception.Message);
         }
+    }
+
+    // Everything one read needs, taken on the UI thread before it starts. Two
+    // requests that compare equal describe the same read of the same records,
+    // which is what lets a repeated refresh recognize the answer already drawn.
+    private readonly record struct AnalysisRequest(
+        TimeAlignmentAnalysisSource MainSource,
+        TimeAlignmentCompareMeasurement? Compare,
+        TimeAlignmentBandMode BandMode,
+        double BandpassCenterHz,
+        double BandpassPassOctaves,
+        double BandpassFadeOctaves,
+        double FirstPeakThresholdBelowMaxDb,
+        double FirstPeakMinimumSnrDb,
+        double PeakSearchWindowMilliseconds);
+
+    // What one read produced. A Message instead of a result is the read saying
+    // why it has nothing to show — a band with no energy in it, or a record the
+    // analysis threw on — and the panel prints that in place of the tables.
+    private sealed record AnalysisOutcome(
+        TimeAlignmentAnalysisSource MainSource,
+        DominantBand? AutoBand,
+        bool AutoBandShared,
+        TimeAlignmentAnalysisResult MainResult,
+        TimeAlignmentArrivalProbe? MainProbe,
+        CrosstalkHeadGate? MainCrosstalk,
+        TimeAlignmentCompareAnalysis? Compare,
+        TimeAlignmentArrivalProbe? CompareProbe,
+        CrosstalkHeadGate? CompareCrosstalk,
+        string? CompareWarning,
+        string? Message)
+    {
+        public static AnalysisOutcome Failed(
+            string message,
+            DominantBand? autoBand = null,
+            bool autoBandShared = false) =>
+            new(
+                default,
+                autoBand,
+                autoBandShared,
+                default,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                message);
+    }
+
+    // A transfer IR's real projection, remembered per record. The analysis reads
+    // doubles while the measurement holds Complex, and converting a megabyte of
+    // samples on every refresh costs both the copy and a NEW array — and a new
+    // array would make every request look like a different one.
+    private sealed record ProjectionEntry(Complex[] Source, double[] Samples);
+
+    // The crosstalk verdict and the cleaned copy that follows from it,
+    // remembered for the same reason: neither depends on the band, so a spin of
+    // a numeric box should not pay for a detection pass and a full copy of the
+    // samples before the analysis it asked for even starts.
+    private sealed record HygieneEntry(
+        double[] Samples,
+        CrosstalkHeadGate? Crosstalk,
+        double[] Cleaned);
+
+    private double[] RealSamples(ref ProjectionEntry? slot, Complex[] transfer)
+    {
+        lock (recordDerivations)
+        {
+            if (slot is { } entry && ReferenceEquals(entry.Source, transfer))
+            {
+                return entry.Samples;
+            }
+
+            var projected = new ProjectionEntry(
+                transfer,
+                Array.ConvertAll(transfer, sample => sample.Real));
+            slot = projected;
+            return projected.Samples;
+        }
+    }
+
+    private HygieneEntry Hygiene(ref HygieneEntry? slot, TimeAlignmentAnalysisSource source)
+    {
+        double[] samples = source.TransferImpulseResponse;
+        lock (recordDerivations)
+        {
+            if (slot is { } cached && ReferenceEquals(cached.Samples, samples))
+            {
+                return cached;
+            }
+        }
+
+        CrosstalkHeadGate? crosstalk = TransferIrDiagnostics.DetectCrosstalkHead(
+            samples, source.SampleRate);
+        var entry = new HygieneEntry(
+            samples,
+            crosstalk,
+            crosstalk is { } gate
+                ? TransferIrDiagnostics.CleanCrosstalkHead(samples, source.SampleRate, gate)
+                : samples);
+        lock (recordDerivations)
+        {
+            slot = entry;
+        }
+
+        return entry;
     }
 
     // The banded modes analyze the record with the convicted click removed
     // (band detection included); the bypass mode shows the record as-is and
     // relies on the red flag instead.
-    private TimeAlignmentAnalysisSource CleanForAnalysis(
+    private static TimeAlignmentAnalysisSource CleanForAnalysis(
         TimeAlignmentAnalysisSource source,
-        CrosstalkHeadGate? crosstalk) =>
-        options.BandMode != TimeAlignmentBandMode.FullBand && crosstalk is { } gate
-            ? source with
-            {
-                TransferImpulseResponse = TransferIrDiagnostics.CleanCrosstalkHead(
-                    source.TransferImpulseResponse, source.SampleRate, gate)
-            }
+        HygieneEntry hygiene,
+        TimeAlignmentBandMode bandMode) =>
+        bandMode != TimeAlignmentBandMode.FullBand && hygiene.Crosstalk != null
+            ? source with { TransferImpulseResponse = hygiene.Cleaned }
             : source;
 
     private bool TryGetMainSource(
@@ -326,7 +579,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 measurement.Sweep?.ComputedDuration ?? 0.0,
                 measurement.PlaybackChannel,
                 measurement.MeasurementMode,
-                Array.ConvertAll(transferImpulseResponse, sample => sample.Real),
+                RealSamples(ref mainProjection, transferImpulseResponse),
                 measurement.TransferCoherence,
                 measurement.CurrentLevels);
             message = string.Empty;
@@ -380,7 +633,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return $"Compare: {compare.Value.DisplayName}, {snapshot.SampleRate} Hz, {snapshot.Bits} bit.";
     }
 
-    private static TimeAlignmentAnalysisSource CreateCompareSource(
+    private TimeAlignmentAnalysisSource CreateCompareSource(
         TimeAlignmentCompareMeasurement compare,
         MeasurementHistorySnapshot snapshot) =>
         new(
@@ -391,32 +644,32 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             snapshot.SweepDurationSeconds,
             snapshot.PlayChannel,
             snapshot.MeasurementMode,
-            Array.ConvertAll(
-                snapshot.TransferImpulseResponse!,
-                sample => sample.Real),
+            RealSamples(ref compareProjection, snapshot.TransferImpulseResponse!),
             snapshot.TransferCoherence,
             snapshot.MeterSnapshot);
 
-    private TimeAlignmentAnalysisOptions CreateAnalysisOptions(
+    private static TimeAlignmentAnalysisOptions CreateAnalysisOptions(
+        AnalysisRequest request,
         TimeAlignmentAnalysisSource source,
         TimeAlignmentAnalysisSource? compareSource,
-        bool wrapPeakPositions)
+        out DominantBand? autoBand,
+        out bool autoBandShared)
     {
-        double centerHz = options.BandpassCenterHz;
-        double passOctaves = options.BandpassPassOctaves;
-        double fadeOctaves = options.BandpassFadeOctaves;
-        lastAutoBand = null;
-        lastAutoBandIsShared = false;
-        if (options.BandMode == TimeAlignmentBandMode.AutoBand)
+        double centerHz = request.BandpassCenterHz;
+        double passOctaves = request.BandpassPassOctaves;
+        double fadeOctaves = request.BandpassFadeOctaves;
+        autoBand = null;
+        autoBandShared = false;
+        if (request.BandMode == TimeAlignmentBandMode.AutoBand)
         {
             DominantBand band = DetectDominantBand(source);
             if (compareSource is { } compare &&
                 TryDetectDominantBand(compare, out DominantBand compareBand))
             {
-                (band, lastAutoBandIsShared) = SharedBand(band, compareBand);
+                (band, autoBandShared) = SharedBand(band, compareBand);
             }
 
-            lastAutoBand = band;
+            autoBand = band;
             centerHz = Math.Sqrt(band.LowHz * band.HighHz);
             passOctaves = Math.Log2(band.HighHz / band.LowHz);
             fadeOctaves = AutoBandFadeOctaves;
@@ -424,14 +677,17 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         return new TimeAlignmentAnalysisOptions
         {
-            UseBandpassWindow = options.BandMode != TimeAlignmentBandMode.FullBand,
+            UseBandpassWindow = request.BandMode != TimeAlignmentBandMode.FullBand,
             BandpassCenterHz = centerHz,
             BandpassPassOctaves = passOctaves,
             BandpassFadeOctaves = fadeOctaves,
-            FirstPeakThresholdBelowMaxDb = options.FirstPeakThresholdBelowMaxDb,
-            FirstPeakMinimumSnrDb = options.FirstPeakMinimumSnrDb,
-            PeakSearchWindowMilliseconds = options.PeakSearchWindowMilliseconds,
-            WrapPeakPositions = wrapPeakPositions
+            FirstPeakThresholdBelowMaxDb = request.FirstPeakThresholdBelowMaxDb,
+            FirstPeakMinimumSnrDb = request.FirstPeakMinimumSnrDb,
+            PeakSearchWindowMilliseconds = request.PeakSearchWindowMilliseconds,
+            // Every position this panel prints is a delay against another
+            // arrival, so a peak past the halfway mark is read as the negative
+            // lead it is rather than as a buffer-length delay.
+            WrapPeakPositions = true
         };
     }
 
@@ -615,13 +871,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // analysis in the banded modes), and no analysis yet — the band still has
     // to be agreed between the two records.
     private TimeAlignmentAnalysisSource? TryGetCompareSource(
+        AnalysisRequest request,
         TimeAlignmentAnalysisSource mainSource,
         out string? warning,
         out CrosstalkHeadGate? crosstalk)
     {
         warning = null;
         crosstalk = null;
-        TimeAlignmentCompareMeasurement? compare = getCompareMeasurement();
+        TimeAlignmentCompareMeasurement? compare = request.Compare;
         if (compare == null)
         {
             return null;
@@ -647,9 +904,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             TimeAlignmentAnalysisSource compareSource =
                 CreateCompareSource(compareValue, snapshot);
-            crosstalk = TransferIrDiagnostics.DetectCrosstalkHead(
-                compareSource.TransferImpulseResponse, compareSource.SampleRate);
-            return CleanForAnalysis(compareSource, crosstalk);
+            HygieneEntry hygiene = Hygiene(ref compareHygiene, compareSource);
+            crosstalk = hygiene.Crosstalk;
+            return CleanForAnalysis(compareSource, hygiene, request.BandMode);
         }
         catch (Exception exception)
         {
@@ -1054,6 +1311,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     }
 
     private void SetMeasurementResultStatus(
+        TimeAlignmentBandMode bandMode,
         TimeAlignmentAnalysisSource mainSource,
         TimeAlignmentAnalysisResult mainResult,
         TimeAlignmentArrivalProbe? mainProbe,
@@ -1068,9 +1326,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             statusTextBox.Clear();
             AppendMeasurementResult(
-                "Main", mainSource.Levels, mainResult, mainProbe, mainCrosstalk);
+                bandMode, "Main", mainSource.Levels, mainResult, mainProbe, mainCrosstalk);
             AppendCompareResult(
-                mainResult, compareAnalysis, compareProbe, compareCrosstalk, compareWarning);
+                bandMode,
+                mainResult,
+                compareAnalysis,
+                compareProbe,
+                compareCrosstalk,
+                compareWarning);
             statusTextBox.SelectionStart = 0;
             statusTextBox.SelectionLength = 0;
         }
@@ -1081,6 +1344,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     }
 
     private void AppendCompareResult(
+        TimeAlignmentBandMode bandMode,
         TimeAlignmentAnalysisResult mainResult,
         TimeAlignmentCompareAnalysis? compareAnalysis,
         TimeAlignmentArrivalProbe? compareProbe,
@@ -1103,6 +1367,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         // Passing the Main result makes the Compare delay table show each value's delta
         // against Source in parentheses.
         AppendMeasurementResult(
+            bandMode,
             "Compare",
             compareAnalysis!.Value.Source.Levels,
             compareAnalysis.Value.Result,
@@ -1112,6 +1377,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     }
 
     private void AppendMeasurementResult(
+        TimeAlignmentBandMode bandMode,
         string title,
         InputLevelMeterSnapshot levels,
         TimeAlignmentAnalysisResult result,
@@ -1121,12 +1387,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     {
         AppendSignalQuality(title, result);
         AppendAlignmentConfidence(result);
-        AppendArrivalHonesty(result, honestyProbe);
-        AppendCrosstalkFlag(crosstalk);
+        AppendArrivalHonesty(bandMode, result, honestyProbe);
+        AppendCrosstalkFlag(bandMode, crosstalk);
         AppendLevelsLine(levels);
         AppendSeparator();
         AppendDelayTable(result, reference);
-        if (IsArrivalRecommendable(result, honestyProbe, options.BandMode, crosstalk != null))
+        if (IsArrivalRecommendable(result, honestyProbe, bandMode, crosstalk != null))
         {
             AppendStrongestPeakHint(result);
         }
@@ -1152,14 +1418,21 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // a fixed early sample in every record of a session; on band-limited
     // drivers it sits within the first-peak threshold and the FULL-BAND
     // First Arrival confidently times it instead of the sound.
-    private void AppendCrosstalkFlag(CrosstalkHeadGate? crosstalk)
+    private void AppendCrosstalkFlag(
+        TimeAlignmentBandMode bandMode,
+        CrosstalkHeadGate? crosstalk)
     {
         if (crosstalk is not { } gate)
         {
             return;
         }
 
-        if (options.BandMode == TimeAlignmentBandMode.FullBand)
+        // The mode the READ was taken in, never the one the controls have
+        // reached since: "removed from this analysis" is a statement about
+        // which record these very figures came off, and a bypass read whose
+        // panel has moved to Auto would otherwise claim a cleaning it never
+        // had.
+        if (bandMode == TimeAlignmentBandMode.FullBand)
         {
             // Bypass shows the record as-is, so the figures above may time
             // the click; the banded modes analyze it removed.
@@ -1186,10 +1459,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // produces a confident wrong number exactly where this tool is used most
     // (subwoofer and midbass bands).
     private void AppendArrivalHonesty(
+        TimeAlignmentBandMode bandMode,
         TimeAlignmentAnalysisResult result,
         TimeAlignmentArrivalProbe? probe)
     {
-        if (options.BandMode == TimeAlignmentBandMode.FullBand)
+        if (bandMode == TimeAlignmentBandMode.FullBand)
         {
             return;
         }

@@ -562,6 +562,21 @@ shows it as flat by construction.
 
 ## Time Alignment / unwrap
 
+- [ ] ★ **The panel reads the WHOLE record to answer a question about its first
+  80 ms.** A transfer IR is `NextPow2(2 x capture)` — a 2.2 s sweep at 96 kHz
+  reads a 10.9 s buffer — and every transform is sized by it, so one read costs
+  465 ms where a window around the arrival costs about 90 (measured 2026-08-31
+  on the field records `tw center.json` and `l mid.json`, after the
+  one-transform pass; a 65536-sample cut at 96 kHz places the arrival within
+  0.1 us of the full read). Deliberately NOT taken with that pass: it moves
+  two numbers, and both need a decision rather than a default.
+  - **SNR** is the peak against the record's quietest quarter, and a short
+    cut's quietest quarter is still decay, not noise: 87.0 -> 82.0 dB and
+    80.4 -> 76.7 dB on those two records.
+  - **Coherence** weights the GCC-PHAT refinement and lives on the FULL
+    record's half spectrum; a cut is a different bin grid, so the weight would
+    have to be dropped (losing what #19 added) or resampled onto it.
+  Merge bar is the session battery, as for anything that moves an arrival.
 - [ ] **GCC-PHAT confidence is peak height, not uniqueness**: a single spectral
   line or a narrowband subwoofer reads ~100% while the delay is poorly
   conditioned. Fix: fold RMS bandwidth / peak curvature / peak-to-second-peak

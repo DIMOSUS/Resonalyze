@@ -40,6 +40,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         // own Checked, so LHD needs no listener of its own.
         radioRightHandDrive.CheckedChanged += (_, _) => InvalidateResult();
         numericSceneOffset.ValueChanged += (_, _) => InvalidateResult();
+        numericRearFill.ValueChanged += (_, _) => InvalidateResult();
         numericNearSideCut.ValueChanged += (_, _) => InvalidateResult();
         checkBoxGains.CheckedChanged += (_, _) =>
         {

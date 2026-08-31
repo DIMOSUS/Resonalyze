@@ -122,6 +122,34 @@ public sealed class EssHarmonicBelowNoiseTests
     }
 
     [Fact]
+    public void AContaminatedEdgeOverANoisePlateau_IsNotBlessedAsBelowNoise()
+    {
+        // A neighbour's undecayed tail sits in the LEADING edge region of HD2's
+        // window while the plateau itself holds nothing above the noise floor.
+        // The below-noise verdict must not swallow that: the window is polluted,
+        // which is exactly what the edge-based overlap warning exists to say.
+        var sweep = Sweep();
+        HarmonicWindowDefinition h2 = EssHarmonicAnalysis.BuildWindow(sweep, 2, 0.5);
+        double[] impulse = NoisyCleanImpulse();
+        int windowLength = h2.EndSample - h2.StartSample + 1;
+        int edgeEnd = h2.StartSample + (int)(0.15 * windowLength);
+        for (int i = h2.StartSample; i < edgeEnd; i++)
+        {
+            impulse[i] = 0.01;
+        }
+
+        EssHarmonicDecomposition decomposition = EssHarmonicAnalysis.AnalyzeEssHarmonics(
+            impulse, sweep, new HarmonicAnalysisOptions(MaxHarmonic: 4));
+
+        HarmonicPacketValidity h2Validity =
+            decomposition.Validity.Packets.Single(p => p.Order == 2);
+        Assert.False(h2Validity.IsBelowNoiseFloor);
+        Assert.False(h2Validity.IsReliable);
+        Assert.NotNull(h2Validity.Warning);
+        Assert.Contains(decomposition.Validity.Warnings, w => w.Contains("HD2"));
+    }
+
+    [Fact]
     public void WithoutAUsableTail_TheOldOverlapVerdictIsKept()
     {
         // The noise stops right after the linear window, leaving a silent tail

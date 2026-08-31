@@ -231,6 +231,23 @@ frequency (a second-harmonic hump from a 1 kHz drive appears at 1 kHz, not at
 sweep-deconvolution scale while the primary curve is loopback-normalized, their
 vertical distance is not yet a calibrated distortion percentage.
 
+A ticked HD curve can still be missing from the plot, and the plot says why at
+its top centre rather than leaving the checkbox unexplained. Each order's
+harmonic lives in its own time window of the deconvolved sweep, and two things
+can empty that window of a drawable curve. If the order's packet has **not
+decayed by its window edge** it leaks into — or is polluted by — the
+neighbouring order, so the curve is dropped from the plot and from THD and an
+amber warning names the order and the cure: a longer sweep, or a narrower
+analysed range (marginal isolation keeps the curve and just carries the
+caveat). If instead the whole window holds **nothing above the record's own
+noise floor** — plateau and edges alike — there is no harmonic to draw at all:
+the curve is dropped the same way, but the note is a neutral gray *"below the
+measurement noise floor"*, because distortion too low for the capture to
+resolve is the mark of a clean measurement, not a fault. A longer sweep or more
+drive level lowers that floor if the vanished order still needs to be resolved.
+The two notes can appear together when one order genuinely leaks while another
+sits under the noise.
+
 ### Sweep band and duration
 
 The exponential sweep is described by the band it must cover: a **Low frequency

@@ -274,6 +274,14 @@ public static class EssHarmonicAnalysis
     // leak — a visible curve — sits far above the floor and is untouched.
     private const double BelowNoisePlateauDb = 16.0;
 
+    // A below-noise verdict must hold for the WHOLE window, edges included: a
+    // neighbour's undecayed tail (or the linear packet's skirt) can sit in an
+    // edge region while the plateau reads pure noise, and that contamination is
+    // exactly what the edge test exists to catch — it must stay a warned overlap,
+    // not a blessed clean capture. An edge RMS is averaged over hundreds of
+    // samples and sits tight on the true noise RMS, so a modest margin suffices.
+    private const double BelowNoiseEdgeMarginDb = 6.0;
+
     // Tail-noise chunking: the quiet region is split into equal chunks whose RMS
     // values are combined by a median, so one stray thump in the tail cannot
     // inflate the noise estimate. Below the minimum chunk length the tail is too
@@ -770,16 +778,27 @@ public static class EssHarmonicAnalysis
         double leadingDb = EdgeEnergyDb(impulse, start, edgeLength, peakEnergy);
         double trailingDb = EdgeEnergyDb(impulse, end - edgeLength + 1, edgeLength, peakEnergy);
 
-        // No packet stands above the record's own noise here: whatever the edges
-        // read, there is nothing to leak and nothing to draw. Dropped like an
-        // overlap, but without a warning — an unresolvably small harmonic is the
-        // mark of a clean capture, not a measurement fault.
+        // No packet stands above the record's own noise here — and the edges are
+        // themselves at the noise floor, so nothing foreign is intruding either:
+        // there is nothing to leak and nothing to draw. Dropped like an overlap,
+        // but without a warning — an unresolvably small harmonic is the mark of a
+        // clean capture, not a measurement fault. A hot edge over a noise-level
+        // plateau (a neighbour's tail reaching in) falls through to the overlap
+        // verdict below instead of being blessed as clean.
         if (tailNoiseAmplitude > 0.0 &&
             peakEnergy <= tailNoiseAmplitude * Math.Pow(10.0, BelowNoisePlateauDb / 20.0))
         {
-            return new HarmonicPacketValidity(
-                window.Order, leadingDb, trailingDb,
-                IsReliable: false, Warning: null, IsBelowNoiseFloor: true);
+            double edgeCeiling =
+                tailNoiseAmplitude * Math.Pow(10.0, BelowNoiseEdgeMarginDb / 20.0);
+            bool edgesAtNoise =
+                peakEnergy * Math.Pow(10.0, leadingDb / 20.0) <= edgeCeiling &&
+                peakEnergy * Math.Pow(10.0, trailingDb / 20.0) <= edgeCeiling;
+            if (edgesAtNoise)
+            {
+                return new HarmonicPacketValidity(
+                    window.Order, leadingDb, trailingDb,
+                    IsReliable: false, Warning: null, IsBelowNoiseFloor: true);
+            }
         }
 
         double worst = Math.Max(leadingDb, trailingDb);

@@ -406,6 +406,14 @@ next field session rather than in a register nobody else can tick.
   worth a live check rather than an assumption). Needs a two-monitor desktop at
   different scales to verify; the owner has one (left 125%, right 100%, as of
   2026-08-23).
+- [✗] **Dark controls allocate `Pen`/`SolidBrush` on every paint — DEFERRED
+  until a profile shows it** (decided 2026-07-22; moved here 2026-08-31 from
+  the retired HANDOFF.md so it is not rediscovered as an oversight).
+  `DarkComboBox.OnPaint` makes ten per repaint (`GainFader` and
+  `DarkNumericUpDown` six each), every one in a `using`, so nothing leaks —
+  the cost is pure allocation churn. Caching them per control is easy but
+  drags in palette/DPI invalidation, and nobody has ever profiled a repaint
+  that shows up: Tracy first, and only then the cache.
 
 ## Audio capture layer
 
@@ -564,6 +572,13 @@ shows it as flat by construction.
   garbage stretches, but short noisy nulls still enter `SmoothLinear` at full
   weight; magnitude curves behave the same). Optional: reliability-weighted
   smoothing.
+- [✗] **`DelayTableText` reads cells back from its own rendered text — KEPT**
+  (decided 2026-07-22; moved here 2026-08-31 from the retired HANDOFF.md).
+  Click-to-copy extracts a cell from the fixed-column text rather than the
+  table being a data model that renders. The structured-model alternative was
+  dropped for low payoff: formatting and the reverse extraction live in one
+  unit-tested class exactly so the two cannot disagree on the layout — the
+  file's own header says as much.
 
 ## Live Spectrum / coherence
 

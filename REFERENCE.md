@@ -2471,8 +2471,14 @@ comb can fine-tune only within the physically correct lobe. Candidates are
 scored by in-band average loss *and* the depth of the deepest smoothed notch,
 and weighed against an arrival-based prior, so the search does not add delay or
 flip polarity without a real improvement. If the resulting delays span more
-than ~10 ms — usually one channel's crossover having excessive group delay — a
-banner flags the lagging driver.
+than 15 ms — usually one channel's crossover having excessive group delay — a
+banner flags the lagging driver. The span is read over **the chain whose
+junctions the search actually settles against each other** — in a staged project
+the front chain, with the rear fill and the centre left out: each of those is
+placed against a front stage already settled (the rear the Rear fill offset
+behind, on purpose), so neither can stretch the chain. Where there is no front
+chain to be placed against — a rear-only project — that project's own chain is
+what the span is read over, exactly as the run walks it.
 
 Polarity is normally the sum search's to decide, with one exception: where the
 lower channel's low-pass and the upper channel's high-pass share family, corner

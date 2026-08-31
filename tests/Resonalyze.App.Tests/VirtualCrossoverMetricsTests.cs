@@ -648,4 +648,221 @@ public sealed class VirtualCrossoverMetricsTests
 
         Assert.Null(rearOnly);
     }
+
+    // A channel whose processed response is a lone impulse at a known sample,
+    // long enough for the band-limited arrival analysis to have something to
+    // work with, tagged with the zone the grouped views sort it by.
+    private static ProcessedChannel Zoned(
+        string name,
+        VirtualCrossoverZone zone,
+        int peak,
+        Complex[]? ir = null)
+    {
+        var channel = new VirtualCrossoverChannel(name) { SampleRate = 48_000 };
+        channel.Pair.Zone = zone;
+        ir ??= LongImpulse(peak);
+        return new ProcessedChannel(channel, ir, peak, 48_000, OxyColors.White);
+    }
+
+    private static Complex[] LongImpulse(int peak)
+    {
+        var ir = new Complex[4096];
+        ir[peak] = Complex.One;
+        return ir;
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_ReusesTheReadOutWhileTheResponsesStand()
+    {
+        // The group Δ read-out costs arrival FFTs over the summed groups, and the
+        // whole redraw waits on them. A view switch rebuilds the frame without
+        // touching a single response, so it must be answered from memory the way
+        // the coordinator answers for the responses themselves — otherwise
+        // Front + Center pays for those FFTs again on every magnitude/phase/
+        // impulse toggle while Front + Sub, which quotes no group Δ, is instant.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        List<ProcessedChannel> shown =
+        [
+            Zoned("Front", VirtualCrossoverZone.Front, 100),
+            Zoned("Centre", VirtualCrossoverZone.Center, 150)
+        ];
+
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> first =
+            await metrics.ComputeGroupDeltasAsync(
+                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate());
+        // The second frame is asked the way a real toggle asks: RequestRedraw
+        // invalidates first and the frame then carries the NEW revision, so a
+        // repeat call at the old one would prove nothing about the path the user
+        // takes.
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> second =
+            await metrics.ComputeGroupDeltasAsync(
+                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate());
+
+        Assert.Single(first);
+        Assert.Equal(VirtualCrossoverZone.Center, first[0].Zone);
+        // The same instance: a recompute builds a new list, so identity is what
+        // says the arrival analysis did not run a second time.
+        Assert.Same(first, second);
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_AnswerNothingForASupersededFrame()
+    {
+        // The other half of remembering the set: a frame the user has already
+        // overtaken is answered as it was before the cache existed — with
+        // nothing. Cheap to get wrong, because a cache hit is tempting to serve
+        // unconditionally, and then a stale frame carries a read-out the caller
+        // was supposed to drop.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        List<ProcessedChannel> shown =
+        [
+            Zoned("Front", VirtualCrossoverZone.Front, 100),
+            Zoned("Centre", VirtualCrossoverZone.Center, 150)
+        ];
+
+        long superseded = coordinator.Invalidate();
+        Assert.Single(await metrics.ComputeGroupDeltasAsync(
+            shown, VirtualCrossoverGroupView.FrontAndCenter, superseded));
+        coordinator.Invalidate();
+
+        Assert.Empty(await metrics.ComputeGroupDeltasAsync(
+            shown, VirtualCrossoverGroupView.FrontAndCenter, superseded));
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_RecomputesWhenAResponseIsReplaced()
+    {
+        // The other half of the bargain. The coordinator manufactures a NEW array
+        // for a channel the moment anything feeding it moves, so a remembered
+        // read-out must be answered for by the very arrays it was measured from.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        ProcessedChannel front = Zoned("Front", VirtualCrossoverZone.Front, 100);
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> first =
+            await metrics.ComputeGroupDeltasAsync(
+                [front, Zoned("Centre", VirtualCrossoverZone.Center, 150)],
+                VirtualCrossoverGroupView.FrontAndCenter,
+                coordinator.CurrentRevision);
+
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> second =
+            await metrics.ComputeGroupDeltasAsync(
+                [front, Zoned("Centre", VirtualCrossoverZone.Center, 260)],
+                VirtualCrossoverGroupView.FrontAndCenter,
+                coordinator.CurrentRevision);
+
+        Assert.NotSame(first, second);
+        Assert.Single(second);
+        // And the answer moved with the response: the centre now arrives later.
+        Assert.NotNull(first[0].DelayMs);
+        Assert.NotNull(second[0].DelayMs);
+        Assert.True(second[0].DelayMs > first[0].DelayMs);
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_StaySilentInASingleGroupView()
+    {
+        // Front + Sub spans one listening group, so it quotes a summation loss
+        // and no group Δ at all — which is why it was the fast view to begin with.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+
+        Assert.Empty(await metrics.ComputeGroupDeltasAsync(
+            [
+                Zoned("Front", VirtualCrossoverZone.Front, 100),
+                Zoned("Sub", VirtualCrossoverZone.Sub, 150)
+            ],
+            VirtualCrossoverGroupView.FrontAndSub,
+            coordinator.CurrentRevision));
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_ReportOneRowPerComparedGroup()
+    {
+        // Everything compares two groups against the front, and both are timed
+        // over the same span here — the path where the front stage's own arrival
+        // is read once for the band rather than once per group. The rows must
+        // still be the two the view promises, each against the same reference.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> deltas =
+            await metrics.ComputeGroupDeltasAsync(
+                [
+                    Zoned("Front", VirtualCrossoverZone.Front, 100),
+                    Zoned("Rear", VirtualCrossoverZone.Rear, 200),
+                    Zoned("Centre", VirtualCrossoverZone.Center, 150)
+                ],
+                VirtualCrossoverGroupView.Everything,
+                coordinator.CurrentRevision);
+
+        Assert.Equal(2, deltas.Count);
+        Assert.Equal(VirtualCrossoverZone.Rear, deltas[0].Zone);
+        Assert.Equal(VirtualCrossoverZone.Center, deltas[1].Zone);
+        // 100 samples at 48 kHz is 2.083 ms behind the front, 50 is 1.042 ms.
+        Assert.Equal(100.0 / 48.0, deltas[0].DelayMs!.Value, 2);
+        Assert.Equal(50.0 / 48.0, deltas[1].DelayMs!.Value, 2);
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltas_DoesNotEvictTheFramesProcessedResponses()
+    {
+        // A block's POSITION in the list handed to the stereo Δ read-out is its
+        // identity in the coordinator's cache. Hand over a filtered list and every
+        // block after the first omission is renumbered onto a slot belonging to
+        // another channel: the read-out overwrites responses the frame had just
+        // processed, the next frame misses on them, reprocesses, overwrites the
+        // read-out's in turn — and the two thrash each other for as long as the
+        // view stays open. On the reference car that is every view except the one
+        // whose blocks happen to sit at the head of the list.
+        int processCount = 0;
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, _, _) =>
+            {
+                Interlocked.Increment(ref processCount);
+                return source.Apply(chain, sampleRate, sampleRate);
+            });
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        // Three mono blocks: the read-out below covers the LAST one only, so with
+        // a shortened list it would take slot 0 — the first block's.
+        List<VirtualCrossoverChannel> channels =
+            [ResolvedMono("A"), ResolvedMono("B"), ResolvedMono("C")];
+        long revision = coordinator.Invalidate();
+        VirtualCrossoverProcessingSnapshot frame = new(
+            revision,
+            channels.Select((channel, index) => new VirtualCrossoverChannelSnapshot(
+                index,
+                new ProcessingSlotId(index, false),
+                channel.SideState(false).ProcessingSource!,
+                48_000,
+                48_000,
+                channel.Settings.ToChain())));
+
+        Assert.NotNull(await coordinator.ProcessAsync(frame));
+        int afterFirstFrame = processCount;
+
+        await metrics.ComputeStereoDeltasAsync(
+            channels, revision, includePair: pair => ReferenceEquals(pair, channels[2].Pair));
+        // The frame runs again with nothing changed, exactly as a view or mode
+        // toggle makes it: every response must still be in the cache.
+        Assert.NotNull(await coordinator.ProcessAsync(frame));
+
+        Assert.Equal(3, afterFirstFrame);
+        Assert.Equal(3, processCount);
+    }
+
+    // A mono block with a resolved source on the side the panel draws.
+    private static VirtualCrossoverChannel ResolvedMono(string name)
+    {
+        VirtualCrossoverChannel channel = ResolvedChannel(name, 48_000);
+        channel.Pair.Mono = true;
+        return channel;
+    }
 }

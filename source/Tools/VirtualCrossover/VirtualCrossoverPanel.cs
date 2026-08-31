@@ -3281,12 +3281,15 @@ public partial class VirtualCrossoverPanel : UserControl
         // The Δ block follows the Show selector like everything else in the
         // frame: a front view listing the rear pair's L/R skew is the read-out
         // describing a set the plot does not draw, which is the whole class of
-        // mismatch this selector exists to close.
-        List<VirtualCrossoverChannel> shownBlocks =
-            [.. channels.Where(channel =>
-                VirtualCrossoverGroupViews.IsShown(groupView, channel.Pair.Zone))];
+        // mismatch this selector exists to close. It is narrowed by a FILTER and
+        // never by handing over a shortened list — a block's position in that
+        // list is its identity in the coordinator's cache.
         List<VirtualCrossoverMetric.StereoDelta> stereoDeltas =
-            await metrics.ComputeStereoDeltasAsync(shownBlocks, revision);
+            await metrics.ComputeStereoDeltasAsync(
+                channels,
+                revision,
+                includePair: pair =>
+                    VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone));
         // What the cross-group views quote instead of a summation loss. Reads the
         // responses this frame already processed, so it adds no render — only the
         // arrival FFTs, on the coordinator's auxiliary path.
@@ -3308,7 +3311,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 // to be the same part of the system this side is showing.
                 includePair: pair =>
                     VirtualCrossoverGroupViews.ParticipatesInTotalSum(
-                        SelectedGroupView, pair.Zone));
+                        groupView, pair.Zone));
         }
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
@@ -3416,7 +3419,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using (AppProfiler.Zone("VirtualDSP.BuildAcousticRender"))
         {
             acousticRender = BuildAcousticRender(
-                shown, summedChannels, magnitudes, sumCurve, lossCurve,
+                shown, summedChannels, groupView, magnitudes, sumCurve, lossCurve,
                 oppositeSum, hybrid);
         }
 
@@ -3460,6 +3463,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private AcousticRender BuildAcousticRender(
         List<ProcessedChannel> processed,
         IReadOnlyList<ProcessedChannel> summed,
+        VirtualCrossoverGroupView view,
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
@@ -3486,7 +3490,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return new AcousticRender(hint, [], BuildImpulseRender(processed));
         }
 
-        if (VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView))
+        if (VirtualCrossoverGroupViews.DrawsGroupSums(view))
         {
             return new AcousticRender(hint, BuildGroupSumCurves(processed), null);
         }

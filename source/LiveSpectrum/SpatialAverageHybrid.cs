@@ -181,25 +181,44 @@ internal static class SpatialAverageHybrid
 
     /// <summary>
     /// Several channels' hybrid curves on ONE grid combined into a group's level
-    /// curve by adding their POWERS point by point. A point where no member has a
-    /// value is a gap; a member's own gap simply contributes nothing there — its
-    /// crossover has removed it from the group's output anyway.
+    /// curve by adding their POWERS point by point. Each curve comes with its
+    /// channel's configured band, which separates the two things a member's gap
+    /// can mean. OUTSIDE its band a NaN is an absent contribution — the
+    /// crossover has removed that driver from the group's output, and the rest
+    /// carry on without it. INSIDE its band it means the capture has nothing to
+    /// say about a driver the DSP says is playing — its grid ended, a stretch
+    /// did not survive the protective high-pass — and the whole group point
+    /// becomes a gap: summing the remaining members would quote part of the
+    /// group as all of it, an error that looks exactly like a valid level. A
+    /// band-level read then pairs such a point away from both sides of a
+    /// comparison instead.
     /// </summary>
     /// <remarks>
     /// Deliberately not the phasor sum the plot's hybrid Sum uses: a spatial
     /// average carries no phase, so the only sum a set of captures can state by
-    /// themselves is the incoherent one. What this figure feeds — a LEVEL over a
-    /// band spanning octaves — barely tells the two apart: the coherent
-    /// cross-terms live in the junction overlaps, a fraction of the band, and
-    /// they appear on both sides of a group to group comparison. Borrowing the
-    /// point-measured phase to resolve them would put one microphone position's
-    /// interference back into the very numbers the hybrid mode exists to free of
-    /// it, at the price of full-length gated FFTs per group per frame.
+    /// themselves is the incoherent one. In a junction overlap that is an
+    /// approximation — two coherent in-phase contributions sum up to 3 dB above
+    /// their powers — and how much of it survives a group-to-group DIFFERENCE
+    /// depends on how alike the groups' junction layouts are: much cancels
+    /// between a front and a rear of the same architecture, little is
+    /// guaranteed against a single-driver centre. The overlaps are still a
+    /// fraction of a band spanning octaves, and resolving them would borrow the
+    /// point-measured phase — one microphone position's interference, the very
+    /// thing the hybrid mode distrusts — at the price of full-length gated FFTs
+    /// per group per frame.
     /// </remarks>
     public static List<SignalPoint> PowerSum(
-        IReadOnlyList<IReadOnlyList<SignalPoint>> curves)
+        IReadOnlyList<IReadOnlyList<SignalPoint>> curves,
+        IReadOnlyList<(double LowHz, double HighHz)> bands)
     {
         ArgumentNullException.ThrowIfNull(curves);
+        ArgumentNullException.ThrowIfNull(bands);
+        if (curves.Count != bands.Count)
+        {
+            throw new ArgumentException(
+                "Every curve needs its channel's band.", nameof(bands));
+        }
+
         if (curves.Count == 0)
         {
             return [];
@@ -209,21 +228,31 @@ internal static class SpatialAverageHybrid
         var points = new List<SignalPoint>(count);
         for (int i = 0; i < count; i++)
         {
+            double x = curves[0][i].X;
             double power = 0;
             bool any = false;
-            foreach (IReadOnlyList<SignalPoint> curve in curves)
+            bool missing = false;
+            for (int c = 0; c < curves.Count; c++)
             {
-                double db = curve[i].Y;
+                double db = curves[c][i].Y;
                 if (double.IsFinite(db))
                 {
+                    // A finite value counts wherever it sits — a crossover
+                    // skirt outside the configured band is a real, if quiet,
+                    // contribution.
                     power += Math.Pow(10.0, db / 10.0);
                     any = true;
+                }
+                else if (x >= bands[c].LowHz && x <= bands[c].HighHz)
+                {
+                    missing = true;
+                    break;
                 }
             }
 
             points.Add(new SignalPoint(
-                curves[0][i].X,
-                any ? 10.0 * Math.Log10(power) : double.NaN));
+                x,
+                any && !missing ? 10.0 * Math.Log10(power) : double.NaN));
         }
 
         return points;

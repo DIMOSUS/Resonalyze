@@ -558,9 +558,11 @@ public partial class VirtualCrossoverPanel
 
     // One compared group's level against the front, both groups' member curves
     // built on ONE grid so the band-level rule can pair their points. Null when
-    // any member of either group has no capture (an array set may have gaps):
-    // power-summing the rest would understate that group by a playing member,
-    // so the row falls back to its point-measured level whole and says so.
+    // any member of either group has no capture at all (an array set may have
+    // gaps) — power-summing the rest would understate that group by a playing
+    // member — and when the captures leave no point in the band where both
+    // groups have a value; either way the row falls back to its point-measured
+    // level whole and says so.
     private double? HybridGroupLevelDeltaDb(
         IReadOnlyList<ProcessedChannel> members,
         IReadOnlyList<ProcessedChannel> front,
@@ -583,6 +585,7 @@ public partial class VirtualCrossoverPanel
         // centre is legitimate) to its single slot the way the plot does.
         bool rightSide = project.ActiveSideRight;
         var curves = new List<IReadOnlyList<SignalPoint>>(members.Count);
+        var bands = new List<(double LowHz, double HighHz)>(members.Count);
         foreach (ProcessedChannel member in members)
         {
             VirtualCrossoverChannelState state =
@@ -610,9 +613,15 @@ public partial class VirtualCrossoverPanel
             }
 
             curves.Add(curve);
+            // The member's configured band, for the sum's two readings of a
+            // gap (see PowerSum): inside it a capture with nothing to say
+            // breaks the GROUP's point, outside it the member is simply
+            // absent. The same band rule GroupBand keyed the comparison on.
+            bands.Add(VirtualCrossoverJunctions.GetChannelBand(
+                member.Channel.SideSettings(rightSide)));
         }
 
-        return SpatialAverageHybrid.PowerSum(curves);
+        return SpatialAverageHybrid.PowerSum(curves, bands);
     }
 
     // Log-spaced through the band at a resolution comfortably past the captures'

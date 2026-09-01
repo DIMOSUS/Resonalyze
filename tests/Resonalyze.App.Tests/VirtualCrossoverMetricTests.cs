@@ -243,7 +243,7 @@ public sealed class VirtualCrossoverMetricTests
 
             Assert.Contains("level +1.6 dB (175 Hz", text);
             Assert.Contains("level -0.6 dB (point mic)", text);
-            Assert.Contains("(point mic): that pair has no capture", text);
+            Assert.Contains("(point mic): that pair's captures cannot produce", text);
         });
     }
 
@@ -287,7 +287,7 @@ public sealed class VirtualCrossoverMetricTests
             Assert.Contains("6.3 dB quieter.", text);
             Assert.Contains("2.1 dB quieter (point mic).", text);
             Assert.Contains("spatial averages", text);
-            Assert.Contains("member without a capture", text);
+            Assert.Contains("could not be read from the captures", text);
         });
     }
 

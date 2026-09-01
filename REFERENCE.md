@@ -1855,10 +1855,15 @@ arrives later) and level difference (ΔdB, negative when it is quieter), measure
 on the groups' summed responses in the band they share. With the
 [hybrid](#hybrid-spatial-averages-under-the-prediction) mode on, the ΔdB is read
 off both groups' spatial averages through their chains instead, each group
-power-summed — an average carries no phase, and over a band spanning octaves the
-junction cross-terms that separates a power sum from a phasor one appear on both
-sides of the comparison; the arrival keeps reading the impulse responses. A group
-with a member that has no capture (an array set may have gaps) keeps its
+power-summed — an average carries no phase, so the junction overlaps, where a
+coherent sum can read up to 3 dB above the powers, are approximated; they are a
+fraction of a band spanning octaves, and the more alike the two groups' junction
+layouts are, the more of that approximation cancels out of the difference. The
+arrival keeps reading the impulse responses. Where a member's capture has
+nothing to say inside that member's own band, the group has no honest level
+there and the frequency is left out of both sides of the comparison; a group
+whose captures cannot produce the figure at all — a member without one (an
+array set may have gaps), or no shared data across the band — keeps its
 point-measured row whole, marked in the tooltip. The Groups view exists
 for exactly that adjustment, which is why it draws the sums rather than the
 drivers: all its lines are gated on one shared anchor, so their relative timing

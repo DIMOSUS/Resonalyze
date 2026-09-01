@@ -283,28 +283,53 @@ public sealed class SpatialAverageHybridTests
     }
 
     /// <summary>
-    /// The group rule under the "vs Front" ΔdB: powers add, so two equal members
-    /// read 3 dB over one, a member's own gap contributes nothing (its crossover
-    /// has removed it from the group's output anyway), and only a point where NO
-    /// member has a value is a gap of the group's.
+    /// The group rule under the "vs Front" ΔdB: powers add (two equal members
+    /// read 3 dB over one), and a member's gap OUTSIDE its configured band is an
+    /// absence — the crossover removed that driver, and the rest carry on.
     /// </summary>
     [Fact]
-    public void PowerSum_AddsPowersAndPassesOnlyAWholeGap()
+    public void PowerSum_AddsPowersAndTreatsAGapOutsideTheMembersBandAsAbsence()
     {
-        List<SignalPoint> first = Flat(-20, count: 8);
-        List<SignalPoint> second = Flat(-20, count: 8);
-        second[5] = new SignalPoint(second[5].X, double.NaN);
-        first[6] = new SignalPoint(first[6].X, double.NaN);
-        second[6] = new SignalPoint(second[6].X, double.NaN);
+        List<SignalPoint> mid = Flat(-20, count: 8);
+        List<SignalPoint> tweeter = Flat(-20, count: 8);
+        tweeter[5] = new SignalPoint(tweeter[5].X, double.NaN);
 
-        List<SignalPoint> sum = SpatialAverageHybrid.PowerSum([first, second]);
+        // The tweeter's band starts above the gap, so the gap sits in its
+        // stopband; the mid covers the whole grid.
+        List<SignalPoint> sum = SpatialAverageHybrid.PowerSum(
+            [mid, tweeter],
+            [(20, 20_000), (tweeter[6].X, 20_000)]);
 
         Assert.Equal(8, sum.Count);
         Assert.Equal(-20 + 10 * Math.Log10(2), sum[0].Y, 9);
-        // One member gone: the other's level stands alone.
+        // The out-of-band member is absent there: the mid's level stands alone.
         Assert.Equal(-20, sum[5].Y, 9);
-        // Both gone: the group has nothing to say there.
-        Assert.True(double.IsNaN(sum[6].Y));
+        Assert.Equal(-20 + 10 * Math.Log10(2), sum[7].Y, 9);
+    }
+
+    /// <summary>
+    /// The other meaning of a gap, and the one that must NOT read as a level: a
+    /// capture with nothing to say INSIDE its member's configured band describes
+    /// a driver the DSP says is playing. Summing the remaining members there
+    /// quoted part of the group as all of it — a systematic error that looked
+    /// exactly like a valid figure — so the group point is a gap, which the
+    /// band-level rule then pairs away from both sides of the comparison.
+    /// </summary>
+    [Fact]
+    public void PowerSum_BreaksTheGroupWhereACaptureIsSilentInsideItsMembersBand()
+    {
+        List<SignalPoint> mid = Flat(-20, count: 8);
+        List<SignalPoint> tweeter = Flat(-20, count: 8);
+        tweeter[5] = new SignalPoint(tweeter[5].X, double.NaN);
+
+        List<SignalPoint> sum = SpatialAverageHybrid.PowerSum(
+            [mid, tweeter],
+            [(20, 20_000), (20, 20_000)]);
+
+        Assert.True(double.IsNaN(sum[5].Y));
+        // The break is the point's alone: its neighbours still sum both members.
+        Assert.Equal(-20 + 10 * Math.Log10(2), sum[4].Y, 9);
+        Assert.Equal(-20 + 10 * Math.Log10(2), sum[6].Y, 9);
     }
 
     private static List<SignalPoint> Flat(double db, int count) =>

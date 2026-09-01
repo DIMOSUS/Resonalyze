@@ -241,9 +241,10 @@ internal static class VirtualCrossoverMetric
                     "view draws \u2014 so one microphone position's dips " +
                     "have no say in it\r\n(positive: LEFT louder)." +
                     (anyPointLevel
-                        ? " (point mic): that pair has no capture on a side, " +
-                            "so its row\r\nstill reads the gated processed " +
-                            "responses."
+                        ? " (point mic): that pair's captures cannot produce " +
+                            "the figure — a side\r\nwithout one, or no shared " +
+                            "data in this band — so its row still reads " +
+                            "the\r\ngated processed responses."
                         : string.Empty)
                 : "\r\nLevel \u0394 is the gated band level of the processed " +
                     "sides (positive: LEFT louder).") +
@@ -360,8 +361,9 @@ internal static class VirtualCrossoverMetric
                 "chains (each group power-summed — an average carries no " +
                 "phase), so one microphone position's dips have no say in " +
                 "them; the arrivals keep reading the impulse responses. A row " +
-                "marked (point mic) has a member without a capture and still " +
-                "reads the gated processed responses.");
+                "marked (point mic) could not be read from the captures — a " +
+                "member without one, or no shared capture data across the " +
+                "band — and still reads the gated processed responses.");
         }
 
         return builder.ToString();

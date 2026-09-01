@@ -785,6 +785,49 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
+    public async Task ComputeGroupDeltas_TakesTheLevelFromTheHybridReaderAndKeysTheCacheOnIt()
+    {
+        // The panel supplies the reader while the hybrid mode is on: the ΔdB
+        // then reports what the groups' spatial averages say. The answer joins
+        // the cache key — toggling the hybrid leaves every response standing,
+        // and the remembered point-measured set must not answer for the
+        // capture-based one.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        List<ProcessedChannel> shown =
+        [
+            Zoned("Front", VirtualCrossoverZone.Front, 100),
+            Zoned("Centre", VirtualCrossoverZone.Center, 150)
+        ];
+        var asked = new List<(int Members, int Front, double LowHz, double HighHz)>();
+
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> hybrid =
+            await metrics.ComputeGroupDeltasAsync(
+                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate(),
+                hybridGroupLevelDeltaDb: (members, front, lowHz, highHz) =>
+                {
+                    asked.Add((members.Count, front.Count, lowHz, highHz));
+                    return -5.5;
+                });
+
+        VirtualCrossoverMetric.GroupDelta delta = Assert.Single(hybrid);
+        Assert.Equal(-5.5, delta.LevelDb);
+        Assert.True(delta.LevelFromSpatialAverage);
+        // Asked once, with the compared group, the front and their shared band.
+        Assert.Equal((1, 1, 20.0, 20_000.0), Assert.Single(asked));
+
+        // The hybrid off again: the same responses must be re-read rather than
+        // answered from the capture-based memory.
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> point =
+            await metrics.ComputeGroupDeltasAsync(
+                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate());
+
+        Assert.NotSame(hybrid, point);
+        Assert.False(Assert.Single(point).LevelFromSpatialAverage);
+    }
+
+    [Fact]
     public async Task ComputeGroupDeltas_AnswerNothingForASupersededFrame()
     {
         // The other half of remembering the set: a frame the user has already

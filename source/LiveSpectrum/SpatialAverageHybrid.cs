@@ -179,6 +179,56 @@ internal static class SpatialAverageHybrid
             : null;
     }
 
+    /// <summary>
+    /// Several channels' hybrid curves on ONE grid combined into a group's level
+    /// curve by adding their POWERS point by point. A point where no member has a
+    /// value is a gap; a member's own gap simply contributes nothing there — its
+    /// crossover has removed it from the group's output anyway.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not the phasor sum the plot's hybrid Sum uses: a spatial
+    /// average carries no phase, so the only sum a set of captures can state by
+    /// themselves is the incoherent one. What this figure feeds — a LEVEL over a
+    /// band spanning octaves — barely tells the two apart: the coherent
+    /// cross-terms live in the junction overlaps, a fraction of the band, and
+    /// they appear on both sides of a group to group comparison. Borrowing the
+    /// point-measured phase to resolve them would put one microphone position's
+    /// interference back into the very numbers the hybrid mode exists to free of
+    /// it, at the price of full-length gated FFTs per group per frame.
+    /// </remarks>
+    public static List<SignalPoint> PowerSum(
+        IReadOnlyList<IReadOnlyList<SignalPoint>> curves)
+    {
+        ArgumentNullException.ThrowIfNull(curves);
+        if (curves.Count == 0)
+        {
+            return [];
+        }
+
+        int count = curves.Min(curve => curve.Count);
+        var points = new List<SignalPoint>(count);
+        for (int i = 0; i < count; i++)
+        {
+            double power = 0;
+            bool any = false;
+            foreach (IReadOnlyList<SignalPoint> curve in curves)
+            {
+                double db = curve[i].Y;
+                if (double.IsFinite(db))
+                {
+                    power += Math.Pow(10.0, db / 10.0);
+                    any = true;
+                }
+            }
+
+            points.Add(new SignalPoint(
+                curves[0][i].X,
+                any ? 10.0 * Math.Log10(power) : double.NaN));
+        }
+
+        return points;
+    }
+
     // The capture back at the level the analyzer measured, before any microphone
     // correction: the pipeline SUBTRACTS the correction, so undoing it adds it back.
     // On the capture's own grid, where each stored value belongs.

@@ -247,6 +247,66 @@ public sealed class VirtualCrossoverMetricTests
         });
     }
 
+    [Fact]
+    public void FormatStereoDeltasDetail_KeepsTheSpatialLevelWhenNoArrivalIsMeasurable()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // A capture is a measurement of its own, so its level outlives the
+            // arrivals — and the compact block shows it, so the tooltip must
+            // not swallow it behind the "no measurable arrival" early row.
+            string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+            [
+                new VirtualCrossoverMetric.StereoDelta(
+                    "B", null, null, 175, 1_300, LevelDeltaDb: -2.5,
+                    LevelFromSpatialAverage: true)
+            ]);
+
+            Assert.Contains(
+                "B: — (no measurable arrival), level -2.5 dB", text);
+        });
+    }
+
+    [Fact]
+    public void FormatGroupDeltasDetail_ExplainsSpatialLevelsAndMarksThePointMeasuredException()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // With the hybrid on the ΔdB rows read the groups' spatial
+            // averages; a group with a member that has no capture keeps its
+            // point-measured figure and is the marked exception.
+            string text = VirtualCrossoverMetric.FormatGroupDeltasDetail(
+            [
+                new VirtualCrossoverMetric.GroupDelta(
+                    VirtualCrossoverZone.Rear, 8.12, -6.3, 290, 20_000,
+                    LevelFromSpatialAverage: true),
+                new VirtualCrossoverMetric.GroupDelta(
+                    VirtualCrossoverZone.Center, -0.35, -2.1, 290, 20_000)
+            ]);
+
+            Assert.Contains("6.3 dB quieter.", text);
+            Assert.Contains("2.1 dB quieter (point mic).", text);
+            Assert.Contains("spatial averages", text);
+            Assert.Contains("member without a capture", text);
+        });
+    }
+
+    [Fact]
+    public void FormatGroupDeltasDetail_SaysNothingAboutAveragesForAPointMeasuredList()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatGroupDeltasDetail(
+            [
+                new VirtualCrossoverMetric.GroupDelta(
+                    VirtualCrossoverZone.Rear, 8.12, -6.3, 290, 20_000)
+            ]);
+
+            Assert.DoesNotContain("spatial", text);
+            Assert.DoesNotContain("(point mic)", text);
+        });
+    }
+
     private static VirtualCrossoverMetric.PhaseEntry PhaseJunction(
         double? lobeMargin = 0.19,
         double? rivalExtraMs = -12.20,

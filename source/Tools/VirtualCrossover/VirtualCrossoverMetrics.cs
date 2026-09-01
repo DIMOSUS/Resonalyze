@@ -314,10 +314,21 @@ internal sealed class VirtualCrossoverMetrics
     /// the stereo deltas do, and is remembered between frames by
     /// <see cref="groupDeltas"/> exactly as their arrivals are.
     /// </remarks>
+    /// <param name="hybridGroupLevelDeltaDb">
+    /// A compared group's level against the front, read off both groups'
+    /// spatial averages through their chains in the shared band, or null where
+    /// the captures cannot say (a member without one). Supplied by the panel
+    /// while the hybrid mode is on, the same contract as the stereo block's
+    /// reader: invoked during the synchronous assembly, so it may read
+    /// UI-thread state, and its answer joins the cache key — a toggle of the
+    /// hybrid must not be served a remembered point-measured set.
+    /// </param>
     public async Task<IReadOnlyList<VirtualCrossoverMetric.GroupDelta>> ComputeGroupDeltasAsync(
         IReadOnlyList<ProcessedChannel> shown,
         VirtualCrossoverGroupView view,
-        long revision)
+        long revision,
+        Func<IReadOnlyList<ProcessedChannel>, IReadOnlyList<ProcessedChannel>,
+            double, double, double?>? hybridGroupLevelDeltaDb = null)
     {
         IReadOnlyList<VirtualCrossoverZone> compared =
             VirtualCrossoverGroupViews.ComparedAgainstFront(view);
@@ -345,11 +356,20 @@ internal sealed class VirtualCrossoverMetrics
                 // cache key below can carry it: two groups timed over different
                 // spans are two different answers even from the same responses.
                 (double zoneLow, double zoneHigh) = GroupBand(members);
+                double lowHz = Math.Max(frontLow, zoneLow);
+                double highHz = Math.Min(frontHigh, zoneHigh);
                 jobs.Add(new GroupDeltaJob(
                     zone,
                     members,
-                    Math.Max(frontLow, zoneLow),
-                    Math.Min(frontHigh, zoneHigh)));
+                    lowHz,
+                    highHz,
+                    // Read here, on the calling thread — captures, chains and
+                    // calibration are UI-thread state. A band the worker will
+                    // refuse to time is not asked either: that row stays the
+                    // all-null refusal it always was.
+                    highHz >= lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio
+                        ? hybridGroupLevelDeltaDb?.Invoke(members, front, lowHz, highHz)
+                        : null));
             }
         }
 
@@ -426,10 +446,15 @@ internal sealed class VirtualCrossoverMetrics
                             ? zoneArrival.FirstArrivalDelayMilliseconds -
                                 frontRead.Arrival.FirstArrivalDelayMilliseconds
                             : null,
-                        VirtualCrossoverAnalysis.MeasureBandLevelDb(
-                            zoneIr, sampleRate, lowHz, highHz) - frontRead.LevelDb,
+                        // The spatial averages' level, where the panel supplied
+                        // one, outranks the point measurement — the same rule
+                        // as the stereo block's rows.
+                        job.HybridLevelDeltaDb ??
+                            VirtualCrossoverAnalysis.MeasureBandLevelDb(
+                                zoneIr, sampleRate, lowHz, highHz) - frontRead.LevelDb,
                         lowHz,
-                        highHz));
+                        highHz,
+                        LevelFromSpatialAverage: job.HybridLevelDeltaDb.HasValue));
                 }
 
                 return results;
@@ -456,7 +481,11 @@ internal sealed class VirtualCrossoverMetrics
         VirtualCrossoverZone Zone,
         List<ProcessedChannel> Members,
         double LowHz,
-        double HighHz);
+        double HighHz,
+        // The group's level against the front off the spatial averages,
+        // resolved at assembly time (see ComputeGroupDeltasAsync); null when
+        // the hybrid is off or the captures cannot produce one.
+        double? HybridLevelDeltaDb = null);
 
     /// <summary>
     /// What a set of group Δs is a function of: which processed responses each
@@ -485,7 +514,8 @@ internal sealed class VirtualCrossoverMetrics
             this.jobs =
             [
                 .. jobs.Select(job => new JobKey(
-                    job.Zone, Responses(job.Members), job.LowHz, job.HighHz))
+                    job.Zone, Responses(job.Members), job.LowHz, job.HighHz,
+                    job.HybridLevelDeltaDb))
             ];
             this.sampleRate = sampleRate;
         }
@@ -501,9 +531,19 @@ internal sealed class VirtualCrossoverMetrics
 
             for (int i = 0; i < jobs.Length; i++)
             {
+                // The hybrid level is part of the answer, not only of the
+                // inputs: the responses stand still while the hybrid is
+                // toggled (or a capture, chain or calibration moves its
+                // figure), and a remembered point-measured set must not
+                // answer for the capture-based one or vice versa. Nullable
+                // equality is exact here — the same inputs reproduce the
+                // same bits.
                 if (jobs[i].Zone != other.jobs[i].Zone ||
                     jobs[i].LowHz != other.jobs[i].LowHz ||
                     jobs[i].HighHz != other.jobs[i].HighHz ||
+                    !Nullable.Equals(
+                        jobs[i].HybridLevelDeltaDb,
+                        other.jobs[i].HybridLevelDeltaDb) ||
                     !SameResponses(jobs[i].Members, other.jobs[i].Members))
                 {
                     return false;
@@ -517,7 +557,8 @@ internal sealed class VirtualCrossoverMetrics
             VirtualCrossoverZone Zone,
             Complex[][] Members,
             double LowHz,
-            double HighHz);
+            double HighHz,
+            double? HybridLevelDeltaDb);
 
         private static Complex[][] Responses(IReadOnlyList<ProcessedChannel> members) =>
             [.. members.Select(item => item.ImpulseResponse)];

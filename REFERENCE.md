@@ -1852,7 +1852,14 @@ decibels of damage that nothing can repair on a system that is correct. Those
 views report the two numbers a tuner does set between groups instead — a **vs
 Front** block giving each group's arrival difference (Δt ms, positive when it
 arrives later) and level difference (ΔdB, negative when it is quieter), measured
-on the groups' summed responses in the band they share. The Groups view exists
+on the groups' summed responses in the band they share. With the
+[hybrid](#hybrid-spatial-averages-under-the-prediction) mode on, the ΔdB is read
+off both groups' spatial averages through their chains instead, each group
+power-summed — an average carries no phase, and over a band spanning octaves the
+junction cross-terms that separates a power sum from a phasor one appear on both
+sides of the comparison; the arrival keeps reading the impulse responses. A group
+with a member that has no capture (an array set may have gaps) keeps its
+point-measured row whole, marked in the tooltip. The Groups view exists
 for exactly that adjustment, which is why it draws the sums rather than the
 drivers: all its lines are gated on one shared anchor, so their relative timing
 is readable off the plot. The target is drawn there too — judging a rear fill's
@@ -2017,13 +2024,15 @@ inaudible there, and takes the point with it when it says the channel is still
 playing.
 
 Everything else keeps reading the impulse responses: timing, polarity, the
-junction analyses, Auto delay, the sum-loss read-out and the phase view. The one
-read-out that follows the hybrid is the **Level Δ L−R** rows of the
-[Δ L−R block](#the-panel-gates-plots-and-read-outs): a level is exactly what the
-captures replace, so while the mode is on those rows compare the sides' spatial
+junction analyses, Auto delay, the sum-loss read-out and the phase view. The
+read-outs that follow the hybrid are the LEVEL rows — a level is exactly what
+the captures replace. The **Level Δ L−R** rows of the
+[Δ L−R block](#the-panel-gates-plots-and-read-outs) compare the sides' spatial
 averages through their chains — under the same one-set condition as the dashed
-opposite-side Sum, and whatever Show view happens to be on screen, because the
-levels a gain trim is judged against do not change with the view. The
+opposite-side Sum — and the **vs Front** ΔdB compares the groups', power-summed
+within each group. Both follow the mode whatever Show view happens to be on
+screen, because the levels a gain trim is judged against do not change with the
+view. The
 toggle needs an average on **every** channel that plays and greys out otherwise,
 since a sum mixing spatially averaged channels with point-measured ones puts two
 references on one axis and still looks like a measurement. The opposite side's

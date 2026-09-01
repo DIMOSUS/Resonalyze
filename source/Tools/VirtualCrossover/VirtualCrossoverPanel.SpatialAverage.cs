@@ -535,6 +535,86 @@ public partial class VirtualCrossoverPanel
             smoothingCode: 0);
     }
 
+    /// <summary>
+    /// The "vs Front" read-out's level source while the hybrid mode is on, or
+    /// null to leave those rows on their gated point-measured levels: a compared
+    /// group's ΔdB against the front is then read off both groups' spatial
+    /// averages through their chains, each group power-summed (see
+    /// <see cref="SpatialAverageHybrid.PowerSum"/> for why not phasors).
+    /// </summary>
+    /// <remarks>
+    /// Follows the mode rather than the view for the reason
+    /// <see cref="HybridStereoLevelReader"/> does. The condition is the ACTIVE
+    /// side's coverage alone — both groups sit on the same side, so the set
+    /// offset is one figure and cancels out of the difference; nothing here
+    /// compares across the sides, and the stereo reader's one-set-of-both-sides
+    /// check would refuse comparisons it has no stake in.
+    /// </remarks>
+    private Func<IReadOnlyList<ProcessedChannel>, IReadOnlyList<ProcessedChannel>,
+        double, double, double?>? HybridGroupLevelReader() =>
+        checkBoxHybrid.Checked && hybridAvailable
+            ? HybridGroupLevelDeltaDb
+            : null;
+
+    // One compared group's level against the front, both groups' member curves
+    // built on ONE grid so the band-level rule can pair their points. Null when
+    // any member of either group has no capture (an array set may have gaps):
+    // power-summing the rest would understate that group by a playing member,
+    // so the row falls back to its point-measured level whole and says so.
+    private double? HybridGroupLevelDeltaDb(
+        IReadOnlyList<ProcessedChannel> members,
+        IReadOnlyList<ProcessedChannel> front,
+        double lowHz,
+        double highHz)
+    {
+        List<double> grid = HybridLevelGrid(lowHz, highHz);
+        List<SignalPoint>? zoneCurve = BuildHybridGroupPowerCurve(members, grid);
+        List<SignalPoint>? frontCurve = BuildHybridGroupPowerCurve(front, grid);
+        return zoneCurve == null || frontCurve == null
+            ? null
+            : SpatialAverageHybrid.BandLevelDeltaDb(zoneCurve, frontCurve);
+    }
+
+    private List<SignalPoint>? BuildHybridGroupPowerCurve(
+        IReadOnlyList<ProcessedChannel> members, List<double> grid)
+    {
+        // The shown set is the ACTIVE side's processed responses, so the
+        // captures are that side's too; SideState routes a mono member (a mono
+        // centre is legitimate) to its single slot the way the plot does.
+        bool rightSide = project.ActiveSideRight;
+        var curves = new List<IReadOnlyList<SignalPoint>>(members.Count);
+        foreach (ProcessedChannel member in members)
+        {
+            VirtualCrossoverChannelState state =
+                member.Channel.SideState(rightSide);
+            if (state.SpatialAverageFor(SpatialAverageMode) is not { } document)
+            {
+                return null;
+            }
+
+            IReadOnlyList<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
+                document,
+                // Bypassed members DO reach the grouped read-outs (unlike the
+                // stereo block, which skips the pair), contributing their raw
+                // measured signal — the same rule the plot applies.
+                member.Channel.Pair.Bypass
+                    ? DspChannelChain.Identity
+                    : member.Channel.SideSettings(rightSide).ToChain(),
+                member.Channel.ProcessorSampleRateFor(rightSide),
+                SpatialAverageCalibrationFor(state),
+                grid,
+                smoothingCode: 0);
+            if (curve == null)
+            {
+                return null;
+            }
+
+            curves.Add(curve);
+        }
+
+        return SpatialAverageHybrid.PowerSum(curves);
+    }
+
     // Log-spaced through the band at a resolution comfortably past the captures'
     // own (~1/48 octave): the figure is an energy mean of a smooth curve, and a
     // log grid with uniform weights is what reproduces the impulse-response band
@@ -717,9 +797,10 @@ public partial class VirtualCrossoverPanel
                     "measured at one point. Both sums follow, adding the channels as " +
                     "phasors with the phase the impulse responses measure — the other " +
                     "side needs its own captures too, and its dashed sum is dropped " +
-                    "rather than drawn by the other method. The read-out's Level " +
-                    "Δ L−R rows follow too, comparing the sides' captures under the " +
-                    "same condition. Timing, polarity and the " +
+                    "rather than drawn by the other method. The read-out's level " +
+                    "rows follow too: Level Δ L−R compares the sides' captures " +
+                    "under the same condition, and the vs Front ΔdB compares the " +
+                    "groups'. Timing, polarity and the " +
                     "sum-loss read-out are " +
                     "unaffected: they keep reading the impulse responses.\r\n\r\n" +
                     "The channel curves are exact — a filter does not depend on " +

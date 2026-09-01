@@ -197,15 +197,6 @@ internal static class VirtualCrossoverMetric
             "offset)\r\n" +
             string.Join("\r\n", deltas.Select(delta =>
             {
-                if (!delta.LeftMs.HasValue && !delta.RightMs.HasValue)
-                {
-                    return $"{delta.Channel}: \u2014 (no measurable arrival)";
-                }
-
-                string deltaText = delta.DeltaMs.HasValue
-                    ? (delta.AnyLatched ? "~" : string.Empty) +
-                        $"{delta.DeltaMs.Value:+0.000;-0.000;0.000} ms"
-                    : "\u2014";
                 string levelText = delta.LevelDeltaDb.HasValue
                     ? $", level {delta.LevelDeltaDb.Value:+0.0;-0.0;0.0} dB" +
                         // The odd one out in a spatial-average list: this pair
@@ -215,6 +206,19 @@ internal static class VirtualCrossoverMetric
                             ? " (point mic)"
                             : string.Empty)
                     : string.Empty;
+                if (!delta.LeftMs.HasValue && !delta.RightMs.HasValue)
+                {
+                    // A spatial-average level outlives the arrivals (a capture
+                    // is a measurement of its own), so the row must not drop
+                    // it: the compact block beside this tooltip still shows it.
+                    return $"{delta.Channel}: \u2014 (no measurable arrival)" +
+                        levelText;
+                }
+
+                string deltaText = delta.DeltaMs.HasValue
+                    ? (delta.AnyLatched ? "~" : string.Empty) +
+                        $"{delta.DeltaMs.Value:+0.000;-0.000;0.000} ms"
+                    : "\u2014";
                 return $"{delta.Channel}: L {Side(delta.LeftMs, delta.LeftLatched)} / " +
                     $"R {Side(delta.RightMs, delta.RightLatched)} ms, " +
                     $"\u0394 {deltaText}{levelText} " +
@@ -268,13 +272,20 @@ internal static class VirtualCrossoverMetric
     /// precedence effect keeps the image forward) and what a centre does not.
     /// <see cref="LevelDb"/> is likewise the group minus the front, so negative
     /// means quieter. Either is null when the band holds no reliable arrival.
+    /// <para>
+    /// <see cref="LevelFromSpatialAverage"/> plays the same role as on
+    /// <see cref="StereoDelta"/>: with the hybrid mode on the level compares the
+    /// two groups' spatial averages through their chains, and only the legend
+    /// changes with the flag — the arrival keeps reading the impulse responses.
+    /// </para>
     /// </remarks>
     internal readonly record struct GroupDelta(
         VirtualCrossoverZone Zone,
         double? DelayMs,
         double? LevelDb,
         double LowHz,
-        double HighHz);
+        double HighHz,
+        bool LevelFromSpatialAverage = false);
 
     /// <summary>
     /// The cross-group block for the read-out panel: one row per compared group.
@@ -307,6 +318,10 @@ internal static class VirtualCrossoverMetric
             return string.Empty;
         }
 
+        // The same basis story the stereo block tells (see
+        // FormatStereoDeltasDetail): a spatial list explains itself, and its
+        // point-measured exceptions are marked in place.
+        bool anySpatialLevel = deltas.Any(delta => delta.LevelFromSpatialAverage);
         var builder = new System.Text.StringBuilder(
             "Each group against the front stage, measured on their summed " +
             "responses in the band they share. No summation loss is quoted " +
@@ -328,9 +343,25 @@ internal static class VirtualCrossoverMetric
             {
                 builder.Append($", {Math.Abs(db):0.0} dB ");
                 builder.Append(db < 0 ? "quieter" : "louder");
+                if (anySpatialLevel && !delta.LevelFromSpatialAverage)
+                {
+                    builder.Append(" (point mic)");
+                }
             }
 
             builder.Append('.');
+        }
+
+        if (anySpatialLevel)
+        {
+            builder.AppendLine();
+            builder.Append(
+                "Levels compare the groups' spatial averages through their " +
+                "chains (each group power-summed — an average carries no " +
+                "phase), so one microphone position's dips have no say in " +
+                "them; the arrivals keep reading the impulse responses. A row " +
+                "marked (point mic) has a member without a capture and still " +
+                "reads the gated processed responses.");
         }
 
         return builder.ToString();

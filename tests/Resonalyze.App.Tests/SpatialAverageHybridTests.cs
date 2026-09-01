@@ -282,6 +282,31 @@ public sealed class SpatialAverageHybridTests
         Assert.Null(SpatialAverageHybrid.BandLevelDeltaDb(left, right));
     }
 
+    /// <summary>
+    /// The group rule under the "vs Front" ΔdB: powers add, so two equal members
+    /// read 3 dB over one, a member's own gap contributes nothing (its crossover
+    /// has removed it from the group's output anyway), and only a point where NO
+    /// member has a value is a gap of the group's.
+    /// </summary>
+    [Fact]
+    public void PowerSum_AddsPowersAndPassesOnlyAWholeGap()
+    {
+        List<SignalPoint> first = Flat(-20, count: 8);
+        List<SignalPoint> second = Flat(-20, count: 8);
+        second[5] = new SignalPoint(second[5].X, double.NaN);
+        first[6] = new SignalPoint(first[6].X, double.NaN);
+        second[6] = new SignalPoint(second[6].X, double.NaN);
+
+        List<SignalPoint> sum = SpatialAverageHybrid.PowerSum([first, second]);
+
+        Assert.Equal(8, sum.Count);
+        Assert.Equal(-20 + 10 * Math.Log10(2), sum[0].Y, 9);
+        // One member gone: the other's level stands alone.
+        Assert.Equal(-20, sum[5].Y, 9);
+        // Both gone: the group has nothing to say there.
+        Assert.True(double.IsNaN(sum[6].Y));
+    }
+
     private static List<SignalPoint> Flat(double db, int count) =>
         Enumerable.Range(0, count)
             .Select(i => new SignalPoint(100 * Math.Pow(2, i / 48.0), db))

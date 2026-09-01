@@ -397,6 +397,62 @@ public sealed class VirtualCrossoverMetricTests
     }
 
     [Fact]
+    public void FormatPhaseCompact_WithholdsTheFixWhereNoDelayAlignsTheBand()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // A junction whose two drivers do not correlate over the overlap:
+            // the sweep's best is still far out of phase, so its optimum is the
+            // least bad of a set of bad alignments and not a delay to apply.
+            // Field case behind the threshold: a 2 kHz handover whose −0.37 ms
+            // "fix" cost 1.15 dB of summation loss when applied.
+            VirtualCrossoverMetric.PhaseEntry incoherent = PhaseJunction() with
+            {
+                Result = PhaseJunction().Result with
+                {
+                    BestScore = 0.34,
+                    CurrentScore = 0.29,
+                    OppositePolarityScore = 0.31
+                }
+            };
+
+            string text = VirtualCrossoverMetric.FormatPhaseCompact([incoherent]);
+
+            Assert.Contains("A/B     -3°      —   0.29", text);
+            Assert.DoesNotContain("-1.30", text);
+            // The polarity mark goes with it: it is read off the same two
+            // scores, and a flip is the more disruptive of the two changes.
+            Assert.DoesNotContain("~", text);
+            // And the period-hop warning, which is about the withheld fix.
+            Assert.DoesNotContain("!", text);
+
+            // Above the threshold the same junction recommends normally.
+            Assert.Contains(
+                "-1.30",
+                VirtualCrossoverMetric.FormatPhaseCompact([PhaseJunction()]));
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseDetail_SaysWhyTheFixIsWithheld()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            VirtualCrossoverMetric.PhaseEntry incoherent = PhaseJunction() with
+            {
+                Result = PhaseJunction().Result with { BestScore = 0.34 }
+            };
+
+            string text = VirtualCrossoverMetric.FormatPhaseDetail([incoherent]);
+
+            // The ceiling is still reported — it is the evidence for the
+            // verdict — but named as a ceiling rather than offered as a delay.
+            Assert.Contains("no delay aligns this band (ceiling 0.34)", text);
+            Assert.DoesNotContain("best 0.34 at", text);
+        });
+    }
+
+    [Fact]
     public void FormatPhaseCompact_KeepsThePolarityMarkOnAMutedFix()
     {
         RunWithInvariantCulture(() =>

@@ -8,12 +8,30 @@ namespace Resonalyze.Dsp;
 /// in phase across their overlap band, and what change would improve it.
 /// </summary>
 /// <remarks>
-/// All figures read the steady-state response (a long analysis window over the
-/// full processed IR, room decay included) because that is what sustained
-/// program material sums to at the listening position — the same regime the
-/// sum-loss metric measures. Direct-sound (frequency-dependent-windowed) phase
-/// is deliberately NOT used: it disagrees systematically by several ms at
-/// subwoofer frequencies, which is the room's own group delay.
+/// The figures are read through the caller's own window — for the Virtual DSP
+/// read-out, the panel's phase gate at an 8-cycle frequency-dependent window,
+/// the very window its phase CURVES are drawn through, so a handover the
+/// numbers call inverted is one the eye can find on the plot.
+/// <para>
+/// It was a 0.68 s steady-state window until 2026-09-01, on the grounds that
+/// direct-sound phase disagreed by several milliseconds at subwoofer junctions.
+/// Re-measured over the archived cabins (the battery's window probe, 20
+/// junctions in 8 cars) that ground is gone: below 500 Hz the two windows agree
+/// to a median 5° and 0.046 ms. The old disagreement was the phase gate
+/// anchoring on the IR PEAK, which for a steeply low-passed driver sits tens of
+/// milliseconds after its own front, so the window ate the front it was meant
+/// to isolate; anchoring on the arrival removed it.
+/// </para>
+/// <para>
+/// What the change buys is the top of the range. Above 1 kHz the steady state
+/// has nothing left to read: its CEILING — the best score any delay reaches
+/// over the band — sits at a median 0.690 there, so a correctly tuned tweeter
+/// junction could not score better than about 0.7 whatever the tuner did, and
+/// the residue is the room decorrelating the two paths rather than a
+/// misalignment a delay can repair. Through the gated window the same ceiling
+/// is 0.928. Below 500 Hz the ceiling is unchanged (0.896 against 0.908), which
+/// is the other half of the result: the bass read-out did not move.
+/// </para>
 /// </remarks>
 /// <param name="CurrentScore">
 /// Energy-weighted in-phase score Σw·cos(Δφ)/Σw at the CURRENT settings:
@@ -180,6 +198,29 @@ public static class JunctionPhaseAlignment
     public const double MinimumPhaseConsistency = 0.5;
 
     /// <summary>
+    /// The <see cref="JunctionPhaseResult.BestScore"/> below which the
+    /// RECOMMENDATION — the extra delay and the polarity mark — must not be
+    /// presented: no delay brings this band into phase, so the sweep's optimum
+    /// is the least bad of a set of bad alignments rather than a fix. The φ
+    /// figure has its own gate (<see cref="MinimumPhaseConsistency"/>); this one
+    /// is about the ceiling, and the two answer different questions — a junction
+    /// can hold one clean phase at fc and still be incoherent across its band.
+    /// </summary>
+    /// <remarks>
+    /// Calibrated on the archived cabins by sweeping the threshold and asking
+    /// what suppressing each junction's fix would have cost: from 0.35 to 0.65
+    /// exactly one junction is suppressed — a 2 kHz handover whose two drivers
+    /// do not correlate at all in their direct sound (whitened correlation
+    /// r = 0.07), and whose recommended −0.37 ms took the panel's own summation
+    /// loss down by 1.15 dB and its dip to −10.9 dB when applied. At 0.70 the
+    /// threshold starts catching junctions whose fix changed nothing, and by
+    /// 0.80 one whose fix helped. 0.5 sits in the middle of that plateau, and
+    /// reads as a statement in its own right: at the optimum the band is still
+    /// 60° out of phase on average, so the delay is not what is wrong with it.
+    /// </remarks>
+    public const double MinimumAlignableScore = 0.5;
+
+    /// <summary>
     /// The number of IR samples actually analyzed at a given sample rate:
     /// <see cref="AnalysisDurationSeconds"/> of signal, but never more than the
     /// FFT holds (the cap can trim it at exotic rates). This is the physical
@@ -219,6 +260,12 @@ public static class JunctionPhaseAlignment
     /// the IR is longer), zero-padded to <see cref="AnalysisLengthFor"/> and
     /// transformed. Callers analyzing several junctions reuse one spectrum per
     /// channel.
+    /// <para>
+    /// The read-out no longer reads this window (see the class remarks); it is
+    /// the REFERENCE the window comparison is measured against, and what the
+    /// synthetic tests analyze, so a later window change can be judged against
+    /// the same baseline rather than against a rebuilt one.
+    /// </para>
     /// </summary>
     public static Complex[] BuildAnalysisSpectrum(Complex[] impulseResponse, int sampleRate)
     {
@@ -300,6 +347,46 @@ public static class JunctionPhaseAlignment
             throw new ArgumentException(
                 $"Analysis spectra must be {length} bins for {sampleRate} Hz " +
                 "(use BuildAnalysisSpectrum).");
+        }
+
+        return AnalyzeWindowedSpectra(
+            lowerSpectrum, upperSpectrum, sampleRate,
+            crossoverHz, bandLowHz, bandHighHz);
+    }
+
+    /// <summary>
+    /// The same junction arithmetic over spectra built by a DIFFERENT window
+    /// than the steady-state one — a gated or frequency-dependent-windowed
+    /// pair, at whatever FFT length that window uses. Both spectra must share
+    /// that length AND one absolute time origin: the cross-phase is what is
+    /// read, so a per-channel window placement has to be re-referenced to a
+    /// common origin first (<see cref="Resonalyze.Dsp.DataHelper.SumGatedSpectra"/>)
+    /// or the placement difference is read as a delay.
+    /// </summary>
+    /// <remarks>
+    /// This is what the Virtual DSP read-out calls (see the class remarks);
+    /// <see cref="AnalyzeSpectra"/> is the steady-state reference beside it.
+    /// </remarks>
+    public static JunctionPhaseResult? AnalyzeWindowedSpectra(
+        Complex[] lowerSpectrum,
+        Complex[] upperSpectrum,
+        int sampleRate,
+        double crossoverHz,
+        double bandLowHz,
+        double bandHighHz)
+    {
+        ArgumentNullException.ThrowIfNull(lowerSpectrum);
+        ArgumentNullException.ThrowIfNull(upperSpectrum);
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+
+        int length = lowerSpectrum.Length;
+        if (upperSpectrum.Length != length || length < 4)
+        {
+            throw new ArgumentException(
+                "Both spectra must share one FFT length of at least 4 bins.");
         }
         if (!(crossoverHz > 0) || !(bandHighHz > bandLowHz) || !(bandLowHz > 0))
         {

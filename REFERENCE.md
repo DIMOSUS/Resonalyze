@@ -2249,10 +2249,18 @@ keeps its own guarded estimators, and reads this ladder in exactly one place —
 to settle a mid/tweeter lobe the direct-sound correlation can only call by a
 hair (see Auto delay above). It never takes a Δt from it as a move.
 
-A **Junction phase** block reads each adjacent pair's steady-state cross-phase in
-a time-sized window (~0.68 s of the processed IR) — the regime sustained program
-material actually sums in, deliberately not the direct-sound phase, because the
-room adds several milliseconds of apparent group delay down low. Per junction it
+A **Junction phase** block reads each adjacent pair's cross-phase through the
+same gate the phase curves are drawn through, at a fixed
+8-cycle frequency-dependent window whatever the gate dialog's FDW selector says —
+so the φ it reports is a figure you can find on the plot beside it, and a shorter
+window chosen for the eye cannot move the numbers. It read a 0.68 s steady-state
+window until the two were measured against each other over the archived cabins:
+below 500 Hz they agree (a median 5° and 0.05 ms across twenty junctions in eight
+cars), while above 1 kHz the steady state has nothing left to read — the best
+score ANY delay reaches over the band sits at a median 0.69 there, so a correctly
+tuned tweeter junction could not score better than about 0.7 whatever you did,
+the residue being the room decorrelating the two paths rather than a misalignment.
+Through the gated window that ceiling is 0.93. Per junction the block
 shows **φfc**, the lower channel's phase minus the upper at the crossover (≈0°
 means phase-aligned; ±180° does not by itself call for a flip, since an inverted
 channel and a half-period delay are identical at fc); and **fix ms**, the extra
@@ -2262,7 +2270,12 @@ warning that the overlap band is too narrow to rule out a whole-period hop — s
 the fix is not to be trusted, and the junction's coherence ladder is the better
 read. A fix worth less than 10° of phase at the crossover (0.03 dB in the sum)
 shows as `·`: a settled tune has nothing to apply there, and a number would
-invite a correction that changes nothing. Last comes **score**, where the
+invite a correction that changes nothing. It shows as `—`, polarity mark and all,
+where even the best delay leaves the band out of phase: the two drivers do not
+correlate over their overlap, so the sweep's optimum is the least bad of a set of
+bad alignments rather than a change to make — on the archived cabins the one
+junction this withholds is a 2 kHz handover whose recommendation cost 1.15 dB of summation
+loss when it was applied. Last comes **score**, where the
 junction stands as it is — the band's phase-alignment score (−1…+1) that the
 fix maximizes: 1.00 is aligned across the overlap, 0 a wash, negative means the
 two drivers are subtracting. It moves while a delay is dragged, so it answers

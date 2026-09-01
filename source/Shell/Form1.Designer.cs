@@ -48,6 +48,7 @@
             buttonCurrentModeSettings = new ReleaseClickButton();
             panel1 = new RoundedPanel();
             buttonCompare = new ReleaseClickButton();
+            buttonRewExport = new ReleaseClickButton();
             inputLevelMeterPanel = new InputLevelMeterPanel();
             buttonHistory = new ReleaseClickButton();
             chromeTitleBar = new ChromeTitleBar();
@@ -262,7 +263,7 @@
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
             buttonCurrentModeSettings.Font = new Font("Segoe UI Emoji", 10F);
             buttonCurrentModeSettings.ForeColor = Color.White;
-            buttonCurrentModeSettings.Location = new Point(1268, 309);
+            buttonCurrentModeSettings.Location = new Point(1268, 338);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
             buttonCurrentModeSettings.Size = new Size(210, 23);
             buttonCurrentModeSettings.TabIndex = 21;
@@ -275,13 +276,14 @@
             // 
             panel1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             panel1.Controls.Add(buttonCompare);
+            panel1.Controls.Add(buttonRewExport);
             panel1.Controls.Add(buttonRecord);
             panel1.Controls.Add(buttonRecordOpt);
             panel1.Controls.Add(buttonSave);
             panel1.Controls.Add(buttonLoad);
             panel1.Location = new Point(1264, 146);
             panel1.Name = "panel1";
-            panel1.Size = new Size(218, 119);
+            panel1.Size = new Size(218, 148);
             panel1.TabIndex = 23;
             // 
             // buttonCompare
@@ -298,6 +300,23 @@
             buttonCompare.Text = "Compare";
             buttonCompare.UseCompatibleTextRendering = true;
             buttonCompare.UseVisualStyleBackColor = false;
+            // 
+            // buttonRewExport
+            // 
+            buttonRewExport.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonRewExport.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRewExport.FlatStyle = FlatStyle.Popup;
+            buttonRewExport.Font = new Font("Segoe UI", 10F);
+            buttonRewExport.ForeColor = Color.White;
+            buttonRewExport.Location = new Point(3, 120);
+            buttonRewExport.Name = "buttonRewExport";
+            buttonRewExport.Size = new Size(210, 23);
+            buttonRewExport.TabIndex = 32;
+            buttonRewExport.Text = "Export";
+            toolTip1.SetToolTip(buttonRewExport, "Send the impulse response to REW");
+            buttonRewExport.UseCompatibleTextRendering = true;
+            buttonRewExport.UseVisualStyleBackColor = false;
+            buttonRewExport.Click += buttonRewExport_Click;
             // 
             // inputLevelMeterPanel
             // 
@@ -317,7 +336,7 @@
             buttonHistory.FlatStyle = FlatStyle.Popup;
             buttonHistory.Font = new Font("Segoe UI Emoji", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
             buttonHistory.ForeColor = Color.White;
-            buttonHistory.Location = new Point(1268, 280);
+            buttonHistory.Location = new Point(1268, 309);
             buttonHistory.Name = "buttonHistory";
             buttonHistory.Size = new Size(210, 23);
             buttonHistory.TabIndex = 25;
@@ -508,5 +527,6 @@
         private Label virtualDspMetricLabel;
         private Label virtualDspWarningLabel;
         private ReleaseClickButton buttonCompare;
+        private ReleaseClickButton buttonRewExport;
     }
 }

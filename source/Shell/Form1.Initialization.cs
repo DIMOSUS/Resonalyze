@@ -74,10 +74,12 @@ public partial class Form1
         MainCommandController createdCommandController = new(
             buttonSave,
             buttonLoad,
+            buttonRewExport,
             buttonCurrentModeSettings,
             buttonRecordOpt,
             buttonHistory,
             () => GetActiveModeDescriptor().HasDockedSettings,
+            () => CanExportToRew,
             () => IsHandleCreated);
         TimeAlignmentPanelController createdTimeAlignmentController = new(
             this,

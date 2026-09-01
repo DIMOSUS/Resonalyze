@@ -3006,10 +3006,13 @@ public partial class VirtualCrossoverPanel : UserControl
             "different times, so fitting one no longer disturbs the other.\r\n" +
             "The Tukey lengths, window mode, detrend mode and FDW cycles\r\n" +
             "are shared, so both sides read at one resolution and method.\r\n" +
-            "The Junction phase read-out is measured through this gate too,\r\n" +
-            "at a fixed 8-cycle window whatever the FDW selector says: the\r\n" +
-            "selector shapes a curve for the eye, and a shorter one moves the\r\n" +
-            "numbers more than it sharpens them.");
+            "The Junction phase read-out follows this gate's OFFSET and\r\n" +
+            "durations, but always reads an 8-cycle frequency-dependent\r\n" +
+            "window — the mode and FDW selectors shape a curve for the eye,\r\n" +
+            "and the settings that suit one are measurably the wrong\r\n" +
+            "instrument for a number. In the default FDW mode the numbers and\r\n" +
+            "the drawn curves are the same window; in Fixed mode they are not,\r\n" +
+            "and the plot then shows a longer window than the figures do.");
         toolTip.SetToolTip(
             buttonSessionExport,
             "Save the whole session (sources, DSP chains, gate, view)\r\n" +
@@ -3315,6 +3318,14 @@ public partial class VirtualCrossoverPanel : UserControl
         // the very same entries). A delay drag makes every frame the first time,
         // so that cost cannot sit in the frame. The gate is read from the panel's
         // state HERE, on the UI thread; only plain numbers cross over.
+        // The SUMMING channels, like the loss beside it: those are the ones
+        // whose junctions it reports, and the windows are placed over exactly
+        // them. In a grouped view that is not quite the drawn set — a centre is
+        // drawn beside the front stage and sums with neither — so a spectator
+        // failing the leading-edge guard can send the CURVES to one shared
+        // window while these figures keep their per-curve placements. That is
+        // the right way round: a channel taking part in none of the junctions
+        // being reported has no claim on the windows they are read through.
         List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
         if (quotesJunctions)
         {

@@ -2250,10 +2250,15 @@ to settle a mid/tweeter lobe the direct-sound correlation can only call by a
 hair (see Auto delay above). It never takes a Δt from it as a move.
 
 A **Junction phase** block reads each adjacent pair's cross-phase through the
-same gate the phase curves are drawn through, at a fixed
-8-cycle frequency-dependent window whatever the gate dialog's FDW selector says —
-so the φ it reports is a figure you can find on the plot beside it, and a shorter
-window chosen for the eye cannot move the numbers. It read a 0.68 s steady-state
+phase gate — its offset and Tukey durations — at a fixed 8-cycle
+frequency-dependent window, whatever the gate dialog's window-mode and FDW
+selectors say. Those selectors shape a curve for the eye; the settings that suit
+one are measurably the wrong instrument for a number, and a fixed window above
+1 kHz cannot score a correctly tuned tweeter junction better than about 0.7 (see
+the ceiling below). In the default frequency-dependent mode the numbers and the
+drawn curves are one window, so the φ reported is a figure you can find on the
+plot beside it; in Fixed mode the plot shows a longer window at high junctions
+than the figures do. It read a 0.68 s steady-state
 window until the two were measured against each other over the archived cabins:
 below 500 Hz they agree (a median 5° and 0.05 ms across twenty junctions in eight
 cars), while above 1 kHz the steady state has nothing left to read — the best

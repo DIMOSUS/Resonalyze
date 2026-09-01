@@ -9,9 +9,10 @@ namespace Resonalyze.Dsp;
 /// </summary>
 /// <remarks>
 /// The figures are read through the caller's own window — for the Virtual DSP
-/// read-out, the panel's phase gate at an 8-cycle frequency-dependent window,
-/// the very window its phase CURVES are drawn through, so a handover the
-/// numbers call inverted is one the eye can find on the plot.
+/// read-out, the panel's phase gate (its offset and Tukey durations) at an
+/// 8-cycle frequency-dependent window, which in that view's default mode is the
+/// very window its phase CURVES are drawn through, so a handover the numbers
+/// call inverted is one the eye can find on the plot.
 /// <para>
 /// It was a 0.68 s steady-state window until 2026-09-01, on the grounds that
 /// direct-sound phase disagreed by several milliseconds at subwoofer junctions.

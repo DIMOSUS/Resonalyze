@@ -10,20 +10,43 @@ namespace Resonalyze;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The same window the phase CURVES are drawn through, deliberately: the φ
-/// column and the plot beside it then describe one measurement, and a handover
-/// the numbers call inverted is one the eye can find on the curves. The
-/// read-out used a 0.68 s steady-state window until 2026-09-01 — see the
-/// remarks on <see cref="JunctionPhaseAlignment"/> for what the battery
-/// measured when the two were compared.
+/// The gate the user placed, at the window the MEASUREMENT needs: its offset
+/// (or the arrival it follows unpinned) and its Tukey durations are the
+/// dialog's, its window mode and cycle count are not. The read-out used a
+/// 0.68 s steady-state window until 2026-09-01 — see the remarks on
+/// <see cref="JunctionPhaseAlignment"/> for what the battery measured when the
+/// two were compared.
+/// </para>
+/// <para>
+/// Where that leaves the drawn curves. With the phase view in its default
+/// frequency-dependent mode the two are one window and the φ column can be read
+/// off the plot beside it. In FIXED mode they are not: the curves keep the
+/// dialog's fixed duration while the numbers stay on the 8-cycle window, so at
+/// a high junction the plot shows a far longer window than the figures do. That
+/// is deliberate and it is the same judgement as the cycle count below — the
+/// selector answers "what should this curve look like", and the answer that
+/// suits an eye is measurably the wrong instrument for a number: on the
+/// archived cabins a fixed window's CEILING above 1 kHz (the best score any
+/// delay reaches over the band) is 0.693 against the gated window's 0.928, so
+/// honouring the selector would hand a fixed-mode project a read-out that
+/// cannot score a correctly tuned tweeter junction above about 0.7.
 /// </para>
 /// <para>
 /// Placement is <see cref="PhaseGatePlacement"/>'s, resolved over the channels
 /// handed in and nothing else, so a set the read-out does not cover cannot move
-/// its windows. Each spectrum is then rotated to the record's own origin: a
-/// per-curve placement is a different time reference per channel, and a
-/// junction is read from the CROSS-phase of two of them, which would otherwise
-/// carry the placement difference as a delay.
+/// its windows. That set is the SUMMING channels, which in a grouped view is
+/// not quite the drawn set — a centre is drawn beside the front stage and sums
+/// with neither — so when such a spectator fails the leading-edge guard the
+/// curves fall back to one shared window while these spectra keep their
+/// per-curve placements. The read-out's own channels all passed that guard; a
+/// channel that takes part in none of the junctions being reported has no claim
+/// on the windows they are read through.
+/// </para>
+/// <para>
+/// Each spectrum is then rotated to the record's own origin: a per-curve
+/// placement is a different time reference per channel, and a junction is read
+/// from the CROSS-phase of two of them, which would otherwise carry the
+/// placement difference as a delay.
 /// </para>
 /// </remarks>
 internal static class JunctionPhaseSpectra

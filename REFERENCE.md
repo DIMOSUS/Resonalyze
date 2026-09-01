@@ -1053,10 +1053,14 @@ succeeds — the measurement is in REW, which is where you are looking.
 
 **What arrives.** The transfer impulse response as measured, with t = 0 on the
 loopback reference. Its samples are sent unchanged and unresampled; the buffer is
-rolled by a tenth of a second so the deconvolution's acausal part, which is wrapped
-into the tail, appears before t = 0 where it belongs, and the roll is stated as a
-negative start time. A circular roll moves no energy, so the arrival still reads the
-delay this measurement found.
+rolled by 150 ms so the deconvolution's acausal part, which is wrapped into the tail,
+appears before t = 0 where it belongs, and the roll is stated as a negative start
+time. A circular roll moves no energy, so the arrival still reads the delay this
+measurement found. The length is deliberate: REW builds its left gate out of the
+pre-roll and quietly clamps that gate to whatever pre-roll it is given. An import
+starts with a 100 ms left window in REW while REW's own swept measurements carry
+125 ms, so 150 ms is what lets an exported measurement be widened to the same gate
+as the REW measurement beside it, and compared with it like for like.
 
 **What it does not carry.** REW files an imported impulse response with **no timing
 reference of its own**: the shape and the internal delays are real, but REW cannot

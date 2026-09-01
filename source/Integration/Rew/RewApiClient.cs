@@ -118,14 +118,46 @@ internal sealed class RewApiClient
     }
 
     /// <summary>Every measurement REW currently holds, keyed by its index.</summary>
+    /// <remarks>
+    /// A body that is not the shape this expects is turned into a
+    /// <see cref="RewApiException"/> rather than left to escape. This is the route
+    /// where that matters: the export deliberately does not gate on REW's version —
+    /// it is a moving beta — so a REW that still answers while having changed this
+    /// shape is the expected way the design fails, and it has to arrive as a
+    /// reported problem rather than as an unhandled exception.
+    /// <para>
+    /// The two types caught are the two this route can actually raise, which was
+    /// measured rather than assumed (.NET 10.0.301). <see cref="JsonException"/>
+    /// covers both a malformed body and a body of another kind entirely: the
+    /// generic <c>ReadFromJsonAsync</c> does not reject a foreign content type, it
+    /// parses the bytes anyway, so an HTML error page arrives as "'&lt;' is an
+    /// invalid start of a value" rather than as the
+    /// <see cref="NotSupportedException"/> one would expect.
+    /// <see cref="InvalidOperationException"/> is the one that does come from the
+    /// header — an unusable charset ("The character set provided in ContentType is
+    /// invalid") — and it is excluded for <see cref="ObjectDisposedException"/>,
+    /// which derives from it and means this application misused its own client
+    /// rather than anything about REW.
+    /// </para>
+    /// </remarks>
     public async Task<IReadOnlyDictionary<string, RewMeasurementSummary>> GetMeasurementsAsync(
         CancellationToken cancellationToken)
     {
-        Dictionary<string, RewMeasurementSummary>? measurements =
-            await GetAsync<Dictionary<string, RewMeasurementSummary>>(
-                "measurements",
-                cancellationToken).ConfigureAwait(false);
-        return measurements ?? [];
+        try
+        {
+            Dictionary<string, RewMeasurementSummary>? measurements =
+                await GetAsync<Dictionary<string, RewMeasurementSummary>>(
+                    "measurements",
+                    cancellationToken).ConfigureAwait(false);
+            return measurements ?? [];
+        }
+        catch (Exception exception) when (IsUnreadable(exception))
+        {
+            throw new RewApiException(
+                "REW answered with a measurement list this build could not read, so the " +
+                "measurement that was just sent could not be found to check it. " +
+                $"({exception.Message})");
+        }
     }
 
     private async Task<T?> GetAsync<T>(string relativePath, CancellationToken cancellationToken)
@@ -140,6 +172,16 @@ internal sealed class RewApiClient
     }
 
     /// <summary>
+    /// Whether a failure means "the answer was not something this can read" — the
+    /// body, or the header that says how to decode it. Shared so the version probe
+    /// and the measurement list agree on what an unreadable answer is; they only
+    /// differ in what they do about it.
+    /// </summary>
+    private static bool IsUnreadable(Exception exception) =>
+        exception is JsonException ||
+        (exception is InvalidOperationException and not ObjectDisposedException);
+
+    /// <summary>
     /// Whether a failure means "REW is not there", as opposed to the caller having
     /// cancelled. A timeout surfaces as a cancellation whose token is not ours, so
     /// the token has to be consulted rather than the exception type.
@@ -148,7 +190,8 @@ internal sealed class RewApiClient
         exception switch
         {
             OperationCanceledException => !cancellationToken.IsCancellationRequested,
-            HttpRequestException or JsonException => true,
+            HttpRequestException => true,
+            _ when IsUnreadable(exception) => true,
             _ => false
         };
 }

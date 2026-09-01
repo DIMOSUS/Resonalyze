@@ -111,6 +111,134 @@ public sealed class RewMeasurementExportTests
         Assert.Contains("refused", exception.Message);
     }
 
+    [Fact]
+    public async Task SendAsync_ReportsAMeasurementListItCannotRead()
+    {
+        // The export deliberately does not gate on REW's version, so a beta that
+        // still answers while having changed this shape is the way the design is
+        // expected to fail. It has to arrive as a reported problem, not as a
+        // JsonException through the application's global unexpected-error handler.
+        var rew = new FakeRew { MeasurementsBody = "{\"1\":{\"title\":" };
+
+        RewApiException exception = await Assert.ThrowsAsync<RewApiException>(
+            () => SendAsync(rew, PeakSeconds(PeakIndex)));
+
+        Assert.Contains("could not read", exception.Message);
+        // The list is read before the import, so nothing was left behind in REW.
+        Assert.DoesNotContain("/import/impulse-response-data", rew.Paths);
+    }
+
+    [Fact]
+    public async Task SendAsync_ReportsAMeasurementListThatIsNotJsonAtAll()
+    {
+        // Something is on the port and it is not REW. Measured (.NET 10.0.301):
+        // ReadFromJsonAsync does NOT reject the foreign content type, it parses the
+        // bytes regardless, so this arrives as a JsonException about '<' — not as
+        // the NotSupportedException the media type would suggest.
+        var rew = new FakeRew
+        {
+            MeasurementsBody = "<html><body>not REW</body></html>",
+            MeasurementsContentType = "text/html; charset=utf-8"
+        };
+
+        RewApiException exception = await Assert.ThrowsAsync<RewApiException>(
+            () => SendAsync(rew, PeakSeconds(PeakIndex)));
+
+        Assert.Contains("could not read", exception.Message);
+    }
+
+    [Fact]
+    public async Task SendAsync_ReportsAMeasurementListItCannotEvenDecode()
+    {
+        // The other half, and the one that is a header fault rather than a body
+        // fault: a charset HttpClient cannot resolve raises InvalidOperationException
+        // from ReadFromJsonAsync, which no JsonException catch would have covered.
+        var rew = new FakeRew
+        {
+            MeasurementsContentType = "application/json; charset=utf-9"
+        };
+
+        RewApiException exception = await Assert.ThrowsAsync<RewApiException>(
+            () => SendAsync(rew, PeakSeconds(PeakIndex)));
+
+        Assert.Contains("could not read", exception.Message);
+    }
+
+    [Fact]
+    public async Task SendAsync_ReportsAMeasurementListThatGoesWrongAfterTheImport()
+    {
+        // The same failure on the polling read, where the import has already gone
+        // through: still a reported problem rather than an unhandled exception.
+        var rew = new FakeRew();
+
+        RewApiException exception = await Assert.ThrowsAsync<RewApiException>(async () =>
+        {
+            using var http = new HttpClient(rew);
+            var export = new RewMeasurementExport(
+                new RewApiClient(http, new Uri("http://localhost:4735/")));
+            rew.BreakMeasurementsAfterImport = true;
+            await export.SendAsync(
+                new RewExportRequest(Arrival(), PeakIndex, SampleRate, "probe", null),
+                CancellationToken.None);
+        });
+
+        Assert.Contains("could not read", exception.Message);
+        Assert.Contains("/import/impulse-response-data", rew.Paths);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_TreatsAPortThatAnswersSomethingElseAsNotRew()
+    {
+        // Something is listening on 4735 and it is not REW. That is the same news
+        // as nothing listening at all, and must not throw at the button — this runs
+        // from an async void handler, so an escape is a crash rather than a message.
+        // The charset case is the one that was NOT already covered: it raises
+        // InvalidOperationException, which the old "unreachable" rule did not list.
+        var rew = new FakeRew
+        {
+            VersionContentType = "application/json; charset=utf-9"
+        };
+        using var http = new HttpClient(rew);
+        var export = new RewMeasurementExport(
+            new RewApiClient(http, new Uri("http://localhost:4735/")));
+
+        string? version = await export.ProbeAsync(
+            TimeSpan.FromSeconds(2),
+            CancellationToken.None);
+
+        Assert.Null(version);
+    }
+
+    [Fact]
+    public async Task SendAsync_FindsItsMeasurementWhenRewShortensTheName()
+    {
+        // REW truncates a long title as it files it and reports the short one back
+        // (measured on 5.40 Beta 132: 54 characters came back as 48, 64 as 45).
+        // Requiring the name to match exactly made every export of a long name wait
+        // out the filing timeout and then report that REW had not filed it.
+        var rew = new FakeRew { TitleLimit = 3 };
+
+        RewExportResult result = await SendAsync(rew, PeakSeconds(PeakIndex));
+
+        Assert.True(result.Verified);
+        Assert.Null(result.Problem);
+    }
+
+    [Fact]
+    public void IsFiledAs_AcceptsATruncationAndRefusesEverythingElse()
+    {
+        Assert.True(RewMeasurementExport.IsFiledAs("measurement", "measurement"));
+        Assert.True(RewMeasurementExport.IsFiledAs("measure", "measurement"));
+        // An empty title is a prefix of everything, so it must not count as one.
+        Assert.False(RewMeasurementExport.IsFiledAs("", "measurement"));
+        Assert.False(RewMeasurementExport.IsFiledAs(null, "measurement"));
+        // Longer than what was sent, or simply another name: not ours.
+        Assert.False(RewMeasurementExport.IsFiledAs("measurements", "measurement"));
+        Assert.False(RewMeasurementExport.IsFiledAs("other", "measurement"));
+        // The truncation REW applies never changes case or content.
+        Assert.False(RewMeasurementExport.IsFiledAs("Measure", "measurement"));
+    }
+
     /// <summary>
     /// The whole path against a running REW, which is the only thing that can prove
     /// the fields are REW's and the start time survives. It creates one measurement
@@ -169,9 +297,12 @@ public sealed class RewMeasurementExportTests
             await client.GetMeasurementsAsync(CancellationToken.None);
         foreach (RewMeasurementSummary summary in after.Values)
         {
+            // The same prefix rule the export itself uses: REW truncates a long
+            // title as it files it, and an equality test here would walk past the
+            // measurement this test created and leave it in the user's session.
             if (string.IsNullOrEmpty(summary.Uuid) ||
                 known.Contains(summary.Uuid) ||
-                !string.Equals(summary.Title, identifier, StringComparison.Ordinal))
+                !RewMeasurementExport.IsFiledAs(summary.Title, identifier))
             {
                 continue;
             }
@@ -326,6 +457,35 @@ public sealed class RewMeasurementExportTests
         public HttpStatusCode ImportStatus { get; set; } = HttpStatusCode.Accepted;
         public FakeMeasurement? Concurrent { get; set; }
 
+        /// <summary>
+        /// What /measurements answers instead of the list, when set: a REW that is
+        /// still there and still answering, having changed or malformed the shape.
+        /// The export does not gate on REW's version, so this is the case that
+        /// stands in for a future beta.
+        /// </summary>
+        public string? MeasurementsBody { get; set; }
+
+        /// <summary>The content type it answers with, for a body that is not JSON at all.</summary>
+        public string MeasurementsContentType { get; set; } = "application/json";
+
+        /// <summary>
+        /// Answer /measurements normally until the import has gone through, then
+        /// stop being readable — the polling read, not the snapshot.
+        /// </summary>
+        public bool BreakMeasurementsAfterImport { get; set; }
+
+        /// <summary>
+        /// How many characters of a title REW keeps when it files one, or 0 for all
+        /// of them. REW really does shorten a long name and report the short one
+        /// back, which is why the export matches on a prefix.
+        /// </summary>
+        public int TitleLimit { get; set; }
+
+        /// <summary>The same, for /version — the route the probe reads.</summary>
+        public string? VersionBody { get; set; }
+
+        public string VersionContentType { get; set; } = "application/json";
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -346,7 +506,10 @@ public sealed class RewMeasurementExportTests
             switch (path)
             {
                 case "/version":
-                    return Json(HttpStatusCode.OK, $"{{\"message\":\"{Version}\"}}");
+                    return Json(
+                        HttpStatusCode.OK,
+                        VersionBody ?? $"{{\"message\":\"{Version}\"}}",
+                        VersionContentType);
 
                 case "/import/impulse-response-data":
                     ImportBody = request.Content == null
@@ -362,7 +525,15 @@ public sealed class RewMeasurementExportTests
                     return Json(ImportStatus, "{\"message\":\"in progress\"}");
 
                 case "/measurements":
-                    return Json(HttpStatusCode.OK, BuildMeasurements());
+                    if (BreakMeasurementsAfterImport && imported)
+                    {
+                        return Json(HttpStatusCode.OK, "{\"1\":{\"title\":");
+                    }
+
+                    return Json(
+                        HttpStatusCode.OK,
+                        MeasurementsBody ?? BuildMeasurements(),
+                        MeasurementsContentType);
 
                 default:
                     return new HttpResponseMessage(HttpStatusCode.NotFound);
@@ -379,9 +550,15 @@ public sealed class RewMeasurementExportTests
 
             if (imported)
             {
+                string filed = "probe";
+                if (TitleLimit > 0 && filed.Length > TitleLimit)
+                {
+                    filed = filed[..TitleLimit];
+                }
+
                 entries.Add(Entry(
                     (Existing.Count + 1).ToString(),
-                    new FakeMeasurement("probe", "new-uuid", ReportedPeakSeconds)));
+                    new FakeMeasurement(filed, "new-uuid", ReportedPeakSeconds)));
             }
 
             // Someone at the keyboard in REW while this send was being filed. New
@@ -398,10 +575,20 @@ public sealed class RewMeasurementExportTests
             FormattableString.Invariant(
                 $"\"{index}\":{{\"title\":\"{measurement.Title}\",\"uuid\":\"{measurement.Uuid}\",\"timeOfIRPeakSeconds\":{measurement.PeakSeconds:R}}}");
 
-        private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
-            new(status)
-            {
-                Content = new StringContent(body, Encoding.UTF8, "application/json")
-            };
+        /// <summary>
+        /// The header goes on unvalidated so a test can send one REW could send and
+        /// HttpClient cannot decode — an unusable charset, which is a header fault
+        /// rather than a body fault and raises a different exception.
+        /// </summary>
+        private static HttpResponseMessage Json(
+            HttpStatusCode status,
+            string body,
+            string contentType = "application/json")
+        {
+            var content = new StringContent(body, Encoding.UTF8);
+            content.Headers.Remove("Content-Type");
+            content.Headers.TryAddWithoutValidation("Content-Type", contentType);
+            return new HttpResponseMessage(status) { Content = content };
+        }
     }
 }

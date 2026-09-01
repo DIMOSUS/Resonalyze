@@ -28,9 +28,25 @@ internal static class RewImpulseResponsePayload
     /// <summary>
     /// How much of the wrapped tail to bring round to the front, in seconds. Long
     /// enough that the acausal ringing of a deconvolution is visible where it
-    /// belongs, short enough to stay a margin rather than half the graph.
+    /// belongs, short enough to stay a margin rather than half the graph — and, the
+    /// binding constraint, long enough for REW's own left gate.
     /// </summary>
-    public const double PreRollSeconds = 0.1;
+    /// <remarks>
+    /// The pre-roll is what REW has to build a left gate out of, and REW CLAMPS a
+    /// gate to the pre-roll present rather than reporting that it could not apply
+    /// the one it was asked for. Measured on 5.40 Beta 132 / API 0.9.6: REW gives an
+    /// IMPORT a 100 ms left window by default, while the swept measurements it makes
+    /// itself carry 125 ms. At 0.1 s — the value this started with — an imported
+    /// measurement therefore could not be given the same gate as the REW measurement
+    /// beside it: asking for 125 ms yielded 100.4. Comparing the two then compares
+    /// REW's windowing as much as the responses, and over a nine-measurement
+    /// crossover bench that showed up as 0.18 dB rms and 0.94 degrees rms. With the
+    /// gates equal the same round trip agrees to 1.2e-5 dB rms and 7.7e-5 degrees
+    /// rms — the same response to the precision a float32 payload can carry. 0.15 s
+    /// leaves 25 ms above the 125 ms an imported measurement has to be able to
+    /// match.
+    /// </remarks>
+    public const double PreRollSeconds = 0.15;
 
     /// <summary>
     /// Builds the import for one measurement.

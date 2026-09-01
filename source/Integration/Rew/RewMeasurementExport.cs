@@ -174,6 +174,15 @@ internal sealed class RewMeasurementExport
     /// stays usable throughout — and verify its timing instead. The title alone would
     /// pick the older of two measurements sharing a name.
     /// </summary>
+    /// <remarks>
+    /// The name is compared as a PREFIX rather than for equality, because REW
+    /// truncates a long title as it files it and reports the shortened one back.
+    /// Measured on 5.40 Beta 132 / API 0.9.6: a 54-character name came back at 48
+    /// and a 64-character one at 45, the cut depending on the characters rather than
+    /// their count — a display width, not a fixed limit. Requiring equality
+    /// therefore made every export of a long name wait out the filing timeout and
+    /// then report that REW had not filed it, while REW had filed it perfectly well.
+    /// </remarks>
     private async Task<RewMeasurementSummary?> WaitForNewMeasurementAsync(
         HashSet<string> known,
         string identifier,
@@ -188,7 +197,7 @@ internal sealed class RewMeasurementExport
             {
                 if (!string.IsNullOrEmpty(summary.Uuid) &&
                     !known.Contains(summary.Uuid) &&
-                    string.Equals(summary.Title, identifier, StringComparison.Ordinal))
+                    IsFiledAs(summary.Title, identifier))
                 {
                     return summary;
                 }
@@ -202,6 +211,16 @@ internal sealed class RewMeasurementExport
             await Task.Delay(FilingPollInterval, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// Whether REW filed this measurement under the name it was sent. What REW
+    /// stores is the name, possibly cut short — never anything added — so the test
+    /// is that the name sent BEGINS with the one REW reports. An empty title is not
+    /// a match: it would be a prefix of everything.
+    /// </summary>
+    internal static bool IsFiledAs(string? filedTitle, string identifier) =>
+        !string.IsNullOrEmpty(filedTitle) &&
+        identifier.StartsWith(filedTitle, StringComparison.Ordinal);
 
     /// <summary>
     /// Identifying the new measurement by UUID rather than by the name it was sent

@@ -263,7 +263,7 @@
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
             buttonCurrentModeSettings.Font = new Font("Segoe UI Emoji", 10F);
             buttonCurrentModeSettings.ForeColor = Color.White;
-            buttonCurrentModeSettings.Location = new Point(1268, 309);
+            buttonCurrentModeSettings.Location = new Point(1268, 338);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
             buttonCurrentModeSettings.Size = new Size(210, 23);
             buttonCurrentModeSettings.TabIndex = 21;
@@ -336,7 +336,7 @@
             buttonHistory.FlatStyle = FlatStyle.Popup;
             buttonHistory.Font = new Font("Segoe UI Emoji", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
             buttonHistory.ForeColor = Color.White;
-            buttonHistory.Location = new Point(1268, 280);
+            buttonHistory.Location = new Point(1268, 309);
             buttonHistory.Name = "buttonHistory";
             buttonHistory.Size = new Size(210, 23);
             buttonHistory.TabIndex = 25;

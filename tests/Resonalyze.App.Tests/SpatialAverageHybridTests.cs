@@ -332,6 +332,52 @@ public sealed class SpatialAverageHybridTests
         Assert.Equal(-20 + 10 * Math.Log10(2), sum[6].Y, 9);
     }
 
+    /// <summary>
+    /// A bypassed member's chain is Identity, so it plays its raw full-range
+    /// response — its configured crossover corners are idle and say nothing
+    /// about where it is present. Reading them as its band turned a capture's
+    /// silence below the idle high-pass back into "the driver is absent" (the
+    /// review's edge case): the gap must break the group point instead.
+    /// </summary>
+    [Fact]
+    public void PowerSum_ABypassedMembersIdleCrossoverDoesNotExcuseItsCaptureGap()
+    {
+        var tweeter = new VirtualCrossoverChannel("Tweeter");
+        VirtualCrossoverChannelSettings settings = tweeter.SideSettings(false);
+        settings.CrossoverKind = CrossoverKind.BandPass;
+        settings.HighPassEdge = new CrossoverEdge(
+            CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
+        settings.LowPassEdge = new CrossoverEdge(
+            CrossoverFilterFamily.LinkwitzRiley, 8_000, 24);
+        tweeter.Pair.Bypass = true;
+
+        (double LowHz, double HighHz) band =
+            VirtualCrossoverPanel.HybridGroupMemberBand(tweeter, rightSide: false);
+
+        // Bypassed, the member plays full range; with the crossover running it
+        // is the configured band, the same rule the comparison spans.
+        Assert.Equal((20.0, 20_000.0), band);
+        tweeter.Pair.Bypass = false;
+        Assert.Equal(
+            (2_000.0, 8_000.0),
+            VirtualCrossoverPanel.HybridGroupMemberBand(tweeter, rightSide: false));
+
+        // The gap sits at ~107 Hz — far below the idle 2 kHz corner. Through
+        // the full-range band it breaks the group point; through the configured
+        // corners it would have read as an absent driver and summed the mid
+        // alone, the very error the in-band rule exists to stop.
+        List<SignalPoint> mid = Flat(-20, count: 8);
+        List<SignalPoint> bypassed = Flat(-20, count: 8);
+        bypassed[5] = new SignalPoint(bypassed[5].X, double.NaN);
+
+        List<SignalPoint> sum = SpatialAverageHybrid.PowerSum(
+            [mid, bypassed],
+            [(20, 20_000), (20.0, 20_000.0)]);
+
+        Assert.True(double.IsNaN(sum[5].Y));
+        Assert.Equal(-20 + 10 * Math.Log10(2), sum[4].Y, 9);
+    }
+
     private static List<SignalPoint> Flat(double db, int count) =>
         Enumerable.Range(0, count)
             .Select(i => new SignalPoint(100 * Math.Pow(2, i / 48.0), db))

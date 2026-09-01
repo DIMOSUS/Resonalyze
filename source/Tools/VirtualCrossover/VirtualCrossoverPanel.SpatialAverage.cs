@@ -613,16 +613,35 @@ public partial class VirtualCrossoverPanel
             }
 
             curves.Add(curve);
-            // The member's configured band, for the sum's two readings of a
-            // gap (see PowerSum): inside it a capture with nothing to say
-            // breaks the GROUP's point, outside it the member is simply
-            // absent. The same band rule GroupBand keyed the comparison on.
-            bands.Add(VirtualCrossoverJunctions.GetChannelBand(
-                member.Channel.SideSettings(rightSide)));
+            bands.Add(HybridGroupMemberBand(member.Channel, rightSide));
         }
 
         return SpatialAverageHybrid.PowerSum(curves, bands);
     }
+
+    /// <summary>
+    /// The band a group member is expected to PLAY in — what separates a
+    /// capture's silence from an absent driver in the group power sum (see
+    /// <see cref="SpatialAverageHybrid.PowerSum"/>): inside it a capture with
+    /// nothing to say breaks the group's point, outside it the member is simply
+    /// absent.
+    /// </summary>
+    /// <remarks>
+    /// Normally the configured crossover band, the same rule the comparison's
+    /// own span is keyed on. A BYPASSED member is the exception the review
+    /// caught: its chain is Identity, so it plays its raw full-range response
+    /// wherever its measurement reaches — the configured corners it is not
+    /// running say nothing about where it is present, and reading them here
+    /// turned "the capture does not know" below an idle high-pass back into
+    /// "the driver is absent", the very confusion the band exists to prevent.
+    /// Static and pure so the rule can be pinned without a panel.
+    /// </remarks>
+    internal static (double LowHz, double HighHz) HybridGroupMemberBand(
+        VirtualCrossoverChannel channel, bool rightSide) =>
+        channel.Pair.Bypass
+            ? (20.0, 20_000.0)
+            : VirtualCrossoverJunctions.GetChannelBand(
+                channel.SideSettings(rightSide));
 
     // Log-spaced through the band at a resolution comfortably past the captures'
     // own (~1/48 octave): the figure is an energy mean of a smooth curve, and a

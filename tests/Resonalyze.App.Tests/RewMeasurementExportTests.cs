@@ -216,9 +216,10 @@ public sealed class RewMeasurementExportTests
         // (measured on 5.40 Beta 132: 54 characters came back as 48, 64 as 45).
         // Requiring the name to match exactly made every export of a long name wait
         // out the filing timeout and then report that REW had not filed it.
-        var rew = new FakeRew { TitleLimit = 3 };
+        const string identifier = "Resonalyze 2026-09-01 12-00-00 export probe name";
+        var rew = new FakeRew { TitleLimit = 45 };
 
-        RewExportResult result = await SendAsync(rew, PeakSeconds(PeakIndex));
+        RewExportResult result = await SendAsync(rew, PeakSeconds(PeakIndex), identifier);
 
         Assert.True(result.Verified);
         Assert.Null(result.Problem);
@@ -227,16 +228,97 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public void IsFiledAs_AcceptsATruncationAndRefusesEverythingElse()
     {
-        Assert.True(RewMeasurementExport.IsFiledAs("measurement", "measurement"));
-        Assert.True(RewMeasurementExport.IsFiledAs("measure", "measurement"));
+        const string identifier = "Resonalyze 2026-09-01 12-00-00 export probe name";
+
+        // Filed whole, and filed shortened to a length REW could have cut it to.
+        Assert.True(RewMeasurementExport.IsFiledAs(identifier, identifier));
+        Assert.True(RewMeasurementExport.IsFiledAs(identifier[..45], identifier));
+        Assert.True(RewMeasurementExport.IsFiledAs(identifier[..40], identifier));
+
+        // A SHORT name that merely begins the same way is somebody else's measurement.
+        Assert.False(RewMeasurementExport.IsFiledAs("Resonalyze", identifier));
+        Assert.False(RewMeasurementExport.IsFiledAs(identifier[..39], identifier));
+
         // An empty title is a prefix of everything, so it must not count as one.
-        Assert.False(RewMeasurementExport.IsFiledAs("", "measurement"));
-        Assert.False(RewMeasurementExport.IsFiledAs(null, "measurement"));
-        // Longer than what was sent, or simply another name: not ours.
-        Assert.False(RewMeasurementExport.IsFiledAs("measurements", "measurement"));
-        Assert.False(RewMeasurementExport.IsFiledAs("other", "measurement"));
-        // The truncation REW applies never changes case or content.
-        Assert.False(RewMeasurementExport.IsFiledAs("Measure", "measurement"));
+        Assert.False(RewMeasurementExport.IsFiledAs("", identifier));
+        Assert.False(RewMeasurementExport.IsFiledAs(null, identifier));
+
+        // Longer than what was sent, another name, or a different case: not ours.
+        Assert.False(RewMeasurementExport.IsFiledAs(identifier + "x", identifier));
+        Assert.False(RewMeasurementExport.IsFiledAs("something else entirely, and long enough", identifier));
+        Assert.False(RewMeasurementExport.IsFiledAs(identifier[..45].ToUpperInvariant(), identifier));
+
+        // A short name is still matched when REW filed it WHOLE - the floor only
+        // governs what may pass as a shortening.
+        Assert.True(RewMeasurementExport.IsFiledAs("probe", "probe"));
+    }
+
+    [Fact]
+    public async Task SendAsync_RefusesToGuessWhenTwoNewMeasurementsShareTheName()
+    {
+        // REW lets two measurements share a title, and both are new since the
+        // snapshot. Nothing separates them, so the export must say so rather than
+        // verify whichever the dictionary happened to yield first.
+        var rew = new FakeRew
+        {
+            Concurrent = new FakeMeasurement("probe", "someone-elses-uuid", 0.5)
+        };
+
+        RewExportResult result = await SendAsync(rew, PeakSeconds(PeakIndex));
+
+        Assert.False(result.Verified);
+        Assert.Contains("more than one", result.Problem!);
+    }
+
+    [Fact]
+    public async Task SendAsync_IgnoresAConcurrentMeasurementWhoseNameOnlyStartsLikeOurs()
+    {
+        const string identifier = "Resonalyze 2026-09-01 12-00-00 export probe name";
+        var rew = new FakeRew
+        {
+            SentIdentifier = identifier,
+            // Filed first, and a prefix of ours: the user's own measurement.
+            Concurrent = new FakeMeasurement("Resonalyze", "someone-elses-uuid", 0.5)
+        };
+
+        RewExportResult result = await SendAsync(rew, PeakSeconds(PeakIndex), identifier);
+
+        // Verified against OURS — 0.5 s would have been reported as a huge disagreement
+        // had the concurrent one been picked.
+        Assert.True(result.Verified);
+        Assert.Null(result.Problem);
+    }
+
+    [Fact]
+    public async Task SendAsync_RefusesToGuessBetweenTwoEquallyGoodTruncations()
+    {
+        // Two new measurements, both shortened to the same length, both a prefix of
+        // what was sent. Waiting cannot separate them and neither can a rule, so the
+        // export says so instead of verifying one of them at random.
+        const string identifier = "Resonalyze 2026-09-01 12-00-00 export probe name";
+        var rew = new FakeRew
+        {
+            SentIdentifier = identifier,
+            TitleLimit = 44,
+            Concurrent = new FakeMeasurement(identifier[..44], "another-new-uuid", 0.5)
+        };
+
+        RewExportResult result = await SendAsync(rew, PeakSeconds(PeakIndex), identifier);
+
+        Assert.False(result.Verified);
+        Assert.Contains("more than one", result.Problem!);
+    }
+
+    [Fact]
+    public void IsFiledAs_RefusesAShortNameThatIsMerelyAPrefix()
+    {
+        const string identifier = "Resonalyze 2026-09-01 12-00-00 export probe name";
+        // A real truncation: long enough that REW could have cut a title to it.
+        Assert.True(RewMeasurementExport.IsFiledAs(identifier[..45], identifier));
+        Assert.True(RewMeasurementExport.IsFiledAs(identifier, identifier));
+        // Someone else's short name that happens to start the same way.
+        Assert.False(RewMeasurementExport.IsFiledAs("Resonalyze", identifier));
+        Assert.False(RewMeasurementExport.IsFiledAs(identifier[..39], identifier));
     }
 
     /// <summary>
@@ -251,7 +333,11 @@ public sealed class RewMeasurementExportTests
         Assert.True(RewApiClient.TryParseBaseAddress(RewFactAttribute.ApiUrl(), out Uri? baseAddress));
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         var client = new RewApiClient(http, baseAddress!);
-        string identifier = $"Resonalyze round trip {Guid.NewGuid():N}";
+        // The GUID leads, so that what REW keeps of the name is still unique to this
+        // run: REW shortens a long title, and a discriminator at the end is the part
+        // it drops. Cleanup deletes by this name, so the cost of getting it wrong is
+        // deleting a measurement belonging to whoever is using REW.
+        string identifier = $"{Guid.NewGuid():N} Resonalyze round trip";
 
         IReadOnlyDictionary<string, RewMeasurementSummary> before =
             await client.GetMeasurementsAsync(CancellationToken.None);
@@ -405,14 +491,18 @@ public sealed class RewMeasurementExportTests
         Assert.Null(result.Problem);
     }
 
-    private static Task<RewExportResult> SendAsync(FakeRew rew, double reportedPeakSeconds)
+    private static Task<RewExportResult> SendAsync(
+        FakeRew rew,
+        double reportedPeakSeconds,
+        string identifier = "probe")
     {
         rew.ReportedPeakSeconds = reportedPeakSeconds;
+        rew.SentIdentifier = identifier;
         using var http = new HttpClient(rew);
         var export = new RewMeasurementExport(
             new RewApiClient(http, new Uri("http://localhost:4735/")));
         return export.SendAsync(
-            new RewExportRequest(Arrival(), PeakIndex, SampleRate, "probe", null),
+            new RewExportRequest(Arrival(), PeakIndex, SampleRate, identifier, null),
             CancellationToken.None);
     }
 
@@ -481,6 +571,9 @@ public sealed class RewMeasurementExportTests
         /// </summary>
         public int TitleLimit { get; set; }
 
+        /// <summary>The name the export sent, which is what REW files it under.</summary>
+        public string SentIdentifier { get; set; } = "probe";
+
         /// <summary>The same, for /version — the route the probe reads.</summary>
         public string? VersionBody { get; set; }
 
@@ -548,9 +641,17 @@ public sealed class RewMeasurementExportTests
                 entries.Add(Entry(index, measurement));
             }
 
+            // The stranger is listed BEFORE ours on purpose. Whichever candidate the
+            // export happens to meet first must not be the one it keeps, and a fake
+            // that always yields ours first cannot show the difference.
+            if (imported && Concurrent is { } first)
+            {
+                entries.Add(Entry((Existing.Count + 2).ToString(), first));
+            }
+
             if (imported)
             {
-                string filed = "probe";
+                string filed = SentIdentifier;
                 if (TitleLimit > 0 && filed.Length > TitleLimit)
                 {
                     filed = filed[..TitleLimit];
@@ -561,13 +662,11 @@ public sealed class RewMeasurementExportTests
                     new FakeMeasurement(filed, "new-uuid", ReportedPeakSeconds)));
             }
 
-            // Someone at the keyboard in REW while this send was being filed. New
-            // since the snapshot, exactly like ours, and nothing to do with us.
-            if (Concurrent is { } concurrent)
-            {
-                entries.Add(Entry((Existing.Count + 2).ToString(), concurrent));
-            }
-
+            // Someone at the keyboard in REW while this send was being filed. It has
+            // to appear only once the import is under way: listed from the start it
+            // would be in the caller's own before-snapshot, which is to say KNOWN, and
+            // a test meaning to exercise the concurrency would quietly exercise
+            // nothing.
             return "{" + string.Join(",", entries) + "}";
         }
 

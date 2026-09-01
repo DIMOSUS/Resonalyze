@@ -16,6 +16,16 @@ public partial class Form1
 
     private static readonly TimeSpan RewProbeTimeout = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// Whether a send is already on its way. The handler is <c>async void</c> and the
+    /// form stays live across both the probe and a send that may run for thirty
+    /// seconds, so without this a second click starts a second export — two imports
+    /// under one name, and each verification then has the other's measurement to pick
+    /// between. Disabling the button is not enough on its own: the click that is
+    /// already queued arrives after the check and before the disable takes effect.
+    /// </summary>
+    private bool rewExportInFlight;
+
     private string RewBaseUrl =>
         string.IsNullOrWhiteSpace(measurementSettings.RewApiBaseUrl)
             ? RewApiClient.DefaultBaseUrl
@@ -31,11 +41,24 @@ public partial class Form1
     {
         // The button is frozen in every state this cannot serve, so these are
         // assertions rather than the guards they were when the gesture was hidden.
-        if (!CanExportToRew)
+        if (!CanExportToRew || rewExportInFlight)
         {
             return;
         }
 
+        rewExportInFlight = true;
+        try
+        {
+            await RunRewExportAsync();
+        }
+        finally
+        {
+            rewExportInFlight = false;
+        }
+    }
+
+    private async Task RunRewExportAsync()
+    {
         string? version = null;
         if (RewApiClient.TryParseBaseAddress(RewBaseUrl, out Uri? baseAddress))
         {

@@ -106,9 +106,13 @@ internal sealed class RewApiClient
                 .ConfigureAwait(false);
             reported = message?.Message;
         }
-        catch (JsonException)
+        catch (Exception exception) when (IsUnreadable(exception))
         {
             // A body that is not REW's error shape tells us nothing; the status does.
+            // Classified the same way as the measurement list, so an unreadable answer
+            // is unreadable wherever it arrives — an unusable charset raises
+            // InvalidOperationException here exactly as it does there, and escaping
+            // from this catch would turn REW refusing an import into a crash.
         }
 
         throw new RewApiException(

@@ -119,10 +119,19 @@ internal sealed class RewMeasurementExport
         await client.ImportImpulseResponseAsync(import.Body, cancellationToken)
             .ConfigureAwait(false);
 
-        RewMeasurementSummary? filed = await WaitForNewMeasurementAsync(
+        (RewMeasurementSummary? filed, bool ambiguous) = await WaitForNewMeasurementAsync(
             known,
             request.Identifier,
             cancellationToken).ConfigureAwait(false);
+        if (ambiguous)
+        {
+            return new RewExportResult(
+                "REW filed more than one new measurement under this name while the " +
+                "export was waiting, so which one to check could not be decided. The " +
+                "measurement is in REW; its timing has not been verified. " +
+                $"(REW reported: {version}.)");
+        }
+
         if (filed == null)
         {
             string waited = FormattableString.Invariant(
@@ -183,7 +192,7 @@ internal sealed class RewMeasurementExport
     /// therefore made every export of a long name wait out the filing timeout and
     /// then report that REW had not filed it, while REW had filed it perfectly well.
     /// </remarks>
-    private async Task<RewMeasurementSummary?> WaitForNewMeasurementAsync(
+    private async Task<(RewMeasurementSummary? Filed, bool Ambiguous)> WaitForNewMeasurementAsync(
         HashSet<string> known,
         string identifier,
         CancellationToken cancellationToken)
@@ -193,19 +202,47 @@ internal sealed class RewMeasurementExport
         {
             IReadOnlyDictionary<string, RewMeasurementSummary> current =
                 await client.GetMeasurementsAsync(cancellationToken).ConfigureAwait(false);
+
+            // The best candidate is the one REW cut LEAST: an untruncated title is the
+            // whole identifier and so always wins, and between two shortenings the
+            // longer is the better claim to being ours. Two candidates that are equally
+            // good is not something waiting can settle, and guessing between them is
+            // how the wrong measurement gets verified.
+            RewMeasurementSummary? best = null;
+            bool ambiguous = false;
             foreach (RewMeasurementSummary summary in current.Values)
             {
-                if (!string.IsNullOrEmpty(summary.Uuid) &&
-                    !known.Contains(summary.Uuid) &&
-                    IsFiledAs(summary.Title, identifier))
+                if (string.IsNullOrEmpty(summary.Uuid) ||
+                    known.Contains(summary.Uuid) ||
+                    !IsFiledAs(summary.Title, identifier))
                 {
-                    return summary;
+                    continue;
                 }
+
+                if (best == null || summary.Title!.Length > best.Title!.Length)
+                {
+                    best = summary;
+                    ambiguous = false;
+                }
+                else if (summary.Title!.Length == best.Title!.Length)
+                {
+                    ambiguous = true;
+                }
+            }
+
+            if (ambiguous)
+            {
+                return (null, true);
+            }
+
+            if (best != null)
+            {
+                return (best, false);
             }
 
             if (DateTime.UtcNow >= deadline)
             {
-                return null;
+                return (null, false);
             }
 
             await Task.Delay(FilingPollInterval, cancellationToken).ConfigureAwait(false);
@@ -213,14 +250,42 @@ internal sealed class RewMeasurementExport
     }
 
     /// <summary>
-    /// Whether REW filed this measurement under the name it was sent. What REW
-    /// stores is the name, possibly cut short — never anything added — so the test
-    /// is that the name sent BEGINS with the one REW reports. An empty title is not
-    /// a match: it would be a prefix of everything.
+    /// The shortest title REW has been seen to shorten a name TO. Measured on 5.40
+    /// Beta 132 / API 0.9.6: 40 characters came back whole, 47 came back at 45, 54 at
+    /// 48 and 64 at 45 — the cut follows the drawn width rather than a count, so this
+    /// sits below the shortest cut observed instead of at it.
     /// </summary>
-    internal static bool IsFiledAs(string? filedTitle, string identifier) =>
-        !string.IsNullOrEmpty(filedTitle) &&
-        identifier.StartsWith(filedTitle, StringComparison.Ordinal);
+    /// <remarks>
+    /// It exists to keep a SHORT name from passing as a truncation of a long one.
+    /// "Resonalyze" begins "Resonalyze 2026-09-01 12-00-00" without being a shortening
+    /// of it, and a measurement the user makes under that name while a send is filing
+    /// is new exactly as ours is — so without this floor the export could verify their
+    /// measurement, and the live test's cleanup could delete it.
+    /// </remarks>
+    private const int ShortestTruncation = 40;
+
+    /// <summary>
+    /// Whether REW filed this measurement under the name it was sent. What REW stores
+    /// is the name, possibly cut short — never anything added — so an exact match is
+    /// accepted outright, and a shorter one only when REW could plausibly have cut a
+    /// title to that length. An empty title is never a match: it is a prefix of
+    /// everything.
+    /// </summary>
+    internal static bool IsFiledAs(string? filedTitle, string identifier)
+    {
+        if (string.IsNullOrEmpty(filedTitle))
+        {
+            return false;
+        }
+
+        if (string.Equals(filedTitle, identifier, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return filedTitle.Length >= ShortestTruncation &&
+            identifier.StartsWith(filedTitle, StringComparison.Ordinal);
+    }
 
     /// <summary>
     /// Identifying the new measurement by UUID rather than by the name it was sent

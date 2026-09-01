@@ -241,44 +241,64 @@ internal sealed class VirtualCrossoverMetrics
     }
 
     /// <summary>
-    /// The per-junction phase read-outs: each adjacent pair's steady-state
-    /// cross-phase analysis (the phase score, the phase at the crossover, the
+    /// The per-junction phase read-outs: each adjacent pair's gated cross-phase
+    /// analysis (the phase score, the phase at the crossover, the
     /// score-maximizing extra delay and polarity on the lower channel, and the
     /// lobe margin). Purely informative — nothing here feeds the alignment
-    /// engine. One analysis spectrum is built per channel and shared by the
-    /// junctions it participates in. Empty when there is no junction to read.
+    /// engine. Empty when there is no junction to read.
     /// </summary>
+    /// <param name="buildSpectra">
+    /// The windowed spectra the junctions are read from, one per channel of the
+    /// BAND-ORDERED set it is handed (<see cref="JunctionPhaseSpectra.Build"/>
+    /// under the panel's own gate). Passed in rather than built here because the
+    /// window placement is the panel's state and the whole set decides it
+    /// together — a per-channel factory could not fall back to one shared
+    /// window when a placement fails. Pure by contract: it is invoked off the
+    /// UI thread.
+    /// </param>
     public List<VirtualCrossoverMetric.PhaseEntry> BuildPhaseEntries(
-        List<ProcessedChannel> processed)
+        List<ProcessedChannel> processed,
+        Func<IReadOnlyList<ProcessedChannel>, IReadOnlyList<Complex[]>> buildSpectra)
     {
+        ArgumentNullException.ThrowIfNull(buildSpectra);
         var entries = new List<VirtualCrossoverMetric.PhaseEntry>();
         if (processed.Count < 2)
         {
             return entries;
         }
 
-        var spectra = new Dictionary<ProcessedChannel, Complex[]>();
-        Complex[] SpectrumOf(ProcessedChannel item)
+        List<ProcessedChannel> ordered = ProcessedChannels.OrderByBand(processed);
+        IReadOnlyList<Complex[]> spectra = buildSpectra(ordered);
+        if (spectra.Count != ordered.Count)
         {
-            if (!spectra.TryGetValue(item, out Complex[]? spectrum))
-            {
-                spectrum = JunctionPhaseAlignment.BuildAnalysisSpectrum(
-                    item.ImpulseResponse, item.SampleRate);
-                spectra.Add(item, spectrum);
-            }
-
-            return spectrum;
+            throw new InvalidOperationException(
+                "The spectrum builder must answer one spectrum per channel.");
         }
 
-        foreach (AdjacentPair pair in ProcessedChannels.GetAdjacentPairs(
-            ProcessedChannels.OrderByBand(processed)))
+        // By REFERENCE: a processed channel is a record, so two channels holding
+        // equal values would collide on a value-keyed lookup.
+        Complex[] SpectrumOf(ProcessedChannel item)
+        {
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                if (ReferenceEquals(ordered[i], item))
+                {
+                    return spectra[i];
+                }
+            }
+
+            throw new InvalidOperationException(
+                "The junction names a channel outside the ordered set.");
+        }
+
+        foreach (AdjacentPair pair in ProcessedChannels.GetAdjacentPairs(ordered))
         {
             if (pair.Lower.SampleRate != pair.Upper.SampleRate)
             {
                 continue;
             }
 
-            JunctionPhaseResult? result = JunctionPhaseAlignment.AnalyzeSpectra(
+            JunctionPhaseResult? result = JunctionPhaseAlignment.AnalyzeWindowedSpectra(
                 SpectrumOf(pair.Lower),
                 SpectrumOf(pair.Upper),
                 pair.Lower.SampleRate,

@@ -3005,7 +3005,14 @@ public partial class VirtualCrossoverPanel : UserControl
             "to the side you are viewing (L or R): their drivers arrive at\r\n" +
             "different times, so fitting one no longer disturbs the other.\r\n" +
             "The Tukey lengths, window mode, detrend mode and FDW cycles\r\n" +
-            "are shared, so both sides read at one resolution and method.");
+            "are shared, so both sides read at one resolution and method.\r\n" +
+            "The Junction phase read-out follows this gate's OFFSET and\r\n" +
+            "durations, but always reads an 8-cycle frequency-dependent\r\n" +
+            "window — the mode and FDW selectors shape a curve for the eye,\r\n" +
+            "and the settings that suit one are measurably the wrong\r\n" +
+            "instrument for a number. In the default FDW mode the numbers and\r\n" +
+            "the drawn curves are the same window; in Fixed mode they are not,\r\n" +
+            "and the plot then shows a longer window than the figures do.");
         toolTip.SetToolTip(
             buttonSessionExport,
             "Save the whole session (sources, DSP chains, gate, view)\r\n" +
@@ -3275,6 +3282,72 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // A view spanning more than one listening group withholds the loss
+        // entirely — curve and figure alike. Front against rear combs however
+        // well either is tuned (no filter hands one band from one to the other),
+        // so the number would report damage nothing can repair. Those views owe
+        // the reader the cross-group arrival and level instead, which
+        // UpdateMetric appends.
+        //
+        // The same silence falls where the chain holds no junction at all, which
+        // a single-group view can still manage: Rear + Sub on the reference car
+        // is subwoofers up to 110 Hz and a rear fill from 290, with nothing
+        // crossing between them. GetAdjacentPairs already declines to invent that
+        // pair, but the loss curve and its total are computed over the window
+        // regardless — and a total summation loss for a chain with no handover
+        // is a figure about a crossover that is not in the car, which is the
+        // thing this view was supposed to stop printing.
+        //
+        // Resolved HERE rather than beside the loss curve it silences, because
+        // the junction phase block below is withheld under the same condition,
+        // for the same reason: both describe JUNCTIONS, and across groups those
+        // pairs do not exist.
+        bool quotesJunctions =
+            VirtualCrossoverGroupViews.LossChainZone(groupView) != null &&
+            ProcessedChannels.HasJunction(summedChannels);
+
+        // The junction phase read-out. Informative only: it renders alongside
+        // the sum loss and feeds nothing back into the alignment engine.
+        //
+        // Off the UI thread, unlike the sum-loss entries beside it, because it
+        // reads through the phase GATE: an 8-cycle frequency-dependent window is
+        // one transform per distinct window length per channel, which on the
+        // archived cabins measures 50–100 ms for four channels the first time a
+        // set of responses is seen (2 ms afterwards — DataHelper memoizes each
+        // gated spectrum per impulse array, and the phase view's own curves warm
+        // the very same entries). A delay drag makes every frame the first time,
+        // so that cost cannot sit in the frame. The gate is read from the panel's
+        // state HERE, on the UI thread; only plain numbers cross over.
+        // The SUMMING channels, like the loss beside it: those are the ones
+        // whose junctions it reports, and the windows are placed over exactly
+        // them. In a grouped view that is not quite the drawn set — a centre is
+        // drawn beside the front stage and sums with neither — so a spectator
+        // failing the leading-edge guard can send the CURVES to one shared
+        // window while these figures keep their per-curve placements. That is
+        // the right way round: a channel taking part in none of the junctions
+        // being reported has no claim on the windows they are read through.
+        List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
+        if (quotesJunctions)
+        {
+            int phaseRate = summedChannels[0].SampleRate;
+            double? pinnedOffsetMs = PinnedGateOffsetMs;
+            double gateLeftMs = gatePreview?.LeftMs ?? project.PhaseGateLeftMs;
+            double gatePlateauMs = gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs;
+            double gateRightMs = gatePreview?.RightMs ?? project.PhaseGateRightMs;
+            phaseEntries = await Task.Run(() =>
+            {
+                // The zone lives INSIDE the task, where it begins and ends on
+                // one thread: Tracy's zones are per-thread LIFO, so one spanning
+                // the await would close on whichever thread resumed it.
+                using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseEntries");
+                return metrics.BuildPhaseEntries(
+                    summedChannels,
+                    ordered => JunctionPhaseSpectra.Build(
+                        ordered, phaseRate, pinnedOffsetMs,
+                        gateLeftMs, gatePlateauMs, gateRightMs));
+            });
+        }
+
         // The stereo Δ block and the opposite-side sum read BOTH sides'
         // processed responses; their caches make an unchanged configuration
         // free. Same staleness rule as above.
@@ -3342,24 +3415,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 shown, magnitudeGate.SmoothingInverseOctaves, summedChannels);
         }
 
-        // A view spanning more than one listening group withholds the loss
-        // entirely — curve and figure alike. Front against rear combs however
-        // well either is tuned (no filter hands one band from one to the other),
-        // so the number would report damage nothing can repair. Those views owe
-        // the reader the cross-group arrival and level instead, which
-        // UpdateMetric appends.
-        //
-        // The same silence falls where the chain holds no junction at all, which
-        // a single-group view can still manage: Rear + Sub on the reference car
-        // is subwoofers up to 110 Hz and a rear fill from 290, with nothing
-        // crossing between them. GetAdjacentPairs already declines to invent that
-        // pair, but the loss curve and its total are computed over the window
-        // regardless — and a total summation loss for a chain with no handover
-        // is a figure about a crossover that is not in the car, which is the
-        // thing this view was supposed to stop printing.
-        bool quotesJunctions =
-            VirtualCrossoverGroupViews.LossChainZone(groupView) != null &&
-            ProcessedChannels.HasJunction(summedChannels);
+        // Decided before the awaits above, because the junction phase block is
+        // computed there under the same condition; the loss CURVE is what is
+        // withheld here.
         if (!quotesJunctions)
         {
             lossCurve = null;
@@ -3411,8 +3469,8 @@ public partial class VirtualCrossoverPanel : UserControl
             // would invent a crossover between them and label a front-only figure
             // with it.
             UpdateMetric(
-                summedChannels, lossCurve, stereoDeltas, hybrid, groupDeltas,
-                quotesJunctions);
+                summedChannels, lossCurve, phaseEntries, stereoDeltas, hybrid,
+                groupDeltas);
         }
 
         using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))
@@ -3884,10 +3942,10 @@ public partial class VirtualCrossoverPanel : UserControl
     private void UpdateMetric(
         List<ProcessedChannel> processed,
         List<SignalPoint>? lossCurve,
+        IReadOnlyList<VirtualCrossoverMetric.PhaseEntry> phaseEntries,
         IReadOnlyList<VirtualCrossoverMetric.StereoDelta>? stereoDeltas = null,
         HybridMagnitudes? hybrid = null,
-        IReadOnlyList<VirtualCrossoverMetric.GroupDelta>? crossGroup = null,
-        bool quotesJunctions = true)
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta>? crossGroup = null)
     {
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas = crossGroup ?? [];
         // The read-out lives in the host's right-side panel (where overlays sit in
@@ -3902,25 +3960,13 @@ public partial class VirtualCrossoverPanel : UserControl
             entries = metrics.BuildEntries(processed, lossCurve);
         }
 
-        // The junction phase block is informative only: it renders alongside
-        // the sum loss but feeds nothing back into the alignment engine.
-        //
-        // It is withheld under the same condition as the loss, and for the same
-        // reason rather than a related one: both describe JUNCTIONS, and it
-        // builds them by pairing channels that are adjacent along the spectrum.
-        // Across groups those pairs do not exist — on the reference installation
-        // that pairing declares a front midrange handing over to a rear fill at
-        // its own low-pass corner, which no filter does — so every row it
-        // produced there would be about a crossover that is not in the car.
-        List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
-        if (quotesJunctions)
-        {
-            using (AppProfiler.Zone("VirtualDSP.BuildPhaseEntries"))
-            {
-                phaseEntries = metrics.BuildPhaseEntries(processed);
-            }
-        }
-
+        // The junction phase block arrives ready, built off the UI thread by the
+        // caller (see RedrawMainPlotAsync), which also decides whether this view
+        // quotes junctions at all: across listening groups the adjacent pairs it
+        // would read do not exist — on the reference installation that pairing
+        // declares a front midrange handing over to a rear fill at its own
+        // low-pass corner, which no filter does — so it is empty there, for the
+        // same reason the loss is withheld.
         string compact = VirtualCrossoverMetric.FormatCompact(entries);
         string detail = entries.Count > 0 ? VirtualCrossoverMetric.FormatDetail(entries) : string.Empty;
         if (phaseEntries.Count > 0)

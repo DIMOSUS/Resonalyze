@@ -223,6 +223,70 @@ public sealed class SpatialAverageHybridTests
         Assert.All(curve!, point => Assert.Equal(-30.0, point.Y, 6));
     }
 
+    /// <summary>
+    /// The Δ L−R level rule on hybrid curves: an energy mean per side over one
+    /// shared grid, differenced once. Two flat curves read exactly their offset,
+    /// whichever way it points.
+    /// </summary>
+    [Fact]
+    public void BandLevelDeltaDb_ReadsTheOffsetBetweenFlatCurves()
+    {
+        List<SignalPoint> left = Flat(-20, count: 97);
+        List<SignalPoint> right = Flat(-23, count: 97);
+
+        Assert.Equal(3.0, SpatialAverageHybrid.BandLevelDeltaDb(left, right)!.Value, 9);
+        Assert.Equal(-3.0, SpatialAverageHybrid.BandLevelDeltaDb(right, left)!.Value, 9);
+    }
+
+    /// <summary>
+    /// A gap on EITHER side removes that frequency from both: the comparison must
+    /// stay symmetric, not weigh one side's band against a different part of the
+    /// other's. Here the halves differ by 12 dB, and a one-sided exclusion would
+    /// drag the figure by several dB.
+    /// </summary>
+    [Fact]
+    public void BandLevelDeltaDb_PairsThePointsSoAGapRemovesTheFrequencyFromBothSides()
+    {
+        // Both sides: −20 dB in the lower half, −8 dB in the upper. The left loses
+        // its upper half to a gap; honest pairing leaves two identical −20 dB
+        // halves, so the delta is zero.
+        List<SignalPoint> left = Flat(-20, count: 96);
+        List<SignalPoint> right = Flat(-20, count: 96);
+        for (int i = 48; i < 96; i++)
+        {
+            left[i] = new SignalPoint(left[i].X, double.NaN);
+            right[i] = new SignalPoint(right[i].X, -8);
+        }
+
+        Assert.Equal(0.0, SpatialAverageHybrid.BandLevelDeltaDb(left, right)!.Value, 9);
+    }
+
+    /// <summary>With no point finite on both sides there is nothing to compare.</summary>
+    [Fact]
+    public void BandLevelDeltaDb_NullWhenTheCurvesNeverOverlap()
+    {
+        List<SignalPoint> left = Flat(-20, count: 8);
+        List<SignalPoint> right = Flat(-20, count: 8);
+        for (int i = 0; i < 8; i++)
+        {
+            if (i < 4)
+            {
+                left[i] = new SignalPoint(left[i].X, double.NaN);
+            }
+            else
+            {
+                right[i] = new SignalPoint(right[i].X, double.NaN);
+            }
+        }
+
+        Assert.Null(SpatialAverageHybrid.BandLevelDeltaDb(left, right));
+    }
+
+    private static List<SignalPoint> Flat(double db, int count) =>
+        Enumerable.Range(0, count)
+            .Select(i => new SignalPoint(100 * Math.Pow(2, i / 48.0), db))
+            .ToList();
+
     private static LiveCaptureDocument Capture(double db) => new()
     {
         SavedAtUtc = DateTimeOffset.UnixEpoch,

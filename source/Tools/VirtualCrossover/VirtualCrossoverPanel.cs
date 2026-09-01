@@ -3289,7 +3289,12 @@ public partial class VirtualCrossoverPanel : UserControl
                 channels,
                 revision,
                 includePair: pair =>
-                    VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone));
+                    VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone),
+                // While the hybrid mode is on, the block's Level Δ rows read
+                // the sides' spatial averages — the levels that mode declares
+                // authoritative — whatever this frame's view draws; see
+                // HybridStereoLevelReader for why it is not HybridRequested.
+                hybridLevelDeltaDb: HybridStereoLevelReader());
         // What the cross-group views quote instead of a summation loss. Reads the
         // responses this frame already processed, so it adds no render — only the
         // arrival FFTs, on the coordinator's auxiliary path.

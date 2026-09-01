@@ -133,6 +133,52 @@ internal static class SpatialAverageHybrid
         return smoothed;
     }
 
+    /// <summary>
+    /// How much louder the first curve is than the second over the band they share,
+    /// in dB: the mean of the point POWERS on each curve over the indices where BOTH
+    /// are finite, converted back to dB once. Null when no point is finite on both.
+    /// </summary>
+    /// <remarks>
+    /// The energy-mean rule is the one the impulse-response band level uses
+    /// (<c>VirtualCrossoverAnalysis.MeasureBandLevelDb</c>): averaging power lets the
+    /// figure track loudness and shrug off narrow dips, where a dB mean would follow
+    /// them down. That method weights its linear-spaced bins by 1/f; on the
+    /// log-spaced grid these curves are built on, uniform weights say the same thing.
+    /// The two curves must share one grid, and the points are paired on purpose: a
+    /// gap on either side (a protective high-pass, the end of a capture's grid)
+    /// removes that frequency from BOTH, rather than comparing one side's band
+    /// against a different part of the other's.
+    /// </remarks>
+    public static double? BandLevelDeltaDb(
+        IReadOnlyList<SignalPoint> left,
+        IReadOnlyList<SignalPoint> right)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        int count = Math.Min(left.Count, right.Count);
+        double leftPower = 0;
+        double rightPower = 0;
+        for (int i = 0; i < count; i++)
+        {
+            double leftDb = left[i].Y;
+            double rightDb = right[i].Y;
+            if (!double.IsFinite(leftDb) || !double.IsFinite(rightDb))
+            {
+                continue;
+            }
+
+            leftPower += Math.Pow(10.0, leftDb / 10.0);
+            rightPower += Math.Pow(10.0, rightDb / 10.0);
+        }
+
+        // Both sums count the same points, so one ratio is the difference of the
+        // two means; a zero says no shared point (or a level beyond any real dB
+        // scale), and either way there is nothing honest to report.
+        return leftPower > 0 && rightPower > 0
+            ? 10.0 * Math.Log10(leftPower / rightPower)
+            : null;
+    }
+
     // The capture back at the level the analyzer measured, before any microphone
     // correction: the pipeline SUBTRACTS the correction, so undoing it adds it back.
     // On the capture's own grid, where each stored value belongs.

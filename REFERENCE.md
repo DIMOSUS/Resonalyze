@@ -2017,7 +2017,13 @@ inaudible there, and takes the point with it when it says the channel is still
 playing.
 
 Everything else keeps reading the impulse responses: timing, polarity, the
-junction analyses, Auto delay, the sum-loss read-out and the phase view. The
+junction analyses, Auto delay, the sum-loss read-out and the phase view. The one
+read-out that follows the hybrid is the **Level Δ L−R** rows of the
+[Δ L−R block](#the-panel-gates-plots-and-read-outs): a level is exactly what the
+captures replace, so while the mode is on those rows compare the sides' spatial
+averages through their chains — under the same one-set condition as the dashed
+opposite-side Sum, and whatever Show view happens to be on screen, because the
+levels a gain trim is judged against do not change with the view. The
 toggle needs an average on **every** channel that plays and greys out otherwise,
 since a sum mixing spatially averaged channels with point-measured ones puts two
 references on one axis and still looks like a measurement. The opposite side's
@@ -2199,7 +2205,15 @@ from. A **Δ L−R** block
 below reports each pair's inter-side state — the two sides' band-limited envelope
 arrivals with their difference (positive means the right side leads, the scene
 offset's convention), plus a **Level Δ L−R** row for the by-ear gain trim that
-finishes the centering.
+finishes the centering. Those level rows normally read the gated band level of the
+processed impulse responses; with the
+[hybrid](#hybrid-spatial-averages-under-the-prediction) mode on they compare the
+sides' spatial averages through their chains instead — the levels that mode draws
+and tunes against, free of one microphone position's dips — provided both sides'
+captures form one set (the dashed opposite-side Sum's condition; separate sets
+cannot be levelled against each other without erasing the very imbalance the row
+reports). The tooltip legend says which measurement the rows read, and marks a
+pair that had to stay point-measured — an array set may have gaps.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
 value stays responsive with several channels loaded. The **Mic cal** selector

@@ -589,10 +589,21 @@ internal sealed class VirtualCrossoverMetrics
     /// passes the current view's zones: a front view listing the rear pair's L/R
     /// skew is the read-out describing a set the plot does not draw.
     /// </param>
+    /// <param name="hybridLevelDeltaDb">
+    /// A pair's L−R level read off the sides' spatial averages through their
+    /// chains, in the given band, or null where the captures cannot say
+    /// (a side without one, no overlap). Supplied by the panel while the
+    /// hybrid mode is on — the levels the tuner is judging the tune on are
+    /// then the captures', so the read-out follows them; the timing keeps
+    /// reading the impulse responses either way (an average carries no
+    /// phase). Invoked during the synchronous job assembly, so it may read
+    /// UI-thread state.
+    /// </param>
     public async Task<List<VirtualCrossoverMetric.StereoDelta>> ComputeStereoDeltasAsync(
         IReadOnlyList<VirtualCrossoverChannel> channels,
         long revision,
-        Func<VirtualCrossoverChannelPairSettings, bool>? includePair = null)
+        Func<VirtualCrossoverChannelPairSettings, bool>? includePair = null,
+        Func<VirtualCrossoverChannel, double, double, double?>? hybridLevelDeltaDb = null)
     {
         var jobs = new List<StereoDeltaJob>();
         int nextId = 0;
@@ -676,7 +687,11 @@ internal sealed class VirtualCrossoverMetrics
                 highHz,
                 leftJob,
                 rightJob,
-                mono));
+                mono,
+                // Read here, on the calling thread, never in the auxiliary
+                // pass below: the captures and chains are UI-thread state. A
+                // mono channel has no L−R to speak of, so it is never asked.
+                mono ? null : hybridLevelDeltaDb?.Invoke(channel, lowHz, highHz)));
         }
 
         List<SideProcessJob> sides = jobs.SelectMany(job => job.Sides).ToList();
@@ -799,19 +814,26 @@ internal sealed class VirtualCrossoverMetrics
 
                 TimeAlignmentAnalysisResult right = job.Right.Arrival!.Value;
                 bool rightReliable = Reliable(right);
+                // The spatial averages' level, where the panel supplied one,
+                // outranks the point measurement AND its reliability gate: a
+                // capture is a measurement of its own, and a noisy impulse
+                // response says nothing against it.
+                double? levelDelta = job.HybridLevelDeltaDb ??
+                    (leftReliable && rightReliable &&
+                    job.Left.LevelDb is { } leftLevel &&
+                    job.Right.LevelDb is { } rightLevel
+                        ? leftLevel - rightLevel
+                        : null);
                 return new VirtualCrossoverMetric.StereoDelta(
                     job.Channel,
                     leftMs,
                     rightReliable ? right.FirstArrivalDelayMilliseconds : null,
                     job.LowHz,
                     job.HighHz,
-                    leftReliable && rightReliable &&
-                    job.Left.LevelDb is { } leftLevel &&
-                    job.Right.LevelDb is { } rightLevel
-                        ? leftLevel - rightLevel
-                        : null,
+                    levelDelta,
                     LeftLatched: job.Left.Latched,
-                    RightLatched: job.Right.Latched);
+                    RightLatched: job.Right.Latched,
+                    LevelFromSpatialAverage: job.HybridLevelDeltaDb.HasValue);
             })
             .ToList();
     }
@@ -1001,7 +1023,11 @@ internal sealed class VirtualCrossoverMetrics
         double HighHz,
         SideProcessJob Left,
         SideProcessJob Right,
-        bool Mono = false)
+        bool Mono = false,
+        // The pair's L−R level off the sides' spatial averages, resolved at
+        // assembly time (see ComputeStereoDeltasAsync); null when the hybrid
+        // is off or the captures cannot produce one.
+        double? HybridLevelDeltaDb = null)
     {
         // A mono job's Left and Right are the same instance; iterate the left
         // slot alone so the shared response is processed once.

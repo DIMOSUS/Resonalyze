@@ -202,6 +202,51 @@ public sealed class VirtualCrossoverMetricTests
         });
     }
 
+    [Fact]
+    public void FormatStereoDeltasDetail_SwapsTheLevelLegendWhenTheLevelsComeFromSpatialAverages()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // With the hybrid mode on the level rows compare the sides' spatial
+            // averages, and the legend must say so instead of claiming the gated
+            // point measurement. A uniform list carries no per-row marks.
+            string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+            [
+                new VirtualCrossoverMetric.StereoDelta(
+                    "B", 25.977, 25.724, 175, 1_300, LevelDeltaDb: 1.63,
+                    LevelFromSpatialAverage: true)
+            ]);
+
+            Assert.Contains("spatial averages", text);
+            Assert.Contains("positive: LEFT louder", text);
+            Assert.DoesNotContain("gated band level", text);
+            Assert.DoesNotContain("(point mic)", text);
+        });
+    }
+
+    [Fact]
+    public void FormatStereoDeltasDetail_MarksThePointMeasuredExceptionInASpatialList()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // An array set may have gaps: a pair the captures cannot speak for
+            // keeps its point-measured level, and in a spatial list that row is
+            // the exception — marked in place, explained in the legend.
+            string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+            [
+                new VirtualCrossoverMetric.StereoDelta(
+                    "B", 25.977, 25.724, 175, 1_300, LevelDeltaDb: 1.63,
+                    LevelFromSpatialAverage: true),
+                new VirtualCrossoverMetric.StereoDelta(
+                    "C", 15.341, 15.412, 1_800, 20_000, LevelDeltaDb: -0.62)
+            ]);
+
+            Assert.Contains("level +1.6 dB (175 Hz", text);
+            Assert.Contains("level -0.6 dB (point mic)", text);
+            Assert.Contains("(point mic): that pair has no capture", text);
+        });
+    }
+
     private static VirtualCrossoverMetric.PhaseEntry PhaseJunction(
         double? lobeMargin = 0.19,
         double? rivalExtraMs = -12.20,

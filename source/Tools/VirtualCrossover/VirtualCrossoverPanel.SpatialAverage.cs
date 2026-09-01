@@ -464,6 +464,96 @@ public partial class VirtualCrossoverPanel
     }
 
     /// <summary>
+    /// The Δ L−R read-out's level source while the hybrid mode is on, or null to
+    /// leave that read-out on its gated point-measured levels: a pair's L−R level
+    /// is then read off the two sides' spatial averages through their chains, in
+    /// the pair's shared band — the levels the hybrid view draws and the levels a
+    /// gain trim is being judged against.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately the hybrid INTENT plus coverage rather than
+    /// <see cref="HybridRequested"/>: that flag follows the current Show view, and
+    /// a level that flipped basis when the user glanced at the phase view would
+    /// read as two different imbalances in one tune. The captures do not stop
+    /// being the authoritative levels because the plot is momentarily drawing
+    /// something else.
+    /// <para>
+    /// Comparing levels ACROSS the sides assumes one recipe at one input gain
+    /// held both sides' captures — exactly the condition the dashed opposite-side
+    /// sum borrows the active side's offset under, so it is the same check. The
+    /// set offset is common to both sides by that construction and cancels out of
+    /// every difference, which is why none is applied here.
+    /// </para>
+    /// </remarks>
+    private Func<VirtualCrossoverChannel, double, double, double?>?
+        HybridStereoLevelReader() =>
+        checkBoxHybrid.Checked && hybridAvailable &&
+        CanDrawOppositeHybridSum(!project.ActiveSideRight)
+            ? HybridStereoLevelDeltaDb
+            : null;
+
+    // One pair's L−R spatial-average level difference, both sides built on ONE
+    // grid so the band-level rule can pair their points (see
+    // SpatialAverageHybrid.BandLevelDeltaDb). Null when a side has no capture —
+    // an array set may have gaps — or the captures never overlap in this band;
+    // the read-out then keeps that pair's point-measured level and says so.
+    private double? HybridStereoLevelDeltaDb(
+        VirtualCrossoverChannel channel, double lowHz, double highHz)
+    {
+        List<double> grid = HybridLevelGrid(lowHz, highHz);
+        IReadOnlyList<SignalPoint>? left =
+            BuildHybridSideLevelCurve(channel, rightSide: false, grid);
+        IReadOnlyList<SignalPoint>? right =
+            BuildHybridSideLevelCurve(channel, rightSide: true, grid);
+        return left == null || right == null
+            ? null
+            : SpatialAverageHybrid.BandLevelDeltaDb(left, right);
+    }
+
+    // One side's capture through that side's own chain, calibration and processor
+    // rate — the same reading BuildHybridChannelCurve makes for the plot, on the
+    // caller's grid and with no display smoothing (an energy mean needs none).
+    private IReadOnlyList<SignalPoint>? BuildHybridSideLevelCurve(
+        VirtualCrossoverChannel channel, bool rightSide, List<double> grid)
+    {
+        VirtualCrossoverChannelState state = channel.PhysicalSideState(rightSide);
+        if (state.SpatialAverageFor(SpatialAverageMode) is not { } document)
+        {
+            return null;
+        }
+
+        return SpatialAverageHybrid.BuildChannelCurve(
+            document,
+            // A bypassed pair never reaches the Δ block, but the rule stays the
+            // plot's: bypass contributes the raw measured signal.
+            channel.Pair.Bypass
+                ? DspChannelChain.Identity
+                : channel.SideSettings(rightSide).ToChain(),
+            channel.ProcessorSampleRateFor(rightSide),
+            SpatialAverageCalibrationFor(state),
+            grid,
+            smoothingCode: 0);
+    }
+
+    // Log-spaced through the band at a resolution comfortably past the captures'
+    // own (~1/48 octave): the figure is an energy mean of a smooth curve, and a
+    // log grid with uniform weights is what reproduces the impulse-response band
+    // level's 1/f weighting.
+    private static List<double> HybridLevelGrid(double lowHz, double highHz)
+    {
+        const double PointsPerOctave = 48.0;
+        int steps = Math.Max(
+            1, (int)Math.Ceiling(Math.Log2(highHz / lowHz) * PointsPerOctave));
+        var grid = new List<double>(steps + 1);
+        for (int i = 0; i <= steps; i++)
+        {
+            grid.Add(lowHz * Math.Pow(highHz / lowHz, (double)i / steps));
+        }
+
+        return grid;
+    }
+
+    /// <summary>
     /// Whether one offset may level both sides' captures — the condition the dashed
     /// opposite sum is drawn under. Static and pure so it can be pinned directly.
     /// </summary>
@@ -627,7 +717,9 @@ public partial class VirtualCrossoverPanel
                     "measured at one point. Both sums follow, adding the channels as " +
                     "phasors with the phase the impulse responses measure — the other " +
                     "side needs its own captures too, and its dashed sum is dropped " +
-                    "rather than drawn by the other method. Timing, polarity and the " +
+                    "rather than drawn by the other method. The read-out's Level " +
+                    "Δ L−R rows follow too, comparing the sides' captures under the " +
+                    "same condition. Timing, polarity and the " +
                     "sum-loss read-out are " +
                     "unaffected: they keep reading the impulse responses.\r\n\r\n" +
                     "The channel curves are exact — a filter does not depend on " +

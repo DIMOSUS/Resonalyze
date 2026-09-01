@@ -133,6 +133,131 @@ internal static class SpatialAverageHybrid
         return smoothed;
     }
 
+    /// <summary>
+    /// How much louder the first curve is than the second over the band they share,
+    /// in dB: the mean of the point POWERS on each curve over the indices where BOTH
+    /// are finite, converted back to dB once. Null when no point is finite on both.
+    /// </summary>
+    /// <remarks>
+    /// The energy-mean rule is the one the impulse-response band level uses
+    /// (<c>VirtualCrossoverAnalysis.MeasureBandLevelDb</c>): averaging power lets the
+    /// figure track loudness and shrug off narrow dips, where a dB mean would follow
+    /// them down. That method weights its linear-spaced bins by 1/f; on the
+    /// log-spaced grid these curves are built on, uniform weights say the same thing.
+    /// The two curves must share one grid, and the points are paired on purpose: a
+    /// gap on either side (a protective high-pass, the end of a capture's grid)
+    /// removes that frequency from BOTH, rather than comparing one side's band
+    /// against a different part of the other's.
+    /// </remarks>
+    public static double? BandLevelDeltaDb(
+        IReadOnlyList<SignalPoint> left,
+        IReadOnlyList<SignalPoint> right)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        int count = Math.Min(left.Count, right.Count);
+        double leftPower = 0;
+        double rightPower = 0;
+        for (int i = 0; i < count; i++)
+        {
+            double leftDb = left[i].Y;
+            double rightDb = right[i].Y;
+            if (!double.IsFinite(leftDb) || !double.IsFinite(rightDb))
+            {
+                continue;
+            }
+
+            leftPower += Math.Pow(10.0, leftDb / 10.0);
+            rightPower += Math.Pow(10.0, rightDb / 10.0);
+        }
+
+        // Both sums count the same points, so one ratio is the difference of the
+        // two means; a zero says no shared point (or a level beyond any real dB
+        // scale), and either way there is nothing honest to report.
+        return leftPower > 0 && rightPower > 0
+            ? 10.0 * Math.Log10(leftPower / rightPower)
+            : null;
+    }
+
+    /// <summary>
+    /// Several channels' hybrid curves on ONE grid combined into a group's level
+    /// curve by adding their POWERS point by point. Each curve comes with its
+    /// channel's configured band, which separates the two things a member's gap
+    /// can mean. OUTSIDE its band a NaN is an absent contribution — the
+    /// crossover has removed that driver from the group's output, and the rest
+    /// carry on without it. INSIDE its band it means the capture has nothing to
+    /// say about a driver the DSP says is playing — its grid ended, a stretch
+    /// did not survive the protective high-pass — and the whole group point
+    /// becomes a gap: summing the remaining members would quote part of the
+    /// group as all of it, an error that looks exactly like a valid level. A
+    /// band-level read then pairs such a point away from both sides of a
+    /// comparison instead.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not the phasor sum the plot's hybrid Sum uses: a spatial
+    /// average carries no phase, so the only sum a set of captures can state by
+    /// themselves is the incoherent one. In a junction overlap that is an
+    /// approximation — two coherent in-phase contributions sum up to 3 dB above
+    /// their powers — and how much of it survives a group-to-group DIFFERENCE
+    /// depends on how alike the groups' junction layouts are: much cancels
+    /// between a front and a rear of the same architecture, little is
+    /// guaranteed against a single-driver centre. The overlaps are still a
+    /// fraction of a band spanning octaves, and resolving them would borrow the
+    /// point-measured phase — one microphone position's interference, the very
+    /// thing the hybrid mode distrusts — at the price of full-length gated FFTs
+    /// per group per frame.
+    /// </remarks>
+    public static List<SignalPoint> PowerSum(
+        IReadOnlyList<IReadOnlyList<SignalPoint>> curves,
+        IReadOnlyList<(double LowHz, double HighHz)> bands)
+    {
+        ArgumentNullException.ThrowIfNull(curves);
+        ArgumentNullException.ThrowIfNull(bands);
+        if (curves.Count != bands.Count)
+        {
+            throw new ArgumentException(
+                "Every curve needs its channel's band.", nameof(bands));
+        }
+
+        if (curves.Count == 0)
+        {
+            return [];
+        }
+
+        int count = curves.Min(curve => curve.Count);
+        var points = new List<SignalPoint>(count);
+        for (int i = 0; i < count; i++)
+        {
+            double x = curves[0][i].X;
+            double power = 0;
+            bool any = false;
+            bool missing = false;
+            for (int c = 0; c < curves.Count; c++)
+            {
+                double db = curves[c][i].Y;
+                if (double.IsFinite(db))
+                {
+                    // A finite value counts wherever it sits — a crossover
+                    // skirt outside the configured band is a real, if quiet,
+                    // contribution.
+                    power += Math.Pow(10.0, db / 10.0);
+                    any = true;
+                }
+                else if (x >= bands[c].LowHz && x <= bands[c].HighHz)
+                {
+                    missing = true;
+                    break;
+                }
+            }
+
+            points.Add(new SignalPoint(
+                x,
+                any && !missing ? 10.0 * Math.Log10(power) : double.NaN));
+        }
+
+        return points;
+    }
+
     // The capture back at the level the analyzer measured, before any microphone
     // correction: the pipeline SUBTRACTS the correction, so undoing it adds it back.
     // On the capture's own grid, where each stored value belongs.

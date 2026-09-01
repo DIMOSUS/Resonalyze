@@ -3289,12 +3289,20 @@ public partial class VirtualCrossoverPanel : UserControl
                 channels,
                 revision,
                 includePair: pair =>
-                    VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone));
+                    VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone),
+                // While the hybrid mode is on, the block's Level Δ rows read
+                // the sides' spatial averages — the levels that mode declares
+                // authoritative — whatever this frame's view draws; see
+                // HybridStereoLevelReader for why it is not HybridRequested.
+                hybridLevelDeltaDb: HybridStereoLevelReader());
         // What the cross-group views quote instead of a summation loss. Reads the
         // responses this frame already processed, so it adds no render — only the
-        // arrival FFTs, on the coordinator's auxiliary path.
+        // arrival FFTs, on the coordinator's auxiliary path. Its ΔdB rows follow
+        // the hybrid mode exactly as the stereo block's level rows do.
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas =
-            await metrics.ComputeGroupDeltasAsync(shown, groupView, revision);
+            await metrics.ComputeGroupDeltasAsync(
+                shown, groupView, revision,
+                hybridGroupLevelDeltaDb: HybridGroupLevelReader());
         // The side sum comes from metrics (shared coordinator cache); the CURVE
         // is built here so it windows through the OPPOSITE side's gate
         // placement — the active side's pin must not gate the other side.

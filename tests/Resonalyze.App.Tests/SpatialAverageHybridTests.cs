@@ -223,6 +223,166 @@ public sealed class SpatialAverageHybridTests
         Assert.All(curve!, point => Assert.Equal(-30.0, point.Y, 6));
     }
 
+    /// <summary>
+    /// The Δ L−R level rule on hybrid curves: an energy mean per side over one
+    /// shared grid, differenced once. Two flat curves read exactly their offset,
+    /// whichever way it points.
+    /// </summary>
+    [Fact]
+    public void BandLevelDeltaDb_ReadsTheOffsetBetweenFlatCurves()
+    {
+        List<SignalPoint> left = Flat(-20, count: 97);
+        List<SignalPoint> right = Flat(-23, count: 97);
+
+        Assert.Equal(3.0, SpatialAverageHybrid.BandLevelDeltaDb(left, right)!.Value, 9);
+        Assert.Equal(-3.0, SpatialAverageHybrid.BandLevelDeltaDb(right, left)!.Value, 9);
+    }
+
+    /// <summary>
+    /// A gap on EITHER side removes that frequency from both: the comparison must
+    /// stay symmetric, not weigh one side's band against a different part of the
+    /// other's. Here the halves differ by 12 dB, and a one-sided exclusion would
+    /// drag the figure by several dB.
+    /// </summary>
+    [Fact]
+    public void BandLevelDeltaDb_PairsThePointsSoAGapRemovesTheFrequencyFromBothSides()
+    {
+        // Both sides: −20 dB in the lower half, −8 dB in the upper. The left loses
+        // its upper half to a gap; honest pairing leaves two identical −20 dB
+        // halves, so the delta is zero.
+        List<SignalPoint> left = Flat(-20, count: 96);
+        List<SignalPoint> right = Flat(-20, count: 96);
+        for (int i = 48; i < 96; i++)
+        {
+            left[i] = new SignalPoint(left[i].X, double.NaN);
+            right[i] = new SignalPoint(right[i].X, -8);
+        }
+
+        Assert.Equal(0.0, SpatialAverageHybrid.BandLevelDeltaDb(left, right)!.Value, 9);
+    }
+
+    /// <summary>With no point finite on both sides there is nothing to compare.</summary>
+    [Fact]
+    public void BandLevelDeltaDb_NullWhenTheCurvesNeverOverlap()
+    {
+        List<SignalPoint> left = Flat(-20, count: 8);
+        List<SignalPoint> right = Flat(-20, count: 8);
+        for (int i = 0; i < 8; i++)
+        {
+            if (i < 4)
+            {
+                left[i] = new SignalPoint(left[i].X, double.NaN);
+            }
+            else
+            {
+                right[i] = new SignalPoint(right[i].X, double.NaN);
+            }
+        }
+
+        Assert.Null(SpatialAverageHybrid.BandLevelDeltaDb(left, right));
+    }
+
+    /// <summary>
+    /// The group rule under the "vs Front" ΔdB: powers add (two equal members
+    /// read 3 dB over one), and a member's gap OUTSIDE its configured band is an
+    /// absence — the crossover removed that driver, and the rest carry on.
+    /// </summary>
+    [Fact]
+    public void PowerSum_AddsPowersAndTreatsAGapOutsideTheMembersBandAsAbsence()
+    {
+        List<SignalPoint> mid = Flat(-20, count: 8);
+        List<SignalPoint> tweeter = Flat(-20, count: 8);
+        tweeter[5] = new SignalPoint(tweeter[5].X, double.NaN);
+
+        // The tweeter's band starts above the gap, so the gap sits in its
+        // stopband; the mid covers the whole grid.
+        List<SignalPoint> sum = SpatialAverageHybrid.PowerSum(
+            [mid, tweeter],
+            [(20, 20_000), (tweeter[6].X, 20_000)]);
+
+        Assert.Equal(8, sum.Count);
+        Assert.Equal(-20 + 10 * Math.Log10(2), sum[0].Y, 9);
+        // The out-of-band member is absent there: the mid's level stands alone.
+        Assert.Equal(-20, sum[5].Y, 9);
+        Assert.Equal(-20 + 10 * Math.Log10(2), sum[7].Y, 9);
+    }
+
+    /// <summary>
+    /// The other meaning of a gap, and the one that must NOT read as a level: a
+    /// capture with nothing to say INSIDE its member's configured band describes
+    /// a driver the DSP says is playing. Summing the remaining members there
+    /// quoted part of the group as all of it — a systematic error that looked
+    /// exactly like a valid figure — so the group point is a gap, which the
+    /// band-level rule then pairs away from both sides of the comparison.
+    /// </summary>
+    [Fact]
+    public void PowerSum_BreaksTheGroupWhereACaptureIsSilentInsideItsMembersBand()
+    {
+        List<SignalPoint> mid = Flat(-20, count: 8);
+        List<SignalPoint> tweeter = Flat(-20, count: 8);
+        tweeter[5] = new SignalPoint(tweeter[5].X, double.NaN);
+
+        List<SignalPoint> sum = SpatialAverageHybrid.PowerSum(
+            [mid, tweeter],
+            [(20, 20_000), (20, 20_000)]);
+
+        Assert.True(double.IsNaN(sum[5].Y));
+        // The break is the point's alone: its neighbours still sum both members.
+        Assert.Equal(-20 + 10 * Math.Log10(2), sum[4].Y, 9);
+        Assert.Equal(-20 + 10 * Math.Log10(2), sum[6].Y, 9);
+    }
+
+    /// <summary>
+    /// A bypassed member's chain is Identity, so it plays its raw full-range
+    /// response — its configured crossover corners are idle and say nothing
+    /// about where it is present. Reading them as its band turned a capture's
+    /// silence below the idle high-pass back into "the driver is absent" (the
+    /// review's edge case): the gap must break the group point instead.
+    /// </summary>
+    [Fact]
+    public void PowerSum_ABypassedMembersIdleCrossoverDoesNotExcuseItsCaptureGap()
+    {
+        var tweeter = new VirtualCrossoverChannel("Tweeter");
+        VirtualCrossoverChannelSettings settings = tweeter.SideSettings(false);
+        settings.CrossoverKind = CrossoverKind.BandPass;
+        settings.HighPassEdge = new CrossoverEdge(
+            CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
+        settings.LowPassEdge = new CrossoverEdge(
+            CrossoverFilterFamily.LinkwitzRiley, 8_000, 24);
+        tweeter.Pair.Bypass = true;
+
+        (double LowHz, double HighHz) band =
+            VirtualCrossoverPanel.HybridGroupMemberBand(tweeter, rightSide: false);
+
+        // Bypassed, the member plays full range; with the crossover running it
+        // is the configured band, the same rule the comparison spans.
+        Assert.Equal((20.0, 20_000.0), band);
+        tweeter.Pair.Bypass = false;
+        Assert.Equal(
+            (2_000.0, 8_000.0),
+            VirtualCrossoverPanel.HybridGroupMemberBand(tweeter, rightSide: false));
+
+        // The gap sits at ~107 Hz — far below the idle 2 kHz corner. Through
+        // the full-range band it breaks the group point; through the configured
+        // corners it would have read as an absent driver and summed the mid
+        // alone, the very error the in-band rule exists to stop.
+        List<SignalPoint> mid = Flat(-20, count: 8);
+        List<SignalPoint> bypassed = Flat(-20, count: 8);
+        bypassed[5] = new SignalPoint(bypassed[5].X, double.NaN);
+
+        List<SignalPoint> sum = SpatialAverageHybrid.PowerSum(
+            [mid, bypassed],
+            [(20, 20_000), (20.0, 20_000.0)]);
+
+        Assert.True(double.IsNaN(sum[5].Y));
+        Assert.Equal(-20 + 10 * Math.Log10(2), sum[4].Y, 9);
+    }
+
+    private static List<SignalPoint> Flat(double db, int count) =>
+        Enumerable.Range(0, count)
+            .Select(i => new SignalPoint(100 * Math.Pow(2, i / 48.0), db))
+            .ToList();
+
     private static LiveCaptureDocument Capture(double db) => new()
     {
         SavedAtUtc = DateTimeOffset.UnixEpoch,

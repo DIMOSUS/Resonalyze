@@ -1852,7 +1852,19 @@ decibels of damage that nothing can repair on a system that is correct. Those
 views report the two numbers a tuner does set between groups instead — a **vs
 Front** block giving each group's arrival difference (Δt ms, positive when it
 arrives later) and level difference (ΔdB, negative when it is quieter), measured
-on the groups' summed responses in the band they share. The Groups view exists
+on the groups' summed responses in the band they share. With the
+[hybrid](#hybrid-spatial-averages-under-the-prediction) mode on, the ΔdB is read
+off both groups' spatial averages through their chains instead, each group
+power-summed — an average carries no phase, so the junction overlaps, where a
+coherent sum can read up to 3 dB above the powers, are approximated; they are a
+fraction of a band spanning octaves, and the more alike the two groups' junction
+layouts are, the more of that approximation cancels out of the difference. The
+arrival keeps reading the impulse responses. Where a member's capture has
+nothing to say inside that member's own band, the group has no honest level
+there and the frequency is left out of both sides of the comparison; a group
+whose captures cannot produce the figure at all — a member without one (an
+array set may have gaps), or no shared data across the band — keeps its
+point-measured row whole, marked in the tooltip. The Groups view exists
 for exactly that adjustment, which is why it draws the sums rather than the
 drivers: all its lines are gated on one shared anchor, so their relative timing
 is readable off the plot. The target is drawn there too — judging a rear fill's
@@ -2018,6 +2030,14 @@ playing.
 
 Everything else keeps reading the impulse responses: timing, polarity, the
 junction analyses, Auto delay, the sum-loss read-out and the phase view. The
+read-outs that follow the hybrid are the LEVEL rows — a level is exactly what
+the captures replace. The **Level Δ L−R** rows of the
+[Δ L−R block](#the-panel-gates-plots-and-read-outs) compare the sides' spatial
+averages through their chains — under the same one-set condition as the dashed
+opposite-side Sum — and the **vs Front** ΔdB compares the groups', power-summed
+within each group. Both follow the mode whatever Show view happens to be on
+screen, because the levels a gain trim is judged against do not change with the
+view. The
 toggle needs an average on **every** channel that plays and greys out otherwise,
 since a sum mixing spatially averaged channels with point-measured ones puts two
 references on one axis and still looks like a measurement. The opposite side's
@@ -2199,7 +2219,15 @@ from. A **Δ L−R** block
 below reports each pair's inter-side state — the two sides' band-limited envelope
 arrivals with their difference (positive means the right side leads, the scene
 offset's convention), plus a **Level Δ L−R** row for the by-ear gain trim that
-finishes the centering.
+finishes the centering. Those level rows normally read the gated band level of the
+processed impulse responses; with the
+[hybrid](#hybrid-spatial-averages-under-the-prediction) mode on they compare the
+sides' spatial averages through their chains instead — the levels that mode draws
+and tunes against, free of one microphone position's dips — provided both sides'
+captures form one set (the dashed opposite-side Sum's condition; separate sets
+cannot be levelled against each other without erasing the very imbalance the row
+reports). The tooltip legend says which measurement the rows read, and marks a
+pair that had to stay point-measured — an array set may have gaps.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
 value stays responsive with several channels loaded. The **Mic cal** selector

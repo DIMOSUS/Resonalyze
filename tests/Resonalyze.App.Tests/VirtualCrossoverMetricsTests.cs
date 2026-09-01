@@ -429,6 +429,83 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.NotNull(channel.PhysicalSideState(false).ArrivalCache);
     }
 
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_TakesTheLevelFromTheHybridReaderWhenSupplied()
+    {
+        // The panel supplies the reader while the hybrid mode is on: the level
+        // row then reports what the spatial averages say — asked once, in the
+        // pair's shared band — and the row says which measurement it read.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        long revision = coordinator.Invalidate();
+        var channel = new VirtualCrossoverChannel("A");
+        Resolve(channel, rightSide: false);
+        Resolve(channel, rightSide: true);
+        var asked = new List<(double LowHz, double HighHz)>();
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync(
+                [channel],
+                revision,
+                hybridLevelDeltaDb: (_, lowHz, highHz) =>
+                {
+                    asked.Add((lowHz, highHz));
+                    return -2.5;
+                });
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        Assert.Equal(-2.5, delta.LevelDeltaDb);
+        Assert.True(delta.LevelFromSpatialAverage);
+        Assert.Equal((20.0, 20_000.0), Assert.Single(asked));
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_AReaderWithNothingToSayLeavesThePointMeasuredLevel()
+    {
+        // An array set may have gaps: a pair the captures cannot speak for keeps
+        // its gated point-measured level, unmarked as spatial.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        long revision = coordinator.Invalidate();
+        var channel = new VirtualCrossoverChannel("A");
+        Resolve(channel, rightSide: false);
+        Resolve(channel, rightSide: true);
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync(
+                [channel], revision, hybridLevelDeltaDb: (_, _, _) => null);
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        // The two sides are byte-identical impulses, so the point level says 0.
+        Assert.Equal(0.0, delta.LevelDeltaDb!.Value, 6);
+        Assert.False(delta.LevelFromSpatialAverage);
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_NeverAsksTheHybridReaderForAMonoChannel()
+    {
+        // One physical driver serving both sides has no L−R to compare, so the
+        // reader must not be consulted for it — a capture could answer, and the
+        // row would then invent an imbalance for a channel that cannot have one.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        long revision = coordinator.Invalidate();
+        var channel = new VirtualCrossoverChannel("Sub") { Pair = { Mono = true } };
+        Resolve(channel, rightSide: false);
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync(
+                [channel],
+                revision,
+                hybridLevelDeltaDb: (_, _, _) =>
+                    throw new InvalidOperationException(
+                        "A mono channel must not reach the hybrid level reader."));
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        Assert.Null(delta.LevelDeltaDb);
+        Assert.False(delta.LevelFromSpatialAverage);
+    }
+
     // A Hann-windowed tone burst: toneHz for cycles periods, scaled by
     // amplitude, placed at startMs.
     private static void AddBurst(
@@ -705,6 +782,49 @@ public sealed class VirtualCrossoverMetricsTests
         // The same instance: a recompute builds a new list, so identity is what
         // says the arrival analysis did not run a second time.
         Assert.Same(first, second);
+    }
+
+    [Fact]
+    public async Task ComputeGroupDeltas_TakesTheLevelFromTheHybridReaderAndKeysTheCacheOnIt()
+    {
+        // The panel supplies the reader while the hybrid mode is on: the ΔdB
+        // then reports what the groups' spatial averages say. The answer joins
+        // the cache key — toggling the hybrid leaves every response standing,
+        // and the remembered point-measured set must not answer for the
+        // capture-based one.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        List<ProcessedChannel> shown =
+        [
+            Zoned("Front", VirtualCrossoverZone.Front, 100),
+            Zoned("Centre", VirtualCrossoverZone.Center, 150)
+        ];
+        var asked = new List<(int Members, int Front, double LowHz, double HighHz)>();
+
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> hybrid =
+            await metrics.ComputeGroupDeltasAsync(
+                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate(),
+                hybridGroupLevelDeltaDb: (members, front, lowHz, highHz) =>
+                {
+                    asked.Add((members.Count, front.Count, lowHz, highHz));
+                    return -5.5;
+                });
+
+        VirtualCrossoverMetric.GroupDelta delta = Assert.Single(hybrid);
+        Assert.Equal(-5.5, delta.LevelDb);
+        Assert.True(delta.LevelFromSpatialAverage);
+        // Asked once, with the compared group, the front and their shared band.
+        Assert.Equal((1, 1, 20.0, 20_000.0), Assert.Single(asked));
+
+        // The hybrid off again: the same responses must be re-read rather than
+        // answered from the capture-based memory.
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> point =
+            await metrics.ComputeGroupDeltasAsync(
+                shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate());
+
+        Assert.NotSame(hybrid, point);
+        Assert.False(Assert.Single(point).LevelFromSpatialAverage);
     }
 
     [Fact]

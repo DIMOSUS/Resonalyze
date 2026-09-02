@@ -290,8 +290,9 @@ public partial class VirtualCrossoverPanel
             }
 
             AgentProposal proposal = parsed.Proposal!;
+            AgentSessionSnapshot reviewedSession = BuildAgentSessionSnapshot();
             AgentProposalReview review =
-                AgentProposalValidator.Review(proposal, BuildAgentSessionSnapshot());
+                AgentProposalValidator.Review(proposal, reviewedSession);
             HashSet<string> selected;
             using (var dialog = new AgentProposalDialog(review))
             {
@@ -304,7 +305,7 @@ public partial class VirtualCrossoverPanel
             }
 
             string? problem = AgentProposalApplier.Prepare(
-                proposal, selected, BuildAgentSessionSnapshot(),
+                proposal, selected, reviewedSession.Fingerprint, BuildAgentSessionSnapshot(),
                 out List<AgentOperationVerdict> toApply, out List<string> unseenWarnings);
             if (problem != null)
             {

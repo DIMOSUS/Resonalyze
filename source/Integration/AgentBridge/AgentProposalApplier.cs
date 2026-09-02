@@ -30,9 +30,16 @@ internal static class AgentProposalApplier
     /// unticked row can take a compensating change with it. The panel asks before
     /// applying over them; they never refuse on their own.
     /// </param>
+    /// <param name="reviewedFingerprint">
+    /// The session fingerprint shown in the review dialog. A different current
+    /// fingerprint means the session moved while the dialog was open; an already
+    /// stale row that the user deliberately ticked is allowed while it stays the
+    /// same.
+    /// </param>
     public static string? Prepare(
         AgentProposal proposal,
         IReadOnlySet<string> selectedIds,
+        string? reviewedFingerprint,
         AgentSessionSnapshot session,
         out List<AgentOperationVerdict> toApply,
         out List<string> unseenWarnings)
@@ -54,11 +61,20 @@ internal static class AgentProposalApplier
             return "No applicable change was selected.";
         }
 
-        // A row the fresh review would no longer offer ticked is one the user
-        // ticked without seeing why it should not be: a measurement, a gate or
-        // the view moved under the dialog, and the row's expected current value
-        // still matches. The same answer as a row that stopped applying.
-        AgentOperationVerdict? stale = toApply.FirstOrDefault(verdict => !verdict.Applicable || !verdict.Ticked);
+        // Ticked is the review's DEFAULT, not an admissibility gate: a stale
+        // settings row is deliberately offered unticked for the user to opt in.
+        // What matters at commit is whether the session moved AFTER that warning
+        // was shown. The dialog's fingerprint is the only state that can answer
+        // that; comparing the fresh verdict's Ticked flag would reject the exact
+        // manual override the review offers.
+        if (!string.Equals(reviewedFingerprint, session.Fingerprint, StringComparison.Ordinal))
+        {
+            toApply.Clear();
+            return "The session changed while the review was open. " +
+                "Import the reply again to review it against the current settings.";
+        }
+
+        AgentOperationVerdict? stale = toApply.FirstOrDefault(verdict => !verdict.Applicable);
         if (stale != null)
         {
             toApply.Clear();

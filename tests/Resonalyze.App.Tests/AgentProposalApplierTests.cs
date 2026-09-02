@@ -5,8 +5,8 @@ namespace Resonalyze.App.Tests;
 
 /// <summary>
 /// The commit half of an import: a second look at the ticked rows against the
-/// live settings, one write for the whole set, and an exact way back. Pinned
-/// on settings objects alone — the panel adds only the control refresh.
+/// live settings and the fingerprint the review showed, one write for the whole
+/// set, and an exact way back. The panel adds only the control refresh.
 /// </summary>
 public sealed class AgentProposalApplierTests
 {
@@ -16,47 +16,109 @@ public sealed class AgentProposalApplierTests
         (AgentSessionSnapshot session, AgentProposal proposal) = Scene();
         var ticked = new HashSet<string>(["op-1", "op-3"]);
 
-        string? problem = AgentProposalApplier.Prepare(proposal, ticked, session, out List<AgentOperationVerdict> toApply, out _);
+        string? problem = AgentProposalApplier.Prepare(
+            proposal, ticked, session.Fingerprint, session,
+            out List<AgentOperationVerdict> toApply, out _);
         Assert.Null(problem);
         Assert.Equal(["op-1", "op-3"], toApply.Select(verdict => verdict.Id));
 
         // The user turned the gain knob while the dialog was open.
         session.Find("A:right")!.Settings.GainDb = -2.5;
-        problem = AgentProposalApplier.Prepare(proposal, ticked, session, out toApply, out _);
+        problem = AgentProposalApplier.Prepare(
+            proposal, ticked, session.Fingerprint, session, out toApply, out _);
         Assert.NotNull(problem);
         Assert.Contains("op-1", problem);
         Assert.Contains("changed while the review was open", problem);
         Assert.Empty(toApply);
 
-        Assert.Contains("No applicable change", AgentProposalApplier.Prepare(proposal, new HashSet<string>(), session, out _, out _));
+        Assert.Contains("No applicable change", AgentProposalApplier.Prepare(
+            proposal, new HashSet<string>(), session.Fingerprint, session, out _, out _));
     }
 
     [Fact]
-    public void Prepare_RefusesARowTheFreshReviewWouldNoLongerOfferTicked()
+    public void Prepare_Refuses_WhenFingerprintMovesFromValidFToG()
     {
         (AgentSessionSnapshot scene, AgentProposal proposal) = Scene();
         const string Package = "11111111-1111-1111-1111-111111111111";
+        const string F = "aaaaaaaaaaaaaaaa";
+        const string G = "bbbbbbbbbbbbbbbb";
         proposal = proposal with { PackageId = Package };
-        AgentSessionSnapshot session = scene with
+        AgentSessionSnapshot reviewed = scene with
         {
             LastPackageId = Package,
-            LastPackageFingerprint = "aaaaaaaaaaaaaaaa",
-            Fingerprint = "aaaaaaaaaaaaaaaa"
+            LastPackageFingerprint = F,
+            Fingerprint = F
         };
         var ticked = new HashSet<string>(["op-1"]);
 
-        Assert.Null(AgentProposalApplier.Prepare(proposal, ticked, session, out List<AgentOperationVerdict> toApply, out _));
-        Assert.Single(toApply);
+        Assert.True(AgentProposalValidator.Review(proposal, reviewed)
+            .Verdicts.Single(verdict => verdict.Id == "op-1").Ticked);
 
-        // Nothing the row's expected current value guards has moved — a
-        // measurement, a gate or the view did, under the dialog — so the fresh
-        // review still finds the row applicable but no longer offers it ticked.
-        // The user ticked it without seeing that warning: not applied.
         string? problem = AgentProposalApplier.Prepare(
-            proposal, ticked, session with { Fingerprint = "bbbbbbbbbbbbbbbb" }, out toApply, out _);
+            proposal, ticked, F, reviewed with { Fingerprint = G },
+            out List<AgentOperationVerdict> toApply, out _);
         Assert.NotNull(problem);
-        Assert.Contains("op-1", problem);
-        Assert.Contains("cannot vouch for", problem);
+        Assert.Contains("changed while the review was open", problem);
+        Assert.Empty(toApply);
+    }
+
+    [Fact]
+    public void Prepare_AppliesManuallyTickedStaleRow_WhenReviewAndApplyBothUseG()
+    {
+        (AgentSessionSnapshot scene, AgentProposal proposal) = Scene();
+        const string Package = "11111111-1111-1111-1111-111111111111";
+        const string F = "aaaaaaaaaaaaaaaa";
+        const string G = "bbbbbbbbbbbbbbbb";
+        proposal = proposal with { PackageId = Package };
+        AgentSessionSnapshot staleAtReview = scene with
+        {
+            LastPackageId = Package,
+            LastPackageFingerprint = F,
+            Fingerprint = G
+        };
+        var ticked = new HashSet<string>(["op-1"]);
+
+        AgentOperationVerdict row = AgentProposalValidator.Review(proposal, staleAtReview)
+            .Verdicts.Single(verdict => verdict.Id == "op-1");
+        Assert.True(row.Applicable);
+        Assert.False(row.Ticked);
+
+        string? problem = AgentProposalApplier.Prepare(
+            proposal, ticked, G, staleAtReview,
+            out List<AgentOperationVerdict> toApply, out _);
+
+        Assert.Null(problem);
+        Assert.Equal("op-1", Assert.Single(toApply).Id);
+        List<AgentUndoEntry> undo = AgentProposalApplier.Apply(toApply);
+        Assert.Equal(-3.0, staleAtReview.Find("A:right")!.Settings.GainDb);
+        Assert.Single(undo);
+    }
+
+    [Fact]
+    public void Prepare_RefusesManuallyTickedStaleRow_WhenFingerprintMovesFromGToH()
+    {
+        (AgentSessionSnapshot scene, AgentProposal proposal) = Scene();
+        const string Package = "11111111-1111-1111-1111-111111111111";
+        const string F = "aaaaaaaaaaaaaaaa";
+        const string G = "bbbbbbbbbbbbbbbb";
+        const string H = "cccccccccccccccc";
+        proposal = proposal with { PackageId = Package };
+        AgentSessionSnapshot staleAtReview = scene with
+        {
+            LastPackageId = Package,
+            LastPackageFingerprint = F,
+            Fingerprint = G
+        };
+        var ticked = new HashSet<string>(["op-1"]);
+
+        Assert.False(AgentProposalValidator.Review(proposal, staleAtReview)
+            .Verdicts.Single(verdict => verdict.Id == "op-1").Ticked);
+
+        string? problem = AgentProposalApplier.Prepare(
+            proposal, ticked, G, staleAtReview with { Fingerprint = H },
+            out List<AgentOperationVerdict> toApply, out _);
+
+        Assert.NotNull(problem);
         Assert.Contains("changed while the review was open", problem);
         Assert.Empty(toApply);
     }
@@ -70,7 +132,9 @@ public sealed class AgentProposalApplierTests
             Rejected = [new AgentRejectedOperation("op-1", "garbage", "Unsupported operation 'garbage'.")]
         };
 
-        string? problem = AgentProposalApplier.Prepare(proposal, new HashSet<string>(["op-1"]), session, out List<AgentOperationVerdict> toApply, out _);
+        string? problem = AgentProposalApplier.Prepare(
+            proposal, new HashSet<string>(["op-1"]), session.Fingerprint, session,
+            out List<AgentOperationVerdict> toApply, out _);
 
         Assert.Null(problem);
         AgentOperationVerdict only = Assert.Single(toApply);
@@ -101,10 +165,14 @@ public sealed class AgentProposalApplierTests
         AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
         Assert.All(review.Verdicts, verdict => Assert.DoesNotContain("junction zone", verdict.Message));
 
-        Assert.Null(AgentProposalApplier.Prepare(proposal, new HashSet<string>(["op-1", "op-2"]), session, out _, out List<string> both));
+        Assert.Null(AgentProposalApplier.Prepare(
+            proposal, new HashSet<string>(["op-1", "op-2"]), session.Fingerprint, session,
+            out _, out List<string> both));
         Assert.Empty(both);
 
-        Assert.Null(AgentProposalApplier.Prepare(proposal, new HashSet<string>(["op-1"]), session, out List<AgentOperationVerdict> toApply, out List<string> crossoverOnly));
+        Assert.Null(AgentProposalApplier.Prepare(
+            proposal, new HashSet<string>(["op-1"]), session.Fingerprint, session,
+            out List<AgentOperationVerdict> toApply, out List<string> crossoverOnly));
         Assert.Single(toApply);
         string warning = Assert.Single(crossoverOnly);
         Assert.StartsWith("B left:", warning);
@@ -116,7 +184,9 @@ public sealed class AgentProposalApplierTests
         bLeft.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1200, 24);
         var gainOnly = new AgentProposal(null, "summary", [], [],
             [new SetGainOperation("op-3", "B:left", "", 0, -1)], []);
-        Assert.Null(AgentProposalApplier.Prepare(gainOnly, new HashSet<string>(["op-3"]), session, out _, out List<string> untouched));
+        Assert.Null(AgentProposalApplier.Prepare(
+            gainOnly, new HashSet<string>(["op-3"]), session.Fingerprint, session,
+            out _, out List<string> untouched));
         Assert.Empty(untouched);
     }
 
@@ -128,7 +198,8 @@ public sealed class AgentProposalApplierTests
         VirtualCrossoverChannelSettings bLeft = session.Find("B:left")!.Settings;
         VirtualCrossoverChannelSettings before = AgentOperations.CloneEditable(bLeft);
         Assert.Null(AgentProposalApplier.Prepare(
-            proposal, new HashSet<string>(["op-1", "op-3", "op-4"]), session, out List<AgentOperationVerdict> toApply, out _));
+            proposal, new HashSet<string>(["op-1", "op-3", "op-4"]),
+            session.Fingerprint, session, out List<AgentOperationVerdict> toApply, out _));
 
         List<AgentUndoEntry> undo = AgentProposalApplier.Apply(toApply);
 

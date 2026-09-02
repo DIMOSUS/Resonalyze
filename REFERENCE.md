@@ -2828,6 +2828,13 @@ this: the clipboard is the only transport, and you are the one who pastes.
   series go first, in a fixed order, and the package lists what it left out. The
   package never contains file paths, the user name, history ids or raw impulse
   responses.
+- **Copy diagnostics for AI** holds the readings the package leaves out to stay
+  the size a chat takes; the assistant asks for one by its menu name and you
+  paste it into the same chat as a second text, named after the package it
+  belongs beside. **Excess group delay** is each measured channel's group delay
+  less its minimum-phase part — the part of a junction's phase mismatch that no
+  PEQ can touch, arrivals and reflections — read through the phase gate as the
+  analyzer's group-delay view shows it for one measurement.
 - **Import AI proposal…** reads the assistant's reply back off the clipboard —
   copy the whole reply, not just the JSON — and opens a review. The reply may
   address five things on one channel: gain, delay, polarity, the crossover, and
@@ -2865,8 +2872,10 @@ this: the clipboard is the only transport, and you are the one who pastes.
   delay above the processor's stated ceiling, a PEQ bank whose net response
   (preamp and every band together) rises above 0 dB somewhere and would clip a
   full-scale signal there, a bell narrower than Q 2 within an octave of one of
-  the channel's own crossover corners (where it turns the phase the pair's sum is
-  built on), a PEQ bank or crossover the device's own limits were not checked
+  the channel's own crossover corners (fine where it flattens a feature of the
+  driver itself, since a minimum-phase bell straightens that phase along with
+  the magnitude; on a dip the spatial average does not show it turns the pair's
+  phase for nothing), a PEQ bank or crossover the device's own limits were not checked
   against because the catalog does not know them, an engine that will write over
   more than the rows name — is a word in the Status column, not only a colour.
   **Apply selected** looks at the ticked rows once more against the live settings

@@ -283,6 +283,33 @@ rather than the direct rise — the number is real but overstates the skew),
 arrival minus the front's), `levelDb` (the zone's level minus the front's),
 `bandHz`, `levelFromSpatialAverage`. Empty in views that compare no groups.
 
+### 1.10 Diagnostics on request
+
+The package is already the size a chat takes, so a reading most tunes never
+need is not in it. The assistant asks for one by its menu name, the user copies
+it (**AI assistant… → Copy diagnostics for AI → …**) and pastes it into the
+same chat as a second text:
+
+```text
+RESONALYZE_AGENT_DIAGNOSTIC_V1
+…
+BEGIN_RESONALYZE_AGENT_DIAGNOSTIC_JSON
+{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.2",
+  "diagnostic": "excessGroupDelay", "packageId": "…", "createdAtUtc": "…",
+  "conventions": { … },
+  "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } }, … ] }
+END_RESONALYZE_AGENT_DIAGNOSTIC_JSON
+```
+
+`packageId` names the package the diagnostic was copied beside (absent when
+none was copied since the project was loaded); the channel ids and the
+broadband grid are the package's, so the two lay side by side. A row is left
+out where the reading could not be made.
+
+| `diagnostic` | What the series holds |
+| --- | --- |
+| `excessGroupDelay` | Each measured channel's excess group delay in ms: its group delay less the minimum-phase part the magnitude dictates (which a minimum-phase PEQ straightens along with the magnitude), read off the raw impulse response through the project's phase gate at the channel's own arrival, with the display smoothing. What remains is arrivals and reflections — the part of a junction's phase mismatch that no PEQ can touch. |
+
 ## 2. The reply
 
 The assistant may write anything before and after. Resonalyze reads the one

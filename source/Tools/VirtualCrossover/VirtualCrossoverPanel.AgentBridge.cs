@@ -63,6 +63,23 @@ public partial class VirtualCrossoverPanel
                 "summary to the clipboard, ready to paste into a chat assistant. " +
                 "Nothing is sent anywhere: you paste it yourself.")
         });
+        var diagnostics = new ToolStripMenuItem("Copy diagnostics for AI")
+        {
+            ToolTipText = ToolTipTextWrapper.Wrap(
+                "Smaller texts the assistant may ask for by name, beside the package: " +
+                "copy the one it named and paste it into the same chat.")
+        };
+        diagnostics.DropDownItems.Add(new ToolStripMenuItem(
+            "Excess group delay",
+            null,
+            async (_, _) => await CopyExcessGroupDelayForAiAsync())
+        {
+            ToolTipText = ToolTipTextWrapper.Wrap(
+                "Each measured channel's excess group delay — the part of its phase a " +
+                "PEQ cannot touch: arrivals and reflections — read through the phase gate " +
+                "as the analyzer shows it.")
+        });
+        agentMenu.Items.Add(diagnostics);
         agentMenu.Items.Add(new ToolStripMenuItem(
             "Import AI proposal…",
             null,
@@ -761,6 +778,79 @@ public partial class VirtualCrossoverPanel
     /// text on the clipboard in one write — a failure anywhere copies nothing, so
     /// the clipboard never holds a partial or an older package.
     /// </summary>
+    // A diagnostic the assistant asked for by name: every measured channel's
+    // excess group delay, as the analyzer shows it for one impulse response, in
+    // a text of its own beside the package — which is already the size a chat
+    // takes. Named after the last package copied, so the reader lays the two
+    // side by side by channel id.
+    private async Task CopyExcessGroupDelayForAiAsync()
+    {
+        if (agentBusy)
+        {
+            return;
+        }
+
+        agentBusy = true;
+        RefreshAutoActionsEnabled();
+        try
+        {
+            var channels = new List<AgentDiagnosticChannel>();
+            foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
+                in AgentChannelSlots())
+            {
+                VirtualCrossoverChannelState state = channel.SideState(rightSide);
+                if (state.TransferImpulseResponse is not { } impulseResponse)
+                {
+                    continue;
+                }
+
+                IReadOnlyList<SignalPoint>? curve = BuildExcessGroupDelayCurve(
+                    impulseResponse, state.TransferPeakIndex, state.SampleRate, state.MeasuredBand);
+                if (curve != null)
+                {
+                    channels.Add(new AgentDiagnosticChannel(AgentChannelIds.Format(block, side), curve));
+                }
+            }
+            if (channels.Count == 0)
+            {
+                ShowError("The diagnostic was not copied.", "No channel has a measurement to read.");
+                return;
+            }
+
+            string? packageId = lastAgentPackageId;
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            AgentDiagnosticBuildResult result = await Task.Run(
+                () => AgentDiagnosticBuilder.BuildExcessGroupDelay(channels, packageId, now));
+            if (IsDisposed)
+            {
+                return;
+            }
+            if (!AgentClipboard.TryWrite(result.Text, out string? error))
+            {
+                ShowError("The diagnostic was not copied.", error!);
+                return;
+            }
+
+            MessageBox.Show(
+                FindForm(),
+                $"Excess group delay diagnostic copied ({(result.JsonBytes + 1023) / 1024} KB, " +
+                $"{channels.Count} channel{(channels.Count == 1 ? "" : "s")}). Paste it into the " +
+                "same chat as the package.",
+                "Copy diagnostics for AI",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            ShowError("The diagnostic was not copied.", exception.Message);
+        }
+        finally
+        {
+            agentBusy = false;
+            RefreshAutoActionsEnabled();
+        }
+    }
+
     private async Task CopyForAiAsync()
     {
         if (agentBusy)
@@ -1193,6 +1283,32 @@ public partial class VirtualCrossoverPanel
             sides,
             stereo,
             groups);
+    }
+
+    // The measurement's excess group delay as the analyzer shows it for one
+    // impulse response: the raw transfer response through the project's phase
+    // gate, placed at the channel's OWN arrival (the handoff's rule for a
+    // measurement read without the chain), with the display smoothing. The
+    // minimum-phase part — what the magnitude dictates and a minimum-phase PEQ
+    // straightens along with it — is taken out; what remains is what no PEQ can
+    // touch, which is the question a junction that will not sum asks.
+    private IReadOnlyList<SignalPoint>? BuildExcessGroupDelayCurve(
+        Complex[] impulseResponse, int peakIndex, int sampleRate, MeasuredBand band)
+    {
+        int anchorIndex = ProcessedChannels.StartAnchorIndex(impulseResponse, peakIndex, sampleRate);
+        GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
+            new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate)
+            {
+                LowestMeasuredFrequencyHz = band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = band.HighEdgeHz
+            },
+            anchorIndex * 1_000.0 / sampleRate,
+            project.PhaseGateLeftMs,
+            project.PhaseGatePlateauMs,
+            project.PhaseGateRightMs,
+            project.SmoothingInverseOctaves,
+            includeMinimumPhase: true);
+        return curves.Excess?.Points;
     }
 
     // Every capture family the side holds, in the mode enum's own names so the

@@ -24,6 +24,18 @@ internal static class AgentProtocol
     public const string ProposalBegin = "BEGIN_RESONALYZE_AGENT_PROPOSAL_V1";
     public const string ProposalEnd = "END_RESONALYZE_AGENT_PROPOSAL_V1";
 
+    /// <summary>
+    /// A diagnostic the assistant asks for by name and the user copies on its
+    /// own: a second, smaller text beside the package, so the package itself
+    /// stays the size a chat takes.
+    /// </summary>
+    public const string DiagnosticKind = "resonalyze.agent-diagnostic";
+    public const string DiagnosticHeader = "RESONALYZE_AGENT_DIAGNOSTIC_V1";
+    public const string DiagnosticJsonBegin = "BEGIN_RESONALYZE_AGENT_DIAGNOSTIC_JSON";
+    public const string DiagnosticJsonEnd = "END_RESONALYZE_AGENT_DIAGNOSTIC_JSON";
+    /// <summary>The excess group delay of every measured channel, as the analyzer shows it.</summary>
+    public const string ExcessGroupDelayDiagnostic = "excessGroupDelay";
+
     // Raw files, not the GitHub page around them: an assistant that can fetch a
     // URL gets the Markdown itself rather than a rendered page it has to scrape.
     public const string GuideUrl =
@@ -68,7 +80,7 @@ internal static class AgentProtocol
     /// package so an assistant reading a newer guide at the URL knows which
     /// methodology the package's author expected.
     /// </summary>
-    public const string GuideVersion = "1.1";
+    public const string GuideVersion = "1.2";
 
     /// <summary>The whole clipboard text, UTF-8 bytes, before any parsing.</summary>
     public const int MaxProposalBytes = 1024 * 1024;

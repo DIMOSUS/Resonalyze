@@ -32,7 +32,7 @@ internal sealed partial class AgentProposalDialog : Form
         foreach (AgentOperationVerdict verdict in review.Verdicts)
         {
             int index = gridView.Rows.Add(
-                verdict.Applicable,
+                verdict.Applicable && verdict.Ticked,
                 verdict.ChannelLabel,
                 verdict.Parameter,
                 verdict.Current,

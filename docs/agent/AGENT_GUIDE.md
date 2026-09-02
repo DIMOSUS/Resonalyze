@@ -1,6 +1,6 @@
 # Resonalyze Agent Guide
 
-Guide version 1.2 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
+Guide version 1.3 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
 
 ## 0. The rules that also travel inside every package
 
@@ -14,7 +14,7 @@ Rules that apply even without the guide:
 2. Ask for what the notes do not say: driver models and locations, amplifier power, DSP model, listening goals. Ask in small groups.
 3. Prefer Resonalyze's own engines: recommend running Auto delay / Auto crossover / EQ Wizard Auto-tune with stated settings instead of inventing delays and PEQ banks by hand.
 4. Never EQ a cancellation; never claim a crossover is driver-safe from Fs or diameter alone; cite sources for hardware facts.
-5. If and only if you have concrete, justified changes, end with ONE JSON object with "kind": "resonalyze.agent-proposal" following the protocol, in a fenced code block; copy channel ids and current values from this package exactly.
+5. If and only if you have concrete, justified changes, end with ONE JSON object with "kind": "resonalyze.agent-proposal" following the protocol, in a fenced code block; copy packageId, channel ids and current values from this package exactly.
 
 ## 1. Your role
 
@@ -40,7 +40,14 @@ what you are sure of, what you are inferring, and what you would need to know.
   is computed at psychoacoustic smoothing (1/3 octave below 100 Hz, 1/6 above
   1 kHz) whatever the user's panel shows, so two packages compare and a dip's
   depth means the same in each. The user's own read-out at another smoothing
-  may differ from the package's; the package's is the one to reason from.
+  may differ from the package's; the package's is the one to reason from. The
+  one exception is the hybrid columns and sums (`hybridPreDspDb`,
+  `hybridProcessedDb`, the hybrid sum): a spatial average is read with the
+  smoothing off, since the average has already removed what smoothing exists
+  to hide, and those travel at the grid's own 1/12 octave
+  (`analysis.spatialAverage.smoothingInverseOctaves`). Compare a hybrid column
+  with the measured one beside it by shape; a narrow feature's depth is not
+  the same reading at the two widths.
 - **Two sample rates.** `channels[].source.sampleRateHz` is what the measurement
   was taken at; `processor.sampleRateHz` is what the device builds its filters
   at. Every corner and PEQ band you propose must sit below half the processor's
@@ -185,7 +192,11 @@ Work in this order; each step gates the next.
    empty `bands` list and `preampDb: 0` is a valid operation; the block's
    Bypass would drop the crossover too and change the junction itself), copy
    a new package, read the junction again, then *Undo AI import* to put the
-   banks back. Read the pass on the PHASE read-outs, not on Sum loss alone:
+   banks back — and ask for one more package before you propose anything:
+   after the undo the session is the one before the pass, not the one the
+   diagnostic package described, and a proposal answering that package has
+   its engine requests refused. Read the pass on the PHASE read-outs, not on
+   Sum loss alone:
    Sum loss is the coherent sum against the magnitude sum, so it moves with
    the two channels' level ratio as much as with their phase — at a fixed
    120° between them, two equal levels lose 6.0 dB and the same pair with
@@ -194,7 +205,7 @@ Work in this order; each step gates the next.
    by that route, and clearing it (its preamp too) changes the ratio back.
    So compare, before and after, the junction's `phase` block —
    `phaseAtCrossoverDeg`, `currentScore` (a phase-alignment score by
-   construction, not a level one), `fitRmsDeg`, `phaseConsistency` — and the
+   construction, not a level one), `fitRmsDeg`, `consistency` — and the
    excess group delay, alongside the two channels' levels in `bandHz`. The
    bands were straightening the minimum-phase part only when the phase
    metrics are WORSE without them and the excess curve is unchanged; then
@@ -421,7 +432,12 @@ itself, so nothing outside the block is needed (and text outside the block is
 what a chat leaves behind when the user copies the block alone). In it:
 
 - Copy `packageId`, every `channelId` and every expected current value from
-  the package exactly. A changed current value refuses the operation.
+  the package exactly. A changed current value refuses the operation. A
+  reply that names no package, or a package the session cannot vouch for —
+  another one, or this one after the user changed something, switched the
+  side or the view, or undid an import — refuses every engine request and
+  offers the settings rows unticked; when the user reports that, ask for a
+  new package.
 - One operation per channel and parameter. State each `reason` in one or two
   sentences; the user reads it in the review.
 - Use only the operations `limits.operations` names, and never an engine

@@ -47,6 +47,9 @@ public sealed class VirtualCrossoverAgentEngineTests
             Hybrid(panel).Checked = false;
             List<VirtualCrossoverChannel> order = Channels(panel).ToList();
             double gain = Channels(panel)[0].SideSettings(rightSide: false).GainDb;
+            var targetLevel = (DarkNumericUpDown)Field(panel, "numericTargetLevel");
+            double level = Project(panel).TargetLevelDb;
+            Assert.Equal(level, (double)targetLevel.Value);
 
             object undo = Invoke(panel, "CaptureAgentUndo")!;
             Invoke(panel, "ApplyAgentSpatialAverage",
@@ -55,6 +58,10 @@ public sealed class VirtualCrossoverAgentEngineTests
             Channels(panel)[0].SideSettings(rightSide: false).GainDb = gain - 6;
             Invoke(panel, "MoveChannel", Channels(panel)[0], 1);
             Assert.NotEqual(order, Channels(panel));
+            // The datum an Auto-tune landing moves: the field, and through its
+            // ValueChanged, the project.
+            targetLevel.Value += 3;
+            Assert.Equal(level + 3, Project(panel).TargetLevelDb);
 
             Set(panel, "agentUndo", undo);
             Set(panel, "agentUndoGeneration", Field(panel, "projectGeneration"));
@@ -65,6 +72,11 @@ public sealed class VirtualCrossoverAgentEngineTests
             Assert.False(Project(panel).ShowHybridCurves);
             Assert.Equal(order, Channels(panel));
             Assert.Equal(gain, Channels(panel)[0].SideSettings(rightSide: false).GainDb);
+            // Both halves of the datum: the undo sets the field with the project
+            // events suppressed, so the project's copy — what the package and the
+            // saved session read — has to be written by hand, and once was not.
+            Assert.Equal(level, (double)targetLevel.Value);
+            Assert.Equal(level, Project(panel).TargetLevelDb);
             Assert.Null(Field(panel, "agentUndo"));
         });
     }
@@ -226,6 +238,105 @@ public sealed class VirtualCrossoverAgentEngineTests
     // The engines run as the import runs them — awaited; on a panel with no
     // measurement every engine answers before it would await anything, so the
     // task is complete by the time it is handed back.
+    [Fact]
+    public void Fingerprint_MovesWithWhatAPackageVouchesFor_AndComesBackWithUndo()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            Project(panel).SpatialAverageMode = VirtualCrossoverSpatialAverageMode.Off;
+            Hybrid(panel).Checked = false;
+            string baseline = Fingerprint(panel);
+            Assert.Equal(baseline, Fingerprint(panel));
+
+            // Each of these was once a path that had to remember to forget the
+            // package, and the two the review found missing — a source picked by
+            // hand, a capture attached — are the reason it is a hash now.
+            VirtualCrossoverChannelSettings left = Channels(panel)[0].SideSettings(rightSide: false);
+            var seen = new HashSet<string>(StringComparer.Ordinal) { baseline };
+            void Moves(Action change)
+            {
+                change();
+                Assert.True(seen.Add(Fingerprint(panel)), "the fingerprint did not move");
+            }
+
+            Moves(() => left.SourceFilePath = @"D:\measurements\left mid (retaken).json");
+            // A measurement saved over its own file: same reference, same length,
+            // same rate, other samples — the CONTENT is what the hash reads.
+            VirtualCrossoverChannelState leftState = Channels(panel)[0].SideState(rightSide: false);
+            var samples = new System.Numerics.Complex[64];
+            samples[3] = new System.Numerics.Complex(0.5, 0);
+            Moves(() => leftState.TransferImpulseResponse = samples);
+            var retaken = new System.Numerics.Complex[64];
+            retaken[3] = new System.Numerics.Complex(0.4, 0);
+            Moves(() => leftState.TransferImpulseResponse = retaken);
+            // The same samples in another array are the same measurement.
+            leftState.TransferImpulseResponse = (System.Numerics.Complex[])retaken.Clone();
+            Assert.Contains(Fingerprint(panel), seen);
+            Moves(() => leftState.TransferCoherence = [0.9, 0.8]);
+            Moves(() => leftState.MeasuredBand = new MeasuredBand(40, 8000));
+            Moves(() => leftState.TransferPeakIndex += 1);
+            // The correction the side is read through, by its points: the same
+            // file re-read with one value edited is another correction.
+            Set(panel, "ownCalibrationSelected", true);
+            Moves(() => leftState.MicrophoneCalibration =
+                new VirtualCrossoverCalibrationSettings { Name = "mic", Points = [[1000, 0.5], [2000, 1.0]] });
+            Moves(() => leftState.MicrophoneCalibration =
+                new VirtualCrossoverCalibrationSettings { Name = "mic", Points = [[1000, 0.5], [2000, 1.5]] });
+            Moves(() => Project(panel).AiNotes = "Front: 6.5\" mids in the doors.");
+            Moves(() => Project(panel).Target = new VirtualCrossoverTargetSettings { ImportedCurve = [1, 2, 3] });
+            Moves(() => Project(panel).Target!.ImportedCurve = [1, 2, 4]);
+            Moves(() => left.SpatialAveragePath = @"D:\measurements\left mid mmm.json");
+            Moves(() => leftState.SpatialAverage = new LiveCaptureDocument { CaptureSessionId = Guid.NewGuid() });
+            Moves(() => leftState.SpatialAverage = new LiveCaptureDocument { CaptureSessionId = Guid.NewGuid() });
+            Moves(() => left.GainDb -= 1.5);
+            Moves(() => left.PeqBands = [new Resonalyze.Dsp.PeqBand(820, 2.1, -2.4)]);
+            Moves(() => Invoke(panel, "MoveChannel", Channels(panel)[0], 1));
+            Moves(() => Hybrid(panel).Checked = true);
+            Moves(() => Project(panel).SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic);
+            Moves(() => Project(panel).PhaseGateLeft.OffsetMs = 3.25);
+            Moves(() => Project(panel).StereoLevelDifferenceDb = -2.0);
+            Moves(() => Project(panel).Pairs[0].Mono = true);
+            // The side on screen and the view: what Auto crossover and a
+            // single-sided Auto delay read, and what decides Auto-tune's source.
+            Moves(() => Project(panel).ActiveSideRight = true);
+            dynamic groupView = Field(panel, "comboBoxGroupView");
+            Moves(() => groupView.SelectedItem = VirtualCrossoverGroupView.Everything);
+            Moves(() => ((DarkNumericUpDown)Field(panel, "numericTargetLevel")).Value += 1);
+        });
+    }
+
+    [Fact]
+    public void Fingerprint_IsBackWhereItWas_AfterUndoAiImport()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            Project(panel).SpatialAverageMode = VirtualCrossoverSpatialAverageMode.Off;
+            Hybrid(panel).Checked = false;
+            string before = Fingerprint(panel);
+
+            object undo = Invoke(panel, "CaptureAgentUndo")!;
+            Invoke(panel, "ApplyAgentSpatialAverage",
+                new UseSpatialAverageOperation("op-1", "", "MicArray", true));
+            Channels(panel)[0].SideSettings(rightSide: false).GainDb -= 6;
+            Invoke(panel, "MoveChannel", Channels(panel)[0], 1);
+            Assert.NotEqual(before, Fingerprint(panel));
+
+            Set(panel, "agentUndo", undo);
+            Set(panel, "agentUndoGeneration", Field(panel, "projectGeneration"));
+            Invoke(panel, "UndoAiImport");
+
+            // The guide's diagnostic pass: clear the banks, copy a package, undo.
+            // The session is then the one BEFORE the import again — not the one
+            // that package described — and the review reads it off the hash.
+            Assert.Equal(before, Fingerprint(panel));
+        });
+    }
+
+    private static string Fingerprint(VirtualCrossoverPanel panel) =>
+        (string)Invoke(panel, "ComputeAgentFingerprint")!;
+
     private static bool RunEngines(
         VirtualCrossoverPanel panel, List<AgentOperationVerdict> rows, List<string> summary) =>
         ((Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary)!)

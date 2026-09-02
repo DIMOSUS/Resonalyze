@@ -47,6 +47,10 @@ internal sealed record AgentAnalysisInputs(
     // to fix than "not ticked".
     bool HybridTicked,
     bool HybridDrawn,
+    // The hybrid curves' and sums' own smoothing — the grid's width, not the
+    // package's psychoacoustic one — printed so a reader knows the two families
+    // of curves were not read at one width (see the capture's note).
+    int HybridSmoothingInverseOctaves,
     PhaseWindowMode PhaseWindowMode,
     int FdwCycles,
     PhaseDetrendMode DetrendMode,

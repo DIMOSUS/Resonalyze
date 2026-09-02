@@ -14,11 +14,14 @@ namespace Resonalyze;
 /// </summary>
 public partial class VirtualCrossoverPanel
 {
-    // The id of the package this session most recently copied; a reply naming
-    // another one gets a warning in the review. Not persisted — a reopened
+    // The id of the package this session most recently copied and the session
+    // fingerprint it was copied at (ComputeAgentFingerprint); a reply naming
+    // another package, or this one after the session has changed, gets a warning
+    // in the review and its engine requests refused. Not persisted — a reopened
     // session cannot vouch for what an earlier one copied, and the expected
-    // current values are the guard that matters.
+    // current values are the guard that matters for the settings rows.
     private string? lastAgentPackageId;
+    private string? lastAgentPackageFingerprint;
 
     // One bridge operation at a time: a second Copy while the first gathers
     // would race the coordinator, and an import while a copy gathers would move
@@ -26,6 +29,11 @@ public partial class VirtualCrossoverPanel
     private bool agentBusy;
 
     private ContextMenuStrip? agentMenu;
+
+    // The smoothing the package's hybrid curves and sums travel at: the width of
+    // the package's own 12-point-per-octave grid, the nearest a grid can come to
+    // the Off the manual reads the hybrid view at (see CaptureAgentPackageInputsAsync).
+    private const int AgentHybridSmoothingInverseOctaves = 12;
 
     /// <summary>
     /// The EQ Wizard's Auto Tune settings at the moment an import fits a bank
@@ -37,15 +45,123 @@ public partial class VirtualCrossoverPanel
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Func<EqAutoTunePolicy>? AutoTunePolicyProvider { get; set; }
 
-    /// <summary>Records the package this session just copied, for the review's correlation warning.</summary>
-    internal void RememberAgentPackage(string packageId) => lastAgentPackageId = packageId;
+    /// <summary>
+    /// Records the package this session just copied and the session it was copied
+    /// from, for the review's staleness check.
+    /// </summary>
+    internal void RememberAgentPackage(string packageId, string fingerprint)
+    {
+        lastAgentPackageId = packageId;
+        lastAgentPackageFingerprint = fingerprint;
+    }
 
-    // The one place the package is forgotten. A package vouches for a project of
-    // one composition: these channels, in this order, with these measurements.
-    // Any change to that — a project loaded, a block added, removed or reordered,
-    // a source resolved or cleared — makes a reply's ids and current values
-    // describe a project this one no longer is, and the review then says so.
-    private void ForgetAgentPackage() => lastAgentPackageId = null;
+    /// <summary>
+    /// The session as one hash (<see cref="AgentSessionFingerprint"/>): everything a
+    /// package vouches for that an expected current value does not already guard.
+    /// The blocks in order (their letters are the channel ids), what each side is
+    /// measured and averaged with, every chain — an import undone puts the chains
+    /// back under a package that was copied without them — and the project figures
+    /// the diagnostics were computed under, the side on screen and the view among
+    /// them, since the engines read those. Not the zoom or the smoothing selector:
+    /// they change what is shown, not what was measured, and the package has its
+    /// own smoothing anyway.
+    /// </summary>
+    /// <remarks>
+    /// Taken at Copy and again at every review, so no path that changes the session
+    /// has to remember to forget the package: a source picked by hand, a capture
+    /// attached, a gate moved, a project loaded all change the hash and the review
+    /// reads the difference. The same session loaded again hashes the same, and a
+    /// package copied from it stays good — which forgetting could never say.
+    /// </remarks>
+    internal string ComputeAgentFingerprint()
+    {
+        var lines = new List<string>
+        {
+            $"processor;{ProcessorProfile.ModelId};{ProcessorSampleRateHz}",
+            $"average;{SpatialAverageMode};{checkBoxHybrid.Checked}",
+            // The side on screen and the view are what the package was computed
+            // for, and what the engines read: Auto crossover proposes from the
+            // shown side's measurements, a single-sided Auto delay aligns it, and
+            // whether Auto-tune's default source is the hybrid follows the view.
+            $"view;{project.ActiveSideRight};{SelectedGroupView}",
+            $"phase;{project.PhaseWindowMode};{project.PhaseFdwCycles};{project.PhaseDetrendMode};" +
+                $"{Number(project.PhaseGateLeftMs)};{Number(project.PhaseGatePlateauMs)};" +
+                $"{Number(project.PhaseGateRightMs)};" +
+                $"{Number(project.PhaseGateLeft.OffsetMs)};{Number(project.PhaseGateLeft.DetrendMs)};" +
+                $"{Number(project.PhaseGateRight.OffsetMs)};{Number(project.PhaseGateRight.DetrendMs)}",
+            $"stereo;{Number(project.StereoSceneOffsetMagnitudeMs)};{project.StereoRightHandDrive};" +
+                $"{Number(project.StereoLevelDifferenceDb)};{Number(project.RearFillOffsetMs)}",
+            // The selected correction by id AND by its points: a curve re-read or
+            // edited under the same id (ReconcileCalibrationSelection) is another
+            // correction on every measurement the package reads.
+            $"calibration;{project.CalibrationId};{ownCalibrationSelected};{Curve(Calibration)}",
+            $"target;{Number((double)numericTargetLevel.Value)};{TargetShape(project.Target)}",
+            // The assistant reasons from the notes as much as from the curves.
+            $"notes;{project.AiNotes}"
+        };
+        foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
+            in AgentChannelSlots())
+        {
+            VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
+            VirtualCrossoverChannelState state = channel.SideState(rightSide);
+            lines.Add(string.Join(';',
+                block, AgentChannelIds.SideName(side), channel.Pair.Zone,
+                channel.Pair.Enabled, channel.Pair.Bypass,
+                // The measurement: its reference, and the CONTENT actually loaded
+                // behind it — a file re-measured and saved over its own name is a
+                // different impulse response with the same reference, length and
+                // rate — with what the package reads off it: the peak, the measured
+                // band, the coherence, the calibration it was read through.
+                settings.HistoryEntryId, settings.SourceFilePath, settings.DisplayName,
+                Digest(state.TransferImpulseResponse), state.SampleRate, state.TransferPeakIndex,
+                Number(state.MeasuredBand.LowestHz), Number(state.MeasuredBand.HighestHz),
+                Digest(state.TransferCoherence),
+                // The correction this side's curves are actually read through —
+                // its own under "Own (as measured)", the selected one otherwise —
+                // by its points.
+                Curve(CalibrationFor(state)),
+                // The captures by session: a pass re-recorded over the same file is
+                // a new capture session with a new id.
+                settings.SpatialAveragePath, Capture(state.SpatialAverage), Capture(state.ArrayCapture),
+                Number(settings.GainDb), Number(settings.DelayMs), settings.InvertPolarity,
+                settings.CrossoverKind, Edge(settings.HighPassEdge), Edge(settings.LowPassEdge),
+                AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands)));
+        }
+
+        return AgentSessionFingerprint.Compute(lines);
+
+        static string Number(double? value) => AgentSessionFingerprint.Number(value);
+
+        static string Digest<T>(T[]? values) where T : unmanaged =>
+            AgentSessionFingerprint.ContentDigest(values);
+
+        static string Curve(CalibrationFile? calibration) =>
+            calibration == null
+                ? string.Empty
+                : AgentSessionFingerprint.ContentDigest(
+                    calibration.Points.SelectMany(point => new[] { point.FrequencyHz, point.Decibels }));
+
+        static string Capture(LiveCaptureDocument? document) =>
+            document == null
+                ? string.Empty
+                : $"{document.CaptureSessionId:D}/{document.SavedAtUtc.UtcTicks}/{document.Method}";
+
+        static string Edge(CrossoverEdge edge) =>
+            $"{edge.Family}/{Number(edge.FrequencyHz)}/{edge.SlopeDbPerOctave}/{Number(edge.RippleDb)}";
+
+        static string TargetShape(VirtualCrossoverTargetSettings? target) =>
+            target == null
+                ? string.Empty
+                : string.Join('/',
+                    target.Preset, Number(target.TiltDbPerOctave),
+                    Number(target.BassShelfGainDb), Number(target.BassShelfFrequencyHz),
+                    Number(target.BassShelfWidthOctaves),
+                    Number(target.TrebleShelfGainDb), Number(target.TrebleShelfFrequencyHz),
+                    Number(target.TrebleShelfWidthOctaves),
+                    Number(target.PresenceGainDb), Number(target.PresenceFrequencyHz),
+                    Number(target.PresenceWidthOctaves),
+                    Number(target.ToleranceDb), target.ImportedName, Digest(target.ImportedCurve));
+    }
 
     // The same two-state toggle the Target button's menu uses: a click while the
     // menu is open closes it; the menu is rebuilt per click so its enabled states
@@ -174,8 +290,9 @@ public partial class VirtualCrossoverPanel
             }
 
             AgentProposal proposal = parsed.Proposal!;
+            AgentSessionSnapshot reviewedSession = BuildAgentSessionSnapshot();
             AgentProposalReview review =
-                AgentProposalValidator.Review(proposal, BuildAgentSessionSnapshot());
+                AgentProposalValidator.Review(proposal, reviewedSession);
             HashSet<string> selected;
             using (var dialog = new AgentProposalDialog(review))
             {
@@ -188,7 +305,7 @@ public partial class VirtualCrossoverPanel
             }
 
             string? problem = AgentProposalApplier.Prepare(
-                proposal, selected, BuildAgentSessionSnapshot(),
+                proposal, selected, reviewedSession.Fingerprint, BuildAgentSessionSnapshot(),
                 out List<AgentOperationVerdict> toApply, out List<string> unseenWarnings);
             if (problem != null)
             {
@@ -727,6 +844,11 @@ public partial class VirtualCrossoverPanel
             project.StereoLevelDifferenceDb = undo.StereoLevelDifferenceDb;
             project.RearFillOffsetMs = undo.RearFillOffsetMs;
             numericTargetLevel.Value = numericTargetLevel.ClampValue(undo.TargetLevelDb);
+            // The field's ValueChanged writes the project through OnViewChanged,
+            // which is what the suppression above silences — so the project's
+            // datum, the one the package and the saved session read, is written
+            // here by hand, as the Hybrid tick's is.
+            project.TargetLevelDb = (double)numericTargetLevel.Value;
         }
         finally
         {
@@ -825,7 +947,12 @@ public partial class VirtualCrossoverPanel
 
             (double, double, double) gate =
                 (project.PhaseGateLeftMs, project.PhaseGatePlateauMs, project.PhaseGateRightMs);
-            string? packageId = lastAgentPackageId;
+            // The package the curves belong beside — while this is still the
+            // session it was copied from. Changed, the id would tie the curves to
+            // channel ids and gates that no longer mean what they meant there.
+            string? packageId = lastAgentPackageFingerprint == ComputeAgentFingerprint()
+                ? lastAgentPackageId
+                : null;
             DateTimeOffset now = DateTimeOffset.UtcNow;
             (AgentDiagnosticBuildResult result, int count) = await Task.Run(() =>
             {
@@ -883,13 +1010,13 @@ public partial class VirtualCrossoverPanel
         RefreshAutoActionsEnabled();
         try
         {
-            AgentPackageInputs? inputs = await CaptureAgentPackageInputsAsync() ??
-                await CaptureAgentPackageInputsAsync();
+            (AgentPackageInputs Inputs, string Fingerprint)? gathered =
+                await GatherAgentPackageAsync() ?? await GatherAgentPackageAsync();
             if (IsDisposed)
             {
                 return;
             }
-            if (inputs == null)
+            if (gathered is not { } package)
             {
                 ShowError(
                     "The AI package was not copied.",
@@ -897,6 +1024,7 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
+            (AgentPackageInputs inputs, string fingerprint) = package;
             Guid packageId = Guid.NewGuid();
             DateTimeOffset now = DateTimeOffset.UtcNow;
             AgentPackageBuildResult result = await Task.Run(
@@ -916,7 +1044,7 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
-            RememberAgentPackage(packageId.ToString("D"));
+            RememberAgentPackage(packageId.ToString("D"), fingerprint);
             string omitted = result.Omitted.Count > 0
                 ? Environment.NewLine + "Left out to fit the size limit: " +
                     string.Join(", ", result.Omitted) + "."
@@ -940,6 +1068,24 @@ public partial class VirtualCrossoverPanel
         }
     }
 
+    // The inputs and the fingerprint of ONE session state. The capture vouches
+    // that the coordinator's revision held while it gathered, but the fingerprint
+    // reads things the revision does not cover — the target level, the Hybrid
+    // tick, a gate pin — so it is taken on both sides of the gather and the pair
+    // is kept only when the two agree. Null otherwise; the caller retries once,
+    // as it does for the capture's own refusal.
+    private async Task<(AgentPackageInputs Inputs, string Fingerprint)?> GatherAgentPackageAsync()
+    {
+        string before = ComputeAgentFingerprint();
+        AgentPackageInputs? inputs = await CaptureAgentPackageInputsAsync();
+        if (inputs == null || IsDisposed || ComputeAgentFingerprint() != before)
+        {
+            return null;
+        }
+
+        return (inputs, before);
+    }
+
     /// <summary>
     /// The channels as the bridge names them, with their live settings and what
     /// each side carries, plus the project figures an engine request is judged
@@ -961,7 +1107,9 @@ public partial class VirtualCrossoverPanel
             AgentAutoDelayDefaults(),
             SpatialAverageMode,
             checkBoxHybrid.Checked,
-            project.ActiveSideRight);
+            project.ActiveSideRight,
+            lastAgentPackageFingerprint,
+            ComputeAgentFingerprint());
 
     // Every physical channel in block order: a stereo block yields its left and
     // right slots, a mono block its single one (routed to the left slot, as the
@@ -1004,6 +1152,14 @@ public partial class VirtualCrossoverPanel
         // the one the manual reads a tune at, so it is the one the package uses.
         int smoothing = SpectrumSmoothing.PsychoacousticCode;
         MagnitudeGateSnapshot packageGate = magnitudeGate with { SmoothingInverseOctaves = smoothing };
+        // Except the hybrid curves and their sum, which the manual reads with the
+        // smoothing OFF: the average has already averaged the position-dependent
+        // wiggles down, and a fractional-octave window straddling a crossover's
+        // skirt pulls the level up toward the passband, right where the acoustic
+        // slopes are judged. Off cannot travel on a 12-point-per-octave grid, so
+        // they go at the grid's own width, 1/12 octave — one step, no more.
+        MagnitudeGateSnapshot hybridGate =
+            magnitudeGate with { SmoothingInverseOctaves = AgentHybridSmoothingInverseOctaves };
 
         var sides = new List<AgentSideInputs>();
         var curves = new Dictionary<
@@ -1048,32 +1204,45 @@ public partial class VirtualCrossoverPanel
             // gate placement, never the active side's pin — the same rule the
             // on-screen opposite sum follows.
             bool oppositeSide = rightSide != activeRight;
-            var sideMetrics = new VirtualCrossoverMetrics(
-                processingCoordinator,
-                (impulseResponse, anchorIndex, sampleRate, band, calibration) =>
-                    BuildGatedMagnitudeCurve(
-                        packageGate,
-                        impulseResponse,
-                        anchorIndex,
-                        sampleRate,
-                        packageGate.ResolveGateOffsetMs(oppositeSide, anchorIndex, sampleRate),
-                        band,
-                        calibration),
-                CalibrationFor,
-                (members, anchorIndex) =>
-                    BuildMeasuredSumCurve(
-                        packageGate,
-                        members,
-                        anchorIndex,
-                        packageGate.ResolveGateOffsetMs(
-                            oppositeSide, anchorIndex, members.Count > 0 ? members[0].SampleRate : 0)));
+            VirtualCrossoverMetrics MetricsThrough(MagnitudeGateSnapshot gate) =>
+                new(
+                    processingCoordinator,
+                    (impulseResponse, anchorIndex, sampleRate, band, calibration) =>
+                        BuildGatedMagnitudeCurve(
+                            gate,
+                            impulseResponse,
+                            anchorIndex,
+                            sampleRate,
+                            gate.ResolveGateOffsetMs(oppositeSide, anchorIndex, sampleRate),
+                            band,
+                            calibration),
+                    CalibrationFor,
+                    (members, anchorIndex) =>
+                        BuildMeasuredSumCurve(
+                            gate,
+                            members,
+                            anchorIndex,
+                            gate.ResolveGateOffsetMs(
+                                oppositeSide, anchorIndex, members.Count > 0 ? members[0].SampleRate : 0)));
+            VirtualCrossoverMetrics sideMetrics = MetricsThrough(packageGate);
 
             List<AnalysisCurve>? magnitudes = null;
             AnalysisCurve? sumCurve = null;
             List<SignalPoint>? loss = null;
+            // The hybrid set's references at the hybrid's own width: a channel the
+            // array mode falls back to its point measurement for enters the hybrid
+            // sum through these, and one smoothed psychoacoustically first would be
+            // smoothed twice, at two widths, in a sum that claims one. Built only
+            // when the hybrid is asked for — it is a second gated pass.
+            List<AnalysisCurve>? hybridReferences = null;
             if (shown.Count > 0)
             {
                 (magnitudes, sumCurve, loss) = sideMetrics.BuildCurves(shown, smoothing, summed);
+                if (HybridRequested)
+                {
+                    (hybridReferences, _, _) = MetricsThrough(hybridGate)
+                        .BuildCurves(shown, AgentHybridSmoothingInverseOctaves, summed);
+                }
             }
 
             bool quotesJunctions =
@@ -1102,19 +1271,19 @@ public partial class VirtualCrossoverPanel
                         ordered, phaseRate, pinnedOffsetMs,
                         gateLeftMs, gatePlateauMs, gateRightMs)));
             }
-            HybridMagnitudes? hybrid = HybridRequested && magnitudes != null
-                ? BuildHybridMagnitudes(shown, magnitudes, rightSide, smoothing)
+            HybridMagnitudes? hybrid = hybridReferences != null
+                ? BuildHybridMagnitudes(shown, hybridReferences, rightSide, AgentHybridSmoothingInverseOctaves)
                 : null;
             // The sum the hybrid view draws beside the measured one: the same two
             // constructions the plot uses (see RedrawMainPlotAsync), the active
             // side's from the shown set, the opposite side's under its own gate
             // placement — and null, as on screen, when the sides cannot be held
             // to one offset.
-            IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || magnitudes == null
+            IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || hybridReferences == null
                 ? null
                 : rightSide == activeRight
-                    ? BuildActiveHybridSumCurve(shown, magnitudes, hybrid, packageGate)
-                    : BuildOppositeHybridSumCurve(sideSum, hybrid.OffsetDb, packageGate)?.Points;
+                    ? BuildActiveHybridSumCurve(shown, hybridReferences, hybrid, hybridGate)
+                    : BuildOppositeHybridSumCurve(sideSum, hybrid.OffsetDb, hybridGate)?.Points;
 
             for (int index = 0; index < shown.Count; index++)
             {
@@ -1125,12 +1294,12 @@ public partial class VirtualCrossoverPanel
                 // twin is the same capture through no chain, on the same axis.
                 IReadOnlyList<SignalPoint>? hybridProcessed = null;
                 IReadOnlyList<SignalPoint>? hybridPreDsp = null;
-                if (hybrid != null && magnitudes != null && !hybrid.PointMeasuredChannels[index])
+                if (hybrid != null && hybridReferences != null && !hybrid.PointMeasuredChannels[index])
                 {
                     hybridProcessed = ShiftedBy(hybrid.Channels[index], hybrid.OffsetDb);
                     hybridPreDsp = BuildHybridPreDspCurve(
-                        shown[index].Channel, rightSide, magnitudes[index].Points,
-                        smoothing, hybrid.OffsetDb);
+                        shown[index].Channel, rightSide, hybridReferences[index].Points,
+                        AgentHybridSmoothingInverseOctaves, hybrid.OffsetDb);
                 }
 
                 curves[(shown[index].Channel, rightSide)] = (
@@ -1294,6 +1463,7 @@ public partial class VirtualCrossoverPanel
             project.SpatialAverageMode,
             checkBoxHybrid.Checked,
             HybridRequested,
+            AgentHybridSmoothingInverseOctaves,
             project.PhaseWindowMode,
             project.PhaseFdwCycles,
             project.PhaseDetrendMode,

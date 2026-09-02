@@ -232,6 +232,8 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal("MovingMic", status.GetProperty("mode").GetString());
         Assert.True(status.GetProperty("hybridTicked").GetBoolean());
         Assert.True(status.GetProperty("hybridDrawn").GetBoolean());
+        // The hybrid curves' own width, beside the package's psychoacoustic one.
+        Assert.Equal(12, status.GetProperty("smoothingInverseOctaves").GetInt32());
         Assert.Equal("partial", status.GetProperty("status").GetString());
         Assert.Equal(2, status.GetProperty("channelsShown").GetInt32());
         Assert.Equal(1, status.GetProperty("channelsWithCapture").GetInt32());
@@ -561,6 +563,7 @@ public sealed class AgentPackageBuilderTests
             new AgentAnalysisInputs(
                 VirtualCrossoverGroupView.FrontAndSub, false, 6, true,
                 VirtualCrossoverSpatialAverageMode.MovingMic, HybridTicked: true, HybridDrawn: true,
+                HybridSmoothingInverseOctaves: 12,
                 PhaseWindowMode.FrequencyDependent, 6, PhaseDetrendMode.Auto,
                 5, 100, 20, null, null, null, 8.66, "ECM8000_90deg.txt", 0.25, false, -1, 0),
             new AgentTargetInputs(-4, TargetPreset.Flat, TargetCurveSpec.FromPreset(TargetPreset.Flat), 3, null),

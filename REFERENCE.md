@@ -2824,7 +2824,11 @@ this: the clipboard is the only transport, and you are the one who pastes.
   smoothing whatever the panel's smoothing selector shows — a Sum loss read at
   1/48 octave and one read at 1/6 are different numbers, and packages have to
   compare across sessions and across users, so the panel's own read-out at
-  another smoothing may differ from the package's. Beyond that, what the
+  another smoothing may differ from the package's. The hybrid curves and their
+  sum are the exception to the exception: an average is read with the
+  smoothing off, as the [Hybrid](#hybrid-spatial-averages-under-the-prediction)
+  section says, and off cannot travel on the package's 12-point-per-octave
+  grid, so they go at 1/12 octave — one grid step. Beyond that, what the
   assistant reads is what you see. Curves are sampled on fixed grids
   rather than taken off the plot, so the package does not depend on the window's
   size or zoom. Before the JSON the text carries a short set of rules for the
@@ -2863,8 +2867,19 @@ this: the clipboard is the only transport, and you are the one who pastes.
   Filters, Gain min/max, Max Q, Cuts only, Shelves) for whatever the reply
   leaves out, keeps the bank's all-pass bands, lands the fit the way the wizard's
   **Return** lands it, and skips itself — with the reason — where the wizard
-  would have asked about the [target level](#eq-wizard). A change the assistant
-  reasoned about a value that has since moved is rejected as such; so is one
+  would have asked about the [target level](#eq-wizard). The package is
+  fingerprinted when it is copied — the blocks and their order, each side's
+  measurement and captures, every chain, the gates, the scene and the target —
+  and the reply is checked against the session as it stands: a reply answering
+  a package this session did not copy, or copied before something changed (a
+  measurement replaced by hand, a capture attached, a gate moved, the side or
+  the view switched, an import undone), is shown with a warning and its engine
+  requests are refused, since an engine reads the session as it is now, which
+  the assistant has not seen — as is an engine request in a reply that names
+  no package at all; the hand-written rows stand on their own expected current
+  values but come unticked, for you to tick what the change does not bear on. A change
+  the assistant reasoned about a value that has since moved is rejected as
+  such; so is one
   outside Virtual DSP's own limits (the channel block's gain and delay ranges and
   steps, the crossover families and slopes, the corner range and the processor's
   Nyquist, the PEQ band count, the Auto delay dialog's own fields), one that
@@ -2902,7 +2917,11 @@ this: the clipboard is the only transport, and you are the one who pastes.
 - **Undo AI import** puts back everything the last import could have moved, not
   only the channels its rows named: every channel's chain, the spatial average
   mode and the **Hybrid** tick, and the block order Auto crossover may have
-  changed. One step; it is gone once a session is loaded.
+  changed. One step; it is gone once a session is loaded. The fingerprint
+  check reads the undone session as what it is: a package copied before the
+  import describes it again, one copied after the import (the diagnostic pass
+  the guide asks for) no longer does, and a reply answering that one has its
+  engine requests refused until a new package is copied.
 
 The assistant's side of the protocol — what the package contains, what a reply
 may say, and the method the assistant is asked to follow (measurement

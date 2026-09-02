@@ -40,6 +40,13 @@ public partial class VirtualCrossoverPanel
     /// <summary>Records the package this session just copied, for the review's correlation warning.</summary>
     internal void RememberAgentPackage(string packageId) => lastAgentPackageId = packageId;
 
+    // The one place the package is forgotten. A package vouches for a project of
+    // one composition: these channels, in this order, with these measurements.
+    // Any change to that — a project loaded, a block added, removed or reordered,
+    // a source resolved or cleared — makes a reply's ids and current values
+    // describe a project this one no longer is, and the review then says so.
+    private void ForgetAgentPackage() => lastAgentPackageId = null;
+
     // The same two-state toggle the Target button's menu uses: a click while the
     // menu is open closes it; the menu is rebuilt per click so its enabled states
     // are current.

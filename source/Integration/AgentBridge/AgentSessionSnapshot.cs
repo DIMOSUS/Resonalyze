@@ -94,7 +94,11 @@ internal sealed record AgentSessionSnapshot(
     string? LastPackageId,
     AgentAutoDelaySettings AutoDelay,
     VirtualCrossoverSpatialAverageMode SpatialAverageMode,
-    bool HybridTicked)
+    bool HybridTicked,
+    // The side on screen: an Auto-tune handoff is built for it alone (its gate
+    // pin, its render anchor, its hybrid datum), so a request for the other
+    // side's channel is refused at review rather than skipped at execution.
+    bool ActiveSideRight = false)
 {
     public AgentChannelSnapshot? Find(string channelId) =>
         Channels.FirstOrDefault(channel =>

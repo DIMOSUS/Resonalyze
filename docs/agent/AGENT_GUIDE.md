@@ -147,7 +147,9 @@ Work in this order; each step gates the next.
    PEQ bank on the channels of that junction (the block's PEQ button, Clear —
    the block's Bypass would drop the crossover too and change the junction
    itself), copy a new package, read the junction again, then load the saved
-   session back.
+   session back. You can clear a bank yourself: a `replacePeqBank` with an
+   empty `bands` list and `preampDb: 0` is a valid operation, and *Undo AI
+   import* puts the bank back.
 5. **Crossover corners and slopes.** Judge the acoustic slopes on
    `processedDb`, not the electrical ones: the driver's own roll-off adds to
    the filter. Before proposing a corner, know the driver (model, size,

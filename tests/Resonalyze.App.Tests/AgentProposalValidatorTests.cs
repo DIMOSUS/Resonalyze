@@ -667,6 +667,42 @@ public sealed class AgentProposalValidatorTests
         Assert.Equal("Would be overwritten by Auto-tune (op-1).", review.Verdicts[1].Message);
     }
 
+    [Fact]
+    public void Review_RefusesAnAutoTuneForTheSideNotOnScreen()
+    {
+        // The fit is built on the handoff the PEQ menu would build, and that is
+        // the side on screen's: its gate pin, its anchor, its hybrid datum.
+        AgentProposal proposal = Proposal(
+            new AutoTunePeqOperation("op-1", "B:left", "", null, null, null, null, null, null),
+            new AutoTunePeqOperation("op-2", "A:right", "", null, null, null, null, null, null));
+
+        AgentProposalReview left = AgentProposalValidator.Review(proposal, Session());
+        Assert.True(left.Verdicts[0].Applicable);
+        Assert.Equal(AgentVerdictStatus.Rejected, left.Verdicts[1].Status);
+        Assert.Contains("side not on screen", left.Verdicts[1].Message);
+
+        AgentProposalReview right = AgentProposalValidator.Review(
+            proposal, Session() with { ActiveSideRight = true });
+        Assert.Equal(AgentVerdictStatus.Rejected, right.Verdicts[0].Status);
+        Assert.True(right.Verdicts[1].Applicable);
+    }
+
+    [Fact]
+    public void Review_TakesAnEmptyBank_AsTheWayToClearAChannelsPeq()
+    {
+        AgentSessionSnapshot session = Session();
+        AgentChannelSnapshot bLeft = session.Find("B:left")!;
+        string hash = AgentPeqHash.Compute(bLeft.Settings.PeqPreampDb, bLeft.Settings.PeqBands);
+        AgentProposal proposal = Proposal(
+            new ReplacePeqBankOperation("op-1", "B:left", "", hash, new AgentPeqBank(0, [])));
+
+        AgentOperationVerdict verdict = Assert.Single(
+            AgentProposalValidator.Review(proposal, session).Verdicts);
+
+        Assert.True(verdict.Applicable);
+        Assert.Equal("0 bands, preamp 0.0 dB", verdict.Proposed);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

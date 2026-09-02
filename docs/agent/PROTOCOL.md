@@ -400,11 +400,13 @@ otherwise, or whichever `source` names — with the wizard's opening values for
 what the reply leaves out (bells no narrower than Q 6, band gains −15…+6 dB,
 cuts only, no shelves, the channel's passband as the window); all-pass bands
 in the bank are kept and the fit tunes around them; a `targetLevelDb` moves the
-project's target level, as the wizard's Return does. It skips itself, with the
-reason, when the channel is on the side not on screen, when `spatialAverage`
-is asked for and the hybrid view is not drawing it, or when the target level
-sits 3 dB or more above the curve (10 dB or more below), which is the question
-the wizard would have asked. `runAutoCrossover` opens the wizard: its rows
+project's target level, as the wizard's Return does. A channel on the side not
+on screen is refused at review (the handoff is the shown side's: its gate pin,
+its anchor, its hybrid datum — switch the L/R selector, copy a new package and
+ask again). The run skips itself, with the reason, when `spatialAverage` is
+asked for and the hybrid view is not drawing it, or when the target level sits
+3 dB or more above the curve (10 dB or more below), which is the question the
+wizard would have asked. `runAutoCrossover` opens the wizard: its rows
 are where the driver types are confirmed, and cancelling it skips that
 operation while the rest of the import carries on.
 

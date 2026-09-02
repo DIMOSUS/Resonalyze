@@ -250,12 +250,16 @@ public partial class VirtualCrossoverPanel
         IReadOnlyList<AgentOperationVerdict> toApply, List<string> summary)
     {
         bool ran = false;
-        foreach (AgentOperation operation in toApply
+        // The verdicts, not the operations alone: a channel operation's target is
+        // the verdict's channel snapshot, held by its settings object, which is
+        // what still names the channel after the crossover wizard has reordered
+        // the blocks and re-lettered them.
+        foreach (AgentOperationVerdict verdict in toApply
             .Where(verdict => verdict.Applicable)
-            .Select(verdict => verdict.Operation!)
-            .Where(operation => operation is not AgentSettingsOperation)
-            .OrderBy(AgentEngineOrder))
+            .Where(verdict => verdict.Operation is not AgentSettingsOperation)
+            .OrderBy(verdict => AgentEngineOrder(verdict.Operation!)))
         {
+            AgentOperation operation = verdict.Operation!;
             switch (operation)
             {
                 case UseSpatialAverageOperation spatial:
@@ -279,7 +283,7 @@ public partial class VirtualCrossoverPanel
                     break;
 
                 case AutoTunePeqOperation tune:
-                    ran |= await RunAgentAutoTuneAsync(tune, summary);
+                    ran |= await RunAgentAutoTuneAsync(tune, verdict.Channel!, summary);
                     break;
 
                 // Every operation the protocol names is executed above; one this
@@ -391,8 +395,11 @@ public partial class VirtualCrossoverPanel
         }
         finally
         {
-            UseWaitCursor = false;
-            Enabled = wasEnabled;
+            if (!IsDisposed)
+            {
+                UseWaitCursor = false;
+                Enabled = wasEnabled;
+            }
         }
         if (IsDisposed)
         {
@@ -408,9 +415,19 @@ public partial class VirtualCrossoverPanel
         {
             summary.Add(launch.PolarityWarning);
         }
-        summary.Add(result.ReportText);
+        // The summary is a message box, which does not scroll: the report's head
+        // (the table is what the dialog showed first) and where the rest went.
+        string[] lines = result.ReportText.Split(
+            ["\r\n", "\n"], StringSplitOptions.None);
+        summary.Add(lines.Length <= AutoDelayReportLinesInSummary
+            ? result.ReportText
+            : string.Join(Environment.NewLine, lines.Take(AutoDelayReportLinesInSummary)) +
+                Environment.NewLine +
+                $"… {lines.Length - AutoDelayReportLinesInSummary} more lines in the alignment log.");
         return true;
     }
+
+    private const int AutoDelayReportLinesInSummary = 16;
 
     // Auto-tune without the wizard: the same handoff the PEQ menu would build
     // for the channel, the same curves and options the wizard would fit
@@ -420,24 +437,25 @@ public partial class VirtualCrossoverPanel
     // The review was the gate; the target-level check the wizard would have
     // asked about is a refusal here, with the phrase in the summary.
     private async Task<bool> RunAgentAutoTuneAsync(
-        AutoTunePeqOperation operation, List<string> summary)
+        AutoTunePeqOperation operation, AgentChannelSnapshot target, List<string> summary)
     {
         string label = $"Auto-tune {operation.ChannelId}";
+        // By the settings object the review judged, not by the id: the crossover
+        // wizard, run earlier in the same import, may have reordered the blocks,
+        // and the letter the reply used then names another channel.
         (VirtualCrossoverChannel Channel, bool RightSide)? slot = AgentChannelSlots()
-            .Where(item => string.Equals(
-                AgentChannelIds.Format(item.Block, item.Side), operation.ChannelId,
-                StringComparison.Ordinal))
+            .Where(item => ReferenceEquals(item.Channel.SideSettings(item.RightSide), target.Settings))
             .Select(item => ((VirtualCrossoverChannel, bool)?)(item.Channel, item.RightSide))
             .FirstOrDefault();
         if (slot is not { } found)
         {
-            summary.Add($"{label}: skipped (no such channel).");
+            summary.Add($"{label}: skipped (the channel is no longer in the project).");
             return false;
         }
 
         (VirtualCrossoverChannel channel, bool rightSide) = found;
-        // The handoff is built for the side on screen, as the PEQ menu builds it:
-        // the gate pin, the render anchor and the hybrid datum are that side's.
+        // The review refused the other side already; this guards a snapshot the
+        // side selector moved under.
         if (!channel.Pair.Mono && rightSide != channel.ActiveRight)
         {
             summary.Add(
@@ -485,6 +503,14 @@ public partial class VirtualCrossoverPanel
         EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
             request, spec, operation.MinHz, operation.MaxHz,
             operation.AllowShelves ?? false, cutsOnly);
+        // The wizard beeps at a source it cannot draw; the tuner must not be
+        // handed one.
+        if (inputs.Source.Count < 2)
+        {
+            summary.Add($"{label}: skipped (the measurement gives no usable curve).");
+            return false;
+        }
+
         string? levelWarning = EqTargetLevelCheck.Warning(
             EqTargetLevelCheck.TargetAboveSourceDb(
                 inputs.Source, inputs.Target, inputs.MinHz, inputs.MaxHz),
@@ -517,8 +543,11 @@ public partial class VirtualCrossoverPanel
         }
         finally
         {
-            UseWaitCursor = false;
-            Enabled = wasEnabled;
+            if (!IsDisposed)
+            {
+                UseWaitCursor = false;
+                Enabled = wasEnabled;
+            }
         }
         if (IsDisposed)
         {
@@ -755,7 +784,8 @@ public partial class VirtualCrossoverPanel
             lastAgentPackageId,
             AgentAutoDelayDefaults(),
             SpatialAverageMode,
-            checkBoxHybrid.Checked);
+            checkBoxHybrid.Checked,
+            project.ActiveSideRight);
 
     // Every physical channel in block order: a stereo block yields its left and
     // right slots, a mono block its single one (routed to the left slot, as the

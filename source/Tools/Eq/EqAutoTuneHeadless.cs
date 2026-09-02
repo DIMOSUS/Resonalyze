@@ -216,7 +216,10 @@ internal static class EqAutoTuneHeadless
         {
             double frequency = curve[index].X;
             double error = target[index].Y - curve[index].Y;
-            if (frequency < minHz || frequency > maxHz || !double.IsFinite(error))
+            // Paired by index on one grid; a point whose frequencies disagree is
+            // not a comparison.
+            if (frequency < minHz || frequency > maxHz || !double.IsFinite(error) ||
+                Math.Abs(frequency - target[index].X) > frequency * 1e-6)
             {
                 continue;
             }

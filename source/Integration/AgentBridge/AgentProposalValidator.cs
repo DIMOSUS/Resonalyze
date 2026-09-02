@@ -516,7 +516,7 @@ internal static class AgentProposalValidator
                         MaximumRearFillOffsetMs, RearFillOffsetStepMs, "The rear fill offset", "ms", 1);
 
             case AutoTunePeqOperation tune:
-                return CheckAutoTune(tune, channel!, session.ProcessorSampleRateHz / 2.0);
+                return CheckAutoTune(tune, channel!, session);
 
             case UseSpatialAverageOperation spatial:
                 return CheckSpatialAverage(spatial, session);
@@ -527,11 +527,20 @@ internal static class AgentProposalValidator
     }
 
     private static string? CheckAutoTune(
-        AutoTunePeqOperation tune, AgentChannelSnapshot channel, double nyquistHz)
+        AutoTunePeqOperation tune, AgentChannelSnapshot channel, AgentSessionSnapshot session)
     {
+        double nyquistHz = session.ProcessorSampleRateHz / 2.0;
         if (!channel.HasMeasurement)
         {
             return $"{channel.Label} has no measurement to fit a bank against.";
+        }
+        // The handoff a fit is built on is the side on screen's — its gate pin,
+        // its render anchor, its hybrid datum — as the PEQ menu builds it.
+        if (channel.Side != AgentChannelSide.Mono &&
+            (channel.Side == AgentChannelSide.Right) != session.ActiveSideRight)
+        {
+            return $"{channel.Label} is on the side not on screen: switch the L/R " +
+                "selector, copy a new package and import again.";
         }
         if (tune.Source != null &&
             tune.Source != PointSource && tune.Source != SpatialAverageSource)

@@ -187,6 +187,53 @@ public sealed class VirtualCrossoverMetricsTests
             [Processed("A", Impulse(), 5, 48_000)], lossCurve: null));
     }
 
+    [Fact]
+    public void JunctionSpectra_KeepEachCurveOnItsOwnWindowAndStillCarryTheDelay()
+    {
+        // The window placement and the cross-phase pull against each other: an
+        // unpinned gate puts each curve on its OWN arrival, which is what keeps
+        // a late channel inside the short high-frequency windows, and that is a
+        // different time reference per channel. A junction is read from the
+        // CROSS-phase of two of them, so unless every spectrum is rotated back
+        // to the record's origin the placement difference reads as a delay —
+        // and here it would cancel the very misalignment under test.
+        List<ProcessedChannel> ordered =
+        [
+            ProcessedThroughChain("A", CrossoverKind.LowPass, 200),
+            ProcessedThroughChain("B", CrossoverKind.HighPass, 200, delayMs: 2.0)
+        ];
+
+        // The placement really is per curve here — otherwise this test would
+        // pass on a bug, both curves sharing one window and nothing to rotate.
+        List<double> offsets = PhaseGatePlacement.ResolvePerCurveOffsets(
+            PlacementChannel.From(ordered),
+            PhaseGatePlacement.EarliestStartMs(
+                PlacementChannel.From(ordered), 48_000),
+            48_000,
+            pinnedOffsetMs: null,
+            leftMs: 0.5,
+            plateauMs: 4.0,
+            rightMs: 1.5);
+        // Well over one period of the 200 Hz junction (5 ms), so a spectrum left
+        // on its own placement could not read as this pair at all.
+        Assert.True(
+            offsets[1] - offsets[0] > 1.0,
+            $"the placements have to differ: {offsets[0]} and {offsets[1]} ms");
+
+        JunctionPhaseResult? result = JunctionPhaseAlignment.AnalyzeWindowedSpectra(
+            JunctionSpectra(ordered)[0],
+            JunctionSpectra(ordered)[1],
+            48_000,
+            crossoverHz: 200,
+            bandLowHz: 100,
+            bandHighHz: 400);
+
+        // B is 2 ms late, so the lower channel needs the same 2 ms — the whole
+        // of it, not the fraction a lost re-reference would leave.
+        Assert.NotNull(result);
+        Assert.InRange(result!.BestExtraDelayMs, 1.9, 2.1);
+    }
+
     // A channel processed through a real crossover chain, for the junction
     // phase read-out: the settings carry the crossover (so the junction and its
     // overlap band resolve) and the IR is the chain-applied impulse.
@@ -219,6 +266,18 @@ public sealed class VirtualCrossoverMetricsTests
             OxyColors.White);
     }
 
+    // The panel's own window, unpinned (each curve on its own arrival) with the
+    // project's default Tukey shoulders — the placement the read-out ships with.
+    private static IReadOnlyList<Complex[]> JunctionSpectra(
+        IReadOnlyList<ProcessedChannel> ordered) =>
+        JunctionPhaseSpectra.Build(
+            ordered,
+            ordered[0].SampleRate,
+            pinnedOffsetMs: null,
+            leftMs: 0.5,
+            plateauMs: 4.0,
+            rightMs: 1.5);
+
     [Fact]
     public void BuildPhaseEntries_IsEmptyForFewerThanTwoChannels()
     {
@@ -226,7 +285,8 @@ public sealed class VirtualCrossoverMetricsTests
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
 
         Assert.Empty(metrics.BuildPhaseEntries(
-            [ProcessedThroughChain("A", CrossoverKind.LowPass, 200)]));
+            [ProcessedThroughChain("A", CrossoverKind.LowPass, 200)],
+            JunctionSpectra));
     }
 
     [Fact]
@@ -237,12 +297,15 @@ public sealed class VirtualCrossoverMetricsTests
 
         // Passed upper-first on purpose: the entries must order by band, not by
         // argument order. The upper channel runs 2 ms late, so the read-out
-        // recommends the same extra delay on the lower one.
+        // recommends the same extra delay on the lower one — a misalignment the
+        // gated window has to recover through the panel's own placement, which
+        // is what makes this a test of the read-out and not of the dsp maths.
         List<VirtualCrossoverMetric.PhaseEntry> entries = metrics.BuildPhaseEntries(
         [
             ProcessedThroughChain("B", CrossoverKind.HighPass, 200, delayMs: 2.0),
             ProcessedThroughChain("A", CrossoverKind.LowPass, 200)
-        ]);
+        ],
+            JunctionSpectra);
 
         VirtualCrossoverMetric.PhaseEntry entry = Assert.Single(entries);
         Assert.Equal("A/B", entry.Junction);
@@ -251,7 +314,12 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.Equal(100, entry.LowHz);
         Assert.Equal(400, entry.HighHz);
         Assert.InRange(entry.Result.BestExtraDelayMs, 1.9, 2.1);
-        Assert.InRange(entry.Result.BestScore, 0.95, 1.0);
+        // Not ~1.00: the read goes through the panel's gate, and the project's
+        // default 0.5/4/1.5 ms window holds barely more than one period of a
+        // 200 Hz junction, so the band's own skirts cost it a few hundredths.
+        // The figure under test is the recovered delay above; this bound only
+        // asserts the band still reads as aligned.
+        Assert.InRange(entry.Result.BestScore, 0.90, 1.0);
     }
 
     [Fact]

@@ -159,7 +159,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         output.WriteLine($"Report written to {reportPath}");
     }
 
-    private static IEnumerable<string> ResolveSessions(string root)
+    internal static IEnumerable<string> ResolveSessions(string root)
     {
         string? configured = Environment.GetEnvironmentVariable(SessionsVariable);
         IEnumerable<string> names = string.IsNullOrWhiteSpace(configured)
@@ -447,7 +447,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     // source run through its chain (the session's, or the session's with the
     // proposal's delay and polarity on top) by the same snapshot the tool
     // processes through, so the head crop and the FFT are the tool's.
-    private static List<ProcessedChannel> Process(
+    internal static List<ProcessedChannel> Process(
         List<VirtualCrossoverChannel> participants,
         Func<VirtualCrossoverChannel, AlignmentOverride?> overrideFor)
     {
@@ -488,7 +488,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     // its own smoothing code) — never a default invented here. Calibration is
     // null: it belongs to the machine that measured, not to the session, and
     // it applies identically to both sides of the comparison anyway.
-    private static List<VirtualCrossoverMetric.Entry> Judge(
+    internal static List<VirtualCrossoverMetric.Entry> Judge(
         VirtualCrossoverProjectFile project,
         List<ProcessedChannel> processed)
     {
@@ -547,7 +547,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     // session: the stored path first, then the same measurement beside the
     // session file (VirtualCrossoverSourceLocator), which is what makes an
     // archived cabin load on a machine that never measured it.
-    private static List<VirtualCrossoverChannel> LoadChannels(
+    internal static List<VirtualCrossoverChannel> LoadChannels(
         VirtualCrossoverProjectFile project,
         out string fingerprint)
     {

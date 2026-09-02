@@ -453,11 +453,22 @@ internal static class VirtualCrossoverMetric
             // rather than a number nobody should act on. The POLARITY mark
             // still renders beside it — an inversion is not a matter of
             // magnitude, and it stays actionable when the delay does not.
+            //
+            // Both go dark on a junction the sweep cannot align at all: when
+            // even the best delay leaves the band out of phase
+            // (MinimumAlignableScore), the optimum is the least bad of a set of
+            // bad alignments, and printing it invites a change that measurably
+            // makes the sum worse. Dashed like an unreliable φ, and for the
+            // same reason — a figure the measurement does not support.
+            bool alignable =
+                result.BestScore >= JunctionPhaseAlignment.MinimumAlignableScore;
             double significantMs =
                 SignificantFixDegrees / 360.0 * 1_000.0 / entry.CrossoverHz;
-            string fix = Math.Abs(result.BestExtraDelayMs) >= significantMs
-                ? $"{FixText(result.BestExtraDelayMs),6}"
-                : "     ·";
+            string fix = !alignable
+                ? "     —"
+                : Math.Abs(result.BestExtraDelayMs) >= significantMs
+                    ? $"{FixText(result.BestExtraDelayMs),6}"
+                    : "     ·";
             // Polarity slot: "i" recommends flipping the lower channel; "~"
             // keeps the current polarity but flags that flipping nearly ties
             // (an inversion and a half-period delay sum alike here — common at
@@ -465,7 +476,8 @@ internal static class VirtualCrossoverMetric
             // summation; a space means the current polarity is clearly right.
             // This is distinct from the period-hop "!" on the lobe column.
             string polarity =
-                result.BestInvert ? "i"
+                !alignable ? " "
+                : result.BestInvert ? "i"
                 : result.BestScore - result.OppositePolarityScore
                     < JunctionPhaseAlignment.PolarityFlipAdvantage ? "~"
                 : " ";
@@ -475,7 +487,10 @@ internal static class VirtualCrossoverMetric
             // because a negative score that rounds to zero would otherwise
             // render "-0.00" as "-+0.00" (see the fix column).
             string score = $"{result.CurrentScore,5:0.00;-0.00;0.00}";
+            // The period-hop warning is about the fix: with no fix offered it
+            // would be warning about a number that is not on the row.
             string warning =
+                alignable &&
                 result.LobeMargin is { } margin && margin < AmbiguousLobeMargin
                     ? " !"
                     : string.Empty;
@@ -497,7 +512,7 @@ internal static class VirtualCrossoverMetric
             return string.Empty;
         }
 
-        return "Junction phase (steady state — what sustained bass sums to)\r\n" +
+        return "Junction phase (through the phase gate, 8-cycle window)\r\n" +
             string.Join("\r\n", entries.Select(entry =>
             {
                 JunctionPhaseResult result = entry.Result;
@@ -515,12 +530,22 @@ internal static class VirtualCrossoverMetric
                 string flip = result.BestInvert
                     ? $", invert {entry.LowerChannel}"
                     : $" (flip scores {result.OppositePolarityScore:0.00})";
+                // The same gate the column applies, spelled out: the sweep's
+                // best is still reported, because it is the evidence for the
+                // verdict, but it is named as a ceiling rather than offered as
+                // a delay to apply.
+                string advice =
+                    result.BestScore >= JunctionPhaseAlignment.MinimumAlignableScore
+                        ? $"best {result.BestScore:0.00} at " +
+                            $"{FixText(result.BestExtraDelayMs)} ms " +
+                            $"on {entry.LowerChannel}{flip}"
+                        : $"no delay aligns this band (ceiling " +
+                            $"{result.BestScore:0.00}) — the two paths do not " +
+                            "correlate here, so no fix is offered";
                 return $"{entry.Junction} @ {FrequencyText.Format(entry.CrossoverHz)}: " +
                     $"{phaseNote}; " +
                     $"phase score {result.CurrentScore:0.00} now, " +
-                    $"best {result.BestScore:0.00} at " +
-                    $"{FixText(result.BestExtraDelayMs)} ms " +
-                    $"on {entry.LowerChannel}{flip};\r\n   {rival}; " +
+                    $"{advice};\r\n   {rival}; " +
                     $"fit Δτ {result.FitDelayMs:+0.00;-0.00;0.00} ms, " +
                     $"rms {result.FitRmsDeg:0}° " +
                     $"({FrequencyText.Format(entry.LowHz)} – " +
@@ -535,7 +560,10 @@ internal static class VirtualCrossoverMetric
             "negative fix advances the lower channel — apply\r\nit as a +delay " +
             "on the UPPER one when the lower is already at 0. A fix worth less " +
             "than\r\n10° of phase at fc (0.03 dB in the sum) shows as \"·\": " +
-            "there is nothing to apply.\r\nPolarity mark: " +
+            "there is nothing to apply.\r\nA fix shows as \"—\" where even " +
+            "the best delay leaves the band out of phase: the two paths do\r\n" +
+            "not correlate over it, and moving one of them cannot help.\r\n" +
+            "Polarity mark: " +
             "\"i\" (or \"invert\") = flipping the lower channel scores " +
             "clearly better; \"~\" = the\r\ncurrent polarity is kept but a flip " +
             "nearly ties (an inversion and a half-period\r\ndelay sum alike, " +

@@ -160,9 +160,10 @@ Work in this order; each step gates the next.
      milliseconds inside it, the mismatch is excess — the cure is timing,
      polarity, an all-pass band, a different crossover slope or type, or the
      reflection itself (aiming, treatment), not the PEQ.
-   - A PEQ is the suspect only where its band corrects something the
-     driver's own curves do not show — a feature absent from
-     `hybridPreDspDb`, or present at one point and gone in the average.
+   - A PEQ is the suspect only where its band corrects something that is
+     not minimum-phase — a feature absent from `hybridPreDspDb`, present at
+     one point and gone in the average, or one the average keeps but whose
+     excess group delay swings across it (a stable reflection or a mode).
    When in doubt, advise a diagnostic pass and read it BOTH ways: clear the
    PEQ bank on the channels of that junction (a `replacePeqBank` with an
    empty `bands` list and `preampDb: 0` is a valid operation; the block's
@@ -215,16 +216,21 @@ Work in this order; each step gates the next.
    level the amplifier gain has to give back, with its noise.
    Near a junction — inside `junctions[].bandHz`, an octave to each side of
    the crossover — a bell's phase turn lands right where the pair's sum is
-   built, so ask what the band corrects. A feature of the driver itself,
-   showing alike on `preDspDb` and on `hybridPreDspDb` (both BEFORE the
-   chain, so the current PEQ cannot have made or hidden it), is minimum-phase
-   and a bell that flattens it also straightens the phase: narrow is fine
-   there, and taking such a band out makes the junction worse. A dip that
-   the average does not show, or that moves between the point and the
-   average, is interference — position-bound, not minimum-phase — and a bell
-   on it turns the phase for nothing: keep Q ≤ 2 there, or leave it. The
-   review warns on any bell narrower than Q 2 in the zone so the user looks;
-   say in the reason which case it is.
+   built, so ask what the band corrects. Two magnitude curves agreeing is
+   not proof of minimum phase — a stable reflection, a cabin mode or a
+   two-path cancellation survives the averaging and still carries excess
+   phase — so the evidence is the excess group delay (§4, the diagnostic on
+   request). A feature of the driver itself shows alike on `preDspDb` and on
+   `hybridPreDspDb` (both BEFORE the chain, so the current PEQ cannot have
+   made or hidden it) AND has a flat excess group delay across it: it is
+   minimum-phase, a bell that flattens it also straightens the phase, narrow
+   is fine there, and taking such a band out makes the junction worse. A
+   dip the average does not show, one that moves between the point and the
+   average, or one whose excess group delay swings across it, is not
+   minimum-phase — interference, a mode, a reflection — and a bell on it
+   turns the phase for nothing: keep Q ≤ 2 there, or leave it. The review
+   warns on any bell narrower than Q 2 in the zone so the user looks; say in
+   the reason which case it is, and on what evidence.
 
 ## 4. What the read-outs mean
 

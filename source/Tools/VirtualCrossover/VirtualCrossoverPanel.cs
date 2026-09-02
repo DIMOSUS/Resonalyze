@@ -1614,6 +1614,9 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (wasMono != monoNow)
         {
+            // A:left and A:right become A:mono, or the other way round: the ids a
+            // copied package used no longer name these channels.
+            ForgetAgentPackage();
             if (monoNow)
             {
                 // The right slot becomes unreachable behind the mono routing;

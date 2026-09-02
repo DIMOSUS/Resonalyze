@@ -69,6 +69,44 @@ internal static class AgentProposalValidator
     // Below this a net rise is bilinear warping and rounding, not a boost.
     private const double HeadroomToleranceDb = 0.05;
 
+    /// <summary>
+    /// The widest bell the review lets pass without comment inside a junction
+    /// zone — an octave to each side of one of the channel's own active corners,
+    /// the same span the panel's junction band covers. A narrower bell turns the
+    /// channel's phase by tens of degrees right where the pair's sum is built on
+    /// it, and the dip it aims at is, that close to a crossover, more often the
+    /// pair's interference than the driver's own.
+    /// </summary>
+    public const double JunctionQLimit = 2;
+
+    // The corner whose junction zone a too-narrow bell sits in, or null. Only
+    // bells: shelves are wide by nature, and an all-pass at a junction is there
+    // for the phase on purpose.
+    private static double? JunctionCornerNear(VirtualCrossoverChannelSettings settings, PeqBand band)
+    {
+        if (band.Type != PeqBandType.Peaking || band.Q <= JunctionQLimit)
+        {
+            return null;
+        }
+
+        bool usesHigh = settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass;
+        bool usesLow = settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass;
+        foreach (double cornerHz in new[]
+        {
+            usesHigh ? settings.HighPassEdge.FrequencyHz : double.NaN,
+            usesLow ? settings.LowPassEdge.FrequencyHz : double.NaN
+        })
+        {
+            if (double.IsFinite(cornerHz) &&
+                band.FrequencyHz >= cornerHz / 2 && band.FrequencyHz <= cornerHz * 2)
+            {
+                return cornerHz;
+            }
+        }
+
+        return null;
+    }
+
     public static AgentProposalReview Review(AgentProposal proposal, AgentSessionSnapshot session)
     {
         ArgumentNullException.ThrowIfNull(proposal);
@@ -299,6 +337,17 @@ internal static class AgentProposalValidator
                         $"The bank's net response rises to +{Db(peakDb)} at " +
                         $"{Hz(AgentCurveSampling.Frequency(peakHz))}: " +
                         $"trim the boost, or lower the preamp by {Db(peakDb)}.");
+                }
+                foreach (PeqBand band in bands)
+                {
+                    if (JunctionCornerNear(copy, band) is { } cornerHz)
+                    {
+                        notes.Add(
+                            $"Band at {Hz(band.FrequencyHz)} (Q {band.Q.ToString("0.#", CultureInfo.InvariantCulture)}) " +
+                            $"sits in the junction zone around the {Hz(cornerHz)} crossover; keep Q at or " +
+                            $"below {JunctionQLimit.ToString("0.#", CultureInfo.InvariantCulture)} there unless the " +
+                            "same feature shows on the driver's own curve and the spatial average.");
+                    }
                 }
                 notes.Add(DeviceLimitsUnknown);
                 break;

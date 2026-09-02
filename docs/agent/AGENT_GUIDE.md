@@ -115,6 +115,12 @@ Work in this order; each step gates the next.
    0 dB, say so and fix it: trim the boost first (a boost that needed compensating
    usually had a weak reason), or lower the preamp by the peak — which costs
    level the amplifier gain has to give back, with its noise.
+   Keep bells wide near a junction: inside `junctions[].bandHz` (an octave to
+   each side of the crossover) use Q ≤ 2. A narrow bell turns the channel's
+   phase by tens of degrees right where the pair's sum is built on it, and a
+   dip that close to a crossover is more often the pair's interference than
+   the driver's own. Go narrower there only when the same feature shows on the
+   driver's `preDspDb` and on its `hybridDb`.
 
 ## 4. What the read-outs mean
 

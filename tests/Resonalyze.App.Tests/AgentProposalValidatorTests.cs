@@ -292,6 +292,39 @@ public sealed class AgentProposalValidatorTests
     }
 
     [Fact]
+    public void Review_WarnsOnANarrowBellInsideTheChannelsOwnJunctionZone()
+    {
+        // B left is band-passed 250 Hz .. 2800 Hz, so its junction zones run
+        // 125..500 Hz and 1400..5600 Hz.
+        AgentSessionSnapshot session = Session();
+        AgentChannelSnapshot bLeft = session.Find("B:left")!;
+        string hash = AgentPeqHash.Compute(bLeft.Settings.PeqPreampDb, bLeft.Settings.PeqBands);
+        string Judge(params AgentPeqBand[] bands) => AgentProposalValidator.Review(
+            Proposal(new ReplacePeqBankOperation("op-1", "B:left", "", hash, new AgentPeqBank(0, bands))), session)
+            .Verdicts[0].Message;
+
+        string narrow = Judge(new AgentPeqBand("Peaking", 300, 4, -3));
+        Assert.Contains("Band at 300 Hz (Q 4)", narrow);
+        Assert.Contains("around the 250 Hz crossover", narrow);
+        Assert.Contains("keep Q at or below 2", narrow);
+        Assert.Contains("around the 2800 Hz crossover", Judge(new AgentPeqBand("Peaking", 2_000, 2.5, -3)));
+
+        // Wide enough, outside both zones, a shelf, or an all-pass: no comment.
+        Assert.DoesNotContain("junction zone", Judge(new AgentPeqBand("Peaking", 300, 1.5, -3)));
+        Assert.DoesNotContain("junction zone", Judge(new AgentPeqBand("Peaking", 1_000, 4, -3)));
+        Assert.DoesNotContain("junction zone", Judge(new AgentPeqBand("LowShelf", 300, 4, -3)));
+        Assert.DoesNotContain("junction zone", Judge(new AgentPeqBand("AllPassSecondOrder", 2_400, 4, 0)));
+
+        // A channel with no crossover has no junction zone of its own to warn about.
+        string aRightHash = AgentPeqHash.Compute(0, []);
+        string open = AgentProposalValidator.Review(
+            Proposal(new ReplacePeqBankOperation("op-1", "A:right", "", aRightHash,
+                new AgentPeqBank(0, [new AgentPeqBand("Peaking", 300, 6, -3)]))), session)
+            .Verdicts[0].Message;
+        Assert.DoesNotContain("junction zone", open);
+    }
+
+    [Fact]
     public void PeqHeadroom_ReadsTheNetPeakAtTheProcessorsRate()
     {
         (double peakDb, double peakHz) = AgentPeqHeadroom.Peak(-1, [new PeqBand(820, 2.1, 4)], 96_000);

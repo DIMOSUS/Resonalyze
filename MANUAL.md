@@ -1533,6 +1533,21 @@ The sofa part of the tuning is now finished. The only thing left is to return to
 car, enter the settings into the processor, and verify that the real system behaves like
 the prediction.
 
+### Optional: a second opinion from a chat assistant
+
+Before the drive back to the car is a good moment for one. Press
+**AI assistant... → Copy for AI**, paste the clipboard into whichever assistant you
+use, and answer its questions about the drivers and the car (the **Notes for AI**
+field in the **DSP processor...** dialog saves you retyping them next time). It
+reads the same read-outs you have been reading — sum loss, junction phase, the
+delay lobes, the L/R deltas — and should send you back to **Auto delay** or **Auto
+crossover** with settings rather than to a list of numbers; where it does propose a
+number, **Import AI proposal…** shows every change against the current value and
+applies only what you tick, with **Undo AI import** one click away. What it cannot
+do is hear the car or know your drivers unless you tell it; treat its advice as a
+colleague's, not as a measurement. [REFERENCE.md](REFERENCE.md#ai-assistant-bridge)
+describes the bridge in full.
+
 ### Hear it before you go back to the car
 
 Virtual DSP can play an arbitrary track through the tune you have just built. Press

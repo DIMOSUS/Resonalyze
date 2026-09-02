@@ -60,6 +60,7 @@ namespace Resonalyze
             labelSmoothing = new Label();
             comboBoxSmoothing = new DarkComboBox();
             buttonAutoDelay = new ReleaseClickButton();
+            buttonAi = new ReleaseClickButton();
             buttonAutoSetup = new ReleaseClickButton();
             buttonDspProcessor = new ReleaseClickButton();
             buttonCaptureOverlay = new ReleaseClickButton();
@@ -416,9 +417,21 @@ namespace Resonalyze
             buttonAutoDelay.TabIndex = 12;
             buttonAutoDelay.Text = "Auto delay...";
             buttonAutoDelay.UseVisualStyleBackColor = false;
-            // 
+            //
+            // buttonAi
+            //
+            buttonAi.BackColor = Color.FromArgb(46, 51, 67);
+            buttonAi.FlatStyle = FlatStyle.Popup;
+            buttonAi.ForeColor = Color.White;
+            buttonAi.Location = new Point(359, 560);
+            buttonAi.Name = "buttonAi";
+            buttonAi.Size = new Size(125, 24);
+            buttonAi.TabIndex = 22;
+            buttonAi.Text = "AI assistant...";
+            buttonAi.UseVisualStyleBackColor = false;
+            //
             // buttonAutoSetup
-            // 
+            //
             buttonAutoSetup.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoSetup.FlatStyle = FlatStyle.Popup;
             buttonAutoSetup.ForeColor = Color.White;
@@ -666,6 +679,7 @@ namespace Resonalyze
             Controls.Add(labelSmoothing);
             Controls.Add(comboBoxSmoothing);
             Controls.Add(buttonAutoDelay);
+            Controls.Add(buttonAi);
             Controls.Add(buttonAutoSetup);
             Controls.Add(buttonDspProcessor);
             Controls.Add(buttonCaptureOverlay);
@@ -728,6 +742,7 @@ namespace Resonalyze
         private Label labelSmoothing;
         private DarkComboBox comboBoxSmoothing;
         private ReleaseClickButton buttonAutoDelay;
+        private ReleaseClickButton buttonAi;
         private ReleaseClickButton buttonAutoSetup;
         private ReleaseClickButton buttonDspProcessor;
         private ReleaseClickButton buttonCaptureOverlay;

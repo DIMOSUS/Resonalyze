@@ -206,8 +206,10 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   virtual chains: gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel /
   Chebyshev crossovers and PEQ (all-pass bands included), with the complex sum,
   sum loss, phase tracking, junction read-outs, Δ L−R timing, **Auto crossover**,
-  a stereo-aware **Auto delay**, a headphone audition, sessions and tuning-sheet
-  export
+  a stereo-aware **Auto delay**, a headphone audition, sessions, tuning-sheet
+  export, and an **AI assistant bridge** that hands the whole diagnosis to any
+  chat assistant through the clipboard and reviews its proposal before a single
+  value is applied
 - **Live Spectrum** — a real-time loopback transfer function with coherence, or a
   reference-free RTA in relative dB or dB SPL, with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white, or Silent for the ambient

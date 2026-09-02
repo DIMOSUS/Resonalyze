@@ -77,6 +77,60 @@ public sealed class DspProcessorDialogTests
         });
     }
 
+    [Fact]
+    public void Notes_RoundTripThroughTheField_AndEmptyReadsAsNone()
+    {
+        StaTest.Run(() =>
+        {
+            // The project stores "no notes" as null, so the dialog has to answer the
+            // same for a field the user cleared or filled with whitespace — otherwise
+            // every OK would count as an edit and schedule a save.
+            using Form dialog = Open(followsMeasurements: true);
+            Assert.Null(Notes(dialog));
+
+            SetNotes(dialog, "2019 Passat B8, LHD.\r\nTweeters in the A-pillars.");
+            Assert.Equal("2019 Passat B8, LHD.\r\nTweeters in the A-pillars.", Notes(dialog));
+
+            NotesBox(dialog).Text = "   \r\n";
+            Assert.Null(Notes(dialog));
+
+            SetNotes(dialog, null);
+            Assert.Equal(string.Empty, NotesBox(dialog).Text);
+        });
+    }
+
+    [Fact]
+    public void Notes_FieldIsBoundedAndLaidOutInsideTheDialog()
+    {
+        StaTest.Run(() =>
+        {
+            // The limit is enforced by the field itself, so OK never has to refuse;
+            // and the field is the tallest thing on the form, so it is the one that
+            // would push the buttons off the bottom if the designer numbers slipped.
+            using Form dialog = Open(followsMeasurements: true);
+            TextBox notes = NotesBox(dialog);
+            Assert.True(notes.Multiline);
+            Assert.Equal(8_000, notes.MaxLength);
+
+            Button ok = dialog.Controls.OfType<Button>().Single(button => button.Text == "OK");
+            Assert.True(notes.Top > 0);
+            Assert.True(ok.Top >= notes.Bottom);
+            Assert.True(ok.Bottom <= dialog.ClientSize.Height);
+        });
+    }
+
+    private static string? Notes(Form dialog) => (string?)Property(dialog, "Notes");
+
+    private static void SetNotes(Form dialog, string? value) =>
+        dialog.GetType()
+            .GetProperty("Notes", BindingFlags.Instance | BindingFlags.Public)!
+            .SetValue(dialog, value);
+
+    private static TextBox NotesBox(Form dialog) =>
+        (TextBox)dialog.GetType()
+            .GetField("textBoxNotes", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(dialog)!;
+
     private static Form Open(
         bool followsMeasurements,
         int measurementRateHz = MeasurementRate)

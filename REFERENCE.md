@@ -51,6 +51,7 @@ read-out refuses rather than guesses, what a number was measured against.
   - [Auto crossover](#auto-crossover)
   - [Auto delay](#auto-delay)
   - [Panel commands](#panel-commands)
+  - [AI assistant bridge](#ai-assistant-bridge)
 - [Calibration](#calibration)
 - [Sound Pressure Level (dB SPL)](#sound-pressure-level-db-spl)
 
@@ -2423,6 +2424,16 @@ own two selectors show them locked for as long as that source is loaded, and a
 bank fitted for one processor is refused on the way back if the project has moved
 to another — the same guard the calibration and the chain already have.
 
+The same dialog holds **Notes for AI**: a free-text description of the
+installation for a chat assistant — the car and the seat, which driver model sits
+where, amplifier power, the processor, and what you want from the tune. Nothing
+here is measured, so nothing here changes the simulation; the notes are simply
+stored with the project (they travel in a saved session) and go out with every
+package the [AI assistant bridge](#ai-assistant-bridge) copies, so the story of
+the car is written once rather than retyped per chat. The field holds up to
+8 000 characters. Leave it empty and the session file is written exactly as it
+was before the field existed.
+
 ### Auto crossover
 
 **Auto crossover...** estimates each channel's usable band and driver type
@@ -2771,6 +2782,71 @@ The tool's autosaved state persists in `tools/virtual-crossover.json` and
 survives restarts. Accuracy holds within the usual physics: one microphone
 position, the same playback chain for every measurement, and the linear
 (non-clipping) regime.
+
+### AI assistant bridge
+
+**AI assistant...** drops a menu of three commands that let a chat assistant of
+your choice — ChatGPT, Claude, Gemini, anything that reads pasted text — look at
+the tune and propose changes. Resonalyze makes no network request in any of
+this: the clipboard is the only transport, and you are the one who pastes.
+
+- **Copy for AI** gathers the current Virtual DSP state into one text and puts it
+  on the clipboard: every channel's chain (gain, delay, polarity, both crossover
+  edges, the PEQ bank), the processor and its limits, the target, the analysis
+  settings that decide what the numbers mean, your
+  [Notes for AI](#dsp-processor), and the diagnostics the panel itself shows —
+  each channel's Raw and Processed curves at 12 points per octave, the side sums,
+  the [Sum loss](#the-panel-gates-plots-and-read-outs) and Junction phase rows,
+  the delay-search lobes and the PHAT read of every junction, the coherence
+  ladder, and the Δ L−R and group blocks. The numbers are the screen's numbers:
+  the package is built from the same computations, for the same **Show** view,
+  so what the assistant reads is what you see. Curves are sampled on fixed grids
+  rather than taken off the plot, so the package does not depend on the window's
+  size or zoom. Before the JSON the text carries a short set of rules for the
+  assistant and a link to the full guide, since many assistants cannot fetch a
+  page. A large installation is trimmed to a size a chat can take — optional
+  series go first, in a fixed order, and the package lists what it left out. The
+  package never contains file paths, the user name, history ids or raw impulse
+  responses.
+- **Import AI proposal…** reads the assistant's reply back off the clipboard —
+  copy the whole reply, not just the JSON — and opens a review. The reply may
+  address only five things, each on one channel: gain, delay, polarity, the
+  crossover, and the whole PEQ bank; nothing else in a session can be reached
+  from a reply, and an unknown request is listed as rejected. Every proposed
+  change is shown against the value the channel holds *now*, with the reason the
+  assistant gave. A change the assistant reasoned about a value that has since
+  moved is rejected as such; so is one outside Virtual DSP's own limits (the
+  channel block's gain and delay ranges and steps, the crossover families and
+  slopes, the corner range and the processor's Nyquist, the PEQ band count), one
+  that changes nothing, and two that contradict each other. Admissible rows start
+  ticked; rejected rows cannot be ticked; a warning — a delay above the
+  processor's stated ceiling, a PEQ bank whose net response (preamp and every
+  band together) rises above 0 dB somewhere and would clip a full-scale signal
+  there, a bell narrower than Q 2 within an octave of one of the channel's own
+  crossover corners (where it turns the phase the pair's sum is built on), a
+  PEQ bank or crossover the device's own limits were not checked against because
+  the catalog does not know them — is a word in the Status column, not only a
+  colour. **Apply selected** looks at the ticked
+  rows once more against the live settings — and at what the ticked subset
+  leaves behind, since the review judged the rows together and unticking one
+  can leave a state it never showed, which then asks before applying — writes
+  them as one set, saves once and redraws once; a failure anywhere writes
+  nothing. Validity is not quality: a
+  proposal that passes every check can still be a worse tune, so listen before you
+  trust it, and re-run **Auto delay** after a polarity or crossover change as the
+  guide tells the assistant to advise.
+- **Undo AI import** puts every channel the last import touched back exactly as
+  it was. One step; it is gone once a session is loaded.
+
+The assistant's side of the protocol — what the package contains, what a reply
+may say, and the method the assistant is asked to follow (measurement
+reliability first, engines before hand-written numbers, no EQ on a cancellation,
+ask about the drivers before touching a crossover) — is documented in
+[docs/agent/PROTOCOL.md](docs/agent/PROTOCOL.md) and
+[docs/agent/AGENT_GUIDE.md](docs/agent/AGENT_GUIDE.md). The guide can improve
+without a new build; the protocol is versioned, and a reply for another version
+is not found rather than misread. Nothing an assistant proposes is a guarantee of
+driver safety: it has only what you told it and what it looked up.
 
 ## Calibration
 

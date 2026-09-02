@@ -777,6 +777,38 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void SaveToAndLoadFrom_CarryTheNotesForAi_AndWriteNothingWhenThereAreNone()
+    {
+        // The notes are additive: a session without them must serialize exactly as
+        // before the field existed (no key at all, so an older build resaves it
+        // untouched), and one with them must bring them back verbatim, line breaks
+        // included — they are the user's own words about the car.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = Path.Combine(root, "session.json");
+            var original = new VirtualCrossoverProjectFile();
+            original.SaveTo(path);
+            Assert.DoesNotContain("aiNotes", File.ReadAllText(path));
+            Assert.Null(VirtualCrossoverProjectFile.LoadFrom(path).AiNotes);
+
+            original.AiNotes = "   ";
+            Assert.Null(original.AiNotes);
+
+            const string notes = "2019 Passat B8, LHD.\r\nMids: Audiofrog GB60 in the doors.";
+            original.AiNotes = notes;
+            original.SaveTo(path);
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
+            Assert.Equal(notes, loaded.AiNotes);
+            Assert.Equal(VirtualCrossoverProjectFile.CurrentVersion, loaded.Version);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveToAndLoadFrom_CarryTheProcessorTheProjectIsDesignedFor()
     {
         // The processor decides the rate every simulated filter is BUILT at, so it is

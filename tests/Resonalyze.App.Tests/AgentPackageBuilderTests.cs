@@ -220,57 +220,75 @@ public sealed class AgentPackageBuilderTests
     [Fact]
     public void Build_SaysWhereTheTuneStandsWithSpatialAverages()
     {
-        // The fixture: A:left measured with no capture, B:mono holds a
-        // moving-microphone capture, the hybrid box is ticked but the view is not
-        // drawing it. Captured, not shown.
+        // The fixture: the left view shows A:left (measured, no capture) and
+        // B:mono (a moving-microphone capture, hybrid curves in the package). One
+        // of two shown channels drawn from its average: partial.
         AgentPackageInputs inputs = Inputs();
         JsonElement status = Json(AgentPackageBuilder.Build(inputs, Id, Clock).Text!)
             .GetProperty("analysis").GetProperty("spatialAverage");
         Assert.Equal("MovingMic", status.GetProperty("mode").GetString());
         Assert.True(status.GetProperty("hybridTicked").GetBoolean());
-        Assert.False(status.GetProperty("hybridDrawn").GetBoolean());
-        Assert.Equal("capturedNotShown", status.GetProperty("status").GetString());
-        Assert.Equal(2, status.GetProperty("channelsMeasured").GetInt32());
+        Assert.True(status.GetProperty("hybridDrawn").GetBoolean());
+        Assert.Equal("partial", status.GetProperty("status").GetString());
+        Assert.Equal(2, status.GetProperty("channelsShown").GetInt32());
         Assert.Equal(1, status.GetProperty("channelsWithCapture").GetInt32());
-        Assert.Equal(0, status.GetProperty("channelsDrawn").GetInt32());
+        Assert.Equal(1, status.GetProperty("channelsDrawn").GetInt32());
 
         // Each channel lists what it holds, and only when it holds something.
         JsonElement channels = Json(AgentPackageBuilder.Build(inputs, Id, Clock).Text!).GetProperty("channels");
         Assert.False(channels[0].GetProperty("source").TryGetProperty("spatialAverageCaptures", out _));
         Assert.Equal(["MovingMic"], channels[2].GetProperty("source").GetProperty("spatialAverageCaptures").EnumerateArray().Select(c => c.GetString()));
 
-        // Drawn: the capture the mode reads, under a view that shows it — for one
-        // of the two measured channels.
-        AgentPackageInputs drawn = inputs with { Analysis = inputs.Analysis with { HybridDrawn = true } };
-        Assert.Equal("partial", Status(drawn));
-
-        // Every measured channel drawn from its average.
-        AgentPackageInputs everywhere = drawn with
+        // Every shown channel drawn from its average.
+        AgentPackageInputs everywhere = inputs with
         {
-            Channels = drawn.Channels
+            Channels = inputs.Channels
                 .Select(channel => channel.Source == null
                     ? channel
-                    : channel with { Source = channel.Source with { SpatialAverage = "MovingMic", SpatialAverageCaptures = ["MovingMic", "MicArray"] } })
+                    : channel with { Source = channel.Source with { SpatialAverage = "MovingMic", SpatialAverageCaptures = ["MovingMic", "MicArray"], HybridPreDsp = Ramp(-2), HybridProcessed = Ramp(-4) } })
                 .ToList()
         };
         Assert.Equal("active", Status(everywhere));
 
-        // A capture the selected mode does not read is captured, not shown —
-        // whatever the box says.
-        AgentPackageInputs wrongMode = everywhere with
+        // "Drawn" is the hybrid curves actually in the package, not the
+        // attachment: captures the view did not turn into curves — the box off,
+        // the mode reading another family, a group view — are captured, not shown.
+        AgentPackageInputs notDrawn = everywhere with
         {
+            Analysis = everywhere.Analysis with { HybridDrawn = false },
             Channels = everywhere.Channels
                 .Select(channel => channel.Source == null
                     ? channel
-                    : channel with { Source = channel.Source with { SpatialAverage = null } })
+                    : channel with { Source = channel.Source with { HybridPreDsp = null, HybridProcessed = null } })
                 .ToList()
         };
-        Assert.Equal("capturedNotShown", Status(wrongMode));
+        Assert.Equal("capturedNotShown", Status(notDrawn));
+
+        // A channel the view leaves out has curves of its own but no hybrid ones,
+        // whatever it holds; a muted one has no curves at all. Neither is counted:
+        // the status describes the channels the diagnostics are built from.
+        AgentPackageInputs outsideTheView = everywhere with
+        {
+            Channels =
+            [
+                .. everywhere.Channels,
+                new AgentChannelInputs("E", AgentChannelSide.Left, VirtualCrossoverZone.Rear,
+                    "rear left.json", true, false, new VirtualCrossoverChannelSettings(), 96_000,
+                    new AgentSourceInputs(48_000, new MeasuredBand(60, 20_000), "MovingMic", ["MovingMic"], Ramp(0), Ramp(-1), null, null, null, null)),
+                new AgentChannelInputs("F", AgentChannelSide.Left, VirtualCrossoverZone.Front,
+                    "muted.json", false, false, new VirtualCrossoverChannelSettings(), 96_000,
+                    new AgentSourceInputs(48_000, new MeasuredBand(60, 20_000), null, [], null, null, null, null, null, "channel muted"))
+            ]
+        };
+        JsonElement outside = Json(AgentPackageBuilder.Build(outsideTheView, Id, Clock).Text!)
+            .GetProperty("analysis").GetProperty("spatialAverage");
+        Assert.Equal("active", outside.GetProperty("status").GetString());
+        Assert.Equal(2, outside.GetProperty("channelsShown").GetInt32());
 
         // Nothing to draw from at all: the case the assistant is told to press.
-        AgentPackageInputs none = inputs with
+        AgentPackageInputs none = notDrawn with
         {
-            Channels = inputs.Channels
+            Channels = notDrawn.Channels
                 .Select(channel => channel.Source == null
                     ? channel
                     : channel with { Source = channel.Source with { SpatialAverage = null, SpatialAverageCaptures = [] } })
@@ -293,7 +311,12 @@ public sealed class AgentPackageBuilderTests
         JsonElement root = Json(AgentPackageBuilder.Build(Inputs(), Id, Clock).Text!);
 
         Assert.Equal(4.0, root.GetProperty("sides")[0].GetProperty("sumVsTargetDb").GetDouble(), 1);
+        // The hybrid sum, Ramp(3), reads one dB higher — its own datum, so the
+        // assistant is not sent to move the target by a point measurement while
+        // the tune is judged on averages.
+        Assert.Equal(5.0, root.GetProperty("sides")[0].GetProperty("hybridSumVsTargetDb").GetDouble(), 1);
         Assert.False(root.GetProperty("sides")[1].TryGetProperty("sumVsTargetDb", out _));
+        Assert.False(root.GetProperty("sides")[1].TryGetProperty("hybridSumVsTargetDb", out _));
     }
 
     [Fact]
@@ -500,6 +523,7 @@ public sealed class AgentPackageBuilderTests
             AgentChannelSide.Left,
             ["A:left", "B:mono"],
             Ramp(2),
+            Ramp(3),
             Ramp(-1).Select(point => new SignalPoint(point.X, double.IsNaN(point.Y) ? point.Y : -Math.Abs(point.Y) / 4)).ToList(),
             [
                 new VirtualCrossoverMetric.Entry("B/A", -1.3, -4.8, 40, 160, IsTotal: false),
@@ -509,7 +533,7 @@ public sealed class AgentPackageBuilderTests
             [new AgentJunctionInputs("B", "A", 80, 40, 160, bProcessed, aLeftProcessed, correlation, coherence)],
             null);
         var rightSide = new AgentSideInputs(
-            AgentChannelSide.Right, [], null, null, [], [], [], "no channel with a source on this side");
+            AgentChannelSide.Right, [], null, null, null, [], [], [], "no channel with a source on this side");
 
         return new AgentPackageInputs(
             "1.2.3",
@@ -518,7 +542,7 @@ public sealed class AgentPackageBuilderTests
                 PeqQConvention.Symmetric, 10, MaxDelayFromCatalog: true),
             new AgentAnalysisInputs(
                 VirtualCrossoverGroupView.FrontAndSub, false, 6, true,
-                VirtualCrossoverSpatialAverageMode.MovingMic, HybridTicked: true, HybridDrawn: false,
+                VirtualCrossoverSpatialAverageMode.MovingMic, HybridTicked: true, HybridDrawn: true,
                 PhaseWindowMode.FrequencyDependent, 6, PhaseDetrendMode.Auto,
                 5, 100, 20, null, null, null, 8.66, "ECM8000_90deg.txt", 0.25, false, -1, 0),
             new AgentTargetInputs(-4, TargetPreset.Flat, TargetCurveSpec.FromPreset(TargetPreset.Flat), 3, null),

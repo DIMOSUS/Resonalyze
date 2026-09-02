@@ -356,7 +356,7 @@ public partial class VirtualCrossoverPanel
             if (sideSum == null)
             {
                 sides.Add(new AgentSideInputs(
-                    sideName, [], null, null, [], [], [], "no channel with a source on this side"));
+                    sideName, [], null, null, null, [], [], [], "no channel with a source on this side"));
                 continue;
             }
 
@@ -419,6 +419,16 @@ public partial class VirtualCrossoverPanel
             HybridMagnitudes? hybrid = HybridRequested && magnitudes != null
                 ? BuildHybridMagnitudes(shown, magnitudes, rightSide, smoothing)
                 : null;
+            // The sum the hybrid view draws beside the measured one: the same two
+            // constructions the plot uses (see RedrawMainPlotAsync), the active
+            // side's from the shown set, the opposite side's under its own gate
+            // placement — and null, as on screen, when the sides cannot be held
+            // to one offset.
+            IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || magnitudes == null
+                ? null
+                : rightSide == activeRight
+                    ? BuildActiveHybridSumCurve(shown, magnitudes, hybrid)
+                    : BuildOppositeHybridSumCurve(sideSum, hybrid.OffsetDb)?.Points;
 
             for (int index = 0; index < shown.Count; index++)
             {
@@ -483,6 +493,7 @@ public partial class VirtualCrossoverPanel
                     item.Channel.Name,
                     item.Channel.Pair.Mono ? AgentChannelSide.Mono : sideName)).ToList(),
                 sumCurve?.Points,
+                hybridSum,
                 loss,
                 entries,
                 phaseEntries,

@@ -14,8 +14,10 @@ internal static class EqTargetLevelCheck
 {
     /// <summary>
     /// A target this far above the source (dB, median over the window) needs
-    /// broadband boost. Only a fit that may boost is warned: under Cuts only the
-    /// auto preamp aligns the curve to the target instead and no level is lost.
+    /// broadband boost. A fit that may boost spends headroom to get there; a
+    /// Cuts-only fit cannot get there at all — its preamp is capped at 0 dB and
+    /// its bands only cut — so the curve stays below the target, and a bump
+    /// that stays under the target line is not a cut the fit will make.
     /// </summary>
     public const double BoostWarningDb = 3;
 
@@ -90,14 +92,20 @@ internal static class EqTargetLevelCheck
         }
 
         string window = $"{minHz:0}–{maxHz:0} Hz";
-        if (offset >= BoostWarningDb && !cutsOnly)
+        if (offset >= BoostWarningDb)
         {
-            return
-                $"The target sits {offset:0.0} dB above the source over {window} " +
-                "(median). The fit will boost across the whole window and spend " +
-                "headroom on level rather than on shape." + Environment.NewLine +
-                Environment.NewLine +
-                "Lower the Target Level, or tick Cuts only. Tune anyway?";
+            return cutsOnly
+                ? $"The target sits {offset:0.0} dB above the source over {window} " +
+                  "(median). Cuts only cannot raise the curve: the fit will leave " +
+                  "it below the target, and a bump that stays under the target line " +
+                  "is not a cut it will make." + Environment.NewLine +
+                  Environment.NewLine +
+                  "Lower the Target Level to the curve. Tune anyway?"
+                : $"The target sits {offset:0.0} dB above the source over {window} " +
+                  "(median). The fit will boost across the whole window and spend " +
+                  "headroom on level rather than on shape." + Environment.NewLine +
+                  Environment.NewLine +
+                  "Lower the Target Level. Tune anyway?";
         }
 
         if (-offset >= CutWarningDb)

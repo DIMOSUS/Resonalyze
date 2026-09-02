@@ -53,11 +53,12 @@ public sealed class EqTargetLevelCheckTests
     [Theory]
     [InlineData(2.9, false, null)]
     [InlineData(3.0, false, "above")]
-    [InlineData(3.0, true, null)]
+    [InlineData(2.9, true, null)]
+    [InlineData(3.0, true, "above")]
     [InlineData(-9.9, false, null)]
     [InlineData(-10.0, false, "below")]
     [InlineData(-10.0, true, "below")]
-    public void TheWarningFollowsTheThresholds_AndCutsOnlyIsOnlyWarnedBelow(
+    public void TheWarningFollowsTheThresholds_InBothModes(
         double targetAboveSourceDb, bool cutsOnly, string? expected)
     {
         string? warning = EqTargetLevelCheck.Warning(targetAboveSourceDb, cutsOnly, 80, 3_000);
@@ -73,6 +74,22 @@ public sealed class EqTargetLevelCheckTests
         }
 
         Assert.Null(EqTargetLevelCheck.Warning(null, cutsOnly, 80, 3_000));
+    }
+
+    [Fact]
+    public void ATargetAboveTheSource_IsExplainedDifferentlyUnderCutsOnly()
+    {
+        // The tuner's Cuts-only preamp is capped at 0 dB and its bands only cut,
+        // so it cannot reach a target above the source at all — the fit is not
+        // "boosts and headroom" there, it is "nothing happens, and a bump under
+        // the target line stays".
+        string boosting = EqTargetLevelCheck.Warning(4, cutsOnly: false, 80, 3_000)!;
+        string cutting = EqTargetLevelCheck.Warning(4, cutsOnly: true, 80, 3_000)!;
+
+        Assert.Contains("boost across the whole window", boosting);
+        Assert.Contains("Cuts only cannot raise the curve", cutting);
+        Assert.Contains("Lower the Target Level to the curve", cutting);
+        Assert.DoesNotContain("tick Cuts only", boosting);
     }
 
     private static List<SignalPoint> Grid(Func<double, double> level)

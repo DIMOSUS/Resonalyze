@@ -115,12 +115,15 @@ internal sealed record AgentSourceInputs(
 /// and the junction read-outs exactly as the panel's metric block quotes them.
 /// </summary>
 /// <param name="ChannelIds">The channels the view drew on this side — the set the sum, the loss and the junctions were computed from.</param>
+/// <param name="Sum">The measured sum — the impulse responses through their chains, coherently added.</param>
+/// <param name="HybridSum">The sum the hybrid view draws: the spatial averages' levels held together by the point measurement's phase, on the same axis as <paramref name="Sum"/>. An estimate of a point's interference, present only while the hybrid curves are drawn.</param>
 /// <param name="Entries">The Sum loss rows, per junction plus the total where the chain is continuous.</param>
 /// <param name="PhaseEntries">The Junction phase rows.</param>
 internal sealed record AgentSideInputs(
     AgentChannelSide Side,
     IReadOnlyList<string> ChannelIds,
     IReadOnlyList<SignalPoint>? Sum,
+    IReadOnlyList<SignalPoint>? HybridSum,
     IReadOnlyList<SignalPoint>? Loss,
     IReadOnlyList<VirtualCrossoverMetric.Entry> Entries,
     IReadOnlyList<VirtualCrossoverMetric.PhaseEntry> PhaseEntries,

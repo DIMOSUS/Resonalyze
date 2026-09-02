@@ -91,17 +91,19 @@ Work in this order; each step gates the next.
      [https://github.com/DIMOSUS/Resonalyze/blob/main/MANUAL.md#optional-equalize-the-spatial-average](https://github.com/DIMOSUS/Resonalyze/blob/main/MANUAL.md#optional-equalize-the-spatial-average)
      (how to attach the captures and turn the hybrid view on). Until then,
      keep any PEQ advice to broad, minimum-phase trends and say why.
-   - `capturedNotShown`: the user has averages and is not using them — the
-     hybrid curves are not on the plot, so every level and PEQ read-out in
-     this package still comes from the point measurements and the averaging
-     is doing nothing. Say so plainly, first. Read `mode`, `hybridTicked`,
-     `hybridDrawn` and the counts to say which: the **Hybrid** box under the
-     plot is unticked; the mode (the **MMM** / **Array** button's menu) does
-     not read the family the channels hold; a playing channel has no capture
-     (`channelsWithCapture` < `channelsMeasured` — name it from
-     `source.spatialAverageCaptures`); or the view is a group comparison,
-     which never draws them. Ask for a new package once the hybrid curves are
-     on; the same manual section explains the switch.
+   - `capturedNotShown`: the user has averages and the channel curves are not
+     using them — no `hybridPreDspDb` / `hybridProcessedDb` is in the package,
+     so every per-channel magnitude and every PEQ judgement here still rests
+     on the point measurements. Say so plainly, first. (The `stereo[]` and
+     `groups[]` level rows choose their basis on their own: read each row's
+     `levelFromSpatialAverage` before calling them point-measured.) Read
+     `mode`, `hybridTicked`, `hybridDrawn` and the counts to say which: the
+     **Hybrid** box under the plot is unticked; the mode (the **MMM** /
+     **Array** button's menu) does not read the family the channels hold; a
+     playing channel has no capture (`channelsWithCapture` < `channelsShown`
+     — name it from `source.spatialAverageCaptures`); or the view is a group
+     comparison, which never draws them. Ask for a new package once the
+     hybrid curves are on; the same manual section explains the switch.
    - `partial`: some measured channels are judged on their average and some
      on a point. Name the ones without (`hybridPreDspDb` absent) and treat
      their PEQ as step 8 says for point measurements.
@@ -153,16 +155,25 @@ Work in this order; each step gates the next.
    A `latched` flag means the arrival timed the room's modal build-up, not the
    direct rise — the number is real but overstates the skew.
 7. **Target and tonal balance.** First the datum: `sides[].sumVsTargetDb` is
-   the median of the side's sum against the target curve. The target level is
-   a number the user typed, and a fit obeys it literally — a target 3 dB or
-   more above the sum makes Auto-tune boost every channel across its band and
-   spend headroom on level; 10 dB or more below makes it cut everything and
-   hand the level back to the amplifier gain, with its noise. Say so before
-   any PEQ advice and have the user move the **Target Level** (the panel's
-   field next to *Target*) rather than let the bands carry it. Then
-   `sides[].sumDb` against `target.curve`: judge broad trends over half an
-   octave or more; a narrow dip at a junction is interference, not tonal
-   balance, and belongs to step 4.
+   the median of the side's measured sum against the target curve, and
+   `sides[].hybridSumVsTargetDb` the same off the sum the hybrid view draws.
+   While `analysis.spatialAverage.status` is `active`, read the hybrid one —
+   the target the user is about to fit to is judged against the averages,
+   and `sumDb` is still the single-position sum; where `partial`, say which
+   channels the two datums disagree about. The target level is a number the
+   user typed, and a fit obeys it literally — a target 3 dB or more above the
+   sum makes Auto-tune boost every channel across its band and spend
+   headroom on level (or, under *Cuts only*, leave the curve short of the
+   target and pass over a bump that stays under it); 10 dB or more below
+   makes it cut everything and hand the level back to the amplifier gain,
+   with its noise. Say so before any PEQ advice and have the user move the
+   **Target Level** (the panel's field next to *Target*) rather than let the
+   bands carry it. Then the tonal balance: `sides[].sumDb` against
+   `target.curve` on a point-measured tune, the channels' `hybridProcessedDb`
+   on an averaged one (the hybrid sum is an estimate of one position's
+   interference and is not for judging a junction's depth). Judge broad
+   trends over half an octave or more; a narrow dip at a junction is
+   interference, not tonal balance, and belongs to step 4.
 8. **PEQ, last.** Only after timing and crossovers are settled. Prefer cuts.
    Prefer the spatial average (`hybridPreDspDb` for what the driver does,
    `hybridProcessedDb` for what the tune does to it) over the point measurement

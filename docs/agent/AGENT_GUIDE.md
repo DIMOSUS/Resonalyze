@@ -160,11 +160,14 @@ Work in this order; each step gates the next.
    that a PEQ cannot touch at all. Read the two apart before blaming either:
    - Ask the user for the **Excess group delay** diagnostic (AI assistant… →
      Copy diagnostics for AI → Excess group delay): each measured channel's
-     `excessGdMs`, the excess part alone. Where the two channels' excess
-     group delays diverge across `bandHz`, or one of them swings by
-     milliseconds inside it, the mismatch is excess — the cure is timing,
-     polarity, an all-pass band, a different crossover slope or type, or the
-     reflection itself (aiming, treatment), not the PEQ.
+     `excessGdMs`, the excess part alone. Its level is the channel's
+     arrival (the bulk delay stays in the excess curve), so read its SHAPE:
+     where one channel's curve bends or swings by milliseconds inside
+     `bandHz`, or the two curves' difference is not a constant across it,
+     the mismatch is excess dispersion — the cure is timing, polarity, an
+     all-pass band, a different crossover slope or type, or the reflection
+     itself (aiming, treatment), not the PEQ. Two flat curves at different
+     levels are a plain timing offset, which is Auto delay's work.
    - A PEQ is the suspect only where its band corrects something that is
      not minimum-phase — a feature absent from `hybridPreDspDb`, present at
      one point and gone in the average, or one the average keeps but whose
@@ -174,11 +177,23 @@ Work in this order; each step gates the next.
    empty `bands` list and `preampDb: 0` is a valid operation; the block's
    Bypass would drop the crossover too and change the junction itself), copy
    a new package, read the junction again, then *Undo AI import* to put the
-   banks back. Sum loss WORSE without the PEQ means the bands were
-   straightening the minimum-phase part and the remainder is excess — keep
-   them and go after timing and all-pass. Sum loss better means a band was
-   turning phase for nothing — rebuild it wider, or leave that feature
-   alone.
+   banks back. Read the pass on the PHASE read-outs, not on Sum loss alone:
+   Sum loss is the coherent sum against the magnitude sum, so it moves with
+   the two channels' level ratio as much as with their phase — at a fixed
+   120° between them, two equal levels lose 6.0 dB and the same pair with
+   one channel 10 dB down loses 3.4 dB, with the phase not improved by a
+   degree. A bank that merely cuts one channel in the band changes Sum loss
+   by that route, and clearing it (its preamp too) changes the ratio back.
+   So compare, before and after, the junction's `phase` block —
+   `phaseAtCrossoverDeg`, `currentScore` (a phase-alignment score by
+   construction, not a level one), `fitRmsDeg`, `phaseConsistency` — and the
+   excess group delay, alongside the two channels' levels in `bandHz`. The
+   bands were straightening the minimum-phase part only when the phase
+   metrics are WORSE without them and the excess curve is unchanged; then
+   keep them and go after timing and all-pass. A band was turning phase for
+   nothing only when the phase metrics are BETTER without it. A Sum loss
+   that moved while the phase metrics did not moved on level, and says
+   nothing about the PEQ's phase either way.
 5. **Crossover corners and slopes.** Judge the acoustic slopes on
    `processedDb`, not the electrical ones: the driver's own roll-off adds to
    the filter. Before proposing a corner, know the driver (model, size,
@@ -227,7 +242,8 @@ Work in this order; each step gates the next.
    phase — so the evidence is the excess group delay (§4, the diagnostic on
    request). A feature of the driver itself shows alike on `preDspDb` and on
    `hybridPreDspDb` (both BEFORE the chain, so the current PEQ cannot have
-   made or hidden it) AND has a flat excess group delay across it: it is
+   made or hidden it) AND has a flat excess group delay across it (constant,
+   whatever its level — the level is the arrival): it is
    minimum-phase, a bell that flattens it also straightens the phase, narrow
    is fine there, and taking such a band out makes the junction worse. A
    dip the average does not show, one that moves between the point and the
@@ -254,11 +270,15 @@ Work in this order; each step gates the next.
   full-record variants.
 - **Coherence ladder** — arrival difference and its coherence per band.
 - **Excess group delay** (`excessGdMs`, a diagnostic on request) — the
-  measurement's group delay less its minimum-phase part, per channel. Flat
-  and near zero: the driver's phase
-  is what its magnitude says, and a PEQ can shape it. Swinging, or diverging
-  from the partner's across a junction band: arrivals and reflections, which
-  timing, polarity, all-pass bands and the crossover address — never a PEQ.
+  measurement's group delay less its minimum-phase part, per channel. The
+  bulk arrival stays in it, so its LEVEL is the channel's delay and is not
+  near zero; read its shape. Flat (a constant, whatever its level): no excess
+  dispersion — the driver's phase is what its magnitude says plus a delay,
+  and a PEQ can shape it. Two flat curves at different levels: a timing
+  offset between the channels, Auto delay's work. Bending or swinging inside
+  a junction band, or two curves whose difference is not constant across it:
+  reflections, a second path, all-pass-like behaviour — which timing,
+  polarity, all-pass bands and the crossover address, never a PEQ.
 - **Measured band** — where the measurement has content. Outside it, curves
   are absent on purpose.
 - **Spatial average / hybrid** — level measured over the listening volume

@@ -801,33 +801,47 @@ public partial class VirtualCrossoverPanel
         RefreshAutoActionsEnabled();
         try
         {
-            var channels = new List<AgentDiagnosticChannel>();
+            // Snapshot on the UI thread — the responses, their anchors and bands,
+            // the gate shape — and compute off it: a gated FFT with a
+            // minimum-phase reconstruction per channel is not a UI-thread job on
+            // a large installation.
+            var measured = new List<(string Id, Complex[] Response, int PeakIndex, int SampleRate, MeasuredBand Band)>();
             foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
                 in AgentChannelSlots())
             {
                 VirtualCrossoverChannelState state = channel.SideState(rightSide);
-                if (state.TransferImpulseResponse is not { } impulseResponse)
+                if (state.TransferImpulseResponse is { } impulseResponse)
                 {
-                    continue;
-                }
-
-                IReadOnlyList<SignalPoint>? curve = BuildExcessGroupDelayCurve(
-                    impulseResponse, state.TransferPeakIndex, state.SampleRate, state.MeasuredBand);
-                if (curve != null)
-                {
-                    channels.Add(new AgentDiagnosticChannel(AgentChannelIds.Format(block, side), curve));
+                    measured.Add((
+                        AgentChannelIds.Format(block, side), impulseResponse,
+                        state.TransferPeakIndex, state.SampleRate, state.MeasuredBand));
                 }
             }
-            if (channels.Count == 0)
+            if (measured.Count == 0)
             {
                 ShowError("The diagnostic was not copied.", "No channel has a measurement to read.");
                 return;
             }
 
+            (double, double, double) gate =
+                (project.PhaseGateLeftMs, project.PhaseGatePlateauMs, project.PhaseGateRightMs);
             string? packageId = lastAgentPackageId;
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            AgentDiagnosticBuildResult result = await Task.Run(
-                () => AgentDiagnosticBuilder.BuildExcessGroupDelay(channels, packageId, now));
+            (AgentDiagnosticBuildResult result, int count) = await Task.Run(() =>
+            {
+                var channels = new List<AgentDiagnosticChannel>(measured.Count);
+                foreach ((string id, Complex[] response, int peakIndex, int sampleRate, MeasuredBand band) in measured)
+                {
+                    IReadOnlyList<SignalPoint>? curve = BuildExcessGroupDelayCurve(
+                        response, peakIndex, sampleRate, band, gate);
+                    if (curve != null)
+                    {
+                        channels.Add(new AgentDiagnosticChannel(id, curve));
+                    }
+                }
+
+                return (AgentDiagnosticBuilder.BuildExcessGroupDelay(channels, packageId, now), channels.Count);
+            });
             if (IsDisposed)
             {
                 return;
@@ -841,7 +855,7 @@ public partial class VirtualCrossoverPanel
             MessageBox.Show(
                 FindForm(),
                 $"Excess group delay diagnostic copied ({(result.JsonBytes + 1023) / 1024} KB, " +
-                $"{channels.Count} channel{(channels.Count == 1 ? "" : "s")}). Paste it into the " +
+                $"{count} channel{(count == 1 ? "" : "s")}). Paste it into the " +
                 "same chat as the package.",
                 "Copy diagnostics for AI",
                 MessageBoxButtons.OK,
@@ -1306,8 +1320,11 @@ public partial class VirtualCrossoverPanel
     // minimum-phase part — what the magnitude dictates and a minimum-phase PEQ
     // straightens along with it — is taken out; what remains is what no PEQ can
     // touch, which is the question a junction that will not sum asks.
-    private IReadOnlyList<SignalPoint>? BuildExcessGroupDelayCurve(
-        Complex[] impulseResponse, int peakIndex, int sampleRate, MeasuredBand band)
+    // Pure: a gated FFT, a minimum-phase reconstruction and the difference, so
+    // it runs off the UI thread on a snapshot of the channel and the gate shape.
+    private static IReadOnlyList<SignalPoint>? BuildExcessGroupDelayCurve(
+        Complex[] impulseResponse, int peakIndex, int sampleRate, MeasuredBand band,
+        (double LeftMs, double PlateauMs, double RightMs) gate)
     {
         int anchorIndex = ProcessedChannels.StartAnchorIndex(impulseResponse, peakIndex, sampleRate);
         GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
@@ -1317,9 +1334,9 @@ public partial class VirtualCrossoverPanel
                 HighestMeasuredFrequencyHz = band.HighEdgeHz
             },
             anchorIndex * 1_000.0 / sampleRate,
-            project.PhaseGateLeftMs,
-            project.PhaseGatePlateauMs,
-            project.PhaseGateRightMs,
+            gate.LeftMs,
+            gate.PlateauMs,
+            gate.RightMs,
             SpectrumSmoothing.PsychoacousticCode,
             includeMinimumPhase: true);
         return curves.Excess?.Points;

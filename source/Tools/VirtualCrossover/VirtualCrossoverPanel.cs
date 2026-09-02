@@ -6524,7 +6524,7 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </para>
     /// </remarks>
     private AnalysisCurve? BuildOppositeHybridSumCurve(
-        VirtualCrossoverSideSum side, double offsetDb)
+        VirtualCrossoverSideSum side, double offsetDb, MagnitudeGateSnapshot? snapshot = null)
     {
         bool oppositeRight = !project.ActiveSideRight;
         if (!CanDrawOppositeHybridSum(oppositeRight))
@@ -6536,7 +6536,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // rule the active side's curves are built under, and for the same reason:
         // per-channel windows would stop the drawn sum being the sum of the drawn
         // channels, and the loss could poke above its 0 dB ceiling.
-        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        snapshot ??= magnitudeGate;
         double gateOffsetMs = snapshot.ResolveGateOffsetMs(
             oppositeSide: true, side.AnchorIndex, side.SampleRate);
         GatedMagnitude sum = BuildMeasuredSumCurve(
@@ -6603,14 +6603,15 @@ public partial class VirtualCrossoverPanel : UserControl
     private List<SignalPoint>? BuildActiveHybridSumCurve(
         List<ProcessedChannel> processed,
         List<AnalysisCurve> magnitudes,
-        HybridMagnitudes hybrid)
+        HybridMagnitudes hybrid,
+        MagnitudeGateSnapshot? snapshot = null)
     {
         if (processed.Count == 0)
         {
             return null;
         }
 
-        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        snapshot ??= magnitudeGate;
         int anchorIndex = ProcessedChannels.SharedStartAnchorIndex(processed);
         return BuildHybridSumCurve(
             hybrid,
@@ -6627,12 +6628,13 @@ public partial class VirtualCrossoverPanel : UserControl
         int peakIndex,
         int sampleRate,
         MeasuredBand band,
-        CalibrationFile? calibration)
+        CalibrationFile? calibration,
+        MagnitudeGateSnapshot? snapshot = null)
     {
         int anchorIndex = ProcessedChannels.StartAnchorIndex(
             impulseResponse, peakIndex, sampleRate);
         return BuildGatedMagnitudeCurve(
-            magnitudeGate,
+            snapshot ?? magnitudeGate,
             impulseResponse,
             anchorIndex,
             sampleRate,
@@ -7395,6 +7397,10 @@ public partial class VirtualCrossoverPanel : UserControl
                 // lengths and the analysis modes are project-wide, so both sides keep
                 // reading the phase at the same resolution and by the same method.
                 VirtualCrossoverPhaseGateSettings gate = ActiveGate;
+                // The gate is what a copied package's phase read-outs — and a
+                // diagnostic copied beside it — were computed through; changed,
+                // the package no longer describes what a new copy would say.
+                ForgetAgentPackage();
                 // Auto pressed = unpinned: store null so this side's gate
                 // keeps following the earliest estimated channel IR start.
                 gate.OffsetMs = dialog.AutoOffset ? null : dialog.GateOffsetMs;

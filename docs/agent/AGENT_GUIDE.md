@@ -1,6 +1,6 @@
 # Resonalyze Agent Guide
 
-Guide version 1.1 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
+Guide version 1.2 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
 
 ## 0. The rules that also travel inside every package
 
@@ -36,6 +36,11 @@ what you are sure of, what you are inferring, and what you would need to know.
   plays later. Frequencies in Hz. Levels in dB. `peqQ` is RBJ cookbook Q, always;
   the device's own Q convention (`processor.qConvention`) is applied by
   Resonalyze only when numbers leave for the device. Do not convert.
+- **One smoothing for every package.** Every magnitude curve, sum and Sum loss
+  is computed at psychoacoustic smoothing (1/3 octave below 100 Hz, 1/6 above
+  1 kHz) whatever the user's panel shows, so two packages compare and a dip's
+  depth means the same in each. The user's own read-out at another smoothing
+  may differ from the package's; the package's is the one to reason from.
 - **Two sample rates.** `channels[].source.sampleRateHz` is what the measurement
   was taken at; `processor.sampleRateHz` is what the device builds its filters
   at. Every corner and PEQ band you propose must sit below half the processor's
@@ -54,6 +59,12 @@ what you are sure of, what you are inferring, and what you would need to know.
   columns so they compare directly. `coherence` is γ² of the measurement, 0…1,
   where the source carried it. The `curves.broadband` grid is 12 points per
   octave; junction curves are 24 per octave.
+- **Diagnostics on request.** Some readings are not in the package — it is
+  already the size a chat takes — but the user can copy them for you as a
+  second text (**AI assistant… → Copy diagnostics for AI**): a
+  `resonalyze.agent-diagnostic` object naming the package it belongs beside,
+  on the same channel ids and grid. Ask for one by its menu name when the
+  analysis needs it; step 4 says when.
 - **`notes`** is what the user typed about the car. Trust it as their own
   description; ask about what it leaves out.
 - **`analysis.groupView`** says which part of the installation the side and
@@ -139,17 +150,58 @@ Work in this order; each step gates the next.
    One pattern is worth knowing by heart. If a junction's `sumLoss` is poor
    while `bestExtraDelayMs` is near zero and `bestScore` barely beats
    `currentScore`, but `fitRmsDeg` is large, the problem does not look like a
-   delay: no single delay fits the phase across the band. Before touching
-   timing or the crossover, look at the PEQ and all-pass bands of BOTH channels
-   inside `bandHz` — an asymmetric IIR correction on one side puts a
-   frequency-dependent phase error into the junction that no delay can take
-   out. When in doubt, advise a diagnostic pass: save the session, clear the
-   PEQ bank on the channels of that junction (the block's PEQ button, Clear —
-   the block's Bypass would drop the crossover too and change the junction
-   itself), copy a new package, read the junction again, then load the saved
-   session back. You can clear a bank yourself: a `replacePeqBank` with an
-   empty `bands` list and `preampDb: 0` is a valid operation, and *Undo AI
-   import* puts the bank back.
+   delay: no single delay fits the phase across the band. The phase a driver
+   puts into the junction has two parts. The **minimum-phase** part follows
+   its magnitude — a resonance, a cabinet or door feature, a roll-off — and a
+   minimum-phase PEQ that flattens that magnitude straightens that phase with
+   it; such a band HELPS the sum, and its own phase turn is exactly the
+   feature's turn undone. The **excess** part does not follow the magnitude:
+   the arrival itself, and the later arrivals — reflections, a second path —
+   that a PEQ cannot touch at all. Read the two apart before blaming either:
+   - Ask the user for the **Excess group delay** diagnostic (AI assistant… →
+     Copy diagnostics for AI → Excess group delay): each measured channel's
+     `excessGdMs`, the excess part alone. Its level is the channel's
+     arrival (the bulk delay stays in the excess curve), so read its SHAPE:
+     where one channel's curve bends or swings by milliseconds inside
+     `bandHz`, or the two curves' difference is not a constant across it,
+     the mismatch is excess dispersion — the cure is timing, polarity, an
+     all-pass band, a different crossover slope or type, or the reflection
+     itself (aiming, treatment), not the PEQ. Two flat curves at different
+     levels are a plain timing offset, which is Auto delay's work.
+   - The two parts coexist in one band: a channel is its minimum-phase
+     response times an all-pass part, and a resonance and a reflection can
+     sit at the same frequency. A bell that undoes the resonance corrects
+     the resonance's phase turn whether or not excess dispersion is there
+     too — it does not touch the excess, and the excess does not make it
+     wrong. So a PEQ is the suspect first where its band corrects something
+     that is not even position-stable — a feature absent from
+     `hybridPreDspDb`, or present at one point and gone in the average — the
+     excess curve says how much of the junction's phase problem remains for
+     timing and all-pass to take, PEQ or no PEQ, and whether a stable feature's
+     bell actually helps THIS pair is what the before/after phase read-outs
+     of the diagnostic pass decide, not the curves alone.
+   When in doubt, advise a diagnostic pass and read it BOTH ways: clear the
+   PEQ bank on the channels of that junction (a `replacePeqBank` with an
+   empty `bands` list and `preampDb: 0` is a valid operation; the block's
+   Bypass would drop the crossover too and change the junction itself), copy
+   a new package, read the junction again, then *Undo AI import* to put the
+   banks back. Read the pass on the PHASE read-outs, not on Sum loss alone:
+   Sum loss is the coherent sum against the magnitude sum, so it moves with
+   the two channels' level ratio as much as with their phase — at a fixed
+   120° between them, two equal levels lose 6.0 dB and the same pair with
+   one channel 10 dB down loses 3.4 dB, with the phase not improved by a
+   degree. A bank that merely cuts one channel in the band changes Sum loss
+   by that route, and clearing it (its preamp too) changes the ratio back.
+   So compare, before and after, the junction's `phase` block —
+   `phaseAtCrossoverDeg`, `currentScore` (a phase-alignment score by
+   construction, not a level one), `fitRmsDeg`, `phaseConsistency` — and the
+   excess group delay, alongside the two channels' levels in `bandHz`. The
+   bands were straightening the minimum-phase part only when the phase
+   metrics are WORSE without them and the excess curve is unchanged; then
+   keep them and go after timing and all-pass. A band was turning phase for
+   nothing only when the phase metrics are BETTER without it. A Sum loss
+   that moved while the phase metrics did not moved on level, and says
+   nothing about the PEQ's phase either way.
 5. **Crossover corners and slopes.** Judge the acoustic slopes on
    `processedDb`, not the electrical ones: the driver's own roll-off adds to
    the filter. Before proposing a corner, know the driver (model, size,
@@ -190,13 +242,31 @@ Work in this order; each step gates the next.
    0 dB, say so and fix it: trim the boost first (a boost that needed compensating
    usually had a weak reason), or lower the preamp by the peak — which costs
    level the amplifier gain has to give back, with its noise.
-   Keep bells wide near a junction: inside `junctions[].bandHz` (an octave to
-   each side of the crossover) use Q ≤ 2. A narrow bell turns the channel's
-   phase by tens of degrees right where the pair's sum is built on it, and a
-   dip that close to a crossover is more often the pair's interference than
-   the driver's own. Go narrower there only when the same feature shows on the
-   driver's `preDspDb` and on its `hybridPreDspDb` — both BEFORE the chain, so
-   the current PEQ cannot have made or hidden it.
+   Near a junction — inside `junctions[].bandHz`, an octave to each side of
+   the crossover — a bell's phase turn lands right where the pair's sum is
+   built, so ask what the band corrects. Three readings answer three
+   different questions, and none of them alone settles the bell. The
+   spatial average says whether the magnitude feature is position-stable
+   enough to consider for EQ at all: one that shows alike on `preDspDb` and
+   on `hybridPreDspDb` (both BEFORE the chain, so the current PEQ cannot
+   have made or hidden it) holds over the listening volume and may be worth
+   a bell, narrow if the feature is narrow — but the average proves
+   stability, not origin: a cabin mode or a stable reflection survives the
+   averaging as readily as a driver's resonance. A dip the average does not
+   show, or one that moves between the point and the average, is
+   position-bound interference, and a bell on it turns the phase for
+   nothing: keep Q ≤ 2 there, or leave it. The excess group delay (§4, the
+   diagnostic on request) says what no PEQ will fix: excess dispersion
+   across the band coexists with a stable feature, is not evidence against
+   its bell and not a reason to withhold it; it is the part that timing,
+   polarity, an all-pass band or the crossover has to take, with or without
+   the PEQ. And whether a stable feature's bell actually helps THIS pair is
+   settled only by the junction's phase read-outs before and after it —
+   `currentScore`, `fitRmsDeg`, `phaseAtCrossoverDeg` — as the diagnostic
+   pass in step 4 reads them: the remaining excess can add to the bell's
+   turn either way. The review warns on any bell narrower than Q 2 in the
+   zone so the user looks; say in the reason which case it is, and on what
+   evidence.
 
 ## 4. What the read-outs mean
 
@@ -214,6 +284,18 @@ Work in this order; each step gates the next.
   added to the upper channel, aligns it with the lower. Direct-sound and
   full-record variants.
 - **Coherence ladder** — arrival difference and its coherence per band.
+- **Excess group delay** (`excessGdMs`, a diagnostic on request) — the
+  measurement's group delay less its minimum-phase part, per channel. The
+  bulk arrival stays in it, so its LEVEL is the channel's delay and is not
+  near zero; read its shape. Flat (a constant, whatever its level): no excess
+  dispersion — the driver's phase is what its magnitude says plus a delay,
+  and a PEQ can shape it. Two flat curves at different levels: a timing
+  offset between the channels, Auto delay's work. Bending or swinging inside
+  a junction band, or two curves whose difference is not constant across it:
+  reflections, a second path, all-pass-like behaviour — which timing,
+  polarity, all-pass bands and the crossover address, never a PEQ. Excess
+  dispersion and a driver's own minimum-phase feature can share a band: the
+  curve says what a PEQ will leave behind there, not whether the PEQ is right.
 - **Measured band** — where the measurement has content. Outside it, curves
   are absent on purpose.
 - **Spatial average / hybrid** — level measured over the listening volume
@@ -227,6 +309,10 @@ Work in this order; each step gates the next.
   and moves with the listener.
 - Do not conclude from a region the measurement does not trust (low
   coherence, outside the measured band, `unavailableReason`).
+- Do not take a PEQ band out of a junction for its narrowness alone. A band
+  that flattens the driver's own feature is straightening the phase there;
+  ask for the excess group delay diagnostic and, when in doubt, run the
+  diagnostic pass, before touching it.
 - Do not equalize a single-point measurement above the modal region when the
   user could be averaging — and do not read a point measurement as the tune
   while averages sit unused (`analysis.spatialAverage.status` other than

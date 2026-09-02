@@ -70,6 +70,23 @@ public partial class VirtualCrossoverPanel
                 "summary to the clipboard, ready to paste into a chat assistant. " +
                 "Nothing is sent anywhere: you paste it yourself.")
         });
+        var diagnostics = new ToolStripMenuItem("Copy diagnostics for AI")
+        {
+            ToolTipText = ToolTipTextWrapper.Wrap(
+                "Smaller texts the assistant may ask for by name, beside the package: " +
+                "copy the one it named and paste it into the same chat.")
+        };
+        diagnostics.DropDownItems.Add(new ToolStripMenuItem(
+            "Excess group delay",
+            null,
+            async (_, _) => await CopyExcessGroupDelayForAiAsync())
+        {
+            ToolTipText = ToolTipTextWrapper.Wrap(
+                "Each measured channel's excess group delay — the part of its phase a " +
+                "PEQ cannot touch: arrivals and reflections — read through the phase gate " +
+                "as the analyzer shows it.")
+        });
+        agentMenu.Items.Add(diagnostics);
         agentMenu.Items.Add(new ToolStripMenuItem(
             "Import AI proposal…",
             null,
@@ -768,6 +785,93 @@ public partial class VirtualCrossoverPanel
     /// text on the clipboard in one write — a failure anywhere copies nothing, so
     /// the clipboard never holds a partial or an older package.
     /// </summary>
+    // A diagnostic the assistant asked for by name: every measured channel's
+    // excess group delay, as the analyzer shows it for one impulse response, in
+    // a text of its own beside the package — which is already the size a chat
+    // takes. Named after the last package copied, so the reader lays the two
+    // side by side by channel id.
+    private async Task CopyExcessGroupDelayForAiAsync()
+    {
+        if (agentBusy)
+        {
+            return;
+        }
+
+        agentBusy = true;
+        RefreshAutoActionsEnabled();
+        try
+        {
+            // Snapshot on the UI thread — the responses, their anchors and bands,
+            // the gate shape — and compute off it: a gated FFT with a
+            // minimum-phase reconstruction per channel is not a UI-thread job on
+            // a large installation.
+            var measured = new List<(string Id, Complex[] Response, int PeakIndex, int SampleRate, MeasuredBand Band)>();
+            foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
+                in AgentChannelSlots())
+            {
+                VirtualCrossoverChannelState state = channel.SideState(rightSide);
+                if (state.TransferImpulseResponse is { } impulseResponse)
+                {
+                    measured.Add((
+                        AgentChannelIds.Format(block, side), impulseResponse,
+                        state.TransferPeakIndex, state.SampleRate, state.MeasuredBand));
+                }
+            }
+            if (measured.Count == 0)
+            {
+                ShowError("The diagnostic was not copied.", "No channel has a measurement to read.");
+                return;
+            }
+
+            (double, double, double) gate =
+                (project.PhaseGateLeftMs, project.PhaseGatePlateauMs, project.PhaseGateRightMs);
+            string? packageId = lastAgentPackageId;
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            (AgentDiagnosticBuildResult result, int count) = await Task.Run(() =>
+            {
+                var channels = new List<AgentDiagnosticChannel>(measured.Count);
+                foreach ((string id, Complex[] response, int peakIndex, int sampleRate, MeasuredBand band) in measured)
+                {
+                    IReadOnlyList<SignalPoint>? curve = BuildExcessGroupDelayCurve(
+                        response, peakIndex, sampleRate, band, gate);
+                    if (curve != null)
+                    {
+                        channels.Add(new AgentDiagnosticChannel(id, curve));
+                    }
+                }
+
+                return (AgentDiagnosticBuilder.BuildExcessGroupDelay(channels, packageId, now), channels.Count);
+            });
+            if (IsDisposed)
+            {
+                return;
+            }
+            if (!AgentClipboard.TryWrite(result.Text, out string? error))
+            {
+                ShowError("The diagnostic was not copied.", error!);
+                return;
+            }
+
+            MessageBox.Show(
+                FindForm(),
+                $"Excess group delay diagnostic copied ({(result.JsonBytes + 1023) / 1024} KB, " +
+                $"{count} channel{(count == 1 ? "" : "s")}). Paste it into the " +
+                "same chat as the package.",
+                "Copy diagnostics for AI",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            ShowError("The diagnostic was not copied.", exception.Message);
+        }
+        finally
+        {
+            agentBusy = false;
+            RefreshAutoActionsEnabled();
+        }
+    }
+
     private async Task CopyForAiAsync()
     {
         if (agentBusy)
@@ -893,7 +997,13 @@ public partial class VirtualCrossoverPanel
         long revision = processingCoordinator.CurrentRevision;
         VirtualCrossoverGroupView groupView = SelectedGroupView;
         bool activeRight = project.ActiveSideRight;
-        int smoothing = magnitudeGate.SmoothingInverseOctaves;
+        // One smoothing for every package, whatever the display shows: the Sum
+        // loss and the curves a reader compares across sessions and across users
+        // must not move with a combo box, and a dip's depth at 1/48 octave is not
+        // the same reading as at 1/6. The panel's own psychoacoustic setting is
+        // the one the manual reads a tune at, so it is the one the package uses.
+        int smoothing = SpectrumSmoothing.PsychoacousticCode;
+        MagnitudeGateSnapshot packageGate = magnitudeGate with { SmoothingInverseOctaves = smoothing };
 
         var sides = new List<AgentSideInputs>();
         var curves = new Dictionary<
@@ -929,15 +1039,34 @@ public partial class VirtualCrossoverPanel
                 activeShown = shown;
             }
 
-            // The opposite side windows through ITS gate placement, never the
-            // active side's pin — the same rule the on-screen opposite sum follows.
-            VirtualCrossoverMetrics sideMetrics = rightSide == activeRight
-                ? metrics
-                : new VirtualCrossoverMetrics(
-                    processingCoordinator,
-                    BuildOppositeSideMagnitudeCurve,
-                    CalibrationFor,
-                    BuildOppositeSideSumCurve);
+            // A metric block of the package's own, for BOTH sides: the panel's
+            // `metrics` builds its channel and sum curves through the live gate
+            // snapshot — the display's smoothing — and BuildCurves' smoothing
+            // argument reaches only the loss curve. These delegates window through
+            // the package gate instead, so processedDb, sumDb and the loss all
+            // carry the package's smoothing. The opposite side windows through ITS
+            // gate placement, never the active side's pin — the same rule the
+            // on-screen opposite sum follows.
+            bool oppositeSide = rightSide != activeRight;
+            var sideMetrics = new VirtualCrossoverMetrics(
+                processingCoordinator,
+                (impulseResponse, anchorIndex, sampleRate, band, calibration) =>
+                    BuildGatedMagnitudeCurve(
+                        packageGate,
+                        impulseResponse,
+                        anchorIndex,
+                        sampleRate,
+                        packageGate.ResolveGateOffsetMs(oppositeSide, anchorIndex, sampleRate),
+                        band,
+                        calibration),
+                CalibrationFor,
+                (members, anchorIndex) =>
+                    BuildMeasuredSumCurve(
+                        packageGate,
+                        members,
+                        anchorIndex,
+                        packageGate.ResolveGateOffsetMs(
+                            oppositeSide, anchorIndex, members.Count > 0 ? members[0].SampleRate : 0)));
 
             List<AnalysisCurve>? magnitudes = null;
             AnalysisCurve? sumCurve = null;
@@ -984,8 +1113,8 @@ public partial class VirtualCrossoverPanel
             IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || magnitudes == null
                 ? null
                 : rightSide == activeRight
-                    ? BuildActiveHybridSumCurve(shown, magnitudes, hybrid)
-                    : BuildOppositeHybridSumCurve(sideSum, hybrid.OffsetDb)?.Points;
+                    ? BuildActiveHybridSumCurve(shown, magnitudes, hybrid, packageGate)
+                    : BuildOppositeHybridSumCurve(sideSum, hybrid.OffsetDb, packageGate)?.Points;
 
             for (int index = 0; index < shown.Count; index++)
             {
@@ -1099,7 +1228,8 @@ public partial class VirtualCrossoverPanel
                             state.TransferPeakIndex,
                             state.SampleRate,
                             found.Item.MeasuredBand,
-                            CalibrationFor(found.Item)).Points;
+                            CalibrationFor(found.Item),
+                            packageGate).Points;
                     }
                     if (found.Processed != null && state.TransferCoherence is { Length: > 1 } linear)
                     {
@@ -1157,10 +1287,10 @@ public partial class VirtualCrossoverPanel
         var analysis = new AgentAnalysisInputs(
             groupView,
             activeRight,
-            // The project's own figure, not the gate snapshot's code (which folds
-            // the psychoacoustic flag into its sign).
-            project.SmoothingInverseOctaves,
-            project.PsychoacousticSmoothing,
+            // The package's own smoothing, not the display's (see the capture's
+            // note): psychoacoustic, 1/6 octave at its narrowest.
+            SpectrumSmoothing.PsychoacousticBaseInverseOctaves,
+            true,
             project.SpatialAverageMode,
             checkBoxHybrid.Checked,
             HybridRequested,
@@ -1200,6 +1330,39 @@ public partial class VirtualCrossoverPanel
             sides,
             stereo,
             groups);
+    }
+
+    // The measurement's excess group delay as the analyzer shows it for one
+    // impulse response: the raw transfer response through the project's phase
+    // gate, placed at the channel's OWN arrival (the handoff's rule for a
+    // measurement read without the chain), at the group-delay view's default
+    // smoothing. The
+    // minimum-phase part — what the magnitude dictates and a minimum-phase PEQ
+    // straightens along with it — is taken out; what remains is what no PEQ can
+    // touch, which is the question a junction that will not sum asks.
+    // Pure: a gated FFT, a minimum-phase reconstruction and the difference, so
+    // it runs off the UI thread on a snapshot of the channel and the gate shape.
+    private static IReadOnlyList<SignalPoint>? BuildExcessGroupDelayCurve(
+        Complex[] impulseResponse, int peakIndex, int sampleRate, MeasuredBand band,
+        (double LeftMs, double PlateauMs, double RightMs) gate)
+    {
+        int anchorIndex = ProcessedChannels.StartAnchorIndex(impulseResponse, peakIndex, sampleRate);
+        GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
+            new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate)
+            {
+                LowestMeasuredFrequencyHz = band.LowEdgeHz,
+                HighestMeasuredFrequencyHz = band.HighEdgeHz
+            },
+            anchorIndex * 1_000.0 / sampleRate,
+            gate.LeftMs,
+            gate.PlateauMs,
+            gate.RightMs,
+            // The group-delay view's own default (1/12 octave), not the magnitude
+            // curves' psychoacoustic setting: a group delay is a phase slope, and
+            // a psychoacoustic width is a hearing model for levels, not for time.
+            FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves,
+            includeMinimumPhase: true);
+        return curves.Excess?.Points;
     }
 
     // Every capture family the side holds, in the mode enum's own names so the
@@ -1275,33 +1438,4 @@ public partial class VirtualCrossoverPanel
         return (correlation, coherence);
     }
 
-    private GatedMagnitude BuildOppositeSideMagnitudeCurve(
-        Complex[] impulseResponse,
-        int anchorIndex,
-        int sampleRate,
-        MeasuredBand band,
-        CalibrationFile? calibration)
-    {
-        MagnitudeGateSnapshot snapshot = magnitudeGate;
-        return BuildGatedMagnitudeCurve(
-            snapshot,
-            impulseResponse,
-            anchorIndex,
-            sampleRate,
-            snapshot.ResolveGateOffsetMs(oppositeSide: true, anchorIndex, sampleRate),
-            band,
-            calibration);
-    }
-
-    private GatedMagnitude BuildOppositeSideSumCurve(
-        IReadOnlyList<ProcessedChannel> channels, int anchorIndex)
-    {
-        MagnitudeGateSnapshot snapshot = magnitudeGate;
-        return BuildMeasuredSumCurve(
-            snapshot,
-            channels,
-            anchorIndex,
-            snapshot.ResolveGateOffsetMs(
-                oppositeSide: true, anchorIndex, channels.Count > 0 ? channels[0].SampleRate : 0));
-    }
 }

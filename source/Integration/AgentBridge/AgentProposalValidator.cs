@@ -390,9 +390,12 @@ internal static class AgentProposalValidator
             {
                 notes.Add(
                     $"Band at {Hz(band.FrequencyHz)} (Q {band.Q.ToString("0.#", CultureInfo.InvariantCulture)}) " +
-                    $"sits in the junction zone around the {Hz(cornerHz)} crossover; keep Q at or " +
-                    $"below {JunctionQLimit.ToString("0.#", CultureInfo.InvariantCulture)} there unless the " +
-                    "same feature shows on the driver's own curve and its spatial average.");
+                    $"sits in the junction zone around the {Hz(cornerHz)} crossover. A bell on a " +
+                    "feature the spatial average shows too corrects a stable feature and its " +
+                    "minimum-phase turn, whatever excess dispersion the channel also carries there " +
+                    "(that part stays for timing and all-pass); whether it helps the pair is read " +
+                    "off the junction phase before and after. On a dip the average does not show " +
+                    $"it turns the pair's phase for nothing; keep Q at or below {JunctionQLimit.ToString("0.#", CultureInfo.InvariantCulture)} there.");
             }
         }
 

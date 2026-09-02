@@ -2818,9 +2818,14 @@ this: the clipboard is the only transport, and you are the one who pastes.
   point out unused ones in the second), and where the target level sits
   against each side's sum — the measured one, and the hybrid one while the
   hybrid view is drawn — so a datum typed too high or too low is named
-  before a PEQ is proposed around it. The numbers are the screen's numbers:
-  the package is built from the same computations, for the same **Show** view,
-  so what the assistant reads is what you see. Curves are sampled on fixed grids
+  before a PEQ is proposed around it. The numbers are the screen's numbers,
+  with one deliberate exception: the package is built from the same
+  computations, for the same **Show** view, but always at psychoacoustic
+  smoothing whatever the panel's smoothing selector shows — a Sum loss read at
+  1/48 octave and one read at 1/6 are different numbers, and packages have to
+  compare across sessions and across users, so the panel's own read-out at
+  another smoothing may differ from the package's. Beyond that, what the
+  assistant reads is what you see. Curves are sampled on fixed grids
   rather than taken off the plot, so the package does not depend on the window's
   size or zoom. Before the JSON the text carries a short set of rules for the
   assistant and a link to the full guide, since many assistants cannot fetch a
@@ -2828,6 +2833,13 @@ this: the clipboard is the only transport, and you are the one who pastes.
   series go first, in a fixed order, and the package lists what it left out. The
   package never contains file paths, the user name, history ids or raw impulse
   responses.
+- **Copy diagnostics for AI** holds the readings the package leaves out to stay
+  the size a chat takes; the assistant asks for one by its menu name and you
+  paste it into the same chat as a second text, named after the package it
+  belongs beside. **Excess group delay** is each measured channel's group delay
+  less its minimum-phase part — the part of a junction's phase mismatch that no
+  PEQ can touch, arrivals and reflections — read through the phase gate as the
+  analyzer's group-delay view shows it for one measurement.
 - **Import AI proposal…** reads the assistant's reply back off the clipboard —
   copy the whole reply, not just the JSON — and opens a review. The reply may
   address five things on one channel: gain, delay, polarity, the crossover, and
@@ -2865,8 +2877,12 @@ this: the clipboard is the only transport, and you are the one who pastes.
   delay above the processor's stated ceiling, a PEQ bank whose net response
   (preamp and every band together) rises above 0 dB somewhere and would clip a
   full-scale signal there, a bell narrower than Q 2 within an octave of one of
-  the channel's own crossover corners (where it turns the phase the pair's sum is
-  built on), a PEQ bank or crossover the device's own limits were not checked
+  the channel's own crossover corners (a bell on a feature the spatial average
+  shows too corrects a stable feature and its minimum-phase turn, whatever
+  excess dispersion the channel also carries there, and whether it helps the
+  pair is read off the junction phase before and after; on a dip the average
+  does not show it turns the pair's phase for nothing), a PEQ
+  bank or crossover the device's own limits were not checked
   against because the catalog does not know them, an engine that will write over
   more than the rows name — is a word in the Status column, not only a colour.
   **Apply selected** looks at the ticked rows once more against the live settings

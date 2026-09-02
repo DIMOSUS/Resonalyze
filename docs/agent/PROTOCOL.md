@@ -106,7 +106,12 @@ Use only the operations the package names; everything else goes in `advice`.
 
 `groupView` (which part of the installation the diagnostics were computed for:
 `FrontAndSub`, `RearAndSub`, `FrontAndCenter`, `GroupsCompared`, `Everything`),
-`activeSide`, `smoothingInverseOctaves`, `psychoacousticSmoothing`,
+`activeSide`, `smoothingInverseOctaves` and `psychoacousticSmoothing` (the
+package's OWN smoothing, not the display's: every magnitude curve, sum and Sum
+loss in a package is computed at psychoacoustic smoothing — 1/3 octave below
+100 Hz narrowing to 1/6 above 1 kHz — whatever the panel's combo box shows, so
+two packages compare and a dip's depth means the same thing in each; the
+screen's read-outs at another smoothing may differ),
 `spatialAverage` (below), `phaseWindowMode`, `fdwCycles`, `phaseDetrendMode`, `gateShapeMs`
 (`left`, `plateau`, `right`), `gateLeft` / `gateRight` (`offsetMs`, `detrendMs`
 where pinned), `calibration` (the microphone calibration's name, no path),
@@ -282,6 +287,33 @@ rather than the direct rise — the number is real but overstates the skew),
 `groups[]`, per zone compared against the front stage: `delayMs` (the zone's
 arrival minus the front's), `levelDb` (the zone's level minus the front's),
 `bandHz`, `levelFromSpatialAverage`. Empty in views that compare no groups.
+
+### 1.10 Diagnostics on request
+
+The package is already the size a chat takes, so a reading most tunes never
+need is not in it. The assistant asks for one by its menu name, the user copies
+it (**AI assistant… → Copy diagnostics for AI → …**) and pastes it into the
+same chat as a second text:
+
+```text
+RESONALYZE_AGENT_DIAGNOSTIC_V1
+…
+BEGIN_RESONALYZE_AGENT_DIAGNOSTIC_JSON
+{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.2",
+  "diagnostic": "excessGroupDelay", "packageId": "…", "createdAtUtc": "…",
+  "conventions": { … },
+  "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } }, … ] }
+END_RESONALYZE_AGENT_DIAGNOSTIC_JSON
+```
+
+`packageId` names the package the diagnostic was copied beside (absent when
+none was copied since the project was loaded); the channel ids and the
+broadband grid are the package's, so the two lay side by side. A row is left
+out where the reading could not be made.
+
+| `diagnostic` | What the series holds |
+| --- | --- |
+| `excessGroupDelay` | Each measured channel's excess group delay in ms: its group delay less the minimum-phase part the magnitude dictates (which a minimum-phase PEQ straightens along with the magnitude), read off the raw impulse response through the project's phase gate at the channel's own arrival, at the group-delay view's own default smoothing, 1/12 octave, whatever the display shows — a group delay is a phase slope, and the package's psychoacoustic width is a hearing model for levels, not for time. What remains is arrivals and reflections — the part of a junction's phase mismatch that no PEQ can touch. |
 
 ## 2. The reply
 

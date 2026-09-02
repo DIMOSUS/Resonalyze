@@ -38,6 +38,11 @@ internal sealed record AgentPackageProcessor(
     string MaxDelaySource,
     int? PeqBandsPerChannel);
 
+/// <param name="Operations">
+/// The `op` names this build can execute. The protocol describes more than a
+/// given build runs, so a reply is written against this list: an operation
+/// missing from it is read and reviewed, then refused.
+/// </param>
 internal sealed record AgentPackageLimits(
     double[] GainDb,
     double GainStepDb,
@@ -47,7 +52,8 @@ internal sealed record AgentPackageLimits(
     double PeqPreampDb,
     double[] CrossoverHz,
     IReadOnlyDictionary<string, int[]> Slopes,
-    double[] ChebyshevRippleDb);
+    double[] ChebyshevRippleDb,
+    IReadOnlyList<string> Operations);
 
 internal sealed record AgentPackageAnalysis(
     string GroupView,

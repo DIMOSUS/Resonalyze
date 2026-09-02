@@ -7948,12 +7948,19 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // ----------------------------------------------------------------- wizard
 
-    // The crossover wizard: detects each channel's usable band and driver type
-    // from the raw magnitude, lets the user confirm the types, and writes the
-    // analytic proposal (LR24 splits, cut-only gains) into the channels. Delay
-    // and polarity stay untouched — that is Auto delay's job, done against the
-    // complex sum afterward.
-    private void OpenAutoSetupWizard()
+    /// <summary>
+    /// The crossover wizard: detects each channel's usable band and driver type
+    /// from the raw magnitude, lets the user confirm the types, and writes the
+    /// analytic proposal (LR24 splits, cut-only gains) into the channels. Delay
+    /// and polarity stay untouched — that is Auto delay's job, done against the
+    /// complex sum afterward.
+    /// </summary>
+    /// <returns>
+    /// Null when the proposal was written; otherwise why it was not, in a phrase
+    /// an import's summary can quote. The button ignores it: every refusal has
+    /// already said its piece on screen.
+    /// </returns>
+    private string? OpenAutoSetupWizard()
     {
         var participating = channels
             .Where(channel => channel.Pair.Enabled &&
@@ -7962,7 +7969,7 @@ public partial class VirtualCrossoverPanel : UserControl
         if (participating.Count < 2)
         {
             System.Media.SystemSounds.Beep.Play();
-            return;
+            return "fewer than two enabled channels have a measurement";
         }
 
         // The band read below is gate-independent (it windows each raw response
@@ -7971,7 +7978,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // misplaced window still has to be dealt with before the wizard runs.
         if (RefuseOnMisplacedGate("Auto crossover"))
         {
-            return;
+            return "the phase gate is misplaced";
         }
 
         // Band/type detection reads the raw (unprocessed) responses with a fixed
@@ -8035,7 +8042,7 @@ public partial class VirtualCrossoverPanel : UserControl
         catch (ArgumentException exception)
         {
             ShowError("A channel's response has no usable band.", exception.Message);
-            return;
+            return "a channel's response has no usable band";
         }
 
         using var dialog = new VirtualCrossoverAutoSetupDialog();
@@ -8046,7 +8053,7 @@ public partial class VirtualCrossoverPanel : UserControl
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } proposals)
         {
-            return;
+            return "cancelled in the wizard";
         }
 
         for (int i = 0; i < participating.Count; i++)
@@ -8091,6 +8098,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         ScheduleSave();
         RedrawAll();
+        return null;
     }
 
     /// <summary>

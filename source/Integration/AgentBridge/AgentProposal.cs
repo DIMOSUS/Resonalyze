@@ -4,7 +4,8 @@ namespace Resonalyze.Integration.AgentBridge;
 /// What an assistant proposed, as the parser understood it: the prose that is
 /// shown, and a closed set of typed operations that may be applied. Nothing in
 /// here can address anything but the five editable parameters of one physical
-/// channel — there is no path from a reply to a file, a source or a setting.
+/// channel and the four engines the panel already runs from its own buttons —
+/// there is no path from a reply to a file, a source or a setting.
 /// </summary>
 /// <param name="PackageId">
 /// The id of the package the assistant says it answered, echoed from that
@@ -31,14 +32,20 @@ internal sealed record AgentSource(string Url, string? Title, IReadOnlyList<stri
 internal sealed record AgentRejectedOperation(string? Id, string? Op, string Problem);
 
 /// <summary>
-/// One proposed change to one channel. Every operation carries what the
-/// assistant believes the CURRENT value is, copied from the package it read; a
-/// current value that no longer matches means the tune moved on since the
-/// package was copied, and the operation is refused rather than applied to a
-/// state it was not reasoned about.
+/// One thing a reply asks for. Two families sit under this: an operation that
+/// WRITES one channel's settings, which carries what the assistant believes the
+/// current value is — a current value that no longer matches means the tune
+/// moved on since the package was copied, and the operation is refused rather
+/// than applied to a state it was not reasoned about — and an operation that
+/// asks for one of the panel's own ENGINES to be run, which carries the
+/// engine's inputs instead, because what an engine will write is not knowable
+/// until it has run.
 /// </summary>
-internal abstract record AgentOperation(string Id, string ChannelId, string Reason)
+internal abstract record AgentOperation(string Id, string Reason)
 {
+    /// <summary>The protocol's name for the operation: what its <c>op</c> said.</summary>
+    public abstract string Op { get; }
+
     /// <summary>
     /// The parameter family the operation edits, the unit conflicts are judged in:
     /// two operations on one channel's same family cannot both be right.
@@ -46,31 +53,51 @@ internal abstract record AgentOperation(string Id, string ChannelId, string Reas
     public abstract string Parameter { get; }
 }
 
+/// <summary>An operation addressed at one physical channel, by the package's id for it.</summary>
+internal abstract record AgentChannelOperation(string Id, string ChannelId, string Reason)
+    : AgentOperation(Id, Reason);
+
+/// <summary>
+/// An operation that writes one channel's editable settings directly — the five
+/// the bridge has always had. These are the only operations the importer applies
+/// itself; everything else it asks an engine to do.
+/// </summary>
+internal abstract record AgentSettingsOperation(string Id, string ChannelId, string Reason)
+    : AgentChannelOperation(Id, ChannelId, Reason);
+
 internal sealed record SetGainOperation(
     string Id, string ChannelId, string Reason, double ExpectedCurrentDb, double ProposedDb)
-    : AgentOperation(Id, ChannelId, Reason)
+    : AgentSettingsOperation(Id, ChannelId, Reason)
 {
+    public override string Op => AgentProtocol.SetGainDb;
+
     public override string Parameter => "Gain";
 }
 
 internal sealed record SetDelayOperation(
     string Id, string ChannelId, string Reason, double ExpectedCurrentMs, double ProposedMs)
-    : AgentOperation(Id, ChannelId, Reason)
+    : AgentSettingsOperation(Id, ChannelId, Reason)
 {
+    public override string Op => AgentProtocol.SetDelayMs;
+
     public override string Parameter => "Delay";
 }
 
 internal sealed record SetPolarityOperation(
     string Id, string ChannelId, string Reason, bool ExpectedCurrentInverted, bool ProposedInverted)
-    : AgentOperation(Id, ChannelId, Reason)
+    : AgentSettingsOperation(Id, ChannelId, Reason)
 {
+    public override string Op => AgentProtocol.SetPolarity;
+
     public override string Parameter => "Polarity";
 }
 
 internal sealed record SetCrossoverOperation(
     string Id, string ChannelId, string Reason, AgentCrossover ExpectedCurrent, AgentCrossover Proposed)
-    : AgentOperation(Id, ChannelId, Reason)
+    : AgentSettingsOperation(Id, ChannelId, Reason)
 {
+    public override string Op => AgentProtocol.SetCrossover;
+
     public override string Parameter => "Crossover";
 }
 
@@ -80,9 +107,90 @@ internal sealed record SetCrossoverOperation(
 /// </param>
 internal sealed record ReplacePeqBankOperation(
     string Id, string ChannelId, string Reason, string ExpectedCurrentHash, AgentPeqBank Proposed)
-    : AgentOperation(Id, ChannelId, Reason)
+    : AgentSettingsOperation(Id, ChannelId, Reason)
 {
+    public override string Op => AgentProtocol.ReplacePeqBank;
+
     public override string Parameter => "PEQ bank";
+}
+
+/// <summary>
+/// Run Auto delay. Every input is optional, and a missing one means "what the
+/// project holds now" — which is what the dialog would open with — so a reply
+/// that wants only the scene offset changed states only that. Whether the run is
+/// stereo or single-sided the panel decides exactly as its button does; nothing
+/// in a reply can.
+/// </summary>
+/// <param name="NearSideCutDb">
+/// How much quieter the near side plays, as the dialog edits it. The layout
+/// toggle owns the sign, so this magnitude is never negative.
+/// </param>
+internal sealed record RunAutoDelayOperation(
+    string Id,
+    string Reason,
+    double? SceneOffsetMs,
+    bool? RightHandDrive,
+    bool? AdjustGains,
+    double? NearSideCutDb,
+    double? RearFillOffsetMs) : AgentOperation(Id, Reason)
+{
+    public override string Op => AgentProtocol.RunAutoDelay;
+
+    public override string Parameter => "Auto delay";
+}
+
+/// <summary>
+/// Open the Auto crossover wizard. It takes no inputs: what it proposes comes
+/// from the drivers' own bands, and the choices it does offer are made in its
+/// own dialog, in front of the user.
+/// </summary>
+internal sealed record RunAutoCrossoverOperation(string Id, string Reason)
+    : AgentOperation(Id, Reason)
+{
+    public override string Op => AgentProtocol.RunAutoCrossover;
+
+    public override string Parameter => "Auto crossover";
+}
+
+/// <summary>
+/// Fit a PEQ bank to the target on one channel. A missing input means the
+/// wizard's own answer for it.
+/// </summary>
+/// <param name="Source">
+/// <c>point</c> or <c>spatialAverage</c>: which curve the fit reads. Null leaves
+/// the choice where it is, with the channel and the panel.
+/// </param>
+internal sealed record AutoTunePeqOperation(
+    string Id,
+    string ChannelId,
+    string Reason,
+    double? TargetLevelDb,
+    double? MinHz,
+    double? MaxHz,
+    bool? AllowShelves,
+    bool? CutsOnly,
+    string? Source) : AgentChannelOperation(Id, ChannelId, Reason)
+{
+    public override string Op => AgentProtocol.AutoTunePeq;
+
+    public override string Parameter => "Auto-tune";
+}
+
+/// <summary>
+/// Judge the tune on spatial averages: read the capture family named here and
+/// tick Hybrid. The one operation addressed at the whole project rather than a
+/// channel, because the mode and the tick are the project's.
+/// </summary>
+/// <param name="Hybrid">
+/// Only <c>true</c> is accepted. Turning the hybrid OFF is not something a reply
+/// has a reason to ask for, and refusing it costs nothing.
+/// </param>
+internal sealed record UseSpatialAverageOperation(
+    string Id, string Reason, string Mode, bool Hybrid) : AgentOperation(Id, Reason)
+{
+    public override string Op => AgentProtocol.UseSpatialAverage;
+
+    public override string Parameter => "Spatial average";
 }
 
 /// <summary>

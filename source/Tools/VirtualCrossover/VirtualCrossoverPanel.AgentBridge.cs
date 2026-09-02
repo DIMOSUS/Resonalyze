@@ -77,16 +77,30 @@ public partial class VirtualCrossoverPanel
         DropDownMenu.ShowUnder(buttonAi, agentMenu);
     }
 
-    // What the last import wrote, for Undo, and the project generation it was
+    // What the last import moved, for Undo, and the project generation it was
     // written into: a session loaded since has different settings objects, and
     // the entries would restore into ones nobody displays.
-    private List<AgentUndoEntry>? agentUndo;
+    private AgentImportUndo? agentUndo;
     private long agentUndoGeneration;
+
+    /// <summary>
+    /// Everything one import can move, as it stood before it ran. Every channel's
+    /// chain is taken, not only the ones a row names: an engine writes channels no
+    /// row mentions, and the crossover wizard can reorder the blocks as well.
+    /// </summary>
+    private sealed record AgentImportUndo(
+        IReadOnlyList<AgentUndoEntry> Channels,
+        VirtualCrossoverSpatialAverageMode? SpatialAverageMode,
+        bool HybridTicked,
+        IReadOnlyList<VirtualCrossoverChannel> Order);
 
     /// <summary>
     /// Import AI proposal: clipboard → strict parse → review against the live
     /// settings → the dialog → a second review of the ticked rows against the
-    /// settings as they are at commit → one write, one save, one redraw.
+    /// settings as they are at commit → one write of the settings rows, then the
+    /// engine requests in their fixed order, then one summary. Undo is armed
+    /// before anything is written, so a failure part-way through still leaves the
+    /// whole import undoable.
     /// </summary>
     private void ImportAiProposal()
     {
@@ -97,6 +111,7 @@ public partial class VirtualCrossoverPanel
 
         agentBusy = true;
         RefreshAutoActionsEnabled();
+        var summary = new List<string>();
         try
         {
             if (!AgentClipboard.TryRead(out string? text, out string? error))
@@ -150,25 +165,57 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
-            List<AgentUndoEntry> undo = AgentProposalApplier.Apply(toApply);
-            RefreshChannelsAfterAgentWrite(undo);
+            // Armed BEFORE the first write, not after the last one: an engine can
+            // throw with the settings rows already in the tune, and an import the
+            // user cannot undo is the worst thing this menu could leave behind.
+            // The previous import's undo is put back only if nothing moved at all.
+            AgentImportUndo undo = CaptureAgentUndo();
+            AgentImportUndo? previousUndo = agentUndo;
+            long previousUndoGeneration = agentUndoGeneration;
             agentUndo = undo;
             agentUndoGeneration = projectGeneration;
+
+            List<AgentUndoEntry> written = AgentProposalApplier.Apply(toApply);
+            if (written.Count > 0)
+            {
+                RefreshChannelsAfterAgentWrite(written);
+                int proposed = review.Verdicts.Count;
+                int rows = toApply.Count(verdict => verdict.Operation is AgentSettingsOperation);
+                summary.Add(
+                    $"Applied {rows} of {proposed} proposed change{(proposed == 1 ? "" : "s")}.");
+            }
+
+            bool ran = RunAgentEngineRequests(toApply, summary);
+            if (written.Count == 0 && !ran)
+            {
+                agentUndo = previousUndo;
+                agentUndoGeneration = previousUndoGeneration;
+            }
+
             ScheduleSave();
             RedrawAll();
-
-            int proposed = review.Verdicts.Count;
             MessageBox.Show(
                 FindForm(),
-                $"Applied {toApply.Count} of {proposed} proposed change{(proposed == 1 ? "" : "s")}. " +
-                "Undo AI import is in the same menu.",
+                string.Join(Environment.NewLine, summary) + Environment.NewLine +
+                Environment.NewLine + "Undo AI import is in the same menu.",
                 "Import AI proposal",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            ShowError("The AI proposal was not imported.", exception.Message);
+            // What the summary already holds DID happen; saying "not imported"
+            // over it would send the reader looking for changes that are there.
+            ShowError(
+                summary.Count == 0
+                    ? "The AI proposal was not imported."
+                    : "The AI proposal was imported only in part.",
+                summary.Count == 0
+                    ? exception.Message
+                    : string.Join(Environment.NewLine, summary) + Environment.NewLine +
+                        Environment.NewLine + "Then it stopped: " + exception.Message +
+                        Environment.NewLine + Environment.NewLine +
+                        "Undo AI import puts the whole import back.");
         }
         finally
         {
@@ -176,6 +223,113 @@ public partial class VirtualCrossoverPanel
             RefreshAutoActionsEnabled();
         }
     }
+
+    /// <summary>
+    /// The engine requests of one import, in the fixed order an import runs them,
+    /// whatever order the reply listed: the spatial average first (it decides
+    /// which curves the rest read), then Auto crossover, then Auto delay, then
+    /// Auto-tune, which is last because it fits the bank to everything the others
+    /// left behind. The settings rows are already written by the time this runs.
+    /// Each engine keeps its own confirmation: cancelling one skips that
+    /// operation and the import carries on with the next.
+    /// </summary>
+    /// <returns>Whether any of them changed the project.</returns>
+    private bool RunAgentEngineRequests(
+        IReadOnlyList<AgentOperationVerdict> toApply, List<string> summary)
+    {
+        bool ran = false;
+        foreach (AgentOperation operation in toApply
+            .Where(verdict => verdict.Applicable)
+            .Select(verdict => verdict.Operation!)
+            .Where(operation => operation is not AgentSettingsOperation)
+            .OrderBy(AgentEngineOrder))
+        {
+            switch (operation)
+            {
+                case UseSpatialAverageOperation spatial:
+                    bool applied = ApplyAgentSpatialAverage(spatial);
+                    summary.Add(applied
+                        ? $"Spatial average: {spatial.Mode}, hybrid on."
+                        : $"Spatial average: skipped ('{spatial.Mode}' names no capture family).");
+                    ran |= applied;
+                    break;
+
+                case RunAutoCrossoverOperation:
+                    string? refused = OpenAutoSetupWizard();
+                    summary.Add(refused == null
+                        ? "Auto crossover: applied."
+                        : $"Auto crossover: skipped ({refused}).");
+                    ran |= refused == null;
+                    break;
+
+                // Auto delay and Auto-tune are not in AgentProtocol.Operations
+                // yet, so the review refuses them and no row reaches here. When
+                // they are wired up they take a case of their own, in the order
+                // AgentEngineOrder already gives them.
+                default:
+                    summary.Add(
+                        $"{operation.Parameter}: skipped " +
+                        "(not available in this version of Resonalyze).");
+                    break;
+            }
+        }
+
+        return ran;
+    }
+
+    private static int AgentEngineOrder(AgentOperation operation) => operation switch
+    {
+        UseSpatialAverageOperation => 0,
+        RunAutoCrossoverOperation => 1,
+        RunAutoDelayOperation => 2,
+        _ => 3
+    };
+
+    // The mode and the tick together: either one alone leaves the point
+    // measurement in charge, which is the thing the operation exists to fix. The
+    // panel's own project events are suppressed around the pair so the import
+    // saves and redraws once, at the end, rather than after each step.
+    /// <returns>Whether the mode named by the request is one the panel has.</returns>
+    private bool ApplyAgentSpatialAverage(UseSpatialAverageOperation operation)
+    {
+        // The review has already refused an unknown mode, so this is a guard, not
+        // a path — but the summary is written from the answer, so it must be one.
+        if (!AgentOperations.TryParseName(
+            operation.Mode, out VirtualCrossoverSpatialAverageMode mode))
+        {
+            return false;
+        }
+
+        bool suppressed = suppressProjectEvents;
+        suppressProjectEvents = true;
+        try
+        {
+            SetSpatialAverageMode(mode);
+            checkBoxHybrid.Checked = true;
+            project.ShowHybridCurves = true;
+        }
+        finally
+        {
+            suppressProjectEvents = suppressed;
+        }
+
+        // SetSpatialAverageMode returns early when the mode is already the one
+        // asked for, and the tick alone still changes what can be drawn.
+        RefreshHybridAvailability();
+        return true;
+    }
+
+    // Everything the import could move, before it moves any of it.
+    private AgentImportUndo CaptureAgentUndo() =>
+        new(
+            AgentChannelSlots()
+                .Select(slot => slot.Channel.SideSettings(slot.RightSide))
+                .Select(settings => new AgentUndoEntry(
+                    settings, AgentOperations.CloneEditable(settings)))
+                .ToList(),
+            project.SpatialAverageMode,
+            checkBoxHybrid.Checked,
+            channels.ToList());
 
     private void UndoAiImport()
     {
@@ -190,12 +344,50 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        List<AgentUndoEntry> undo = agentUndo;
+        AgentImportUndo undo = agentUndo;
         agentUndo = null;
-        AgentProposalApplier.Restore(undo);
-        RefreshChannelsAfterAgentWrite(undo);
+        AgentProposalApplier.Restore(undo.Channels);
+        RefreshChannelsAfterAgentWrite(undo.Channels);
+        RestoreAgentChannelOrder(undo.Order);
+
+        bool suppressed = suppressProjectEvents;
+        suppressProjectEvents = true;
+        try
+        {
+            project.SpatialAverageMode = undo.SpatialAverageMode;
+            checkBoxHybrid.Checked = undo.HybridTicked;
+            project.ShowHybridCurves = undo.HybridTicked;
+        }
+        finally
+        {
+            suppressProjectEvents = suppressed;
+        }
+
+        foreach (VirtualCrossoverChannel channel in channels)
+        {
+            RefreshSpatialAverageStatus(channel);
+        }
+
+        RefreshHybridAvailability();
         ScheduleSave();
         RedrawAll();
+    }
+
+    // The Auto crossover wizard can reorder the blocks, and the block letters a
+    // reply used are that order. Restored by identity rather than by index: the
+    // list holds the same objects, in another arrangement.
+    private void RestoreAgentChannelOrder(IReadOnlyList<VirtualCrossoverChannel> order)
+    {
+        if (order.Count != channels.Count || order.SequenceEqual(channels))
+        {
+            return;
+        }
+
+        List<int> indices = order.Select(channel => channels.IndexOf(channel)).ToList();
+        if (indices.All(index => index >= 0))
+        {
+            ApplyChannelOrder(indices);
+        }
     }
 
     // The blocks whose settings an import (or its undo) wrote, refreshed the way
@@ -291,16 +483,34 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    /// <summary>The channels as the bridge names them, with their live settings.</summary>
+    /// <summary>
+    /// The channels as the bridge names them, with their live settings and what
+    /// each side carries, plus the project figures an engine request is judged
+    /// and described against.
+    /// </summary>
     internal AgentSessionSnapshot BuildAgentSessionSnapshot() =>
         new(
             AgentChannelSlots()
                 .Select(slot => new AgentChannelSnapshot(
-                    slot.Block, slot.Side, slot.Channel.SideSettings(slot.RightSide)))
+                    slot.Block,
+                    slot.Side,
+                    slot.Channel.SideSettings(slot.RightSide),
+                    slot.Channel.SideState(slot.RightSide).TransferImpulseResponse != null,
+                    AgentSpatialAverageCaptures(slot.Channel.SideState(slot.RightSide))))
                 .ToList(),
             ProcessorSampleRateHz,
             ProcessorProfile.MaxDelayMs,
-            lastAgentPackageId);
+            lastAgentPackageId,
+            new AgentAutoDelaySettings(
+                project.StereoSceneOffsetMagnitudeMs,
+                project.StereoRightHandDrive,
+                // The dialog's gain balance opens unticked every time: the project
+                // stores the tilt it would apply, never the opt-in itself.
+                AdjustGains: false,
+                Math.Abs(project.StereoLevelDifferenceDb),
+                project.RearFillOffsetMs),
+            SpatialAverageMode,
+            checkBoxHybrid.Checked);
 
     // Every physical channel in block order: a stereo block yields its left and
     // right slots, a mono block its single one (routed to the left slot, as the

@@ -198,7 +198,8 @@ internal static class AgentPackageBuilder
             Enum.GetValues<CrossoverFilterFamily>().ToDictionary(
                 family => family.ToString(),
                 family => CrossoverFilter.SupportedSlopes(family).ToArray()),
-            [0, CrossoverFilter.MaximumChebyshevRippleDb]);
+            [0, CrossoverFilter.MaximumChebyshevRippleDb],
+            AgentProtocol.Operations);
 
     private static AgentPackageAnalysis BuildAnalysis(
         AgentAnalysisInputs analysis,

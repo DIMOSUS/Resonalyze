@@ -38,10 +38,21 @@ internal static class AgentChannelIds
 /// against, and what a commit writes to. The validator never mutates it: every
 /// trial edit goes to a copy.
 /// </param>
+/// <param name="HasMeasurement">
+/// Whether the side carries an impulse response. An engine asked to fit this
+/// channel has nothing to fit without one.
+/// </param>
+/// <param name="SpatialAverageCaptures">
+/// Every capture family the side holds, in the mode enum's own names — the same
+/// list the package prints as <c>source.spatialAverageCaptures</c>. What the mode
+/// currently READS is the session's business, not the channel's.
+/// </param>
 internal sealed record AgentChannelSnapshot(
     string Block,
     AgentChannelSide Side,
-    VirtualCrossoverChannelSettings Settings)
+    VirtualCrossoverChannelSettings Settings,
+    bool HasMeasurement,
+    IReadOnlyList<string> SpatialAverageCaptures)
 {
     public string Id => AgentChannelIds.Format(Block, Side);
 
@@ -65,16 +76,48 @@ internal sealed record AgentChannelSnapshot(
 /// The id of the package this session most recently copied, or null when it has
 /// not copied one since it opened. A reply naming another id gets a warning.
 /// </param>
+/// <param name="AutoDelay">
+/// What an Auto delay run would start from: the values the dialog would open
+/// with. An engine request that leaves an input out is judged, and described in
+/// the review, against these.
+/// </param>
+/// <param name="SpatialAverageMode">
+/// The capture family in force — the panel's effective mode, not the raw stored
+/// one, so a project that has not settled its choice yet is judged on what it
+/// actually draws.
+/// </param>
+/// <param name="HybridTicked">Whether the Hybrid box under the plot is ticked.</param>
 internal sealed record AgentSessionSnapshot(
     IReadOnlyList<AgentChannelSnapshot> Channels,
     int ProcessorSampleRateHz,
     double MaxDelayMs,
-    string? LastPackageId)
+    string? LastPackageId,
+    AgentAutoDelaySettings AutoDelay,
+    VirtualCrossoverSpatialAverageMode SpatialAverageMode,
+    bool HybridTicked)
 {
     public AgentChannelSnapshot? Find(string channelId) =>
         Channels.FirstOrDefault(channel =>
             string.Equals(channel.Id, channelId, StringComparison.Ordinal));
+
+    /// <summary>Whether any channel of the session holds a capture of that family.</summary>
+    public bool HasCapture(VirtualCrossoverSpatialAverageMode mode) =>
+        Channels.Any(channel => channel.SpatialAverageCaptures.Contains(
+            mode.ToString(), StringComparer.Ordinal));
 }
+
+/// <summary>
+/// The Auto delay inputs as the dialog would present them: the project's own
+/// figures as layout-neutral magnitudes (the layout toggle owns every sign), and
+/// the gain balance's opt-in, which the dialog opens unticked every time rather
+/// than storing an answer.
+/// </summary>
+internal sealed record AgentAutoDelaySettings(
+    double SceneOffsetMs,
+    bool RightHandDrive,
+    bool AdjustGains,
+    double NearSideCutDb,
+    double RearFillOffsetMs);
 
 /// <summary>
 /// A short fingerprint of one channel's PEQ bank, printed in the package and

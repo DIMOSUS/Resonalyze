@@ -360,6 +360,22 @@ public sealed class AgentPackageBuilderTests
     }
 
     [Fact]
+    public void Limits_NameTheOperationsThisBuildCanRun()
+    {
+        JsonElement limits = Json(AgentPackageBuilder.Build(Inputs(), Id, Clock).Text!).GetProperty("limits");
+
+        string[] operations = limits.GetProperty("operations")
+            .EnumerateArray().Select(operation => operation.GetString()!).ToArray();
+
+        Assert.Equal(AgentProtocol.Operations, operations);
+        Assert.Contains("useSpatialAverage", operations);
+        Assert.Contains("runAutoCrossover", operations);
+        // The protocol describes these two; this build reviews them and refuses.
+        Assert.DoesNotContain("runAutoDelay", operations);
+        Assert.DoesNotContain("autoTunePeq", operations);
+    }
+
+    [Fact]
     public void Limits_RestateWhatTheProjectValidatorEnforces()
     {
         JsonElement limits = Json(AgentPackageBuilder.Build(Inputs(), Id, Clock).Text!).GetProperty("limits");

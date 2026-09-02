@@ -77,4 +77,38 @@ internal static class AgentProtocol
     public const string SetPolarity = "setPolarity";
     public const string SetCrossover = "setCrossover";
     public const string ReplacePeqBank = "replacePeqBank";
+
+    // The intent operations: "open engine X with these settings" rather than
+    // "write this value". The engine keeps its own confirmation.
+    public const string RunAutoDelay = "runAutoDelay";
+    public const string RunAutoCrossover = "runAutoCrossover";
+    public const string AutoTunePeq = "autoTunePeq";
+    public const string UseSpatialAverage = "useSpatialAverage";
+
+    /// <summary>
+    /// The operations this build EXECUTES, published as <c>limits.operations</c>
+    /// and the list the importer holds a reply to. The protocol describes more
+    /// than a given build can run: the parser and the validator understand every
+    /// operation named above — so a reply written for a later build is read
+    /// rather than mangled — and one that is missing from this list is reviewed
+    /// and then refused with a plain reason. The guide tells the assistant to
+    /// use only what the package lists.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Operations =
+    [
+        SetGainDb,
+        SetDelayMs,
+        SetPolarity,
+        SetCrossover,
+        ReplacePeqBank,
+        UseSpatialAverage,
+        RunAutoCrossover
+    ];
+
+    public static bool Executes(string op) => Operations.Contains(op, StringComparer.Ordinal);
+
+    /// <summary>Why an operation this build does not run was refused.</summary>
+    public static string NotAvailable(string op) =>
+        $"'{op}' is not available in this version of Resonalyze; the package's " +
+        "limits.operations lists the operations it can run.";
 }

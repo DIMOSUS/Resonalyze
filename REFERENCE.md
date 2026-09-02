@@ -2878,10 +2878,10 @@ this: the clipboard is the only transport, and you are the one who pastes.
   (preamp and every band together) rises above 0 dB somewhere and would clip a
   full-scale signal there, a bell narrower than Q 2 within an octave of one of
   the channel's own crossover corners (fine where it flattens a feature of the
-  driver itself — one the spatial average shows too, with a flat excess group
-  delay across it — since a minimum-phase bell straightens that phase along
-  with the magnitude; on a dip the average does not show, or one the excess
-  group delay swings across, it turns the pair's phase for nothing), a PEQ
+  driver itself — one the spatial average shows too — since a minimum-phase
+  bell straightens that feature's phase along with the magnitude, whatever
+  excess dispersion the channel also carries there; on a dip the average does
+  not show it turns the pair's phase for nothing), a PEQ
   bank or crossover the device's own limits were not checked
   against because the catalog does not know them, an engine that will write over
   more than the rows name — is a word in the Status column, not only a colour.

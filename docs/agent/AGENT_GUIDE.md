@@ -168,10 +168,16 @@ Work in this order; each step gates the next.
      all-pass band, a different crossover slope or type, or the reflection
      itself (aiming, treatment), not the PEQ. Two flat curves at different
      levels are a plain timing offset, which is Auto delay's work.
-   - A PEQ is the suspect only where its band corrects something that is
-     not minimum-phase — a feature absent from `hybridPreDspDb`, present at
-     one point and gone in the average, or one the average keeps but whose
-     excess group delay swings across it (a stable reflection or a mode).
+   - The two parts coexist in one band: a channel is its minimum-phase
+     response times an all-pass part, and a resonance and a reflection can
+     sit at the same frequency. A bell that undoes the resonance corrects
+     the resonance's phase turn whether or not excess dispersion is there
+     too — it does not touch the excess, and the excess does not make it
+     wrong. So a PEQ is the suspect only where its band corrects something
+     the driver does not have — a feature absent from `hybridPreDspDb`, or
+     present at one point and gone in the average — and the excess curve
+     says how much of the junction's phase problem remains for timing and
+     all-pass to take, PEQ or no PEQ.
    When in doubt, advise a diagnostic pass and read it BOTH ways: clear the
    PEQ bank on the channels of that junction (a `replacePeqBank` with an
    empty `bands` list and `preampDb: 0` is a valid operation; the block's
@@ -236,22 +242,24 @@ Work in this order; each step gates the next.
    level the amplifier gain has to give back, with its noise.
    Near a junction — inside `junctions[].bandHz`, an octave to each side of
    the crossover — a bell's phase turn lands right where the pair's sum is
-   built, so ask what the band corrects. Two magnitude curves agreeing is
-   not proof of minimum phase — a stable reflection, a cabin mode or a
-   two-path cancellation survives the averaging and still carries excess
-   phase — so the evidence is the excess group delay (§4, the diagnostic on
-   request). A feature of the driver itself shows alike on `preDspDb` and on
+   built, so ask what the band corrects. Two readings answer two different
+   questions. The spatial average says whether the magnitude feature is the
+   driver's at all: one that shows alike on `preDspDb` and on
    `hybridPreDspDb` (both BEFORE the chain, so the current PEQ cannot have
-   made or hidden it) AND has a flat excess group delay across it (constant,
-   whatever its level — the level is the arrival): it is
-   minimum-phase, a bell that flattens it also straightens the phase, narrow
-   is fine there, and taking such a band out makes the junction worse. A
-   dip the average does not show, one that moves between the point and the
-   average, or one whose excess group delay swings across it, is not
-   minimum-phase — interference, a mode, a reflection — and a bell on it
-   turns the phase for nothing: keep Q ≤ 2 there, or leave it. The review
-   warns on any bell narrower than Q 2 in the zone so the user looks; say in
-   the reason which case it is, and on what evidence.
+   made or hidden it) is position-stable and worth a bell, narrow if the
+   feature is narrow, and the bell straightens the minimum-phase turn that
+   feature carries — taking such a band out makes the junction worse. A dip
+   the average does not show, or one that moves between the point and the
+   average, is interference, position-bound, and a bell on it turns the
+   phase for nothing: keep Q ≤ 2 there, or leave it. The excess group delay
+   (§4, the diagnostic on request) answers the other question — how much of
+   the junction's phase problem no PEQ will fix: excess dispersion across the
+   band coexists with the driver's own features, is not evidence against
+   them and is not a reason to withhold the bell; it is the part that
+   timing, polarity, an all-pass band or the crossover has to take, with or
+   without the PEQ. The review warns on any bell narrower than Q 2 in the
+   zone so the user looks; say in the reason which case it is, and on what
+   evidence.
 
 ## 4. What the read-outs mean
 
@@ -278,7 +286,9 @@ Work in this order; each step gates the next.
   offset between the channels, Auto delay's work. Bending or swinging inside
   a junction band, or two curves whose difference is not constant across it:
   reflections, a second path, all-pass-like behaviour — which timing,
-  polarity, all-pass bands and the crossover address, never a PEQ.
+  polarity, all-pass bands and the crossover address, never a PEQ. Excess
+  dispersion and a driver's own minimum-phase feature can share a band: the
+  curve says what a PEQ will leave behind there, not whether the PEQ is right.
 - **Measured band** — where the measurement has content. Outside it, curves
   are absent on purpose.
 - **Spatial average / hybrid** — level measured over the listening volume

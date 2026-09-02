@@ -1039,15 +1039,34 @@ public partial class VirtualCrossoverPanel
                 activeShown = shown;
             }
 
-            // The opposite side windows through ITS gate placement, never the
-            // active side's pin — the same rule the on-screen opposite sum follows.
-            VirtualCrossoverMetrics sideMetrics = rightSide == activeRight
-                ? metrics
-                : new VirtualCrossoverMetrics(
-                    processingCoordinator,
-                    BuildOppositeSideMagnitudeCurve,
-                    CalibrationFor,
-                    BuildOppositeSideSumCurve);
+            // A metric block of the package's own, for BOTH sides: the panel's
+            // `metrics` builds its channel and sum curves through the live gate
+            // snapshot — the display's smoothing — and BuildCurves' smoothing
+            // argument reaches only the loss curve. These delegates window through
+            // the package gate instead, so processedDb, sumDb and the loss all
+            // carry the package's smoothing. The opposite side windows through ITS
+            // gate placement, never the active side's pin — the same rule the
+            // on-screen opposite sum follows.
+            bool oppositeSide = rightSide != activeRight;
+            var sideMetrics = new VirtualCrossoverMetrics(
+                processingCoordinator,
+                (impulseResponse, anchorIndex, sampleRate, band, calibration) =>
+                    BuildGatedMagnitudeCurve(
+                        packageGate,
+                        impulseResponse,
+                        anchorIndex,
+                        sampleRate,
+                        packageGate.ResolveGateOffsetMs(oppositeSide, anchorIndex, sampleRate),
+                        band,
+                        calibration),
+                CalibrationFor,
+                (members, anchorIndex) =>
+                    BuildMeasuredSumCurve(
+                        packageGate,
+                        members,
+                        anchorIndex,
+                        packageGate.ResolveGateOffsetMs(
+                            oppositeSide, anchorIndex, members.Count > 0 ? members[0].SampleRate : 0)));
 
             List<AnalysisCurve>? magnitudes = null;
             AnalysisCurve? sumCurve = null;
@@ -1415,33 +1434,4 @@ public partial class VirtualCrossoverPanel
         return (correlation, coherence);
     }
 
-    private GatedMagnitude BuildOppositeSideMagnitudeCurve(
-        Complex[] impulseResponse,
-        int anchorIndex,
-        int sampleRate,
-        MeasuredBand band,
-        CalibrationFile? calibration)
-    {
-        MagnitudeGateSnapshot snapshot = magnitudeGate;
-        return BuildGatedMagnitudeCurve(
-            snapshot,
-            impulseResponse,
-            anchorIndex,
-            sampleRate,
-            snapshot.ResolveGateOffsetMs(oppositeSide: true, anchorIndex, sampleRate),
-            band,
-            calibration);
-    }
-
-    private GatedMagnitude BuildOppositeSideSumCurve(
-        IReadOnlyList<ProcessedChannel> channels, int anchorIndex)
-    {
-        MagnitudeGateSnapshot snapshot = magnitudeGate;
-        return BuildMeasuredSumCurve(
-            snapshot,
-            channels,
-            anchorIndex,
-            snapshot.ResolveGateOffsetMs(
-                oppositeSide: true, anchorIndex, channels.Count > 0 ? channels[0].SampleRate : 0));
-    }
 }

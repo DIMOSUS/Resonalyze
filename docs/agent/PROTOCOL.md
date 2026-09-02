@@ -140,6 +140,11 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
 - `peq.hash` is twelve hex digits of SHA-256 over the bands in order (type,
   frequency, Q, gain in round-trip form) and the preamp. A `replacePeqBank`
   reply echoes it instead of the whole current bank.
+- `peq.peakDb` / `peq.peakHz` is the highest point of the bank's **net**
+  response — preamp and every band together, built at the processor's rate.
+  Above 0 dB the device is asked for more than unity there and a full-scale
+  signal clips. A boost inside a wider cut, or under a negative preamp, is not
+  a headroom problem; the sign of one band says nothing.
 - `curves.broadband` runs 20 Hz to the lower of 20 kHz and half of either sample
   rate, at **12 points per octave**, endpoints included. Columns present only
   when the channel has them: `preDspDb` (the measured response before the chain —
@@ -298,7 +303,7 @@ that changes nothing is refused as "no change".
 | `setDelayMs` | `expectedCurrent`, `proposed` (ms) | `limits.delayMs`, `limits.delayStepMs`; above `processor.maxDelayMs` is a warning |
 | `setPolarity` | `expectedCurrent`, `proposed` (booleans, true = inverted) | — |
 | `setCrossover` | `expectedCurrent`, `proposed` (a crossover object) | kind and family names exactly as in the package; slopes per family; corner in `limits.crossoverHz` and below the processor's Nyquist; ripple in `limits.chebyshevRippleDb` for Chebyshev |
-| `replacePeqBank` | `expectedCurrentHash`, `proposed` `{ preampDb, bands[] }` | at most `limits.peqBands` bands; every band `frequencyHz > 0` and below the processor's Nyquist, `q > 0`, finite `gainDb`, `type` one of `Peaking`, `LowShelf`, `HighShelf`, `AllPassFirstOrder`, `AllPassSecondOrder`; preamp within ±`limits.peqPreampDb` |
+| `replacePeqBank` | `expectedCurrentHash`, `proposed` `{ preampDb, bands[] }` | at most `limits.peqBands` bands; every band `frequencyHz > 0` and below the processor's Nyquist, `q > 0`, finite `gainDb`, `type` one of `Peaking`, `LowShelf`, `HighShelf`, `AllPassFirstOrder`, `AllPassSecondOrder`; preamp within ±`limits.peqPreampDb`; a net response rising above 0 dB is a warning naming the peak and the preamp that would absorb it |
 
 A crossover object is `{ kind, highPass?, lowPass? }` with each edge
 `{ family, frequencyHz, slopeDbPerOctave, rippleDb? }`. The edges the kind uses

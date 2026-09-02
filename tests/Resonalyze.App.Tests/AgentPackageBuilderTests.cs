@@ -78,6 +78,9 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(AgentPeqHash.Compute(-1, [new PeqBand(820, 2.1, -2.4)]), peq.GetProperty("hash").GetString());
         Assert.Equal("Peaking", peq.GetProperty("bands")[0].GetProperty("type").GetString());
         Assert.Equal(2.1, peq.GetProperty("bands")[0].GetProperty("q").GetDouble());
+        // A cut under a −1 dB preamp: the net response never rises above the preamp.
+        Assert.Equal(-1.0, peq.GetProperty("peakDb").GetDouble());
+        Assert.True(peq.TryGetProperty("peakHz", out _));
 
         JsonElement aRight = channels[1];
         Assert.False(aRight.GetProperty("source").GetProperty("available").GetBoolean());

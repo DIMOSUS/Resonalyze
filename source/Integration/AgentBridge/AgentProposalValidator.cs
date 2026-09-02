@@ -66,6 +66,9 @@ internal static class AgentProposalValidator
     public const string DeviceLimitsUnknown =
         "Device limits unknown; only Virtual DSP limits were checked.";
 
+    // Below this a net rise is bilinear warping and rounding, not a boost.
+    private const double HeadroomToleranceDb = 0.05;
+
     public static AgentProposalReview Review(AgentProposal proposal, AgentSessionSnapshot session)
     {
         ArgumentNullException.ThrowIfNull(proposal);
@@ -282,6 +285,20 @@ internal static class AgentProposalValidator
                 if (bands.Any(band => band.FrequencyHz >= nyquistHz))
                 {
                     return $"Every PEQ band must sit below the processor's Nyquist of {Hz(nyquistHz)}.";
+                }
+                // Headroom is judged on the NET response, never on a band's sign: a
+                // boost inside a wider cut, or under a negative preamp, asks the
+                // device for nothing; a net rise above unity is where a full-scale
+                // signal clips. A warning, not a refusal — the user may know the
+                // source never reaches full scale.
+                (double peakDb, double peakHz) = AgentPeqHeadroom.Peak(
+                    peq.Proposed.PreampDb, bands, session.ProcessorSampleRateHz);
+                if (peakDb > HeadroomToleranceDb)
+                {
+                    notes.Add(
+                        $"The bank's net response rises to +{Db(peakDb)} at " +
+                        $"{Hz(AgentCurveSampling.Frequency(peakHz))}: " +
+                        $"trim the boost, or lower the preamp by {Db(peakDb)}.");
                 }
                 notes.Add(DeviceLimitsUnknown);
                 break;

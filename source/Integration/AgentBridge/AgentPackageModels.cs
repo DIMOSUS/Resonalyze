@@ -123,9 +123,12 @@ internal sealed record AgentPackageEdge(
     int SlopeDbPerOctave,
     double RippleDb);
 
+/// <param name="PeakDb">The net response's highest point, preamp included; above 0 dB is a headroom problem.</param>
 internal sealed record AgentPackagePeq(
     double PreampDb,
     string Hash,
+    double PeakDb,
+    double PeakHz,
     IReadOnlyList<AgentPackageBand> Bands);
 
 internal sealed record AgentPackageBand(string Type, double FrequencyHz, double Q, double GainDb);

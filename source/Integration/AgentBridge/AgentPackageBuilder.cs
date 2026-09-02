@@ -60,6 +60,7 @@ internal static class AgentPackageBuilder
             ["phase"] = "degrees",
             ["coherence"] = "gamma squared, 0..1",
             ["peqQ"] = "RBJ cookbook Q; the processor's own Q convention is applied only when numbers leave for the device",
+            ["peqPeak"] = "peakDb/peakHz = the highest point of the bank's NET response (preamp + all bands); above 0 dB the device is asked for more than unity there and a full-scale signal clips — lower the preamp by that much or trim the boost; a boost inside a wider cut or under a negative preamp is not a headroom problem",
             ["crossoverEdges"] = "both edges are stored; kind says which act: LowPass uses lowPass, HighPass uses highPass, BandPass both, Off none",
             ["curves"] = "preDspDb = measured response before the chain (Raw); processedDb = through the chain (Processed); chainDb = the chain alone; peqDb = the PEQ alone; hybridDb = the spatial average through the chain; null = not measured there",
             ["sumLoss"] = "dB <= 0: how far the coherent sum falls short of the magnitude sum over the junction band; averageDb over the band, dipDb its worst point",
@@ -235,6 +236,8 @@ internal static class AgentPackageBuilder
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
         AgentSourceInputs? source = channel.Source;
+        (double PeakDb, double PeakHz) peak = AgentPeqHeadroom.Peak(
+            settings.PeqPreampDb, settings.PeqBands, channel.ProcessorSampleRateHz);
         var dsp = new AgentPackageDsp(
             settings.GainDb,
             settings.DelayMs,
@@ -246,6 +249,8 @@ internal static class AgentPackageBuilder
             new AgentPackagePeq(
                 settings.PeqPreampDb,
                 AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands),
+                Math.Round(peak.PeakDb, 1),
+                AgentCurveSampling.Frequency(peak.PeakHz),
                 settings.PeqBands
                     .Select(band => new AgentPackageBand(
                         band.Type.ToString(), band.FrequencyHz, band.Q, band.GainDb))

@@ -2820,9 +2820,11 @@ this: the clipboard is the only transport, and you are the one who pastes.
   slopes, the corner range and the processor's Nyquist, the PEQ band count), one
   that changes nothing, and two that contradict each other. Admissible rows start
   ticked; rejected rows cannot be ticked; a warning — a delay above the
-  processor's stated ceiling, a PEQ bank or crossover the device's own limits
-  were not checked against because the catalog does not know them — is a word in
-  the Status column, not only a colour. **Apply selected** looks at the ticked
+  processor's stated ceiling, a PEQ bank whose net response (preamp and every
+  band together) rises above 0 dB somewhere and would clip a full-scale signal
+  there, a PEQ bank or crossover the device's own limits were not checked
+  against because the catalog does not know them — is a word in the Status
+  column, not only a colour. **Apply selected** looks at the ticked
   rows once more against the live settings, writes them as one set, saves once
   and redraws once; a failure anywhere writes nothing. Validity is not quality: a
   proposal that passes every check can still be a worse tune, so listen before you

@@ -266,6 +266,43 @@ public sealed class AgentProposalValidatorTests
     }
 
     [Fact]
+    public void Review_WarnsWhenABanksNetResponseRisesAboveUnity_JudgedOnTheWholeBankNotOnABandsSign()
+    {
+        AgentSessionSnapshot session = Session();
+        AgentChannelSnapshot bLeft = session.Find("B:left")!;
+        string hash = AgentPeqHash.Compute(bLeft.Settings.PeqPreampDb, bLeft.Settings.PeqBands);
+        string Judge(AgentPeqBank bank) => AgentProposalValidator.Review(
+            Proposal(new ReplacePeqBankOperation("op-1", "B:left", "", hash, bank)), session)
+            .Verdicts[0].Message;
+
+        // A +3 dB bell with nothing against it.
+        string bare = Judge(new AgentPeqBank(0, [new AgentPeqBand("Peaking", 1_000, 1.5, 3)]));
+        // The peak sits on the headroom grid's nearest point to the bell's centre.
+        Assert.Matches(@"rises to \+3\.0 dB at (9[89]\d|10[01]\d)(\.\d+)? Hz", bare);
+        Assert.Contains("lower the preamp by 3.0 dB", bare);
+        // The same bell under a −3 dB preamp: net never above unity.
+        Assert.DoesNotContain("rises",
+            Judge(new AgentPeqBank(-3, [new AgentPeqBand("Peaking", 1_000, 1.5, 3)])));
+        // A +3 dB bell inside a −6 dB shelf that covers it: net stays below zero.
+        Assert.DoesNotContain("rises",
+            Judge(new AgentPeqBank(0, [new AgentPeqBand("LowShelf", 4_000, 0.7, -6), new AgentPeqBand("Peaking", 1_000, 1.5, 3)])));
+        // A cut only: no rise, no warning.
+        Assert.DoesNotContain("rises",
+            Judge(new AgentPeqBank(0, [new AgentPeqBand("Peaking", 1_000, 1.5, -3)])));
+    }
+
+    [Fact]
+    public void PeqHeadroom_ReadsTheNetPeakAtTheProcessorsRate()
+    {
+        (double peakDb, double peakHz) = AgentPeqHeadroom.Peak(-1, [new PeqBand(820, 2.1, 4)], 96_000);
+        Assert.Equal(3.0, peakDb, 1);
+        Assert.InRange(peakHz, 780, 860);
+
+        (peakDb, _) = AgentPeqHeadroom.Peak(-2.5, [], 96_000);
+        Assert.Equal(-2.5, peakDb);
+    }
+
+    [Fact]
     public void PeqHash_ChangesWithAnyBandFieldOrderOrPreamp()
     {
         PeqBand a = new(100, 1.5, -2);

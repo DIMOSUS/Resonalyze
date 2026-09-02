@@ -531,6 +531,19 @@ public partial class VirtualCrossoverPanel
         VirtualCrossoverTargetSettings targetSettings =
             project.Target ?? new VirtualCrossoverTargetSettings();
         TargetCurveSpec spec = (targetCurve ?? targetSettings.ToCurve()).Normalized().Spec;
+        // The wizard's own refusal: kept all-pass bands that fill Max Filters
+        // leave the fit nothing to place, and a bank over the limit is not one
+        // the button would ever hand back.
+        int room = EqAutoTuneHeadless.RoomUnderMaxFilters(request, policy);
+        if (room <= 0)
+        {
+            int kept = request.BankSeed.Bands.Count(band => band.Type.IsAllPass());
+            summary.Add(
+                $"{label}: skipped (keeping {kept} all-pass band{(kept == 1 ? "" : "s")} " +
+                $"leaves no room under Max Filters ({policy.MaxBands})).");
+            return false;
+        }
+
         EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
             request, spec, policy, operation.MinHz, operation.MaxHz,
             operation.AllowShelves, operation.CutsOnly);

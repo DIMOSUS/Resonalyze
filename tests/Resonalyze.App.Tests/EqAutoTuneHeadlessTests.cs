@@ -186,6 +186,37 @@ public sealed class EqAutoTuneHeadlessTests
     }
 
     [Fact]
+    public void Prepare_RefusesWhenTheKeptAllPassBandsFillMaxFilters_AsTheWizardDoes()
+    {
+        // Max Filters 4 and four all-pass bands kept: the wizard says "no room"
+        // and does not run; a fit that placed one band anyway would hand back
+        // five filters under a limit of four.
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Settings.PeqBands =
+        [
+            new PeqBand(200, 0.7, 0, PeqBandType.AllPassSecondOrder),
+            new PeqBand(300, 0.7, 0, PeqBandType.AllPassSecondOrder),
+            new PeqBand(400, 0.7, 0, PeqBandType.AllPassFirstOrder),
+            new PeqBand(500, 0.7, 0, PeqBandType.AllPassSecondOrder)
+        ];
+        VirtualDspEqHandoffRequest request = Build(channel);
+        var four = new EqAutoTunePolicy(4, -15, 6, 6, CutsOnly: true, AllowShelves: false);
+        var five = four with { MaxBands = 5 };
+        TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
+
+        Assert.Equal(0, EqAutoTuneHeadless.RoomUnderMaxFilters(request, four));
+        Assert.Throws<InvalidOperationException>(() =>
+            EqAutoTuneHeadless.Prepare(request, target, four, null, null, null, null));
+
+        Assert.Equal(1, EqAutoTuneHeadless.RoomUnderMaxFilters(request, five));
+        EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(request, target, five, null, null, null, null);
+        Assert.Equal(1, inputs.Options.MaxBands);
+        EqualizationCurve fitted = EqAutoTuneHeadless.Fit(inputs);
+        Assert.True(fitted.Bands.Count <= 5);
+        Assert.Equal(4, fitted.Bands.Count(band => band.Type.IsAllPass()));
+    }
+
+    [Fact]
     public void Fit_ReturnsTheKeptAllPassBandsWithTheFittedOnes()
     {
         VirtualCrossoverChannel channel = BuildChannel();

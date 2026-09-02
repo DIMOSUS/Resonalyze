@@ -193,9 +193,15 @@ internal static class EqAutoTuneHeadless
             minHz ?? request.AutoTuneMinHz ?? WindowMinHz,
             maxHz ?? request.AutoTuneMaxHz ?? WindowMaxHz);
 
-        // Max Filters is a budget for the BANK: the kept bands come off it.
-        int bandLimit = Math.Clamp(
-            policy.MaxBands - allPass.Count, 1, EqualizationCurve.MaxBandCount);
+        // Max Filters is a budget for the BANK: the kept bands come off it, and a
+        // budget they fill leaves the fit nothing to place — the wizard refuses
+        // that run rather than handing back more filters than the limit promises.
+        int bandLimit = RoomUnderMaxFilters(request, policy);
+        if (bandLimit <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Keeping {allPass.Count} all-pass bands leaves no room under Max Filters ({policy.MaxBands}).");
+        }
         // The preamp policy the wizard applies (CreateAutoTuneOptions): under Cuts
         // only the auto preamp may move within the field's range and the 0 dB
         // ceiling keeps the profile clip-free; otherwise the preamp is the user's
@@ -221,6 +227,18 @@ internal static class EqAutoTuneHeadless
         return new EqHeadlessTuneInputs(
             fitSource, target, options, source.Coherence, allPass,
             windowMinHz, windowMaxHz, !boostsAllowed);
+    }
+
+    /// <summary>
+    /// How many bands the fit may place once the bank's all-pass bands are kept:
+    /// Max Filters less those bands. Zero or less is the run the wizard refuses.
+    /// </summary>
+    public static int RoomUnderMaxFilters(VirtualDspEqHandoffRequest request, EqAutoTunePolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(policy);
+        int kept = request.BankSeed.Bands.Count(band => band.Type.IsAllPass());
+        return Math.Min(policy.MaxBands, EqualizationCurve.MaxBandCount) - kept;
     }
 
     /// <summary>The fit, with the kept all-pass bands put back in front of it.</summary>

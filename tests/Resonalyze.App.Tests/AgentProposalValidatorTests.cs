@@ -425,9 +425,45 @@ public sealed class AgentProposalValidatorTests
         // package: a reply naming one gets its warning too.
         string forgotten = Assert.Single(AgentProposalValidator.Review(other, Session(lastPackageId: null)).Warnings);
         Assert.Contains("has not copied", forgotten);
-        // A warning is only a warning for a settings row: it still applies, on
-        // its expected current value.
-        Assert.True(AgentProposalValidator.Review(other, Session()).Verdicts[0].Applicable);
+        // A settings row still applies, on its expected current value — but is
+        // offered unticked and marked: the value can match after the measurement
+        // the row was reasoned from has been replaced.
+        AgentOperationVerdict row = AgentProposalValidator.Review(other, Session()).Verdicts[0];
+        Assert.True(row.Applicable);
+        Assert.False(row.Ticked);
+        Assert.Equal(AgentVerdictStatus.Warning, row.Status);
+        Assert.Contains("cannot vouch for", row.Message);
+        AgentOperationVerdict good = AgentProposalValidator.Review(none, Session()).Verdicts[0];
+        Assert.True(good.Ticked);
+        Assert.Equal(AgentVerdictStatus.Valid, good.Status);
+    }
+
+    [Fact]
+    public void Review_RefusesEngineRequests_InAReplyThatNamesNoPackage()
+    {
+        // No expected current value guards an engine request, so without a
+        // package id nothing says which session it was written for.
+        AgentProposal proposal = Proposal(
+            new SetGainOperation("op-1", "A:right", "", -2.0, -3.0),
+            new RunAutoDelayOperation("op-2", "", null, null, null, null, null)) with
+        {
+            PackageId = null
+        };
+
+        AgentProposalReview review = AgentProposalValidator.Review(proposal, Session());
+
+        string warning = Assert.Single(review.Warnings);
+        Assert.Contains("names no package", warning);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.True(review.Verdicts[0].Applicable);
+        Assert.False(review.Verdicts[0].Ticked);
+
+        // Settings rows alone need no package: each carries its own guard.
+        AgentProposalReview settingsOnly = AgentProposalValidator.Review(
+            Proposal(new SetGainOperation("op-1", "A:right", "", -2.0, -3.0)) with { PackageId = null },
+            Session());
+        Assert.Empty(settingsOnly.Warnings);
+        Assert.True(settingsOnly.Verdicts[0].Ticked);
     }
 
     [Fact]
@@ -451,10 +487,12 @@ public sealed class AgentProposalValidatorTests
             AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
             string warning = Assert.Single(review.Warnings);
             Assert.Contains("copy a new package", warning);
-            // The settings row is judged on its expected current value, as always;
-            // an engine reads the session as it is NOW, which the assistant has
-            // not seen, so the requests are refused rather than run blind.
+            // The settings row is judged on its expected current value, as always,
+            // and offered unticked; an engine reads the session as it is NOW,
+            // which the assistant has not seen, so the requests are refused
+            // rather than run blind.
             Assert.True(review.Verdicts[0].Applicable);
+            Assert.False(review.Verdicts[0].Ticked);
             Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
             Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[2].Status);
             Assert.Contains("copy a new package", review.Verdicts[1].Message);
@@ -466,6 +504,7 @@ public sealed class AgentProposalValidatorTests
             proposal, Session(lastFingerprint: "aaaaaaaaaaaaaaaa", fingerprint: "aaaaaaaaaaaaaaaa")).Warnings);
         Assert.Empty(AgentProposalValidator.Review(proposal, Session()).Warnings);
         Assert.True(AgentProposalValidator.Review(proposal, Session()).Verdicts[1].Applicable);
+        Assert.True(AgentProposalValidator.Review(proposal, Session()).Verdicts[0].Ticked);
     }
 
     [Fact]

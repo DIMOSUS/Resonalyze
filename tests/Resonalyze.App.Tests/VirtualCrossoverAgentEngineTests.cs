@@ -297,6 +297,11 @@ public sealed class VirtualCrossoverAgentEngineTests
             Moves(() => Project(panel).PhaseGateLeft.OffsetMs = 3.25);
             Moves(() => Project(panel).StereoLevelDifferenceDb = -2.0);
             Moves(() => Project(panel).Pairs[0].Mono = true);
+            // The side on screen and the view: what Auto crossover and a
+            // single-sided Auto delay read, and what decides Auto-tune's source.
+            Moves(() => Project(panel).ActiveSideRight = true);
+            dynamic groupView = Field(panel, "comboBoxGroupView");
+            Moves(() => groupView.SelectedItem = VirtualCrossoverGroupView.Everything);
             Moves(() => ((DarkNumericUpDown)Field(panel, "numericTargetLevel")).Value += 1);
         });
     }

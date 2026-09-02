@@ -73,7 +73,7 @@ internal static class AgentProtocol
         "alone; cite sources for hardware facts.\r\n" +
         "5. If and only if you have concrete, justified changes, end with ONE JSON object with " +
         "\"kind\": \"" + ProposalKind + "\" following the protocol, in a fenced code block; " +
-        "copy channel ids and current values from this package exactly.";
+        "copy packageId, channel ids and current values from this package exactly.";
 
     /// <summary>
     /// The version of the guide this build was written against, printed in the

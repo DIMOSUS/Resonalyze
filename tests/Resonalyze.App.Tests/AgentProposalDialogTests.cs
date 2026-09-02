@@ -66,7 +66,34 @@ public sealed class AgentProposalDialogTests
             Assert.Contains("changed since the package was copied", detail.Text);
             Assert.Contains("Run Auto delay afterwards.", detail.Text);
             Assert.Contains("https://example.com/datasheet.pdf", detail.Text);
+            Assert.Equal(string.Empty, dialog.Controls["labelWarnings"]!.Text);
+        });
+    }
+
+    [Fact]
+    public void AReplyToAPackageTheSessionCannotVouchFor_ComesUnticked_WithTheWarningShown()
+    {
+        StaTest.Run(() =>
+        {
+            using var dialog = new AgentProposalDialog(
+                Review(packageId: "22222222-2222-2222-2222-222222222222"));
+            DataGridView grid = Grid(dialog);
+            Button apply = dialog.Controls.OfType<Button>().Single(button => button.Text == "Apply selected");
+
             Assert.Contains("different package", dialog.Controls["labelWarnings"]!.Text);
+            // The settings rows stay, marked and unticked: an expected current
+            // value can still match after the measurement the row was reasoned
+            // from was replaced, so the user ticks what still applies.
+            Assert.Equal(false, grid.Rows[1].Cells[0].Value);
+            Assert.False(grid.Rows[1].Cells[0].ReadOnly);
+            Assert.Equal("Warning", grid.Rows[1].Cells[5].Value);
+            Assert.Contains("cannot vouch for", grid.Rows[1].Cells[5].ToolTipText);
+            Assert.Equal(false, grid.Rows[2].Cells[0].Value);
+            Assert.Empty(dialog.Selected);
+            Assert.False(apply.Enabled);
+
+            grid.Rows[1].Cells[0].Value = true;
+            Assert.Equal(["op-1"], dialog.Selected.Select(verdict => verdict.Id));
         });
     }
 
@@ -133,12 +160,13 @@ public sealed class AgentProposalDialogTests
         };
         var session = new AgentSessionSnapshot(
             [new AgentChannelSnapshot("B", AgentChannelSide.Left, bLeft, true, [])],
-            96_000, 10, null,
+            96_000, 10, "11111111-1111-1111-1111-111111111111",
             new AgentAutoDelaySettings(0.25, RightHandDrive: false, AdjustGains: false, 1.0, 15.0),
             VirtualCrossoverSpatialAverageMode.MovingMic,
             HybridTicked: false);
+        // An engine request needs the package it was written for named.
         var proposal = new AgentProposal(
-            null, "The corners are guesses.", [], [],
+            "11111111-1111-1111-1111-111111111111", "The corners are guesses.", [], [],
             [
                 new RunAutoCrossoverOperation("op-1", "let the wizard split them"),
                 new SetCrossoverOperation("op-2", "B:left", "lower the top",
@@ -153,7 +181,7 @@ public sealed class AgentProposalDialogTests
         return AgentProposalValidator.Review(proposal, session);
     }
 
-    private static AgentProposalReview Review()
+    private static AgentProposalReview Review(string packageId = "11111111-1111-1111-1111-111111111111")
     {
         var aRight = new VirtualCrossoverChannelSettings { GainDb = -2.0, DelayMs = 1.42 };
         var bLeft = new VirtualCrossoverChannelSettings
@@ -172,7 +200,7 @@ public sealed class AgentProposalDialogTests
             VirtualCrossoverSpatialAverageMode.MovingMic,
             HybridTicked: false);
         var proposal = new AgentProposal(
-            "22222222-2222-2222-2222-222222222222",
+            packageId,
             "The left mid/tweeter junction cancels near 3.1 kHz.",
             ["Run Auto delay afterwards."],
             [new AgentSource("https://example.com/datasheet.pdf", "Datasheet", ["Fs 65 Hz"])],

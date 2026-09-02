@@ -2872,10 +2872,12 @@ this: the clipboard is the only transport, and you are the one who pastes.
   measurement and captures, every chain, the gates, the scene and the target —
   and the reply is checked against the session as it stands: a reply answering
   a package this session did not copy, or copied before something changed (a
-  measurement replaced by hand, a capture attached, a gate moved, an import
-  undone), is shown with a warning and its engine requests are refused, since
-  an engine reads the session as it is now, which the assistant has not seen;
-  the hand-written rows stand on their own expected current values. A change
+  measurement replaced by hand, a capture attached, a gate moved, the side or
+  the view switched, an import undone), is shown with a warning and its engine
+  requests are refused, since an engine reads the session as it is now, which
+  the assistant has not seen — as is an engine request in a reply that names
+  no package at all; the hand-written rows stand on their own expected current
+  values but come unticked, for you to tick what the change does not bear on. A change
   the assistant reasoned about a value that has since moved is rejected as
   such; so is one
   outside Virtual DSP's own limits (the channel block's gain and delay ranges and

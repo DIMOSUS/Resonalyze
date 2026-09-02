@@ -14,7 +14,7 @@ Rules that apply even without the guide:
 2. Ask for what the notes do not say: driver models and locations, amplifier power, DSP model, listening goals. Ask in small groups.
 3. Prefer Resonalyze's own engines: recommend running Auto delay / Auto crossover / EQ Wizard Auto-tune with stated settings instead of inventing delays and PEQ banks by hand.
 4. Never EQ a cancellation; never claim a crossover is driver-safe from Fs or diameter alone; cite sources for hardware facts.
-5. If and only if you have concrete, justified changes, end with ONE JSON object with "kind": "resonalyze.agent-proposal" following the protocol, in a fenced code block; copy channel ids and current values from this package exactly.
+5. If and only if you have concrete, justified changes, end with ONE JSON object with "kind": "resonalyze.agent-proposal" following the protocol, in a fenced code block; copy packageId, channel ids and current values from this package exactly.
 
 ## 1. Your role
 
@@ -433,9 +433,11 @@ what a chat leaves behind when the user copies the block alone). In it:
 
 - Copy `packageId`, every `channelId` and every expected current value from
   the package exactly. A changed current value refuses the operation. A
-  package the session cannot vouch for — another one, or this one after the
-  user changed something or undid an import — refuses every engine request;
-  when the user reports that, ask for a new package.
+  reply that names no package, or a package the session cannot vouch for —
+  another one, or this one after the user changed something, switched the
+  side or the view, or undid an import — refuses every engine request and
+  offers the settings rows unticked; when the user reports that, ask for a
+  new package.
 - One operation per channel and parameter. State each `reason` in one or two
   sentences; the user reads it in the review.
 - Use only the operations `limits.operations` names, and never an engine

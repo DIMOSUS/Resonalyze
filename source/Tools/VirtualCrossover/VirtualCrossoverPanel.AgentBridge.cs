@@ -61,9 +61,10 @@ public partial class VirtualCrossoverPanel
     /// The blocks in order (their letters are the channel ids), what each side is
     /// measured and averaged with, every chain — an import undone puts the chains
     /// back under a package that was copied without them — and the project figures
-    /// the diagnostics were computed under. Not the display: the view, the side on
-    /// screen, the zoom and the smoothing selector change what is shown, not what
-    /// was measured, and the package has its own smoothing anyway.
+    /// the diagnostics were computed under, the side on screen and the view among
+    /// them, since the engines read those. Not the zoom or the smoothing selector:
+    /// they change what is shown, not what was measured, and the package has its
+    /// own smoothing anyway.
     /// </summary>
     /// <remarks>
     /// Taken at Copy and again at every review, so no path that changes the session
@@ -78,6 +79,11 @@ public partial class VirtualCrossoverPanel
         {
             $"processor;{ProcessorProfile.ModelId};{ProcessorSampleRateHz}",
             $"average;{SpatialAverageMode};{checkBoxHybrid.Checked}",
+            // The side on screen and the view are what the package was computed
+            // for, and what the engines read: Auto crossover proposes from the
+            // shown side's measurements, a single-sided Auto delay aligns it, and
+            // whether Auto-tune's default source is the hybrid follows the view.
+            $"view;{project.ActiveSideRight};{SelectedGroupView}",
             $"phase;{project.PhaseWindowMode};{project.PhaseFdwCycles};{project.PhaseDetrendMode};" +
                 $"{Number(project.PhaseGateLeftMs)};{Number(project.PhaseGatePlateauMs)};" +
                 $"{Number(project.PhaseGateRightMs)};" +

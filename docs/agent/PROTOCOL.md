@@ -48,7 +48,7 @@ to the 100 KB ceiling, and beyond that nothing is copied:
 | `kind` | `"resonalyze.agent-package"` |
 | `protocolVersion` | `1` |
 | `guideVersion` | The version of [AGENT_GUIDE.md](AGENT_GUIDE.md) this build was written against (its first line). The guide at the URL may be newer; read it, and know which methodology the package's author expected. |
-| `packageId` | A new GUID per copy. Echo it in the reply: it is how the importer knows which session the reply describes. A reply naming a package the session cannot vouch for — none copied, another one, or this one after the session changed — is shown with a warning; its settings rows are judged on their expected current values, its engine requests refused (§2.2). |
+| `packageId` | A new GUID per copy. Echo it in the reply: it is how the importer knows which session the reply describes, and an engine request without it is refused. A reply naming a package the session cannot vouch for — none copied, another one, or this one after the session changed — is shown with a warning; its settings rows are judged on their expected current values but offered unticked, its engine requests refused (§2.2). |
 | `createdAtUtc` | ISO 8601, UTC. |
 | `application` | `{ name, version }` |
 | `conventions` | Units and sign conventions, as text, for readers without the guide. |
@@ -390,7 +390,7 @@ open door: an `extensions` object, whose content is ignored).
 | --- | --- | --- |
 | `kind` | yes | `"resonalyze.agent-proposal"` |
 | `protocolVersion` | yes | `1` |
-| `packageId` | no | Echo of the package's id. A package the session cannot vouch for (§2.2) is shown as a warning and refuses the engine requests. |
+| `packageId` | for engine requests | Echo of the package's id. Required when `operations[]` holds an engine request — one without it is refused; a reply of settings rows alone may leave it out, each row carrying its own expected current value. A package the session cannot vouch for (§2.2) is shown as a warning, refuses the engine requests and offers the settings rows unticked. |
 | `summary` | yes | One paragraph, shown at the top of the review. |
 | `advice[]` | no | Changes that are not operations — engines to run, things to re-measure. Shown, never applied. |
 | `sources[]` | no | `{ url, title?, factsUsed[] }`; `url` must be `http(s)`. Shown as text, never opened. |
@@ -494,15 +494,18 @@ which curves the rest are read on), then `runAutoCrossover`, then `runAutoDelay`
 then `autoTunePeq`. One summary at the end says what was applied and what was
 skipped, and *Undo AI import* puts back everything the whole sequence moved.
 
-An engine request is refused — the reply's other rows left to their own checks
-— when the session cannot vouch for the package the reply names: no package
-copied since the session opened, another package than the last one copied, or
-that package copied from a session that has since changed (a measurement or
-capture replaced, a block added, removed or reordered, a chain, gate or datum
-moved, an import undone). Resonalyze fingerprints the session at every copy
-and compares at every review. A settings row still stands on its expected
-current value; an engine reads the session as it is *now*, which the assistant
-has not seen. Ask for a new package. A reply that names no package is taken at
+An engine request is refused when the reply names no package, or names one the
+session cannot vouch for: no package copied since the session opened, another
+package than the last one copied, or that package copied from a session that
+has since changed (a measurement, capture or calibration replaced, a block
+added, removed or reordered, a chain, gate or datum moved, the side on screen
+or the view switched, an import undone). Resonalyze fingerprints the session
+at every copy and compares at every review. An engine reads the session as it
+is *now*, which the assistant has not seen. The settings rows stay — each is
+still judged on its expected current value — but are offered **unticked** and
+marked, since a current value can match after the measurement the row was
+reasoned from has been replaced; the user ticks what still applies. Ask for a
+new package. A reply of settings rows alone that names no package is taken at
 its word.
 
 An engine and a hand-written value the engine would write over cannot both be

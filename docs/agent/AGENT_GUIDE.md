@@ -102,8 +102,11 @@ Work in this order; each step gates the next.
    timing or the crossover, look at the PEQ and all-pass bands of BOTH channels
    inside `bandHz` — an asymmetric IIR correction on one side puts a
    frequency-dependent phase error into the junction that no delay can take
-   out. When in doubt, advise bypassing the PEQ, copying a new package, and
-   reading the junction again.
+   out. When in doubt, advise a diagnostic pass: save the session, clear the
+   PEQ bank on the channels of that junction (the block's PEQ button, Clear —
+   the block's Bypass would drop the crossover too and change the junction
+   itself), copy a new package, read the junction again, then load the saved
+   session back.
 4. **Crossover corners and slopes.** Judge the acoustic slopes on
    `processedDb`, not the electrical ones: the driver's own roll-off adds to
    the filter. Before proposing a corner, know the driver (model, size,

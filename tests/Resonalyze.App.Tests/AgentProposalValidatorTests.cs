@@ -373,6 +373,18 @@ public sealed class AgentProposalValidatorTests
 
         (peakDb, _) = AgentPeqHeadroom.Peak(-2.5, [], 96_000);
         Assert.Equal(-2.5, peakDb);
+
+        // A legal bell below 20 Hz, and a bell so narrow that a 512-point log grid
+        // steps over it: both are found within a tenth of a dB of their top.
+        (peakDb, peakHz) = AgentPeqHeadroom.Peak(0, [new PeqBand(10, 30, 12)], 96_000);
+        Assert.Equal(12.0, peakDb, 1);
+        Assert.InRange(peakHz, 9.5, 10.5);
+        (peakDb, peakHz) = AgentPeqHeadroom.Peak(0, [new PeqBand(1_003, 60, 12)], 96_000);
+        Assert.Equal(12.0, peakDb, 1);
+        Assert.InRange(peakHz, 1_000, 1_006);
+        // Two bells that together top out between their centres.
+        (peakDb, _) = AgentPeqHeadroom.Peak(0, [new PeqBand(900, 3, 4), new PeqBand(1_100, 3, 4)], 96_000);
+        Assert.True(peakDb > 4.5, peakDb.ToString());
     }
 
     [Fact]

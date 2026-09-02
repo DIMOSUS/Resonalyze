@@ -127,10 +127,26 @@ public partial class VirtualCrossoverPanel
             }
 
             string? problem = AgentProposalApplier.Prepare(
-                proposal, selected, BuildAgentSessionSnapshot(), out List<AgentOperationVerdict> toApply);
+                proposal, selected, BuildAgentSessionSnapshot(),
+                out List<AgentOperationVerdict> toApply, out List<string> unseenWarnings);
             if (problem != null)
             {
                 ShowError("Nothing was applied.", problem);
+                return;
+            }
+            // The review judged every row together; the ticked subset can leave a
+            // state it never showed. Say so and let the user decide — a warning,
+            // not a refusal, as in the review itself.
+            if (unseenWarnings.Count > 0 &&
+                MessageBox.Show(
+                    FindForm(),
+                    "With only the ticked rows applied:" + Environment.NewLine + Environment.NewLine +
+                    string.Join(Environment.NewLine, unseenWarnings) + Environment.NewLine + Environment.NewLine +
+                    "Apply anyway?",
+                    "Import AI proposal",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning) != DialogResult.Yes)
+            {
                 return;
             }
 
@@ -530,7 +546,9 @@ public partial class VirtualCrossoverPanel
                 source = new AgentSourceInputs(
                     state.SampleRate,
                     state.MeasuredBand,
-                    state.SpatialAverage != null ? "MovingMic" : state.ArrayCapture != null ? "MicArray" : null,
+                    // The family the hybrid curves are built from — the selected
+                    // mode's capture — not whichever capture the side happens to hold.
+                    state.SpatialAverageFor(SpatialAverageMode) != null ? SpatialAverageMode.ToString() : null,
                     raw,
                     processed ? found.Processed : null,
                     processed ? found.HybridPreDsp : null,

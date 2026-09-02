@@ -16,19 +16,19 @@ public sealed class AgentProposalApplierTests
         (AgentSessionSnapshot session, AgentProposal proposal) = Scene();
         var ticked = new HashSet<string>(["op-1", "op-3"]);
 
-        string? problem = AgentProposalApplier.Prepare(proposal, ticked, session, out List<AgentOperationVerdict> toApply);
+        string? problem = AgentProposalApplier.Prepare(proposal, ticked, session, out List<AgentOperationVerdict> toApply, out _);
         Assert.Null(problem);
         Assert.Equal(["op-1", "op-3"], toApply.Select(verdict => verdict.Id));
 
         // The user turned the gain knob while the dialog was open.
         session.Find("A:right")!.Settings.GainDb = -2.5;
-        problem = AgentProposalApplier.Prepare(proposal, ticked, session, out toApply);
+        problem = AgentProposalApplier.Prepare(proposal, ticked, session, out toApply, out _);
         Assert.NotNull(problem);
         Assert.Contains("op-1", problem);
         Assert.Contains("changed while the review was open", problem);
         Assert.Empty(toApply);
 
-        Assert.Contains("No applicable change", AgentProposalApplier.Prepare(proposal, new HashSet<string>(), session, out _));
+        Assert.Contains("No applicable change", AgentProposalApplier.Prepare(proposal, new HashSet<string>(), session, out _, out _));
     }
 
     [Fact]
@@ -40,11 +40,46 @@ public sealed class AgentProposalApplierTests
             Rejected = [new AgentRejectedOperation("op-1", "garbage", "Unsupported operation 'garbage'.")]
         };
 
-        string? problem = AgentProposalApplier.Prepare(proposal, new HashSet<string>(["op-1"]), session, out List<AgentOperationVerdict> toApply);
+        string? problem = AgentProposalApplier.Prepare(proposal, new HashSet<string>(["op-1"]), session, out List<AgentOperationVerdict> toApply, out _);
 
         Assert.Null(problem);
         AgentOperationVerdict only = Assert.Single(toApply);
         Assert.IsType<SetGainOperation>(only.Operation);
+    }
+
+    [Fact]
+    public void Prepare_WarnsAboutWhatTheTickedSubsetLeaves_WhenTheReviewJudgedTheWholeSet()
+    {
+        // Current: LP 2800 Hz with a Q 4 bell at 1 kHz. The reply moves the low-pass
+        // to 1.2 kHz AND replaces the bank without the bell — together clean, so the
+        // review warns about nothing. Untick the bank and the bell sits in the new
+        // junction zone: the commit has to say so, since no row ever did.
+        (AgentSessionSnapshot session, _) = Scene();
+        VirtualCrossoverChannelSettings bLeft = session.Find("B:left")!.Settings;
+        bLeft.PeqBands = [new PeqBand(1_000, 4, -3)];
+        var proposal = new AgentProposal(null, "summary", [], [],
+            [
+                new SetCrossoverOperation("op-1", "B:left", "",
+                    new AgentCrossover("BandPass", new AgentCrossoverEdge("LinkwitzRiley", 250, 24, null), new AgentCrossoverEdge("LinkwitzRiley", 2800, 24, null)),
+                    new AgentCrossover("BandPass", new AgentCrossoverEdge("LinkwitzRiley", 250, 24, null), new AgentCrossoverEdge("LinkwitzRiley", 1200, 24, null))),
+                new ReplacePeqBankOperation("op-2", "B:left", "",
+                    AgentPeqHash.Compute(bLeft.PeqPreampDb, bLeft.PeqBands),
+                    new AgentPeqBank(0, [new AgentPeqBand("Peaking", 300, 1, -2)]))
+            ],
+            []);
+
+        AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
+        Assert.All(review.Verdicts, verdict => Assert.DoesNotContain("junction zone", verdict.Message));
+
+        Assert.Null(AgentProposalApplier.Prepare(proposal, new HashSet<string>(["op-1", "op-2"]), session, out _, out List<string> both));
+        Assert.Empty(both);
+
+        Assert.Null(AgentProposalApplier.Prepare(proposal, new HashSet<string>(["op-1"]), session, out List<AgentOperationVerdict> toApply, out List<string> crossoverOnly));
+        Assert.Single(toApply);
+        string warning = Assert.Single(crossoverOnly);
+        Assert.StartsWith("B left:", warning);
+        Assert.Contains("Band at 1000 Hz (Q 4)", warning);
+        Assert.Contains("around the 1200 Hz crossover", warning);
     }
 
     [Fact]
@@ -55,7 +90,7 @@ public sealed class AgentProposalApplierTests
         VirtualCrossoverChannelSettings bLeft = session.Find("B:left")!.Settings;
         VirtualCrossoverChannelSettings before = AgentOperations.CloneEditable(bLeft);
         Assert.Null(AgentProposalApplier.Prepare(
-            proposal, new HashSet<string>(["op-1", "op-3", "op-4"]), session, out List<AgentOperationVerdict> toApply));
+            proposal, new HashSet<string>(["op-1", "op-3", "op-4"]), session, out List<AgentOperationVerdict> toApply, out _));
 
         List<AgentUndoEntry> undo = AgentProposalApplier.Apply(toApply);
 

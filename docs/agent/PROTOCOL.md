@@ -135,6 +135,9 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
   long as the expected current values in a reply keep matching.
 - `source.available` is false when no measurement is loaded; `unavailableReason`
   says why a loaded channel has no curves (`channel muted`, `not processed`).
+  `source.spatialAverage` names the capture family the hybrid curves are built
+  from — the selected mode (`MovingMic` or `MicArray`) when the channel holds a
+  capture of it; absent otherwise, whatever other captures the channel has.
 - Both crossover edges are always stored; `kind` says which act (`LowPass` uses
   `lowPass`, `HighPass` uses `highPass`, `BandPass` both, `Off` none). `rippleDb`
   matters only for `Chebyshev`.
@@ -142,7 +145,10 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
   frequency, Q, gain in round-trip form) and the preamp. A `replacePeqBank`
   reply echoes it instead of the whole current bank.
 - `peq.peakDb` / `peq.peakHz` is the highest point of the bank's **net**
-  response — preamp and every band together, built at the processor's rate.
+  response — preamp and every band together, built at the processor's rate,
+  searched from below the lowest band to the processor's Nyquist with every
+  band's centre sampled and each maximum refined, so a narrow bell is not
+  stepped over.
   Above 0 dB the device is asked for more than unity there and a full-scale
   signal clips. A boost inside a wider cut, or under a negative preamp, is not
   a headroom problem; the sign of one band says nothing.
@@ -324,6 +330,11 @@ Nothing else can be addressed: not the target, the processor, the gates, the
 sources, the calibration, the channel list, mute or bypass. Such changes belong
 in `advice`, as text. An unknown `op` is listed in the review as rejected and
 never applied.
+
+The review judges the junction-zone rule on each channel as it would end up
+after **every** applicable row; the commit judges it again on the rows the user
+actually ticked, and asks before applying a subset that leaves a state the
+review never showed (a crossover moved without the bank that went with it).
 
 ### 2.3 What the importer does
 

@@ -22,16 +22,24 @@ internal static class AgentProposalApplier
     /// Null when every one of them is still applicable and admissible together;
     /// otherwise the first problem, and nothing may be applied.
     /// </summary>
+    /// <param name="unseenWarnings">
+    /// Warnings about the channels as the TICKED rows would leave them that the
+    /// review did not show — it judged every applicable row together, and an
+    /// unticked row can take a compensating change with it. The panel asks before
+    /// applying over them; they never refuse on their own.
+    /// </param>
     public static string? Prepare(
         AgentProposal proposal,
         IReadOnlySet<string> selectedIds,
         AgentSessionSnapshot session,
-        out List<AgentOperationVerdict> toApply)
+        out List<AgentOperationVerdict> toApply,
+        out List<string> unseenWarnings)
     {
         ArgumentNullException.ThrowIfNull(proposal);
         ArgumentNullException.ThrowIfNull(selectedIds);
         ArgumentNullException.ThrowIfNull(session);
 
+        unseenWarnings = [];
         AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
         // Rows the parser refused carry no operation and can never have been
         // ticked; they are skipped here by that, not by id — a refused object may
@@ -56,9 +64,25 @@ internal static class AgentProposalApplier
         if (problem != null)
         {
             toApply.Clear();
+            return problem;
         }
 
-        return problem;
+        foreach ((AgentChannelSnapshot channel, List<string> notes) in
+            AgentProposalValidator.FinalStateNotes(toApply))
+        {
+            foreach (string note in notes)
+            {
+                bool shown = toApply.Any(verdict =>
+                    ReferenceEquals(verdict.Channel, channel) &&
+                    verdict.Message.Contains(note, StringComparison.Ordinal));
+                if (!shown)
+                {
+                    unseenWarnings.Add($"{channel.Label}: {note}");
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

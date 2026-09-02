@@ -165,7 +165,38 @@ internal static class AgentProposalValidator
 
     private static void AddFinalStateNotes(List<AgentOperationVerdict> verdicts)
     {
-        foreach (IGrouping<AgentChannelSnapshot, AgentOperationVerdict> group in verdicts
+        foreach ((AgentChannelSnapshot channel, List<string> notes) in FinalStateNotes(verdicts))
+        {
+            foreach (AgentOperationVerdict verdict in verdicts
+                .Where(verdict => verdict.Applicable && ReferenceEquals(verdict.Channel, channel))
+                .Where(verdict => verdict.Operation is SetCrossoverOperation or ReplacePeqBankOperation)
+                .ToList())
+            {
+                verdicts[verdicts.IndexOf(verdict)] = verdict with
+                {
+                    Status = AgentVerdictStatus.Warning,
+                    Message = verdict.Status == AgentVerdictStatus.Valid
+                        ? string.Join(" ", notes)
+                        : verdict.Message + " " + string.Join(" ", notes)
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// The warnings that are about a channel as it would END UP after the given
+    /// rows — today the junction-zone check — per channel. The review runs it over
+    /// every applicable row; the commit runs it again over the rows the user
+    /// actually ticked, because unticking one can leave a state the review never
+    /// showed (a crossover moved without the bank that would have gone with it).
+    /// </summary>
+    public static List<(AgentChannelSnapshot Channel, List<string> Notes)> FinalStateNotes(
+        IEnumerable<AgentOperationVerdict> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var result = new List<(AgentChannelSnapshot, List<string>)>();
+        foreach (IGrouping<AgentChannelSnapshot, AgentOperationVerdict> group in rows
             .Where(verdict => verdict.Applicable)
             .GroupBy(verdict => verdict.Channel!))
         {
@@ -183,23 +214,13 @@ internal static class AgentProposalValidator
             }
 
             List<string> notes = JunctionQNotes(final);
-            if (notes.Count == 0)
+            if (notes.Count > 0)
             {
-                continue;
-            }
-
-            foreach (AgentOperationVerdict verdict in group
-                .Where(verdict => verdict.Operation is SetCrossoverOperation or ReplacePeqBankOperation))
-            {
-                verdicts[verdicts.IndexOf(verdict)] = verdict with
-                {
-                    Status = AgentVerdictStatus.Warning,
-                    Message = verdict.Status == AgentVerdictStatus.Valid
-                        ? string.Join(" ", notes)
-                        : verdict.Message + " " + string.Join(" ", notes)
-                };
+                result.Add((group.Key, notes));
             }
         }
+
+        return result;
     }
 
     // Every bell of the bank that is too narrow for the junction zone it sits

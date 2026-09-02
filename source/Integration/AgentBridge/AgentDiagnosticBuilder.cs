@@ -88,9 +88,9 @@ internal static class AgentDiagnosticBuilder
                     "minimum-phase part the magnitude dictates (which a minimum-phase PEQ " +
                     "straightens along with the magnitude); what remains is arrivals and " +
                     "reflections, which no PEQ can touch — read off the raw impulse response " +
-                    "through the phase gate at the channel's own arrival, at a fixed 1/6-octave " +
-                    "smoothing whatever the display shows; a row is absent where the response " +
-                    "is too weak to read"
+                    "through the phase gate at the channel's own arrival, at the group-delay " +
+                    "view's default 1/12-octave smoothing whatever the display shows; a row is " +
+                    "absent where the response is too weak to read"
             },
             series);
         string json = JsonSerializer.Serialize(diagnostic, Options);

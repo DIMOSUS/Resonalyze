@@ -1335,7 +1335,8 @@ public partial class VirtualCrossoverPanel
     // The measurement's excess group delay as the analyzer shows it for one
     // impulse response: the raw transfer response through the project's phase
     // gate, placed at the channel's OWN arrival (the handoff's rule for a
-    // measurement read without the chain), at the package's own smoothing. The
+    // measurement read without the chain), at the group-delay view's default
+    // smoothing. The
     // minimum-phase part — what the magnitude dictates and a minimum-phase PEQ
     // straightens along with it — is taken out; what remains is what no PEQ can
     // touch, which is the question a junction that will not sum asks.
@@ -1356,7 +1357,10 @@ public partial class VirtualCrossoverPanel
             gate.LeftMs,
             gate.PlateauMs,
             gate.RightMs,
-            SpectrumSmoothing.PsychoacousticCode,
+            // The group-delay view's own default (1/12 octave), not the magnitude
+            // curves' psychoacoustic setting: a group delay is a phase slope, and
+            // a psychoacoustic width is a hearing model for levels, not for time.
+            FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves,
             includeMinimumPhase: true);
         return curves.Excess?.Points;
     }

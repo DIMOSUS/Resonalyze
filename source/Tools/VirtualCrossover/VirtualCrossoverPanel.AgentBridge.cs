@@ -481,15 +481,12 @@ public partial class VirtualCrossoverPanel
             return false;
         }
 
-        // The datum is the project's, moved before the handoff is built so the
-        // token carries it — as the wizard's Return moves it on the way back.
-        if (operation.TargetLevelDb is { } level &&
-            !((double)numericTargetLevel.Value).Equals(level))
-        {
-            numericTargetLevel.Value = numericTargetLevel.ClampValue(level);
-        }
-
-        VirtualDspEqHandoffRequest? request = BuildPeqHandoffRequest(channel, withChain: true, average);
+        // A stated target level is built into the request (the token carries it)
+        // and reaches the panel only once the fit has landed — a run that skips
+        // itself must leave nothing behind, since the import's undo is dropped
+        // when nothing ran.
+        VirtualDspEqHandoffRequest? request = BuildPeqHandoffRequest(
+            channel, withChain: true, average, operation.TargetLevelDb);
         if (request == null)
         {
             summary.Add($"{label}: skipped (no measurement to fit against).");
@@ -557,6 +554,15 @@ public partial class VirtualCrossoverPanel
         // Landed the way the wizard's Return lands, against the capture the
         // request was built with — the reply may have asked for the point
         // measurement under a hybrid view, and the token says which it was.
+        // The datum the fit was built against becomes the project's now, as the
+        // wizard's Return moves it on the way back; the token carries the same
+        // value, which is what the landing checks.
+        decimal previousTargetLevel = numericTargetLevel.Value;
+        if (!((double)numericTargetLevel.Value).Equals(request.TargetLevelDb))
+        {
+            numericTargetLevel.Value = numericTargetLevel.ClampValue(request.TargetLevelDb);
+        }
+
         VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
         MagnitudeGateSnapshot snapshot = magnitudeGate;
         if (!VirtualDspEqHandoff.TryApplyReturn(
@@ -572,6 +578,8 @@ public partial class VirtualCrossoverPanel
                 average.Capture,
                 ProcessorSampleRateHz))
         {
+            // Nothing landed, so nothing of the request stays — the datum included.
+            numericTargetLevel.Value = previousTargetLevel;
             summary.Add($"{label}: skipped (the channel changed while the fit ran).");
             return false;
         }

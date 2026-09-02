@@ -2421,7 +2421,10 @@ public partial class VirtualCrossoverPanel : UserControl
     private VirtualDspEqHandoffRequest? BuildPeqHandoffRequest(
         VirtualCrossoverChannel channel,
         bool withChain,
-        (LiveCaptureDocument? Capture, double OffsetDb) spatialAverage)
+        (LiveCaptureDocument? Capture, double OffsetDb) spatialAverage,
+        // An import may ask for another target level; it is built INTO the
+        // request, and written to the panel only once the fit has landed.
+        double? targetLevelDb = null)
     {
         MagnitudeGateSnapshot snapshot = magnitudeGate;
         // Only a render that still describes the CURRENT settings may place the
@@ -2446,7 +2449,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 snapshot.PinnedOffsetMs,
                 renderAnchor,
                 CapturePhaseContext(channel),
-                (double)numericTargetLevel.Value,
+                targetLevelDb ?? (double)numericTargetLevel.Value,
                 (double)numericTargetLevel.Minimum,
                 (double)numericTargetLevel.Maximum,
                 snapshot.SmoothingInverseOctaves,

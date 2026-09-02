@@ -400,7 +400,10 @@ otherwise, or whichever `source` names — with the wizard's opening values for
 what the reply leaves out (bells no narrower than Q 6, band gains −15…+6 dB,
 cuts only, no shelves, the channel's passband as the window); all-pass bands
 in the bank are kept and the fit tunes around them; a `targetLevelDb` moves the
-project's target level, as the wizard's Return does. A channel on the side not
+project's target level, as the wizard's Return does — it is one datum for the
+whole project, so every request in a reply that states one must state the
+same value (the first stated level stands, the others are refused naming it),
+and a run that skips itself leaves the level untouched. A channel on the side not
 on screen is refused at review (the handoff is the shown side's: its gate pin,
 its anchor, its hybrid datum — switch the L/R selector, copy a new package and
 ask again). The run skips itself, with the reason, when `spatialAverage` is

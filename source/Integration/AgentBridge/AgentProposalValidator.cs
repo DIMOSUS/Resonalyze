@@ -179,6 +179,7 @@ internal static class AgentProposalValidator
         }
 
         RejectRepeatedEngineRequests(verdicts);
+        RejectDisagreeingTargetLevels(verdicts);
         RejectOverwrittenSettings(verdicts, session);
 
         // Some warnings are about the channel as it would END UP, not about one
@@ -219,6 +220,38 @@ internal static class AgentProposalValidator
             else
             {
                 first[key] = verdict.Id;
+            }
+        }
+    }
+
+    // The target level is one datum for the whole project, and an Auto-tune that
+    // states one moves it. Two requests stating different levels would fit one
+    // bank at a level the project no longer holds by the time the other has run,
+    // so only the first stated level stands and the rest are refused naming it.
+    private static void RejectDisagreeingTargetLevels(List<AgentOperationVerdict> verdicts)
+    {
+        (string Id, double LevelDb)? first = null;
+        for (int index = 0; index < verdicts.Count; index++)
+        {
+            AgentOperationVerdict verdict = verdicts[index];
+            if (!verdict.Applicable ||
+                verdict.Operation is not AutoTunePeqOperation { TargetLevelDb: { } level })
+            {
+                continue;
+            }
+
+            if (first is not { } stated)
+            {
+                first = (verdict.Id, level);
+            }
+            else if (!stated.LevelDb.Equals(level))
+            {
+                verdicts[index] = verdict with
+                {
+                    Status = AgentVerdictStatus.Rejected,
+                    Message = $"The target level is one datum for the whole project; " +
+                        $"{stated.Id} already states {Db(stated.LevelDb)}."
+                };
             }
         }
     }

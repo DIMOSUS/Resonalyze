@@ -703,6 +703,30 @@ public sealed class AgentProposalValidatorTests
         Assert.Equal("0 bands, preamp 0.0 dB", verdict.Proposed);
     }
 
+    [Fact]
+    public void Review_RefusesAutoTunesThatDisagreeAboutTheProjectsTargetLevel()
+    {
+        // The target level is one datum for the project: two fits at two levels
+        // would leave the first bank tuned against a level the project no
+        // longer holds. The first stated level stands; a request that states
+        // none, or the same, is fine.
+        AgentProposal proposal = Proposal(
+            new AutoTunePeqOperation("op-1", "B:left", "", -6, null, null, null, null, null),
+            new AutoTunePeqOperation("op-2", "A:left", "", -8, null, null, null, null, null),
+            new AutoTunePeqOperation("op-3", "C:mono", "", -6, null, null, null, null, null),
+            new AutoTunePeqOperation("op-4", "A:left", "", null, null, null, null, null, null));
+
+        AgentProposalReview review = AgentProposalValidator.Review(proposal, Session());
+
+        Assert.True(review.Verdicts[0].Applicable);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.Contains("op-1 already states -6.0 dB", review.Verdicts[1].Message);
+        Assert.True(review.Verdicts[2].Applicable);
+        // op-4 repeats op-2's channel: refused as a repeat, not for its level.
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[3].Status);
+        Assert.Contains("Already requested by op-2", review.Verdicts[3].Message);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

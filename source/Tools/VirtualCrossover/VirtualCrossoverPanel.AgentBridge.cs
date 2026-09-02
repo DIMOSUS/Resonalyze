@@ -85,7 +85,10 @@ public partial class VirtualCrossoverPanel
                 $"{Number(project.PhaseGateRight.OffsetMs)};{Number(project.PhaseGateRight.DetrendMs)}",
             $"stereo;{Number(project.StereoSceneOffsetMagnitudeMs)};{project.StereoRightHandDrive};" +
                 $"{Number(project.StereoLevelDifferenceDb)};{Number(project.RearFillOffsetMs)}",
-            $"calibration;{project.CalibrationId}",
+            // The selected correction by id AND by its points: a curve re-read or
+            // edited under the same id (ReconcileCalibrationSelection) is another
+            // correction on every measurement the package reads.
+            $"calibration;{project.CalibrationId};{ownCalibrationSelected};{Curve(Calibration)}",
             $"target;{Number((double)numericTargetLevel.Value)};{TargetShape(project.Target)}",
             // The assistant reasons from the notes as much as from the curves.
             $"notes;{project.AiNotes}"
@@ -107,8 +110,10 @@ public partial class VirtualCrossoverPanel
                 Digest(state.TransferImpulseResponse), state.SampleRate, state.TransferPeakIndex,
                 Number(state.MeasuredBand.LowestHz), Number(state.MeasuredBand.HighestHz),
                 Digest(state.TransferCoherence),
-                state.MicrophoneCalibration?.Name, state.MicrophoneCalibration?.FileName,
-                state.MicrophoneCalibration?.Points.Count,
+                // The correction this side's curves are actually read through —
+                // its own under "Own (as measured)", the selected one otherwise —
+                // by its points.
+                Curve(CalibrationFor(state)),
                 // The captures by session: a pass re-recorded over the same file is
                 // a new capture session with a new id.
                 settings.SpatialAveragePath, Capture(state.SpatialAverage), Capture(state.ArrayCapture),
@@ -123,6 +128,12 @@ public partial class VirtualCrossoverPanel
 
         static string Digest<T>(T[]? values) where T : unmanaged =>
             AgentSessionFingerprint.ContentDigest(values);
+
+        static string Curve(CalibrationFile? calibration) =>
+            calibration == null
+                ? string.Empty
+                : AgentSessionFingerprint.ContentDigest(
+                    calibration.Points.SelectMany(point => new[] { point.FrequencyHz, point.Decibels }));
 
         static string Capture(LiveCaptureDocument? document) =>
             document == null

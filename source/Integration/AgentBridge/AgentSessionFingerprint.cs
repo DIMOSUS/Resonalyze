@@ -57,5 +57,17 @@ internal static class AgentSessionFingerprint
             ? string.Empty
             : Digests.GetValue(values, array => Hex(SHA256.HashData(MemoryMarshal.AsBytes<T>((T[])array))));
 
+    /// <summary>
+    /// The content of a short curve — a calibration's points — as sixteen hex
+    /// digits, hashed on every call: the points are read off a list the caller
+    /// flattens, so there is no array instance to cache by.
+    /// </summary>
+    public static string ContentDigest(IEnumerable<double> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        double[] flat = values.ToArray();
+        return Hex(SHA256.HashData(MemoryMarshal.AsBytes<double>(flat)));
+    }
+
     private static string Hex(byte[] hash) => Convert.ToHexStringLower(hash)[..16];
 }

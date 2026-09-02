@@ -34,6 +34,9 @@ public sealed class AgentSessionFingerprintTests
         Assert.NotEqual(digest, AgentSessionFingerprint.ContentDigest(other));
         Assert.NotEqual(digest, AgentSessionFingerprint.ContentDigest(a[..2]));
         Assert.Equal(string.Empty, AgentSessionFingerprint.ContentDigest<double>(null));
+        // The uncached twin, for a curve flattened on the way: same reading.
+        Assert.Equal(digest, AgentSessionFingerprint.ContentDigest(a.AsEnumerable()));
+        Assert.NotEqual(digest, AgentSessionFingerprint.ContentDigest(other.AsEnumerable()));
         // A complex array hashes its real and imaginary parts alike.
         Assert.NotEqual(
             AgentSessionFingerprint.ContentDigest([new System.Numerics.Complex(1, 0)]),

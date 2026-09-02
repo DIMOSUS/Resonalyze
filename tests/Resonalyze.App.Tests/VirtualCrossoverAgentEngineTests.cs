@@ -276,6 +276,13 @@ public sealed class VirtualCrossoverAgentEngineTests
             Moves(() => leftState.TransferCoherence = [0.9, 0.8]);
             Moves(() => leftState.MeasuredBand = new MeasuredBand(40, 8000));
             Moves(() => leftState.TransferPeakIndex += 1);
+            // The correction the side is read through, by its points: the same
+            // file re-read with one value edited is another correction.
+            Set(panel, "ownCalibrationSelected", true);
+            Moves(() => leftState.MicrophoneCalibration =
+                new VirtualCrossoverCalibrationSettings { Name = "mic", Points = [[1000, 0.5], [2000, 1.0]] });
+            Moves(() => leftState.MicrophoneCalibration =
+                new VirtualCrossoverCalibrationSettings { Name = "mic", Points = [[1000, 0.5], [2000, 1.5]] });
             Moves(() => Project(panel).AiNotes = "Front: 6.5\" mids in the doors.");
             Moves(() => Project(panel).Target = new VirtualCrossoverTargetSettings { ImportedCurve = [1, 2, 3] });
             Moves(() => Project(panel).Target!.ImportedCurve = [1, 2, 4]);

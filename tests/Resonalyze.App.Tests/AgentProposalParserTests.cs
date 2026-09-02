@@ -40,6 +40,106 @@ public sealed class AgentProposalParserTests
         }
         """;
 
+
+    private const string FourEngines = """
+        {
+          "kind": "resonalyze.agent-proposal",
+          "protocolVersion": 1,
+          "summary": "Let the engines do the arithmetic.",
+          "operations": [
+            { "id": "op-1", "op": "useSpatialAverage", "mode": "MicArray", "hybrid": true, "reason": "Arrays are attached but unused." },
+            { "id": "op-2", "op": "runAutoCrossover", "reason": "The corners are guesses." },
+            { "id": "op-3", "op": "runAutoDelay", "sceneOffsetMs": 0.25, "rightHandDrive": false, "adjustGains": true, "nearSideCutDb": 1.5, "reason": "Realign after the flip." },
+            { "id": "op-4", "op": "autoTunePeq", "channelId": "B:left", "targetLevelDb": -6, "minHz": 100, "maxHz": 8000, "allowShelves": true, "cutsOnly": false, "source": "spatialAverage", "reason": "Fit the door." }
+          ]
+        }
+        """;
+
+    [Fact]
+    public void Parse_ReadsTheFourEngineRequests_AndLeavesTheirOmittedInputsNull()
+    {
+        AgentProposalParseResult result = AgentProposalParser.Parse(Begin + FourEngines + End);
+
+        Assert.True(result.Succeeded, result.Error);
+        AgentProposal proposal = result.Proposal!;
+        Assert.Empty(proposal.Rejected);
+        Assert.Collection(proposal.Operations,
+            operation =>
+            {
+                var spatial = Assert.IsType<UseSpatialAverageOperation>(operation);
+                Assert.Equal("useSpatialAverage", spatial.Op);
+                Assert.Equal("Spatial average", spatial.Parameter);
+                Assert.Equal("MicArray", spatial.Mode);
+                Assert.True(spatial.Hybrid);
+            },
+            operation =>
+            {
+                var crossover = Assert.IsType<RunAutoCrossoverOperation>(operation);
+                Assert.Equal("runAutoCrossover", crossover.Op);
+                Assert.Equal("The corners are guesses.", crossover.Reason);
+            },
+            operation =>
+            {
+                var delay = Assert.IsType<RunAutoDelayOperation>(operation);
+                Assert.Equal(0.25, delay.SceneOffsetMs);
+                Assert.False(delay.RightHandDrive);
+                Assert.True(delay.AdjustGains);
+                Assert.Equal(1.5, delay.NearSideCutDb);
+                // Not stated is not zero: the panel's own value stands.
+                Assert.Null(delay.RearFillOffsetMs);
+            },
+            operation =>
+            {
+                var tune = Assert.IsType<AutoTunePeqOperation>(operation);
+                Assert.Equal("B:left", tune.ChannelId);
+                Assert.Equal(-6, tune.TargetLevelDb);
+                Assert.Equal(100, tune.MinHz);
+                Assert.Equal(8000, tune.MaxHz);
+                Assert.True(tune.AllowShelves);
+                Assert.False(tune.CutsOnly);
+                Assert.Equal("spatialAverage", tune.Source);
+            });
+
+        // The two whole-project engines carry no channel at all, by their type.
+        Assert.Equal(
+            ["B:left"],
+            proposal.Operations.OfType<AgentChannelOperation>().Select(operation => operation.ChannelId));
+    }
+
+    [Theory]
+    [InlineData("\"op\": \"runAutoCrossover\"", "\"op\": \"runAutoCrossover\", \"channelId\": \"B:left\"", "op-2")]
+    [InlineData("\"op\": \"autoTunePeq\", \"channelId\": \"B:left\"", "\"op\": \"autoTunePeq\"", "op-4")]
+    [InlineData("\"mode\": \"MicArray\", ", "", "op-1")]
+    [InlineData("\"hybrid\": true", "\"hybrid\": \"true\"", "op-1")]
+    [InlineData("\"sceneOffsetMs\": 0.25", "\"sceneOffsetMs\": \"0.25\"", "op-3")]
+    // `required` only demands the member be PRESENT; a null passes the reader.
+    [InlineData("\"channelId\": \"B:left\"", "\"channelId\": null", "op-4")]
+    [InlineData("\"mode\": \"MicArray\"", "\"mode\": null", "op-1")]
+    [InlineData("\"hybrid\": true", "\"hybrid\": null", "op-1")]
+    public void Parse_RefusesAnEngineRequestThatIsNotTheShapeTheProtocolDescribes(
+        string from, string to, string id)
+    {
+        string json = FourEngines.Replace(from, to);
+
+        AgentProposal proposal = AgentProposalParser.Parse(Begin + json + End).Proposal!;
+
+        Assert.Equal(id, Assert.Single(proposal.Rejected).Id);
+        Assert.Equal(3, proposal.Operations.Count);
+    }
+
+    [Fact]
+    public void Parse_RefusesAnEngineRequestWhoseModeIsBlank()
+    {
+        // Length and emptiness are the parser's business; whether the mode NAMES
+        // a capture family the session has is the validator's.
+        string json = FourEngines.Replace("\"mode\": \"MicArray\"", "\"mode\": \"   \"");
+
+        AgentProposal proposal = AgentProposalParser.Parse(Begin + json + End).Proposal!;
+
+        Assert.Equal("op-1", Assert.Single(proposal.Rejected).Id);
+        Assert.Contains("spatial average mode is missing", proposal.Rejected[0].Problem);
+    }
+
     [Fact]
     public void Parse_ReadsAllFiveOperationsOutOfAReplyWithProseAroundTheBlock()
     {

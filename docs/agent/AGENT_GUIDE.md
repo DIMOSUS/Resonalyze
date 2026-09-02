@@ -1,6 +1,6 @@
 # Resonalyze Agent Guide
 
-Guide version 1.0 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
+Guide version 1.1 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
 
 ## 0. The rules that also travel inside every package
 
@@ -102,8 +102,12 @@ Work in this order; each step gates the next.
      **Array** button's menu) does not read the family the channels hold; a
      playing channel has no capture (`channelsWithCapture` < `channelsShown`
      — name it from `source.spatialAverageCaptures`); or the view is a group
-     comparison, which never draws them. Ask for a new package once the
-     hybrid curves are on; the same manual section explains the switch.
+     comparison, which never draws them. Where the package's
+     `limits.operations` names `useSpatialAverage` you can ask for the mode
+     and the **Hybrid** tick as an operation (§6) rather than describing the
+     clicks; either way, ask for a new package once the hybrid curves are on,
+     since every curve in this one was read the old way. The same manual
+     section explains the switch.
    - `partial`: some measured channels are judged on their average and some
      on a point. Name the ones without (`hybridPreDspDb` absent) and treat
      their PEQ as step 8 says for point measurements.
@@ -143,7 +147,9 @@ Work in this order; each step gates the next.
    PEQ bank on the channels of that junction (the block's PEQ button, Clear —
    the block's Bypass would drop the crossover too and change the junction
    itself), copy a new package, read the junction again, then load the saved
-   session back.
+   session back. You can clear a bank yourself: a `replacePeqBank` with an
+   empty `bands` list and `preampDb: 0` is a valid operation, and *Undo AI
+   import* puts the bank back.
 5. **Crossover corners and slopes.** Judge the acoustic slopes on
    `processedDb`, not the electrical ones: the driver's own roll-off adds to
    the filter. Before proposing a corner, know the driver (model, size,
@@ -226,7 +232,8 @@ Work in this order; each step gates the next.
   while averages sit unused (`analysis.spatialAverage.status` other than
   `active`). Step 2 says what to tell them.
 - Do not pick a delay from one number. Use the lobes, the PHAT peaks and the
-  ladder together, and prefer recommending Auto delay over stating a value.
+  ladder together, and prefer Auto delay — recommended, or requested as an
+  operation where the package offers one — over stating a value.
 - Do not declare a high-pass safe from Fs or cone size. Ask for the driver and
   cite the maker's recommendation; say when you are inferring.
 - Do not invent precision. A 0.01 ms delay or a 0.1 dB trim you cannot justify
@@ -239,20 +246,53 @@ Work in this order; each step gates the next.
 
 ## 6. Engines first, numbers second
 
-Resonalyze has three engines the user can run in one click. Recommend them, with
-settings, before you hand-write what they compute:
+Resonalyze has three engines the user can run in one click. Reach for them
+before you hand-write what they compute:
 
 - **Auto delay** — searches delays and polarities per junction and across the
-  sides. Say: run Auto delay, with the scene offset and steering side, and
-  whether to let it adjust gains. Then copy a new package to check the result.
+  sides. Say, or request: the scene offset, the steering side, and whether to
+  let it adjust gains. Then ask for a new package to check the result.
 - **Auto crossover** — proposes corners and slopes from the drivers' usable
-  bands. Say when to run it and what to confirm afterwards.
+  bands. It takes no settings; say what to confirm in its dialog afterwards.
 - **EQ Wizard Auto-tune** — fits a PEQ bank to the target over a channel's
-  band, optionally on the spatial average. Say which channel, which target
-  level, whether shelves are allowed.
+  band, optionally on the spatial average. Say, or request: which channel,
+  which target level, whether shelves are allowed, cuts only or not.
 
-Write these as `advice`, not as operations. Hand-written operations are for:
-a polarity flip you can justify from the junction read-outs; a crossover
+**You can now ASK for an engine**, as an operation, when the package's
+`limits.operations` names it — `runAutoDelay`, `runAutoCrossover`,
+`autoTunePeq`, and `useSpatialAverage` for the mode and the Hybrid tick. The
+review is the gate: once the user applies the row, `runAutoDelay` runs at once
+with your inputs (no dialog; the run's report comes back to the user in the
+import's summary, and the same checks the button makes — two measured
+channels, no bypassed participant, the gate in place, a crossover somewhere —
+skip it with the reason when they fail); `autoTunePeq` runs at once as well,
+on the curve the wizard would have opened on for that channel (the spatial
+average while the hybrid view draws it — ask for `useSpatialAverage` first
+where it is not — or the `source` you name), with the EQ Wizard's Auto Tune
+settings as the user left them (Max Filters, gain range, Max Q, Cuts only,
+Shelves) for what you leave out, and the channel's passband as the window;
+a stated edge must lie within 20 Hz–20 kHz and keep the window ordered
+against the passband edge you leave in place. State `targetLevelDb` only when
+you mean to move the project's target level — it is one datum for every
+channel, so every request that states one must state the same value, and
+one import fits every channel to one level; the run skips itself when it sits
+3 dB or more above the curve or 10 dB or more below. `runAutoCrossover`
+opens the wizard for the user to confirm
+the driver types. Either way, ask for a new
+package afterwards to read the result. What `limits.operations` does NOT name,
+say in `advice` as before — that build cannot run it, and asking anyway costs
+the user a rejected row.
+
+Two rules that follow from it. Do not send an engine request together with a
+hand-written value the engine would write over (Auto delay writes delay and
+polarity, and gains when you ask it to balance them; Auto crossover writes the
+corners and a cut-only gain; Auto-tune replaces one channel's bank) — the
+review rejects the hand-written row. And request each engine once: a repeat is
+refused, naming the first. `autoTunePeq` counts per channel, so ask for it once
+per channel you want fitted.
+
+Hand-written operations are still the right answer for what an engine does not
+decide: a polarity flip you can justify from the junction read-outs; a crossover
 corner or slope you can justify from the driver and the acoustic slope; a gain
 trim from the level deltas; a small, targeted PEQ change with a stated cause
 (for example a door resonance visible in both the point measurement and the
@@ -288,18 +328,23 @@ When a driver or a processor matters to your advice:
 
 Write your analysis in prose. Then, **only if** you have concrete, justified
 changes for the five editable parameters (gain, delay, polarity, crossover,
-PEQ bank of one channel), end with exactly one block between
-`BEGIN_RESONALYZE_AGENT_PROPOSAL_V1` and `END_RESONALYZE_AGENT_PROPOSAL_V1`
-as [PROTOCOL.md](PROTOCOL.md) §2 describes. In it:
+PEQ bank of one channel) or an engine to request, end with exactly one block
+between `BEGIN_RESONALYZE_AGENT_PROPOSAL_V1` and
+`END_RESONALYZE_AGENT_PROPOSAL_V1` as [PROTOCOL.md](PROTOCOL.md) §2 describes.
+In it:
 
 - Copy `packageId`, every `channelId` and every expected current value from
   the package exactly. A changed current value refuses the operation.
 - One operation per channel and parameter. State each `reason` in one or two
   sentences; the user reads it in the review.
-- Put everything else — run Auto delay with these settings, re-measure this
-  channel, switch the view and copy again — into `advice`.
+- Use only the operations `limits.operations` names, and never an engine
+  request beside a hand-written value that engine would write over (§6).
+- Put everything else — re-measure this channel, switch the view and copy
+  again, run an engine this build does not offer as an operation — into
+  `advice`.
 - A reply with no block is a normal reply. A reply that only advises, or only
   asks, is often the right one.
 
-Example of a complete reply: PROTOCOL.md §2 shows one with all five operation
-types; do not include operations you have no evidence for.
+Example of a complete reply: PROTOCOL.md §2 shows one with all five settings
+operations, and §2.2 the engine requests; do not include operations you have no
+evidence for.

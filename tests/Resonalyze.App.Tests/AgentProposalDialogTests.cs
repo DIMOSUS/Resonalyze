@@ -86,7 +86,72 @@ public sealed class AgentProposalDialogTests
         });
     }
 
+    [Fact]
+    public void AnEngineRow_NamesTheWholeProject_AndCarriesWhatTheEngineWouldWriteOver()
+    {
+        StaTest.Run(() =>
+        {
+            using var dialog = new AgentProposalDialog(EngineReview());
+            DataGridView grid = Grid(dialog);
+
+            Assert.Equal(AgentProposalValidator.AllChannels, grid.Rows[0].Cells[1].Value);
+            Assert.Equal("Auto crossover", grid.Rows[0].Cells[2].Value);
+            Assert.Equal("Warning", grid.Rows[0].Cells[5].Value);
+            Assert.Equal(true, grid.Rows[0].Cells[0].Value);
+            Assert.Contains("can reorder the chain", grid.Rows[0].Cells[5].ToolTipText);
+
+            // Current and Proposed are 170 px wide and an engine states its whole
+            // set of inputs there, so both have to be readable off the row and
+            // off the detail box rather than only clipped into the cell.
+            Assert.Equal(
+                "the corners, slopes and gains as they stand", grid.Rows[0].Cells[3].ToolTipText);
+            Assert.Equal(
+                "the wizard's corners, slopes and cut-only gains",
+                grid.Rows[0].Cells[4].ToolTipText);
+            grid.ClearSelection();
+            grid.Rows[0].Selected = true;
+            string detail = ((TextBox)dialog.Controls["textBoxDetail"]!).Text;
+            Assert.Contains("Current: the corners, slopes and gains as they stand", detail);
+            Assert.Contains("Proposed: the wizard's corners", detail);
+
+            // The hand-written corner the wizard would erase is listed, greyed.
+            Assert.Equal(false, grid.Rows[1].Cells[0].Value);
+            Assert.Equal("Rejected", grid.Rows[1].Cells[5].Value);
+            Assert.Equal(["op-1"], dialog.Selected.Select(verdict => verdict.Id));
+        });
+    }
+
     private static DataGridView Grid(Form dialog) => (DataGridView)dialog.Controls["gridView"]!;
+
+    private static AgentProposalReview EngineReview()
+    {
+        var bLeft = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.BandPass,
+            HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 250, 24),
+            LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2800, 24)
+        };
+        var session = new AgentSessionSnapshot(
+            [new AgentChannelSnapshot("B", AgentChannelSide.Left, bLeft, true, [])],
+            96_000, 10, null,
+            new AgentAutoDelaySettings(0.25, RightHandDrive: false, AdjustGains: false, 1.0, 15.0),
+            VirtualCrossoverSpatialAverageMode.MovingMic,
+            HybridTicked: false);
+        var proposal = new AgentProposal(
+            null, "The corners are guesses.", [], [],
+            [
+                new RunAutoCrossoverOperation("op-1", "let the wizard split them"),
+                new SetCrossoverOperation("op-2", "B:left", "lower the top",
+                    new AgentCrossover("BandPass",
+                        new AgentCrossoverEdge("LinkwitzRiley", 250, 24, null),
+                        new AgentCrossoverEdge("LinkwitzRiley", 2800, 24, null)),
+                    new AgentCrossover("BandPass",
+                        new AgentCrossoverEdge("LinkwitzRiley", 250, 24, null),
+                        new AgentCrossoverEdge("LinkwitzRiley", 2600, 24, null)))
+            ],
+            []);
+        return AgentProposalValidator.Review(proposal, session);
+    }
 
     private static AgentProposalReview Review()
     {
@@ -99,10 +164,13 @@ public sealed class AgentProposalDialogTests
         };
         var session = new AgentSessionSnapshot(
             [
-                new AgentChannelSnapshot("A", AgentChannelSide.Right, aRight),
-                new AgentChannelSnapshot("B", AgentChannelSide.Left, bLeft)
+                new AgentChannelSnapshot("A", AgentChannelSide.Right, aRight, true, []),
+                new AgentChannelSnapshot("B", AgentChannelSide.Left, bLeft, true, [])
             ],
-            96_000, 10, "11111111-1111-1111-1111-111111111111");
+            96_000, 10, "11111111-1111-1111-1111-111111111111",
+            new AgentAutoDelaySettings(0.25, RightHandDrive: false, AdjustGains: false, 1.0, 15.0),
+            VirtualCrossoverSpatialAverageMode.MovingMic,
+            HybridTicked: false);
         var proposal = new AgentProposal(
             "22222222-2222-2222-2222-222222222222",
             "The left mid/tweeter junction cancels near 3.1 kHz.",

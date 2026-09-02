@@ -86,11 +86,20 @@ the catalog does not know it.
   "peqBands": 32, "peqPreampDb": 60, "crossoverHz": [10, 24000],
   "slopes": { "Butterworth": [6,12,18,24,30,36,42,48], "LinkwitzRiley": [12,24,36,48],
               "Bessel": [6,12,18,24,36,48], "Chebyshev": [6,12,18,24,30,36,42,48] },
-  "chebyshevRippleDb": [0, 3] }
+  "chebyshevRippleDb": [0, 3],
+  "operations": ["setGainDb", "setDelayMs", "setPolarity", "setCrossover",
+                 "replacePeqBank", "useSpatialAverage", "runAutoCrossover",
+                 "runAutoDelay", "autoTunePeq"] }
 ```
 
 These are Virtual DSP's own limits, not the device's. A reply outside them is
 rejected; a reply inside them may still exceed what the device can dial.
+
+`operations` is what THIS build can execute. The protocol below describes more
+than any one build runs: an operation missing from the list is still read and
+reviewed — so a reply written for a newer build is understood rather than
+mangled — and then refused with "not available in this version of Resonalyze".
+Use only the operations the package names; everything else goes in `advice`.
 
 ### 1.4 `analysis`
 
@@ -342,13 +351,15 @@ facts per source, 2000 characters per string, JSON depth 8.
 
 ### 2.2 Operations
 
-Every operation has `id` (unique in the reply), `op`, `channelId` (an id from
-the package), `reason` (shown in the review), and what it believes the
+Every operation has `id` (unique in the reply), `op` and `reason` (shown in the
+review). There are two families. The five below WRITE one channel's settings:
+they add `channelId` (an id from the package) and what they believe the
 **current** value is, copied from the package. A current value that no longer
-matches means the tune moved on since the package was copied, and the
-operation is refused rather than applied to a state it was not reasoned about.
-Two operations on one channel's same parameter refuse each other. An operation
-that changes nothing is refused as "no change".
+matches means the tune moved on since the package was copied, and the operation
+is refused rather than applied to a state it was not reasoned about. Two
+operations on one channel's same parameter refuse each other. An operation that
+changes nothing is refused as "no change". The four under *Engine requests*
+below ask for one of the panel's own engines instead.
 
 | `op` | Fields | Checked against |
 | --- | --- | --- |
@@ -368,10 +379,90 @@ All `q` values are RBJ cookbook Q. Resonalyze never converts them on the way in;
 the processor's own convention is applied only where numbers leave for the
 device (the tuning sheets).
 
-Nothing else can be addressed: not the target, the processor, the gates, the
-sources, the calibration, the channel list, mute or bypass. Such changes belong
-in `advice`, as text. An unknown `op` is listed in the review as rejected and
-never applied.
+#### Engine requests
+
+The four operations below carry no value of their own. Three ask for one of the
+panel's engines to be opened with the inputs stated; the fourth,
+`useSpatialAverage`, puts the panel into the state the others should be read in.
+They exist because the engines compute what no reading of a curve can, and
+because a user who has been told to "run Auto delay with a 0.25 ms scene offset"
+otherwise has to find the dialog and retype the numbers.
+
+They carry no `expectedCurrent`: what the engine writes is what the run decides.
+The review is the gate. `runAutoDelay` then runs **without its dialog** — the
+same checks the button makes (two measured channels, no bypassed participant,
+the gate in place, a crossover somewhere; a failed check skips the operation
+with the reason in the summary), the same search, the same commit — and its
+report, the text the dialog would have shown, comes back in the import's
+summary and the alignment log. `autoTunePeq` runs without the EQ Wizard too:
+it fits the curve the wizard would have opened on for that channel — the
+spatial average while the hybrid view draws it, the point measurement
+otherwise, or whichever `source` names — with the EQ Wizard's Auto Tune
+settings as they stand (Max Filters, Gain min/max, Max Q, Cuts only, Shelves —
+the same bank the wizard's button would fit for the same project) for what the
+reply leaves out, and the channel's passband as the window; all-pass bands
+in the bank are kept and the fit tunes around them; a `targetLevelDb` moves the
+project's target level, as the wizard's Return does — it is one datum for the
+whole project, so every request in a reply that states one must state the
+same value (the first stated level stands, the others are refused naming it),
+and a run that skips itself leaves the level untouched. A channel on the side not
+on screen is refused at review (the handoff is the shown side's: its gate pin,
+its anchor, its hybrid datum — switch the L/R selector, copy a new package and
+ask again). The run skips itself, with the reason, when `spatialAverage` is
+asked for and the hybrid view is not drawing it, or when the target level sits
+3 dB or more above the curve (10 dB or more below), which is the question the
+wizard would have asked. `runAutoCrossover` opens the wizard: its rows
+are where the driver types are confirmed, and cancelling it skips that
+operation while the rest of the import carries on.
+
+`runAutoDelay`, `runAutoCrossover` and `useSpatialAverage` take **no**
+`channelId`: they address the whole project, and a `channelId` on one is refused
+as a property the protocol does not name. Every other input is optional, and one
+that is left out means the value the panel would open with — so a reply that
+wants only the scene offset changed states only that.
+
+| `op` | Fields | Checked against |
+| --- | --- | --- |
+| `runAutoDelay` | `sceneOffsetMs?`, `rightHandDrive?`, `adjustGains?`, `nearSideCutDb?`, `rearFillOffsetMs?` | the dialog's own fields: scene offset 0–5 ms in steps of 0.01, near-side cut 0–6 dB in steps of 0.1, rear fill offset 0–30 ms in steps of 0.1. `nearSideCutDb` is a magnitude: the LHD/RHD toggle owns the sign. Stereo or single-sided is the panel's decision, as it is for the button |
+| `runAutoCrossover` | none | the wizard has no inputs: the families, the corner window and the chain order are chosen in its own dialog |
+| `autoTunePeq` | `channelId`, `targetLevelDb?`, `minHz?`, `maxHz?`, `allowShelves?`, `cutsOnly?`, `source?` | the channel exists, has a measurement and is on the side on screen; target level −120…60 dB in whole dB, the same in every request that states one; each stated edge within the wizard's From/To fields (20 Hz–20 kHz) and below the processor's Nyquist, and the window as the run will use it — a stated edge with the channel's passband edge for the one left out — ordered; `source` is `point` or `spatialAverage`, and `spatialAverage` needs the channel to carry one |
+| `useSpatialAverage` | `mode`, `hybrid` | `mode` is `MovingMic` or `MicArray` and at least one channel carries that family (`channels[].source.spatialAverageCaptures`); `hybrid` must be `true`; a mode already in force with Hybrid already ticked is refused as "no change" |
+
+```json
+{ "operations": [
+  { "id": "op-6", "op": "useSpatialAverage", "mode": "MovingMic", "hybrid": true,
+    "reason": "Every channel carries an MMM capture and the tune is still read at one point." },
+  { "id": "op-7", "op": "runAutoDelay", "sceneOffsetMs": 0.25, "adjustGains": true,
+    "reason": "Two polarity flips changed the arrivals the current delays were set for." }
+] }
+```
+
+An import runs what it was given in one fixed order, whatever order the reply
+listed: the five settings operations first, then `useSpatialAverage` (it decides
+which curves the rest are read on), then `runAutoCrossover`, then `runAutoDelay`,
+then `autoTunePeq`. One summary at the end says what was applied and what was
+skipped, and *Undo AI import* puts back everything the whole sequence moved.
+
+An engine and a hand-written value the engine would write over cannot both be
+meant, so the hand-written row is **rejected**, naming the engine that would have
+erased it. The engine keeps its row: it is the one that computes the number.
+
+| Requesting | Rejects |
+| --- | --- |
+| `runAutoDelay` | `setDelayMs` and `setPolarity` on any channel; `setGainDb` too when the run balances gains |
+| `runAutoCrossover` | `setCrossover` and `setGainDb` on any channel (the wizard writes a cut-only gain with every corner) |
+| `autoTunePeq` | `replacePeqBank` on the same channel |
+
+An engine this build cannot run erases nothing, so its request is refused and the
+hand-written rows are left to do the work instead. Request each engine once: a
+repeat is refused, naming the first. `autoTunePeq` counts per channel — one fit
+per channel is the point of it — so a second request for the SAME channel is the
+one that is refused.
+
+Beyond the operations of this section, nothing in a session can be addressed:
+not the target, the processor, the gates, the sources, the calibration, the
+channel list, mute or bypass. Such changes belong in `advice`, as text. An
+unknown `op` is listed in the review as rejected and never applied.
 
 The review judges the junction-zone rule on each channel as it would end up
 after **every** applicable row; the commit judges it again on the rows the user
@@ -388,9 +479,17 @@ showed (a crossover moved without the bank that went with it).
 3. Shows the review: every row with its current and proposed value; admissible
    rows ticked, rejected rows greyed with their reason, warnings in words.
 4. On *Apply selected*, judges the ticked rows once more against the settings as
-   they are at that moment, then writes them as one set, saves once, redraws
-   once. A failure anywhere writes nothing.
-5. *Undo AI import* puts every touched channel back exactly as it was.
+   they are at that moment, then writes the settings rows as one set. A failure
+   there writes nothing.
+5. Runs the ticked engine requests, in the fixed order above — the spatial
+   average straight onto the panel, Auto crossover through its wizard, Auto
+   delay and Auto-tune without their dialogs — and
+   ends with one summary of what was applied and what was skipped. Undo is armed
+   before the first of these writes, so an import that stops part-way is still
+   undone in one step.
+6. *Undo AI import* puts back everything the import could have moved: every
+   channel's chain, the spatial average mode and the Hybrid tick, and the block
+   order the crossover wizard may have changed.
 
 ## 3. Privacy
 

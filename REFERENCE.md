@@ -2830,33 +2830,62 @@ this: the clipboard is the only transport, and you are the one who pastes.
   responses.
 - **Import AI proposal…** reads the assistant's reply back off the clipboard —
   copy the whole reply, not just the JSON — and opens a review. The reply may
-  address only five things, each on one channel: gain, delay, polarity, the
-  crossover, and the whole PEQ bank; nothing else in a session can be reached
-  from a reply, and an unknown request is listed as rejected. Every proposed
-  change is shown against the value the channel holds *now*, with the reason the
-  assistant gave. A change the assistant reasoned about a value that has since
-  moved is rejected as such; so is one outside Virtual DSP's own limits (the
-  channel block's gain and delay ranges and steps, the crossover families and
-  slopes, the corner range and the processor's Nyquist, the PEQ band count), one
-  that changes nothing, and two that contradict each other. Admissible rows start
-  ticked; rejected rows cannot be ticked; a warning — a delay above the
-  processor's stated ceiling, a PEQ bank whose net response (preamp and every
-  band together) rises above 0 dB somewhere and would clip a full-scale signal
-  there, a bell narrower than Q 2 within an octave of one of the channel's own
-  crossover corners (where it turns the phase the pair's sum is built on), a
-  PEQ bank or crossover the device's own limits were not checked against because
-  the catalog does not know them — is a word in the Status column, not only a
-  colour. **Apply selected** looks at the ticked
-  rows once more against the live settings — and at what the ticked subset
-  leaves behind, since the review judged the rows together and unticking one
-  can leave a state it never showed, which then asks before applying — writes
-  them as one set, saves once and redraws once; a failure anywhere writes
-  nothing. Validity is not quality: a
-  proposal that passes every check can still be a worse tune, so listen before you
-  trust it, and re-run **Auto delay** after a polarity or crossover change as the
-  guide tells the assistant to advise.
-- **Undo AI import** puts every channel the last import touched back exactly as
-  it was. One step; it is gone once a session is loaded.
+  address five things on one channel: gain, delay, polarity, the crossover, and
+  the whole PEQ bank. It may also **ask for an engine to be run**: **Auto
+  crossover**, or the spatial average — the capture family and the **Hybrid**
+  tick together, which is how an assistant that has noticed unused averages puts
+  them to work in one tick. (Auto delay and the EQ Wizard's Auto-tune are part of
+  the protocol and are read and reviewed, but this build refuses them as not
+  available; the package tells the assistant which operations it can run.)
+  Nothing else in a session can be reached from a reply, and an unknown request
+  is listed as rejected.
+
+  Every proposed change is shown against the value the channel holds *now*, with
+  the reason the assistant gave; an engine request is shown against the settings
+  the engine would start from, with what it will write over. Auto crossover
+  then opens its wizard as the button does; Auto delay runs without its dialog
+  — the button's own checks, search and commit, with the report it would have
+  shown returned in the import's summary and the alignment log; Auto-tune runs
+  without the EQ Wizard, on the curve the wizard would have opened on for that
+  channel and with the wizard's own Auto Tune settings as they stand (Max
+  Filters, Gain min/max, Max Q, Cuts only, Shelves) for whatever the reply
+  leaves out, keeps the bank's all-pass bands, lands the fit the way the wizard's
+  **Return** lands it, and skips itself — with the reason — where the wizard
+  would have asked about the [target level](#eq-wizard). A change the assistant
+  reasoned about a value that has since moved is rejected as such; so is one
+  outside Virtual DSP's own limits (the channel block's gain and delay ranges and
+  steps, the crossover families and slopes, the corner range and the processor's
+  Nyquist, the PEQ band count, the Auto delay dialog's own fields), one that
+  changes nothing, and two that contradict each other — including a
+  hand-written value an engine in the same reply would write over, which is
+  rejected naming the engine, since the two cannot both be meant and the engine
+  is the one that computes the number.
+
+  Admissible rows start ticked; rejected rows cannot be ticked; a warning — a
+  delay above the processor's stated ceiling, a PEQ bank whose net response
+  (preamp and every band together) rises above 0 dB somewhere and would clip a
+  full-scale signal there, a bell narrower than Q 2 within an octave of one of
+  the channel's own crossover corners (where it turns the phase the pair's sum is
+  built on), a PEQ bank or crossover the device's own limits were not checked
+  against because the catalog does not know them, an engine that will write over
+  more than the rows name — is a word in the Status column, not only a colour.
+  **Apply selected** looks at the ticked rows once more against the live settings
+  — and at what the ticked subset leaves behind, since the review judged the
+  rows together and unticking one can leave a state it never showed, which then
+  asks before applying — writes them as one set, then runs the engine requests
+  in a fixed order (the spatial average first, since it decides which curves the
+  rest are read on, then Auto crossover, then Auto delay) and closes with one
+  summary of what was applied and what was skipped. Cancelling the wizard, or
+  a check Auto delay's button would have refused on (fewer than two measured
+  channels, a bypassed participant, a misplaced gate, no crossover anywhere),
+  skips that operation with the reason and the rest carry on; a failure while
+  writing the settings writes nothing. Validity is not quality: a proposal that passes every check can still
+  be a worse tune, so listen before you trust it, and re-run **Auto delay** after
+  a polarity or crossover change as the guide tells the assistant to advise.
+- **Undo AI import** puts back everything the last import could have moved, not
+  only the channels its rows named: every channel's chain, the spatial average
+  mode and the **Hybrid** tick, and the block order Auto crossover may have
+  changed. One step; it is gone once a session is loaded.
 
 The assistant's side of the protocol — what the package contains, what a reply
 may say, and the method the assistant is asked to follow (measurement

@@ -29,7 +29,8 @@ internal sealed record AgentOperationVerdict(
     AgentChannelSnapshot? Channel)
 {
     public bool Applicable =>
-        Status != AgentVerdictStatus.Rejected && Operation != null && Channel != null;
+        Status != AgentVerdictStatus.Rejected && Operation != null &&
+        (Operation is not AgentChannelOperation || Channel != null);
 }
 
 /// <summary>A reply judged against a session: the rows, plus reply-level warnings.</summary>
@@ -62,6 +63,30 @@ internal static class AgentProposalValidator
     public const double MinimumDelayMs = 0;
     public const double MaximumDelayMs = 100;
     public const double DelayStepMs = 0.01;
+
+    // The Auto delay dialog's own fields, and the panel's Target Level field,
+    // restated here for the same reason and pinned to their controls by the same
+    // test: an engine request outside them would be clamped on the first touch,
+    // and the run would not be the one that was reviewed.
+    public const double MinimumSceneOffsetMs = 0;
+    public const double MaximumSceneOffsetMs = 5;
+    public const double SceneOffsetStepMs = 0.01;
+    public const double MinimumNearSideCutDb = 0;
+    public const double MaximumNearSideCutDb = 6;
+    public const double NearSideCutStepDb = 0.1;
+    public const double MinimumRearFillOffsetMs = 0;
+    public const double MaximumRearFillOffsetMs = 30;
+    public const double RearFillOffsetStepMs = 0.1;
+    public const double MinimumTargetLevelDb = -120;
+    public const double MaximumTargetLevelDb = 60;
+    public const double TargetLevelStepDb = 1;
+
+    /// <summary>The two curves an auto-tune request may name as its source.</summary>
+    public const string PointSource = "point";
+    public const string SpatialAverageSource = "spatialAverage";
+
+    /// <summary>How the review's Channel column names a row about the whole project.</summary>
+    public const string AllChannels = "all";
 
     public const string DeviceLimitsUnknown =
         "Device limits unknown; only Virtual DSP limits were checked.";
@@ -133,17 +158,10 @@ internal static class AgentProposalValidator
             verdicts.Add(Judge(operation, session));
         }
 
-        // Some warnings are about the channel as it would END UP, not about one
-        // operation: a bell that lands in a junction zone because the crossover
-        // moved, or a bank proposed against a crossover another row moves. Every
-        // channel's applicable rows are applied together to a copy and judged
-        // there; the notes go on the rows that shape that state.
-        AddFinalStateNotes(verdicts);
-
         // Two applicable operations on one channel's same parameter cannot both be
         // meant; neither is picked over the other.
         foreach (IGrouping<(string, string), AgentOperationVerdict> group in verdicts
-            .Where(verdict => verdict.Applicable)
+            .Where(verdict => verdict.Applicable && verdict.Operation is AgentSettingsOperation)
             .GroupBy(verdict => (verdict.Channel!.Id, verdict.Parameter))
             .Where(group => group.Count() > 1))
         {
@@ -160,8 +178,136 @@ internal static class AgentProposalValidator
             }
         }
 
+        RejectRepeatedEngineRequests(verdicts);
+        RejectDisagreeingTargetLevels(verdicts);
+        RejectOverwrittenSettings(verdicts, session);
+
+        // Some warnings are about the channel as it would END UP, not about one
+        // operation: a bell that lands in a junction zone because the crossover
+        // moved, or a bank proposed against a crossover another row moves. Every
+        // channel's applicable rows are applied together to a copy and judged
+        // there; the notes go on the rows that shape that state. LAST, after every
+        // refusal above: a row this pass reads is a row that is going to be
+        // applied, and a note read off one that has just been refused would
+        // describe a state nothing will produce.
+        AddFinalStateNotes(verdicts);
         return new AgentProposalReview(proposal, verdicts, warnings);
     }
+
+    // The panel runs each engine once per import, and a second request for the
+    // same one carries a second set of inputs. The first is kept rather than the
+    // set silently deciding which won — the reply listed them in an order.
+    private static void RejectRepeatedEngineRequests(List<AgentOperationVerdict> verdicts)
+    {
+        var first = new Dictionary<(string Op, string? ChannelId), string>();
+        for (int index = 0; index < verdicts.Count; index++)
+        {
+            AgentOperationVerdict verdict = verdicts[index];
+            if (!verdict.Applicable || verdict.Operation is null or AgentSettingsOperation)
+            {
+                continue;
+            }
+
+            (string, string?) key = (verdict.Operation.Op, ChannelIdOf(verdict.Operation));
+            if (first.TryGetValue(key, out string? owner))
+            {
+                verdicts[index] = verdict with
+                {
+                    Status = AgentVerdictStatus.Rejected,
+                    Message = $"Already requested by {owner}; an engine runs once per import."
+                };
+            }
+            else
+            {
+                first[key] = verdict.Id;
+            }
+        }
+    }
+
+    // The target level is one datum for the whole project, and an Auto-tune that
+    // states one moves it. Two requests stating different levels would fit one
+    // bank at a level the project no longer holds by the time the other has run,
+    // so only the first stated level stands and the rest are refused naming it.
+    private static void RejectDisagreeingTargetLevels(List<AgentOperationVerdict> verdicts)
+    {
+        (string Id, double LevelDb)? first = null;
+        for (int index = 0; index < verdicts.Count; index++)
+        {
+            AgentOperationVerdict verdict = verdicts[index];
+            if (!verdict.Applicable ||
+                verdict.Operation is not AutoTunePeqOperation { TargetLevelDb: { } level })
+            {
+                continue;
+            }
+
+            if (first is not { } stated)
+            {
+                first = (verdict.Id, level);
+            }
+            else if (!stated.LevelDb.Equals(level))
+            {
+                verdicts[index] = verdict with
+                {
+                    Status = AgentVerdictStatus.Rejected,
+                    Message = $"The target level is one datum for the whole project; " +
+                        $"{stated.Id} already states {Db(stated.LevelDb)}."
+                };
+            }
+        }
+    }
+
+    // An engine and a hand-written value the engine is going to write over cannot
+    // both be meant. The engine keeps its row — it is the one that computes the
+    // number — and the hand-written row is refused, naming what would have erased
+    // it. Only an engine this build can RUN erases anything: a request refused as
+    // unavailable leaves the hand-written rows to do the work instead.
+    private static void RejectOverwrittenSettings(
+        List<AgentOperationVerdict> verdicts, AgentSessionSnapshot session)
+    {
+        foreach (AgentOperationVerdict engine in verdicts
+            .Where(verdict => verdict.Applicable && verdict.Operation is not AgentSettingsOperation)
+            .ToList())
+        {
+            for (int index = 0; index < verdicts.Count; index++)
+            {
+                AgentOperationVerdict verdict = verdicts[index];
+                if (verdict.Applicable &&
+                    verdict.Operation is AgentSettingsOperation written &&
+                    Overwrites(engine.Operation!, written, session))
+                {
+                    verdicts[index] = verdict with
+                    {
+                        Status = AgentVerdictStatus.Rejected,
+                        Message = $"Would be overwritten by {engine.Parameter} ({engine.Id})."
+                    };
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether running <paramref name="engine"/> would write over what
+    /// <paramref name="written"/> asks for. Read off what the panel's own buttons
+    /// do: Auto delay writes delay and polarity, and gains when the balance is
+    /// asked for; the crossover wizard writes both corners and the cut-only gain
+    /// of every channel it proposes for; Auto-tune replaces one channel's bank.
+    /// </summary>
+    public static bool Overwrites(
+        AgentOperation engine, AgentSettingsOperation written, AgentSessionSnapshot session) =>
+        engine switch
+        {
+            RunAutoDelayOperation delay =>
+                written is SetDelayOperation or SetPolarityOperation ||
+                (written is SetGainOperation && (delay.AdjustGains ?? session.AutoDelay.AdjustGains)),
+            RunAutoCrossoverOperation => written is SetCrossoverOperation or SetGainOperation,
+            AutoTunePeqOperation tune =>
+                written is ReplacePeqBankOperation &&
+                string.Equals(tune.ChannelId, written.ChannelId, StringComparison.Ordinal),
+            _ => false
+        };
+
+    private static string? ChannelIdOf(AgentOperation operation) =>
+        operation is AgentChannelOperation channel ? channel.ChannelId : null;
 
     private static void AddFinalStateNotes(List<AgentOperationVerdict> verdicts)
     {
@@ -197,7 +343,7 @@ internal static class AgentProposalValidator
 
         var result = new List<(AgentChannelSnapshot, List<string>)>();
         foreach (IGrouping<AgentChannelSnapshot, AgentOperationVerdict> group in rows
-            .Where(verdict => verdict.Applicable)
+            .Where(verdict => verdict.Applicable && verdict.Operation is AgentSettingsOperation)
             .GroupBy(verdict => verdict.Channel!))
         {
             VirtualCrossoverChannelSettings final = AgentOperations.CloneEditable(group.Key.Settings);
@@ -205,7 +351,7 @@ internal static class AgentProposalValidator
             {
                 foreach (AgentOperationVerdict verdict in group)
                 {
-                    AgentOperations.Apply(verdict.Operation!, final);
+                    AgentOperations.Apply((AgentSettingsOperation)verdict.Operation!, final);
                 }
             }
             catch (InvalidDataException)
@@ -254,7 +400,7 @@ internal static class AgentProposalValidator
         ArgumentNullException.ThrowIfNull(selected);
 
         foreach (IGrouping<AgentChannelSnapshot, AgentOperationVerdict> group in selected
-            .Where(verdict => verdict.Applicable)
+            .Where(verdict => verdict.Applicable && verdict.Operation is AgentSettingsOperation)
             .GroupBy(verdict => verdict.Channel!))
         {
             VirtualCrossoverChannelSettings copy = AgentOperations.CloneEditable(group.Key.Settings);
@@ -262,7 +408,7 @@ internal static class AgentProposalValidator
             {
                 foreach (AgentOperationVerdict verdict in group)
                 {
-                    AgentOperations.Apply(verdict.Operation!, copy);
+                    AgentOperations.Apply((AgentSettingsOperation)verdict.Operation!, copy);
                 }
                 copy.Validate();
             }
@@ -277,17 +423,26 @@ internal static class AgentProposalValidator
 
     private static AgentOperationVerdict Judge(AgentOperation operation, AgentSessionSnapshot session)
     {
-        AgentChannelSnapshot? channel = session.Find(operation.ChannelId);
-        if (channel == null)
+        AgentChannelSnapshot? channel = null;
+        if (operation is AgentChannelOperation addressed)
         {
-            return Rejected(operation, null, string.Empty, string.Empty,
-                $"Unknown channel '{operation.ChannelId}'; the package names the channels this session has.");
+            channel = session.Find(addressed.ChannelId);
+            if (channel == null)
+            {
+                return Rejected(operation, null, string.Empty, string.Empty,
+                    $"Unknown channel '{addressed.ChannelId}'; the package names the channels this session has.");
+            }
         }
 
-        VirtualCrossoverChannelSettings settings = channel.Settings;
-        string current = Describe(operation, settings);
+        if (operation is not AgentSettingsOperation edit)
+        {
+            return JudgeEngineRequest(operation, channel, session);
+        }
 
-        string? stale = CheckExpected(operation, settings);
+        VirtualCrossoverChannelSettings settings = channel!.Settings;
+        string current = Describe(edit, settings);
+
+        string? stale = CheckExpected(edit, settings);
         if (stale != null)
         {
             return Rejected(operation, channel, current, string.Empty,
@@ -296,14 +451,14 @@ internal static class AgentProposalValidator
 
         var notes = new List<string>();
         VirtualCrossoverChannelSettings copy = AgentOperations.CloneEditable(settings);
-        string? problem = CheckValue(operation, session, copy, notes);
+        string? problem = CheckValue(edit, session, copy, notes);
         if (problem != null)
         {
             return Rejected(operation, channel, current, string.Empty, problem);
         }
 
-        string proposed = Describe(operation, copy);
-        if (IsNoChange(operation, settings, copy))
+        string proposed = Describe(edit, copy);
+        if (IsNoChange(edit, settings, copy))
         {
             return Rejected(operation, channel, current, proposed, "No change.");
         }
@@ -318,13 +473,286 @@ internal static class AgentProposalValidator
     private static AgentOperationVerdict Rejected(
         AgentOperation operation, AgentChannelSnapshot? channel, string current, string proposed,
         string message) =>
-        new(operation.Id, channel?.Label ?? string.Empty, operation.Parameter, current, proposed,
+        new(operation.Id, LabelFor(operation, channel), operation.Parameter, current, proposed,
             AgentVerdictStatus.Rejected, message, operation.Reason, operation, channel);
+
+    // A row that is not about one channel says which channels it is about rather
+    // than leaving the column blank: the engines address the whole project.
+    private static string LabelFor(AgentOperation operation, AgentChannelSnapshot? channel) =>
+        channel?.Label ?? (operation is AgentChannelOperation ? string.Empty : AllChannels);
+
+    /// <summary>
+    /// An engine request judged on its INPUTS. There is no current value to
+    /// compare against: what the engine writes is what the run decides, and the
+    /// engine's own dialog is still the gate it goes through. What the review can
+    /// state is where the run would start from, what it was asked for, and what
+    /// it will write over — which is what the row carries.
+    /// </summary>
+    private static AgentOperationVerdict JudgeEngineRequest(
+        AgentOperation operation, AgentChannelSnapshot? channel, AgentSessionSnapshot session)
+    {
+        string current = DescribeEngineStart(operation, channel, session);
+        string proposed = DescribeEngineRequest(operation, session);
+        string? problem = CheckEngineRequest(operation, channel, session);
+        if (problem != null)
+        {
+            return Rejected(operation, channel, current, proposed, problem);
+        }
+        if (!AgentProtocol.Executes(operation.Op))
+        {
+            return Rejected(
+                operation, channel, current, proposed, AgentProtocol.NotAvailable(operation.Op));
+        }
+
+        (AgentVerdictStatus status, string message) = EngineNote(operation, session);
+        return new AgentOperationVerdict(
+            operation.Id, LabelFor(operation, channel), operation.Parameter, current, proposed,
+            status, message, operation.Reason, operation, channel);
+    }
+
+    // What the engine will write over, in the row's own words. A warning rather
+    // than plain OK wherever the run reaches past the channels the reply names:
+    // the reader is ticking a box that hands several channels to a search.
+    private static (AgentVerdictStatus Status, string Message) EngineNote(
+        AgentOperation operation, AgentSessionSnapshot session) => operation switch
+    {
+        RunAutoDelayOperation delay => (AgentVerdictStatus.Warning,
+            "Auto delay runs with these inputs and rewrites the delay and polarity of every " +
+            "channel it aligns" +
+            ((delay.AdjustGains ?? session.AutoDelay.AdjustGains) ? ", and their gains" : string.Empty) +
+            ". It runs without its dialog; its report goes into the import's summary."),
+        RunAutoCrossoverOperation => (AgentVerdictStatus.Warning,
+            "The Auto crossover wizard rewrites the crossover and the gain of every enabled " +
+            "channel that has a measurement, and can reorder the chain. Its own dialog " +
+            "confirms the proposal."),
+        AutoTunePeqOperation => (AgentVerdictStatus.Warning,
+            "Auto-tune replaces this channel's whole PEQ bank (all-pass bands kept). It runs " +
+            "without the EQ Wizard, on the curve the wizard would have opened on, and skips " +
+            "itself when the target level sits too far from that curve."),
+        _ => (AgentVerdictStatus.Valid, "OK")
+    };
+
+    // Every input is held to the field a user would type it into, and an input
+    // the reply leaves out is not judged at all — it is the panel's own answer,
+    // which is admissible by construction.
+    private static string? CheckEngineRequest(
+        AgentOperation operation, AgentChannelSnapshot? channel, AgentSessionSnapshot session)
+    {
+        switch (operation)
+        {
+            case RunAutoDelayOperation delay:
+                return Bounded(delay.SceneOffsetMs, MinimumSceneOffsetMs, MaximumSceneOffsetMs,
+                        SceneOffsetStepMs, "The scene offset", "ms", 2)
+                    ?? Bounded(delay.NearSideCutDb, MinimumNearSideCutDb, MaximumNearSideCutDb,
+                        NearSideCutStepDb, "The near-side cut", "dB", 1)
+                    ?? Bounded(delay.RearFillOffsetMs, MinimumRearFillOffsetMs,
+                        MaximumRearFillOffsetMs, RearFillOffsetStepMs, "The rear fill offset", "ms", 1);
+
+            case AutoTunePeqOperation tune:
+                return CheckAutoTune(tune, channel!, session);
+
+            case UseSpatialAverageOperation spatial:
+                return CheckSpatialAverage(spatial, session);
+
+            default:
+                return null;
+        }
+    }
+
+    private static string? CheckAutoTune(
+        AutoTunePeqOperation tune, AgentChannelSnapshot channel, AgentSessionSnapshot session)
+    {
+        double nyquistHz = session.ProcessorSampleRateHz / 2.0;
+        if (!channel.HasMeasurement)
+        {
+            return $"{channel.Label} has no measurement to fit a bank against.";
+        }
+        // The handoff a fit is built on is the side on screen's — its gate pin,
+        // its render anchor, its hybrid datum — as the PEQ menu builds it.
+        if (channel.Side != AgentChannelSide.Mono &&
+            (channel.Side == AgentChannelSide.Right) != session.ActiveSideRight)
+        {
+            return $"{channel.Label} is on the side not on screen: switch the L/R " +
+                "selector, copy a new package and import again.";
+        }
+        if (tune.Source != null &&
+            tune.Source != PointSource && tune.Source != SpatialAverageSource)
+        {
+            return $"Unknown auto-tune source '{tune.Source}'; " +
+                $"use '{PointSource}' or '{SpatialAverageSource}'.";
+        }
+        if (tune.Source == SpatialAverageSource && channel.SpatialAverageCaptures.Count == 0)
+        {
+            return $"{channel.Label} carries no spatial average to fit against.";
+        }
+
+        string? problem =
+            Bounded(tune.TargetLevelDb, MinimumTargetLevelDb, MaximumTargetLevelDb,
+                TargetLevelStepDb, "The target level", "dB", 0)
+            ?? Edge(tune.MinHz, nyquistHz, "lower")
+            ?? Edge(tune.MaxHz, nyquistHz, "upper");
+        if (problem != null)
+        {
+            return problem;
+        }
+
+        // The window the run will use, with the wizard's own answer for an edge
+        // the reply leaves out (the channel's passband, else the field's end) —
+        // judged as a whole, since a stated lower edge above the passband's
+        // upper is as inverted as two stated edges the wrong way round.
+        (double MinHz, double MaxHz)? passband = VirtualDspEqHandoff.PassbandFor(channel.Settings);
+        double minHz = tune.MinHz ?? passband?.MinHz ?? EqAutoTuneHeadless.WindowMinHz;
+        double maxHz = tune.MaxHz ?? passband?.MaxHz ?? EqAutoTuneHeadless.WindowMaxHz;
+        return EqAutoTuneHeadless.IsUsableWindow(minHz, maxHz)
+            ? null
+            : $"The auto-tune window would be {Hz(minHz)} to {Hz(maxHz)}: its lower edge " +
+                "must sit below its upper edge.";
+    }
+
+    private static string? CheckSpatialAverage(
+        UseSpatialAverageOperation spatial, AgentSessionSnapshot session)
+    {
+        if (!spatial.Hybrid)
+        {
+            return "The hybrid view is what makes a spatial average count, so a request " +
+                "to leave it off has nothing to do.";
+        }
+        if (!AgentOperations.TryParseName(
+                spatial.Mode, out VirtualCrossoverSpatialAverageMode mode) ||
+            mode == VirtualCrossoverSpatialAverageMode.Off)
+        {
+            return $"Unknown spatial average mode '{spatial.Mode}'; use " +
+                $"{VirtualCrossoverSpatialAverageMode.MovingMic} or " +
+                $"{VirtualCrossoverSpatialAverageMode.MicArray}.";
+        }
+        if (!session.HasCapture(mode))
+        {
+            return $"No channel in this session carries a {mode} capture.";
+        }
+
+        return session.SpatialAverageMode == mode && session.HybridTicked ? "No change." : null;
+    }
+
+    // An optional engine input against the field a user would type it into.
+    private static string? Bounded(
+        double? value, double minimum, double maximum, double step,
+        string name, string unit, int decimals)
+    {
+        if (value is not { } number)
+        {
+            return null;
+        }
+        if (!double.IsFinite(number) || number < minimum || number > maximum)
+        {
+            return $"{name} must be between {Fixed(minimum, decimals)} and " +
+                $"{Fixed(maximum, decimals)} {unit}.";
+        }
+
+        return OnStep(number, step)
+            ? null
+            : $"{name} must be a multiple of {Fixed(step, decimals)} {unit}.";
+    }
+
+    // The From/To fields' own range, 20 Hz to 20 kHz, and the processor's Nyquist
+    // where that is lower: what the review admits is what the run uses.
+    private static string? Edge(double? value, double nyquistHz, string name) =>
+        value is not { } frequency ||
+        (double.IsFinite(frequency) &&
+            frequency >= EqAutoTuneHeadless.WindowMinHz &&
+            frequency <= EqAutoTuneHeadless.WindowMaxHz &&
+            frequency < nyquistHz)
+            ? null
+            : $"The auto-tune window's {name} edge must sit between " +
+                $"{Hz(EqAutoTuneHeadless.WindowMinHz)} and {Hz(EqAutoTuneHeadless.WindowMaxHz)}" +
+                (nyquistHz < EqAutoTuneHeadless.WindowMaxHz
+                    ? $", below the processor's Nyquist of {Hz(nyquistHz)}."
+                    : ".");
+
+    // Where the engine would start from, in the words its own dialog uses.
+    private static string DescribeEngineStart(
+        AgentOperation operation, AgentChannelSnapshot? channel, AgentSessionSnapshot session) =>
+        operation switch
+        {
+            RunAutoDelayOperation => AutoDelayText(
+                session.AutoDelay.SceneOffsetMs,
+                session.AutoDelay.RightHandDrive,
+                session.AutoDelay.AdjustGains,
+                session.AutoDelay.NearSideCutDb,
+                session.AutoDelay.RearFillOffsetMs),
+            RunAutoCrossoverOperation => "the corners, slopes and gains as they stand",
+            AutoTunePeqOperation => channel == null ? string.Empty : BankText(channel.Settings),
+            UseSpatialAverageOperation => SpatialAverageText(
+                session.SpatialAverageMode.ToString(), session.HybridTicked),
+            _ => string.Empty
+        };
+
+    private static string DescribeEngineRequest(
+        AgentOperation operation, AgentSessionSnapshot session) => operation switch
+    {
+        RunAutoDelayOperation delay => AutoDelayText(
+            delay.SceneOffsetMs ?? session.AutoDelay.SceneOffsetMs,
+            delay.RightHandDrive ?? session.AutoDelay.RightHandDrive,
+            delay.AdjustGains ?? session.AutoDelay.AdjustGains,
+            delay.NearSideCutDb ?? session.AutoDelay.NearSideCutDb,
+            delay.RearFillOffsetMs ?? session.AutoDelay.RearFillOffsetMs),
+        RunAutoCrossoverOperation => "the wizard's corners, slopes and cut-only gains",
+        AutoTunePeqOperation tune => AutoTuneText(tune),
+        UseSpatialAverageOperation spatial => SpatialAverageText(spatial.Mode, spatial.Hybrid),
+        _ => string.Empty
+    };
+
+    // The near-side cut only where the gain balance is on: with it off the field
+    // is an input to nothing, and printing it would read as a change.
+    private static string AutoDelayText(
+        double sceneOffsetMs, bool rightHandDrive, bool adjustGains,
+        double nearSideCutDb, double rearFillOffsetMs) =>
+        $"scene {Ms(sceneOffsetMs)} {(rightHandDrive ? "RHD" : "LHD")}, " +
+        $"gains {(adjustGains ? "on" : "off")}" +
+        (adjustGains ? $", near-side cut {Db(nearSideCutDb)}" : string.Empty) +
+        $", rear fill {Ms(rearFillOffsetMs)}";
+
+    // Only what the reply actually states: an input it leaves out is the wizard's
+    // own answer, and printing that would read as a choice the reply made.
+    private static string AutoTuneText(AutoTunePeqOperation tune)
+    {
+        var parts = new List<string>();
+        if (tune.MinHz != null || tune.MaxHz != null)
+        {
+            parts.Add(
+                (tune.MinHz is { } low ? Hz(low) : "the wizard's low edge") + " to " +
+                (tune.MaxHz is { } high ? Hz(high) : "the wizard's high edge"));
+        }
+        if (tune.TargetLevelDb is { } level)
+        {
+            parts.Add("target " + Db(level));
+        }
+        if (tune.AllowShelves is { } shelves)
+        {
+            parts.Add(shelves ? "shelves allowed" : "no shelves");
+        }
+        if (tune.CutsOnly is { } cutsOnly)
+        {
+            parts.Add(cutsOnly ? "cuts only" : "cuts and boosts");
+        }
+        if (tune.Source is { } source)
+        {
+            parts.Add("from the " +
+                (source == SpatialAverageSource ? "spatial average" : "point measurement"));
+        }
+
+        return parts.Count == 0
+            ? "auto-tune with the wizard's own settings"
+            : "auto-tune " + string.Join(", ", parts);
+    }
+
+    private static string SpatialAverageText(string mode, bool hybrid) =>
+        $"{mode}, hybrid {(hybrid ? "on" : "off")}";
 
     // Exact comparison: the package prints every value in round-trip form, so an
     // assistant that copied it hands back the same double. A tolerance here would
     // be a tolerance for a reply that was reasoned about a different value.
-    private static string? CheckExpected(AgentOperation operation, VirtualCrossoverChannelSettings settings)
+    private static string? CheckExpected(
+        AgentSettingsOperation operation, VirtualCrossoverChannelSettings settings)
     {
         switch (operation)
         {
@@ -351,7 +779,7 @@ internal static class AgentProposalValidator
     // Applies the operation to the copy and says what is wrong with the value, if
     // anything; notes collect the warnings that do not refuse it.
     private static string? CheckValue(
-        AgentOperation operation,
+        AgentSettingsOperation operation,
         AgentSessionSnapshot session,
         VirtualCrossoverChannelSettings copy,
         List<string> notes)
@@ -443,7 +871,7 @@ internal static class AgentProposalValidator
     }
 
     private static bool IsNoChange(
-        AgentOperation operation,
+        AgentSettingsOperation operation,
         VirtualCrossoverChannelSettings before,
         VirtualCrossoverChannelSettings after) => operation switch
     {
@@ -461,16 +889,20 @@ internal static class AgentProposalValidator
         return Math.Abs(steps - Math.Round(steps)) < 1e-6;
     }
 
-    private static string Describe(AgentOperation operation, VirtualCrossoverChannelSettings settings) =>
+    private static string Describe(
+        AgentSettingsOperation operation, VirtualCrossoverChannelSettings settings) =>
         operation switch
         {
             SetGainOperation => Db(settings.GainDb),
             SetDelayOperation => Ms(settings.DelayMs),
             SetPolarityOperation => Polarity(settings.InvertPolarity),
             SetCrossoverOperation => Crossover(settings),
-            _ => $"{settings.PeqBands.Count} band{(settings.PeqBands.Count == 1 ? "" : "s")}, " +
-                $"preamp {Db(settings.PeqPreampDb)}"
+            _ => BankText(settings)
         };
+
+    private static string BankText(VirtualCrossoverChannelSettings settings) =>
+        $"{settings.PeqBands.Count} band{(settings.PeqBands.Count == 1 ? "" : "s")}, " +
+        $"preamp {Db(settings.PeqPreampDb)}";
 
     // A crossover in a table cell: the tuning sheet's full wording does not fit
     // one, so the family is abbreviated the way the channel block's own combo
@@ -509,6 +941,10 @@ internal static class AgentProposalValidator
     private static string Hz(double value) =>
         value.ToString("0.###", CultureInfo.InvariantCulture) + " Hz";
 
+    private static string Fixed(double value, int decimals) =>
+        (value + 0).ToString(
+            "F" + decimals.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+
     private static string Polarity(bool inverted) => inverted ? "Inverted" : "Normal";
 }
 
@@ -544,7 +980,7 @@ internal static class AgentOperations
 
     /// <summary>Writes the operation into the settings; the review has already passed it.</summary>
     /// <exception cref="InvalidDataException">The operation's value cannot be mapped.</exception>
-    public static void Apply(AgentOperation operation, VirtualCrossoverChannelSettings target)
+    public static void Apply(AgentSettingsOperation operation, VirtualCrossoverChannelSettings target)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(target);
@@ -750,7 +1186,7 @@ internal static class AgentOperations
 
     // The enum names exactly as the package prints them: no case games, and no
     // numeric strings, which Enum.TryParse would otherwise accept.
-    private static bool TryParseName<TEnum>(string? name, out TEnum value) where TEnum : struct, Enum
+    public static bool TryParseName<TEnum>(string? name, out TEnum value) where TEnum : struct, Enum
     {
         value = default;
         return !string.IsNullOrEmpty(name) &&

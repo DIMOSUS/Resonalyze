@@ -207,6 +207,10 @@ namespace Resonalyze
                 eqWizardPanel.BeginVirtualDspHandoff(request);
                 _ = modeController.SelectAsync(ModeTab.ToolsEqWizard);
             };
+            // An AI import that fits a bank without the wizard fits it with the
+            // wizard's own Auto Tune settings, as they stand: the same project
+            // gets the same bank from the button and from the import.
+            virtualCrossoverPanel.AutoTunePolicyProvider = () => eqWizardPanel.CurrentAutoTunePolicy;
             virtualCrossoverPanel.OpenSourceInAnalyzersRequested =
                 (entryId, filePath) =>
                     _ = OpenVirtualDspSourceInAnalyzersAsync(entryId, filePath);

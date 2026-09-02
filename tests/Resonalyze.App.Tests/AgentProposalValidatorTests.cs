@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;
 
@@ -204,7 +206,7 @@ public sealed class AgentProposalValidatorTests
         Assert.Contains("needs its lowPass edge", review.Verdicts[1].Message);
 
         var copy = AgentOperations.CloneEditable(session.Find("B:left")!.Settings);
-        AgentOperations.Apply(review.Verdicts[0].Operation!, copy);
+        AgentOperations.Apply((AgentSettingsOperation)review.Verdicts[0].Operation!, copy);
         Assert.Equal(CrossoverKind.HighPass, copy.CrossoverKind);
         Assert.Equal(new CrossoverEdge(CrossoverFilterFamily.Bessel, 300, 18, 1.0), copy.HighPassEdge);
         Assert.Equal(new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2800, 24), copy.LowPassEdge);
@@ -260,7 +262,7 @@ public sealed class AgentProposalValidatorTests
         Assert.Contains("PEQ preamp is invalid", review.Verdicts[5].Message);
 
         var copy = AgentOperations.CloneEditable(bLeft.Settings);
-        AgentOperations.Apply(review.Verdicts[4].Operation!, copy);
+        AgentOperations.Apply((AgentSettingsOperation)review.Verdicts[4].Operation!, copy);
         Assert.Equal(0.8, copy.PeqBands[1].Q);
         Assert.Equal(PeqBandType.AllPassSecondOrder, copy.PeqBands[1].Type);
     }
@@ -468,8 +470,427 @@ public sealed class AgentProposalValidatorTests
         Assert.Equal(-2.0, session.Find("A:right")!.Settings.GainDb);
     }
 
+
+    [Fact]
+    public void Review_TakesTheEngineRequestsThisBuildRuns_AndRefusesTheOnesItDoesNot()
+    {
+        AgentProposal proposal = Proposal(
+            new UseSpatialAverageOperation("op-1", "the averages are attached", "MicArray", true),
+            new RunAutoCrossoverOperation("op-2", "the corners are guesses"),
+            new RunAutoDelayOperation("op-3", "realign after the flip", 0.35, null, null, null, null),
+            new AutoTunePeqOperation("op-4", "B:left", "fit the door", -6, 100, 8000, true, false, "point"));
+
+        AgentProposalReview review = AgentProposalValidator.Review(
+            proposal, Session(captures: ["MicArray"]));
+
+        Assert.Collection(review.Verdicts,
+            v =>
+            {
+                Assert.Equal(AgentVerdictStatus.Valid, v.Status);
+                Assert.Equal(AgentProposalValidator.AllChannels, v.ChannelLabel);
+                Assert.Equal("Spatial average", v.Parameter);
+                Assert.Equal("Off, hybrid off", v.Current);
+                Assert.Equal("MicArray, hybrid on", v.Proposed);
+            },
+            v =>
+            {
+                Assert.Equal(AgentVerdictStatus.Warning, v.Status);
+                Assert.Equal(AgentProposalValidator.AllChannels, v.ChannelLabel);
+                Assert.Contains("rewrites the crossover and the gain", v.Message);
+                Assert.True(v.Applicable);
+            },
+            v =>
+            {
+                Assert.Equal(AgentVerdictStatus.Warning, v.Status);
+                Assert.True(v.Applicable);
+                Assert.Contains("rewrites the delay and polarity", v.Message);
+                Assert.Contains("without its dialog", v.Message);
+                Assert.Equal("scene 0.25 ms LHD, gains off, rear fill 15.00 ms", v.Current);
+                Assert.Equal("scene 0.35 ms LHD, gains off, rear fill 15.00 ms", v.Proposed);
+            },
+            v =>
+            {
+                Assert.Equal(AgentVerdictStatus.Warning, v.Status);
+                Assert.True(v.Applicable);
+                Assert.Contains("replaces this channel's whole PEQ bank", v.Message);
+                Assert.Contains("without the EQ Wizard", v.Message);
+                Assert.Equal("B left", v.ChannelLabel);
+                Assert.Equal("2 bands, preamp 0.0 dB", v.Current);
+                Assert.Equal(
+                    "auto-tune 100 Hz to 8000 Hz, target -6.0 dB, shelves allowed, " +
+                    "cuts and boosts, from the point measurement", v.Proposed);
+            });
+
+        // The list the package publishes is the list the review holds a reply to.
+        Assert.Equal(
+            ["setGainDb", "setDelayMs", "setPolarity", "setCrossover", "replacePeqBank",
+                "useSpatialAverage", "runAutoCrossover", "runAutoDelay", "autoTunePeq"],
+            AgentProtocol.Operations);
+    }
+
+    [Fact]
+    public void Review_DescribesAnAutoDelayRunAgainstTheProjectsOwnFigures()
+    {
+        AgentProposal proposal = Proposal(
+            new RunAutoDelayOperation("op-1", "", null, true, true, 2.0, 12.5));
+
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(
+            proposal, Session(adjustGains: false)).Verdicts[0];
+
+        // What it leaves out is what the dialog would open with; the near-side
+        // cut appears only on the side of the line where the balance is on.
+        Assert.Equal("scene 0.25 ms LHD, gains off, rear fill 15.00 ms", verdict.Current);
+        Assert.Equal(
+            "scene 0.25 ms RHD, gains on, near-side cut 2.0 dB, rear fill 12.50 ms",
+            verdict.Proposed);
+    }
+
+    [Theory]
+    [InlineData(6.0, null, null, "The scene offset must be between 0.00 and 5.00 ms")]
+    [InlineData(0.255, null, null, "The scene offset must be a multiple of 0.01 ms")]
+    [InlineData(null, 7.0, null, "The near-side cut must be between 0.0 and 6.0 dB")]
+    [InlineData(null, 1.25, null, "The near-side cut must be a multiple of 0.1 dB")]
+    [InlineData(null, null, 45.0, "The rear fill offset must be between 0.0 and 30.0 ms")]
+    public void Review_HoldsAnAutoDelayRequestToTheDialogsOwnFields(
+        double? sceneOffsetMs, double? nearSideCutDb, double? rearFillOffsetMs, string words)
+    {
+        AgentProposal proposal = Proposal(new RunAutoDelayOperation(
+            "op-1", "", sceneOffsetMs, null, null, nearSideCutDb, rearFillOffsetMs));
+
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(proposal, Session()).Verdicts[0];
+
+        Assert.Equal(AgentVerdictStatus.Rejected, verdict.Status);
+        // The value is wrong on its own terms, so that is what the row says —
+        // not that the engine happens to be unavailable in this build.
+        Assert.Contains(words, verdict.Message);
+    }
+
+    [Theory]
+    [InlineData("D:mono", null, null, null, null, "has no measurement")]
+    [InlineData("B:left", 90.0, null, null, null, "The target level must be between -120 and 60 dB")]
+    [InlineData("B:left", null, 8000.0, 100.0, null, "lower edge must sit below its upper edge")]
+    [InlineData("B:left", null, 100.0, 60_000.0, null, "upper edge must sit between 20 Hz and 20000 Hz")]
+    [InlineData("B:left", null, null, null, "hybrid", "Unknown auto-tune source 'hybrid'")]
+    [InlineData("B:left", null, null, null, "spatialAverage", "carries no spatial average")]
+    public void Review_HoldsAnAutoTuneRequestToTheChannelAndTheWizardsFields(
+        string channelId, double? targetLevelDb, double? minHz, double? maxHz, string? source, string words)
+    {
+        AgentProposal proposal = Proposal(new AutoTunePeqOperation(
+            "op-1", channelId, "", targetLevelDb, minHz, maxHz, null, null, source));
+
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(proposal, Session()).Verdicts[0];
+
+        Assert.Equal(AgentVerdictStatus.Rejected, verdict.Status);
+        Assert.Contains(words, verdict.Message);
+    }
+
+    [Theory]
+    [InlineData("MicArray", true, VirtualCrossoverSpatialAverageMode.Off, false, "MovingMic", "No channel in this session carries a MicArray capture")]
+    [InlineData("MovingMic", false, VirtualCrossoverSpatialAverageMode.Off, false, "MovingMic", "nothing to do")]
+    [InlineData("Off", true, VirtualCrossoverSpatialAverageMode.Off, false, "MovingMic", "Unknown spatial average mode 'Off'")]
+    [InlineData("movingmic", true, VirtualCrossoverSpatialAverageMode.Off, false, "MovingMic", "Unknown spatial average mode 'movingmic'")]
+    [InlineData("MovingMic", true, VirtualCrossoverSpatialAverageMode.MovingMic, true, "MovingMic", "No change.")]
+    public void Review_HoldsASpatialAverageRequestToWhatTheSessionCarries(
+        string mode,
+        bool hybrid,
+        VirtualCrossoverSpatialAverageMode current,
+        bool hybridTicked,
+        string capture,
+        string words)
+    {
+        AgentProposal proposal = Proposal(new UseSpatialAverageOperation("op-1", "", mode, hybrid));
+
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(
+            proposal,
+            Session(spatialAverageMode: current, hybridTicked: hybridTicked, captures: [capture]))
+            .Verdicts[0];
+
+        Assert.Equal(AgentVerdictStatus.Rejected, verdict.Status);
+        Assert.Contains(words, verdict.Message);
+    }
+
+    [Fact]
+    public void Review_AcceptsTheHybridTickAloneWhenTheModeIsAlreadyTheOneAsked()
+    {
+        AgentProposal proposal = Proposal(
+            new UseSpatialAverageOperation("op-1", "", "MovingMic", true));
+
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(
+            proposal,
+            Session(
+                spatialAverageMode: VirtualCrossoverSpatialAverageMode.MovingMic,
+                hybridTicked: false,
+                captures: ["MovingMic"]))
+            .Verdicts[0];
+
+        Assert.True(verdict.Applicable);
+        Assert.Equal("MovingMic, hybrid off", verdict.Current);
+        Assert.Equal("MovingMic, hybrid on", verdict.Proposed);
+    }
+
+    [Fact]
+    public void Review_RefusesAHandWrittenValueTheRequestedEngineWouldWriteOver()
+    {
+        AgentProposal proposal = Proposal(
+            new RunAutoCrossoverOperation("op-1", "let the wizard split them"),
+            new SetCrossoverOperation("op-2", "B:left", "",
+                Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("LinkwitzRiley", 2800, 24)),
+                Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("LinkwitzRiley", 2600, 24))),
+            new SetGainOperation("op-3", "A:right", "", -2.0, -2.6),
+            new SetDelayOperation("op-4", "A:right", "", 1.42, 1.37));
+
+        AgentProposalReview review = AgentProposalValidator.Review(proposal, Session());
+
+        Assert.True(review.Verdicts[0].Applicable);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.Equal("Would be overwritten by Auto crossover (op-1).", review.Verdicts[1].Message);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[2].Status);
+        // The wizard leaves delay and polarity alone; that is Auto delay's work.
+        Assert.True(review.Verdicts[3].Applicable);
+    }
+
+    [Fact]
+    public void Review_RejectsTheBankAnAutoTuneOnTheSameChannelWouldReplace()
+    {
+        AgentSessionSnapshot session = Session();
+        AgentChannelSnapshot bLeft = session.Find("B:left")!;
+        string hash = AgentPeqHash.Compute(bLeft.Settings.PeqPreampDb, bLeft.Settings.PeqBands);
+        AgentProposal proposal = Proposal(
+            new AutoTunePeqOperation("op-1", "B:left", "", null, null, null, null, null, null),
+            new ReplacePeqBankOperation("op-2", "B:left", "", hash,
+                new AgentPeqBank(0, [new AgentPeqBand("Peaking", 820, 2.1, -2.4)])));
+
+        AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
+
+        Assert.True(review.Verdicts[0].Applicable);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.Equal("Would be overwritten by Auto-tune (op-1).", review.Verdicts[1].Message);
+    }
+
+    [Fact]
+    public void Review_RefusesAnAutoTuneForTheSideNotOnScreen()
+    {
+        // The fit is built on the handoff the PEQ menu would build, and that is
+        // the side on screen's: its gate pin, its anchor, its hybrid datum.
+        AgentProposal proposal = Proposal(
+            new AutoTunePeqOperation("op-1", "B:left", "", null, null, null, null, null, null),
+            new AutoTunePeqOperation("op-2", "A:right", "", null, null, null, null, null, null));
+
+        AgentProposalReview left = AgentProposalValidator.Review(proposal, Session());
+        Assert.True(left.Verdicts[0].Applicable);
+        Assert.Equal(AgentVerdictStatus.Rejected, left.Verdicts[1].Status);
+        Assert.Contains("side not on screen", left.Verdicts[1].Message);
+
+        AgentProposalReview right = AgentProposalValidator.Review(
+            proposal, Session() with { ActiveSideRight = true });
+        Assert.Equal(AgentVerdictStatus.Rejected, right.Verdicts[0].Status);
+        Assert.True(right.Verdicts[1].Applicable);
+    }
+
+    [Fact]
+    public void Review_TakesAnEmptyBank_AsTheWayToClearAChannelsPeq()
+    {
+        AgentSessionSnapshot session = Session();
+        AgentChannelSnapshot bLeft = session.Find("B:left")!;
+        string hash = AgentPeqHash.Compute(bLeft.Settings.PeqPreampDb, bLeft.Settings.PeqBands);
+        AgentProposal proposal = Proposal(
+            new ReplacePeqBankOperation("op-1", "B:left", "", hash, new AgentPeqBank(0, [])));
+
+        AgentOperationVerdict verdict = Assert.Single(
+            AgentProposalValidator.Review(proposal, session).Verdicts);
+
+        Assert.True(verdict.Applicable);
+        Assert.Equal("0 bands, preamp 0.0 dB", verdict.Proposed);
+    }
+
+    [Fact]
+    public void Review_HoldsTheAutoTuneWindowToTheWizardsFields_AsTheRunWillUseIt()
+    {
+        // B:left plays 250..2800 Hz. A lower edge stated above the passband's
+        // upper would be a window the run cannot fit; an edge past the From/To
+        // fields' 20 Hz..20 kHz is one the wizard could never hold; a window
+        // inside both is fine, with either edge left to the passband.
+        AgentProposal proposal = Proposal(
+            new AutoTunePeqOperation("op-1", "B:left", "", null, 3_000, null, null, null, null),
+            new AutoTunePeqOperation("op-2", "A:left", "", null, 5, null, null, null, null),
+            new AutoTunePeqOperation("op-3", "C:mono", "", null, null, 40_000, null, null, null),
+            new AutoTunePeqOperation("op-4", "B:right", "", null, 400, null, null, null, null));
+
+        AgentProposalReview review = AgentProposalValidator.Review(
+            proposal, Session() with { ActiveSideRight = false });
+
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[0].Status);
+        Assert.Contains("would be 3000 Hz to 2800 Hz", review.Verdicts[0].Message);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.Contains("between 20 Hz and 20000 Hz", review.Verdicts[1].Message);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[2].Status);
+        Assert.Contains("between 20 Hz and 20000 Hz", review.Verdicts[2].Message);
+        // The other side is refused before its window is read.
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[3].Status);
+        Assert.Contains("side not on screen", review.Verdicts[3].Message);
+
+        AgentProposalReview inside = AgentProposalValidator.Review(
+            Proposal(new AutoTunePeqOperation("op-1", "B:left", "", null, 400, null, null, null, null)),
+            Session());
+        Assert.True(inside.Verdicts[0].Applicable);
+    }
+
+    [Fact]
+    public void Review_RefusesAutoTunesThatDisagreeAboutTheProjectsTargetLevel()
+    {
+        // The target level is one datum for the project: two fits at two levels
+        // would leave the first bank tuned against a level the project no
+        // longer holds. The first stated level stands; a request that states
+        // none, or the same, is fine.
+        AgentProposal proposal = Proposal(
+            new AutoTunePeqOperation("op-1", "B:left", "", -6, null, null, null, null, null),
+            new AutoTunePeqOperation("op-2", "A:left", "", -8, null, null, null, null, null),
+            new AutoTunePeqOperation("op-3", "C:mono", "", -6, null, null, null, null, null),
+            new AutoTunePeqOperation("op-4", "A:left", "", null, null, null, null, null, null));
+
+        AgentProposalReview review = AgentProposalValidator.Review(proposal, Session());
+
+        Assert.True(review.Verdicts[0].Applicable);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.Contains("op-1 already states -6.0 dB", review.Verdicts[1].Message);
+        Assert.True(review.Verdicts[2].Applicable);
+        // op-4 repeats op-2's channel: refused as a repeat, not for its level.
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[3].Status);
+        Assert.Contains("Already requested by op-2", review.Verdicts[3].Message);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Overwrites_ReadsWhatEachEngineActuallyWrites(bool projectAdjustsGains)
+    {
+        AgentSessionSnapshot session = Session(adjustGains: projectAdjustsGains);
+        var autoDelay = new RunAutoDelayOperation("op-1", "", null, null, null, null, null);
+        var autoCrossover = new RunAutoCrossoverOperation("op-2", "");
+        var autoTune = new AutoTunePeqOperation("op-3", "B:left", "", null, null, null, null, null, null);
+        var gain = new SetGainOperation("op-4", "A:right", "", -2.0, -2.6);
+        var delay = new SetDelayOperation("op-5", "A:right", "", 1.42, 1.37);
+        var polarity = new SetPolarityOperation("op-6", "B:left", "", false, true);
+        var crossover = new SetCrossoverOperation("op-7", "B:left", "",
+            Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("LinkwitzRiley", 2800, 24)),
+            Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("LinkwitzRiley", 2600, 24)));
+        var bank = new ReplacePeqBankOperation("op-8", "B:left", "", "hash",
+            new AgentPeqBank(0, [new AgentPeqBand("Peaking", 820, 2.1, -2.4)]));
+        var otherBank = new ReplacePeqBankOperation("op-9", "A:right", "", "hash",
+            new AgentPeqBank(0, [new AgentPeqBand("Peaking", 820, 2.1, -2.4)]));
+
+        Assert.True(AgentProposalValidator.Overwrites(autoDelay, delay, session));
+        Assert.True(AgentProposalValidator.Overwrites(autoDelay, polarity, session));
+        Assert.False(AgentProposalValidator.Overwrites(autoDelay, crossover, session));
+        // The gain balance is an opt-in, and a run that does not ask for it
+        // leaves a hand-written trim standing.
+        Assert.Equal(projectAdjustsGains, AgentProposalValidator.Overwrites(autoDelay, gain, session));
+        Assert.True(AgentProposalValidator.Overwrites(
+            autoDelay with { AdjustGains = true }, gain, session));
+        Assert.False(AgentProposalValidator.Overwrites(
+            autoDelay with { AdjustGains = false }, gain, session));
+
+        Assert.True(AgentProposalValidator.Overwrites(autoCrossover, crossover, session));
+        Assert.True(AgentProposalValidator.Overwrites(autoCrossover, gain, session));
+        Assert.False(AgentProposalValidator.Overwrites(autoCrossover, delay, session));
+
+        // Auto-tune reaches one channel's bank, and only that one.
+        Assert.True(AgentProposalValidator.Overwrites(autoTune, bank, session));
+        Assert.False(AgentProposalValidator.Overwrites(autoTune, otherBank, session));
+        Assert.False(AgentProposalValidator.Overwrites(autoTune, crossover, session));
+    }
+
+    [Fact]
+    public void Review_ReadsTheFinalStateOffTheRowsThatSurvive_NotTheOnesItRefused()
+    {
+        AgentSessionSnapshot session = Session();
+        AgentChannelSnapshot bLeft = session.Find("B:left")!;
+        // B left runs LR24 250-2800. The bell at 1350 Hz sits in the junction zone
+        // of the PROPOSED 2600 Hz corner (an octave below it) and outside the zone
+        // of the 2800 Hz corner the channel actually keeps.
+        AgentProposal proposal = Proposal(
+            new RunAutoCrossoverOperation("op-1", "let the wizard split them"),
+            new SetCrossoverOperation("op-2", "B:left", "",
+                Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("LinkwitzRiley", 2800, 24)),
+                Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("LinkwitzRiley", 2600, 24))),
+            new ReplacePeqBankOperation("op-3", "B:left", "door",
+                AgentPeqHash.Compute(bLeft.Settings.PeqPreampDb, bLeft.Settings.PeqBands),
+                new AgentPeqBank(0, [new AgentPeqBand("Peaking", 1350, 3, -3)])));
+
+        AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
+
+        // The crossover row is refused, so it moves no corner — and the bank must
+        // not be judged against a corner that is not going to be there.
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.True(review.Verdicts[2].Applicable);
+        Assert.DoesNotContain("junction zone", review.Verdicts[2].Message);
+        Assert.Equal(AgentProposalValidator.DeviceLimitsUnknown, review.Verdicts[2].Message);
+    }
+
+    [Fact]
+    public void Review_RefusesASecondRequestForTheSameEngine_KeepingTheFirst()
+    {
+        AgentProposal proposal = Proposal(
+            new RunAutoCrossoverOperation("op-1", "split them"),
+            new RunAutoCrossoverOperation("op-2", "split them again"));
+
+        AgentProposalReview review = AgentProposalValidator.Review(proposal, Session());
+
+        Assert.True(review.Verdicts[0].Applicable);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.Contains("Already requested by op-1", review.Verdicts[1].Message);
+    }
+
+    [Fact]
+    public void EngineInputLimits_MatchTheFieldsTheyWouldBeTypedInto()
+    {
+        // Same reason as the gain and delay pin above: the validator restates
+        // these ranges rather than reading them off a control it cannot see.
+        StaTest.Run(() =>
+        {
+            using var dialog = new VirtualCrossoverAutoDelayDialog();
+            AssertField(dialog, "numericSceneOffset",
+                AgentProposalValidator.MinimumSceneOffsetMs,
+                AgentProposalValidator.MaximumSceneOffsetMs,
+                AgentProposalValidator.SceneOffsetStepMs);
+            AssertField(dialog, "numericNearSideCut",
+                AgentProposalValidator.MinimumNearSideCutDb,
+                AgentProposalValidator.MaximumNearSideCutDb,
+                AgentProposalValidator.NearSideCutStepDb);
+            AssertField(dialog, "numericRearFill",
+                AgentProposalValidator.MinimumRearFillOffsetMs,
+                AgentProposalValidator.MaximumRearFillOffsetMs,
+                AgentProposalValidator.RearFillOffsetStepMs);
+
+            using var panel = new VirtualCrossoverPanel();
+            AssertField(panel, "numericTargetLevel",
+                AgentProposalValidator.MinimumTargetLevelDb,
+                AgentProposalValidator.MaximumTargetLevelDb,
+                AgentProposalValidator.TargetLevelStepDb);
+        });
+    }
+
+    // A field's step is its decimal places: the arrows' Increment is a
+    // convenience, the places are what a typed value is rounded to.
+    private static void AssertField(
+        Control owner, string name, double minimum, double maximum, double step)
+    {
+        var field = (DarkNumericUpDown)owner.GetType()
+            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(owner)!;
+        Assert.Equal((decimal)minimum, field.Minimum);
+        Assert.Equal((decimal)maximum, field.Maximum);
+        Assert.Equal(step, Math.Pow(10, -field.DecimalPlaces), 12);
+    }
+
     private static AgentSessionSnapshot Session(
-        int processorRateHz = 96_000, double maxDelayMs = 50, string? lastPackageId = Package)
+        int processorRateHz = 96_000,
+        double maxDelayMs = 50,
+        string? lastPackageId = Package,
+        VirtualCrossoverSpatialAverageMode spatialAverageMode = VirtualCrossoverSpatialAverageMode.Off,
+        bool hybridTicked = false,
+        bool adjustGains = false,
+        IReadOnlyList<string>? captures = null)
     {
         var aLeft = new VirtualCrossoverChannelSettings { GainDb = 0, DelayMs = 0 };
         var aRight = new VirtualCrossoverChannelSettings { GainDb = -2.0, DelayMs = 1.42 };
@@ -482,17 +903,24 @@ public sealed class AgentProposalValidatorTests
         };
         var bRight = new VirtualCrossoverChannelSettings();
         var cMono = new VirtualCrossoverChannelSettings { CrossoverKind = CrossoverKind.LowPass };
+        var dMono = new VirtualCrossoverChannelSettings();
         return new AgentSessionSnapshot(
             [
-                new AgentChannelSnapshot("A", AgentChannelSide.Left, aLeft),
-                new AgentChannelSnapshot("A", AgentChannelSide.Right, aRight),
-                new AgentChannelSnapshot("B", AgentChannelSide.Left, bLeft),
-                new AgentChannelSnapshot("B", AgentChannelSide.Right, bRight),
-                new AgentChannelSnapshot("C", AgentChannelSide.Mono, cMono)
+                new AgentChannelSnapshot("A", AgentChannelSide.Left, aLeft, true, captures ?? []),
+                new AgentChannelSnapshot("A", AgentChannelSide.Right, aRight, true, captures ?? []),
+                new AgentChannelSnapshot("B", AgentChannelSide.Left, bLeft, true, captures ?? []),
+                new AgentChannelSnapshot("B", AgentChannelSide.Right, bRight, true, captures ?? []),
+                new AgentChannelSnapshot("C", AgentChannelSide.Mono, cMono, true, captures ?? []),
+                // The block a source was never resolved for: an engine asked to
+                // fit it has nothing to read.
+                new AgentChannelSnapshot("D", AgentChannelSide.Mono, dMono, false, [])
             ],
             processorRateHz,
             maxDelayMs,
-            lastPackageId);
+            lastPackageId,
+            new AgentAutoDelaySettings(0.25, RightHandDrive: false, adjustGains, 1.0, 15.0),
+            spatialAverageMode,
+            hybridTicked);
     }
 
     private static AgentProposal Proposal(params AgentOperation[] operations) =>

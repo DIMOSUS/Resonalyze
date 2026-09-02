@@ -9,9 +9,11 @@ internal sealed record AgentUndoEntry(
 
 /// <summary>
 /// The commit half of an import: judges the ticked rows once more against the
-/// session as it is NOW (the dialog may have been open a while), applies them to
-/// the live settings as one set, and hands back what to put back for Undo. No
-/// control and no redraw in here — the panel does those once, after.
+/// session as it is NOW (the dialog may have been open a while), applies the
+/// ones that write settings to the live objects as one set, and hands back what
+/// to put back for Undo. The engine requests among the ticked rows are handed
+/// straight back for the panel to run in its own fixed order — nothing in here
+/// touches a control, opens a dialog or redraws.
 /// </summary>
 internal static class AgentProposalApplier
 {
@@ -93,9 +95,11 @@ internal static class AgentProposalApplier
     }
 
     /// <summary>
-    /// Writes the rows into their channels' live settings. Every channel is
-    /// snapshotted before its first write; should a write throw, what was written
-    /// is put back and the exception surfaces — the settings never hold half a set.
+    /// Writes the settings rows into their channels' live settings. Every channel
+    /// is snapshotted before its first write; should a write throw, what was
+    /// written is put back and the exception surfaces — the settings never hold
+    /// half a set. The engine rows are not touched here: they are asked for, not
+    /// written, and the panel runs them afterwards.
     /// </summary>
     public static List<AgentUndoEntry> Apply(IReadOnlyList<AgentOperationVerdict> toApply)
     {
@@ -105,14 +109,14 @@ internal static class AgentProposalApplier
         try
         {
             foreach (IGrouping<VirtualCrossoverChannelSettings, AgentOperationVerdict> group in toApply
-                .Where(verdict => verdict.Applicable)
+                .Where(verdict => verdict.Applicable && verdict.Operation is AgentSettingsOperation)
                 .GroupBy(verdict => verdict.Channel!.Settings))
             {
                 VirtualCrossoverChannelSettings settings = group.Key;
                 undo.Add(new AgentUndoEntry(settings, AgentOperations.CloneEditable(settings)));
                 foreach (AgentOperationVerdict verdict in group)
                 {
-                    AgentOperations.Apply(verdict.Operation!, settings);
+                    AgentOperations.Apply((AgentSettingsOperation)verdict.Operation!, settings);
                     if (verdict.Operation is ReplacePeqBankOperation)
                     {
                         // The block's PEQ read-out names where a bank came from; this

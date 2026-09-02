@@ -1546,12 +1546,14 @@ use, and answer its questions about the drivers and the car (the **Notes for AI*
 field in the **DSP processor...** dialog saves you retyping them next time). It
 reads the same read-outs you have been reading — sum loss, junction phase, the
 delay lobes, the L/R deltas — and should send you back to **Auto delay** or **Auto
-crossover** with settings rather than to a list of numbers; where it does propose a
-number, **Import AI proposal…** shows every change against the current value and
-applies only what you tick, with **Undo AI import** one click away. What it cannot
-do is hear the car or know your drivers unless you tell it; treat its advice as a
-colleague's, not as a measurement. [REFERENCE.md](REFERENCE.md#ai-assistant-bridge)
-describes the bridge in full.
+crossover** with settings rather than to a list of numbers. **Import AI proposal…**
+shows every change against the current value and applies only what you tick, with
+**Undo AI import** one click away. A reply can also ask to open **Auto crossover**
+for you, or to switch the tune onto its spatial averages with **Hybrid** ticked;
+those arrive as rows you tick like any other, and the engine's own dialog still
+runs in front of you. What it cannot do is hear the car or know your drivers
+unless you tell it; treat its advice as a colleague's, not as a measurement.
+[REFERENCE.md](REFERENCE.md#ai-assistant-bridge) describes the bridge in full.
 
 ### Hear it before you go back to the car
 

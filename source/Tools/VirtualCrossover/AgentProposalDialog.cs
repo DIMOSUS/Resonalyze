@@ -54,6 +54,12 @@ internal sealed partial class AgentProposalDialog : Form
             }
             row.Cells[ColumnStatus.Index].ToolTipText = verdict.Message;
             row.Cells[ColumnReason.Index].ToolTipText = verdict.Reason;
+            // These two columns are fixed-width and an engine request states its
+            // whole set of inputs in them, well past what the cell can show. The
+            // detail box below repeats them for the selected row; the tooltip is
+            // for reading down the table without moving the selection.
+            row.Cells[ColumnCurrent.Index].ToolTipText = verdict.Current;
+            row.Cells[ColumnProposed.Index].ToolTipText = verdict.Proposed;
         }
 
         // A click on the box is a click on the box: commit it so CellValueChanged
@@ -120,6 +126,14 @@ internal sealed partial class AgentProposalDialog : Form
         {
             lines.Add($"{verdict.Id} — {verdict.ChannelLabel} {verdict.Parameter}: " +
                 $"{StatusWord(verdict.Status)}. {verdict.Message}");
+            if (verdict.Current.Length > 0)
+            {
+                lines.Add("Current: " + verdict.Current);
+            }
+            if (verdict.Proposed.Length > 0)
+            {
+                lines.Add("Proposed: " + verdict.Proposed);
+            }
             if (verdict.Reason.Length > 0)
             {
                 lines.Add("Reason: " + verdict.Reason);

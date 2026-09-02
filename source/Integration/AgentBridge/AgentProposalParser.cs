@@ -141,7 +141,7 @@ internal static class AgentProposalParser
             else if (!ids.Add(operation.Id))
             {
                 rejected.Add(new AgentRejectedOperation(
-                    operation.Id, OpNameOf(operation), "Duplicate operation id."));
+                    operation.Id, operation.Op, "Duplicate operation id."));
             }
             else
             {
@@ -239,6 +239,10 @@ internal static class AgentProposalParser
                 AgentProtocol.SetPolarity => Map(element.Deserialize<PolarityWire>(Strict)),
                 AgentProtocol.SetCrossover => Map(element.Deserialize<CrossoverWire>(Strict)),
                 AgentProtocol.ReplacePeqBank => Map(element.Deserialize<PeqWire>(Strict)),
+                AgentProtocol.RunAutoDelay => Map(element.Deserialize<AutoDelayWire>(Strict)),
+                AgentProtocol.RunAutoCrossover => Map(element.Deserialize<AutoCrossoverWire>(Strict)),
+                AgentProtocol.AutoTunePeq => Map(element.Deserialize<AutoTuneWire>(Strict)),
+                AgentProtocol.UseSpatialAverage => Map(element.Deserialize<SpatialAverageWire>(Strict)),
                 _ => null
             };
             if (operation == null)
@@ -265,7 +269,8 @@ internal static class AgentProposalParser
         {
             return "The operation id is missing or too long.";
         }
-        if (string.IsNullOrWhiteSpace(operation.ChannelId) || !WithinLength(operation.ChannelId))
+        if (operation is AgentChannelOperation channel &&
+            (string.IsNullOrWhiteSpace(channel.ChannelId) || !WithinLength(channel.ChannelId)))
         {
             return "The channel id is missing or too long.";
         }
@@ -284,6 +289,11 @@ internal static class AgentProposalParser
                 peq.Proposed?.Bands == null ||
                 peq.Proposed.Bands.Any(band => band == null || band.Type == null) =>
                 "The PEQ bank is incomplete.",
+            AutoTunePeqOperation tune when !WithinLength(tune.Source) =>
+                "The auto-tune source is too long.",
+            UseSpatialAverageOperation spatial when
+                string.IsNullOrWhiteSpace(spatial.Mode) || !WithinLength(spatial.Mode) =>
+                "The spatial average mode is missing or too long.",
             _ => null
         };
     }
@@ -294,15 +304,6 @@ internal static class AgentProposalParser
         crossover.LowPass is { Family: null }
             ? "The crossover spec is incomplete."
             : null;
-
-    private static string OpNameOf(AgentOperation operation) => operation switch
-    {
-        SetGainOperation => AgentProtocol.SetGainDb,
-        SetDelayOperation => AgentProtocol.SetDelayMs,
-        SetPolarityOperation => AgentProtocol.SetPolarity,
-        SetCrossoverOperation => AgentProtocol.SetCrossover,
-        _ => AgentProtocol.ReplacePeqBank
-    };
 
     private static AgentOperation? Map(GainWire? wire) => wire == null
         ? null
@@ -353,6 +354,26 @@ internal static class AgentProposalParser
                     .Select(band => new AgentPeqBand(band.Type, band.FrequencyHz, band.Q, band.GainDb))
                     .ToList()));
     }
+
+    private static AgentOperation? Map(AutoDelayWire? wire) => wire == null
+        ? null
+        : new RunAutoDelayOperation(
+            wire.Id, wire.Reason, wire.SceneOffsetMs, wire.RightHandDrive, wire.AdjustGains,
+            wire.NearSideCutDb, wire.RearFillOffsetMs);
+
+    private static AgentOperation? Map(AutoCrossoverWire? wire) => wire == null
+        ? null
+        : new RunAutoCrossoverOperation(wire.Id, wire.Reason);
+
+    private static AgentOperation? Map(AutoTuneWire? wire) => wire == null
+        ? null
+        : new AutoTunePeqOperation(
+            wire.Id, wire.ChannelId, wire.Reason, wire.TargetLevelDb, wire.MinHz, wire.MaxHz,
+            wire.AllowShelves, wire.CutsOnly, wire.Source);
+
+    private static AgentOperation? Map(SpatialAverageWire? wire) => wire == null
+        ? null
+        : new UseSpatialAverageOperation(wire.Id, wire.Reason, wire.Mode, wire.Hybrid);
 
     private static bool WithinLength(string? value) =>
         value == null || value.Length <= AgentProtocol.MaxStringLength;
@@ -416,30 +437,37 @@ internal static class AgentProposalParser
     {
         public required string Op { get; init; }
         public required string Id { get; init; }
-        public required string ChannelId { get; init; }
         public required string Reason { get; init; }
         public JsonElement? Extensions { get; init; }
     }
 
-    private sealed class GainWire : OperationWire
+    // Everything but the three requests aimed at the whole project: a channel id
+    // is required, and a reply that leaves it out is refused rather than aimed
+    // at a guess.
+    private abstract class ChannelOperationWire : OperationWire
+    {
+        public required string ChannelId { get; init; }
+    }
+
+    private sealed class GainWire : ChannelOperationWire
     {
         public required double ExpectedCurrent { get; init; }
         public required double Proposed { get; init; }
     }
 
-    private sealed class DelayWire : OperationWire
+    private sealed class DelayWire : ChannelOperationWire
     {
         public required double ExpectedCurrent { get; init; }
         public required double Proposed { get; init; }
     }
 
-    private sealed class PolarityWire : OperationWire
+    private sealed class PolarityWire : ChannelOperationWire
     {
         public required bool ExpectedCurrent { get; init; }
         public required bool Proposed { get; init; }
     }
 
-    private sealed class CrossoverWire : OperationWire
+    private sealed class CrossoverWire : ChannelOperationWire
     {
         public required CrossoverSpecWire ExpectedCurrent { get; init; }
         public required CrossoverSpecWire Proposed { get; init; }
@@ -460,7 +488,7 @@ internal static class AgentProposalParser
         public double? RippleDb { get; init; }
     }
 
-    private sealed class PeqWire : OperationWire
+    private sealed class PeqWire : ChannelOperationWire
     {
         public required string ExpectedCurrentHash { get; init; }
         public required PeqBankWire Proposed { get; init; }
@@ -478,6 +506,38 @@ internal static class AgentProposalParser
         public required double FrequencyHz { get; init; }
         public required double Q { get; init; }
         public required double GainDb { get; init; }
+    }
+
+    // The engine requests. An optional input that is absent means "what the panel
+    // would open with", so a `null` and a missing member read the same; what is
+    // `required` here is what the request cannot be understood without.
+    private sealed class AutoDelayWire : OperationWire
+    {
+        public double? SceneOffsetMs { get; init; }
+        public bool? RightHandDrive { get; init; }
+        public bool? AdjustGains { get; init; }
+        public double? NearSideCutDb { get; init; }
+        public double? RearFillOffsetMs { get; init; }
+    }
+
+    private sealed class AutoCrossoverWire : OperationWire
+    {
+    }
+
+    private sealed class AutoTuneWire : ChannelOperationWire
+    {
+        public double? TargetLevelDb { get; init; }
+        public double? MinHz { get; init; }
+        public double? MaxHz { get; init; }
+        public bool? AllowShelves { get; init; }
+        public bool? CutsOnly { get; init; }
+        public string? Source { get; init; }
+    }
+
+    private sealed class SpatialAverageWire : OperationWire
+    {
+        public required string Mode { get; init; }
+        public required bool Hybrid { get; init; }
     }
 }
 

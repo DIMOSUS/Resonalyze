@@ -161,11 +161,14 @@ public sealed class AgentProposalApplierTests
         };
         var session = new AgentSessionSnapshot(
             [
-                new AgentChannelSnapshot("A", AgentChannelSide.Left, aLeft),
-                new AgentChannelSnapshot("A", AgentChannelSide.Right, aRight),
-                new AgentChannelSnapshot("B", AgentChannelSide.Left, bLeft)
+                new AgentChannelSnapshot("A", AgentChannelSide.Left, aLeft, true, []),
+                new AgentChannelSnapshot("A", AgentChannelSide.Right, aRight, true, []),
+                new AgentChannelSnapshot("B", AgentChannelSide.Left, bLeft, true, [])
             ],
-            96_000, 50, null);
+            96_000, 50, null,
+            new AgentAutoDelaySettings(0.25, RightHandDrive: false, AdjustGains: false, 1.0, 15.0),
+            VirtualCrossoverSpatialAverageMode.MovingMic,
+            HybridTicked: false);
         var proposal = new AgentProposal(null, "summary", [], [],
             [
                 new SetGainOperation("op-1", "A:right", "level", -2.0, -3.0),

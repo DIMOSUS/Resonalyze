@@ -411,7 +411,7 @@ public sealed class AgentProposalValidatorTests
     }
 
     [Fact]
-    public void Review_WarnsWhenTheReplyAnswersAnotherPackage_AndNotWhenItNamesNone()
+    public void Review_WarnsWhenTheReplyAnswersAnotherPackage_OrOneThisProjectNeverCopied()
     {
         AgentProposal other = Proposal(new SetGainOperation("op-1", "A:right", "", -2.0, -3.0)) with
         {
@@ -421,7 +421,10 @@ public sealed class AgentProposalValidatorTests
 
         Assert.Single(AgentProposalValidator.Review(other, Session()).Warnings);
         Assert.Empty(AgentProposalValidator.Review(none, Session()).Warnings);
-        Assert.Empty(AgentProposalValidator.Review(other, Session(lastPackageId: null)).Warnings);
+        // The panel forgets its package on a project load, a block reorder or a
+        // source replacement: a reply naming one then gets its warning too.
+        string forgotten = Assert.Single(AgentProposalValidator.Review(other, Session(lastPackageId: null)).Warnings);
+        Assert.Contains("has not copied", forgotten);
         // A warning is only a warning: the row itself still applies.
         Assert.True(AgentProposalValidator.Review(other, Session()).Verdicts[0].Applicable);
     }

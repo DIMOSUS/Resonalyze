@@ -339,7 +339,7 @@ public partial class VirtualCrossoverPanel
             if (sideSum == null)
             {
                 sides.Add(new AgentSideInputs(
-                    sideName, null, null, [], [], [], "no channel with a source on this side"));
+                    sideName, [], null, null, [], [], [], "no channel with a source on this side"));
                 continue;
             }
 
@@ -381,9 +381,24 @@ public partial class VirtualCrossoverPanel
                 loss = null;
             }
             List<VirtualCrossoverMetric.Entry> entries = sideMetrics.BuildEntries(shown, loss);
-            List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = quotesJunctions
-                ? sideMetrics.BuildPhaseEntries(shown)
-                : [];
+            // The junction phase block reads through the phase gate, placed over
+            // the SUMMING channels with THIS side's pin — the same call the frame
+            // makes for the active side (see RedrawMainPlotAsync), off the UI
+            // thread, with only numbers crossing over.
+            List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
+            if (quotesJunctions)
+            {
+                int phaseRate = summed[0].SampleRate;
+                double? pinnedOffsetMs = project.PhaseGateFor(rightSide).OffsetMs;
+                double gateLeftMs = gatePreview?.LeftMs ?? project.PhaseGateLeftMs;
+                double gatePlateauMs = gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs;
+                double gateRightMs = gatePreview?.RightMs ?? project.PhaseGateRightMs;
+                phaseEntries = await Task.Run(() => sideMetrics.BuildPhaseEntries(
+                    summed,
+                    ordered => JunctionPhaseSpectra.Build(
+                        ordered, phaseRate, pinnedOffsetMs,
+                        gateLeftMs, gatePlateauMs, gateRightMs)));
+            }
             HybridMagnitudes? hybrid = HybridRequested && magnitudes != null
                 ? BuildHybridMagnitudes(shown, magnitudes, rightSide, smoothing)
                 : null;
@@ -431,6 +446,9 @@ public partial class VirtualCrossoverPanel
 
             sides.Add(new AgentSideInputs(
                 sideName,
+                shown.Select(item => AgentChannelIds.Format(
+                    item.Channel.Name,
+                    item.Channel.Pair.Mono ? AgentChannelSide.Mono : sideName)).ToList(),
                 sumCurve?.Points,
                 loss,
                 entries,
@@ -510,7 +528,10 @@ public partial class VirtualCrossoverPanel
                 settings.DisplayName,
                 channel.Pair.Enabled,
                 channel.Pair.Bypass,
-                settings,
+                // A copy: the builder runs off the UI thread after this method
+                // returns, and the live object may be edited meanwhile — the
+                // package must describe one revision, the one the curves are from.
+                AgentOperations.CloneEditable(settings),
                 ProcessorSampleRateHz,
                 source));
         }

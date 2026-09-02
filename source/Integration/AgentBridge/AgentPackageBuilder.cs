@@ -343,11 +343,9 @@ internal static class AgentPackageBuilder
     private static AgentPackageSide BuildSide(AgentSideInputs side, AgentPackageInputs inputs)
     {
         string sideName = AgentChannelIds.SideName(side.Side);
-        List<string> channels = inputs.Channels
-            .Where(channel => channel.Side == side.Side || channel.Side == AgentChannelSide.Mono)
-            .Where(channel => channel.Source?.Processed != null)
-            .Select(channel => channel.Id)
-            .ToList();
+        // The ids the capture says went into this side's sum — not every channel
+        // with curves, since channels outside the view get curves of their own.
+        List<string> channels = side.ChannelIds.ToList();
 
         AgentSeries? sum = null;
         if (side.Sum != null)

@@ -80,6 +80,11 @@ internal static class AgentProposalParser
         {
             return AgentProposalParseResult.Fail("The proposal has no summary.");
         }
+        // `required` only requires the member to be PRESENT; a JSON null passes it.
+        if (wire.Operations == null)
+        {
+            return AgentProposalParseResult.Fail("The proposal's operations list is null.");
+        }
         if (!WithinLength(wire.Summary) || !WithinLength(wire.PackageId))
         {
             return AgentProposalParseResult.Fail("The summary or package id is too long.");
@@ -314,24 +319,40 @@ internal static class AgentProposalParser
     private static AgentOperation? Map(CrossoverWire? wire) => wire == null
         ? null
         : new SetCrossoverOperation(
-            wire.Id, wire.ChannelId, wire.Reason, Map(wire.ExpectedCurrent), Map(wire.Proposed));
+            wire.Id, wire.ChannelId, wire.Reason,
+            Map(NotNull(wire.ExpectedCurrent, "expectedCurrent")),
+            Map(NotNull(wire.Proposed, "proposed")));
 
     private static AgentCrossover Map(CrossoverSpecWire wire) =>
         new(wire.Kind, Map(wire.HighPass), Map(wire.LowPass));
+
+    // A JSON null in a required object: `required` does not catch it, so the
+    // mapper does, with the same exception the strict reader would have thrown.
+    private static T NotNull<T>(T? value, string member) where T : class =>
+        value ?? throw new JsonException($"'{member}' is null.");
 
     private static AgentCrossoverEdge? Map(EdgeWire? wire) => wire == null
         ? null
         : new AgentCrossoverEdge(wire.Family, wire.FrequencyHz, wire.SlopeDbPerOctave, wire.RippleDb);
 
-    private static AgentOperation? Map(PeqWire? wire) => wire == null
-        ? null
-        : new ReplacePeqBankOperation(
+    private static AgentOperation? Map(PeqWire? wire)
+    {
+        if (wire == null)
+        {
+            return null;
+        }
+
+        PeqBankWire bank = NotNull(wire.Proposed, "proposed");
+        List<PeqBandWire> bands = NotNull(bank.Bands, "proposed.bands");
+        return new ReplacePeqBankOperation(
             wire.Id, wire.ChannelId, wire.Reason, wire.ExpectedCurrentHash,
             new AgentPeqBank(
-                wire.Proposed.PreampDb,
-                wire.Proposed.Bands
+                bank.PreampDb,
+                bands
+                    .Select(band => NotNull(band, "proposed.bands[]"))
                     .Select(band => new AgentPeqBand(band.Type, band.FrequencyHz, band.Q, band.GainDb))
                     .ToList()));
+    }
 
     private static bool WithinLength(string? value) =>
         value == null || value.Length <= AgentProtocol.MaxStringLength;

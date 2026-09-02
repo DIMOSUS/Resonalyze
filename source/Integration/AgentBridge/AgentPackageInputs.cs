@@ -104,10 +104,12 @@ internal sealed record AgentSourceInputs(
 /// One side of the car in the current group view: its sum, its summation loss
 /// and the junction read-outs exactly as the panel's metric block quotes them.
 /// </summary>
+/// <param name="ChannelIds">The channels the view drew on this side — the set the sum, the loss and the junctions were computed from.</param>
 /// <param name="Entries">The Sum loss rows, per junction plus the total where the chain is continuous.</param>
 /// <param name="PhaseEntries">The Junction phase rows.</param>
 internal sealed record AgentSideInputs(
     AgentChannelSide Side,
+    IReadOnlyList<string> ChannelIds,
     IReadOnlyList<SignalPoint>? Sum,
     IReadOnlyList<SignalPoint>? Loss,
     IReadOnlyList<VirtualCrossoverMetric.Entry> Entries,

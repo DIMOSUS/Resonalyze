@@ -279,6 +279,27 @@ public sealed class AgentProposalParserTests
     }
 
     [Fact]
+    public void Parse_TreatsAJsonNullInARequiredMemberAsAnError_NotACrash()
+    {
+        // `required` only demands the member be present; a null passes the
+        // reader and used to reach the mapper as a null reference.
+        string nullOperations = FiveOperations.Replace("\"operations\": [", "\"operations\": null, \"extensions\": [");
+        AgentProposalParseResult result = AgentProposalParser.Parse(Begin + nullOperations + End);
+        Assert.False(result.Succeeded);
+        Assert.Contains("operations list is null", result.Error);
+
+        string nullSpecs = FiveOperations
+            .Replace("\"expectedCurrent\": { \"kind\": \"BandPass\"", "\"expectedCurrent\": null, \"extensions\": { \"kind\": \"BandPass\"")
+            .Replace("\"proposed\": { \"preampDb\": -1.0, \"bands\": [ { \"type\": \"Peaking\", \"frequencyHz\": 820, \"q\": 2.1, \"gainDb\": -2.4 } ] }",
+                "\"proposed\": { \"preampDb\": -1.0, \"bands\": null }");
+        AgentProposal proposal = AgentProposalParser.Parse(Begin + nullSpecs + End).Proposal!;
+        Assert.Equal(["op-1", "op-2", "op-3"], proposal.Operations.Select(op => op.Id));
+        Assert.Collection(proposal.Rejected,
+            rejected => { Assert.Equal("op-4", rejected.Id); Assert.Contains("'expectedCurrent' is null", rejected.Problem); },
+            rejected => { Assert.Equal("op-5", rejected.Id); Assert.Contains("'proposed.bands' is null", rejected.Problem); });
+    }
+
+    [Fact]
     public void Parse_TreatsAMissingPackageIdAsNone()
     {
         string json = FiveOperations.Replace(

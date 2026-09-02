@@ -405,6 +405,7 @@ public sealed class AgentPackageBuilderTests
 
         var leftSide = new AgentSideInputs(
             AgentChannelSide.Left,
+            ["A:left", "B:mono"],
             Ramp(2),
             Ramp(-1).Select(point => new SignalPoint(point.X, double.IsNaN(point.Y) ? point.Y : -Math.Abs(point.Y) / 4)).ToList(),
             [
@@ -415,7 +416,7 @@ public sealed class AgentPackageBuilderTests
             [new AgentJunctionInputs("B", "A", 80, 40, 160, bProcessed, aLeftProcessed, correlation, coherence)],
             null);
         var rightSide = new AgentSideInputs(
-            AgentChannelSide.Right, null, null, [], [], [], "no channel with a source on this side");
+            AgentChannelSide.Right, [], null, null, [], [], [], "no channel with a source on this side");
 
         return new AgentPackageInputs(
             "1.2.3",

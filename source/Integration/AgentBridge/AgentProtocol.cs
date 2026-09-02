@@ -33,11 +33,11 @@ internal static class AgentProtocol
 
     /// <summary>
     /// The package a chat can take: numbers tokenize at four or five tokens each,
-    /// so a 60 KB package is already tens of thousands of tokens. The builder aims
+    /// so an 80 KB package is already tens of thousands of tokens. The builder aims
     /// under the target and drops optional series, in a fixed order, to stay under
     /// the ceiling.
     /// </summary>
-    public const int TargetPackageBytes = 60 * 1024;
+    public const int TargetPackageBytes = 80 * 1024;
     public const int MaxPackageBytes = 100 * 1024;
 
     /// <summary>

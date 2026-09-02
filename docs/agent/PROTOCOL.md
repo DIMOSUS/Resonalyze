@@ -30,7 +30,7 @@ Anything unavailable is **absent** — a property is not written when it has no
 value — and where the absence needs a reason, a sibling `unavailableReason`
 says it. Nothing is ever a zero standing in for "unknown".
 
-Size: Resonalyze aims under 60 KB of JSON and never exceeds 100 KB. Over the
+Size: Resonalyze aims under 80 KB of JSON and never exceeds 100 KB — a seven-channel, six-junction car fits the target whole; a larger installation is trimmed. Over the
 target it drops optional series in this fixed order, listing what it dropped in
 `omitted`; once every optional series is gone, the mandatory payload may grow up
 to the 100 KB ceiling, and beyond that nothing is copied:

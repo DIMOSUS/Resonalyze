@@ -67,8 +67,15 @@ internal static class AgentProposalApplier
             return problem;
         }
 
+        // Only channels whose ticked rows shape the junction zone: a gain or delay
+        // row leaves the bank and the corners as they are, and a note about them
+        // would be about the tune as it already is, not about the import.
+        HashSet<AgentChannelSnapshot> shaped = toApply
+            .Where(verdict => verdict.Operation is SetCrossoverOperation or ReplacePeqBankOperation)
+            .Select(verdict => verdict.Channel!)
+            .ToHashSet();
         foreach ((AgentChannelSnapshot channel, List<string> notes) in
-            AgentProposalValidator.FinalStateNotes(toApply))
+            AgentProposalValidator.FinalStateNotes(toApply).Where(entry => shaped.Contains(entry.Channel)))
         {
             foreach (string note in notes)
             {

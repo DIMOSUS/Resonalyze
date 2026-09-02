@@ -16,12 +16,12 @@ internal static class AgentPeqHeadroom
     private const int RefinementSteps = 24;
 
     /// <summary>
-    /// The net response's maximum (dB) and where it sits (Hz), over the whole
-    /// range a band may be placed in: from below the lowest band (a bell at 10 Hz
-    /// is a legal band and clips like any other) up to the processor's Nyquist.
-    /// A log grid alone would step over a narrow bell — Q is unbounded — so every
-    /// band's centre is sampled too, and each local maximum of the grid is refined
-    /// between its neighbours.
+    /// The net response's maximum (dB) and where it sits (Hz), over the band the
+    /// tune is judged in — 20 Hz to 20 kHz, or the processor's Nyquist where that
+    /// is lower. A band may legally sit outside it; what it does there is not a
+    /// tuning question. A log grid alone would step over a narrow bell — Q is
+    /// unbounded — so every band's centre inside the range is sampled too, and
+    /// each local maximum of the grid is refined between its neighbours.
     /// </summary>
     public static (double PeakDb, double PeakHz) Peak(
         double preampDb, IReadOnlyList<PeqBand> bands, int processorSampleRateHz)
@@ -36,14 +36,13 @@ internal static class AgentPeqHeadroom
         PreparedDspResponse response = PreparedDspResponse.Create(
             new DspChannelChain(0, 0, false, CrossoverSpec.Off, new EqualizationCurve(bands, preampDb)),
             processorSampleRateHz);
-        double nyquistHz = processorSampleRateHz / 2.0 * 0.999;
-        double lowHz = Math.Max(1, Math.Min(AgentCurveSampling.BroadbandLowHz, bands.Min(band => band.FrequencyHz) / 2));
-        double highHz = nyquistHz;
+        double lowHz = AgentCurveSampling.BroadbandLowHz;
+        double highHz = Math.Min(AgentCurveSampling.BroadbandHighHz, processorSampleRateHz / 2.0 * 0.999);
 
         List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(lowHz, highHz, GridPoints)];
         foreach (PeqBand band in bands)
         {
-            if (band.FrequencyHz > 0 && band.FrequencyHz < nyquistHz)
+            if (band.FrequencyHz > lowHz && band.FrequencyHz < highHz)
             {
                 grid.Add(band.FrequencyHz);
             }

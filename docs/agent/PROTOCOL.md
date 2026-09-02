@@ -145,10 +145,11 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
   frequency, Q, gain in round-trip form) and the preamp. A `replacePeqBank`
   reply echoes it instead of the whole current bank.
 - `peq.peakDb` / `peq.peakHz` is the highest point of the bank's **net**
-  response — preamp and every band together, built at the processor's rate,
-  searched from below the lowest band to the processor's Nyquist with every
-  band's centre sampled and each maximum refined, so a narrow bell is not
-  stepped over.
+  response — preamp and every band together, built at the processor's rate —
+  over the band the tune is judged in, 20 Hz to 20 kHz (or the processor's
+  Nyquist where lower), with every band's centre sampled and each maximum
+  refined, so a narrow bell is not stepped over. A band outside that range is
+  legal; what it does there is not a tuning question.
   Above 0 dB the device is asked for more than unity there and a full-scale
   signal clips. A boost inside a wider cut, or under a negative preamp, is not
   a headroom problem; the sign of one band says nothing.
@@ -333,8 +334,9 @@ never applied.
 
 The review judges the junction-zone rule on each channel as it would end up
 after **every** applicable row; the commit judges it again on the rows the user
-actually ticked, and asks before applying a subset that leaves a state the
-review never showed (a crossover moved without the bank that went with it).
+actually ticked — on the channels whose ticked rows touch the crossover or the
+bank — and asks before applying a subset that leaves a state the review never
+showed (a crossover moved without the bank that went with it).
 
 ### 2.3 What the importer does
 

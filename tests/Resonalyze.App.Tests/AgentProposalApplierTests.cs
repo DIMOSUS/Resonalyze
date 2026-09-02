@@ -80,6 +80,14 @@ public sealed class AgentProposalApplierTests
         Assert.StartsWith("B left:", warning);
         Assert.Contains("Band at 1000 Hz (Q 4)", warning);
         Assert.Contains("around the 1200 Hz crossover", warning);
+
+        // A row that touches neither the bank nor the corners says nothing about a
+        // zone problem the channel already has: that is the tune, not the import.
+        bLeft.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1200, 24);
+        var gainOnly = new AgentProposal(null, "summary", [], [],
+            [new SetGainOperation("op-3", "B:left", "", 0, -1)], []);
+        Assert.Null(AgentProposalApplier.Prepare(gainOnly, new HashSet<string>(["op-3"]), session, out _, out List<string> untouched));
+        Assert.Empty(untouched);
     }
 
     [Fact]

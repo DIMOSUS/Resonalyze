@@ -263,8 +263,16 @@ review is the gate: once the user applies the row, `runAutoDelay` runs at once
 with your inputs (no dialog; the run's report comes back to the user in the
 import's summary, and the same checks the button makes — two measured
 channels, no bypassed participant, the gate in place, a crossover somewhere —
-skip it with the reason when they fail), while `runAutoCrossover` opens the
-wizard for the user to confirm the driver types. Either way, ask for a new
+skip it with the reason when they fail); `autoTunePeq` runs at once as well,
+on the curve the wizard would have opened on for that channel (the spatial
+average while the hybrid view draws it — ask for `useSpatialAverage` first
+where it is not — or the `source` you name), with the wizard's own opening
+values for what you leave out: cuts only, no shelves, Q no narrower than 6,
+the channel's passband as the window. State `targetLevelDb` only when you
+mean to move the project's target level — it is one datum for every channel,
+and the run skips itself when it sits 3 dB or more above the curve or 10 dB
+or more below. `runAutoCrossover` opens the wizard for the user to confirm
+the driver types. Either way, ask for a new
 package afterwards to read the result. What `limits.operations` does NOT name,
 say in `advice` as before — that build cannot run it, and asking anyway costs
 the user a rejected row.

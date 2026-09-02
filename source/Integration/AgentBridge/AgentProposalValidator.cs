@@ -493,7 +493,9 @@ internal static class AgentProposalValidator
             "channel that has a measurement, and can reorder the chain. Its own dialog " +
             "confirms the proposal."),
         AutoTunePeqOperation => (AgentVerdictStatus.Warning,
-            "Auto-tune replaces this channel's whole PEQ bank."),
+            "Auto-tune replaces this channel's whole PEQ bank (all-pass bands kept). It runs " +
+            "without the EQ Wizard, on the curve the wizard would have opened on, and skips " +
+            "itself when the target level sits too far from that curve."),
         _ => (AgentVerdictStatus.Valid, "OK")
     };
 

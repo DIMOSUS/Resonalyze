@@ -393,7 +393,18 @@ same checks the button makes (two measured channels, no bypassed participant,
 the gate in place, a crossover somewhere; a failed check skips the operation
 with the reason in the summary), the same search, the same commit — and its
 report, the text the dialog would have shown, comes back in the import's
-summary and the alignment log. `runAutoCrossover` opens the wizard: its rows
+summary and the alignment log. `autoTunePeq` runs without the EQ Wizard too:
+it fits the curve the wizard would have opened on for that channel — the
+spatial average while the hybrid view draws it, the point measurement
+otherwise, or whichever `source` names — with the wizard's opening values for
+what the reply leaves out (bells no narrower than Q 6, band gains −15…+6 dB,
+cuts only, no shelves, the channel's passband as the window); all-pass bands
+in the bank are kept and the fit tunes around them; a `targetLevelDb` moves the
+project's target level, as the wizard's Return does. It skips itself, with the
+reason, when the channel is on the side not on screen, when `spatialAverage`
+is asked for and the hybrid view is not drawing it, or when the target level
+sits 3 dB or more above the curve (10 dB or more below), which is the question
+the wizard would have asked. `runAutoCrossover` opens the wizard: its rows
 are where the driver types are confirmed, and cancelling it skips that
 operation while the rest of the import carries on.
 

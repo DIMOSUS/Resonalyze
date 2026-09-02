@@ -2845,7 +2845,12 @@ this: the clipboard is the only transport, and you are the one who pastes.
   the engine would start from, with what it will write over. Auto crossover
   then opens its wizard as the button does; Auto delay runs without its dialog
   — the button's own checks, search and commit, with the report it would have
-  shown returned in the import's summary and the alignment log. A change the assistant
+  shown returned in the import's summary and the alignment log; Auto-tune runs
+  without the EQ Wizard, on the curve the wizard would have opened on for that
+  channel and with the wizard's opening values for whatever the reply leaves
+  out, keeps the bank's all-pass bands, lands the fit the way the wizard's
+  **Return** lands it, and skips itself — with the reason — where the wizard
+  would have asked about the [target level](#eq-wizard). A change the assistant
   reasoned about a value that has since moved is rejected as such; so is one
   outside Virtual DSP's own limits (the channel block's gain and delay ranges and
   steps, the crossover families and slopes, the corner range and the processor's

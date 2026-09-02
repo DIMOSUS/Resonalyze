@@ -371,8 +371,7 @@ public sealed class AgentPackageBuilderTests
         Assert.Contains("useSpatialAverage", operations);
         Assert.Contains("runAutoCrossover", operations);
         Assert.Contains("runAutoDelay", operations);
-        // The protocol describes this one; this build reviews it and refuses.
-        Assert.DoesNotContain("autoTunePeq", operations);
+        Assert.Contains("autoTunePeq", operations);
     }
 
     [Fact]

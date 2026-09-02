@@ -2406,6 +2406,23 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        VirtualDspEqHandoffRequest? request = BuildPeqHandoffRequest(
+            channel, withChain, HandoffSpatialAverage(channel, channel.ActiveRight));
+        if (request != null)
+        {
+            requested(request);
+        }
+    }
+
+    // The handoff as the PEQ menu builds it, for the wizard or for an import
+    // that tunes without one: the ACTIVE side, the gate snapshot, the shared
+    // anchor of the current render, the target level the panel shows. Null when
+    // the channel side has no measurement to hand over.
+    private VirtualDspEqHandoffRequest? BuildPeqHandoffRequest(
+        VirtualCrossoverChannel channel,
+        bool withChain,
+        (LiveCaptureDocument? Capture, double OffsetDb) spatialAverage)
+    {
         MagnitudeGateSnapshot snapshot = magnitudeGate;
         // Only a render that still describes the CURRENT settings may place the
         // window: a delay or crossover edit invalidates the coordinator and queues a
@@ -2417,8 +2434,6 @@ public partial class VirtualCrossoverPanel : UserControl
             processingCoordinator.IsCurrent(render.Revision)
                 ? ProcessedChannels.SharedStartAnchorIndex(render.Channels)
                 : null;
-        (LiveCaptureDocument? Capture, double OffsetDb) spatialAverage =
-            HandoffSpatialAverage(channel, channel.ActiveRight);
         VirtualDspEqHandoffRequest request;
         try
         {
@@ -2457,10 +2472,10 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             // The measurement vanished between opening the menu and choosing — a
             // silent no-op, like a deleted history entry in the source picker.
-            return;
+            return null;
         }
 
-        requested(request);
+        return request;
     }
 
     /// <summary>

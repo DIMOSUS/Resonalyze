@@ -99,7 +99,9 @@ public partial class VirtualCrossoverPanel
         double SceneOffsetMagnitudeMs,
         bool RightHandDrive,
         double StereoLevelDifferenceDb,
-        double RearFillOffsetMs);
+        double RearFillOffsetMs,
+        // The datum an Auto-tune request may move, as the wizard's return does.
+        double TargetLevelDb);
 
     /// <summary>
     /// Import AI proposal: clipboard → strict parse → review against the live
@@ -276,10 +278,12 @@ public partial class VirtualCrossoverPanel
                     ran |= await RunAgentAutoDelayAsync(delay, summary);
                     break;
 
-                // Auto-tune is not in AgentProtocol.Operations yet, so the review
-                // refuses it and no row reaches here. When it is wired up it
-                // takes a case of its own, in the order AgentEngineOrder already
-                // gives it.
+                case AutoTunePeqOperation tune:
+                    ran |= await RunAgentAutoTuneAsync(tune, summary);
+                    break;
+
+                // Every operation the protocol names is executed above; one this
+                // build does not run never reaches here, the review refuses it.
                 default:
                     summary.Add(
                         $"{operation.Parameter}: skipped " +
@@ -408,6 +412,156 @@ public partial class VirtualCrossoverPanel
         return true;
     }
 
+    // Auto-tune without the wizard: the same handoff the PEQ menu would build
+    // for the channel, the same curves and options the wizard would fit
+    // (EqAutoTuneHeadless, pinned against the wizard's own render), and the
+    // same landing the wizard's Return takes — every guard included, so a
+    // channel that moved while the fit ran is refused rather than written.
+    // The review was the gate; the target-level check the wizard would have
+    // asked about is a refusal here, with the phrase in the summary.
+    private async Task<bool> RunAgentAutoTuneAsync(
+        AutoTunePeqOperation operation, List<string> summary)
+    {
+        string label = $"Auto-tune {operation.ChannelId}";
+        (VirtualCrossoverChannel Channel, bool RightSide)? slot = AgentChannelSlots()
+            .Where(item => string.Equals(
+                AgentChannelIds.Format(item.Block, item.Side), operation.ChannelId,
+                StringComparison.Ordinal))
+            .Select(item => ((VirtualCrossoverChannel, bool)?)(item.Channel, item.RightSide))
+            .FirstOrDefault();
+        if (slot is not { } found)
+        {
+            summary.Add($"{label}: skipped (no such channel).");
+            return false;
+        }
+
+        (VirtualCrossoverChannel channel, bool rightSide) = found;
+        // The handoff is built for the side on screen, as the PEQ menu builds it:
+        // the gate pin, the render anchor and the hybrid datum are that side's.
+        if (!channel.Pair.Mono && rightSide != channel.ActiveRight)
+        {
+            summary.Add(
+                $"{label}: skipped (the other side is on screen; switch the L/R " +
+                "selector and import again).");
+            return false;
+        }
+
+        // What the wizard would open on: the average while the hybrid view draws
+        // it, the point measurement otherwise — unless the reply chose.
+        (LiveCaptureDocument? Capture, double OffsetDb) average =
+            HandoffSpatialAverage(channel, channel.ActiveRight);
+        if (operation.Source == AgentProposalValidator.PointSource)
+        {
+            average = (null, 0.0);
+        }
+        else if (operation.Source == AgentProposalValidator.SpatialAverageSource &&
+            average.Capture == null)
+        {
+            summary.Add(
+                $"{label}: skipped (the hybrid view is not drawing this channel's " +
+                "spatial average; ask for useSpatialAverage first).");
+            return false;
+        }
+
+        // The datum is the project's, moved before the handoff is built so the
+        // token carries it — as the wizard's Return moves it on the way back.
+        if (operation.TargetLevelDb is { } level &&
+            !((double)numericTargetLevel.Value).Equals(level))
+        {
+            numericTargetLevel.Value = numericTargetLevel.ClampValue(level);
+        }
+
+        VirtualDspEqHandoffRequest? request = BuildPeqHandoffRequest(channel, withChain: true, average);
+        if (request == null)
+        {
+            summary.Add($"{label}: skipped (no measurement to fit against).");
+            return false;
+        }
+
+        VirtualCrossoverTargetSettings targetSettings =
+            project.Target ?? new VirtualCrossoverTargetSettings();
+        TargetCurveSpec spec = (targetCurve ?? targetSettings.ToCurve()).Normalized().Spec;
+        bool cutsOnly = operation.CutsOnly ?? true;
+        EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
+            request, spec, operation.MinHz, operation.MaxHz,
+            operation.AllowShelves ?? false, cutsOnly);
+        string? levelWarning = EqTargetLevelCheck.Warning(
+            EqTargetLevelCheck.TargetAboveSourceDb(
+                inputs.Source, inputs.Target, inputs.MinHz, inputs.MaxHz),
+            cutsOnly, inputs.MinHz, inputs.MaxHz);
+        if (levelWarning != null)
+        {
+            summary.Add($"{label}: skipped ({levelWarning.Split('.')[0]}).");
+            return false;
+        }
+
+        double? before = EqAutoTuneHeadless.RmsErrorDb(
+            inputs.Source, inputs.Target, inputs.MinHz, inputs.MaxHz);
+        EqualizationCurve fitted;
+        double? after;
+        bool wasEnabled = Enabled;
+        Enabled = false;
+        UseWaitCursor = true;
+        try
+        {
+            (fitted, after) = await Task.Run(() =>
+            {
+                EqualizationCurve curve = EqAutoTuneHeadless.Fit(inputs);
+                // The corrected curve as the wizard's Source + EQ draws it: the
+                // bank in the chain, through the window or over the average.
+                IReadOnlyList<SignalPoint> corrected = EqAutoTuneHeadless.SourceCurve(
+                    request.Source, request.SmoothingInverseOctaves, curve);
+                return (curve, EqAutoTuneHeadless.RmsErrorDb(
+                    corrected, inputs.Target, inputs.MinHz, inputs.MaxHz));
+            });
+        }
+        finally
+        {
+            UseWaitCursor = false;
+            Enabled = wasEnabled;
+        }
+        if (IsDisposed)
+        {
+            return false;
+        }
+
+        // Landed the way the wizard's Return lands, against the capture the
+        // request was built with — the reply may have asked for the point
+        // measurement under a hybrid view, and the token says which it was.
+        VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        if (!VirtualDspEqHandoff.TryApplyReturn(
+                channels,
+                request.Token,
+                fitted,
+                projectGeneration,
+                CalibrationFor(state),
+                SpatialAverageCalibrationFor(state),
+                snapshot.Template,
+                snapshot.PinnedOffsetMs,
+                (double)numericTargetLevel.Value,
+                average.Capture,
+                ProcessorSampleRateHz))
+        {
+            summary.Add($"{label}: skipped (the channel changed while the fit ran).");
+            return false;
+        }
+
+        channel.SideSettings(channel.ActiveRight).PeqSourceName = "Auto-tune (AI import)";
+        UpdatePeqReadouts(channel);
+        int fittedBands = fitted.Bands.Count(band => !band.Type.IsAllPass());
+        summary.Add(
+            $"{label}: applied — {fittedBands} band{(fittedBands == 1 ? "" : "s")}" +
+            (inputs.KeptAllPass.Count > 0 ? $" + {inputs.KeptAllPass.Count} all-pass kept" : string.Empty) +
+            $", preamp {fitted.PreampDb:0.0} dB, {inputs.MinHz:0}–{inputs.MaxHz:0} Hz, " +
+            $"{(cutsOnly ? "cuts only" : "cuts and boosts")}, on the " +
+            $"{(average.Capture != null ? "spatial average" : "point measurement")}; " +
+            $"RMS error {Rms(before)} -> {Rms(after)}.");
+        return true;
+
+        static string Rms(double? value) => value is { } rms ? $"{rms:0.0} dB" : "n/a";
+    }
+
     // Everything the import could move, before it moves any of it.
     private AgentImportUndo CaptureAgentUndo() =>
         new(
@@ -422,7 +576,8 @@ public partial class VirtualCrossoverPanel
             project.StereoSceneOffsetMagnitudeMs,
             project.StereoRightHandDrive,
             project.StereoLevelDifferenceDb,
-            project.RearFillOffsetMs);
+            project.RearFillOffsetMs,
+            (double)numericTargetLevel.Value);
 
     private void UndoAiImport()
     {
@@ -453,6 +608,7 @@ public partial class VirtualCrossoverPanel
             project.SetStereoScene(undo.SceneOffsetMagnitudeMs, undo.RightHandDrive);
             project.StereoLevelDifferenceDb = undo.StereoLevelDifferenceDb;
             project.RearFillOffsetMs = undo.RearFillOffsetMs;
+            numericTargetLevel.Value = numericTargetLevel.ClampValue(undo.TargetLevelDb);
         }
         finally
         {

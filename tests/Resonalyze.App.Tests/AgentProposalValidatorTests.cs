@@ -510,8 +510,10 @@ public sealed class AgentProposalValidatorTests
             },
             v =>
             {
-                Assert.Equal(AgentVerdictStatus.Rejected, v.Status);
-                Assert.Contains("not available in this version of Resonalyze", v.Message);
+                Assert.Equal(AgentVerdictStatus.Warning, v.Status);
+                Assert.True(v.Applicable);
+                Assert.Contains("replaces this channel's whole PEQ bank", v.Message);
+                Assert.Contains("without the EQ Wizard", v.Message);
                 Assert.Equal("B left", v.ChannelLabel);
                 Assert.Equal("2 bands, preamp 0.0 dB", v.Current);
                 Assert.Equal(
@@ -522,7 +524,7 @@ public sealed class AgentProposalValidatorTests
         // The list the package publishes is the list the review holds a reply to.
         Assert.Equal(
             ["setGainDb", "setDelayMs", "setPolarity", "setCrossover", "replacePeqBank",
-                "useSpatialAverage", "runAutoCrossover", "runAutoDelay"],
+                "useSpatialAverage", "runAutoCrossover", "runAutoDelay", "autoTunePeq"],
             AgentProtocol.Operations);
     }
 
@@ -648,10 +650,8 @@ public sealed class AgentProposalValidatorTests
     }
 
     [Fact]
-    public void Review_LeavesHandWrittenRowsAloneWhenTheEngineThatWouldEraseThemCannotRun()
+    public void Review_RejectsTheBankAnAutoTuneOnTheSameChannelWouldReplace()
     {
-        // Auto-tune is the engine this build does not run yet: its request is
-        // refused, so the bank it would have replaced stays a live row.
         AgentSessionSnapshot session = Session();
         AgentChannelSnapshot bLeft = session.Find("B:left")!;
         string hash = AgentPeqHash.Compute(bLeft.Settings.PeqPreampDb, bLeft.Settings.PeqBands);
@@ -662,9 +662,9 @@ public sealed class AgentProposalValidatorTests
 
         AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
 
-        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[0].Status);
-        Assert.Contains("not available in this version of Resonalyze", review.Verdicts[0].Message);
-        Assert.True(review.Verdicts[1].Applicable);
+        Assert.True(review.Verdicts[0].Applicable);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.Equal("Would be overwritten by Auto-tune (op-1).", review.Verdicts[1].Message);
     }
 
     [Theory]

@@ -5,9 +5,9 @@ namespace Resonalyze.App.Tests;
 /// <summary>
 /// The question Auto Tune asks when the target level datum sits far from the
 /// curve it is about to fit. Pinned: the reading is a median over the window
-/// (a dip does not move it), the thresholds, and that Cuts only is warned about
-/// a target below the source but not above it — there the auto preamp aligns
-/// the curve and nothing is lost.
+/// (a dip does not move it), the thresholds in both modes, and that a target
+/// above the source is explained differently under Cuts only — there the fit
+/// cannot raise the curve at all, rather than raising it at the cost of headroom.
 /// </summary>
 public sealed class EqTargetLevelCheckTests
 {

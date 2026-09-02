@@ -32,6 +32,36 @@ public sealed class AgentProposalApplierTests
     }
 
     [Fact]
+    public void Prepare_RefusesARowTheFreshReviewWouldNoLongerOfferTicked()
+    {
+        (AgentSessionSnapshot scene, AgentProposal proposal) = Scene();
+        const string Package = "11111111-1111-1111-1111-111111111111";
+        proposal = proposal with { PackageId = Package };
+        AgentSessionSnapshot session = scene with
+        {
+            LastPackageId = Package,
+            LastPackageFingerprint = "aaaaaaaaaaaaaaaa",
+            Fingerprint = "aaaaaaaaaaaaaaaa"
+        };
+        var ticked = new HashSet<string>(["op-1"]);
+
+        Assert.Null(AgentProposalApplier.Prepare(proposal, ticked, session, out List<AgentOperationVerdict> toApply, out _));
+        Assert.Single(toApply);
+
+        // Nothing the row's expected current value guards has moved — a
+        // measurement, a gate or the view did, under the dialog — so the fresh
+        // review still finds the row applicable but no longer offers it ticked.
+        // The user ticked it without seeing that warning: not applied.
+        string? problem = AgentProposalApplier.Prepare(
+            proposal, ticked, session with { Fingerprint = "bbbbbbbbbbbbbbbb" }, out toApply, out _);
+        Assert.NotNull(problem);
+        Assert.Contains("op-1", problem);
+        Assert.Contains("cannot vouch for", problem);
+        Assert.Contains("changed while the review was open", problem);
+        Assert.Empty(toApply);
+    }
+
+    [Fact]
     public void Prepare_IgnoresARefusedRowThatSharesTheTickedRowsId()
     {
         (AgentSessionSnapshot session, AgentProposal proposal) = Scene();

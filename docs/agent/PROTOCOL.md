@@ -543,9 +543,11 @@ showed (a crossover moved without the bank that went with it).
    session must pass.
 3. Shows the review: every row with its current and proposed value; admissible
    rows ticked, rejected rows greyed with their reason, warnings in words.
-4. On *Apply selected*, judges the ticked rows once more against the settings as
-   they are at that moment, then writes the settings rows as one set. A failure
-   there writes nothing.
+4. On *Apply selected*, judges the ticked rows once more against the settings
+   and the session fingerprint as they are at that moment — a row the fresh
+   review would refuse, or would no longer offer ticked, stops the whole
+   import with a request to review again — then writes the settings rows as
+   one set. A failure there writes nothing.
 5. Runs the ticked engine requests, in the fixed order above — the spatial
    average straight onto the panel, Auto crossover through its wizard, Auto
    delay and Auto-tune without their dialogs — and

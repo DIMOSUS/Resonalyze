@@ -54,7 +54,11 @@ internal static class AgentProposalApplier
             return "No applicable change was selected.";
         }
 
-        AgentOperationVerdict? stale = toApply.FirstOrDefault(verdict => !verdict.Applicable);
+        // A row the fresh review would no longer offer ticked is one the user
+        // ticked without seeing why it should not be: a measurement, a gate or
+        // the view moved under the dialog, and the row's expected current value
+        // still matches. The same answer as a row that stopped applying.
+        AgentOperationVerdict? stale = toApply.FirstOrDefault(verdict => !verdict.Applicable || !verdict.Ticked);
         if (stale != null)
         {
             toApply.Clear();

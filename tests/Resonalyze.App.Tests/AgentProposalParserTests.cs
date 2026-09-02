@@ -83,6 +83,25 @@ public sealed class AgentProposalParserTests
     }
 
     [Fact]
+    public void Parse_IsNotThrownByProseQuotesOrByAPasteFullOfBraces()
+    {
+        // A lone quote in the prose before the object must not swallow it: each
+        // candidate is walked from its own opening brace, where no string is open.
+        AgentProposalParseResult quoted = AgentProposalParser.Parse(
+            "As the maker's sheet says, \"Fs 65 Hz. The rest is my reading.\n```json\n" +
+            FiveOperations + "\n```");
+        Assert.True(quoted.Succeeded, quoted.Error);
+
+        // Twenty thousand braces that never close, then the proposal: the walk is
+        // budgeted, so the reply is answered in well under a second either way.
+        string braces = string.Concat(Enumerable.Repeat("{ ", 20_000));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        _ = AgentProposalParser.Parse(braces + "\n" + FiveOperations);
+        clock.Stop();
+        Assert.True(clock.ElapsedMilliseconds < 2_000, $"{clock.ElapsedMilliseconds} ms");
+    }
+
+    [Fact]
     public void Parse_RefusesAReplyWithTwoProposals_OrNone()
     {
         AgentProposalParseResult two = AgentProposalParser.Parse(

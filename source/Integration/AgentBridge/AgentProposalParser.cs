@@ -255,10 +255,26 @@ internal static class AgentProposalParser
     {
         var found = new List<string>();
         string kindMarker = "\"" + AgentProtocol.ProposalKind + "\"";
-        int index = 0;
-        while ((index = text.IndexOf('{', index)) >= 0)
+        // No object opened after the last mention of the kind can contain it.
+        int lastMarker = text.LastIndexOf(kindMarker, StringComparison.Ordinal);
+        if (lastMarker < 0)
         {
-            int close = MatchingBrace(text, index);
+            return found;
+        }
+
+        // Each brace that never closes is walked to the end of the text, and a
+        // paste full of them (a minified script, say) would be quadratic. The
+        // walk gets a budget generous for any reply and small for such a paste;
+        // past it the reply reads as holding whatever was found by then.
+        long budget = 8L * text.Length + (1L << 20);
+        int index = 0;
+        while (index <= lastMarker && (index = text.IndexOf('{', index)) >= 0 && index <= lastMarker)
+        {
+            int close = MatchingBrace(text, index, ref budget);
+            if (budget <= 0)
+            {
+                break;
+            }
             if (close < 0)
             {
                 index++;
@@ -280,11 +296,11 @@ internal static class AgentProposalParser
         return found;
     }
 
-    private static int MatchingBrace(string text, int open)
+    private static int MatchingBrace(string text, int open, ref long budget)
     {
         int depth = 0;
         bool inString = false;
-        for (int index = open; index < text.Length; index++)
+        for (int index = open; index < text.Length && budget-- > 0; index++)
         {
             char c = text[index];
             if (inString)

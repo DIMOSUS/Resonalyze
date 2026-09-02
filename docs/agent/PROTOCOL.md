@@ -47,6 +47,7 @@ to the 100 KB ceiling, and beyond that nothing is copied:
 | --- | --- |
 | `kind` | `"resonalyze.agent-package"` |
 | `protocolVersion` | `1` |
+| `guideVersion` | The version of [AGENT_GUIDE.md](AGENT_GUIDE.md) this build was written against (its first line). The guide at the URL may be newer; read it, and know which methodology the package's author expected. |
 | `packageId` | A new GUID per copy. Echo it in the reply; a mismatch is a warning, not a refusal. |
 | `createdAtUtc` | ISO 8601, UTC. |
 | `application` | `{ name, version }` |

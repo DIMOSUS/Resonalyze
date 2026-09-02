@@ -67,7 +67,7 @@ public sealed class EqAutoTuneHeadlessTests
         VirtualDspEqHandoffRequest request = Build(channel);
 
         EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
-            request, TargetCurveSpec.FromPreset(TargetPreset.Flat), null, null,
+            request, TargetCurveSpec.FromPreset(TargetPreset.Flat), EqAutoTunePolicy.Default, null, null,
             allowShelves: false, cutsOnly: true);
 
         PeqBand kept = Assert.Single(inputs.KeptAllPass);
@@ -100,7 +100,7 @@ public sealed class EqAutoTuneHeadlessTests
         // Cuts only: the auto preamp may use the field's whole range, the net
         // gain is capped at 0 dB.
         EqAutoTuner.Options cuts = EqAutoTuneHeadless.Prepare(
-            request, target, null, null, allowShelves: false, cutsOnly: true).Options;
+            request, target, EqAutoTunePolicy.Default, null, null, allowShelves: false, cutsOnly: true).Options;
         Assert.True(cuts.CutsOnlyMode);
         Assert.Equal(-EqAutoTuneHeadless.PreampRangeDb, cuts.PreampMinDb);
         Assert.Equal(EqAutoTuneHeadless.PreampRangeDb, cuts.PreampMaxDb);
@@ -119,7 +119,7 @@ public sealed class EqAutoTuneHeadlessTests
         // Boosts allowed: the preamp is the user's and stays where the bank had
         // it; the reply's window and shelves are honoured.
         EqAutoTuner.Options boosts = EqAutoTuneHeadless.Prepare(
-            request, target, 100, 3_000, allowShelves: true, cutsOnly: false).Options;
+            request, target, EqAutoTunePolicy.Default, 100, 3_000, allowShelves: true, cutsOnly: false).Options;
         Assert.False(boosts.CutsOnlyMode);
         Assert.Equal(-2.5, boosts.PreampMinDb);
         Assert.Equal(-2.5, boosts.PreampMaxDb);
@@ -130,21 +130,59 @@ public sealed class EqAutoTuneHeadlessTests
     }
 
     [Fact]
-    public void Prepare_ClampsTheWindowLikeTheFromToFields()
+    public void Prepare_TakesTheWindowAsStated_AndOnlyHoldsItToTheFieldsRange()
     {
         VirtualDspEqHandoffRequest request = Build(BuildChannel());
         TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
 
-        // Inverted edges are ordered; edges past the fields' range are clamped.
-        EqHeadlessTuneInputs swapped = EqAutoTuneHeadless.Prepare(
-            request, target, 5_000, 300, allowShelves: false, cutsOnly: true);
-        Assert.Equal(300, swapped.MinHz);
-        Assert.Equal(5_000, swapped.MaxHz);
+        // Inverted edges are NOT reordered: the review confirmed a lower and an
+        // upper edge, and a run that swapped them would fit a window nobody
+        // ticked. The pair reads as unusable instead.
+        EqHeadlessTuneInputs inverted = EqAutoTuneHeadless.Prepare(
+            request, target, EqAutoTunePolicy.Default, 5_000, 300, allowShelves: false, cutsOnly: true);
+        Assert.Equal(5_000, inverted.MinHz);
+        Assert.Equal(300, inverted.MaxHz);
+        Assert.False(EqAutoTuneHeadless.IsUsableWindow(inverted.MinHz, inverted.MaxHz));
+        Assert.True(EqAutoTuneHeadless.IsUsableWindow(300, 5_000));
+        Assert.False(EqAutoTuneHeadless.IsUsableWindow(300, 300.5));
 
         EqHeadlessTuneInputs wide = EqAutoTuneHeadless.Prepare(
-            request, target, 5, 40_000, allowShelves: false, cutsOnly: true);
+            request, target, EqAutoTunePolicy.Default, 5, 40_000, allowShelves: false, cutsOnly: true);
         Assert.Equal(EqAutoTuneHeadless.WindowMinHz, wide.MinHz);
         Assert.Equal(EqAutoTuneHeadless.WindowMaxHz, wide.MaxHz);
+    }
+
+    [Fact]
+    public void Prepare_FitsWithTheWizardsCurrentSettings_UnlessTheReplyStatesItsOwn()
+    {
+        // The wizard's controls as the user left them — Max Filters 8, Max Q 3.5,
+        // cuts down to -10 dB, boosts allowed, shelves on — reach the tuner the
+        // way CreateAutoTuneOptions would hand them; the reply overrides only
+        // what it states.
+        VirtualDspEqHandoffRequest request = Build(BuildChannel());
+        TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
+        var policy = new EqAutoTunePolicy(8, -10, 4, 3.5, CutsOnly: false, AllowShelves: true);
+
+        EqAutoTuner.Options asWizard = EqAutoTuneHeadless.Prepare(
+            request, target, policy, null, null, allowShelves: null, cutsOnly: null).Options;
+        Assert.Equal(8, asWizard.MaxBands);
+        Assert.Equal(-10, asWizard.BandGainMinDb);
+        Assert.Equal(4, asWizard.BandGainMaxDb);
+        Assert.Equal(3.5, asWizard.QMax);
+        Assert.False(asWizard.CutsOnlyMode);
+        Assert.True(asWizard.AllowShelves);
+
+        EqAutoTuner.Options overridden = EqAutoTuneHeadless.Prepare(
+            request, target, policy, null, null, allowShelves: false, cutsOnly: true).Options;
+        Assert.True(overridden.CutsOnlyMode);
+        Assert.False(overridden.AllowShelves);
+        Assert.Equal(8, overridden.MaxBands);
+        Assert.Equal(3.5, overridden.QMax);
+
+        // The opening values, for a host with no wizard to ask.
+        Assert.Equal(EqualizationCurve.MaxBandCount, EqAutoTunePolicy.Default.MaxBands);
+        Assert.True(EqAutoTunePolicy.Default.CutsOnly);
+        Assert.False(EqAutoTunePolicy.Default.AllowShelves);
     }
 
     [Fact]
@@ -154,7 +192,7 @@ public sealed class EqAutoTuneHeadlessTests
         channel.Settings.PeqBands = [new PeqBand(400, 0.7, 0, PeqBandType.AllPassSecondOrder)];
         VirtualDspEqHandoffRequest request = Build(channel);
         EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
-            request, TargetCurveSpec.FromPreset(TargetPreset.Flat), null, null,
+            request, TargetCurveSpec.FromPreset(TargetPreset.Flat), EqAutoTunePolicy.Default, null, null,
             allowShelves: false, cutsOnly: true);
 
         EqualizationCurve fitted = EqAutoTuneHeadless.Fit(inputs);

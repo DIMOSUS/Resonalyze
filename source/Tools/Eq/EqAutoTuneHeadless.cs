@@ -20,15 +20,40 @@ internal sealed record EqHeadlessTuneInputs(
     bool CutsOnly);
 
 /// <summary>
+/// The Auto Tune settings the EQ Wizard holds at the moment — Max Filters, the
+/// band gain range, Max Q, Cuts only, Shelves — as CreateAutoTuneOptions reads
+/// them off its controls. An import's fit takes the wizard's CURRENT policy, so
+/// the button and the import produce the same bank for the same project;
+/// <see cref="Default"/> is what the wizard opens with, for a host that has no
+/// wizard to ask.
+/// </summary>
+internal sealed record EqAutoTunePolicy(
+    int MaxBands,
+    double BandGainMinDb,
+    double BandGainMaxDb,
+    double MaxQ,
+    bool CutsOnly,
+    bool AllowShelves)
+{
+    public static EqAutoTunePolicy Default { get; } = new(
+        EqualizationCurve.MaxBandCount,
+        EqAutoTuneHeadless.BandGainMinDb,
+        EqAutoTuneHeadless.BandGainMaxDb,
+        EqAutoTuneHeadless.MaxQ,
+        CutsOnly: true,
+        AllowShelves: false);
+}
+
+/// <summary>
 /// Auto Tune without the wizard, for an AI import that asked for it. The
 /// curves and the options are the wizard's own constructions — the same gated
 /// preview or spatial-average curve <c>ComputeSourceCurve</c> draws for a
 /// handoff, the same target on the source's frequencies, the same option
 /// mapping <c>CreateAutoTuneOptions</c> makes — held here where a test can pin
 /// the two against each other, because "almost the same curve" is the failure
-/// that only shows on a live session. The wizard's opening values stand in for
-/// the fields a request leaves out; all-pass bands are always kept, since a
-/// headless run cannot ask.
+/// that only shows on a live session. The wizard's current Auto Tune settings
+/// stand in for the fields a request leaves out; all-pass bands are always
+/// kept, since a headless run cannot ask.
 /// </summary>
 internal static class EqAutoTuneHeadless
 {
@@ -126,18 +151,25 @@ internal static class EqAutoTuneHeadless
     /// current bank already applied (the fit tunes around what they do, as the
     /// wizard's "keep them" does), the target on its frequencies, and the
     /// options — the request's window unless the reply narrows it, the reply's
-    /// shelves and cuts-only choices, the wizard's opening values for the rest.
+    /// shelves and cuts-only choices where it states them, the wizard's current
+    /// policy for the rest. The window is taken as stated: the review has already
+    /// held it to the wizard's fields, and a headless run must not reinterpret
+    /// what the user confirmed.
     /// </summary>
     public static EqHeadlessTuneInputs Prepare(
         VirtualDspEqHandoffRequest request,
         TargetCurveSpec targetSpec,
+        EqAutoTunePolicy policy,
         double? minHz,
         double? maxHz,
-        bool allowShelves,
-        bool cutsOnly)
+        bool? allowShelves,
+        bool? cutsOnly)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(targetSpec);
+        ArgumentNullException.ThrowIfNull(policy);
+        bool boostsAllowed = !(cutsOnly ?? policy.CutsOnly);
+        bool shelves = allowShelves ?? policy.AllowShelves;
 
         EqWizardCurveSource source = request.Source;
         List<PeqBand> allPass = request.BankSeed.Bands
@@ -163,7 +195,7 @@ internal static class EqAutoTuneHeadless
 
         // Max Filters is a budget for the BANK: the kept bands come off it.
         int bandLimit = Math.Clamp(
-            EqualizationCurve.MaxBandCount - allPass.Count, 1, EqualizationCurve.MaxBandCount);
+            policy.MaxBands - allPass.Count, 1, EqualizationCurve.MaxBandCount);
         // The preamp policy the wizard applies (CreateAutoTuneOptions): under Cuts
         // only the auto preamp may move within the field's range and the 0 dB
         // ceiling keeps the profile clip-free; otherwise the preamp is the user's
@@ -174,21 +206,21 @@ internal static class EqAutoTuneHeadless
             MaxBands = bandLimit,
             MinFrequencyHz = windowMinHz,
             MaxFrequencyHz = windowMaxHz,
-            PreampMinDb = cutsOnly ? -PreampRangeDb : seedPreamp,
-            PreampMaxDb = cutsOnly ? PreampRangeDb : seedPreamp,
-            BandGainMinDb = BandGainMinDb,
-            BandGainMaxDb = BandGainMaxDb,
-            TotalGainMaxDb = cutsOnly ? 0 : double.PositiveInfinity,
+            PreampMinDb = boostsAllowed ? seedPreamp : -PreampRangeDb,
+            PreampMaxDb = boostsAllowed ? seedPreamp : PreampRangeDb,
+            BandGainMinDb = policy.BandGainMinDb,
+            BandGainMaxDb = policy.BandGainMaxDb,
+            TotalGainMaxDb = boostsAllowed ? double.PositiveInfinity : 0,
             SampleRateHz = ProcessorRate(source),
-            CutsOnlyMode = cutsOnly,
+            CutsOnlyMode = !boostsAllowed,
             QMin = PeqSlotControl.MinimumQ,
-            QMax = MaxQ,
-            AllowShelves = allowShelves
+            QMax = policy.MaxQ,
+            AllowShelves = shelves
         };
 
         return new EqHeadlessTuneInputs(
             fitSource, target, options, source.Coherence, allPass,
-            windowMinHz, windowMaxHz, cutsOnly);
+            windowMinHz, windowMaxHz, !boostsAllowed);
     }
 
     /// <summary>The fit, with the kept all-pass bands put back in front of it.</summary>
@@ -231,14 +263,16 @@ internal static class EqAutoTuneHeadless
         return valid > 0 ? Math.Sqrt(sumSquares / valid) : null;
     }
 
-    // The From/To fields' own clamping (SetAutoTuneWindow): ordered, inside
-    // 20 Hz..20 kHz, at least the gap apart.
-    private static (double MinHz, double MaxHz) Window(double lowHz, double highHz)
-    {
-        double from = Math.Clamp(Math.Min(lowHz, highHz), WindowMinHz, WindowMaxHz - MinWindowGapHz);
-        double to = Math.Clamp(Math.Max(lowHz, highHz), from + MinWindowGapHz, WindowMaxHz);
-        return (from, to);
-    }
+    // The From/To fields' range, and nothing else: no reordering, no widening
+    // — a lower edge stated above the upper is a window the review would have
+    // refused, and one that slipped through is refused by the run, not read the
+    // other way round.
+    private static (double MinHz, double MaxHz) Window(double lowHz, double highHz) =>
+        (Math.Clamp(lowHz, WindowMinHz, WindowMaxHz), Math.Clamp(highHz, WindowMinHz, WindowMaxHz));
+
+    /// <summary>Whether a window is one the From/To fields could hold: ordered, the gap apart.</summary>
+    public static bool IsUsableWindow(double minHz, double maxHz) =>
+        minHz + MinWindowGapHz <= maxHz;
 
     // A handoff carries the project's processor, and the bank is realized at
     // its rate (EqProcessorSampleRate).

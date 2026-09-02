@@ -27,6 +27,16 @@ public partial class VirtualCrossoverPanel
 
     private ContextMenuStrip? agentMenu;
 
+    /// <summary>
+    /// The EQ Wizard's Auto Tune settings at the moment an import fits a bank
+    /// without it — wired by the host so the import produces the bank the
+    /// wizard's button would; the wizard's opening values when nothing is wired.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Func<EqAutoTunePolicy>? AutoTunePolicyProvider { get; set; }
+
     /// <summary>Records the package this session just copied, for the review's correlation warning.</summary>
     internal void RememberAgentPackage(string packageId) => lastAgentPackageId = packageId;
 
@@ -250,6 +260,12 @@ public partial class VirtualCrossoverPanel
         IReadOnlyList<AgentOperationVerdict> toApply, List<string> summary)
     {
         bool ran = false;
+        // One target level for every fit of this import, decided before the first
+        // runs: the level the reply states (the review made the stated ones
+        // agree), else the project's as it stands now. Read per operation, a row
+        // that states none would fit at the old datum and the next row move it.
+        double importTargetLevelDb = ImportTargetLevelDb(toApply, (double)numericTargetLevel.Value);
+        EqAutoTunePolicy policy = AutoTunePolicyProvider?.Invoke() ?? EqAutoTunePolicy.Default;
         // The verdicts, not the operations alone: a channel operation's target is
         // the verdict's channel snapshot, held by its settings object, which is
         // what still names the channel after the crossover wizard has reordered
@@ -283,7 +299,8 @@ public partial class VirtualCrossoverPanel
                     break;
 
                 case AutoTunePeqOperation tune:
-                    ran |= await RunAgentAutoTuneAsync(tune, verdict.Channel!, summary);
+                    ran |= await RunAgentAutoTuneAsync(
+                        tune, verdict.Channel!, importTargetLevelDb, policy, summary);
                     break;
 
                 // Every operation the protocol names is executed above; one this
@@ -436,8 +453,26 @@ public partial class VirtualCrossoverPanel
     // channel that moved while the fit ran is refused rather than written.
     // The review was the gate; the target-level check the wizard would have
     // asked about is a refusal here, with the phrase in the summary.
+    /// <summary>
+    /// The target level every Auto-tune of one import fits to: the first level a
+    /// ticked request states, else the project's own. UI-free so it can be pinned.
+    /// </summary>
+    internal static double ImportTargetLevelDb(
+        IReadOnlyList<AgentOperationVerdict> toApply, double currentTargetLevelDb) =>
+        toApply
+            .Where(verdict => verdict.Status != AgentVerdictStatus.Rejected)
+            .Select(verdict => verdict.Operation)
+            .OfType<AutoTunePeqOperation>()
+            .Select(tune => tune.TargetLevelDb)
+            .FirstOrDefault(level => level != null)
+            ?? currentTargetLevelDb;
+
     private async Task<bool> RunAgentAutoTuneAsync(
-        AutoTunePeqOperation operation, AgentChannelSnapshot target, List<string> summary)
+        AutoTunePeqOperation operation,
+        AgentChannelSnapshot target,
+        double targetLevelDb,
+        EqAutoTunePolicy policy,
+        List<string> summary)
     {
         string label = $"Auto-tune {operation.ChannelId}";
         // By the settings object the review judged, not by the id: the crossover
@@ -486,7 +521,7 @@ public partial class VirtualCrossoverPanel
         // itself must leave nothing behind, since the import's undo is dropped
         // when nothing ran.
         VirtualDspEqHandoffRequest? request = BuildPeqHandoffRequest(
-            channel, withChain: true, average, operation.TargetLevelDb);
+            channel, withChain: true, average, targetLevelDb);
         if (request == null)
         {
             summary.Add($"{label}: skipped (no measurement to fit against).");
@@ -496,15 +531,24 @@ public partial class VirtualCrossoverPanel
         VirtualCrossoverTargetSettings targetSettings =
             project.Target ?? new VirtualCrossoverTargetSettings();
         TargetCurveSpec spec = (targetCurve ?? targetSettings.ToCurve()).Normalized().Spec;
-        bool cutsOnly = operation.CutsOnly ?? true;
         EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
-            request, spec, operation.MinHz, operation.MaxHz,
-            operation.AllowShelves ?? false, cutsOnly);
+            request, spec, policy, operation.MinHz, operation.MaxHz,
+            operation.AllowShelves, operation.CutsOnly);
+        bool cutsOnly = inputs.CutsOnly;
         // The wizard beeps at a source it cannot draw; the tuner must not be
         // handed one.
         if (inputs.Source.Count < 2)
         {
             summary.Add($"{label}: skipped (the measurement gives no usable curve).");
+            return false;
+        }
+        // The review held the window to the wizard's fields; a snapshot the
+        // crossover moved under can still leave a stated edge past the other.
+        if (!EqAutoTuneHeadless.IsUsableWindow(inputs.MinHz, inputs.MaxHz))
+        {
+            summary.Add(
+                $"{label}: skipped (the window {inputs.MinHz:0}–{inputs.MaxHz:0} Hz " +
+                "has its lower edge above its upper).");
             return false;
         }
 

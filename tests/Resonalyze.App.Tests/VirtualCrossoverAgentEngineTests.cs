@@ -154,6 +154,25 @@ public sealed class VirtualCrossoverAgentEngineTests
     }
 
     [Fact]
+    public void ImportTargetLevel_IsTheFirstStatedOne_ElseTheProjectsOwn_ForEveryFit()
+    {
+        // Decided once for the whole import: a row that states no level must not
+        // fit at the old datum while the next row moves it.
+        AgentOperationVerdict stated = Row(
+            new AutoTunePeqOperation("op-1", "B:left", "", -6, null, null, null, null, null), "Auto-tune");
+        AgentOperationVerdict omitted = Row(
+            new AutoTunePeqOperation("op-2", "A:left", "", null, null, null, null, null, null), "Auto-tune");
+        AgentOperationVerdict rejected = Row(
+            new AutoTunePeqOperation("op-3", "C:mono", "", -9, null, null, null, null, null), "Auto-tune")
+            with { Status = AgentVerdictStatus.Rejected };
+
+        Assert.Equal(-6, VirtualCrossoverPanel.ImportTargetLevelDb([omitted, stated], -4));
+        Assert.Equal(-4, VirtualCrossoverPanel.ImportTargetLevelDb([omitted], -4));
+        Assert.Equal(-4, VirtualCrossoverPanel.ImportTargetLevelDb([rejected, omitted], -4));
+        Assert.Equal(-4, VirtualCrossoverPanel.ImportTargetLevelDb([], -4));
+    }
+
+    [Fact]
     public void AutoDelay_RunHeadless_IsRefusedWithThePhraseTheSummaryQuotes()
     {
         StaTest.Run(() =>

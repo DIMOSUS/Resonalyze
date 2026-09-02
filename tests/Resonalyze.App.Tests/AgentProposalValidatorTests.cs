@@ -569,7 +569,7 @@ public sealed class AgentProposalValidatorTests
     [InlineData("D:mono", null, null, null, null, "has no measurement")]
     [InlineData("B:left", 90.0, null, null, null, "The target level must be between -120 and 60 dB")]
     [InlineData("B:left", null, 8000.0, 100.0, null, "lower edge must sit below its upper edge")]
-    [InlineData("B:left", null, 100.0, 60_000.0, null, "upper edge must sit above 0 Hz and below")]
+    [InlineData("B:left", null, 100.0, 60_000.0, null, "upper edge must sit between 20 Hz and 20000 Hz")]
     [InlineData("B:left", null, null, null, "hybrid", "Unknown auto-tune source 'hybrid'")]
     [InlineData("B:left", null, null, null, "spatialAverage", "carries no spatial average")]
     public void Review_HoldsAnAutoTuneRequestToTheChannelAndTheWizardsFields(
@@ -701,6 +701,38 @@ public sealed class AgentProposalValidatorTests
 
         Assert.True(verdict.Applicable);
         Assert.Equal("0 bands, preamp 0.0 dB", verdict.Proposed);
+    }
+
+    [Fact]
+    public void Review_HoldsTheAutoTuneWindowToTheWizardsFields_AsTheRunWillUseIt()
+    {
+        // B:left plays 250..2800 Hz. A lower edge stated above the passband's
+        // upper would be a window the run cannot fit; an edge past the From/To
+        // fields' 20 Hz..20 kHz is one the wizard could never hold; a window
+        // inside both is fine, with either edge left to the passband.
+        AgentProposal proposal = Proposal(
+            new AutoTunePeqOperation("op-1", "B:left", "", null, 3_000, null, null, null, null),
+            new AutoTunePeqOperation("op-2", "A:left", "", null, 5, null, null, null, null),
+            new AutoTunePeqOperation("op-3", "C:mono", "", null, null, 40_000, null, null, null),
+            new AutoTunePeqOperation("op-4", "B:right", "", null, 400, null, null, null, null));
+
+        AgentProposalReview review = AgentProposalValidator.Review(
+            proposal, Session() with { ActiveSideRight = false });
+
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[0].Status);
+        Assert.Contains("would be 3000 Hz to 2800 Hz", review.Verdicts[0].Message);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.Contains("between 20 Hz and 20000 Hz", review.Verdicts[1].Message);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[2].Status);
+        Assert.Contains("between 20 Hz and 20000 Hz", review.Verdicts[2].Message);
+        // The other side is refused before its window is read.
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[3].Status);
+        Assert.Contains("side not on screen", review.Verdicts[3].Message);
+
+        AgentProposalReview inside = AgentProposalValidator.Review(
+            Proposal(new AutoTunePeqOperation("op-1", "B:left", "", null, 400, null, null, null, null)),
+            Session());
+        Assert.True(inside.Verdicts[0].Applicable);
     }
 
     [Fact]

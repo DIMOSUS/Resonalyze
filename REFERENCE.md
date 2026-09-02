@@ -2847,8 +2847,9 @@ this: the clipboard is the only transport, and you are the one who pastes.
   — the button's own checks, search and commit, with the report it would have
   shown returned in the import's summary and the alignment log; Auto-tune runs
   without the EQ Wizard, on the curve the wizard would have opened on for that
-  channel and with the wizard's opening values for whatever the reply leaves
-  out, keeps the bank's all-pass bands, lands the fit the way the wizard's
+  channel and with the wizard's own Auto Tune settings as they stand (Max
+  Filters, Gain min/max, Max Q, Cuts only, Shelves) for whatever the reply
+  leaves out, keeps the bank's all-pass bands, lands the fit the way the wizard's
   **Return** lands it, and skips itself — with the reason — where the wizard
   would have asked about the [target level](#eq-wizard). A change the assistant
   reasoned about a value that has since moved is rejected as such; so is one

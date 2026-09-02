@@ -1003,6 +1003,22 @@ public partial class EqWizardPanel : UserControl
     // Mirrors the control limits so the fit only proposes values the controls accept.
     // Bands the caller is holding back (all-pass ones the user chose to keep) come
     // off the fit's budget, so the merged bank still fits the slot count.
+    /// <summary>
+    /// The Auto Tune settings as they stand on the controls — what
+    /// <see cref="CreateAutoTuneOptions"/> reads — for a fit run elsewhere (an
+    /// AI import) that has to produce the bank this button would.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal EqAutoTunePolicy CurrentAutoTunePolicy => new(
+        SelectedBandLimit,
+        (double)numericGainMin.Value,
+        (double)numericGainMax.Value,
+        (double)numericQMax.Value,
+        checkBoxCutsOnly.Checked,
+        checkBoxShelves.Checked);
+
     private EqAutoTuner.Options CreateAutoTuneOptions(int reservedBands)
     {
         // Max Filters is a budget for the BANK, not for the fit alone: a user who set

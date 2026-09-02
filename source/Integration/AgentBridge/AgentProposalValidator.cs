@@ -596,9 +596,17 @@ internal static class AgentProposalValidator
             return problem;
         }
 
-        return tune.MinHz is { } minHz && tune.MaxHz is { } maxHz && minHz >= maxHz
-            ? "The auto-tune window's lower edge must sit below its upper edge."
-            : null;
+        // The window the run will use, with the wizard's own answer for an edge
+        // the reply leaves out (the channel's passband, else the field's end) —
+        // judged as a whole, since a stated lower edge above the passband's
+        // upper is as inverted as two stated edges the wrong way round.
+        (double MinHz, double MaxHz)? passband = VirtualDspEqHandoff.PassbandFor(channel.Settings);
+        double minHz = tune.MinHz ?? passband?.MinHz ?? EqAutoTuneHeadless.WindowMinHz;
+        double maxHz = tune.MaxHz ?? passband?.MaxHz ?? EqAutoTuneHeadless.WindowMaxHz;
+        return EqAutoTuneHeadless.IsUsableWindow(minHz, maxHz)
+            ? null
+            : $"The auto-tune window would be {Hz(minHz)} to {Hz(maxHz)}: its lower edge " +
+                "must sit below its upper edge.";
     }
 
     private static string? CheckSpatialAverage(
@@ -645,12 +653,20 @@ internal static class AgentProposalValidator
             : $"{name} must be a multiple of {Fixed(step, decimals)} {unit}.";
     }
 
+    // The From/To fields' own range, 20 Hz to 20 kHz, and the processor's Nyquist
+    // where that is lower: what the review admits is what the run uses.
     private static string? Edge(double? value, double nyquistHz, string name) =>
         value is not { } frequency ||
-        (double.IsFinite(frequency) && frequency > 0 && frequency < nyquistHz)
+        (double.IsFinite(frequency) &&
+            frequency >= EqAutoTuneHeadless.WindowMinHz &&
+            frequency <= EqAutoTuneHeadless.WindowMaxHz &&
+            frequency < nyquistHz)
             ? null
-            : $"The auto-tune window's {name} edge must sit above 0 Hz and below the " +
-                $"processor's Nyquist of {Hz(nyquistHz)}.";
+            : $"The auto-tune window's {name} edge must sit between " +
+                $"{Hz(EqAutoTuneHeadless.WindowMinHz)} and {Hz(EqAutoTuneHeadless.WindowMaxHz)}" +
+                (nyquistHz < EqAutoTuneHeadless.WindowMaxHz
+                    ? $", below the processor's Nyquist of {Hz(nyquistHz)}."
+                    : ".");
 
     // Where the engine would start from, in the words its own dialog uses.
     private static string DescribeEngineStart(

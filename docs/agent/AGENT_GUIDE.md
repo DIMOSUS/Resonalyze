@@ -268,12 +268,16 @@ channels, no bypassed participant, the gate in place, a crossover somewhere —
 skip it with the reason when they fail); `autoTunePeq` runs at once as well,
 on the curve the wizard would have opened on for that channel (the spatial
 average while the hybrid view draws it — ask for `useSpatialAverage` first
-where it is not — or the `source` you name), with the wizard's own opening
-values for what you leave out: cuts only, no shelves, Q no narrower than 6,
-the channel's passband as the window. State `targetLevelDb` only when you
-mean to move the project's target level — it is one datum for every channel,
-and the run skips itself when it sits 3 dB or more above the curve or 10 dB
-or more below. `runAutoCrossover` opens the wizard for the user to confirm
+where it is not — or the `source` you name), with the EQ Wizard's Auto Tune
+settings as the user left them (Max Filters, gain range, Max Q, Cuts only,
+Shelves) for what you leave out, and the channel's passband as the window;
+a stated edge must lie within 20 Hz–20 kHz and keep the window ordered
+against the passband edge you leave in place. State `targetLevelDb` only when
+you mean to move the project's target level — it is one datum for every
+channel, so every request that states one must state the same value, and
+one import fits every channel to one level; the run skips itself when it sits
+3 dB or more above the curve or 10 dB or more below. `runAutoCrossover`
+opens the wizard for the user to confirm
 the driver types. Either way, ask for a new
 package afterwards to read the result. What `limits.operations` does NOT name,
 say in `advice` as before — that build cannot run it, and asking anyway costs

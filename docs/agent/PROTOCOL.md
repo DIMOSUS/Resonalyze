@@ -88,7 +88,8 @@ the catalog does not know it.
               "Bessel": [6,12,18,24,36,48], "Chebyshev": [6,12,18,24,30,36,42,48] },
   "chebyshevRippleDb": [0, 3],
   "operations": ["setGainDb", "setDelayMs", "setPolarity", "setCrossover",
-                 "replacePeqBank", "useSpatialAverage", "runAutoCrossover"] }
+                 "replacePeqBank", "useSpatialAverage", "runAutoCrossover",
+                 "runAutoDelay", "autoTunePeq"] }
 ```
 
 These are Virtual DSP's own limits, not the device's. A reply outside them is
@@ -396,9 +397,10 @@ report, the text the dialog would have shown, comes back in the import's
 summary and the alignment log. `autoTunePeq` runs without the EQ Wizard too:
 it fits the curve the wizard would have opened on for that channel — the
 spatial average while the hybrid view draws it, the point measurement
-otherwise, or whichever `source` names — with the wizard's opening values for
-what the reply leaves out (bells no narrower than Q 6, band gains −15…+6 dB,
-cuts only, no shelves, the channel's passband as the window); all-pass bands
+otherwise, or whichever `source` names — with the EQ Wizard's Auto Tune
+settings as they stand (Max Filters, Gain min/max, Max Q, Cuts only, Shelves —
+the same bank the wizard's button would fit for the same project) for what the
+reply leaves out, and the channel's passband as the window; all-pass bands
 in the bank are kept and the fit tunes around them; a `targetLevelDb` moves the
 project's target level, as the wizard's Return does — it is one datum for the
 whole project, so every request in a reply that states one must state the
@@ -423,7 +425,7 @@ wants only the scene offset changed states only that.
 | --- | --- | --- |
 | `runAutoDelay` | `sceneOffsetMs?`, `rightHandDrive?`, `adjustGains?`, `nearSideCutDb?`, `rearFillOffsetMs?` | the dialog's own fields: scene offset 0–5 ms in steps of 0.01, near-side cut 0–6 dB in steps of 0.1, rear fill offset 0–30 ms in steps of 0.1. `nearSideCutDb` is a magnitude: the LHD/RHD toggle owns the sign. Stereo or single-sided is the panel's decision, as it is for the button |
 | `runAutoCrossover` | none | the wizard has no inputs: the families, the corner window and the chain order are chosen in its own dialog |
-| `autoTunePeq` | `channelId`, `targetLevelDb?`, `minHz?`, `maxHz?`, `allowShelves?`, `cutsOnly?`, `source?` | the channel exists and has a measurement; target level −120…60 dB in whole dB; each stated edge above 0 Hz and below the processor's Nyquist, the lower below the upper; `source` is `point` or `spatialAverage`, and `spatialAverage` needs the channel to carry one |
+| `autoTunePeq` | `channelId`, `targetLevelDb?`, `minHz?`, `maxHz?`, `allowShelves?`, `cutsOnly?`, `source?` | the channel exists, has a measurement and is on the side on screen; target level −120…60 dB in whole dB, the same in every request that states one; each stated edge within the wizard's From/To fields (20 Hz–20 kHz) and below the processor's Nyquist, and the window as the run will use it — a stated edge with the channel's passband edge for the one left out — ordered; `source` is `point` or `spatialAverage`, and `spatialAverage` needs the channel to carry one |
 | `useSpatialAverage` | `mode`, `hybrid` | `mode` is `MovingMic` or `MicArray` and at least one channel carries that family (`channels[].source.spatialAverageCaptures`); `hybrid` must be `true`; a mode already in force with Hybrid already ticked is refused as "no change" |
 
 ```json
@@ -479,8 +481,9 @@ showed (a crossover moved without the bank that went with it).
 4. On *Apply selected*, judges the ticked rows once more against the settings as
    they are at that moment, then writes the settings rows as one set. A failure
    there writes nothing.
-5. Runs the ticked engine requests, in the fixed order above — each engine
-   through its own dialog, the spatial average straight onto the panel — and
+5. Runs the ticked engine requests, in the fixed order above — the spatial
+   average straight onto the panel, Auto crossover through its wizard, Auto
+   delay and Auto-tune without their dialogs — and
    ends with one summary of what was applied and what was skipped. Undo is armed
    before the first of these writes, so an import that stops part-way is still
    undone in one step.

@@ -313,7 +313,7 @@ out where the reading could not be made.
 
 | `diagnostic` | What the series holds |
 | --- | --- |
-| `excessGroupDelay` | Each measured channel's excess group delay in ms: its group delay less the minimum-phase part the magnitude dictates (which a minimum-phase PEQ straightens along with the magnitude), read off the raw impulse response through the project's phase gate at the channel's own arrival, with the display smoothing. What remains is arrivals and reflections — the part of a junction's phase mismatch that no PEQ can touch. |
+| `excessGroupDelay` | Each measured channel's excess group delay in ms: its group delay less the minimum-phase part the magnitude dictates (which a minimum-phase PEQ straightens along with the magnitude), read off the raw impulse response through the project's phase gate at the channel's own arrival, at a fixed 1/6-octave smoothing (the package's psychoacoustic setting, which the group-delay computation reads as a plain 1/6 octave) whatever the display shows. What remains is arrivals and reflections — the part of a junction's phase mismatch that no PEQ can touch. |
 
 ## 2. The reply
 

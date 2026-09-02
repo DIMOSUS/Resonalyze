@@ -7397,6 +7397,10 @@ public partial class VirtualCrossoverPanel : UserControl
                 // lengths and the analysis modes are project-wide, so both sides keep
                 // reading the phase at the same resolution and by the same method.
                 VirtualCrossoverPhaseGateSettings gate = ActiveGate;
+                // The gate is what a copied package's phase read-outs — and a
+                // diagnostic copied beside it — were computed through; changed,
+                // the package no longer describes what a new copy would say.
+                ForgetAgentPackage();
                 // Auto pressed = unpinned: store null so this side's gate
                 // keeps following the earliest estimated channel IR start.
                 gate.OffsetMs = dialog.AutoOffset ? null : dialog.GateOffsetMs;

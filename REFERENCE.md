@@ -2834,11 +2834,11 @@ this: the clipboard is the only transport, and you are the one who pastes.
   the whole PEQ bank. It may also **ask for an engine to be run**: **Auto
   crossover**, or the spatial average — the capture family and the **Hybrid**
   tick together, which is how an assistant that has noticed unused averages puts
-  them to work in one tick. (Auto delay and the EQ Wizard's Auto-tune are part of
-  the protocol and are read and reviewed, but this build refuses them as not
-  available; the package tells the assistant which operations it can run.)
-  Nothing else in a session can be reached from a reply, and an unknown request
-  is listed as rejected.
+  them to work in one tick — and **Auto delay** and the EQ Wizard's
+  **Auto-tune**, which run without their dialogs as described below. The
+  package tells the assistant which operations the build can run. Nothing else
+  in a session can be reached from a reply, and an unknown request is listed as
+  rejected.
 
   Every proposed change is shown against the value the channel holds *now*, with
   the reason the assistant gave; an engine request is shown against the settings
@@ -2874,7 +2874,8 @@ this: the clipboard is the only transport, and you are the one who pastes.
   rows together and unticking one can leave a state it never showed, which then
   asks before applying — writes them as one set, then runs the engine requests
   in a fixed order (the spatial average first, since it decides which curves the
-  rest are read on, then Auto crossover, then Auto delay) and closes with one
+  rest are read on, then Auto crossover, then Auto delay, then Auto-tune, which
+  fits to everything the others left behind) and closes with one
   summary of what was applied and what was skipped. Cancelling the wizard, or
   a check Auto delay's button would have refused on (fewer than two measured
   channels, a bypassed participant, a misplaced gate, no crossover anywhere),

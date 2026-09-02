@@ -558,6 +558,11 @@ public partial class VirtualCrossoverPanel : UserControl
         VirtualCrossoverSessionCalibration? previousSession = sessionCalibration;
         project = newProject;
         relinkDirectory = null;
+        // A package copied from the previous project vouches for nothing here: a
+        // reply naming it gets the review's "different package" warning, and the
+        // previous import's undo would restore into settings nobody displays.
+        ForgetAgentPackage();
+        agentUndo = null;
         // A new project on the same blocks. The channel OBJECTS are reused when the
         // count matches (see the rebind below), so nothing about a channel reference
         // says which session it now describes — this counter does, and an EQ Wizard
@@ -1306,6 +1311,10 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </remarks>
     private void ApplyChannelOrder(IReadOnlyList<int> order)
     {
+        // The block letters are the channel ids a package used; after a reorder
+        // they name other channels, so the package is forgotten and a reply
+        // naming it gets the review's warning.
+        ForgetAgentPackage();
         List<VirtualCrossoverChannel> reordered =
             order.Select(index => channels[index]).ToList();
         channels.Clear();
@@ -1467,6 +1476,8 @@ public partial class VirtualCrossoverPanel : UserControl
     private void SetChannelCount(int count)
     {
         count = Math.Clamp(count, MinChannelCount, MaxChannelCount);
+        // A block added or removed: the composition a copied package described.
+        ForgetAgentPackage();
 
         while (channels.Count > count)
         {
@@ -1603,6 +1614,9 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (wasMono != monoNow)
         {
+            // A:left and A:right become A:mono, or the other way round: the ids a
+            // copied package used no longer name these channels.
+            ForgetAgentPackage();
             if (monoNow)
             {
                 // The right slot becomes unreachable behind the mono routing;
@@ -2160,6 +2174,9 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void ClearSourceCore(VirtualCrossoverChannel channel, bool rightSide)
     {
+        // The package described a measurement under this channel's id that is
+        // about to be gone.
+        ForgetAgentPackage();
         channel.SideState(rightSide).Clear();
         VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
         settings.DisplayName = string.Empty;
@@ -2182,6 +2199,10 @@ public partial class VirtualCrossoverPanel : UserControl
     private async Task ResolveSourceAsync(
         VirtualCrossoverChannel channel, bool rightSide, bool showErrors)
     {
+        // A measurement resolved here replaces what a copied package described
+        // under this channel's id; the package is forgotten and a reply naming it
+        // gets the review's warning. (A project load has forgotten it already.)
+        ForgetAgentPackage();
         VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
         // The side's OTHER persisted reference, resolved on the same pass and ahead

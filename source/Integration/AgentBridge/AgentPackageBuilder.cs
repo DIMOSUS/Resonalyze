@@ -153,6 +153,7 @@ internal static class AgentPackageBuilder
         return new AgentPackage(
             AgentProtocol.PackageKind,
             AgentProtocol.Version,
+            AgentProtocol.GuideVersion,
             packageId.ToString("D"),
             createdAtUtc.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture),
             new AgentPackageApplication("Resonalyze", inputs.ApplicationVersion),

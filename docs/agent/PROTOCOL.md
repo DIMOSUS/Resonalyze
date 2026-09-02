@@ -47,6 +47,7 @@ to the 100 KB ceiling, and beyond that nothing is copied:
 | --- | --- |
 | `kind` | `"resonalyze.agent-package"` |
 | `protocolVersion` | `1` |
+| `guideVersion` | The version of [AGENT_GUIDE.md](AGENT_GUIDE.md) this build was written against (its first line). The guide at the URL may be newer; read it, and know which methodology the package's author expected. |
 | `packageId` | A new GUID per copy. Echo it in the reply; a mismatch is a warning, not a refusal. |
 | `createdAtUtc` | ISO 8601, UTC. |
 | `application` | `{ name, version }` |
@@ -284,16 +285,20 @@ arrival minus the front's), `levelDb` (the zone's level minus the front's),
 
 ## 2. The reply
 
-The assistant may write anything before and after. Resonalyze reads only the
-JSON between the markers, and there must be **exactly one** such block:
+The assistant may write anything before and after. Resonalyze reads the one
+JSON object in the reply whose `kind` is `resonalyze.agent-proposal` — the
+object identifies itself, and there must be **exactly one** such object:
 
-```text
-BEGIN_RESONALYZE_AGENT_PROPOSAL_V1
-{ … }
-END_RESONALYZE_AGENT_PROPOSAL_V1
+```json
+{ "kind": "resonalyze.agent-proposal", "protocolVersion": 1, … }
 ```
 
-A Markdown fence around the JSON is tolerated. Everything else is strict: no
+A Markdown fence around the JSON is expected and tolerated; braces inside
+strings do not confuse the reader. The earlier envelope — the object between a
+`BEGIN_RESONALYZE_AGENT_PROPOSAL_V1` and an `END_RESONALYZE_AGENT_PROPOSAL_V1`
+line — is still read when a reply carries it, but it is no longer asked for:
+a chat that sets such markers outside the block it offers to copy leaves the
+user pasting a block the importer could not find. Everything else is strict: no
 comments, no trailing commas, no `NaN`/`Infinity`, property names exactly as
 written here (case matters), no properties the protocol does not name (one
 open door: an `extensions` object, whose content is ignored).

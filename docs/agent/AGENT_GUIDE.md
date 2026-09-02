@@ -14,7 +14,7 @@ Rules that apply even without the guide:
 2. Ask for what the notes do not say: driver models and locations, amplifier power, DSP model, listening goals. Ask in small groups.
 3. Prefer Resonalyze's own engines: recommend running Auto delay / Auto crossover / EQ Wizard Auto-tune with stated settings instead of inventing delays and PEQ banks by hand.
 4. Never EQ a cancellation; never claim a crossover is driver-safe from Fs or diameter alone; cite sources for hardware facts.
-5. If and only if you have concrete, justified changes, end with ONE block between BEGIN_RESONALYZE_AGENT_PROPOSAL_V1 and END_RESONALYZE_AGENT_PROPOSAL_V1 following the protocol; copy channel ids and current values from this package exactly.
+5. If and only if you have concrete, justified changes, end with ONE JSON object with "kind": "resonalyze.agent-proposal" following the protocol, in a fenced code block; copy channel ids and current values from this package exactly.
 
 ## 1. Your role
 
@@ -328,10 +328,11 @@ When a driver or a processor matters to your advice:
 
 Write your analysis in prose. Then, **only if** you have concrete, justified
 changes for the five editable parameters (gain, delay, polarity, crossover,
-PEQ bank of one channel) or an engine to request, end with exactly one block
-between `BEGIN_RESONALYZE_AGENT_PROPOSAL_V1` and
-`END_RESONALYZE_AGENT_PROPOSAL_V1` as [PROTOCOL.md](PROTOCOL.md) §2 describes.
-In it:
+PEQ bank of one channel) or an engine to request, end with exactly one JSON
+object whose `"kind"` is `"resonalyze.agent-proposal"`, in a fenced code
+block, as [PROTOCOL.md](PROTOCOL.md) §2 describes — the object identifies
+itself, so nothing outside the block is needed (and text outside the block is
+what a chat leaves behind when the user copies the block alone). In it:
 
 - Copy `packageId`, every `channelId` and every expected current value from
   the package exactly. A changed current value refuses the operation.

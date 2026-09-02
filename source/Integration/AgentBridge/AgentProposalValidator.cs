@@ -138,7 +138,17 @@ internal static class AgentProposalValidator
         ArgumentNullException.ThrowIfNull(session);
 
         var warnings = new List<string>();
-        if (proposal.PackageId != null && session.LastPackageId != null &&
+        if (proposal.PackageId != null && session.LastPackageId == null)
+        {
+            // The panel forgets its package when the project is loaded, the blocks
+            // are reordered or a source is replaced: the ids the reply uses were
+            // read off a project this one no longer is.
+            warnings.Add(
+                "The reply names a package this project has not copied — a project was " +
+                "loaded, the blocks were reordered or a measurement was replaced since, or the " +
+                "package came from elsewhere. The current values below decide.");
+        }
+        else if (proposal.PackageId != null && session.LastPackageId != null &&
             !string.Equals(proposal.PackageId, session.LastPackageId, StringComparison.OrdinalIgnoreCase))
         {
             warnings.Add(

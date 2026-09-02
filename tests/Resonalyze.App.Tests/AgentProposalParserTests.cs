@@ -55,6 +55,66 @@ public sealed class AgentProposalParserTests
         }
         """;
 
+    [Theory]
+    [InlineData("bare")]
+    [InlineData("fenced")]
+    [InlineData("prose")]
+    public void Parse_FindsTheProposalByItsKind_WithNoEnvelopeAroundIt(string shape)
+    {
+        // The object identifies itself: bare, in a fence, or buried in prose that
+        // has braces of its own — including a brace inside a JSON string.
+        string reply = shape switch
+        {
+            "bare" => FiveOperations,
+            "fenced" => "Here is what I would change.\n```json\n" + FiveOperations + "\n```\nDone.",
+            _ => "Notes {not JSON} first. { \"kind\": \"something else\" }\n```json\n" +
+                FiveOperations.Replace("\"Level.\"", "\"Level {see the deltas}.\"") +
+                "\n```\nAnd a stray } at the end.",
+        };
+
+        AgentProposalParseResult result = AgentProposalParser.Parse(reply);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal(5, result.Proposal!.Operations.Count);
+        if (shape == "prose")
+        {
+            Assert.Equal("Level {see the deltas}.", result.Proposal.Operations[1].Reason);
+        }
+    }
+
+    [Fact]
+    public void Parse_IsNotThrownByProseQuotesOrByAPasteFullOfBraces()
+    {
+        // A lone quote in the prose before the object must not swallow it: each
+        // candidate is walked from its own opening brace, where no string is open.
+        AgentProposalParseResult quoted = AgentProposalParser.Parse(
+            "As the maker's sheet says, \"Fs 65 Hz. The rest is my reading.\n```json\n" +
+            FiveOperations + "\n```");
+        Assert.True(quoted.Succeeded, quoted.Error);
+
+        // Twenty thousand braces that never close, then the proposal: the walk is
+        // budgeted, so the reply is answered in well under a second either way.
+        string braces = string.Concat(Enumerable.Repeat("{ ", 20_000));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        _ = AgentProposalParser.Parse(braces + "\n" + FiveOperations);
+        clock.Stop();
+        Assert.True(clock.ElapsedMilliseconds < 2_000, $"{clock.ElapsedMilliseconds} ms");
+    }
+
+    [Fact]
+    public void Parse_RefusesAReplyWithTwoProposals_OrNone()
+    {
+        AgentProposalParseResult two = AgentProposalParser.Parse(
+            FiveOperations + "\n\nOr alternatively:\n" + FourEngines);
+        Assert.False(two.Succeeded);
+        Assert.Contains("exactly one proposal; found 2", two.Error);
+
+        AgentProposalParseResult none = AgentProposalParser.Parse(
+            "I would not change anything. { \"kind\": \"resonalyze.agent-package\" }");
+        Assert.False(none.Succeeded);
+        Assert.Contains("No proposal found", none.Error);
+    }
+
     [Fact]
     public void Parse_ReadsTheFourEngineRequests_AndLeavesTheirOmittedInputsNull()
     {
@@ -188,7 +248,7 @@ public sealed class AgentProposalParserTests
 
     [Theory]
     [InlineData("", "no text")]
-    [InlineData("Just prose, no block at all.", "No proposal block")]
+    [InlineData("Just prose, no block at all.", "No proposal found")]
     [InlineData("BEGIN_RESONALYZE_AGENT_PROPOSAL_V1 {} END_RESONALYZE_AGENT_PROPOSAL_V1 BEGIN_RESONALYZE_AGENT_PROPOSAL_V1 {} END_RESONALYZE_AGENT_PROPOSAL_V1", "exactly one")]
     [InlineData("END_RESONALYZE_AGENT_PROPOSAL_V1 {} BEGIN_RESONALYZE_AGENT_PROPOSAL_V1", "before its begin")]
     [InlineData("BEGIN_RESONALYZE_AGENT_PROPOSAL_V1   END_RESONALYZE_AGENT_PROPOSAL_V1", "empty")]

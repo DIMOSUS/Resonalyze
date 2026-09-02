@@ -9,6 +9,7 @@ namespace Resonalyze.Integration.AgentBridge;
 internal sealed record AgentPackage(
     string Kind,
     int ProtocolVersion,
+    string GuideVersion,
     string PackageId,
     string CreatedAtUtc,
     AgentPackageApplication Application,

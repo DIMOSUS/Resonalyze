@@ -607,6 +607,28 @@ public sealed class VirtualCrossoverProjectFile
     public PeqQConvention DspProcessorQConvention { get; set; } = PeqQConvention.Rbj;
 
     /// <summary>
+    /// What the user tells an AI assistant about the installation that no
+    /// measurement can say: the car and the seat, which driver sits where, the
+    /// amplifiers and the processor, and what the tune is for. Edited in the DSP
+    /// processor dialog and sent with every Copy for AI package, so it is written
+    /// once and travels with the session rather than being retyped per chat.
+    /// </summary>
+    /// <remarks>
+    /// Optional and additive, so the schema version does not move — the same rule
+    /// as <see cref="SpatialAverageMode"/>. Empty is stored as absent: a session
+    /// that never had notes serializes byte for byte as it did before the field
+    /// existed, and an older build reads and resaves it without noticing.
+    /// </remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AiNotes
+    {
+        get => aiNotes;
+        set => aiNotes = string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private string? aiNotes;
+
+    /// <summary>
     /// True while this project states no rate of its own and takes the measurements'
     /// instead. That is what a file written before the selector says, and what the DSP
     /// processor dialog's "Follow measurements" entry writes — deliberately distinct

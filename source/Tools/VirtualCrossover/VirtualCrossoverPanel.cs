@@ -230,6 +230,7 @@ public partial class VirtualCrossoverPanel : UserControl
         InitializeToolTips();
 
         buttonAutoDelay.Click += (_, _) => AutoAlignDelay();
+        buttonAi.Click += (_, _) => ShowAgentMenu();
         buttonAutoSetup.Click += (_, _) => OpenAutoSetupWizard();
         buttonDspProcessor.Click += (_, _) => OpenDspProcessorDialog();
         buttonCaptureOverlay.Click += async (_, _) => await CaptureSumToOverlayAsync();
@@ -1420,10 +1421,24 @@ public partial class VirtualCrossoverPanel : UserControl
         using var dialog = new DspProcessorDialog(
             ProcessorProfile,
             ProcessorRateFollowsMeasurements,
-            MeasuredSampleRateHz ?? 0);
+            MeasuredSampleRateHz ?? 0)
+        {
+            Notes = project.AiNotes
+        };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
             return;
+        }
+
+        // The notes change nothing the simulation computes, so they are saved on
+        // their own: edited notes with the processor left alone is a save, never a
+        // re-run of every channel.
+        string? notes = dialog.Notes;
+        bool notesChanged = !string.Equals(notes, project.AiNotes, StringComparison.Ordinal);
+        if (notesChanged)
+        {
+            project.AiNotes = notes;
+            ScheduleSave();
         }
 
         DspProcessorProfile profile = dialog.Profile;
@@ -2985,6 +3000,14 @@ public partial class VirtualCrossoverPanel : UserControl
             "The Q convention only restates the numbers on a tuning\r\n" +
             "sheet; it never moves a filter.");
         toolTip.SetToolTip(
+            buttonAi,
+            "Work with a chat assistant through the clipboard:\r\n" +
+            "Copy for AI puts the current settings, your notes and a\r\n" +
+            "diagnostic summary on the clipboard for you to paste into\r\n" +
+            "any assistant; Import AI proposal reads its reply back and\r\n" +
+            "shows every proposed change against the current value before\r\n" +
+            "anything is applied. Nothing is sent anywhere by Resonalyze.");
+        toolTip.SetToolTip(
             buttonAutoSetup,
             "Crossover wizard: detect each channel's driver type from\r\n" +
             "its response, confirm the types, and get a starting point —\r\n" +
@@ -3110,6 +3133,9 @@ public partial class VirtualCrossoverPanel : UserControl
             || redrawTask is { IsCompleted: false };
         buttonAutoSetup.Enabled = !busy;
         buttonAutoDelay.Enabled = !busy;
+        // The package is gathered at one revision like the audition; and an
+        // import writes settings, which a load in progress would overwrite.
+        buttonAi.Enabled = !busy && !agentBusy;
         // The audition sums both sides through the coordinator at one revision;
         // starting it mid-redraw would race the invalidation and render nothing.
         buttonAudition.Enabled = !busy;

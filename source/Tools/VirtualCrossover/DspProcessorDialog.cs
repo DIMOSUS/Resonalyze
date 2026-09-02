@@ -106,6 +106,25 @@ internal sealed partial class DspProcessorDialog : Form
     public bool FollowsMeasurements =>
         SelectedPreset == null && ReferenceEquals(comboBoxSampleRate.SelectedItem, FollowItem);
 
+    /// <summary>
+    /// The user's description of the installation for an AI assistant (see
+    /// <see cref="VirtualCrossoverProjectFile.AiNotes"/>): set before showing, read
+    /// back after OK. Null when the field is empty, matching what the project stores.
+    /// </summary>
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public string? Notes
+    {
+        get => string.IsNullOrWhiteSpace(textBoxNotes.Text) ? null : textBoxNotes.Text;
+        set => textBoxNotes.Text = value ?? string.Empty;
+    }
+
+    /// <summary>
+    /// The most the notes may hold. Generous for a paragraph per driver plus the car
+    /// and the goals, and small next to the diagnostic package the notes travel in.
+    /// </summary>
+    public const int MaximumNotesLength = 8_000;
+
     private DspProcessorPreset? SelectedPreset =>
         comboBoxModel.SelectedItem as DspProcessorPreset;
 

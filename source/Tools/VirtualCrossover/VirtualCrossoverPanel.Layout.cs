@@ -54,6 +54,7 @@ public partial class VirtualCrossoverPanel
             buttonDspProcessor,
             buttonAutoSetup,
             buttonAutoDelay,
+            buttonAi,
             dspPlotView
         })
         {

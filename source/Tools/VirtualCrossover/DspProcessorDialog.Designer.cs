@@ -31,6 +31,9 @@ namespace Resonalyze
             comboBoxQConvention = new DarkComboBox();
             labelStatus = new Label();
             labelHint = new Label();
+            labelNotes = new Label();
+            labelNotesHint = new Label();
+            textBoxNotes = new TextBox();
             buttonOk = new ReleaseClickButton();
             buttonCancel = new ReleaseClickButton();
             SuspendLayout();
@@ -131,16 +134,53 @@ namespace Resonalyze
             labelHint.Text = "A PEQ bank handed to the EQ Wizard carries this processor with " +
                 "it, and is realized there at its rate.";
             //
+            // labelNotes
+            //
+            labelNotes.AutoSize = true;
+            labelNotes.ForeColor = Color.FromArgb(185, 190, 200);
+            labelNotes.Location = new Point(12, 292);
+            labelNotes.Name = "labelNotes";
+            labelNotes.Size = new Size(78, 15);
+            labelNotes.TabIndex = 9;
+            labelNotes.Text = "Notes for AI:";
+            //
+            // labelNotesHint
+            //
+            labelNotesHint.AutoSize = true;
+            labelNotesHint.ForeColor = Color.FromArgb(150, 156, 168);
+            labelNotesHint.Location = new Point(12, 310);
+            labelNotesHint.MaximumSize = new Size(456, 0);
+            labelNotesHint.Name = "labelNotesHint";
+            labelNotesHint.Size = new Size(456, 45);
+            labelNotesHint.TabIndex = 10;
+            labelNotesHint.Text = "What an assistant cannot measure: the car and the seat, each " +
+                "driver's model and where it sits, amplifier power, the DSP, and what you " +
+                "want from the tune. Sent with every Copy for AI.";
+            //
+            // textBoxNotes
+            //
+            textBoxNotes.AcceptsReturn = true;
+            textBoxNotes.BackColor = Color.FromArgb(33, 36, 45);
+            textBoxNotes.BorderStyle = BorderStyle.FixedSingle;
+            textBoxNotes.ForeColor = Color.FromArgb(210, 214, 222);
+            textBoxNotes.Location = new Point(12, 362);
+            textBoxNotes.MaxLength = MaximumNotesLength;
+            textBoxNotes.Multiline = true;
+            textBoxNotes.Name = "textBoxNotes";
+            textBoxNotes.ScrollBars = ScrollBars.Vertical;
+            textBoxNotes.Size = new Size(456, 100);
+            textBoxNotes.TabIndex = 11;
+            //
             // buttonOk
             //
             buttonOk.BackColor = Color.FromArgb(46, 51, 67);
             buttonOk.DialogResult = DialogResult.OK;
             buttonOk.FlatStyle = FlatStyle.Popup;
             buttonOk.ForeColor = Color.White;
-            buttonOk.Location = new Point(292, 302);
+            buttonOk.Location = new Point(292, 476);
             buttonOk.Name = "buttonOk";
             buttonOk.Size = new Size(84, 26);
-            buttonOk.TabIndex = 9;
+            buttonOk.TabIndex = 12;
             buttonOk.Text = "OK";
             buttonOk.UseVisualStyleBackColor = false;
             //
@@ -149,10 +189,10 @@ namespace Resonalyze
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
             buttonCancel.ForeColor = Color.White;
-            buttonCancel.Location = new Point(384, 302);
+            buttonCancel.Location = new Point(384, 476);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
-            buttonCancel.TabIndex = 10;
+            buttonCancel.TabIndex = 13;
             buttonCancel.Text = "Cancel";
             buttonCancel.UseVisualStyleBackColor = true;
             //
@@ -161,7 +201,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(40, 44, 54);
-            ClientSize = new Size(480, 340);
+            ClientSize = new Size(480, 514);
             Controls.Add(labelCaption);
             Controls.Add(labelModel);
             Controls.Add(comboBoxModel);
@@ -171,6 +211,9 @@ namespace Resonalyze
             Controls.Add(comboBoxQConvention);
             Controls.Add(labelStatus);
             Controls.Add(labelHint);
+            Controls.Add(labelNotes);
+            Controls.Add(labelNotesHint);
+            Controls.Add(textBoxNotes);
             Controls.Add(buttonOk);
             Controls.Add(buttonCancel);
             Font = new Font("Segoe UI", 9F);
@@ -197,6 +240,9 @@ namespace Resonalyze
         private DarkComboBox comboBoxQConvention;
         private Label labelStatus;
         private Label labelHint;
+        private Label labelNotes;
+        private Label labelNotesHint;
+        private TextBox textBoxNotes;
         private ReleaseClickButton buttonOk;
         private ReleaseClickButton buttonCancel;
     }

@@ -2842,8 +2842,10 @@ this: the clipboard is the only transport, and you are the one who pastes.
 
   Every proposed change is shown against the value the channel holds *now*, with
   the reason the assistant gave; an engine request is shown against the settings
-  the engine would start from, with what it will write over — and it is still
-  the engine's own dialog that runs and applies it. A change the assistant
+  the engine would start from, with what it will write over. Auto crossover
+  then opens its wizard as the button does; Auto delay runs without its dialog
+  — the button's own checks, search and commit, with the report it would have
+  shown returned in the import's summary and the alignment log. A change the assistant
   reasoned about a value that has since moved is rejected as such; so is one
   outside Virtual DSP's own limits (the channel block's gain and delay ranges and
   steps, the crossover families and slopes, the corner range and the processor's
@@ -2866,10 +2868,12 @@ this: the clipboard is the only transport, and you are the one who pastes.
   rows together and unticking one can leave a state it never showed, which then
   asks before applying — writes them as one set, then runs the engine requests
   in a fixed order (the spatial average first, since it decides which curves the
-  rest are read on, then Auto crossover) and closes with one summary of what was
-  applied and what was skipped. Cancelling an engine's dialog skips that
-  operation and the rest carry on; a failure while writing the settings writes
-  nothing. Validity is not quality: a proposal that passes every check can still
+  rest are read on, then Auto crossover, then Auto delay) and closes with one
+  summary of what was applied and what was skipped. Cancelling the wizard, or
+  a check Auto delay's button would have refused on (fewer than two measured
+  channels, a bypassed participant, a misplaced gate, no crossover anywhere),
+  skips that operation with the reason and the rest carry on; a failure while
+  writing the settings writes nothing. Validity is not quality: a proposal that passes every check can still
   be a worse tune, so listen before you trust it, and re-run **Auto delay** after
   a polarity or crossover change as the guide tells the assistant to advise.
 - **Undo AI import** puts back everything the last import could have moved, not

@@ -88,11 +88,18 @@ public partial class VirtualCrossoverPanel
     /// chain is taken, not only the ones a row names: an engine writes channels no
     /// row mentions, and the crossover wizard can reorder the blocks as well.
     /// </summary>
+    // The stereo scene, the level tilt and the rear-fill offset are what an Auto
+    // delay run commits beside the channels (CommitAutoDelayResult), so an undo
+    // of an import that ran one has to carry them too.
     private sealed record AgentImportUndo(
         IReadOnlyList<AgentUndoEntry> Channels,
         VirtualCrossoverSpatialAverageMode? SpatialAverageMode,
         bool HybridTicked,
-        IReadOnlyList<VirtualCrossoverChannel> Order);
+        IReadOnlyList<VirtualCrossoverChannel> Order,
+        double SceneOffsetMagnitudeMs,
+        bool RightHandDrive,
+        double StereoLevelDifferenceDb,
+        double RearFillOffsetMs);
 
     /// <summary>
     /// Import AI proposal: clipboard → strict parse → review against the live
@@ -102,7 +109,10 @@ public partial class VirtualCrossoverPanel
     /// before anything is written, so a failure part-way through still leaves the
     /// whole import undoable.
     /// </summary>
-    private void ImportAiProposal()
+    // async void as the button handlers are: the engines that run without their
+    // dialogs await their compute, and the try/finally below is what keeps the
+    // busy flag honest across those awaits.
+    private async void ImportAiProposal()
     {
         if (agentBusy)
         {
@@ -185,7 +195,7 @@ public partial class VirtualCrossoverPanel
                     $"Applied {rows} of {proposed} proposed change{(proposed == 1 ? "" : "s")}.");
             }
 
-            bool ran = RunAgentEngineRequests(toApply, summary);
+            bool ran = await RunAgentEngineRequests(toApply, summary);
             if (written.Count == 0 && !ran)
             {
                 agentUndo = previousUndo;
@@ -234,7 +244,7 @@ public partial class VirtualCrossoverPanel
     /// operation and the import carries on with the next.
     /// </summary>
     /// <returns>Whether any of them changed the project.</returns>
-    private bool RunAgentEngineRequests(
+    private async Task<bool> RunAgentEngineRequests(
         IReadOnlyList<AgentOperationVerdict> toApply, List<string> summary)
     {
         bool ran = false;
@@ -262,10 +272,14 @@ public partial class VirtualCrossoverPanel
                     ran |= refused == null;
                     break;
 
-                // Auto delay and Auto-tune are not in AgentProtocol.Operations
-                // yet, so the review refuses them and no row reaches here. When
-                // they are wired up they take a case of their own, in the order
-                // AgentEngineOrder already gives them.
+                case RunAutoDelayOperation delay:
+                    ran |= await RunAgentAutoDelayAsync(delay, summary);
+                    break;
+
+                // Auto-tune is not in AgentProtocol.Operations yet, so the review
+                // refuses it and no row reaches here. When it is wired up it
+                // takes a case of its own, in the order AgentEngineOrder already
+                // gives it.
                 default:
                     summary.Add(
                         $"{operation.Parameter}: skipped " +
@@ -319,6 +333,81 @@ public partial class VirtualCrossoverPanel
         return true;
     }
 
+    // The Auto delay inputs as the dialog would open with them: the project's
+    // figures as layout-neutral magnitudes (the layout toggle owns every sign),
+    // and the gain balance unticked — the project stores the tilt it would
+    // apply, never the opt-in. Printed in the package's "Current" column and
+    // filled in for every input a request leaves out, so the two agree.
+    private AgentAutoDelaySettings AgentAutoDelayDefaults() =>
+        new(
+            project.StereoSceneOffsetMagnitudeMs,
+            project.StereoRightHandDrive,
+            AdjustGains: false,
+            Math.Abs(project.StereoLevelDifferenceDb),
+            project.RearFillOffsetMs);
+
+    /// <summary>
+    /// The run inputs a request asks for: what it states, and the dialog's own
+    /// answer for what it leaves out. UI-free so the rule can be pinned.
+    /// </summary>
+    internal static AutoDelayRunRequest BuildAutoDelayRequest(
+        RunAutoDelayOperation operation, AgentAutoDelaySettings defaults) =>
+        new(
+            operation.SceneOffsetMs ?? defaults.SceneOffsetMs,
+            operation.RightHandDrive ?? defaults.RightHandDrive,
+            operation.AdjustGains ?? defaults.AdjustGains,
+            operation.NearSideCutDb ?? defaults.NearSideCutDb,
+            operation.RearFillOffsetMs ?? defaults.RearFillOffsetMs);
+
+    // Auto delay without its dialog: the button's own checks (headless, so a
+    // refusal is a phrase for the summary rather than a box), the same compute
+    // delegate the dialog's Run would call, and the same commit its Apply would
+    // make — report, log and outcome metric included. The review was the gate.
+    // The panel is disabled for the compute's span: the dialog's modality is
+    // what kept the channel configuration still under the button's run, and an
+    // edit landing mid-search would be aligned against a chain that is gone.
+    private async Task<bool> RunAgentAutoDelayAsync(
+        RunAutoDelayOperation operation, List<string> summary)
+    {
+        (AutoDelayLaunch? launch, string? refusal) = PrepareAutoDelay(interactive: false);
+        if (launch == null)
+        {
+            summary.Add($"Auto delay: skipped ({refusal}).");
+            return false;
+        }
+
+        AutoDelayRunRequest request = BuildAutoDelayRequest(operation, AgentAutoDelayDefaults());
+        AutoDelayRunResult result;
+        bool wasEnabled = Enabled;
+        Enabled = false;
+        UseWaitCursor = true;
+        try
+        {
+            result = await launch.Runner(request);
+        }
+        finally
+        {
+            UseWaitCursor = false;
+            Enabled = wasEnabled;
+        }
+        if (IsDisposed)
+        {
+            return false;
+        }
+
+        await ApplyConfirmedAutoDelayAsync(result);
+        summary.Add(
+            $"Auto delay: applied ({(launch.Stereo ? "stereo" : "single side")}, " +
+            $"scene {request.SceneOffsetMs:0.00} ms {(request.RightHandDrive ? "RHD" : "LHD")}, " +
+            $"gains {(request.AdjustGains ? "balanced" : "kept")}).");
+        if (launch.PolarityWarning != null)
+        {
+            summary.Add(launch.PolarityWarning);
+        }
+        summary.Add(result.ReportText);
+        return true;
+    }
+
     // Everything the import could move, before it moves any of it.
     private AgentImportUndo CaptureAgentUndo() =>
         new(
@@ -329,7 +418,11 @@ public partial class VirtualCrossoverPanel
                 .ToList(),
             project.SpatialAverageMode,
             checkBoxHybrid.Checked,
-            channels.ToList());
+            channels.ToList(),
+            project.StereoSceneOffsetMagnitudeMs,
+            project.StereoRightHandDrive,
+            project.StereoLevelDifferenceDb,
+            project.RearFillOffsetMs);
 
     private void UndoAiImport()
     {
@@ -357,6 +450,9 @@ public partial class VirtualCrossoverPanel
             project.SpatialAverageMode = undo.SpatialAverageMode;
             checkBoxHybrid.Checked = undo.HybridTicked;
             project.ShowHybridCurves = undo.HybridTicked;
+            project.SetStereoScene(undo.SceneOffsetMagnitudeMs, undo.RightHandDrive);
+            project.StereoLevelDifferenceDb = undo.StereoLevelDifferenceDb;
+            project.RearFillOffsetMs = undo.RearFillOffsetMs;
         }
         finally
         {
@@ -501,14 +597,7 @@ public partial class VirtualCrossoverPanel
             ProcessorSampleRateHz,
             ProcessorProfile.MaxDelayMs,
             lastAgentPackageId,
-            new AgentAutoDelaySettings(
-                project.StereoSceneOffsetMagnitudeMs,
-                project.StereoRightHandDrive,
-                // The dialog's gain balance opens unticked every time: the project
-                // stores the tilt it would apply, never the opt-in itself.
-                AdjustGains: false,
-                Math.Abs(project.StereoLevelDifferenceDb),
-                project.RearFillOffsetMs),
+            AgentAutoDelayDefaults(),
             SpatialAverageMode,
             checkBoxHybrid.Checked);
 

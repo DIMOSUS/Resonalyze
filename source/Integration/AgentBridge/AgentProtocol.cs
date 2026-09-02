@@ -102,7 +102,8 @@ internal static class AgentProtocol
         SetCrossover,
         ReplacePeqBank,
         UseSpatialAverage,
-        RunAutoCrossover
+        RunAutoCrossover,
+        RunAutoDelay
     ];
 
     public static bool Executes(string op) => Operations.Contains(op, StringComparer.Ordinal);

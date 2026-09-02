@@ -258,11 +258,16 @@ before you hand-write what they compute:
 
 **You can now ASK for an engine**, as an operation, when the package's
 `limits.operations` names it — `runAutoDelay`, `runAutoCrossover`,
-`autoTunePeq`, and `useSpatialAverage` for the mode and the Hybrid tick. An
-engine request is not a headless run: it opens the engine with your inputs, and
-the user still runs and applies it in the engine's own dialog. What
-`limits.operations` does NOT name, say in `advice` as before — that build
-cannot run it, and asking anyway costs the user a rejected row.
+`autoTunePeq`, and `useSpatialAverage` for the mode and the Hybrid tick. The
+review is the gate: once the user applies the row, `runAutoDelay` runs at once
+with your inputs (no dialog; the run's report comes back to the user in the
+import's summary, and the same checks the button makes — two measured
+channels, no bypassed participant, the gate in place, a crossover somewhere —
+skip it with the reason when they fail), while `runAutoCrossover` opens the
+wizard for the user to confirm the driver types. Either way, ask for a new
+package afterwards to read the result. What `limits.operations` does NOT name,
+say in `advice` as before — that build cannot run it, and asking anyway costs
+the user a rejected row.
 
 Two rules that follow from it. Do not send an engine request together with a
 hand-written value the engine would write over (Auto delay writes delay and

@@ -82,14 +82,13 @@ public sealed class VirtualCrossoverAgentEngineTests
             // Listed the other way round on purpose: the import runs the spatial
             // average first whatever order the reply gave, because it decides
             // which curves the engines after it are read on.
-            bool ran = (bool)Invoke(panel, "RunAgentEngineRequests",
-                new List<AgentOperationVerdict>
-                {
+            bool ran = RunEngines(panel,
+                [
                     Row(new RunAutoCrossoverOperation("op-1", "split them"), "Auto crossover"),
                     Row(new UseSpatialAverageOperation("op-2", "unused arrays", "MicArray", true),
                         "Spatial average")
-                },
-                summary)!;
+                ],
+                summary);
 
             Assert.Equal(
                 [
@@ -114,12 +113,9 @@ public sealed class VirtualCrossoverAgentEngineTests
             using VirtualCrossoverPanel panel = Loaded();
             var summary = new List<string>();
 
-            bool ran = (bool)Invoke(panel, "RunAgentEngineRequests",
-                new List<AgentOperationVerdict>
-                {
-                    Row(new RunAutoCrossoverOperation("op-1", ""), "Auto crossover")
-                },
-                summary)!;
+            bool ran = RunEngines(panel,
+                [Row(new RunAutoCrossoverOperation("op-1", ""), "Auto crossover")],
+                summary);
 
             // The import reads this answer to decide whether Undo stays armed: a
             // refused wizard moved nothing, and arming it would offer to put back
@@ -129,6 +125,92 @@ public sealed class VirtualCrossoverAgentEngineTests
             Assert.Contains("skipped", summary[0]);
         });
     }
+
+    [Fact]
+    public void AutoDelayRequest_TakesWhatTheReplyStates_AndTheDialogsAnswerForTheRest()
+    {
+        var defaults = new AgentAutoDelaySettings(0.25, false, false, 1.0, 15.0);
+
+        // Only the scene offset stated: everything else is what the dialog would
+        // have opened with, the gain balance unticked included.
+        AutoDelayRunRequest partial = VirtualCrossoverPanel.BuildAutoDelayRequest(
+            new RunAutoDelayOperation("op-1", "", 0.35, null, null, null, null), defaults);
+        Assert.Equal(0.35, partial.SceneOffsetMs);
+        Assert.False(partial.RightHandDrive);
+        Assert.False(partial.AdjustGains);
+        Assert.Equal(1.0, partial.NearSideCutDb);
+        Assert.Equal(15.0, partial.RearFillOffsetMs);
+
+        AutoDelayRunRequest full = VirtualCrossoverPanel.BuildAutoDelayRequest(
+            new RunAutoDelayOperation("op-1", "", null, true, true, 2.0, 12.5), defaults);
+        Assert.Equal(0.25, full.SceneOffsetMs);
+        Assert.True(full.RightHandDrive);
+        Assert.True(full.AdjustGains);
+        Assert.Equal(2.0, full.NearSideCutDb);
+        Assert.Equal(12.5, full.RearFillOffsetMs);
+        // The tilt in the gain engine's convention follows the layout, as the
+        // dialog's would.
+        Assert.Equal(2.0, full.LevelDifferenceDb);
+    }
+
+    [Fact]
+    public void AutoDelay_RunHeadless_IsRefusedWithThePhraseTheSummaryQuotes()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            var summary = new List<string>();
+
+            // The button's own first check, answered as a phrase instead of a
+            // beep: no block here carries a measurement.
+            bool ran = RunEngines(panel,
+                [Row(new RunAutoDelayOperation("op-1", "", 0.35, null, null, null, null), "Auto delay")],
+                summary);
+
+            Assert.False(ran);
+            Assert.Equal(
+                ["Auto delay: skipped (fewer than two enabled channels have a measurement)."],
+                summary);
+        });
+    }
+
+    [Fact]
+    public void UndoAiImport_PutsBackTheStereoSceneTheTiltAndTheRearFill()
+    {
+        StaTest.Run(() =>
+        {
+            // What an Auto delay run commits beside the channels
+            // (CommitAutoDelayResult): the scene offset with its layout, the
+            // level tilt, the rear-fill offset.
+            using VirtualCrossoverPanel panel = Loaded();
+            VirtualCrossoverProjectFile project = Project(panel);
+            project.SetStereoScene(0.25, rightHandDrive: false);
+            project.StereoLevelDifferenceDb = -1.0;
+            project.RearFillOffsetMs = 15.0;
+
+            object undo = Invoke(panel, "CaptureAgentUndo")!;
+            project.SetStereoScene(0.6, rightHandDrive: true);
+            project.StereoLevelDifferenceDb = 2.5;
+            project.RearFillOffsetMs = 9.0;
+
+            Set(panel, "agentUndo", undo);
+            Set(panel, "agentUndoGeneration", Field(panel, "projectGeneration"));
+            Invoke(panel, "UndoAiImport");
+
+            Assert.Equal(0.25, project.StereoSceneOffsetMagnitudeMs);
+            Assert.False(project.StereoRightHandDrive);
+            Assert.Equal(-1.0, project.StereoLevelDifferenceDb);
+            Assert.Equal(15.0, project.RearFillOffsetMs);
+        });
+    }
+
+    // The engines run as the import runs them — awaited; on a panel with no
+    // measurement every engine answers before it would await anything, so the
+    // task is complete by the time it is handed back.
+    private static bool RunEngines(
+        VirtualCrossoverPanel panel, List<AgentOperationVerdict> rows, List<string> summary) =>
+        ((Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary)!)
+            .GetAwaiter().GetResult();
 
     private static AgentOperationVerdict Row(AgentOperation operation, string parameter) =>
         new(operation.Id, AgentProposalValidator.AllChannels, parameter,

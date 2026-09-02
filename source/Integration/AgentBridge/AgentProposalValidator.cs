@@ -484,10 +484,10 @@ internal static class AgentProposalValidator
         AgentOperation operation, AgentSessionSnapshot session) => operation switch
     {
         RunAutoDelayOperation delay => (AgentVerdictStatus.Warning,
-            "Auto delay opens with these inputs and rewrites the delay and polarity of every " +
+            "Auto delay runs with these inputs and rewrites the delay and polarity of every " +
             "channel it aligns" +
             ((delay.AdjustGains ?? session.AutoDelay.AdjustGains) ? ", and their gains" : string.Empty) +
-            ". Its own dialog runs and applies the proposal."),
+            ". It runs without its dialog; its report goes into the import's summary."),
         RunAutoCrossoverOperation => (AgentVerdictStatus.Warning,
             "The Auto crossover wizard rewrites the crossover and the gain of every enabled " +
             "channel that has a measurement, and can reorder the chain. Its own dialog " +

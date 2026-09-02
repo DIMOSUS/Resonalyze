@@ -4640,6 +4640,57 @@ public partial class VirtualCrossoverPanel : UserControl
     // every time.
     private async void AutoAlignDelay()
     {
+        (AutoDelayLaunch? launch, _) = PrepareAutoDelay(interactive: true);
+        if (launch == null)
+        {
+            return;
+        }
+
+        using var dialog = new VirtualCrossoverAutoDelayDialog();
+        // The dialog edits both tuning figures as layout-neutral magnitudes;
+        // the project stores each with the layout in its sign (the scene
+        // offset's wire format, the gain engine's L-R convention), so older
+        // builds read the same file — hence the magnitudes here and the
+        // layout-signed write-back in CommitAutoDelayResult.
+        dialog.Init(
+            launch.Stereo,
+            project.StereoSceneOffsetMagnitudeMs,
+            project.StereoRightHandDrive,
+            Math.Abs(project.StereoLevelDifferenceDb),
+            launch.Runner,
+            launch.PolarityWarning,
+            launch.HasRearFill,
+            project.RearFillOffsetMs);
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
+            dialog.Result is not { } result ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        await ApplyConfirmedAutoDelayAsync(result);
+    }
+
+    /// <summary>
+    /// An Auto delay run made ready but not started: which kind it is, the
+    /// compute delegate (run inputs -> proposal) over the participants the
+    /// checks admitted, and the two things the dialog shows beside the inputs.
+    /// The button hands it to the dialog; an AI import runs it straight away.
+    /// </summary>
+    private sealed record AutoDelayLaunch(
+        bool Stereo,
+        Func<AutoDelayRunRequest, Task<AutoDelayRunResult>> Runner,
+        string? PolarityWarning,
+        bool HasRearFill);
+
+    // Every check the button makes before its dialog opens, answered as a
+    // launch or a refusal. Interactive, the refusals speak on screen as they
+    // always did and the broad-window question is asked; headless (an AI
+    // import), nothing is shown and that question is a refusal too — the
+    // import's summary quotes the phrase, and the user sets the crossovers
+    // first, which is the answer the question was steering them to anyway.
+    private (AutoDelayLaunch? Launch, string? Refusal) PrepareAutoDelay(bool interactive)
+    {
         // Stereo whenever the data allows it: some non-mono pair has BOTH
         // sides resolved (the highest such pair becomes the L/R bridge) and
         // the left side can hold its own walk. Otherwise the classic
@@ -4658,20 +4709,19 @@ public partial class VirtualCrossoverPanel : UserControl
             .LastOrDefault();
         if (bridgeRight != null && leftSide.Count(InFrontChain) >= 2)
         {
-            await AutoAlignStereoAsync(leftSide, rightSide, bridgeRight);
-            return;
+            return PrepareStereoAutoDelay(leftSide, rightSide, bridgeRight, interactive);
         }
 
-        await AutoAlignSingleSideAsync();
+        return PrepareSingleSideAutoDelay(interactive);
     }
 
-    // The single-side Auto delay command: participant validation up front,
-    // then the modal Auto delay dialog. The proposal (delays, polarities and
+    // The single-side Auto delay run: participant validation up front, then
+    // the launch. From the button the proposal (delays, polarities and
     // optionally gains) is computed by the dialog's Run and written only on
-    // its Apply — Discard leaves every channel setting as it was. The
-    // dialog's modality is also what keeps the channel configuration stable
-    // under the background compute.
-    private async Task AutoAlignSingleSideAsync()
+    // its Apply — Discard leaves every channel setting as it was — and the
+    // dialog's modality is what keeps the channel configuration stable under
+    // the background compute; an import disables the panel for the same span.
+    private (AutoDelayLaunch? Launch, string? Refusal) PrepareSingleSideAutoDelay(bool interactive)
     {
         // Cheap participant snapshot: enabled channels with a resolved
         // measurement. No DSP runs here — the shared crop and every ApplyChain
@@ -4683,8 +4733,12 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
         if (participants.Count < 2)
         {
-            System.Media.SystemSounds.Beep.Play();
-            return;
+            if (interactive)
+            {
+                System.Media.SystemSounds.Beep.Play();
+            }
+
+            return (null, "fewer than two enabled channels have a measurement");
         }
 
         // A bypassed channel processes through the identity chain, so the
@@ -4698,19 +4752,24 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
         if (bypassed.Count > 0)
         {
-            ShowError(
-                "Auto delay cannot run with bypassed channels.",
-                "Bypass feeds the raw measured signal, so the computed delays " +
-                "and polarities would not apply to: " +
-                string.Join(", ", bypassed.Select(channel => channel.Name)) +
-                ".\r\n\r\nDisable Bypass on every participating channel " +
-                "(or mute the channel to exclude it) and run Auto delay again.");
-            return;
+            if (interactive)
+            {
+                ShowError(
+                    "Auto delay cannot run with bypassed channels.",
+                    "Bypass feeds the raw measured signal, so the computed delays " +
+                    "and polarities would not apply to: " +
+                    string.Join(", ", bypassed.Select(channel => channel.Name)) +
+                    ".\r\n\r\nDisable Bypass on every participating channel " +
+                    "(or mute the channel to exclude it) and run Auto delay again.");
+            }
+
+            return (null, "a participating channel is bypassed: " +
+                string.Join(", ", bypassed.Select(channel => channel.Name)));
         }
 
-        if (RefuseOnMisplacedGate("Auto delay"))
+        if (interactive ? RefuseOnMisplacedGate("Auto delay") : GateIsMisplaced)
         {
-            return;
+            return (null, "the phase gate is misplaced");
         }
 
         // Without crossovers the search falls back to a broad midband window and
@@ -4718,6 +4777,10 @@ public partial class VirtualCrossoverPanel : UserControl
         // only matters (and is only well-defined) in the overlap region.
         bool anyCrossover = participants.Any(
             channel => channel.Settings.CrossoverKind != CrossoverKind.Off);
+        if (!anyCrossover && !interactive)
+        {
+            return (null, "no channel has a crossover configured; set the crossovers first");
+        }
         if (!anyCrossover)
         {
             DialogResult answer = MessageBox.Show(
@@ -4735,33 +4798,21 @@ public partial class VirtualCrossoverPanel : UserControl
                 MessageBoxIcon.Warning);
             if (answer != DialogResult.Yes)
             {
-                return;
+                return (null, "cancelled");
             }
         }
 
         (double minHz, double maxHz) = VirtualCrossoverJunctions.GetCrossoverWindow(
             participants.Select(channel => channel.Settings));
 
-        using var dialog = new VirtualCrossoverAutoDelayDialog();
-        dialog.Init(
-            stereo: false,
-            project.StereoSceneOffsetMagnitudeMs,
-            project.StereoRightHandDrive,
-            Math.Abs(project.StereoLevelDifferenceDb),
-            request => RunSingleSideProposalAsync(
-                participants, minHz, maxHz, request),
-            polarityWarning: null,
-            hasRearFill: participants.Any(channel =>
-                channel.Pair.Zone == VirtualCrossoverZone.Rear),
-            project.RearFillOffsetMs);
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
-            dialog.Result is not { } result ||
-            IsDisposed)
-        {
-            return;
-        }
-
-        await ApplyConfirmedAutoDelayAsync(result);
+        return (
+            new AutoDelayLaunch(
+                Stereo: false,
+                request => RunSingleSideProposalAsync(participants, minHz, maxHz, request),
+                PolarityWarning: null,
+                HasRearFill: participants.Any(channel =>
+                    channel.Pair.Zone == VirtualCrossoverZone.Rear)),
+            null);
     }
 
     // Compute errors surface inside the dialog; here the confirmed proposal
@@ -5925,10 +5976,11 @@ public partial class VirtualCrossoverPanel : UserControl
     // then the far side's descent — the cascade itself lives in
     // AutoAlignmentEngine.ComputeStereo (dsp, unit-tested on synthetic
     // systems and real car measurements), fed a mirrored plan for RHD.
-    private async Task AutoAlignStereoAsync(
+    private (AutoDelayLaunch? Launch, string? Refusal) PrepareStereoAutoDelay(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
         List<VirtualCrossoverSideAlignmentChannel> rightSide,
-        VirtualCrossoverSideAlignmentChannel bridgeRight)
+        VirtualCrossoverSideAlignmentChannel bridgeRight,
+        bool interactive)
     {
         List<VirtualCrossoverSideAlignmentChannel> union = leftSide.Concat(rightSide)
             .Distinct()
@@ -5943,26 +5995,35 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
         if (bypassed.Count > 0)
         {
-            ShowError(
-                "Auto delay cannot run with bypassed channels.",
-                "Bypass feeds the raw measured signal, so the computed delays " +
-                "and polarities would not apply to: " +
-                string.Join(", ", bypassed.Select(item => item.Name)) +
-                ".\r\n\r\nDisable Bypass on every participating channel " +
-                "(or mute the channel to exclude it) and run Auto delay again.");
-            return;
+            if (interactive)
+            {
+                ShowError(
+                    "Auto delay cannot run with bypassed channels.",
+                    "Bypass feeds the raw measured signal, so the computed delays " +
+                    "and polarities would not apply to: " +
+                    string.Join(", ", bypassed.Select(item => item.Name)) +
+                    ".\r\n\r\nDisable Bypass on every participating channel " +
+                    "(or mute the channel to exclude it) and run Auto delay again.");
+            }
+
+            return (null, "a participating channel is bypassed: " +
+                string.Join(", ", bypassed.Select(item => item.Name)));
         }
 
         // The verdict describes the side on screen; the detail text says so and
         // asks for the other one to be checked after switching, because only
         // the shown side's channels have been processed to judge it against.
-        if (RefuseOnMisplacedGate("Auto delay"))
+        if (interactive ? RefuseOnMisplacedGate("Auto delay") : GateIsMisplaced)
         {
-            return;
+            return (null, "the phase gate is misplaced");
         }
 
         bool anyCrossover = union.Any(
             item => item.Settings.CrossoverKind != CrossoverKind.Off);
+        if (!anyCrossover && !interactive)
+        {
+            return (null, "no channel has a crossover configured; set the crossovers first");
+        }
         if (!anyCrossover)
         {
             DialogResult answer = MessageBox.Show(
@@ -5980,7 +6041,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 MessageBoxIcon.Warning);
             if (answer != DialogResult.Yes)
             {
-                return;
+                return (null, "cancelled");
             }
         }
 
@@ -6000,41 +6061,29 @@ public partial class VirtualCrossoverPanel : UserControl
         if (bridgeBandHighHz <
             bridgeBandLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
         {
-            ShowError(
-                "The stereo bridge has no usable shared band.",
-                $"The top pair's crossover bands barely overlap: " +
-                $"{bridgeLeft.Name} plays {leftBandLowHz:0}-{leftBandHighHz:0} Hz, " +
-                $"{bridgeRight.Name} plays {rightBandLowHz:0}-{rightBandHighHz:0} Hz. " +
-                "Align the pair's crossover settings so the sides share at " +
-                "least a third of an octave and run Auto delay again.");
-            return;
+            if (interactive)
+            {
+                ShowError(
+                    "The stereo bridge has no usable shared band.",
+                    $"The top pair's crossover bands barely overlap: " +
+                    $"{bridgeLeft.Name} plays {leftBandLowHz:0}-{leftBandHighHz:0} Hz, " +
+                    $"{bridgeRight.Name} plays {rightBandLowHz:0}-{rightBandHighHz:0} Hz. " +
+                    "Align the pair's crossover settings so the sides share at " +
+                    "least a third of an octave and run Auto delay again.");
+            }
+
+            return (null, "the stereo bridge has no usable shared band");
         }
 
-        using var dialog = new VirtualCrossoverAutoDelayDialog();
-        // The dialog edits both tuning figures as layout-neutral magnitudes;
-        // the project stores each with the layout in its sign (the scene
-        // offset's wire format, the gain engine's L-R convention), so older
-        // builds read the same file — hence the magnitudes here and the
-        // layout-signed write-back in CommitAutoDelayResult.
-        dialog.Init(
-            stereo: true,
-            project.StereoSceneOffsetMagnitudeMs,
-            project.StereoRightHandDrive,
-            Math.Abs(project.StereoLevelDifferenceDb),
-            request => RunStereoProposalAsync(
-                leftSide, rightSide, union, bridgeLeft, bridgeRight,
-                bridgeBandLowHz, bridgeBandHighHz, request),
-            DescribeLeftRightPolarityMismatch(leftSide, rightSide),
-            union.Any(side => side.Runtime.Pair.Zone == VirtualCrossoverZone.Rear),
-            project.RearFillOffsetMs);
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
-            dialog.Result is not { } result ||
-            IsDisposed)
-        {
-            return;
-        }
-
-        await ApplyConfirmedAutoDelayAsync(result);
+        return (
+            new AutoDelayLaunch(
+                Stereo: true,
+                request => RunStereoProposalAsync(
+                    leftSide, rightSide, union, bridgeLeft, bridgeRight,
+                    bridgeBandLowHz, bridgeBandHighHz, request),
+                DescribeLeftRightPolarityMismatch(leftSide, rightSide),
+                union.Any(side => side.Runtime.Pair.Zone == VirtualCrossoverZone.Rear)),
+            null);
     }
 
     // A launch-time red heads-up for the Auto delay dialog when a driver's LEFT
@@ -7193,6 +7242,10 @@ public partial class VirtualCrossoverPanel : UserControl
     // sum-loss read-out and (for Auto delay) the outcome metric written into
     // the alignment log — so a run started here can only be verified against a
     // view of the reverberant tail.
+    // The verdict a refusal is built on, readable without showing anything —
+    // an AI import quotes the phrase in its summary instead of a dialog.
+    private bool GateIsMisplaced => gatePlacement is { CutsChannels: true };
+
     private bool RefuseOnMisplacedGate(string command)
     {
         if (gatePlacement is not { CutsChannels: true } verdict)

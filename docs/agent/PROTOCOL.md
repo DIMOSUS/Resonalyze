@@ -387,10 +387,15 @@ They exist because the engines compute what no reading of a curve can, and
 because a user who has been told to "run Auto delay with a 0.25 ms scene offset"
 otherwise has to find the dialog and retype the numbers.
 
-They carry no `expectedCurrent`: what the engine writes is what the run decides,
-and the engine's own dialog — Auto delay's report, the crossover wizard's rows,
-the EQ Wizard's graph — stays the gate it goes through. Cancelling one skips
-that operation; the rest of the import carries on.
+They carry no `expectedCurrent`: what the engine writes is what the run decides.
+The review is the gate. `runAutoDelay` then runs **without its dialog** — the
+same checks the button makes (two measured channels, no bypassed participant,
+the gate in place, a crossover somewhere; a failed check skips the operation
+with the reason in the summary), the same search, the same commit — and its
+report, the text the dialog would have shown, comes back in the import's
+summary and the alignment log. `runAutoCrossover` opens the wizard: its rows
+are where the driver types are confirmed, and cancelling it skips that
+operation while the rest of the import carries on.
 
 `runAutoDelay`, `runAutoCrossover` and `useSpatialAverage` take **no**
 `channelId`: they address the whole project, and a `channelId` on one is refused

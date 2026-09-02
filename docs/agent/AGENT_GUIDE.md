@@ -36,6 +36,11 @@ what you are sure of, what you are inferring, and what you would need to know.
   plays later. Frequencies in Hz. Levels in dB. `peqQ` is RBJ cookbook Q, always;
   the device's own Q convention (`processor.qConvention`) is applied by
   Resonalyze only when numbers leave for the device. Do not convert.
+- **One smoothing for every package.** Every magnitude curve, sum and Sum loss
+  is computed at psychoacoustic smoothing (1/3 octave below 100 Hz, 1/6 above
+  1 kHz) whatever the user's panel shows, so two packages compare and a dip's
+  depth means the same in each. The user's own read-out at another smoothing
+  may differ from the package's; the package's is the one to reason from.
 - **Two sample rates.** `channels[].source.sampleRateHz` is what the measurement
   was taken at; `processor.sampleRateHz` is what the device builds its filters
   at. Every corner and PEQ band you propose must sit below half the processor's

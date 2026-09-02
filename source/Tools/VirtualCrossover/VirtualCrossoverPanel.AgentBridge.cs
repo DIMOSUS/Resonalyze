@@ -976,7 +976,13 @@ public partial class VirtualCrossoverPanel
         long revision = processingCoordinator.CurrentRevision;
         VirtualCrossoverGroupView groupView = SelectedGroupView;
         bool activeRight = project.ActiveSideRight;
-        int smoothing = magnitudeGate.SmoothingInverseOctaves;
+        // One smoothing for every package, whatever the display shows: the Sum
+        // loss and the curves a reader compares across sessions and across users
+        // must not move with a combo box, and a dip's depth at 1/48 octave is not
+        // the same reading as at 1/6. The panel's own psychoacoustic setting is
+        // the one the manual reads a tune at, so it is the one the package uses.
+        int smoothing = SpectrumSmoothing.PsychoacousticCode;
+        MagnitudeGateSnapshot packageGate = magnitudeGate with { SmoothingInverseOctaves = smoothing };
 
         var sides = new List<AgentSideInputs>();
         var curves = new Dictionary<
@@ -1067,8 +1073,8 @@ public partial class VirtualCrossoverPanel
             IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || magnitudes == null
                 ? null
                 : rightSide == activeRight
-                    ? BuildActiveHybridSumCurve(shown, magnitudes, hybrid)
-                    : BuildOppositeHybridSumCurve(sideSum, hybrid.OffsetDb)?.Points;
+                    ? BuildActiveHybridSumCurve(shown, magnitudes, hybrid, packageGate)
+                    : BuildOppositeHybridSumCurve(sideSum, hybrid.OffsetDb, packageGate)?.Points;
 
             for (int index = 0; index < shown.Count; index++)
             {
@@ -1182,7 +1188,8 @@ public partial class VirtualCrossoverPanel
                             state.TransferPeakIndex,
                             state.SampleRate,
                             found.Item.MeasuredBand,
-                            CalibrationFor(found.Item)).Points;
+                            CalibrationFor(found.Item),
+                            packageGate).Points;
                     }
                     if (found.Processed != null && state.TransferCoherence is { Length: > 1 } linear)
                     {
@@ -1240,10 +1247,10 @@ public partial class VirtualCrossoverPanel
         var analysis = new AgentAnalysisInputs(
             groupView,
             activeRight,
-            // The project's own figure, not the gate snapshot's code (which folds
-            // the psychoacoustic flag into its sign).
-            project.SmoothingInverseOctaves,
-            project.PsychoacousticSmoothing,
+            // The package's own smoothing, not the display's (see the capture's
+            // note): psychoacoustic, 1/6 octave at its narrowest.
+            SpectrumSmoothing.PsychoacousticBaseInverseOctaves,
+            true,
             project.SpatialAverageMode,
             checkBoxHybrid.Checked,
             HybridRequested,
@@ -1288,7 +1295,7 @@ public partial class VirtualCrossoverPanel
     // The measurement's excess group delay as the analyzer shows it for one
     // impulse response: the raw transfer response through the project's phase
     // gate, placed at the channel's OWN arrival (the handoff's rule for a
-    // measurement read without the chain), with the display smoothing. The
+    // measurement read without the chain), at the package's own smoothing. The
     // minimum-phase part — what the magnitude dictates and a minimum-phase PEQ
     // straightens along with it — is taken out; what remains is what no PEQ can
     // touch, which is the question a junction that will not sum asks.
@@ -1306,7 +1313,7 @@ public partial class VirtualCrossoverPanel
             project.PhaseGateLeftMs,
             project.PhaseGatePlateauMs,
             project.PhaseGateRightMs,
-            project.SmoothingInverseOctaves,
+            SpectrumSmoothing.PsychoacousticCode,
             includeMinimumPhase: true);
         return curves.Excess?.Points;
     }

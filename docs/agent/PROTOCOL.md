@@ -106,7 +106,12 @@ Use only the operations the package names; everything else goes in `advice`.
 
 `groupView` (which part of the installation the diagnostics were computed for:
 `FrontAndSub`, `RearAndSub`, `FrontAndCenter`, `GroupsCompared`, `Everything`),
-`activeSide`, `smoothingInverseOctaves`, `psychoacousticSmoothing`,
+`activeSide`, `smoothingInverseOctaves` and `psychoacousticSmoothing` (the
+package's OWN smoothing, not the display's: every magnitude curve, sum and Sum
+loss in a package is computed at psychoacoustic smoothing — 1/3 octave below
+100 Hz narrowing to 1/6 above 1 kHz — whatever the panel's combo box shows, so
+two packages compare and a dip's depth means the same thing in each; the
+screen's read-outs at another smoothing may differ),
 `spatialAverage` (below), `phaseWindowMode`, `fdwCycles`, `phaseDetrendMode`, `gateShapeMs`
 (`left`, `plateau`, `right`), `gateLeft` / `gateRight` (`offsetMs`, `detrendMs`
 where pinned), `calibration` (the microphone calibration's name, no path),

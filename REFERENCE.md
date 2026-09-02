@@ -2818,9 +2818,14 @@ this: the clipboard is the only transport, and you are the one who pastes.
   point out unused ones in the second), and where the target level sits
   against each side's sum — the measured one, and the hybrid one while the
   hybrid view is drawn — so a datum typed too high or too low is named
-  before a PEQ is proposed around it. The numbers are the screen's numbers:
-  the package is built from the same computations, for the same **Show** view,
-  so what the assistant reads is what you see. Curves are sampled on fixed grids
+  before a PEQ is proposed around it. The numbers are the screen's numbers,
+  with one deliberate exception: the package is built from the same
+  computations, for the same **Show** view, but always at psychoacoustic
+  smoothing whatever the panel's smoothing selector shows — a Sum loss read at
+  1/48 octave and one read at 1/6 are different numbers, and packages have to
+  compare across sessions and across users, so the panel's own read-out at
+  another smoothing may differ from the package's. Beyond that, what the
+  assistant reads is what you see. Curves are sampled on fixed grids
   rather than taken off the plot, so the package does not depend on the window's
   size or zoom. Before the JSON the text carries a short set of rules for the
   assistant and a link to the full guide, since many assistants cannot fetch a

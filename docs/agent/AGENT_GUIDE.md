@@ -173,11 +173,13 @@ Work in this order; each step gates the next.
      sit at the same frequency. A bell that undoes the resonance corrects
      the resonance's phase turn whether or not excess dispersion is there
      too — it does not touch the excess, and the excess does not make it
-     wrong. So a PEQ is the suspect only where its band corrects something
-     the driver does not have — a feature absent from `hybridPreDspDb`, or
-     present at one point and gone in the average — and the excess curve
-     says how much of the junction's phase problem remains for timing and
-     all-pass to take, PEQ or no PEQ.
+     wrong. So a PEQ is the suspect first where its band corrects something
+     that is not even position-stable — a feature absent from
+     `hybridPreDspDb`, or present at one point and gone in the average — the
+     excess curve says how much of the junction's phase problem remains for
+     timing and all-pass to take, PEQ or no PEQ, and whether a stable feature's
+     bell actually helps THIS pair is what the before/after phase read-outs
+     of the diagnostic pass decide, not the curves alone.
    When in doubt, advise a diagnostic pass and read it BOTH ways: clear the
    PEQ bank on the channels of that junction (a `replacePeqBank` with an
    empty `bands` list and `preampDb: 0` is a valid operation; the block's
@@ -242,22 +244,27 @@ Work in this order; each step gates the next.
    level the amplifier gain has to give back, with its noise.
    Near a junction — inside `junctions[].bandHz`, an octave to each side of
    the crossover — a bell's phase turn lands right where the pair's sum is
-   built, so ask what the band corrects. Two readings answer two different
-   questions. The spatial average says whether the magnitude feature is the
-   driver's at all: one that shows alike on `preDspDb` and on
-   `hybridPreDspDb` (both BEFORE the chain, so the current PEQ cannot have
-   made or hidden it) is position-stable and worth a bell, narrow if the
-   feature is narrow, and the bell straightens the minimum-phase turn that
-   feature carries — taking such a band out makes the junction worse. A dip
-   the average does not show, or one that moves between the point and the
-   average, is interference, position-bound, and a bell on it turns the
-   phase for nothing: keep Q ≤ 2 there, or leave it. The excess group delay
-   (§4, the diagnostic on request) answers the other question — how much of
-   the junction's phase problem no PEQ will fix: excess dispersion across the
-   band coexists with the driver's own features, is not evidence against
-   them and is not a reason to withhold the bell; it is the part that
-   timing, polarity, an all-pass band or the crossover has to take, with or
-   without the PEQ. The review warns on any bell narrower than Q 2 in the
+   built, so ask what the band corrects. Three readings answer three
+   different questions, and none of them alone settles the bell. The
+   spatial average says whether the magnitude feature is position-stable
+   enough to consider for EQ at all: one that shows alike on `preDspDb` and
+   on `hybridPreDspDb` (both BEFORE the chain, so the current PEQ cannot
+   have made or hidden it) holds over the listening volume and may be worth
+   a bell, narrow if the feature is narrow — but the average proves
+   stability, not origin: a cabin mode or a stable reflection survives the
+   averaging as readily as a driver's resonance. A dip the average does not
+   show, or one that moves between the point and the average, is
+   position-bound interference, and a bell on it turns the phase for
+   nothing: keep Q ≤ 2 there, or leave it. The excess group delay (§4, the
+   diagnostic on request) says what no PEQ will fix: excess dispersion
+   across the band coexists with a stable feature, is not evidence against
+   its bell and not a reason to withhold it; it is the part that timing,
+   polarity, an all-pass band or the crossover has to take, with or without
+   the PEQ. And whether a stable feature's bell actually helps THIS pair is
+   settled only by the junction's phase read-outs before and after it —
+   `currentScore`, `fitRmsDeg`, `phaseAtCrossoverDeg` — as the diagnostic
+   pass in step 4 reads them: the remaining excess can add to the bell's
+   turn either way. The review warns on any bell narrower than Q 2 in the
    zone so the user looks; say in the reason which case it is, and on what
    evidence.
 

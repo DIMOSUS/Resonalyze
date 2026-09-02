@@ -889,10 +889,36 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
+        List<SignalPoint> fitSource = FitSource(render.Source, keepAllPass ? allPass : [])
+            .Select(point => new SignalPoint(point.X, point.Y))
+            .ToList();
+        List<SignalPoint> fitTarget = render.Target.Points
+            .Select(point => new SignalPoint(point.X, point.Y))
+            .ToList();
+
+        // A datum set wrong is something the fit does faithfully — boosting or
+        // cutting the whole window to reach it — so it is asked about before,
+        // not discovered in the headroom read-out after.
+        (double windowMinHz, double windowMaxHz) = GetFrequencyWindow();
+        string? levelWarning = EqTargetLevelCheck.Warning(
+            EqTargetLevelCheck.TargetAboveSourceDb(fitSource, fitTarget, windowMinHz, windowMaxHz),
+            checkBoxCutsOnly.Checked,
+            windowMinHz,
+            windowMaxHz);
+        if (levelWarning != null &&
+            MessageBox.Show(
+                FindForm(),
+                levelWarning,
+                "EQ Wizard",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            return;
+        }
+
         var request = new EqWizardAutoTuneRequest(
-            FitSource(render.Source, keepAllPass ? allPass : [])
-                .Select(point => new SignalPoint(point.X, point.Y)),
-            render.Target.Points.Select(point => new SignalPoint(point.X, point.Y)),
+            fitSource,
+            fitTarget,
             CreateAutoTuneOptions(reserved),
             // Only a loopback-transfer impulse response carries coherence; an imported
             // curve has none, so boosts fall back to null-detection alone.

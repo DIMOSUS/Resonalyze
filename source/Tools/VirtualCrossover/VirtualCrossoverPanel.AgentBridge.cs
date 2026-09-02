@@ -549,6 +549,9 @@ public partial class VirtualCrossoverPanel
                     // The family the hybrid curves are built from — the selected
                     // mode's capture — not whichever capture the side happens to hold.
                     state.SpatialAverageFor(SpatialAverageMode) != null ? SpatialAverageMode.ToString() : null,
+                    // And every family it holds, read or not: the difference between
+                    // "has no average" and "has one the view is not using".
+                    AgentSpatialAverageCaptures(state),
                     raw,
                     processed ? found.Processed : null,
                     processed ? found.HybridPreDsp : null,
@@ -591,6 +594,7 @@ public partial class VirtualCrossoverPanel
             project.SmoothingInverseOctaves,
             project.PsychoacousticSmoothing,
             project.SpatialAverageMode,
+            checkBoxHybrid.Checked,
             HybridRequested,
             project.PhaseWindowMode,
             project.PhaseFdwCycles,
@@ -628,6 +632,24 @@ public partial class VirtualCrossoverPanel
             sides,
             stereo,
             groups);
+    }
+
+    // Every capture family the side holds, in the mode enum's own names so the
+    // package's per-channel list and its analysis.spatialAverage.mode agree.
+    private static IReadOnlyList<string> AgentSpatialAverageCaptures(VirtualCrossoverChannelState state)
+    {
+        var captures = new List<string>(2);
+        if (state.SpatialAverage != null)
+        {
+            captures.Add(VirtualCrossoverSpatialAverageMode.MovingMic.ToString());
+        }
+
+        if (state.ArrayCapture != null)
+        {
+            captures.Add(VirtualCrossoverSpatialAverageMode.MicArray.ToString());
+        }
+
+        return captures;
     }
 
     // The channel's spatial average through NO chain, on the impulse responses'

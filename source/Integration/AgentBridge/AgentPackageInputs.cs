@@ -41,7 +41,12 @@ internal sealed record AgentAnalysisInputs(
     int SmoothingInverseOctaves,
     bool PsychoacousticSmoothing,
     VirtualCrossoverSpatialAverageMode? SpatialAverageMode,
-    bool HybridOn,
+    // The tick is intent; whether the hybrid curves are actually drawn also needs
+    // every playing channel to carry a capture and a view that shows them. Both
+    // travel, because "ticked but not drawn" is a different thing for the user
+    // to fix than "not ticked".
+    bool HybridTicked,
+    bool HybridDrawn,
     PhaseWindowMode PhaseWindowMode,
     int FdwCycles,
     PhaseDetrendMode DetrendMode,
@@ -90,11 +95,14 @@ internal sealed record AgentChannelInputs(
 /// <param name="Processed">After the chain — the Processed curve, shared window with the side's sum.</param>
 /// <param name="HybridPreDsp">The spatial average before the chain, on the impulse responses' level axis (the hybrid datum applied), when the hybrid mode is on.</param>
 /// <param name="HybridProcessed">The spatial average through the chain, on the same axis — the curve the hybrid view draws.</param>
+/// <param name="SpatialAverage">The capture family the hybrid curves are built from — the selected mode's, when the channel holds one.</param>
+/// <param name="SpatialAverageCaptures">Every capture family the channel holds, whether or not the mode reads it — what an assistant needs to say "you have averages you are not using".</param>
 /// <param name="Coherence">The measurement's γ² per frequency, when the source carried it.</param>
 internal sealed record AgentSourceInputs(
     int SampleRateHz,
     MeasuredBand MeasuredBand,
     string? SpatialAverage,
+    IReadOnlyList<string> SpatialAverageCaptures,
     IReadOnlyList<SignalPoint>? PreDsp,
     IReadOnlyList<SignalPoint>? Processed,
     IReadOnlyList<SignalPoint>? HybridPreDsp,

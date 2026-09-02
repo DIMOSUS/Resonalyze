@@ -54,8 +54,7 @@ internal sealed record AgentPackageAnalysis(
     string ActiveSide,
     int SmoothingInverseOctaves,
     bool PsychoacousticSmoothing,
-    string? SpatialAverageMode,
-    bool Hybrid,
+    AgentPackageSpatialAverage SpatialAverage,
     string PhaseWindowMode,
     int FdwCycles,
     string PhaseDetrendMode,
@@ -67,6 +66,22 @@ internal sealed record AgentPackageAnalysis(
     bool RightHandDrive,
     double StereoLevelDifferenceDb,
     double RearFillOffsetMs);
+
+/// <summary>
+/// Whether the tune is being judged on spatial averages, and if not, why not —
+/// stated as one word so the assistant does not have to count captures across
+/// the channels: <c>none</c> (no channel carries one), <c>capturedNotShown</c>
+/// (captures exist, the hybrid view is not drawn), <c>partial</c> (drawn for
+/// some measured channels), <c>active</c>.
+/// </summary>
+internal sealed record AgentPackageSpatialAverage(
+    string? Mode,
+    bool HybridTicked,
+    bool HybridDrawn,
+    string Status,
+    int ChannelsMeasured,
+    int ChannelsWithCapture,
+    int ChannelsDrawn);
 
 internal sealed record AgentPackageGateShape(double Left, double Plateau, double Right);
 
@@ -103,6 +118,7 @@ internal sealed record AgentPackageSource(
     int? SampleRateHz,
     double[]? MeasuredBandHz,
     string? SpatialAverage,
+    IReadOnlyList<string>? SpatialAverageCaptures,
     string? UnavailableReason);
 
 internal sealed record AgentPackageDsp(
@@ -140,6 +156,10 @@ internal sealed record AgentPackageSide(
     IReadOnlyList<string> Channels,
     AgentSeries? SumDb,
     AgentPackageLoss? TotalSumLoss,
+    // The median of sum minus target over the broadband grid: where the target
+    // level datum sits against what the side actually plays. Sign: positive =
+    // the side plays above the target.
+    double? SumVsTargetDb,
     string? UnavailableReason);
 
 internal sealed record AgentPackageLoss(double AverageDb, double? DipDb);

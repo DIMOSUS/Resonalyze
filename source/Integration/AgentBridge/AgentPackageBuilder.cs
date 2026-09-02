@@ -160,7 +160,7 @@ internal static class AgentPackageBuilder
             inputs.Notes,
             BuildProcessor(inputs.Processor),
             BuildLimits(),
-            BuildAnalysis(inputs.Analysis),
+            BuildAnalysis(inputs.Analysis, inputs.Channels),
             BuildTarget(inputs.Target),
             inputs.Channels.Select(channel => BuildChannel(channel, inputs, keepCoherence)).ToList(),
             sides,
@@ -200,14 +200,15 @@ internal static class AgentPackageBuilder
                 family => CrossoverFilter.SupportedSlopes(family).ToArray()),
             [0, CrossoverFilter.MaximumChebyshevRippleDb]);
 
-    private static AgentPackageAnalysis BuildAnalysis(AgentAnalysisInputs analysis) =>
+    private static AgentPackageAnalysis BuildAnalysis(
+        AgentAnalysisInputs analysis,
+        IReadOnlyList<AgentChannelInputs> channels) =>
         new(
             analysis.GroupView.ToString(),
             analysis.ActiveSideRight ? "right" : "left",
             analysis.SmoothingInverseOctaves,
             analysis.PsychoacousticSmoothing,
-            analysis.SpatialAverageMode?.ToString(),
-            analysis.HybridOn,
+            BuildSpatialAverage(analysis, channels),
             analysis.PhaseWindowMode.ToString(),
             analysis.FdwCycles,
             analysis.DetrendMode.ToString(),
@@ -219,6 +220,38 @@ internal static class AgentPackageBuilder
             analysis.RightHandDrive,
             analysis.StereoLevelDifferenceDb,
             analysis.RearFillOffsetMs);
+
+    // One word for where the tune stands with spatial averages, counted over the
+    // channels that have a measurement at all. "Drawn" is the selected mode's
+    // capture under a hybrid view that is actually showing — a capture the mode
+    // does not read, or a tick the view cannot honour, leaves the point
+    // measurement in charge, and that is what the assistant has to tell the user.
+    private static AgentPackageSpatialAverage BuildSpatialAverage(
+        AgentAnalysisInputs analysis,
+        IReadOnlyList<AgentChannelInputs> channels)
+    {
+        List<AgentSourceInputs> measured = channels
+            .Where(channel => channel.Source != null)
+            .Select(channel => channel.Source!)
+            .ToList();
+        int withCapture = measured.Count(source => source.SpatialAverageCaptures.Count > 0);
+        int drawn = analysis.HybridDrawn
+            ? measured.Count(source => source.SpatialAverage != null)
+            : 0;
+        string status =
+            withCapture == 0 ? "none"
+            : drawn == 0 ? "capturedNotShown"
+            : drawn < measured.Count ? "partial"
+            : "active";
+        return new AgentPackageSpatialAverage(
+            analysis.SpatialAverageMode?.ToString(),
+            analysis.HybridTicked,
+            analysis.HybridDrawn,
+            status,
+            measured.Count,
+            withCapture,
+            drawn);
+    }
 
     private static AgentPackageTarget BuildTarget(AgentTargetInputs target)
     {
@@ -275,6 +308,7 @@ internal static class AgentPackageBuilder
             source?.SampleRateHz,
             source == null ? null : [source.MeasuredBand.LowEdgeHz, source.MeasuredBand.HighEdgeHz],
             source?.SpatialAverage,
+            source is { SpatialAverageCaptures.Count: > 0 } ? source.SpatialAverageCaptures : null,
             source?.UnavailableReason ?? (source == null ? "no measurement loaded" : null));
 
         return new AgentPackageChannel(
@@ -369,6 +403,7 @@ internal static class AgentPackageBuilder
         List<string> channels = side.ChannelIds.ToList();
 
         AgentSeries? sum = null;
+        double? sumVsTarget = null;
         if (side.Sum != null)
         {
             List<double> grid = AgentCurveSampling.LogGrid(
@@ -383,6 +418,23 @@ internal static class AgentPackageBuilder
                 .Where(row => row[1] != null)
                 .ToList();
             sum = new AgentSeries(["frequencyHz", "sumDb"], rows);
+
+            // The median, not the mean: a junction dip or the sub's roll-off is
+            // interference or a band edge, not a level, and must not pull the datum.
+            TargetCurveSpec spec = inputs.Target.Spec;
+            List<double> excess = grid
+                .Select(frequency => AgentCurveSampling.Sample(side.Sum, frequency) is { } level
+                    ? level - (inputs.Target.LevelDb + spec.Evaluate(frequency))
+                    : double.NaN)
+                .Where(double.IsFinite)
+                .Order()
+                .ToList();
+            if (excess.Count > 0)
+            {
+                sumVsTarget = Round1(excess.Count % 2 == 1
+                    ? excess[excess.Count / 2]
+                    : (excess[excess.Count / 2 - 1] + excess[excess.Count / 2]) / 2);
+            }
         }
 
         VirtualCrossoverMetric.Entry? total = side.Entries
@@ -394,6 +446,7 @@ internal static class AgentPackageBuilder
             channels,
             sum,
             total is { } t ? new AgentPackageLoss(Round1(t.AverageDb), AgentCurveSampling.Round(t.DipDb, 1)) : null,
+            sumVsTarget,
             side.UnavailableReason ??
                 (total == null && side.Sum != null
                     ? "no total: the chain is not continuous, or the view spans more than one listening group"

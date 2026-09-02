@@ -138,22 +138,10 @@ internal static class AgentProposalValidator
         ArgumentNullException.ThrowIfNull(session);
 
         var warnings = new List<string>();
-        if (proposal.PackageId != null && session.LastPackageId == null)
+        string? stale = StaleSessionReason(proposal, session);
+        if (stale != null)
         {
-            // The panel forgets its package when the project is loaded, the blocks
-            // are reordered or a source is replaced: the ids the reply uses were
-            // read off a project this one no longer is.
-            warnings.Add(
-                "The reply names a package this project has not copied — a project was " +
-                "loaded, the blocks were reordered or a measurement was replaced since, or the " +
-                "package came from elsewhere. The current values below decide.");
-        }
-        else if (proposal.PackageId != null && session.LastPackageId != null &&
-            !string.Equals(proposal.PackageId, session.LastPackageId, StringComparison.OrdinalIgnoreCase))
-        {
-            warnings.Add(
-                "The reply answers a different package than the one last copied from this " +
-                "session (or the session was reopened since). The current values below decide.");
+            warnings.Add(stale);
         }
 
         var verdicts = new List<AgentOperationVerdict>();
@@ -188,6 +176,7 @@ internal static class AgentProposalValidator
             }
         }
 
+        RejectEngineRequestsOnAStaleSession(verdicts, stale);
         RejectRepeatedEngineRequests(verdicts);
         RejectDisagreeingTargetLevels(verdicts);
         RejectOverwrittenSettings(verdicts, session);
@@ -202,6 +191,69 @@ internal static class AgentProposalValidator
         // describe a state nothing will produce.
         AddFinalStateNotes(verdicts);
         return new AgentProposalReview(proposal, verdicts, warnings);
+    }
+
+    // Whether the session can vouch for the package the reply answers, and if
+    // not, why: no package copied since the session opened (or the reply's came
+    // from elsewhere), another package than the one last copied, or the session
+    // changed since that copy — its fingerprint (AgentSessionFingerprint) no
+    // longer matches, whichever way it changed. A reply that names no package
+    // is taken at its word. The settings rows survive all three, judged on their
+    // expected current values as always; the engine requests do not, since an
+    // engine reads the session as it is now, which the assistant has not seen.
+    private static string? StaleSessionReason(AgentProposal proposal, AgentSessionSnapshot session)
+    {
+        if (proposal.PackageId == null)
+        {
+            return null;
+        }
+
+        const string Decide =
+            " The settings rows are judged on the current values below; the engine " +
+            "requests are refused, since they would run on a session the assistant has " +
+            "not seen — copy a new package and ask again.";
+        if (session.LastPackageId == null)
+        {
+            return "The reply names a package this session has not copied since it opened, " +
+                "or one that came from elsewhere." + Decide;
+        }
+        if (!string.Equals(proposal.PackageId, session.LastPackageId, StringComparison.OrdinalIgnoreCase))
+        {
+            return "The reply answers a different package than the one last copied from this " +
+                "session." + Decide;
+        }
+        if (session.LastPackageFingerprint != null && session.Fingerprint != null &&
+            !string.Equals(session.LastPackageFingerprint, session.Fingerprint, StringComparison.Ordinal))
+        {
+            return "The session has changed since that package was copied — a measurement or " +
+                "capture replaced, a block added, removed or reordered, a chain, gate or datum " +
+                "moved, or an import undone." + Decide;
+        }
+
+        return null;
+    }
+
+    private static void RejectEngineRequestsOnAStaleSession(
+        List<AgentOperationVerdict> verdicts, string? staleReason)
+    {
+        if (staleReason == null)
+        {
+            return;
+        }
+
+        for (int index = 0; index < verdicts.Count; index++)
+        {
+            AgentOperationVerdict verdict = verdicts[index];
+            if (verdict.Applicable && verdict.Operation is not AgentSettingsOperation)
+            {
+                verdicts[index] = verdict with
+                {
+                    Status = AgentVerdictStatus.Rejected,
+                    Message = "The session is not the one the package described; " +
+                        "copy a new package and ask again."
+                };
+            }
+        }
     }
 
     // The panel runs each engine once per import, and a second request for the

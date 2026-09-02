@@ -83,11 +83,16 @@ internal sealed record AgentPackageAnalysis(
 /// all). Counted over the channels the current view shows — the ones whose
 /// curves the package's diagnostics are built from — and "drawn" is read off
 /// the hybrid curves actually present, not off what is attached.
+/// <see cref="SmoothingInverseOctaves"/> is the hybrid curves' and sums' own
+/// smoothing: the package's grid width rather than its psychoacoustic one,
+/// because the manual reads an average with the smoothing off, and off cannot
+/// travel on a grid.
 /// </summary>
 internal sealed record AgentPackageSpatialAverage(
     string? Mode,
     bool HybridTicked,
     bool HybridDrawn,
+    int SmoothingInverseOctaves,
     string Status,
     int ChannelsShown,
     int ChannelsWithCapture,

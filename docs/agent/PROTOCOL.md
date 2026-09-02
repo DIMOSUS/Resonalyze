@@ -48,7 +48,7 @@ to the 100 KB ceiling, and beyond that nothing is copied:
 | `kind` | `"resonalyze.agent-package"` |
 | `protocolVersion` | `1` |
 | `guideVersion` | The version of [AGENT_GUIDE.md](AGENT_GUIDE.md) this build was written against (its first line). The guide at the URL may be newer; read it, and know which methodology the package's author expected. |
-| `packageId` | A new GUID per copy. Echo it in the reply; a mismatch is a warning, not a refusal. |
+| `packageId` | A new GUID per copy. Echo it in the reply: it is how the importer knows which session the reply describes. A reply naming a package the session cannot vouch for — none copied, another one, or this one after the session changed — is shown with a warning; its settings rows are judged on their expected current values, its engine requests refused (§2.2). |
 | `createdAtUtc` | ISO 8601, UTC. |
 | `application` | `{ name, version }` |
 | `conventions` | Units and sign conventions, as text, for readers without the guide. |
@@ -111,7 +111,8 @@ package's OWN smoothing, not the display's: every magnitude curve, sum and Sum
 loss in a package is computed at psychoacoustic smoothing — 1/3 octave below
 100 Hz narrowing to 1/6 above 1 kHz — whatever the panel's combo box shows, so
 two packages compare and a dip's depth means the same thing in each; the
-screen's read-outs at another smoothing may differ),
+screen's read-outs at another smoothing may differ — the hybrid curves and
+sums are the one exception, at `spatialAverage.smoothingInverseOctaves`, below),
 `spatialAverage` (below), `phaseWindowMode`, `fdwCycles`, `phaseDetrendMode`, `gateShapeMs`
 (`left`, `plateau`, `right`), `gateLeft` / `gateRight` (`offsetMs`, `detrendMs`
 where pinned), `calibration` (the microphone calibration's name, no path),
@@ -123,7 +124,7 @@ the channels that have a measurement:
 
 ```json
 "spatialAverage": { "mode": "MovingMic", "hybridTicked": true, "hybridDrawn": false,
-                    "status": "capturedNotShown",
+                    "smoothingInverseOctaves": 12, "status": "capturedNotShown",
                     "channelsShown": 7, "channelsWithCapture": 5, "channelsDrawn": 0 }
 ```
 
@@ -132,6 +133,17 @@ the channels that have a measurement:
   `hybridDrawn` whether the hybrid curves are actually on the plot — that also
   needs every playing channel to carry a capture of the selected family and a
   view that shows them (not a group comparison).
+- `smoothingInverseOctaves` is the width the hybrid curves and sums are read at
+  — `hybridPreDspDb`, `hybridProcessedDb`, the sides' hybrid sum and
+  `hybridSumVsTargetDb`: 1/12 octave, the grid's own width, not the package's
+  psychoacoustic one. The manual reads a spatial average with the smoothing
+  off — the average has already removed the position-dependent wiggles
+  smoothing exists to hide, and a fractional-octave window straddling a
+  crossover's skirt pulls the level toward the passband right where the
+  acoustic slopes are judged — and off cannot travel on a 12-point-per-octave
+  grid; one grid step is the nearest. A hybrid column and the measured column
+  beside it are therefore not at one width: compare the two by shape, not by
+  the depth of a narrow feature.
 - The counts run over the channels the current view **shows** — the union of
   `sides[].channels`, the channels the diagnostics are built from. A channel the
   view leaves out has its own curves but never hybrid ones, whatever it holds;
@@ -208,7 +220,7 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
   window), `chainDb` (the chain alone, built at the processor's rate), `peqDb`
   (the PEQ alone), `hybridPreDspDb` and `hybridProcessedDb` (the spatial average
   before and through the chain, present when the hybrid view is on and the
-  channel has a capture), `coherence` (γ², when the source carried it). The two
+  channel has a capture, at the hybrid's own smoothing, §1.4), `coherence` (γ², when the source carried it). The two
   hybrid columns are placed on the **same level axis** as the impulse-response
   columns — the datum the panel draws them with is applied — so every column of
   a channel compares directly with every other. A `null` cell is a frequency the
@@ -299,7 +311,7 @@ same chat as a second text:
 RESONALYZE_AGENT_DIAGNOSTIC_V1
 …
 BEGIN_RESONALYZE_AGENT_DIAGNOSTIC_JSON
-{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.2",
+{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.3",
   "diagnostic": "excessGroupDelay", "packageId": "…", "createdAtUtc": "…",
   "conventions": { … },
   "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } }, … ] }
@@ -307,7 +319,9 @@ END_RESONALYZE_AGENT_DIAGNOSTIC_JSON
 ```
 
 `packageId` names the package the diagnostic was copied beside (absent when
-none was copied since the project was loaded); the channel ids and the
+none was copied since the session opened, or when the session has changed
+since that copy — the same check the reply's review makes, §2.2 — so an id
+that is present vouches that the curves belong beside it); the channel ids and the
 broadband grid are the package's, so the two lay side by side. A row is left
 out where the reading could not be made.
 
@@ -376,7 +390,7 @@ open door: an `extensions` object, whose content is ignored).
 | --- | --- | --- |
 | `kind` | yes | `"resonalyze.agent-proposal"` |
 | `protocolVersion` | yes | `1` |
-| `packageId` | no | Echo of the package's id. A different id is shown as a warning. |
+| `packageId` | no | Echo of the package's id. A package the session cannot vouch for (§2.2) is shown as a warning and refuses the engine requests. |
 | `summary` | yes | One paragraph, shown at the top of the review. |
 | `advice[]` | no | Changes that are not operations — engines to run, things to re-measure. Shown, never applied. |
 | `sources[]` | no | `{ url, title?, factsUsed[] }`; `url` must be `http(s)`. Shown as text, never opened. |
@@ -480,6 +494,17 @@ which curves the rest are read on), then `runAutoCrossover`, then `runAutoDelay`
 then `autoTunePeq`. One summary at the end says what was applied and what was
 skipped, and *Undo AI import* puts back everything the whole sequence moved.
 
+An engine request is refused — the reply's other rows left to their own checks
+— when the session cannot vouch for the package the reply names: no package
+copied since the session opened, another package than the last one copied, or
+that package copied from a session that has since changed (a measurement or
+capture replaced, a block added, removed or reordered, a chain, gate or datum
+moved, an import undone). Resonalyze fingerprints the session at every copy
+and compares at every review. A settings row still stands on its expected
+current value; an engine reads the session as it is *now*, which the assistant
+has not seen. Ask for a new package. A reply that names no package is taken at
+its word.
+
 An engine and a hand-written value the engine would write over cannot both be
 meant, so the hand-written row is **rejected**, naming the engine that would have
 erased it. The engine keeps its row: it is the one that computes the number.
@@ -526,7 +551,12 @@ showed (a crossover moved without the bank that went with it).
    undone in one step.
 6. *Undo AI import* puts back everything the import could have moved: every
    channel's chain, the spatial average mode and the Hybrid tick, and the block
-   order the crossover wizard may have changed.
+   order the crossover wizard may have changed. The fingerprint check reads
+   the undone session as what it is: a package copied *before* the import
+   describes it again, and a reply answering that package is taken in full; a
+   package copied *after* the import — the guide's diagnostic pass — no longer
+   does, and a reply answering it has its engine requests refused until a new
+   package is copied.
 
 ## 3. Privacy
 

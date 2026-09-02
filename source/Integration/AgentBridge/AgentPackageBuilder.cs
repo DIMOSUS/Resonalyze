@@ -253,6 +253,7 @@ internal static class AgentPackageBuilder
             analysis.SpatialAverageMode?.ToString(),
             analysis.HybridTicked,
             analysis.HybridDrawn,
+            analysis.HybridSmoothingInverseOctaves,
             status,
             shown.Count,
             withCapture,

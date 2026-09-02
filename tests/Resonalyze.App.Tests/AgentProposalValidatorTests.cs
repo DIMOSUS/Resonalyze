@@ -421,12 +421,51 @@ public sealed class AgentProposalValidatorTests
 
         Assert.Single(AgentProposalValidator.Review(other, Session()).Warnings);
         Assert.Empty(AgentProposalValidator.Review(none, Session()).Warnings);
-        // The panel forgets its package on a project load, a block reorder or a
-        // source replacement: a reply naming one then gets its warning too.
+        // A session that has copied nothing since it opened cannot vouch for any
+        // package: a reply naming one gets its warning too.
         string forgotten = Assert.Single(AgentProposalValidator.Review(other, Session(lastPackageId: null)).Warnings);
         Assert.Contains("has not copied", forgotten);
-        // A warning is only a warning: the row itself still applies.
+        // A warning is only a warning for a settings row: it still applies, on
+        // its expected current value.
         Assert.True(AgentProposalValidator.Review(other, Session()).Verdicts[0].Applicable);
+    }
+
+    [Fact]
+    public void Review_RefusesEngineRequests_WhenTheSessionCannotVouchForThePackage()
+    {
+        AgentProposal proposal = Proposal(
+            new SetGainOperation("op-1", "A:right", "", -2.0, -3.0),
+            new RunAutoDelayOperation("op-2", "", null, null, null, null, null),
+            new AutoTunePeqOperation("op-3", "B:left", "", null, null, null, null, null, null));
+
+        // Three ways the session cannot vouch for the package the reply answers:
+        // it copied none, it copied another, or it has changed since the copy —
+        // its fingerprint no longer matches the one the package was taken at.
+        foreach (AgentSessionSnapshot session in new[]
+        {
+            Session(lastPackageId: null),
+            Session(lastPackageId: "11111111-2222-3333-4444-555555555555"),
+            Session(lastFingerprint: "aaaaaaaaaaaaaaaa", fingerprint: "bbbbbbbbbbbbbbbb")
+        })
+        {
+            AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
+            string warning = Assert.Single(review.Warnings);
+            Assert.Contains("copy a new package", warning);
+            // The settings row is judged on its expected current value, as always;
+            // an engine reads the session as it is NOW, which the assistant has
+            // not seen, so the requests are refused rather than run blind.
+            Assert.True(review.Verdicts[0].Applicable);
+            Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+            Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[2].Status);
+            Assert.Contains("copy a new package", review.Verdicts[1].Message);
+        }
+
+        // The same fingerprint at the copy and now: the package is still good, and
+        // a session that took no fingerprint at all is not compared.
+        Assert.Empty(AgentProposalValidator.Review(
+            proposal, Session(lastFingerprint: "aaaaaaaaaaaaaaaa", fingerprint: "aaaaaaaaaaaaaaaa")).Warnings);
+        Assert.Empty(AgentProposalValidator.Review(proposal, Session()).Warnings);
+        Assert.True(AgentProposalValidator.Review(proposal, Session()).Verdicts[1].Applicable);
     }
 
     [Fact]
@@ -893,7 +932,9 @@ public sealed class AgentProposalValidatorTests
         VirtualCrossoverSpatialAverageMode spatialAverageMode = VirtualCrossoverSpatialAverageMode.Off,
         bool hybridTicked = false,
         bool adjustGains = false,
-        IReadOnlyList<string>? captures = null)
+        IReadOnlyList<string>? captures = null,
+        string? lastFingerprint = null,
+        string? fingerprint = null)
     {
         var aLeft = new VirtualCrossoverChannelSettings { GainDb = 0, DelayMs = 0 };
         var aRight = new VirtualCrossoverChannelSettings { GainDb = -2.0, DelayMs = 1.42 };
@@ -923,7 +964,9 @@ public sealed class AgentProposalValidatorTests
             lastPackageId,
             new AgentAutoDelaySettings(0.25, RightHandDrive: false, adjustGains, 1.0, 15.0),
             spatialAverageMode,
-            hybridTicked);
+            hybridTicked,
+            LastPackageFingerprint: lastFingerprint,
+            Fingerprint: fingerprint);
     }
 
     private static AgentProposal Proposal(params AgentOperation[] operations) =>

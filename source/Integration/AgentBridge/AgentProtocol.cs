@@ -80,7 +80,7 @@ internal static class AgentProtocol
     /// package so an assistant reading a newer guide at the URL knows which
     /// methodology the package's author expected.
     /// </summary>
-    public const string GuideVersion = "1.2";
+    public const string GuideVersion = "1.3";
 
     /// <summary>The whole clipboard text, UTF-8 bytes, before any parsing.</summary>
     public const int MaxProposalBytes = 1024 * 1024;

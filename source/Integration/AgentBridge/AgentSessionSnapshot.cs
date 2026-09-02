@@ -74,7 +74,8 @@ internal sealed record AgentChannelSnapshot(
 /// </param>
 /// <param name="LastPackageId">
 /// The id of the package this session most recently copied, or null when it has
-/// not copied one since it opened. A reply naming another id gets a warning.
+/// not copied one since it opened. A reply naming another id gets a warning,
+/// and its engine requests are refused.
 /// </param>
 /// <param name="AutoDelay">
 /// What an Auto delay run would start from: the values the dialog would open
@@ -98,7 +99,13 @@ internal sealed record AgentSessionSnapshot(
     // The side on screen: an Auto-tune handoff is built for it alone (its gate
     // pin, its render anchor, its hybrid datum), so a request for the other
     // side's channel is refused at review rather than skipped at execution.
-    bool ActiveSideRight = false)
+    bool ActiveSideRight = false,
+    // The fingerprint the last copied package was taken at, and the session's
+    // own now (AgentSessionFingerprint): unequal, the session has changed since
+    // the copy, whichever way. Null when the panel took none — a test session —
+    // and then the two are not compared.
+    string? LastPackageFingerprint = null,
+    string? Fingerprint = null)
 {
     public AgentChannelSnapshot? Find(string channelId) =>
         Channels.FirstOrDefault(channel =>

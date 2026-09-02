@@ -41,7 +41,12 @@ internal sealed record AgentAnalysisInputs(
     int SmoothingInverseOctaves,
     bool PsychoacousticSmoothing,
     VirtualCrossoverSpatialAverageMode? SpatialAverageMode,
-    bool HybridOn,
+    // The tick is intent; whether the hybrid curves are actually drawn also needs
+    // every playing channel to carry a capture and a view that shows them. Both
+    // travel, because "ticked but not drawn" is a different thing for the user
+    // to fix than "not ticked".
+    bool HybridTicked,
+    bool HybridDrawn,
     PhaseWindowMode PhaseWindowMode,
     int FdwCycles,
     PhaseDetrendMode DetrendMode,
@@ -90,11 +95,14 @@ internal sealed record AgentChannelInputs(
 /// <param name="Processed">After the chain — the Processed curve, shared window with the side's sum.</param>
 /// <param name="HybridPreDsp">The spatial average before the chain, on the impulse responses' level axis (the hybrid datum applied), when the hybrid mode is on.</param>
 /// <param name="HybridProcessed">The spatial average through the chain, on the same axis — the curve the hybrid view draws.</param>
+/// <param name="SpatialAverage">The capture family the hybrid curves are built from — the selected mode's, when the channel holds one.</param>
+/// <param name="SpatialAverageCaptures">Every capture family the channel holds, whether or not the mode reads it — what an assistant needs to say "you have averages you are not using".</param>
 /// <param name="Coherence">The measurement's γ² per frequency, when the source carried it.</param>
 internal sealed record AgentSourceInputs(
     int SampleRateHz,
     MeasuredBand MeasuredBand,
     string? SpatialAverage,
+    IReadOnlyList<string> SpatialAverageCaptures,
     IReadOnlyList<SignalPoint>? PreDsp,
     IReadOnlyList<SignalPoint>? Processed,
     IReadOnlyList<SignalPoint>? HybridPreDsp,
@@ -107,12 +115,15 @@ internal sealed record AgentSourceInputs(
 /// and the junction read-outs exactly as the panel's metric block quotes them.
 /// </summary>
 /// <param name="ChannelIds">The channels the view drew on this side — the set the sum, the loss and the junctions were computed from.</param>
+/// <param name="Sum">The measured sum — the impulse responses through their chains, coherently added.</param>
+/// <param name="HybridSum">The sum the hybrid view draws: the spatial averages' levels held together by the point measurement's phase, on the same axis as <paramref name="Sum"/>. An estimate of a point's interference, present only while the hybrid curves are drawn.</param>
 /// <param name="Entries">The Sum loss rows, per junction plus the total where the chain is continuous.</param>
 /// <param name="PhaseEntries">The Junction phase rows.</param>
 internal sealed record AgentSideInputs(
     AgentChannelSide Side,
     IReadOnlyList<string> ChannelIds,
     IReadOnlyList<SignalPoint>? Sum,
+    IReadOnlyList<SignalPoint>? HybridSum,
     IReadOnlyList<SignalPoint>? Loss,
     IReadOnlyList<VirtualCrossoverMetric.Entry> Entries,
     IReadOnlyList<VirtualCrossoverMetric.PhaseEntry> PhaseEntries,

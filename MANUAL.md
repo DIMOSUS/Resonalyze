@@ -1131,7 +1131,12 @@ Psychoacoustic smoothing helps here too, by de-emphasizing narrow, position-depe
 irregularities that are usually not worth correcting — unless you are working in Hybrid
 mode, where smoothing should be **Off** for the reasons given above.
 
-Press **Auto Tune** and let Resonalyze fit the response to the target.
+Press **Auto Tune** and let Resonalyze fit the response to the target. If it asks
+first whether to tune anyway, the target level is the problem, not the curve: it
+sits far enough above the source that the fit would boost the whole band to reach
+it, or far enough below that it would cut the whole band and give the level back to
+the amplifier gain. Answer *No*, move **Target Level** toward the curve, and press
+again.
 
 ![The same channel after Auto Tune: seven bands, RMS error 3.9 → 1.3 dB](assets/images/manual/eq-wizard-tuned.png)
 

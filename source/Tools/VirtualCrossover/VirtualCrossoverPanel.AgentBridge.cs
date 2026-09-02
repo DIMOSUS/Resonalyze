@@ -356,7 +356,7 @@ public partial class VirtualCrossoverPanel
             if (sideSum == null)
             {
                 sides.Add(new AgentSideInputs(
-                    sideName, [], null, null, [], [], [], "no channel with a source on this side"));
+                    sideName, [], null, null, null, [], [], [], "no channel with a source on this side"));
                 continue;
             }
 
@@ -419,6 +419,16 @@ public partial class VirtualCrossoverPanel
             HybridMagnitudes? hybrid = HybridRequested && magnitudes != null
                 ? BuildHybridMagnitudes(shown, magnitudes, rightSide, smoothing)
                 : null;
+            // The sum the hybrid view draws beside the measured one: the same two
+            // constructions the plot uses (see RedrawMainPlotAsync), the active
+            // side's from the shown set, the opposite side's under its own gate
+            // placement — and null, as on screen, when the sides cannot be held
+            // to one offset.
+            IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || magnitudes == null
+                ? null
+                : rightSide == activeRight
+                    ? BuildActiveHybridSumCurve(shown, magnitudes, hybrid)
+                    : BuildOppositeHybridSumCurve(sideSum, hybrid.OffsetDb)?.Points;
 
             for (int index = 0; index < shown.Count; index++)
             {
@@ -483,6 +493,7 @@ public partial class VirtualCrossoverPanel
                     item.Channel.Name,
                     item.Channel.Pair.Mono ? AgentChannelSide.Mono : sideName)).ToList(),
                 sumCurve?.Points,
+                hybridSum,
                 loss,
                 entries,
                 phaseEntries,
@@ -549,6 +560,9 @@ public partial class VirtualCrossoverPanel
                     // The family the hybrid curves are built from — the selected
                     // mode's capture — not whichever capture the side happens to hold.
                     state.SpatialAverageFor(SpatialAverageMode) != null ? SpatialAverageMode.ToString() : null,
+                    // And every family it holds, read or not: the difference between
+                    // "has no average" and "has one the view is not using".
+                    AgentSpatialAverageCaptures(state),
                     raw,
                     processed ? found.Processed : null,
                     processed ? found.HybridPreDsp : null,
@@ -591,6 +605,7 @@ public partial class VirtualCrossoverPanel
             project.SmoothingInverseOctaves,
             project.PsychoacousticSmoothing,
             project.SpatialAverageMode,
+            checkBoxHybrid.Checked,
             HybridRequested,
             project.PhaseWindowMode,
             project.PhaseFdwCycles,
@@ -628,6 +643,24 @@ public partial class VirtualCrossoverPanel
             sides,
             stereo,
             groups);
+    }
+
+    // Every capture family the side holds, in the mode enum's own names so the
+    // package's per-channel list and its analysis.spatialAverage.mode agree.
+    private static IReadOnlyList<string> AgentSpatialAverageCaptures(VirtualCrossoverChannelState state)
+    {
+        var captures = new List<string>(2);
+        if (state.SpatialAverage != null)
+        {
+            captures.Add(VirtualCrossoverSpatialAverageMode.MovingMic.ToString());
+        }
+
+        if (state.ArrayCapture != null)
+        {
+            captures.Add(VirtualCrossoverSpatialAverageMode.MicArray.ToString());
+        }
+
+        return captures;
     }
 
     // The channel's spatial average through NO chain, on the impulse responses'

@@ -97,12 +97,42 @@ rejected; a reply inside them may still exceed what the device can dial.
 `groupView` (which part of the installation the diagnostics were computed for:
 `FrontAndSub`, `RearAndSub`, `FrontAndCenter`, `GroupsCompared`, `Everything`),
 `activeSide`, `smoothingInverseOctaves`, `psychoacousticSmoothing`,
-`spatialAverageMode`, `hybrid` (whether the spatial averages were drawn under the
-prediction), `phaseWindowMode`, `fdwCycles`, `phaseDetrendMode`, `gateShapeMs`
+`spatialAverage` (below), `phaseWindowMode`, `fdwCycles`, `phaseDetrendMode`, `gateShapeMs`
 (`left`, `plateau`, `right`), `gateLeft` / `gateRight` (`offsetMs`, `detrendMs`
 where pinned), `calibration` (the microphone calibration's name, no path),
 `stereoSceneOffsetMs`, `rightHandDrive`, `stereoLevelDifferenceDb`,
 `rearFillOffsetMs`.
+
+`spatialAverage` says where the tune stands with spatial averages, counted over
+the channels that have a measurement:
+
+```json
+"spatialAverage": { "mode": "MovingMic", "hybridTicked": true, "hybridDrawn": false,
+                    "status": "capturedNotShown",
+                    "channelsShown": 7, "channelsWithCapture": 5, "channelsDrawn": 0 }
+```
+
+- `mode` is the family the project reads (`MovingMic`, `MicArray`, `Off`; absent
+  when the project has never chosen). `hybridTicked` is the Hybrid box;
+  `hybridDrawn` whether the hybrid curves are actually on the plot — that also
+  needs every playing channel to carry a capture of the selected family and a
+  view that shows them (not a group comparison).
+- The counts run over the channels the current view **shows** — the union of
+  `sides[].channels`, the channels the diagnostics are built from. A channel the
+  view leaves out has its own curves but never hybrid ones, whatever it holds;
+  a muted channel has no curves at all; neither is counted. `channelsDrawn` is
+  read off the hybrid curves actually present in the package, not off what is
+  attached.
+- `status`: `none` — no shown channel carries a capture of any family, the tune
+  rests on single-point measurements; `capturedNotShown` — captures exist, but
+  no hybrid curve is in the package (the box is off, the mode does not read
+  them, the view cannot show them, or a playing channel lacks one); `partial` —
+  hybrid curves for some shown channels; `active` — every shown channel is
+  judged on its average.
+- The status is about the channel curves. The `stereo[]` and `groups[]` level
+  rows choose their basis on their own — they read the averages whenever the
+  box is ticked and the captures cover both sides, whatever the view — and say
+  so per row in `levelFromSpatialAverage`.
 
 ### 1.5 `target`
 
@@ -138,6 +168,9 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
   `source.spatialAverage` names the capture family the hybrid curves are built
   from — the selected mode (`MovingMic` or `MicArray`) when the channel holds a
   capture of it; absent otherwise, whatever other captures the channel has.
+  `source.spatialAverageCaptures` lists every family the channel holds, read or
+  not; absent when it holds none. The two differ exactly when the user has an
+  average they are not using — see `analysis.spatialAverage`.
 - Both crossover edges are always stored; `kind` says which act (`LowPass` uses
   `lowPass`, `HighPass` uses `highPass`, `BandPass` both, `Off` none). `rippleDb`
   matters only for `Chebyshev`.
@@ -171,7 +204,15 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
 `side`, `channels` (the ids that played on this side in the current view),
 `sumDb` (the coherent sum on the broadband grid), `totalSumLoss`
 (`averageDb`, `dipDb` — only where the chain is continuous and the view is one
-listening group), `unavailableReason`.
+listening group), `sumVsTargetDb` (the median of `sumDb` minus `target.curve`
+over the grid: positive = the side plays above the target level; where the
+target datum sits, unmoved by a junction dip or a band edge),
+`hybridSumVsTargetDb` (the same reading off the sum the hybrid view draws —
+the spatial averages' levels held together by the point measurement's phase;
+present only while the hybrid curves are drawn, and an estimate of one
+position's interference rather than a measurement, so it carries the datum but
+not a junction's depth), `unavailableReason`. `sumDb` itself is always the
+measured, single-position sum.
 
 ### 1.8 `junctions[]`
 

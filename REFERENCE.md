@@ -1586,6 +1586,18 @@ the band count itself**, up to the **Max Filters** limit (4–32), while a
 cumulative-boost cap and minimum band spacing keep it from stacking maxed-out
 bands where the response simply cannot be corrected.
 
+Before it runs, the fit reads where **Target Level** sits against the source
+over the From–To window — the median of their difference, so a junction dip or
+a modal null does not move it — and asks first when the datum is the problem
+rather than the shape: a target 3 dB or more **above** the source would be
+reached by boosting the whole window, spending headroom on level — or, under
+**Cuts only**, not reached at all: its preamp stops at 0 dB and its bands only
+cut, so the curve stays below the target, and a bump that stays under the
+target line is not a cut the fit will make; a target 10 dB or more **below**
+the source would be reached by cutting the whole window, handing that level to
+the amplifier gain and its noise. All three are a Target Level typed wrong.
+*Yes* tunes anyway.
+
 **Max Q** is the ceiling on how narrow those bands may be — **6.0** by default,
 against the 20 a strip accepts when you type one in by hand. It bounds Auto Tune
 alone; nothing it fitted earlier is touched, and you can still narrow any band
@@ -2798,7 +2810,15 @@ this: the clipboard is the only transport, and you are the one who pastes.
   each channel's Raw and Processed curves at 12 points per octave, the side sums,
   the [Sum loss](#the-panel-gates-plots-and-read-outs) and Junction phase rows,
   the delay-search lobes and the PHAT read of every junction, the coherence
-  ladder, and the Δ L−R and group blocks. The numbers are the screen's numbers:
+  ladder, and the Δ L−R and group blocks — plus two readings the assistant is
+  asked to act on before anything else: where the tune stands with
+  [spatial averages](#hybrid-spatial-averages-under-the-prediction) (none
+  taken, taken but not drawn, drawn for some channels, drawn for all — the
+  guide has it press for moving-microphone captures in the first case and
+  point out unused ones in the second), and where the target level sits
+  against each side's sum — the measured one, and the hybrid one while the
+  hybrid view is drawn — so a datum typed too high or too low is named
+  before a PEQ is proposed around it. The numbers are the screen's numbers:
   the package is built from the same computations, for the same **Show** view,
   so what the assistant reads is what you see. Curves are sampled on fixed grids
   rather than taken off the plot, so the package does not depend on the window's

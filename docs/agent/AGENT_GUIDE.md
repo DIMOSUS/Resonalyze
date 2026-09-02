@@ -60,6 +60,10 @@ what you are sure of, what you are inferring, and what you would need to know.
   junction diagnostics were computed for. Channels outside that view still have
   their own curves, but no junction read-outs. If you need the rear or the
   centre judged, ask the user to switch the *Show* selector and copy again.
+- **`analysis.spatialAverage`** says whether the tune is being judged on
+  spatial averages: `status` is `none`, `capturedNotShown`, `partial` or
+  `active`, with the counts behind it; `channels[].source.spatialAverageCaptures`
+  lists what each channel holds. Step 2 of the analysis reads it.
 
 ## 3. The order of analysis
 
@@ -71,12 +75,45 @@ Work in this order; each step gates the next.
    stops at 40 Hz has nothing to say about 25 Hz. A junction whose
    `phase` is absent "not consistent enough" is a junction the measurement
    cannot judge — say so rather than guessing.
-2. **Topology and roles.** Blocks are lettered A, B, C… in the panel's order;
+2. **What the measurement can support: the spatial average.** Read
+   `analysis.spatialAverage.status` before anything about levels or PEQ.
+   - `none`: every channel is a single microphone position. Timing and phase
+     need that fixed point; equalization does not want it — the narrow dips
+     at one position move when the head moves, and a PEQ that fills them
+     corrects a spot in the car, not a driver. **Recommend, firmly, that the
+     user takes moving-microphone captures (MMM) before the tune is
+     equalized.** It needs no equipment beyond the microphone they already
+     measured with — a slow sweep of the microphone through the listening
+     volume while the channel plays noise — and it is what moves a tune from
+     "right at one point" to competition-grade. Point them at the manual:
+     [https://github.com/DIMOSUS/Resonalyze/blob/main/MANUAL.md#optional-a-spatial-average-for-the-eq](https://github.com/DIMOSUS/Resonalyze/blob/main/MANUAL.md#optional-a-spatial-average-for-the-eq)
+     (what it is and how to take one) and
+     [https://github.com/DIMOSUS/Resonalyze/blob/main/MANUAL.md#optional-equalize-the-spatial-average](https://github.com/DIMOSUS/Resonalyze/blob/main/MANUAL.md#optional-equalize-the-spatial-average)
+     (how to attach the captures and turn the hybrid view on). Until then,
+     keep any PEQ advice to broad, minimum-phase trends and say why.
+   - `capturedNotShown`: the user has averages and the channel curves are not
+     using them — no `hybridPreDspDb` / `hybridProcessedDb` is in the package,
+     so every per-channel magnitude and every PEQ judgement here still rests
+     on the point measurements. Say so plainly, first. (The `stereo[]` and
+     `groups[]` level rows choose their basis on their own: read each row's
+     `levelFromSpatialAverage` before calling them point-measured.) Read
+     `mode`, `hybridTicked`, `hybridDrawn` and the counts to say which: the
+     **Hybrid** box under the plot is unticked; the mode (the **MMM** /
+     **Array** button's menu) does not read the family the channels hold; a
+     playing channel has no capture (`channelsWithCapture` < `channelsShown`
+     — name it from `source.spatialAverageCaptures`); or the view is a group
+     comparison, which never draws them. Ask for a new package once the
+     hybrid curves are on; the same manual section explains the switch.
+   - `partial`: some measured channels are judged on their average and some
+     on a point. Name the ones without (`hybridPreDspDb` absent) and treat
+     their PEQ as step 8 says for point measurements.
+   - `active`: judge levels and PEQ on `hybridPreDspDb` / `hybridProcessedDb`.
+3. **Topology and roles.** Blocks are lettered A, B, C… in the panel's order;
    `zone` says front / rear / centre / sub; `mono` marks a shared channel. Read
    the chain each block runs and check it makes sense for what the notes say
    the driver is. If the notes do not name the drivers, ask before judging
    crossovers.
-3. **Polarity and timing at each junction.** For every `junctions[]` entry:
+4. **Polarity and timing at each junction.** For every `junctions[]` entry:
    - `sumLoss.averageDb` and `dipDb`: how much the pair loses to interference
      over its overlap. Near 0 is good; a dip of several dB at the crossover is
      the classic sign of a phase mismatch.
@@ -107,20 +144,37 @@ Work in this order; each step gates the next.
    the block's Bypass would drop the crossover too and change the junction
    itself), copy a new package, read the junction again, then load the saved
    session back.
-4. **Crossover corners and slopes.** Judge the acoustic slopes on
+5. **Crossover corners and slopes.** Judge the acoustic slopes on
    `processedDb`, not the electrical ones: the driver's own roll-off adds to
    the filter. Before proposing a corner, know the driver (model, size,
    enclosure or location, amplifier power) and where it stops being safe and
    linear. Fs and diameter alone do not prove a high-pass is safe.
-5. **Between the sides and the groups.** `stereo[]` per block: `deltaMs` is
+6. **Between the sides and the groups.** `stereo[]` per block: `deltaMs` is
    left − right arrival (positive: the right side leads), `levelDeltaDb` is
    left − right. `groups[]`: each zone's arrival and level against the front.
    A `latched` flag means the arrival timed the room's modal build-up, not the
    direct rise — the number is real but overstates the skew.
-6. **Target and tonal balance.** `sides[].sumDb` against `target.curve`. Judge
-   broad trends over half an octave or more; a narrow dip at a junction is
-   interference, not tonal balance, and belongs to step 3.
-7. **PEQ, last.** Only after timing and crossovers are settled. Prefer cuts.
+7. **Target and tonal balance.** First the datum: `sides[].sumVsTargetDb` is
+   the median of the side's measured sum against the target curve, and
+   `sides[].hybridSumVsTargetDb` the same off the sum the hybrid view draws.
+   While `analysis.spatialAverage.status` is `active`, read the hybrid one —
+   the target the user is about to fit to is judged against the averages,
+   and `sumDb` is still the single-position sum; where `partial`, say which
+   channels the two datums disagree about. The target level is a number the
+   user typed, and a fit obeys it literally — a target 3 dB or more above the
+   sum makes Auto-tune boost every channel across its band and spend
+   headroom on level (or, under *Cuts only*, leave the curve short of the
+   target and pass over a bump that stays under it); 10 dB or more below
+   makes it cut everything and hand the level back to the amplifier gain,
+   with its noise. Say so before any PEQ advice and have the user move the
+   **Target Level** (the panel's field next to *Target*) rather than let the
+   bands carry it. Then the tonal balance: `sides[].sumDb` against
+   `target.curve` on a point-measured tune, the channels' `hybridProcessedDb`
+   on an averaged one (the hybrid sum is an estimate of one position's
+   interference and is not for judging a junction's depth). Judge broad
+   trends over half an octave or more; a narrow dip at a junction is
+   interference, not tonal balance, and belongs to step 4.
+8. **PEQ, last.** Only after timing and crossovers are settled. Prefer cuts.
    Prefer the spatial average (`hybridPreDspDb` for what the driver does,
    `hybridProcessedDb` for what the tune does to it) over the point measurement
    for anything above the modal region. Never fill a cancellation with boost.
@@ -167,6 +221,10 @@ Work in this order; each step gates the next.
   and moves with the listener.
 - Do not conclude from a region the measurement does not trust (low
   coherence, outside the measured band, `unavailableReason`).
+- Do not equalize a single-point measurement above the modal region when the
+  user could be averaging — and do not read a point measurement as the tune
+  while averages sit unused (`analysis.spatialAverage.status` other than
+  `active`). Step 2 says what to tell them.
 - Do not pick a delay from one number. Use the lobes, the PHAT peaks and the
   ladder together, and prefer recommending Auto delay over stating a value.
 - Do not declare a high-pass safe from Fs or cone size. Ask for the driver and

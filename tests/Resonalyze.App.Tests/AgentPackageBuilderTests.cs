@@ -31,6 +31,9 @@ public sealed class AgentPackageBuilderTests
         JsonElement root = Json(text);
         Assert.Equal(AgentProtocol.PackageKind, root.GetProperty("kind").GetString());
         Assert.Equal(1, root.GetProperty("protocolVersion").GetInt32());
+        // The methodology the package's author wrote against, since the guide at
+        // the URL moves on without the program.
+        Assert.Equal(AgentProtocol.GuideVersion, root.GetProperty("guideVersion").GetString());
         Assert.Equal(Id.ToString(), root.GetProperty("packageId").GetString());
         Assert.Equal("2026-09-02T07:00:00Z", root.GetProperty("createdAtUtc").GetString());
         Assert.Equal("Passat B8, LHD.", root.GetProperty("notes").GetString());

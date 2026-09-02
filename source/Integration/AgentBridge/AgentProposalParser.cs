@@ -161,17 +161,45 @@ internal static class AgentProposalParser
     // Exactly one begin and one end, in that order, with something between them.
     // Two blocks are not "take the last one": an assistant that wrote two was
     // asked for one, and guessing which it meant is how the wrong tune gets applied.
+    // The proposal is the one JSON object in the reply whose "kind" names it. A
+    // chat pastes the object inside a Markdown fence and puts anything around it;
+    // the earlier envelope of BEGIN/END markers is still read when a reply
+    // carries it, since assistants keep copying what they saw work — but a chat
+    // that set the markers OUTSIDE the block it offers to copy is why the object
+    // now identifies itself.
     private static bool TryExtractBlock(string text, out string json, out string? problem)
     {
         json = string.Empty;
         int begins = Count(text, AgentProtocol.ProposalBegin);
         int ends = Count(text, AgentProtocol.ProposalEnd);
-        if (begins == 0 && ends == 0)
+        if (begins > 0 || ends > 0)
         {
-            problem = $"No proposal block found: the reply must contain a JSON block " +
-                $"between {AgentProtocol.ProposalBegin} and {AgentProtocol.ProposalEnd}.";
+            return TryExtractMarkedBlock(text, begins, ends, out json, out problem);
+        }
+
+        List<string> candidates = ProposalObjects(text);
+        if (candidates.Count == 0)
+        {
+            problem = "No proposal found: the reply must contain one JSON object with " +
+                $"\"kind\": \"{AgentProtocol.ProposalKind}\" (a fenced code block is fine).";
             return false;
         }
+        if (candidates.Count > 1)
+        {
+            problem = $"The reply must contain exactly one proposal; found {candidates.Count} " +
+                $"JSON objects with \"kind\": \"{AgentProtocol.ProposalKind}\".";
+            return false;
+        }
+
+        json = candidates[0];
+        problem = null;
+        return true;
+    }
+
+    private static bool TryExtractMarkedBlock(
+        string text, int begins, int ends, out string json, out string? problem)
+    {
+        json = string.Empty;
         if (begins != 1 || ends != 1)
         {
             problem = $"The reply must contain exactly one proposal block; found " +
@@ -188,8 +216,21 @@ internal static class AgentProposalParser
             return false;
         }
 
-        json = text[start..end].Trim();
-        // A fenced block is what most chat UIs copy; the fence is not part of the JSON.
+        json = Unfenced(text[start..end]);
+        if (json.Length == 0)
+        {
+            problem = "The proposal block is empty.";
+            return false;
+        }
+
+        problem = null;
+        return true;
+    }
+
+    // A fenced block is what most chat UIs copy; the fence is not part of the JSON.
+    private static string Unfenced(string text)
+    {
+        string json = text.Trim();
         if (json.StartsWith("```", StringComparison.Ordinal))
         {
             int newline = json.IndexOf('\n');
@@ -201,14 +242,83 @@ internal static class AgentProposalParser
             json = json.Trim();
         }
 
-        if (json.Length == 0)
+        return json;
+    }
+
+    // Every top-level JSON object in the text that names the proposal kind. A
+    // brace scanner that knows JSON strings (so a brace inside a reason does not
+    // end an object) walks each candidate from its opening brace; an object
+    // that never closes, or does not name the kind, is prose and skipped, and
+    // the walk resumes after the candidate so nested objects are not counted
+    // twice.
+    private static List<string> ProposalObjects(string text)
+    {
+        var found = new List<string>();
+        string kindMarker = "\"" + AgentProtocol.ProposalKind + "\"";
+        int index = 0;
+        while ((index = text.IndexOf('{', index)) >= 0)
         {
-            problem = "The proposal block is empty.";
-            return false;
+            int close = MatchingBrace(text, index);
+            if (close < 0)
+            {
+                index++;
+                continue;
+            }
+
+            string candidate = text[index..(close + 1)];
+            if (candidate.Contains(kindMarker, StringComparison.Ordinal))
+            {
+                found.Add(candidate);
+                index = close + 1;
+            }
+            else
+            {
+                index++;
+            }
         }
 
-        problem = null;
-        return true;
+        return found;
+    }
+
+    private static int MatchingBrace(string text, int open)
+    {
+        int depth = 0;
+        bool inString = false;
+        for (int index = open; index < text.Length; index++)
+        {
+            char c = text[index];
+            if (inString)
+            {
+                if (c == '\\')
+                {
+                    index++;
+                }
+                else if (c == '"')
+                {
+                    inString = false;
+                }
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"':
+                    inString = true;
+                    break;
+                case '{':
+                    depth++;
+                    break;
+                case '}':
+                    depth--;
+                    if (depth == 0)
+                    {
+                        return index;
+                    }
+                    break;
+            }
+        }
+
+        return -1;
     }
 
     private static (AgentOperation? Operation, AgentRejectedOperation? Rejection) ReadOperation(

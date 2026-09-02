@@ -59,9 +59,16 @@ internal static class AgentProtocol
         "EQ Wizard Auto-tune with stated settings instead of inventing delays and PEQ banks by hand.\r\n" +
         "4. Never EQ a cancellation; never claim a crossover is driver-safe from Fs or diameter " +
         "alone; cite sources for hardware facts.\r\n" +
-        "5. If and only if you have concrete, justified changes, end with ONE block between " +
-        ProposalBegin + " and " + ProposalEnd + " following the protocol; copy channel ids and " +
-        "current values from this package exactly.";
+        "5. If and only if you have concrete, justified changes, end with ONE JSON object with " +
+        "\"kind\": \"" + ProposalKind + "\" following the protocol, in a fenced code block; " +
+        "copy channel ids and current values from this package exactly.";
+
+    /// <summary>
+    /// The version of the guide this build was written against, printed in the
+    /// package so an assistant reading a newer guide at the URL knows which
+    /// methodology the package's author expected.
+    /// </summary>
+    public const string GuideVersion = "1.1";
 
     /// <summary>The whole clipboard text, UTF-8 bytes, before any parsing.</summary>
     public const int MaxProposalBytes = 1024 * 1024;

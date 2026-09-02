@@ -558,6 +558,11 @@ public partial class VirtualCrossoverPanel : UserControl
         VirtualCrossoverSessionCalibration? previousSession = sessionCalibration;
         project = newProject;
         relinkDirectory = null;
+        // A package copied from the previous project vouches for nothing here: a
+        // reply naming it gets the review's "different package" warning, and the
+        // previous import's undo would restore into settings nobody displays.
+        lastAgentPackageId = null;
+        agentUndo = null;
         // A new project on the same blocks. The channel OBJECTS are reused when the
         // count matches (see the rebind below), so nothing about a channel reference
         // says which session it now describes — this counter does, and an EQ Wizard

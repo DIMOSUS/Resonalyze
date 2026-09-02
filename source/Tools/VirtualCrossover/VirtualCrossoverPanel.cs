@@ -1311,6 +1311,10 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </remarks>
     private void ApplyChannelOrder(IReadOnlyList<int> order)
     {
+        // The block letters are the channel ids a package used; after a reorder
+        // they name other channels, so the package is forgotten and a reply
+        // naming it gets the review's warning.
+        lastAgentPackageId = null;
         List<VirtualCrossoverChannel> reordered =
             order.Select(index => channels[index]).ToList();
         channels.Clear();
@@ -2187,6 +2191,10 @@ public partial class VirtualCrossoverPanel : UserControl
     private async Task ResolveSourceAsync(
         VirtualCrossoverChannel channel, bool rightSide, bool showErrors)
     {
+        // A measurement resolved here replaces what a copied package described
+        // under this channel's id; the package is forgotten and a reply naming it
+        // gets the review's warning. (A project load has forgotten it already.)
+        lastAgentPackageId = null;
         VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
         // The side's OTHER persisted reference, resolved on the same pass and ahead

@@ -133,6 +133,13 @@ internal static class AgentProposalValidator
             verdicts.Add(Judge(operation, session));
         }
 
+        // Some warnings are about the channel as it would END UP, not about one
+        // operation: a bell that lands in a junction zone because the crossover
+        // moved, or a bank proposed against a crossover another row moves. Every
+        // channel's applicable rows are applied together to a copy and judged
+        // there; the notes go on the rows that shape that state.
+        AddFinalStateNotes(verdicts);
+
         // Two applicable operations on one channel's same parameter cannot both be
         // meant; neither is picked over the other.
         foreach (IGrouping<(string, string), AgentOperationVerdict> group in verdicts
@@ -154,6 +161,65 @@ internal static class AgentProposalValidator
         }
 
         return new AgentProposalReview(proposal, verdicts, warnings);
+    }
+
+    private static void AddFinalStateNotes(List<AgentOperationVerdict> verdicts)
+    {
+        foreach (IGrouping<AgentChannelSnapshot, AgentOperationVerdict> group in verdicts
+            .Where(verdict => verdict.Applicable)
+            .GroupBy(verdict => verdict.Channel!))
+        {
+            VirtualCrossoverChannelSettings final = AgentOperations.CloneEditable(group.Key.Settings);
+            try
+            {
+                foreach (AgentOperationVerdict verdict in group)
+                {
+                    AgentOperations.Apply(verdict.Operation!, final);
+                }
+            }
+            catch (InvalidDataException)
+            {
+                continue;
+            }
+
+            List<string> notes = JunctionQNotes(final);
+            if (notes.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (AgentOperationVerdict verdict in group
+                .Where(verdict => verdict.Operation is SetCrossoverOperation or ReplacePeqBankOperation))
+            {
+                verdicts[verdicts.IndexOf(verdict)] = verdict with
+                {
+                    Status = AgentVerdictStatus.Warning,
+                    Message = verdict.Status == AgentVerdictStatus.Valid
+                        ? string.Join(" ", notes)
+                        : verdict.Message + " " + string.Join(" ", notes)
+                };
+            }
+        }
+    }
+
+    // Every bell of the bank that is too narrow for the junction zone it sits
+    // in, judged on the crossover the SAME settings hold.
+    private static List<string> JunctionQNotes(VirtualCrossoverChannelSettings settings)
+    {
+        var notes = new List<string>();
+        foreach (PeqBand band in settings.PeqBands)
+        {
+            if (JunctionCornerNear(settings, band) is { } cornerHz)
+            {
+                notes.Add(
+                    $"Band at {Hz(band.FrequencyHz)} (Q {band.Q.ToString("0.#", CultureInfo.InvariantCulture)}) " +
+                    $"sits in the junction zone around the {Hz(cornerHz)} crossover; keep Q at or " +
+                    $"below {JunctionQLimit.ToString("0.#", CultureInfo.InvariantCulture)} there unless the " +
+                    "same feature shows on the driver's own curve and its spatial average.");
+            }
+        }
+
+        return notes;
     }
 
     /// <summary>
@@ -337,17 +403,6 @@ internal static class AgentProposalValidator
                         $"The bank's net response rises to +{Db(peakDb)} at " +
                         $"{Hz(AgentCurveSampling.Frequency(peakHz))}: " +
                         $"trim the boost, or lower the preamp by {Db(peakDb)}.");
-                }
-                foreach (PeqBand band in bands)
-                {
-                    if (JunctionCornerNear(copy, band) is { } cornerHz)
-                    {
-                        notes.Add(
-                            $"Band at {Hz(band.FrequencyHz)} (Q {band.Q.ToString("0.#", CultureInfo.InvariantCulture)}) " +
-                            $"sits in the junction zone around the {Hz(cornerHz)} crossover; keep Q at or " +
-                            $"below {JunctionQLimit.ToString("0.#", CultureInfo.InvariantCulture)} there unless the " +
-                            "same feature shows on the driver's own curve and the spatial average.");
-                    }
                 }
                 notes.Add(DeviceLimitsUnknown);
                 break;

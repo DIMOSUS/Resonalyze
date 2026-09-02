@@ -30,9 +30,10 @@ Anything unavailable is **absent** — a property is not written when it has no
 value — and where the absence needs a reason, a sibling `unavailableReason`
 says it. Nothing is ever a zero standing in for "unknown".
 
-Size: Resonalyze aims for about 60 KB and never exceeds 100 KB of JSON. Over
-the ceiling it drops optional series in this fixed order and lists what it
-dropped in `omitted`:
+Size: Resonalyze aims under 60 KB of JSON and never exceeds 100 KB. Over the
+target it drops optional series in this fixed order, listing what it dropped in
+`omitted`; once every optional series is gone, the mandatory payload may grow up
+to the 100 KB ceiling, and beyond that nothing is copied:
 
 1. `junctions[].sweep`
 2. `junctions[].coherenceLadder`
@@ -150,9 +151,13 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
   when the channel has them: `preDspDb` (the measured response before the chain —
   the panel's Raw curve), `processedDb` (through the chain, sharing the side's
   window), `chainDb` (the chain alone, built at the processor's rate), `peqDb`
-  (the PEQ alone), `hybridDb` (the spatial average through the chain), `coherence`
-  (γ², when the source carried it). A `null` cell is a frequency the channel did
-  not measure — never a zero.
+  (the PEQ alone), `hybridPreDspDb` and `hybridProcessedDb` (the spatial average
+  before and through the chain, present when the hybrid view is on and the
+  channel has a capture), `coherence` (γ², when the source carried it). The two
+  hybrid columns are placed on the **same level axis** as the impulse-response
+  columns — the datum the panel draws them with is applied — so every column of
+  a channel compares directly with every other. A `null` cell is a frequency the
+  channel did not measure — never a zero.
 
 ### 1.7 `sides[]`
 
@@ -303,7 +308,7 @@ that changes nothing is refused as "no change".
 | `setDelayMs` | `expectedCurrent`, `proposed` (ms) | `limits.delayMs`, `limits.delayStepMs`; above `processor.maxDelayMs` is a warning |
 | `setPolarity` | `expectedCurrent`, `proposed` (booleans, true = inverted) | — |
 | `setCrossover` | `expectedCurrent`, `proposed` (a crossover object) | kind and family names exactly as in the package; slopes per family; corner in `limits.crossoverHz` and below the processor's Nyquist; ripple in `limits.chebyshevRippleDb` for Chebyshev |
-| `replacePeqBank` | `expectedCurrentHash`, `proposed` `{ preampDb, bands[] }` | at most `limits.peqBands` bands; every band `frequencyHz > 0` and below the processor's Nyquist, `q > 0`, finite `gainDb`, `type` one of `Peaking`, `LowShelf`, `HighShelf`, `AllPassFirstOrder`, `AllPassSecondOrder`; preamp within ±`limits.peqPreampDb`; a net response rising above 0 dB is a warning naming the peak and the preamp that would absorb it; a bell with Q > 2 within an octave of one of the channel's own active crossover corners is a warning naming the corner |
+| `replacePeqBank` | `expectedCurrentHash`, `proposed` `{ preampDb, bands[] }` | at most `limits.peqBands` bands; every band `frequencyHz > 0` and below the processor's Nyquist, `q > 0`, finite `gainDb`, `type` one of `Peaking`, `LowShelf`, `HighShelf`, `AllPassFirstOrder`, `AllPassSecondOrder`; preamp within ±`limits.peqPreampDb`; a net response rising above 0 dB is a warning naming the peak and the preamp that would absorb it; a bell with Q > 2 within an octave of one of the channel's own active crossover corners is a warning naming the corner — judged on the channel as it would end up after every applicable row on it, so a crossover row that moves a corner onto an existing bell warns too |
 
 A crossover object is `{ kind, highPass?, lowPass? }` with each edge
 `{ family, frequencyHz, slopeDbPerOctave, rippleDb? }`. The edges the kind uses

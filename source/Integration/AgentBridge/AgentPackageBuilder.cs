@@ -62,7 +62,7 @@ internal static class AgentPackageBuilder
             ["peqQ"] = "RBJ cookbook Q; the processor's own Q convention is applied only when numbers leave for the device",
             ["peqPeak"] = "peakDb/peakHz = the highest point of the bank's NET response (preamp + all bands); above 0 dB the device is asked for more than unity there and a full-scale signal clips — lower the preamp by that much or trim the boost; a boost inside a wider cut or under a negative preamp is not a headroom problem",
             ["crossoverEdges"] = "both edges are stored; kind says which act: LowPass uses lowPass, HighPass uses highPass, BandPass both, Off none",
-            ["curves"] = "preDspDb = measured response before the chain (Raw); processedDb = through the chain (Processed); chainDb = the chain alone; peqDb = the PEQ alone; hybridDb = the spatial average through the chain; null = not measured there",
+            ["curves"] = "preDspDb = measured response before the chain (Raw); processedDb = through the chain (Processed); chainDb = the chain alone; peqDb = the PEQ alone; hybridPreDspDb = the spatial average before the chain and hybridProcessedDb through it, both placed on the same level axis as the impulse-response curves (the hybrid datum applied) so all columns compare directly; null = not measured there",
             ["sumLoss"] = "dB <= 0: how far the coherent sum falls short of the magnitude sum over the junction band; averageDb over the band, dipDb its worst point",
             ["phase"] = "junction phase read-out: bestExtraDelayMs and bestInvert are applied to the LOWER channel; scores in -1..1, higher is better",
             ["sweep"] = "summation score vs extra delay applied to the UPPER channel, both polarities; scoreDb <= 0, 0 = perfect; lobes are its local maxima",
@@ -72,10 +72,19 @@ internal static class AgentPackageBuilder
             ["groups"] = "each zone against the front stage: delayMs = the zone's arrival minus the front's; levelDb = the zone's level minus the front's"
         };
 
+    /// <param name="targetBytes">
+    /// What the builder aims under: optional series go, in order, until the JSON
+    /// fits it. The size a chat with a modest context takes comfortably.
+    /// </param>
+    /// <param name="maxBytes">
+    /// The ceiling: once every optional series is gone, the mandatory payload may
+    /// grow up to here; beyond it nothing is copied.
+    /// </param>
     public static AgentPackageBuildResult Build(
         AgentPackageInputs inputs,
         Guid packageId,
         DateTimeOffset createdAtUtc,
+        int targetBytes = AgentProtocol.TargetPackageBytes,
         int maxBytes = AgentProtocol.MaxPackageBytes)
     {
         ArgumentNullException.ThrowIfNull(inputs);
@@ -88,7 +97,7 @@ internal static class AgentPackageBuilder
             AgentPackage package = Assemble(inputs, packageId, createdAtUtc, omitted);
             json = JsonSerializer.Serialize(package, Options);
             bytes = Encoding.UTF8.GetByteCount(json);
-            if (bytes <= maxBytes)
+            if (bytes <= targetBytes)
             {
                 return new AgentPackageBuildResult(Envelope(json), bytes, omitted, null);
             }
@@ -96,6 +105,11 @@ internal static class AgentPackageBuilder
             {
                 omitted.Add(OmissionOrder[level]);
             }
+        }
+
+        if (bytes <= maxBytes)
+        {
+            return new AgentPackageBuildResult(Envelope(json), bytes, omitted, null);
         }
 
         return new AgentPackageBuildResult(
@@ -323,7 +337,8 @@ internal static class AgentPackageBuilder
         if (source.Processed != null) columns.Add("processedDb");
         if (chainResponse != null) columns.Add("chainDb");
         if (peqResponse != null) columns.Add("peqDb");
-        if (source.Hybrid != null) columns.Add("hybridDb");
+        if (source.HybridPreDsp != null) columns.Add("hybridPreDspDb");
+        if (source.HybridProcessed != null) columns.Add("hybridProcessedDb");
         if (coherence) columns.Add("coherence");
 
         var rows = new List<double?[]>(grid.Count);
@@ -334,7 +349,8 @@ internal static class AgentPackageBuilder
             if (source.Processed != null) row.Add(AgentCurveSampling.Round(AgentCurveSampling.Sample(source.Processed, frequency), 1));
             if (chainResponse != null) row.Add(AgentCurveSampling.Round(Decibels(chainResponse, frequency), 1));
             if (peqResponse != null) row.Add(AgentCurveSampling.Round(Decibels(peqResponse, frequency), 1));
-            if (source.Hybrid != null) row.Add(AgentCurveSampling.Round(AgentCurveSampling.Sample(source.Hybrid, frequency), 1));
+            if (source.HybridPreDsp != null) row.Add(AgentCurveSampling.Round(AgentCurveSampling.Sample(source.HybridPreDsp, frequency), 1));
+            if (source.HybridProcessed != null) row.Add(AgentCurveSampling.Round(AgentCurveSampling.Sample(source.HybridProcessed, frequency), 1));
             if (coherence) row.Add(AgentCurveSampling.Round(AgentCurveSampling.Sample(source.Coherence!, frequency), 2));
             rows.Add(row.ToArray());
         }

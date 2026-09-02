@@ -14,7 +14,11 @@ internal static class AgentPeqHeadroom
 {
     private const int GridPoints = 512;
 
-    /// <summary>The net response's maximum (dB) and where it sits (Hz), over 20 Hz .. Nyquist.</summary>
+    /// <summary>
+    /// The net response's maximum (dB) and where it sits (Hz), over 20 Hz to the
+    /// processor's Nyquist — the whole range a band may be placed in, not the
+    /// audible one: a boost at 25 kHz on a 96 kHz device clips just the same.
+    /// </summary>
     public static (double PeakDb, double PeakHz) Peak(
         double preampDb, IReadOnlyList<PeqBand> bands, int processorSampleRateHz)
     {
@@ -28,7 +32,7 @@ internal static class AgentPeqHeadroom
         PreparedDspResponse response = PreparedDspResponse.Create(
             new DspChannelChain(0, 0, false, CrossoverSpec.Off, new EqualizationCurve(bands, preampDb)),
             processorSampleRateHz);
-        double highHz = Math.Min(AgentCurveSampling.BroadbandHighHz, processorSampleRateHz / 2.0 * 0.999);
+        double highHz = processorSampleRateHz / 2.0 * 0.999;
         double peakDb = double.NegativeInfinity;
         double peakHz = AgentCurveSampling.BroadbandLowHz;
         foreach (double frequency in EqualizationCurve.LogFrequencyGrid(

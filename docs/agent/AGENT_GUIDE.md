@@ -48,10 +48,12 @@ what you are sure of, what you are inferring, and what you would need to know.
   not filtering anything.
 - **Curves.** `preDspDb` is the measured response before the chain (the Raw
   curve on screen); `processedDb` is through the chain; `chainDb` the chain
-  alone; `peqDb` the PEQ alone; `hybridDb` the spatial average through the chain
-  (present only when the user turned the hybrid view on). `coherence` is γ² of
-  the measurement, 0…1, where the source carried it. The `curves.broadband`
-  grid is 12 points per octave; junction curves are 24 per octave.
+  alone; `peqDb` the PEQ alone; `hybridPreDspDb` and `hybridProcessedDb` the
+  spatial average before and through the chain (present only when the user
+  turned the hybrid view on), placed on the same level axis as the other
+  columns so they compare directly. `coherence` is γ² of the measurement, 0…1,
+  where the source carried it. The `curves.broadband` grid is 12 points per
+  octave; junction curves are 24 per octave.
 - **`notes`** is what the user typed about the car. Trust it as their own
   description; ask about what it leaves out.
 - **`analysis.groupView`** says which part of the installation the side and
@@ -93,6 +95,15 @@ Work in this order; each step gates the next.
    - `coherenceLadder`: per band, whether the pair's arrival difference is
      consistent (`peakR` high) and whether the current alignment sits on it
      (`currentR` near `peakR`).
+   One pattern is worth knowing by heart. If a junction's `sumLoss` is poor
+   while `bestExtraDelayMs` is near zero and `bestScore` barely beats
+   `currentScore`, but `fitRmsDeg` is large, the problem does not look like a
+   delay: no single delay fits the phase across the band. Before touching
+   timing or the crossover, look at the PEQ and all-pass bands of BOTH channels
+   inside `bandHz` — an asymmetric IIR correction on one side puts a
+   frequency-dependent phase error into the junction that no delay can take
+   out. When in doubt, advise bypassing the PEQ, copying a new package, and
+   reading the junction again.
 4. **Crossover corners and slopes.** Judge the acoustic slopes on
    `processedDb`, not the electrical ones: the driver's own roll-off adds to
    the filter. Before proposing a corner, know the driver (model, size,
@@ -107,8 +118,9 @@ Work in this order; each step gates the next.
    broad trends over half an octave or more; a narrow dip at a junction is
    interference, not tonal balance, and belongs to step 3.
 7. **PEQ, last.** Only after timing and crossovers are settled. Prefer cuts.
-   Prefer the spatial average (`hybridDb`) over the point measurement for
-   anything above the modal region. Never fill a cancellation with boost.
+   Prefer the spatial average (`hybridPreDspDb` for what the driver does,
+   `hybridProcessedDb` for what the tune does to it) over the point measurement
+   for anything above the modal region. Never fill a cancellation with boost.
    Headroom is judged on the bank's **net** response, `dsp.peq.peakDb`: a
    boost is fine while the net curve stays at or below 0 dB everywhere — inside
    a wider cut, or under a negative preamp. Where the net curve rises above
@@ -120,7 +132,8 @@ Work in this order; each step gates the next.
    phase by tens of degrees right where the pair's sum is built on it, and a
    dip that close to a crossover is more often the pair's interference than
    the driver's own. Go narrower there only when the same feature shows on the
-   driver's `preDspDb` and on its `hybridDb`.
+   driver's `preDspDb` and on its `hybridPreDspDb` — both BEFORE the chain, so
+   the current PEQ cannot have made or hidden it.
 
 ## 4. What the read-outs mean
 

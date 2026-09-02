@@ -88,7 +88,8 @@ internal sealed record AgentChannelInputs(
 /// </summary>
 /// <param name="PreDsp">The acoustic response before the chain — the Raw curve.</param>
 /// <param name="Processed">After the chain — the Processed curve, shared window with the side's sum.</param>
-/// <param name="Hybrid">The spatial average through the chain, when the hybrid mode drew one.</param>
+/// <param name="HybridPreDsp">The spatial average before the chain, on the impulse responses' level axis (the hybrid datum applied), when the hybrid mode is on.</param>
+/// <param name="HybridProcessed">The spatial average through the chain, on the same axis — the curve the hybrid view draws.</param>
 /// <param name="Coherence">The measurement's γ² per frequency, when the source carried it.</param>
 internal sealed record AgentSourceInputs(
     int SampleRateHz,
@@ -96,7 +97,8 @@ internal sealed record AgentSourceInputs(
     string? SpatialAverage,
     IReadOnlyList<SignalPoint>? PreDsp,
     IReadOnlyList<SignalPoint>? Processed,
-    IReadOnlyList<SignalPoint>? Hybrid,
+    IReadOnlyList<SignalPoint>? HybridPreDsp,
+    IReadOnlyList<SignalPoint>? HybridProcessed,
     IReadOnlyList<SignalPoint>? Coherence,
     string? UnavailableReason);
 

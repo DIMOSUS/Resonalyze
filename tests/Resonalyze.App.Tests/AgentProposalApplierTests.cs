@@ -32,6 +32,22 @@ public sealed class AgentProposalApplierTests
     }
 
     [Fact]
+    public void Prepare_IgnoresARefusedRowThatSharesTheTickedRowsId()
+    {
+        (AgentSessionSnapshot session, AgentProposal proposal) = Scene();
+        proposal = proposal with
+        {
+            Rejected = [new AgentRejectedOperation("op-1", "garbage", "Unsupported operation 'garbage'.")]
+        };
+
+        string? problem = AgentProposalApplier.Prepare(proposal, new HashSet<string>(["op-1"]), session, out List<AgentOperationVerdict> toApply);
+
+        Assert.Null(problem);
+        AgentOperationVerdict only = Assert.Single(toApply);
+        Assert.IsType<SetGainOperation>(only.Operation);
+    }
+
+    [Fact]
     public void Apply_WritesOnlyTheTickedRows_AndRestoreBringsEverythingBack()
     {
         (AgentSessionSnapshot session, AgentProposal proposal) = Scene();

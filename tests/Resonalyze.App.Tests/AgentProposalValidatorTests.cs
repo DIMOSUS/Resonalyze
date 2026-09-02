@@ -325,6 +325,46 @@ public sealed class AgentProposalValidatorTests
     }
 
     [Fact]
+    public void Review_JudgesTheJunctionZoneOnTheChannelAsItWouldEndUp()
+    {
+        // B left holds a Q 4 bell at 1 kHz, outside both of its zones today (the
+        // corners are 250 Hz and 2.8 kHz). A crossover move alone puts the low-pass
+        // at 1.2 kHz and the existing bell in its zone: the crossover row says so.
+        AgentSessionSnapshot session = Session();
+        AgentChannelSnapshot bLeft = session.Find("B:left")!;
+        bLeft.Settings.PeqBands = [new PeqBand(1_000, 4, -3)];
+        string hash = AgentPeqHash.Compute(bLeft.Settings.PeqPreampDb, bLeft.Settings.PeqBands);
+        AgentCrossover current = Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("LinkwitzRiley", 2800, 24));
+        AgentCrossover moved = Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("LinkwitzRiley", 1200, 24));
+
+        AgentProposalReview alone = AgentProposalValidator.Review(
+            Proposal(new SetCrossoverOperation("op-1", "B:left", "", current, moved)), session);
+        Assert.Equal(AgentVerdictStatus.Warning, alone.Verdicts[0].Status);
+        Assert.Contains("Band at 1000 Hz (Q 4)", alone.Verdicts[0].Message);
+        Assert.Contains("around the 1200 Hz crossover", alone.Verdicts[0].Message);
+
+        // The crossover move plus a new bank with a narrow bell at 1.5 kHz: the bank
+        // is judged against the crossover the OTHER row proposes, not today's.
+        AgentProposalReview both = AgentProposalValidator.Review(
+            Proposal(
+                new SetCrossoverOperation("op-1", "B:left", "", current, moved),
+                new ReplacePeqBankOperation("op-2", "B:left", "", hash,
+                    new AgentPeqBank(0, [new AgentPeqBand("Peaking", 1_500, 5, -3)]))),
+            session);
+        Assert.All(both.Verdicts, verdict => Assert.Equal(AgentVerdictStatus.Warning, verdict.Status));
+        Assert.Contains("Band at 1500 Hz (Q 5)", both.Verdicts[1].Message);
+        Assert.Contains("around the 1200 Hz crossover", both.Verdicts[1].Message);
+        Assert.DoesNotContain("1000 Hz", both.Verdicts[1].Message);
+
+        // A narrow bell at 1 kHz alone, against today's crossover: in no zone.
+        AgentProposalReview bankAlone = AgentProposalValidator.Review(
+            Proposal(new ReplacePeqBankOperation("op-2", "B:left", "", hash,
+                new AgentPeqBank(0, [new AgentPeqBand("Peaking", 1_000, 5, -3)]))),
+            session);
+        Assert.DoesNotContain("junction zone", bankAlone.Verdicts[0].Message);
+    }
+
+    [Fact]
     public void PeqHeadroom_ReadsTheNetPeakAtTheProcessorsRate()
     {
         (double peakDb, double peakHz) = AgentPeqHeadroom.Peak(-1, [new PeqBand(820, 2.1, 4)], 96_000);

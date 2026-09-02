@@ -325,7 +325,8 @@ public partial class VirtualCrossoverPanel
         var sides = new List<AgentSideInputs>();
         var curves = new Dictionary<
             (VirtualCrossoverChannel Channel, bool RightSide),
-            (ProcessedChannel Item, IReadOnlyList<SignalPoint>? Processed, IReadOnlyList<SignalPoint>? Hybrid)>();
+            (ProcessedChannel Item, IReadOnlyList<SignalPoint>? Processed,
+                IReadOnlyList<SignalPoint>? HybridPreDsp, IReadOnlyList<SignalPoint>? HybridProcessed)>();
         List<ProcessedChannel> activeShown = [];
         foreach (bool rightSide in new[] { false, true })
         {
@@ -405,10 +406,26 @@ public partial class VirtualCrossoverPanel
 
             for (int index = 0; index < shown.Count; index++)
             {
+                // The hybrid curves are stored on the captures' own level axis and
+                // drawn shifted by the set's datum onto the impulse responses' axis
+                // (see BuildMagnitudeCurves); the package carries what is drawn, so
+                // every column of a channel compares with every other. The pre-DSP
+                // twin is the same capture through no chain, on the same axis.
+                IReadOnlyList<SignalPoint>? hybridProcessed = null;
+                IReadOnlyList<SignalPoint>? hybridPreDsp = null;
+                if (hybrid != null && magnitudes != null && !hybrid.PointMeasuredChannels[index])
+                {
+                    hybridProcessed = ShiftedBy(hybrid.Channels[index], hybrid.OffsetDb);
+                    hybridPreDsp = BuildHybridPreDspCurve(
+                        shown[index].Channel, rightSide, magnitudes[index].Points,
+                        smoothing, hybrid.OffsetDb);
+                }
+
                 curves[(shown[index].Channel, rightSide)] = (
                     shown[index],
                     magnitudes?[index].Points,
-                    hybrid?.Channels[index]);
+                    hybridPreDsp,
+                    hybridProcessed);
             }
             if (others.Count > 0)
             {
@@ -417,7 +434,7 @@ public partial class VirtualCrossoverPanel
                 for (int index = 0; index < others.Count; index++)
                 {
                     curves[(others[index].Channel, rightSide)] =
-                        (others[index], otherMagnitudes?[index].Points, null);
+                        (others[index], otherMagnitudes?[index].Points, null, null);
                 }
             }
 
@@ -516,7 +533,8 @@ public partial class VirtualCrossoverPanel
                     state.SpatialAverage != null ? "MovingMic" : state.ArrayCapture != null ? "MicArray" : null,
                     raw,
                     processed ? found.Processed : null,
-                    processed ? found.Hybrid : null,
+                    processed ? found.HybridPreDsp : null,
+                    processed ? found.HybridProcessed : null,
                     coherence,
                     processed ? null : channel.Pair.Enabled ? "not processed" : "channel muted");
             }
@@ -592,6 +610,33 @@ public partial class VirtualCrossoverPanel
             sides,
             stereo,
             groups);
+    }
+
+    // The channel's spatial average through NO chain, on the impulse responses'
+    // level axis: the same capture, calibration and grid the hybrid view draws
+    // the channel with, the chain replaced by identity, the set's datum applied.
+    // Null when the channel has no capture of the selected family.
+    private IReadOnlyList<SignalPoint>? BuildHybridPreDspCurve(
+        VirtualCrossoverChannel channel,
+        bool rightSide,
+        IReadOnlyList<SignalPoint> grid,
+        int smoothingCode,
+        double offsetDb)
+    {
+        VirtualCrossoverChannelState state = channel.SideState(rightSide);
+        if (state.SpatialAverageFor(SpatialAverageMode) is not { } document || grid.Count == 0)
+        {
+            return null;
+        }
+
+        IReadOnlyList<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
+            document,
+            DspChannelChain.Identity,
+            channel.ProcessorSampleRateFor(rightSide),
+            SpatialAverageCalibrationFor(state),
+            grid.Select(point => point.X).ToList(),
+            smoothingCode);
+        return curve == null ? null : ShiftedBy(curve, offsetDb);
     }
 
     // Both junction views of one pair, off the UI thread; a view that fails is

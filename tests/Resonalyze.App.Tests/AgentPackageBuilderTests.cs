@@ -91,6 +91,9 @@ public sealed class AgentPackageBuilderTests
         Assert.True(mono.GetProperty("mono").GetBoolean());
         Assert.Equal("Sub", mono.GetProperty("zone").GetString());
         Assert.Equal("MovingMic", mono.GetProperty("source").GetProperty("spatialAverage").GetString());
+        Assert.Equal(
+            ["frequencyHz", "preDspDb", "processedDb", "chainDb", "hybridPreDspDb", "hybridProcessedDb"],
+            mono.GetProperty("curves").GetProperty("broadband").GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
         Assert.Equal([20, 200], mono.GetProperty("source").GetProperty("measuredBandHz").EnumerateArray().Select(v => v.GetDouble()));
     }
 
@@ -229,8 +232,9 @@ public sealed class AgentPackageBuilderTests
         AgentPackageInputs inputs = Inputs();
         int full = AgentPackageBuilder.Build(inputs, Id, Clock).JsonBytes;
 
-        // Just under the full size: only the first optional series has to go.
-        AgentPackageBuildResult trimmed = AgentPackageBuilder.Build(inputs, Id, Clock, maxBytes: full - 1);
+        // Just under the full size as the TARGET: only the first optional series
+        // has to go, and the ceiling is not what decides.
+        AgentPackageBuildResult trimmed = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: full - 1);
         Assert.True(trimmed.Succeeded, trimmed.Error);
         Assert.Equal(["junctions[].sweep"], trimmed.Omitted);
         JsonElement junction = Json(trimmed.Text!).GetProperty("junctions")[0];
@@ -238,8 +242,15 @@ public sealed class AgentPackageBuilderTests
         Assert.True(junction.TryGetProperty("lobes", out _));
         Assert.Equal(["junctions[].sweep"], Json(trimmed.Text!).GetProperty("omitted").EnumerateArray().Select(o => o.GetString()));
 
+        // Over the target every optional series goes, and the mandatory payload
+        // may still grow up to the ceiling.
+        AgentPackageBuildResult mandatory = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: 100, maxBytes: full);
+        Assert.True(mandatory.Succeeded, mandatory.Error);
+        Assert.Equal(5, mandatory.Omitted.Count);
+        Assert.True(mandatory.JsonBytes < full);
+
         // Nothing optional is enough: the failure names the size, and no text is handed out.
-        AgentPackageBuildResult failed = AgentPackageBuilder.Build(inputs, Id, Clock, maxBytes: 100);
+        AgentPackageBuildResult failed = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: 100, maxBytes: 100);
         Assert.False(failed.Succeeded);
         Assert.Null(failed.Text);
         Assert.Equal(5, failed.Omitted.Count);
@@ -376,7 +387,7 @@ public sealed class AgentPackageBuilderTests
         List<SignalPoint> bProcessed = Ramp(-3);
         var aLeft = new AgentChannelInputs("A", AgentChannelSide.Left, VirtualCrossoverZone.Front,
             "left mid.json", true, false, aLeftSettings, 96_000,
-            new AgentSourceInputs(48_000, new MeasuredBand(40, 20_000), null, Ramp(0), aLeftProcessed, null, null, null));
+            new AgentSourceInputs(48_000, new MeasuredBand(40, 20_000), null, Ramp(0), aLeftProcessed, null, null, null, null));
         var aRight = new AgentChannelInputs("A", AgentChannelSide.Right, VirtualCrossoverZone.Front,
             "right mid.json", true, false, aRightSettings, 96_000, null);
         var b = new AgentChannelInputs("B", AgentChannelSide.Mono, VirtualCrossoverZone.Sub,
@@ -385,7 +396,7 @@ public sealed class AgentPackageBuilderTests
         // listed: the side's channel list is what says it played.
         var bWithCurves = b with
         {
-            Source = new AgentSourceInputs(48_000, new MeasuredBand(20, 200), "MovingMic", Ramp(-3), bProcessed, null, null, null)
+            Source = new AgentSourceInputs(48_000, new MeasuredBand(20, 200), "MovingMic", Ramp(-3), bProcessed, Ramp(-2), Ramp(-4), null, null)
         };
 
         var correlation = new JunctionCorrelationView(

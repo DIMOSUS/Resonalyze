@@ -33,7 +33,12 @@ internal static class AgentProposalApplier
         ArgumentNullException.ThrowIfNull(session);
 
         AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
-        toApply = review.Verdicts.Where(verdict => selectedIds.Contains(verdict.Id)).ToList();
+        // Rows the parser refused carry no operation and can never have been
+        // ticked; they are skipped here by that, not by id — a refused object may
+        // carry the same id as a row the user did tick.
+        toApply = review.Verdicts
+            .Where(verdict => verdict.Operation != null && selectedIds.Contains(verdict.Id))
+            .ToList();
         if (toApply.Count == 0)
         {
             return "No applicable change was selected.";

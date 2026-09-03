@@ -165,8 +165,8 @@ internal static class AgentProposalValidator
             warnings.Add(unexplained == proposal.Operations.Count
                 ? $"No operation says why: judge the {unexplained} row" +
                     $"{(unexplained == 1 ? "" : "s")} below by the values alone."
-                : $"{unexplained} of {proposal.Operations.Count} operations say why they are " +
-                    "proposed; the rest are marked in the reason column.");
+                : $"{unexplained} of {proposal.Operations.Count} operations do not say why; " +
+                    "they are marked in the reason column.");
         }
 
         var verdicts = new List<AgentOperationVerdict>();

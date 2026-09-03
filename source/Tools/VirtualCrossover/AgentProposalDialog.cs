@@ -40,6 +40,11 @@ internal sealed partial class AgentProposalDialog : Form
 
         foreach (AgentOperationVerdict verdict in review.Verdicts)
         {
+            // A row the assistant explained shows its sentence; one it did not
+            // is marked, so the blank cannot be read as "no reason to give". A
+            // row the parser refused carries an empty reason and is left blank:
+            // its message IS the explanation.
+            string reasonText = verdict.Reason ?? NoReasonText;
             int index = gridView.Rows.Add(
                 verdict.Applicable && verdict.Ticked,
                 verdict.ChannelLabel,
@@ -47,11 +52,7 @@ internal sealed partial class AgentProposalDialog : Form
                 verdict.Current,
                 verdict.Proposed,
                 StatusWord(verdict.Status),
-                // A row the assistant explained shows its sentence; one it did
-                // not is marked, so the blank cannot be read as "no reason to
-                // give". A row the parser refused carries an empty reason and
-                // is left blank: its message IS the explanation.
-                verdict.Reason ?? NoReasonText);
+                reasonText);
             DataGridViewRow row = gridView.Rows[index];
             row.Tag = verdict;
             if (!verdict.Applicable)
@@ -66,7 +67,7 @@ internal sealed partial class AgentProposalDialog : Form
                 row.Cells[ColumnStatus.Index].Style.SelectionForeColor = WarningText;
             }
             row.Cells[ColumnStatus.Index].ToolTipText = verdict.Message;
-            row.Cells[ColumnReason.Index].ToolTipText = verdict.Reason;
+            row.Cells[ColumnReason.Index].ToolTipText = reasonText;
             // These two columns are fixed-width and an engine request states its
             // whole set of inputs in them, well past what the cell can show. The
             // detail box below repeats them for the selected row; the tooltip is

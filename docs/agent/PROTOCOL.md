@@ -408,10 +408,10 @@ present must stay within them; the two prose fields may be absent.
 
 Every operation has `id` (unique in the reply) and `op`, and should have
 `reason` — the sentence the review shows the user beside the values. A `reason`
-is wanted rather than required: an operation without one is read and offered
-like any other, marked "(no reason given)" in the review, since refusing a
-sound change over a missing sentence costs the user a round trip and gets them
-no sentence either. There are two families. The five below WRITE one channel's settings:
+is wanted rather than required: an operation without one — or with an empty one,
+which says as much — is read and offered like any other, marked "(no reason
+given)" in the review, since refusing a sound change over a missing sentence
+costs the user a round trip and gets them no sentence either. There are two families. The five below WRITE one channel's settings:
 they add `channelId` (an id from the package) and what they believe the
 **current** value is, copied from the package. A current value that no longer
 matches means the tune moved on since the package was copied, and the operation

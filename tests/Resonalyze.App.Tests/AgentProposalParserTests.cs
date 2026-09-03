@@ -460,6 +460,21 @@ public sealed class AgentProposalParserTests
     }
 
     [Fact]
+    public void Parse_ReadsABlankReasonAsNoReason()
+    {
+        // "reason": "" says exactly as much as no field at all, and the review
+        // can only mark what it can tell apart.
+        string json = FiveOperations.Replace("\"reason\": \"Arrival.\"", "\"reason\": \"  \"");
+
+        AgentProposal proposal = AgentProposalParser.Parse(Begin + json + End).Proposal!;
+
+        Assert.Null(proposal.Operations.Single(op => op.Id == "op-3").Reason);
+        Assert.All(
+            proposal.Operations.Where(op => op.Id != "op-3"),
+            op => Assert.False(string.IsNullOrWhiteSpace(op.Reason)));
+    }
+
+    [Fact]
     public void Parse_KeepsAReplyThatLeftTheSummaryOut()
     {
         // The words are for the user, and losing the whole reply over them

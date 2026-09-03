@@ -462,12 +462,25 @@ public static class CrossoverJunctionTuner
         }
 
         double nyquistHz = sides.Min(side => side.SampleRate) * 0.49;
+        // BOTH edges of every variant, not the handover between them: a variant
+        // may put the two corners apart on purpose — a mid low-passed at 3.6 kHz
+        // under a tweeter high-passed at 4.4 kHz is a tune, not a mistake — and
+        // a shared band drawn from the lower edge alone would stop short of what
+        // the upper one is doing.
         var corners = new List<double>();
         foreach (JunctionProbeVariant variant in variants)
         {
             foreach (JunctionProbeChains chains in variant.Sides)
             {
                 corners.Add(CornerOf(chains));
+                if (LowPassOf(chains.Lower) is { } low)
+                {
+                    corners.Add(low.FrequencyHz);
+                }
+                if (HighPassOf(chains.Upper) is { } high)
+                {
+                    corners.Add(high.FrequencyHz);
+                }
             }
         }
 
@@ -504,7 +517,9 @@ public static class CrossoverJunctionTuner
         {
             // The first side's edges name the variant: a crossover is one
             // filter for both sides, and a variant that changes only a PEQ
-            // carries the edges it already had.
+            // carries the edges it already had. The two edges need not share a
+            // frequency, a family or a slope — the entry is read around where
+            // they actually hand over.
             double cornerHz = CornerOf(variant.Sides[0]);
             CrossoverEdge? lowPass = LowPassOf(variant.Sides[0].Lower);
             CrossoverEdge? highPass = HighPassOf(variant.Sides[0].Upper);
@@ -527,11 +542,20 @@ public static class CrossoverJunctionTuner
         return new JunctionProbeResult(entries, sharedLowHz, sharedHighHz);
     }
 
-    // The corner a chain pair hands over at: the lower channel's low-pass, else
-    // the upper's high-pass, else the geometric middle of the audio band —
-    // which only happens where neither channel is filtered at all.
+    // Where a chain pair hands over. With both edges in place that is BETWEEN
+    // them — their geometric middle — since a variant may hold them apart on
+    // purpose, and taking the lower one alone would centre the reading below
+    // half of what the pair is doing. With one edge it is that edge; with
+    // neither, the geometric middle of the audio band, which only happens when
+    // nothing filters either channel.
     private static double CornerOf(JunctionProbeChains chains) =>
-        LowPassOf(chains.Lower)?.FrequencyHz ?? HighPassOf(chains.Upper)?.FrequencyHz ?? 632.0;
+        (LowPassOf(chains.Lower)?.FrequencyHz, HighPassOf(chains.Upper)?.FrequencyHz) switch
+        {
+            ({ } low, { } high) => Math.Sqrt(low * high),
+            ({ } low, null) => low,
+            (null, { } high) => high,
+            _ => 632.0
+        };
 
     /// <summary>
     /// What an alignment search would find at this junction as it stands, and

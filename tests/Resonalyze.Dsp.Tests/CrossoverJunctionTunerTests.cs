@@ -217,6 +217,43 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    public void Probe_TakesTheTwoEdgesApart_AndReadsBetweenThem()
+    {
+        // A variant may hold the two corners apart on purpose — the mid low-passed
+        // below where the tweeter comes in — and the reading has to sit where the
+        // pair hands over rather than under the lower edge alone.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 4_000, 24);
+        DspChannelChain lowerChain = LowPassChain(lr);
+        DspChannelChain upperChain = HighPassChain(lr);
+        JunctionTuneSide side = Side("left", lowerChain, upperChain);
+        CrossoverEdge low = Edge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
+        CrossoverEdge high = Edge(CrossoverFilterFamily.Butterworth, 8_000, 48);
+
+        JunctionProbeResult result = CrossoverJunctionTuner.Probe([side], SampleRate,
+            [
+                new JunctionProbeVariant("current", [new JunctionProbeChains(lowerChain, upperChain)]),
+                new JunctionProbeVariant("apart", [new JunctionProbeChains(
+                    CrossoverJunctionTuner.WithLowPass(lowerChain, low),
+                    CrossoverJunctionTuner.WithHighPass(upperChain, high))])
+            ]);
+
+        // Each entry keeps the two edges it was given, whatever they are.
+        Assert.Equal(low, result.Entries[1].LowerLowPass);
+        Assert.Equal(high, result.Entries[1].UpperHighPass);
+        // Its own band is an octave each side of the handover BETWEEN them
+        // (√(2000·8000) = 4000), not of the lower edge.
+        Assert.Equal(4_000, result.Entries[1].CornerHz, 6);
+        Assert.Equal((2_000.0, 8_000.0), (result.Entries[1].BandLowHz, result.Entries[1].BandHighHz));
+        // And the shared band reaches past the upper edge, which a band drawn
+        // from the lower corners alone would not have done.
+        Assert.True(result.SharedBandHighHz >= 8_000 * 2 - 1e-6);
+        Assert.Equal(1_000, result.SharedBandLowHz);
+        Assert.All(result.Entries, entry => Assert.Null(entry.Unavailable));
+        // A gap that wide leaves a hole in the sum; the reading says so.
+        Assert.True(result.Entries[1].Sides[0].RippleDb > result.Entries[0].Sides[0].RippleDb);
+    }
+
+    [Fact]
     public void Probe_ReadsABankChangeWithoutApplyingIt()
     {
         // A deep bell right at the corner on the lower channel: the junction

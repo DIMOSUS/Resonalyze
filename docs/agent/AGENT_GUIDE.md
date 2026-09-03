@@ -260,7 +260,10 @@ the question needs, up to `limits.probeVariantsPerImport` variants in the reply
 altogether, since the user waits for them and pastes the answer. Each variant
 changes that junction's own two channels — `gainDb`, `delayMs`,
 `invertPolarity`, `crossover`, `peq`, in any combination, everything you leave
-out kept as it is. Resonalyze measures each on a copy and hands the user one
+out kept as it is. The two channels are stated separately, so a variant may
+give them different corners, families or slopes — a mid low-passed below where
+the tweeter comes in is a tune, not a mistake, and the reading is taken around
+where the pair actually hands over. Resonalyze measures each on a copy and hands the user one
 text to paste back: per side and variant the sum loss, its dip, the ripple, the
 junction's phase block and what the best delay would leave, beside the same
 figures for the junction as it stands. An empty `peq` bank is the bank cleared

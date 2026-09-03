@@ -138,6 +138,14 @@ is not just a plot but the DSP settings themselves:
 - **Fast compare-and-adjust work** — persistent and calculated overlays, target
   curves, on-plot labels, and a measurement history that keeps each entry's whole
   working state.
+- **A chat assistant that can measure** — copy the whole diagnosis to the
+  clipboard, paste it into any chat, and its reply comes back as typed
+  operations you tick one by one, never as settings written behind your back.
+  It can also ask instead of guess: a **probe** measures what a junction would
+  do under a crossover, a PEQ bank, a gain or a delay it names — computed on a
+  copy, with nothing in your tune touched — and hands you the answer to paste
+  back. No account, no API key, no network request: the clipboard is the whole
+  transport.
 
 Resonalyze does not try to be every acoustic tool at once. For room EQ at home,
 REW remains excellent; when the question is *"what delays, crossovers, and
@@ -208,8 +216,10 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   sum loss, phase tracking, junction read-outs, Δ L−R timing, **Auto crossover**,
   a stereo-aware **Auto delay**, a headphone audition, sessions, tuning-sheet
   export, and an **AI assistant bridge** that hands the whole diagnosis to any
-  chat assistant through the clipboard and reviews its proposal before a single
-  value is applied
+  chat assistant through the clipboard, reviews its proposal before a single
+  value is applied, lets it run the engines or tune one junction of a finished
+  tune, and answers its "what would this do" with **probes** that measure a
+  variant without changing anything
 - **Live Spectrum** — a real-time loopback transfer function with coherence, or a
   reference-free RTA in relative dB or dB SPL, with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white, or Silent for the ambient
@@ -366,6 +376,12 @@ asking:
   control does and why it behaves as it does. Start here if you want to know what
   a particular graph, read-out or option means.
 
+Two more are written for the chat assistant rather than for you, and are worth a
+look if you use the bridge: **[docs/agent/AGENT_GUIDE.md](docs/agent/AGENT_GUIDE.md)**,
+the tuning methodology an assistant is asked to follow, and
+**[docs/agent/PROTOCOL.md](docs/agent/PROTOCOL.md)**, the exact shape of what
+leaves and enters the clipboard.
+
 ## FAQ
 
 **Can I use a UMIK-1 or another USB microphone?**
@@ -397,6 +413,17 @@ ones any single-point method has: the prediction holds at the microphone positio
 playback chain and mic position for every measurement, and at a roughly stable
 cabin temperature. For frequency-response work you can go further with spatial
 averaging. And the final judge of a tune is still your ears.
+
+**Does the AI bridge send my measurements anywhere?**
+
+Only where you paste them. Resonalyze holds no account, no API key and no model:
+it writes a package to the clipboard, you decide which chat sees it, and its
+reply comes back the same way. The bridge itself makes no network request. The
+package carries curves, settings and whatever you typed into the session's
+notes — never file paths, folder names, your Windows user name, or raw impulse
+responses — and nothing an assistant proposes
+reaches the tune until you tick it in the review; a probe changes nothing at
+all. Use none of it and the program is exactly what it was.
 
 ## Building from Source
 

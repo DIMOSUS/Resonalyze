@@ -64,10 +64,11 @@ fabricating a number when the measurement cannot support one.
 
 And it can hand that whole diagnosis to a **chat assistant**. Copy the system to
 the clipboard, paste it into whichever assistant you already use, and its reply
-comes back as typed operations you tick one at a time — or as a **probe**, which
-measures what a crossover, a PEQ bank, a gain or a delay *would* do and changes
-nothing while it answers. No account, no API key, no network request: the
-clipboard is the whole transport, and the tune stays yours until you tick a box.
+comes back as typed rows in a review — each one against the value your channel
+holds now, yours to untick or cancel, and nothing written until you press Apply.
+Or it comes back as a **probe**, which measures what a crossover, a PEQ bank, a
+gain or a delay *would* do and changes nothing while it answers. No account, no
+API key, no network request: the clipboard is the whole transport.
 
 > Resonalyze is under active development. Treat its results as diagnostic
 > measurements, not as certified laboratory data.
@@ -103,8 +104,8 @@ clipboard is the whole transport, and the tune stays yours until you tick a box.
 
 <p align="center">
   <strong>A chat assistant that can measure.</strong> The reply to a pasted
-  package arrives as typed rows you tick, not as settings written behind your
-  back. Here it asks nothing to be changed at all: three <strong>probes</strong>
+  package arrives as typed rows, each against the value the channel holds now
+  and none of them written until you press Apply. Here it asks nothing to be changed at all: three <strong>probes</strong>
   — twelve crossover candidates on the right C–D junction, the same twelve on the
   already-good left one, and every channel's excess group delay — each measured
   on a copy of the chain and handed back through the clipboard, with the tune
@@ -145,8 +146,9 @@ is not just a plot but the DSP settings themselves:
   phase-aware predicted sum. **Auto crossover** and **Auto delay** search these
   settings automatically, across both stereo sides in one run.
 - **A chat assistant that can measure** — copy the whole diagnosis to the
-  clipboard, paste it into any chat, and its reply comes back as typed
-  operations you tick one by one, never as settings written behind your back.
+  clipboard, paste it into any chat, and its reply comes back as a table of
+  typed operations judged against your current values, never as settings
+  written behind your back: you untick what you do not want and press Apply.
   It can also ask instead of guess: a **probe** measures what a junction would
   do under a crossover, a PEQ bank, a gain or a delay it names — computed on a
   copy, with nothing in your tune touched — and hands you the answer to paste
@@ -241,7 +243,8 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   export
 - **AI assistant bridge** — the whole diagnosis to any chat assistant and back
   through the clipboard: its reply arrives as typed operations reviewed against
-  the current values and applied only where you tick, it may ask for **Auto
+  the current values, each row yours to untick before Apply and refused outright
+  where the tune has moved on, it may ask for **Auto
   delay**, **Auto crossover** or a **junction tune** rather than invent numbers,
   and its "what would this do" is answered by **probes** that measure a variant
   — another crossover, a bank cleared, a different gain, delay or polarity —
@@ -448,8 +451,9 @@ reply comes back the same way. The bridge itself makes no network request. The
 package carries curves, settings and whatever you typed into the session's
 notes — never file paths, folder names, your Windows user name, or raw impulse
 responses — and nothing an assistant proposes
-reaches the tune until you tick it in the review; a probe changes nothing at
-all. Use none of it and the program is exactly what it was.
+reaches the tune until you press Apply in the review, where every row is judged
+against your current values and any of them can be unticked; a probe changes
+nothing at all. Use none of it and the program is exactly what it was.
 
 ## Building from Source
 

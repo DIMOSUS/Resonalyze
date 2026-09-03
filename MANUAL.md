@@ -1,4 +1,4 @@
-﻿# Professional Car Audio Tuning with Resonalyze
+# Professional Car Audio Tuning with Resonalyze
 
 **A complete step-by-step guide**
 
@@ -1120,8 +1120,9 @@ answer its questions about the drivers and the car (the **Notes for AI** field i
 after saves the first question). It reads the same
 read-outs you have — sum loss, junction phase, the delay lobes, the L/R deltas — and
 should send you back to **Auto delay** or **Auto crossover** with settings rather than
-numbers. **Import AI proposal…** shows every change against the current value and
-applies only what you tick, with **Undo AI import** one click away; a reply can also ask
+numbers. **Import AI proposal…** shows every change against the current value,
+starts the admissible rows ticked and applies exactly those you leave ticked,
+with **Undo AI import** one click away; a reply can also ask
 to open **Auto crossover**, to tune one junction of a finished tune (the two facing
 crossover edges, scored on the pair's sum at your delays, everything else kept) or to
 switch the tune onto its spatial averages with **Hybrid**, and those arrive as rows you

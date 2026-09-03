@@ -346,35 +346,9 @@ public partial class VirtualCrossoverPanel
                     // different one.
                     await RunAgentProbesAsync(toApply, summary, progress);
 
-                    // Armed BEFORE the first write, not after the last one: an
-                    // engine can throw with the settings rows already in the tune,
-                    // and an import the user cannot undo is the worst thing this
-                    // menu could leave behind. The previous import's undo is put
-                    // back only if nothing moved at all.
-                    AgentImportUndo undo = CaptureAgentUndo();
-                    AgentImportUndo? previousUndo = agentUndo;
-                    long previousUndoGeneration = agentUndoGeneration;
-                    agentUndo = undo;
-                    agentUndoGeneration = projectGeneration;
-
-                    List<AgentUndoEntry> written = AgentProposalApplier.Apply(toApply);
-                    if (written.Count > 0)
-                    {
-                        RefreshChannelsAfterAgentWrite(written);
-                        int proposed = review.Verdicts.Count;
-                        int rows = toApply.Count(verdict => verdict.Operation is AgentSettingsOperation);
-                        summary.Add(
-                            $"Applied {rows} of {proposed} proposed change{(proposed == 1 ? "" : "s")}.");
-                    }
-
-                    bool engines = await RunAgentEngineRequests(toApply, summary, progress);
-                    if (written.Count == 0 && !engines)
-                    {
-                        agentUndo = previousUndo;
-                        agentUndoGeneration = previousUndoGeneration;
-                    }
-
-                    return engines;
+                    return await CommitAgentImportAsync(
+                        proposal, selected, reviewedSession.Fingerprint,
+                        review.Verdicts.Count, summary, progress);
                 });
 
             ScheduleSave();
@@ -650,6 +624,67 @@ public partial class VirtualCrossoverPanel
     // responses and its current chains, and the one crossover the tuner settles
     // on is written to both sides of both blocks — as the wizard writes, and as
     /// <summary>
+    /// The writing half of an import: everything from the undo snapshot to the
+    /// last engine. It judges the ticked rows ONCE MORE first, against the
+    /// session as it is at this moment.
+    /// <para>
+    /// That second look is not ceremony. The rows were prepared before the
+    /// probes ran, the probes take seconds, and the window over them
+    /// deliberately takes nothing away from the panel — so the tune can have
+    /// moved under them, and writing values judged against the state before
+    /// would be exactly the overwrite the commit-time check exists to stop. The
+    /// probes themselves stand: they only read, and their answer describes what
+    /// they read.
+    /// </para>
+    /// </summary>
+    /// <returns>Whether an engine changed the project.</returns>
+    private async Task<bool> CommitAgentImportAsync(
+        AgentProposal proposal,
+        IReadOnlySet<string> selected,
+        string? reviewedFingerprint,
+        int proposedRows,
+        List<string> summary,
+        AgentProgressDialog? progress)
+    {
+        string? moved = AgentProposalApplier.Prepare(
+            proposal, selected, reviewedFingerprint, BuildAgentSessionSnapshot(),
+            out List<AgentOperationVerdict> toApply, out _);
+        if (moved != null)
+        {
+            summary.Add($"Nothing was written: {moved}");
+            return false;
+        }
+
+        // Armed BEFORE the first write, not after the last one: an engine can
+        // throw with the settings rows already in the tune, and an import the
+        // user cannot undo is the worst thing this menu could leave behind.
+        // The previous import's undo is put back only if nothing moved at all.
+        AgentImportUndo undo = CaptureAgentUndo();
+        AgentImportUndo? previousUndo = agentUndo;
+        long previousUndoGeneration = agentUndoGeneration;
+        agentUndo = undo;
+        agentUndoGeneration = projectGeneration;
+
+        List<AgentUndoEntry> written = AgentProposalApplier.Apply(toApply);
+        if (written.Count > 0)
+        {
+            RefreshChannelsAfterAgentWrite(written);
+            int rows = toApply.Count(verdict => verdict.Operation is AgentSettingsOperation);
+            summary.Add(
+                $"Applied {rows} of {proposedRows} proposed change{(proposedRows == 1 ? "" : "s")}.");
+        }
+
+        bool engines = await RunAgentEngineRequests(toApply, summary, progress);
+        if (written.Count == 0 && !engines)
+        {
+            agentUndo = previousUndo;
+            agentUndoGeneration = previousUndoGeneration;
+        }
+
+        return engines;
+    }
+
+    /// <summary>
     /// The two blocks of a junction as the tuner and the probes read them: every
     /// side that carries both measurements, with each side's own chain — or the
     /// one side asked for, where a reading belongs to a single physical channel.
@@ -720,6 +755,13 @@ public partial class VirtualCrossoverPanel
             return false;
         }
 
+        // The readings of one document are meant to describe one session. Each
+        // is taken off snapshots, so none of them can be torn — but the user is
+        // free to edit between two of them, and a document assembled from two
+        // states would let a reader compare figures that never coexisted. It is
+        // not refused (nothing was written, and each reading is still true of
+        // what it read); it is declared.
+        string sessionBefore = ComputeAgentFingerprint();
         var reports = new List<AgentProbeReport>(probes.Count);
         UseWaitCursor = true;
         try
@@ -761,10 +803,12 @@ public partial class VirtualCrossoverPanel
 
         // The package the reading belongs beside, while this is still the
         // session it was copied from — the same rule the diagnostic follows.
+        string sessionAfter = ComputeAgentFingerprint();
         bool matches = lastAgentPackageFingerprint != null &&
-            lastAgentPackageFingerprint == ComputeAgentFingerprint();
+            lastAgentPackageFingerprint == sessionAfter;
+        bool steady = string.Equals(sessionBefore, sessionAfter, StringComparison.Ordinal);
         AgentProbeBuildResult result = AgentProbeBuilder.Build(
-            reports, matches ? lastAgentPackageId : null, matches, DateTimeOffset.UtcNow);
+            reports, matches ? lastAgentPackageId : null, matches, steady, DateTimeOffset.UtcNow);
         if (!AgentClipboard.TryWrite(result.Text, out string? error))
         {
             summary.Add($"Probe: the reading was computed but not copied ({error}).");
@@ -779,6 +823,12 @@ public partial class VirtualCrossoverPanel
         foreach (AgentProbeReport report in reports.Where(item => item.Unavailable != null))
         {
             summary.Add($"  {report.Probe} {report.JunctionId ?? string.Empty}: {report.Unavailable}");
+        }
+        if (!steady)
+        {
+            summary.Add(
+                "  The tune changed while the readings were being taken, so they do not all " +
+                "describe one state; the text says so and a fresh probe would settle it.");
         }
 
         return true;

@@ -712,7 +712,9 @@ document is read:
 
 `packageId` names the package the reading belongs beside, and
 `sessionMatchesPackage` says whether the session still is the one that package
-described. An entry or a whole probe that could not be read carries
+described. `sessionChangedWhileReading` appears, true, only when the user edited
+the tune between two of the readings — they then do not all describe one state,
+and a fresh probe settles it; its absence means one session throughout. An entry or a whole probe that could not be read carries
 `unavailable` with the reason, and the others still stand.
 
 ## 3. Privacy

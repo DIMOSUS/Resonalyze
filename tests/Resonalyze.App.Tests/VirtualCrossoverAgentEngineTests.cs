@@ -388,6 +388,77 @@ public sealed class VirtualCrossoverAgentEngineTests
     }
 
     [Fact]
+    public void Commit_WritesNothing_WhenTheTuneMovedWhileTheProbesRan()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            VirtualCrossoverChannelSettings settings =
+                Channels(panel)[0].SideSettings(rightSide: false);
+            settings.GainDb = -1;
+
+            // A reply that trims the gain, reviewed and prepared against the
+            // tune as it was.
+            var proposal = new AgentProposal(
+                null, "trim it", [], [],
+                [new SetGainOperation("op-1", "A:left", "too hot", -1, -3)], []);
+            AgentSessionSnapshot reviewed = Snapshot(panel);
+            AgentProposalReview review = AgentProposalValidator.Review(proposal, reviewed);
+            Assert.True(review.Verdicts[0].Applicable);
+            var selected = new HashSet<string>(StringComparer.Ordinal) { "op-1" };
+            Assert.Null(AgentProposalApplier.Prepare(
+                proposal, selected, reviewed.Fingerprint, Snapshot(panel),
+                out List<AgentOperationVerdict> preparedBefore, out _));
+
+            // Then the user moves the very channel the row was judged against —
+            // which is what the seconds a probe takes leave room for, since the
+            // progress window takes nothing away from the panel.
+            settings.GainDb = -2;
+
+            var summary = new List<string>();
+            bool ran = Commit(panel, proposal, selected, reviewed.Fingerprint, review.Verdicts.Count, summary);
+
+            Assert.False(ran);
+            Assert.Equal(-2, settings.GainDb);
+            string line = Assert.Single(summary);
+            Assert.StartsWith("Nothing was written:", line);
+            Assert.Contains("changed while the review was open", line);
+            Assert.Null(Field(panel, "agentUndo"));
+
+            // What that guard is between: the applier re-checks nothing, so the
+            // rows prepared BEFORE the probes ran — the list the import used to
+            // carry across them — go straight over the edit the user just made.
+            AgentProposalApplier.Apply(preparedBefore);
+            Assert.Equal(-3, settings.GainDb);
+        });
+    }
+
+    [Fact]
+    public void Commit_WritesTheRows_WhenTheTuneStoodStill()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            VirtualCrossoverChannelSettings settings =
+                Channels(panel)[0].SideSettings(rightSide: false);
+            settings.GainDb = -1;
+            var proposal = new AgentProposal(
+                null, "trim it", [], [],
+                [new SetGainOperation("op-1", "A:left", "too hot", -1, -3)], []);
+            AgentSessionSnapshot reviewed = Snapshot(panel);
+            AgentProposalReview review = AgentProposalValidator.Review(proposal, reviewed);
+
+            var summary = new List<string>();
+            Commit(
+                panel, proposal, new HashSet<string> { "op-1" },
+                reviewed.Fingerprint, review.Verdicts.Count, summary);
+
+            Assert.Equal(-3, settings.GainDb);
+            Assert.Contains("Applied 1 of 1 proposed change.", summary);
+        });
+    }
+
+    [Fact]
     public void Probe_MarksTheBaselineByItsPosition_NotByTheReplysLabel()
     {
         StaTest.Run(() =>
@@ -759,6 +830,29 @@ public sealed class VirtualCrossoverAgentEngineTests
         VirtualCrossoverPanel panel, List<AgentOperationVerdict> rows, List<string> summary) =>
         ((Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary, null)!)
             .GetAwaiter().GetResult();
+
+    private static AgentSessionSnapshot Snapshot(VirtualCrossoverPanel panel) =>
+        (AgentSessionSnapshot)Invoke(panel, "BuildAgentSessionSnapshot")!;
+
+    private static bool Commit(
+        VirtualCrossoverPanel panel,
+        AgentProposal proposal,
+        IReadOnlySet<string> selected,
+        string? reviewedFingerprint,
+        int proposedRows,
+        List<string> summary)
+    {
+        var task = (Task<bool>)Invoke(
+            panel, "CommitAgentImportAsync",
+            proposal, selected, reviewedFingerprint, proposedRows, summary, null)!;
+        while (!task.IsCompleted)
+        {
+            Application.DoEvents();
+            Thread.Sleep(5);
+        }
+
+        return task.GetAwaiter().GetResult();
+    }
 
     private static bool RunProbes(
         VirtualCrossoverPanel panel, List<AgentOperationVerdict> rows, List<string> summary)

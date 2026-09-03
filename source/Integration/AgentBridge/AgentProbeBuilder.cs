@@ -8,12 +8,18 @@ namespace Resonalyze.Integration.AgentBridge;
 /// <summary>What a probe read, ready for the clipboard.</summary>
 internal sealed record AgentProbeBuildResult(string Text, int JsonBytes);
 
+/// <param name="SessionChangedWhileReading">
+/// Written only when it is true: the tune moved between two of the readings, so
+/// they do not all describe one state. Absent — the ordinary case — means every
+/// reading below was taken off the same session.
+/// </param>
 internal sealed record AgentProbeDocument(
     string Kind,
     int ProtocolVersion,
     string GuideVersion,
     string? PackageId,
     bool SessionMatchesPackage,
+    bool? SessionChangedWhileReading,
     string CreatedAtUtc,
     IReadOnlyDictionary<string, string> Conventions,
     IReadOnlyList<AgentProbeReport> Probes);
@@ -143,13 +149,19 @@ internal static class AgentProbeBuilder
                 "the same number",
             ["nothingWasChanged"] =
                 "the tune was not touched to produce any of this: the readings are computed on " +
-                "copies of the responses, and the session is exactly as it was"
+                "copies of the responses, and the session is exactly as it was",
+            ["sessionChangedWhileReading"] =
+                "present and true only when the user edited the tune between two of the readings " +
+                "below, which then do not all describe one state — compare them with that in " +
+                "mind, and ask for the probe again if it matters. Absent means one session " +
+                "throughout"
         };
 
     public static AgentProbeBuildResult Build(
         IReadOnlyList<AgentProbeReport> probes,
         string? packageId,
         bool sessionMatchesPackage,
+        bool sessionSteady,
         DateTimeOffset createdAtUtc)
     {
         ArgumentNullException.ThrowIfNull(probes);
@@ -160,6 +172,7 @@ internal static class AgentProbeBuilder
             AgentProtocol.GuideVersion,
             packageId,
             sessionMatchesPackage,
+            sessionSteady ? null : true,
             createdAtUtc.ToUniversalTime().ToString(
                 "yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             Conventions,

@@ -240,6 +240,28 @@ public sealed class AgentProbeReviewTests
     }
 
     [Fact]
+    public void Document_DeclaresASessionThatMovedBetweenTwoReadings()
+    {
+        AgentProbeReport report = new(
+            "op-1", AgentProtocol.JunctionDelayProbe, "left:B-C", "B:left", "C:left",
+            null, null, null, [], null);
+
+        string steady = AgentProbeBuilder.Build(
+            [report], null, sessionMatchesPackage: false, sessionSteady: true,
+            DateTimeOffset.UnixEpoch).Text;
+        string moved = AgentProbeBuilder.Build(
+            [report], null, sessionMatchesPackage: false, sessionSteady: false,
+            DateTimeOffset.UnixEpoch).Text;
+
+        // Absent is the ordinary case, so the reader only ever sees the flag
+        // when the readings really do describe more than one state. (The
+        // conventions carry the name in both, which is where it is explained.)
+        Assert.DoesNotContain("\"sessionChangedWhileReading\":true", steady);
+        Assert.Contains("\"sessionChangedWhileReading\":true", moved);
+        Assert.Contains("sessionChangedWhileReading", AgentProbeBuilder.Conventions.Keys);
+    }
+
+    [Fact]
     public void Review_RefusesAProbeThisBuildDoesNotCompute()
     {
         AgentOperationVerdict verdict = AgentProposalValidator.Review(

@@ -10,9 +10,11 @@
 
 <p align="center">
   Automatic time alignment with honest verdicts, a virtual DSP crossover
-  designer, and engineering-grade acoustic analysis — impulse response,
-  frequency response, phase, loopback-referenced timing, and live transfer
-  functions — on Windows.
+  designer, engineering-grade acoustic analysis — impulse response, frequency
+  response, phase, loopback-referenced timing, and live transfer functions — and
+  a clipboard bridge that lets any <strong>chat assistant</strong> read the whole
+  system, measure what a change would do, and propose one you review before it
+  is applied. On Windows.
 </p>
 
 <p align="center">
@@ -59,6 +61,13 @@ and **Auto crossover** search the actual settings against the phase-aware
 predicted sum, and every automatic result comes with an honest verdict — the
 engine reports *why* it trusts an arrival, and refuses loudly instead of
 fabricating a number when the measurement cannot support one.
+
+And it can hand that whole diagnosis to a **chat assistant**. Copy the system to
+the clipboard, paste it into whichever assistant you already use, and its reply
+comes back as typed operations you tick one at a time — or as a **probe**, which
+measures what a crossover, a PEQ bank, a gain or a delay *would* do and changes
+nothing while it answers. No account, no API key, no network request: the
+clipboard is the whole transport, and the tune stays yours until you tick a box.
 
 > Resonalyze is under active development. Treat its results as diagnostic
 > measurements, not as certified laboratory data.
@@ -121,6 +130,14 @@ is not just a plot but the DSP settings themselves:
   per-driver delay and polarity, and PEQ down to all-pass bands, tuned against the
   phase-aware predicted sum. **Auto crossover** and **Auto delay** search these
   settings automatically, across both stereo sides in one run.
+- **A chat assistant that can measure** — copy the whole diagnosis to the
+  clipboard, paste it into any chat, and its reply comes back as typed
+  operations you tick one by one, never as settings written behind your back.
+  It can also ask instead of guess: a **probe** measures what a junction would
+  do under a crossover, a PEQ bank, a gain or a delay it names — computed on a
+  copy, with nothing in your tune touched — and hands you the answer to paste
+  back. No account, no API key, no network request: the clipboard is the whole
+  transport.
 - **Honest automation** — an automatic tuner that guesses is worse than none.
   Arrival estimates carry confidence and verdicts, modal build-up latches and
   playback crosstalk are detected instead of aligned to, and when a measurement
@@ -138,14 +155,6 @@ is not just a plot but the DSP settings themselves:
 - **Fast compare-and-adjust work** — persistent and calculated overlays, target
   curves, on-plot labels, and a measurement history that keeps each entry's whole
   working state.
-- **A chat assistant that can measure** — copy the whole diagnosis to the
-  clipboard, paste it into any chat, and its reply comes back as typed
-  operations you tick one by one, never as settings written behind your back.
-  It can also ask instead of guess: a **probe** measures what a junction would
-  do under a crossover, a PEQ bank, a gain or a delay it names — computed on a
-  copy, with nothing in your tune touched — and hands you the answer to paste
-  back. No account, no API key, no network request: the clipboard is the whole
-  transport.
 
 Resonalyze does not try to be every acoustic tool at once. For room EQ at home,
 REW remains excellent; when the question is *"what delays, crossovers, and
@@ -215,11 +224,14 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   Chebyshev crossovers and PEQ (all-pass bands included), with the complex sum,
   sum loss, phase tracking, junction read-outs, Δ L−R timing, **Auto crossover**,
   a stereo-aware **Auto delay**, a headphone audition, sessions, tuning-sheet
-  export, and an **AI assistant bridge** that hands the whole diagnosis to any
-  chat assistant through the clipboard, reviews its proposal before a single
-  value is applied, lets it run the engines or tune one junction of a finished
-  tune, and answers its "what would this do" with **probes** that measure a
-  variant without changing anything
+  export
+- **AI assistant bridge** — the whole diagnosis to any chat assistant and back
+  through the clipboard: its reply arrives as typed operations reviewed against
+  the current values and applied only where you tick, it may ask for **Auto
+  delay**, **Auto crossover** or a **junction tune** rather than invent numbers,
+  and its "what would this do" is answered by **probes** that measure a variant
+  — another crossover, a bank cleared, a different gain, delay or polarity —
+  without changing anything in the tune
 - **Live Spectrum** — a real-time loopback transfer function with coherence, or a
   reference-free RTA in relative dB or dB SPL, with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white, or Silent for the ambient

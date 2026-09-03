@@ -435,12 +435,13 @@ device (the tuning sheets).
 
 #### Engine requests
 
-The four operations below carry no value of their own. Three ask for one of the
-panel's engines to be opened with the inputs stated; the fourth,
-`useSpatialAverage`, puts the panel into the state the others should be read in.
-They exist because the engines compute what no reading of a curve can, and
-because a user who has been told to "run Auto delay with a 0.25 ms scene offset"
-otherwise has to find the dialog and retype the numbers.
+The operations below carry no value of their own. Four ask for one of the
+panel's engines to be run with the inputs stated; `useSpatialAverage` puts the
+panel into the state the others should be read in; and `probe` asks a question
+and changes nothing at all. They exist because the engines compute what no
+reading of a curve can, because a user told to "run Auto delay with a 0.25 ms
+scene offset" otherwise has to find the dialog and retype the numbers, and
+because "what would this do" deserves an answer that costs the user no undo.
 
 They carry no `expectedCurrent`: what the engine writes is what the run decides.
 The review is the gate. `runAutoDelay` then runs **without its dialog** — the

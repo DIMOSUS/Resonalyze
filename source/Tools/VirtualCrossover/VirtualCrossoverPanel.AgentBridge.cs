@@ -1165,7 +1165,7 @@ public partial class VirtualCrossoverPanel
                     .Append(" at ").Append(alignment.ExtraDelayMs >= 0 ? "+" : string.Empty)
                     .Append(alignment.ExtraDelayMs.ToString("0.00", CultureInfo.InvariantCulture))
                     .Append(" ms on the upper block")
-                    .Append(alignment.InvertUpper ? ", inverted" : string.Empty);
+                    .Append(alignment.InvertUpper ? ", with it inverted" : string.Empty);
             }
             summary.Add(line.Append('.').ToString());
         }

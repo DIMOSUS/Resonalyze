@@ -100,10 +100,15 @@ public sealed record JunctionTuneCandidate(
 
 /// <summary>
 /// What a junction would measure after the delay the production alignment
-/// would pick for it — the extra delay on the UPPER channel, its polarity, and
-/// the loss and dip there. Says how much of what remains is timing's to take,
-/// which the crossover cannot.
+/// would pick for it — the extra delay on the UPPER channel, the polarity that
+/// channel would END UP with, and the loss and dip there. Says how much of what
+/// remains is timing's to take, which the crossover cannot.
 /// </summary>
+/// <param name="InvertUpper">
+/// The upper channel's resulting polarity, not a flip of what it runs now: the
+/// search works on the response the chain already inverted, and a reader who
+/// took its relative answer for an absolute one would propose the opposite.
+/// </param>
 public sealed record JunctionTuneAlignment(
     string Side,
     double ExtraDelayMs,
@@ -196,6 +201,9 @@ public sealed record JunctionProbeResult(
 /// and dip it would leave. <paramref name="Chosen"/> marks the one the
 /// production selection would take.
 /// </summary>
+/// <param name="InvertUpper">
+/// The upper channel's resulting polarity, as in <see cref="JunctionTuneAlignment"/>.
+/// </param>
 public sealed record JunctionDelayProbeCandidate(
     double ExtraDelayMs,
     bool InvertUpper,
@@ -273,12 +281,6 @@ public static class CrossoverJunctionTuner
     private static readonly double MinProbeRatio = Math.Pow(2.0, 1.0 / 24.0);
 
     /// <summary>
-    /// Where a tune reports how long its phases took, for a harness; null in
-    /// production.
-    /// </summary>
-    public static Action<string>? Trace { get; set; }
-
-    /// <summary>
     /// Tunes the junction. <paramref name="sides"/> holds every side the pair is
     /// measured on (one for a mono junction, two for a stereo one).
     /// </summary>
@@ -286,7 +288,6 @@ public static class CrossoverJunctionTuner
         IReadOnlyList<JunctionTuneSide> sides,
         JunctionTuneOptions options)
     {
-        var clock = System.Diagnostics.Stopwatch.StartNew();
         ArgumentNullException.ThrowIfNull(sides);
         ArgumentNullException.ThrowIfNull(options);
         if (sides.Count == 0)
@@ -359,8 +360,6 @@ public static class CrossoverJunctionTuner
                 currentLowPass, currentHighPass, currentHz, replaceEdges: false, ownBand: true)
             ?? throw new InvalidOperationException(
                 "The junction's current crossover cannot be read: the band holds no usable bins.");
-        Trace?.Invoke($"crop {cropLength} samples, current read: {clock.ElapsedMilliseconds} ms");
-        clock.Restart();
 
         // The probes are ranked on the shared band alone; their own-band read
         // is taken afterwards for the few that are reported, since a gated
@@ -390,14 +389,10 @@ public static class CrossoverJunctionTuner
                 "or the band holds no usable bins.");
         }
 
-        Trace?.Invoke($"{probes.Count} probes: {clock.ElapsedMilliseconds} ms ({work.ChainsRun} chains run)");
-        clock.Restart();
         List<JunctionTuneCandidate> reported = ranked
             .Take(1 + RunnersUpReported)
             .Select(candidate => work.ReadOwnBand(candidate) ?? candidate)
             .ToList();
-        Trace?.Invoke($"own-band reads: {clock.ElapsedMilliseconds} ms");
-        clock.Restart();
 
         // The margin on the shared band, and the challenger's own-band read no
         // worse than the current's: a win the user's own read-outs would not
@@ -410,7 +405,6 @@ public static class CrossoverJunctionTuner
 
         List<JunctionTuneAlignment> currentAfterDelay = work.AfterDelay(current, replaceEdges: false);
         List<JunctionTuneAlignment> bestAfterDelay = work.AfterDelay(best, replaceEdges: true);
-        Trace?.Invoke($"after-delay searches: {clock.ElapsedMilliseconds} ms");
         return new JunctionTuneResult(
             current,
             best,
@@ -610,7 +604,9 @@ public static class CrossoverJunctionTuner
                 .OrderByDescending(candidate => candidate.ScoreDb)
                 .Take(maxCandidates)
                 .Select(candidate => new JunctionDelayProbeCandidate(
-                    candidate.DelayMs, candidate.InvertPolarity, candidate.ScoreDb,
+                    candidate.DelayMs,
+                    ResultingPolarity(side.UpperChain, candidate),
+                    candidate.ScoreDb,
                     candidate.LossDb, candidate.DipDb,
                     candidate.DelayMs.Equals(chosen.DelayMs) &&
                         candidate.InvertPolarity == chosen.InvertPolarity))
@@ -620,7 +616,7 @@ public static class CrossoverJunctionTuner
             if (!reported.Any(candidate => candidate.Chosen))
             {
                 reported.Insert(0, new JunctionDelayProbeCandidate(
-                    chosen.DelayMs, chosen.InvertPolarity, chosen.ScoreDb,
+                    chosen.DelayMs, ResultingPolarity(side.UpperChain, chosen), chosen.ScoreDb,
                     chosen.LossDb, chosen.DipDb, Chosen: true));
             }
 
@@ -665,6 +661,14 @@ public static class CrossoverJunctionTuner
         };
         return chain with { Crossover = replaced };
     }
+
+    // The polarity the upper channel would END UP with. The search reads the
+    // response the chain has already inverted, so its answer is a flip of THAT:
+    // reported as it stands, a channel running inverted whose best alignment is
+    // to stop being inverted would read "invert it", which is the opposite of
+    // what a reply should propose.
+    private static bool ResultingPolarity(DspChannelChain upperChain, AlignmentCandidate candidate) =>
+        upperChain.InvertPolarity ^ candidate.InvertPolarity;
 
     private static CrossoverEdge? LowPassOf(DspChannelChain chain) =>
         chain.Crossover is { Kind: CrossoverKind.LowPass or CrossoverKind.BandPass } spec
@@ -759,10 +763,6 @@ public static class CrossoverJunctionTuner
         // chains are the costly half of a probe or a tune.
         private readonly System.Collections.Concurrent.ConcurrentDictionary<
             (int Side, bool Upper, DspChannelChain Chain), (Complex[] Response, ValidSampleRange Range)> processed = new();
-
-        private int chainsRun;
-
-        public int ChainsRun => chainsRun;
 
         public Work(
             IReadOnlyList<JunctionTuneSide> sides,
@@ -967,7 +967,8 @@ public static class CrossoverJunctionTuner
 
             AlignmentCandidate chosen = AlignmentSelection.Select(found, 0);
             return new JunctionTuneAlignment(
-                sides[side].Name, chosen.DelayMs, chosen.InvertPolarity, chosen.LossDb, chosen.DipDb);
+                sides[side].Name, chosen.DelayMs, ResultingPolarity(upperChain, chosen),
+                chosen.LossDb, chosen.DipDb);
         }
 
         // The chain a side's channel runs with the candidate edge in place of
@@ -988,7 +989,6 @@ public static class CrossoverJunctionTuner
             processed.GetOrAdd((side, upper, chain), key =>
             {
                 JunctionTuneSide item = sides[key.Side];
-                Interlocked.Increment(ref chainsRun);
                 Complex[] response = VirtualCrossoverAnalysis.ApplyChain(
                     key.Upper ? cropped[key.Side].Upper : cropped[key.Side].Lower,
                     key.Chain, item.SampleRate, options.ProcessorSampleRateHz,

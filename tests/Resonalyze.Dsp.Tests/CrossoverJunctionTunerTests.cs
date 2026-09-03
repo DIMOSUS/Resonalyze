@@ -266,6 +266,33 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    public void ProbeAlignment_ReportsTheUpperChannelsRESULTINGPolarity()
+    {
+        // The upper channel runs inverted and is otherwise aligned, so the way
+        // to align the pair is to stop inverting it. The search says "flip the
+        // response you gave me", which is true of the response the chain
+        // already inverted — the report must say what the CHANNEL ends up as,
+        // or a reply would propose the opposite polarity.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        JunctionTuneSide inverted = Side(
+            "left", LowPassChain(lr), HighPassChain(lr) with { InvertPolarity = true });
+
+        JunctionDelayProbeCandidate chosen = Assert.Single(
+            Assert.Single(CrossoverJunctionTuner.ProbeAlignment([inverted], SampleRate)).Candidates,
+            candidate => candidate.Chosen);
+
+        Assert.False(chosen.InvertUpper);
+        Assert.InRange(chosen.LossDb, -0.3, 0.0);
+
+        // The same pair without the inversion keeps its normal polarity.
+        JunctionDelayProbeCandidate normal = Assert.Single(
+            Assert.Single(CrossoverJunctionTuner.ProbeAlignment(
+                [Side("left", LowPassChain(lr), HighPassChain(lr))], SampleRate)).Candidates,
+            candidate => candidate.Chosen);
+        Assert.False(normal.InvertUpper);
+    }
+
+    [Fact]
     public void Tune_RefusesAnEmptyFamilyList_AndAnInvertedWindow()
     {
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);

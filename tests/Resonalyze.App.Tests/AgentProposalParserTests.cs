@@ -228,6 +228,37 @@ public sealed class AgentProposalParserTests
         Assert.Empty(proposal.Operations.OfType<AgentChannelOperation>());
     }
 
+    [Theory]
+    [InlineData("\"variants\": [null]")]
+    [InlineData("\"variants\": [{ \"changes\": [null] }]")]
+    [InlineData("\"variants\": [{ \"changes\": [{ \"channelId\": \"C:left\", \"peq\": { \"preampDb\": 0, \"bands\": [null] } }] }]")]
+    [InlineData("\"variants\": [{ \"changes\": [{ \"channelId\": \"C:left\", \"peq\": { \"preampDb\": 0, \"bands\": null } }] }]")]
+    public void Parse_RefusesAProbeWithANullInsideIt_AsOneRejectedRow(string variants)
+    {
+        // Valid JSON that `required` does not catch: a null element. Dereferenced
+        // while mapping it would leave the parser with a NullReferenceException,
+        // which nothing above catches — the whole import would die instead of
+        // one operation being refused.
+        string json = $$"""
+            { "kind": "resonalyze.agent-proposal", "protocolVersion": 1, "summary": "s",
+              "operations": [
+                { "id": "op-1", "op": "probe", "probe": "junction", "junctionId": "left:C-D", {{variants}}, "reason": "r" },
+                { "id": "op-2", "op": "probe", "probe": "excessGroupDelay", "reason": "r" }
+              ] }
+            """;
+
+        AgentProposalParseResult result = AgentProposalParser.Parse(Begin + json + End);
+
+        Assert.True(result.Succeeded, result.Error);
+        AgentRejectedOperation rejected = Assert.Single(result.Proposal!.Rejected);
+        Assert.Equal("op-1", rejected.Id);
+        Assert.Contains("the shape the protocol describes", rejected.Problem);
+        Assert.Contains("is null", rejected.Problem);
+        // The rest of the reply still stands.
+        AgentOperation kept = Assert.Single(result.Proposal.Operations);
+        Assert.Equal("op-2", kept.Id);
+    }
+
     [Fact]
     public void Parse_ReadsAJunctionTune_WithOnlyWhatTheReplyStates()
     {

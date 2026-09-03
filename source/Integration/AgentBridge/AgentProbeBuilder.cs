@@ -60,6 +60,7 @@ internal sealed record AgentProbeSide(
 
 internal sealed record AgentProbeBandReading(double? SumLossDb, double? DipDb, double? RippleDb);
 
+/// <param name="InvertUpper">The upper channel's RESULTING polarity, not a flip of its current one.</param>
 internal sealed record AgentProbeAfterDelay(
     double? ExtraDelayMs,
     bool InvertUpper,
@@ -82,6 +83,7 @@ internal sealed record AgentProbeDelaySide(
     string? Unavailable,
     IReadOnlyList<AgentProbeDelayCandidate> Candidates);
 
+/// <param name="InvertUpper">The upper channel's RESULTING polarity, not a flip of its current one.</param>
 internal sealed record AgentProbeDelayCandidate(
     double? ExtraDelayMs,
     bool InvertUpper,
@@ -127,8 +129,9 @@ internal static class AgentProbeBuilder
                 "between two such bands by more than a crossover decision does",
             ["afterBestDelay"] =
                 "what the junction would measure once the alignment had been re-run for THIS " +
-                "entry — the delay (on the upper channel) and polarity the production search " +
-                "would pick, and the loss and dip left there. The fair comparison between " +
+                "entry — the extra delay on the upper channel, the polarity that channel would " +
+                "END UP with ('invertUpper' is its resulting state, not a flip of what it runs " +
+                "now), and the loss and dip left there. The fair comparison between " +
                 "entries, since the delays in the tune were set for the tune as it stands; a " +
                 "reply that wants that delay applied asks for runAutoDelay",
             ["phase"] =

@@ -526,6 +526,10 @@ internal static class AgentProposalParser
             wire.Id, wire.Reason, wire.JunctionId, wire.MinHz, wire.MaxHz,
             wire.Families, wire.Slopes, wire.IndependentSlopes);
 
+    // Every nested element goes through NotNull: `"variants": [null]` and
+    // `"changes": [null]` are valid JSON that `required` does not catch, and
+    // dereferencing one would leave the parser with a NullReferenceException —
+    // which nothing above catches — instead of one rejected operation.
     private static AgentOperation? Map(ProbeWire? wire) => wire == null
         ? null
         : new ProbeOperation(
@@ -533,21 +537,32 @@ internal static class AgentProposalParser
             wire.Reason,
             wire.Probe,
             wire.JunctionId,
-            wire.Variants?.Select(variant => new AgentProbeVariant(
-                variant.Label,
-                (variant.Changes ?? []).Select(change => new AgentProbeChange(
-                    change.ChannelId,
-                    change.GainDb,
-                    change.DelayMs,
-                    change.InvertPolarity,
-                    change.Crossover == null ? null : Map(change.Crossover),
-                    change.Peq == null
-                        ? null
-                        : new AgentPeqBank(
-                            change.Peq.PreampDb,
-                            NotNull(change.Peq.Bands, "peq.bands").Select(band => new AgentPeqBand(
-                                band.Type, band.FrequencyHz, band.Q, band.GainDb)).ToList())))
-                    .ToList())).ToList());
+            wire.Variants?.Select(item =>
+            {
+                ProbeVariantWire variant = NotNull(item, "variants[]");
+                return new AgentProbeVariant(
+                    variant.Label,
+                    (variant.Changes ?? []).Select(entry =>
+                    {
+                        ProbeChangeWire change = NotNull(entry, "changes[]");
+                        return new AgentProbeChange(
+                            change.ChannelId,
+                            change.GainDb,
+                            change.DelayMs,
+                            change.InvertPolarity,
+                            change.Crossover == null ? null : Map(change.Crossover),
+                            change.Peq == null
+                                ? null
+                                : new AgentPeqBank(
+                                    change.Peq.PreampDb,
+                                    NotNull(change.Peq.Bands, "peq.bands")
+                                        .Select(band => Map(NotNull(band, "peq.bands[]")))
+                                        .ToList()));
+                    }).ToList());
+            }).ToList());
+
+    private static AgentPeqBand Map(PeqBandWire wire) =>
+        new(wire.Type, wire.FrequencyHz, wire.Q, wire.GainDb);
 
     private static AgentOperation? Map(AutoTuneWire? wire) => wire == null
         ? null

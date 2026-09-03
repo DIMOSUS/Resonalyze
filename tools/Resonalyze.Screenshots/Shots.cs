@@ -1,3 +1,5 @@
+using Resonalyze.Integration.AgentBridge;
+
 namespace Resonalyze.Screenshots;
 
 /// <summary>
@@ -50,6 +52,14 @@ internal static class Shots
                     ? "no \"arrayRig\" in the config — the inputs, the loopback and the " +
                       "backend to draw the dialog for, which no measurement records"
                     : null)),
+        // Its own scene, and not a screen capture: the review is a dialog, so it is
+        // drawn straight off the form and the run does not need the display to
+        // itself. The reply it is shown for is a real one — ai-proposal.json beside
+        // this tool — with only its packageId rewritten, because the id is minted
+        // when the package is copied and a reply carrying any other one is a
+        // different figure: the amber warning about a package the session cannot
+        // vouch for.
+        new("agent", ShotSession.AssetWindowSize, ["ai_assistant"], AgentReview),
         new("manual", ShotSession.ManualWindowSize,
             ["manual/virtual-dsp", "manual/channel-card", "manual/eq-wizard-handoff",
              "manual/eq-wizard-tuned", "manual/dsp-processor",
@@ -451,6 +461,52 @@ internal static class Shots
     }
 
     // ------------------------------------------------------------------ helpers
+
+    // ------------------------------------------------------------- the AI bridge
+
+    private static void AgentReview(ShotSession session, Func<string, bool> wanted)
+    {
+        _ = wanted;
+        OpenSession(session);
+        var panel = Reflect.Field<VirtualCrossoverPanel>(session.Shell, "virtualCrossoverPanel");
+
+        // Copy for AI first, through the menu item's own path: it is what mints the
+        // package id and remembers the session it was minted for, and the review
+        // reads both. Faked, the figure would show a warning row instead of a tune.
+        session.Await((Task)Reflect.Invoke(panel, "CopyForAiAsync")!);
+        session.Pump(3_000);
+        var packageId = Reflect.Field<string>(panel, "lastAgentPackageId");
+
+        string path = Path.Combine(AppContext.BaseDirectory, "ai-proposal.json");
+        string reply = File.ReadAllText(path).Replace("PACKAGE_ID", packageId, StringComparison.Ordinal);
+        AgentProposalParseResult parsed = AgentProposalParser.Parse(reply);
+        if (!parsed.Succeeded)
+        {
+            throw new InvalidOperationException($"ai-proposal.json: {parsed.Error}");
+        }
+
+        AgentProposalReview review = AgentProposalValidator.Review(
+            parsed.Proposal!, panel.BuildAgentSessionSnapshot());
+        // A figure of a reply this session argues with teaches the argument. Both
+        // ways it can happen are refused here rather than photographed: a warning
+        // over the reply as a whole, and a row the session will not offer — which
+        // is what a config whose session has no C-D junction produces.
+        if (review.Warnings.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "The review warns, so the figure would show a refusal: " +
+                string.Join(" | ", review.Warnings));
+        }
+        if (review.Verdicts.FirstOrDefault(verdict => !verdict.Applicable) is { } refused)
+        {
+            throw new InvalidOperationException(
+                $"{refused.Id} is not applicable to this session ({refused.Message}), so " +
+                "the figure would show a refused row. The reply is written for a session " +
+                "with a C-D junction on both sides.");
+        }
+
+        session.CaptureDialog(new AgentProposalDialog(review), "ai_assistant");
+    }
 
     private static void OpenSession(ShotSession session)
     {

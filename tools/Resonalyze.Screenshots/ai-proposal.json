@@ -1,0 +1,60 @@
+{
+  "kind": "resonalyze.agent-proposal",
+  "protocolVersion": 1,
+  "packageId": "PACKAGE_ID",
+  "summary": "Probe the C-D crossover around the current BW48 1610/1800 Hz solution. The right junction still reaches -3.7 dB Sum-loss dip, while its best delay differs by only 0.02 ms, so the useful search is in crossover shape rather than timing. The same candidates are probed on the already-good left C-D junction so an improvement on the right is not bought by degrading the left.",
+  "advice": [
+    "Paste the probe result back into the same chat. Compare every candidate against the current tune on both right:C-D and left:C-D; do not select a right-side winner that materially worsens the left side.",
+    "The Excess group delay probe is included to distinguish crossover-correctable phase shape from excess-phase dispersion/reflections."
+  ],
+  "operations": [
+    {
+      "id": "probe-right-cd",
+      "op": "probe",
+      "probe": "junction",
+      "junctionId": "right:C-D",
+      "variants": [
+        {"label":"BW48 1700/1800","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1700,"slopeDbPerOctave":48}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"BW48 1800/1800","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":48}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"BW48 1600/1900","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1600,"slopeDbPerOctave":48}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1900,"slopeDbPerOctave":48}}}]},
+        {"label":"BW48 1500/1900","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1500,"slopeDbPerOctave":48}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1900,"slopeDbPerOctave":48}}}]},
+        {"label":"BW36 1610/1800","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1610,"slopeDbPerOctave":36}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":36}}}]},
+        {"label":"BW36 1700/1900","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1700,"slopeDbPerOctave":36}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1900,"slopeDbPerOctave":36}}}]},
+        {"label":"C48 D36 1610/1800","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1610,"slopeDbPerOctave":48}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":36}}}]},
+        {"label":"C36 D48 1610/1800","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1610,"slopeDbPerOctave":36}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"LR48 1610/1800","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"LinkwitzRiley","frequencyHz":1610,"slopeDbPerOctave":48}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"LinkwitzRiley","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"C BW48 D LR48","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1610,"slopeDbPerOctave":48}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"LinkwitzRiley","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"C LR48 D BW48","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"LinkwitzRiley","frequencyHz":1610,"slopeDbPerOctave":48}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"LR36 1700/1900","changes":[{"channelId":"C:right","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"LinkwitzRiley","frequencyHz":1700,"slopeDbPerOctave":36}}},{"channelId":"D:right","crossover":{"kind":"HighPass","highPass":{"family":"LinkwitzRiley","frequencyHz":1900,"slopeDbPerOctave":36}}}]}
+      ],
+      "reason": "Find whether the right C-D junction can beat the current BW48 1610/1800 Hz split without relying on a delay change."
+    },
+    {
+      "id": "probe-left-cd",
+      "op": "probe",
+      "probe": "junction",
+      "junctionId": "left:C-D",
+      "variants": [
+        {"label":"BW48 1700/1800","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1700,"slopeDbPerOctave":48}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"BW48 1800/1800","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":48}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"BW48 1600/1900","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1600,"slopeDbPerOctave":48}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1900,"slopeDbPerOctave":48}}}]},
+        {"label":"BW48 1500/1900","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1500,"slopeDbPerOctave":48}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1900,"slopeDbPerOctave":48}}}]},
+        {"label":"BW36 1610/1800","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1610,"slopeDbPerOctave":36}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":36}}}]},
+        {"label":"BW36 1700/1900","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1700,"slopeDbPerOctave":36}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1900,"slopeDbPerOctave":36}}}]},
+        {"label":"C48 D36 1610/1800","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1610,"slopeDbPerOctave":48}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":36}}}]},
+        {"label":"C36 D48 1610/1800","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1610,"slopeDbPerOctave":36}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"LR48 1610/1800","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"LinkwitzRiley","frequencyHz":1610,"slopeDbPerOctave":48}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"LinkwitzRiley","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"C BW48 D LR48","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"Butterworth","frequencyHz":1610,"slopeDbPerOctave":48}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"LinkwitzRiley","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"C LR48 D BW48","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"LinkwitzRiley","frequencyHz":1610,"slopeDbPerOctave":48}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"Butterworth","frequencyHz":1800,"slopeDbPerOctave":48}}}]},
+        {"label":"LR36 1700/1900","changes":[{"channelId":"C:left","crossover":{"kind":"BandPass","highPass":{"family":"Butterworth","frequencyHz":200,"slopeDbPerOctave":48},"lowPass":{"family":"LinkwitzRiley","frequencyHz":1700,"slopeDbPerOctave":36}}},{"channelId":"D:left","crossover":{"kind":"HighPass","highPass":{"family":"LinkwitzRiley","frequencyHz":1900,"slopeDbPerOctave":36}}}]}
+      ],
+      "reason": "The left C-D junction is already excellent, so every crossover candidate considered for the right side must also be checked against the left-side baseline."
+    },
+    {
+      "id": "probe-excess-gd",
+      "op": "probe",
+      "probe": "excessGroupDelay",
+      "reason": "The right C-D junction has a very large phase-fit residual despite essentially no useful delay correction; inspect excess group delay to see whether reflections or a second path are driving the mismatch."
+    }
+  ]
+}

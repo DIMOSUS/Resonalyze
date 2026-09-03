@@ -10,9 +10,11 @@
 
 <p align="center">
   Automatic time alignment with honest verdicts, a virtual DSP crossover
-  designer, and engineering-grade acoustic analysis — impulse response,
-  frequency response, phase, loopback-referenced timing, and live transfer
-  functions — on Windows.
+  designer, engineering-grade acoustic analysis — impulse response, frequency
+  response, phase, loopback-referenced timing, and live transfer functions — and
+  a clipboard bridge that lets any <strong>chat assistant</strong> read the whole
+  system, measure what a change would do, and propose one you review before it
+  is applied. On Windows.
 </p>
 
 <p align="center">
@@ -60,6 +62,14 @@ predicted sum, and every automatic result comes with an honest verdict — the
 engine reports *why* it trusts an arrival, and refuses loudly instead of
 fabricating a number when the measurement cannot support one.
 
+And it can hand that whole diagnosis to a **chat assistant**. Copy the system to
+the clipboard, paste it into whichever assistant you already use, and its reply
+comes back as typed rows in a review — each one against the value your channel
+holds now, yours to untick or cancel, and nothing written until you press Apply.
+Or it comes back as a **probe**, which measures what a crossover, a PEQ bank, a
+gain or a delay *would* do and changes nothing while it answers. No account, no
+API key, no network request: the clipboard is the whole transport.
+
 > Resonalyze is under active development. Treat its results as diagnostic
 > measurements, not as certified laboratory data.
 
@@ -86,6 +96,20 @@ fabricating a number when the measurement cannot support one.
   years. Right: the same system after one <strong>Auto&nbsp;crossover</strong> +
   <strong>Auto&nbsp;delay</strong> pass — the worst dip shrinks from −8.0 to
   −2.3&nbsp;dB.
+</p>
+
+<p align="center">
+  <img src="assets/images/ai_assistant.png" alt="Import AI proposal: three read-only probes from a chat assistant, reviewed before anything runs">
+</p>
+
+<p align="center">
+  <strong>A chat assistant that can measure.</strong> The reply to a pasted
+  package arrives as typed rows, each against the value the channel holds now
+  and none of them written until you press Apply. Here it asks nothing to be changed at all: three <strong>probes</strong>
+  — twelve crossover candidates on the right C–D junction, the same twelve on the
+  already-good left one, and every channel's excess group delay — each measured
+  on a copy of the chain and handed back through the clipboard, with the tune
+  untouched and nothing to undo.
 </p>
 
 <table>
@@ -121,6 +145,15 @@ is not just a plot but the DSP settings themselves:
   per-driver delay and polarity, and PEQ down to all-pass bands, tuned against the
   phase-aware predicted sum. **Auto crossover** and **Auto delay** search these
   settings automatically, across both stereo sides in one run.
+- **A chat assistant that can measure** — copy the whole diagnosis to the
+  clipboard, paste it into any chat, and its reply comes back as a table of
+  typed operations judged against your current values, never as settings
+  written behind your back: you untick what you do not want and press Apply.
+  It can also ask instead of guess: a **probe** measures what a junction would
+  do under a crossover, a PEQ bank, a gain or a delay it names — computed on a
+  copy, with nothing in your tune touched — and hands you the answer to paste
+  back. No account, no API key, no network request: the clipboard is the whole
+  transport.
 - **Honest automation** — an automatic tuner that guesses is worse than none.
   Arrival estimates carry confidence and verdicts, modal build-up latches and
   playback crosstalk are detected instead of aligned to, and when a measurement
@@ -207,9 +240,15 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   Chebyshev crossovers and PEQ (all-pass bands included), with the complex sum,
   sum loss, phase tracking, junction read-outs, Δ L−R timing, **Auto crossover**,
   a stereo-aware **Auto delay**, a headphone audition, sessions, tuning-sheet
-  export, and an **AI assistant bridge** that hands the whole diagnosis to any
-  chat assistant through the clipboard and reviews its proposal before a single
-  value is applied
+  export
+- **AI assistant bridge** — the whole diagnosis to any chat assistant and back
+  through the clipboard: its reply arrives as typed operations reviewed against
+  the current values, each row yours to untick before Apply and refused outright
+  where the tune has moved on, it may ask for **Auto
+  delay**, **Auto crossover** or a **junction tune** rather than invent numbers,
+  and its "what would this do" is answered by **probes** that measure a variant
+  — another crossover, a bank cleared, a different gain, delay or polarity —
+  without changing anything in the tune
 - **Live Spectrum** — a real-time loopback transfer function with coherence, or a
   reference-free RTA in relative dB or dB SPL, with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white, or Silent for the ambient
@@ -366,6 +405,12 @@ asking:
   control does and why it behaves as it does. Start here if you want to know what
   a particular graph, read-out or option means.
 
+Two more are written for the chat assistant rather than for you, and are worth a
+look if you use the bridge: **[docs/agent/AGENT_GUIDE.md](docs/agent/AGENT_GUIDE.md)**,
+the tuning methodology an assistant is asked to follow, and
+**[docs/agent/PROTOCOL.md](docs/agent/PROTOCOL.md)**, the exact shape of what
+leaves and enters the clipboard.
+
 ## FAQ
 
 **Can I use a UMIK-1 or another USB microphone?**
@@ -397,6 +442,18 @@ ones any single-point method has: the prediction holds at the microphone positio
 playback chain and mic position for every measurement, and at a roughly stable
 cabin temperature. For frequency-response work you can go further with spatial
 averaging. And the final judge of a tune is still your ears.
+
+**Does the AI bridge send my measurements anywhere?**
+
+Only where you paste them. Resonalyze holds no account, no API key and no model:
+it writes a package to the clipboard, you decide which chat sees it, and its
+reply comes back the same way. The bridge itself makes no network request. The
+package carries curves, settings and whatever you typed into the session's
+notes — never file paths, folder names, your Windows user name, or raw impulse
+responses — and nothing an assistant proposes
+reaches the tune until you press Apply in the review, where every row is judged
+against your current values and any of them can be unticked; a probe changes
+nothing at all. Use none of it and the program is exactly what it was.
 
 ## Building from Source
 

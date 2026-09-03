@@ -45,6 +45,14 @@ dotnet run --project tools/Resonalyze.Screenshots -- measurement-options
 — but asking for one of their shots BY NAME fails instead, because a named shot that was
 never written must not exit 0.
 
+**`ai_assistant` is taken for a real reply, in `ai-proposal.json` beside this tool.**
+The scene presses *Copy for AI* first, because that is what mints the package id, and
+rewrites only that id into the reply — a reply carrying any other one draws the amber
+warning about a package the session cannot vouch for, which is a different figure. It
+refuses to shoot rather than photograph a refusal: a review that warns, or a row the
+session will not offer, stops the scene with the reason. The reply is written for a
+session with a C–D junction on both sides; edit the file to suit another one.
+
 **The run needs the screen to itself.** Several shots are screen captures, so the
 tool raises the shell above everything else and refuses the shot when another
 process's window still covers it — without that check a grab quietly returns whatever

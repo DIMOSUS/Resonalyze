@@ -938,34 +938,44 @@ public partial class VirtualCrossoverPanel
         }
 
         // A channel hands over twice, and this reading covers one of those
-        // handovers. The other ones the variants touch are named, so a change
-        // that wins here is not proposed without their being looked at.
-        IReadOnlyList<string> affected = AgentProposalValidator.NeighbourJunctionIds(
-            BuildAgentSessionSnapshot(), probe.JunctionId ?? string.Empty,
-            (probe.Variants ?? [])
-                .SelectMany(variant => variant.Changes)
-                .Select(change => change.ChannelId)
-                .Distinct(StringComparer.Ordinal)
-                .ToList());
+        // handovers. Each entry names the OTHER junctions ITS OWN changes
+        // reach: two variants of one probe may touch opposite ends of the
+        // junction, and a list pooled over the probe would send the assistant
+        // to a junction the winning variant never touched — and cannot even be
+        // probed with, since a variant states only the named junction's two
+        // channels. The entries are the variants in order, the baseline first,
+        // exactly as BuildAgentProbeVariants assembled them.
+        AgentSessionSnapshot session = BuildAgentSessionSnapshot();
+        IReadOnlyList<AgentProbeVariant> asked = probe.Variants ?? [];
         return new AgentProbeReport(
             probe.Id, probe.Probe, probe.JunctionId, lowerSnapshot!.Id, upperSnapshot!.Id, null,
             [
                 AgentCurveSampling.Frequency(probed.SharedBandLowHz),
                 AgentCurveSampling.Frequency(probed.SharedBandHighHz)
             ],
-            probed.Entries.Select(AgentProbeEntryOf).ToList(),
+            probed.Entries.Select((entry, index) => AgentProbeEntryOf(
+                entry, index,
+                index == 0 || index > asked.Count
+                    ? null
+                    : AgentProposalValidator.NeighbourJunctionIds(
+                        session, probe.JunctionId ?? string.Empty,
+                        asked[index - 1].Changes
+                            .Select(change => change.ChannelId)
+                            .Distinct(StringComparer.Ordinal)
+                            .ToList()))).ToList(),
             null,
-            null,
-            affected.Count > 0 ? affected : null);
+            null);
     }
 
     // The FIRST entry is the tune as it stands, because the panel builds it
     // first — read off the position, never off the label, which is the reply's
     // own text and may say anything, "current" included.
-    private static AgentProbeEntry AgentProbeEntryOf(JunctionProbeEntry entry, int index) =>
+    private static AgentProbeEntry AgentProbeEntryOf(
+        JunctionProbeEntry entry, int index, IReadOnlyList<string>? affected) =>
         new(
             entry.Label,
             index == 0,
+            affected is { Count: > 0 } ? affected : null,
             entry.LowerLowPass is { } low ? Edge(low) : null,
             entry.UpperHighPass is { } high ? Edge(high) : null,
             [

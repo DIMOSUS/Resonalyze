@@ -275,9 +275,11 @@ paste, then propose — and propose what you probed.
 
 **A channel hands over twice.** A midrange meets the woofer below it and the
 tweeter above it, and a probe answers for the junction you named and no other,
-so a variant that wins there can spoil the one on the channel's other side. The
-report names those junctions in `affectedJunctions`; probe each of them under
-the same variant before you propose it.
+so a variant that wins there can spoil the one on the channel's other side. Each
+entry names its own in `affectedJunctions`. Before proposing that entry, probe
+every junction it names, carrying the change to the channel they share — a
+variant states the named junction's two channels, so that shared channel's
+change is the part of the entry that travels.
 
 **The engines**, when `limits.operations` names them (see PROTOCOL §2.2 for
 every input and what each refuses):

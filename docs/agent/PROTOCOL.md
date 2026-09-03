@@ -674,7 +674,6 @@ BEGIN_RESONALYZE_AGENT_PROBE_JSON
   "probes": [
     { "id": "op-1", "probe": "junction", "junctionId": "left:C-D",
       "lower": "C:left", "upper": "D:left", "sharedBandHz": [875, 4800],
-      "affectedJunctions": ["left:B-C"],
       "entries": [
         { "label": "current", "current": true,
           "lowPass": { "family": "Butterworth", "frequencyHz": 2000, "slopeDbPerOctave": 48, "rippleDb": 1 },
@@ -686,7 +685,7 @@ BEGIN_RESONALYZE_AGENT_PROBE_JSON
                        "phase": { "phaseAtCrossoverDeg": -12.4, "consistency": 0.82,
                                   "currentScore": 0.79, "bestScore": 0.88,
                                   "bestExtraDelayMs": 0.08, "bestInvert": false, "fitRmsDeg": 14 } } ] },
-        { "label": "no bank on C", … } ] },
+        { "label": "no bank on C", "affectedJunctions": ["left:B-C"], … } ] },
     { "id": "op-2", "probe": "junctionDelay", "junctionId": "left:C-D",
       "sides": [ { "side": "left", "bandHz": [1000, 4000], "searchHalfWindowMs": 2,
                    "candidates": [ { "extraDelayMs": 0.08, "invertUpper": false, "scoreDb": -0.2,
@@ -717,11 +716,14 @@ document is read:
   BETWEEN the entries of one probe; the package's `junctions[].phase` is read
   through the panel's own gate and is not the same number.
 
-`affectedJunctions` is written when the variants change a channel that also
-hands over somewhere else — a midrange meets a woofer below and a tweeter above,
-and this reading covers one of those two handovers. The junctions it names are
-the ones a winning variant may have spoiled; probing them under the same variant
-is what tells you.
+An entry's `affectedJunctions` is written when THAT entry changes a channel that
+also hands over somewhere else — a midrange meets a woofer below and a tweeter
+above, and this reading covers one of those two handovers. It is per entry
+because two entries of one probe may touch opposite ends of the junction: the
+list belongs to the change that would have to be proposed, and the baseline,
+which changes nothing, carries none. Before proposing an entry, probe each
+junction it names, carrying the part of the entry that reaches that junction —
+the change to the channel the two junctions share.
 
 `packageId` names the package the reading belongs beside, and
 `sessionMatchesPackage` says whether the session still is the one that package

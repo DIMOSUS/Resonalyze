@@ -28,10 +28,6 @@ internal sealed record AgentProbeDocument(
 /// One probe's answer. The fields a kind does not use are absent, as everywhere
 /// else in the protocol.
 /// </summary>
-/// <param name="AffectedJunctions">
-/// The other junctions the variants' channels take part in, written only when
-/// there are any: this reading does not cover them.
-/// </param>
 internal sealed record AgentProbeReport(
     string Id,
     string Probe,
@@ -42,13 +38,18 @@ internal sealed record AgentProbeReport(
     double[]? SharedBandHz,
     IReadOnlyList<AgentProbeEntry>? Entries,
     IReadOnlyList<AgentProbeDelaySide>? Sides,
-    IReadOnlyList<AgentDiagnosticSeries>? Channels,
-    IReadOnlyList<string>? AffectedJunctions = null);
+    IReadOnlyList<AgentDiagnosticSeries>? Channels);
 
 /// <param name="Current">Whether this entry is the tune as it stands.</param>
+/// <param name="AffectedJunctions">
+/// The other junctions THIS entry's channels hand over at, written only when
+/// there are any: the entry says nothing about them. Absent on the baseline,
+/// which changes nothing.
+/// </param>
 internal sealed record AgentProbeEntry(
     string Label,
     bool Current,
+    IReadOnlyList<string>? AffectedJunctions,
     AgentPackageEdge? LowPass,
     AgentPackageEdge? HighPass,
     double[] BandHz,
@@ -153,10 +154,11 @@ internal static class AgentProbeBuilder
                 "the package's junctions[].phase is read through the panel's own gate and is not " +
                 "the same number",
             ["affectedJunctions"] =
-                "the OTHER junctions the variants' channels hand over at, which this reading does " +
-                "not cover: a channel meets a neighbour below it and another above it, so a " +
-                "variant that changes one can improve the junction asked about and spoil one of " +
-                "these. Probe them under the same variant before proposing the change",
+                "on an ENTRY: the other junctions that entry's own changed channels hand over at, " +
+                "which this reading does not cover. A channel meets a neighbour below it and " +
+                "another above it, so an entry that wins here can spoil one of these. Before " +
+                "proposing that entry, probe each junction it names — with the change to the " +
+                "channel that junction shares, which is the part of the entry that reaches it",
             ["nothingWasChanged"] =
                 "the tune was not touched to produce any of this: the readings are computed on " +
                 "copies of the responses, and the session is exactly as it was",

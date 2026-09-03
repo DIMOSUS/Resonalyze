@@ -439,7 +439,10 @@ public sealed class VirtualCrossoverAgentEngineTests
                                     [new AgentProbeChange($"{mid.Name}:left", null, null, null,
                                         new AgentCrossover("BandPass",
                                             new AgentCrossoverEdge("LinkwitzRiley", 300, 24, null),
-                                            new AgentCrossoverEdge("Butterworth", 2_000, 48, null)), null)])
+                                            new AgentCrossoverEdge("Butterworth", 2_000, 48, null)), null)]),
+                                new AgentProbeVariant("trim the tweeter",
+                                    [new AgentProbeChange(
+                                        $"{tweeter.Name}:left", -1.5, null, null, null, null)])
                             ]), "Probe")
                     ],
                     summary);
@@ -451,12 +454,21 @@ public sealed class VirtualCrossoverAgentEngineTests
                 AgentClipboard.WriteText = write;
             }
 
-            // The variant rewrites the midrange, so the junction BELOW it moves
-            // too — and this reading says nothing about that one.
+            // The list belongs to the entry, not to the probe: the variant that
+            // rewrites the midrange moves the junction BELOW it, and the one
+            // that only trims the tweeter — which hands over nowhere else —
+            // moves nothing, so it must not inherit the other's neighbour.
             string text = Assert.IsType<string>(copied);
-            Assert.Contains(
-                $"\"affectedJunctions\":[\"left:{woofer.Name}-{mid.Name}\"]", text);
-            Assert.DoesNotContain($"\"left:{mid.Name}-{tweeter.Name}\"]", text);
+            string below = $"\"affectedJunctions\":[\"left:{woofer.Name}-{mid.Name}\"]";
+            Assert.Contains(below, text);
+            Assert.Equal(1, text.Split("\"affectedJunctions\":[").Length - 1);
+            int mark = text.IndexOf(below, StringComparison.Ordinal);
+            int steeper = text.IndexOf("\"label\":\"BW48 on the mid\"", StringComparison.Ordinal);
+            int trim = text.IndexOf("\"label\":\"trim the tweeter\"", StringComparison.Ordinal);
+            Assert.True(steeper > 0 && trim > steeper);
+            Assert.InRange(mark, steeper, trim);
+            // The baseline changes nothing, so it carries no list at all.
+            Assert.True(mark > text.IndexOf("\"current\":true", StringComparison.Ordinal));
         });
     }
 

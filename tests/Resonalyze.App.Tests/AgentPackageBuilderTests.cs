@@ -383,7 +383,9 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(
             AgentProtocol.Probes,
             limits.GetProperty("probes").EnumerateArray().Select(probe => probe.GetString()!).ToArray());
-        Assert.Equal(AgentProtocol.MaxProbeVariants, limits.GetProperty("probeVariants").GetInt32());
+        Assert.Equal(
+            AgentProtocol.MaxProbeVariantsPerImport,
+            limits.GetProperty("probeVariantsPerImport").GetInt32());
         Assert.Equal(AgentProtocol.MaxProbeChanges, limits.GetProperty("probeChanges").GetInt32());
         Assert.Contains("autoTunePeq", operations);
     }

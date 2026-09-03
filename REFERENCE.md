@@ -2851,7 +2851,7 @@ this: the clipboard is the only transport, and you are the one who pastes.
   the whole PEQ bank. It may also **ask a question that changes nothing**: a
   **probe** measures the tune as it would be under settings the reply names —
   a crossover, a PEQ bank, a gain, a delay, a polarity, on the two channels of
-  one junction, up to ten variants at a time — and hands you one text to paste
+  one junction, a couple of dozen variants at a time — and hands you one text to paste
   back into the chat, with the junction as it stands read beside them; two more
   probes answer what a delay search would find at a junction and what every
   channel's excess group delay is. Nothing is applied and there is nothing to

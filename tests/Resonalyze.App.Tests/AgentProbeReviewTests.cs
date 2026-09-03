@@ -215,9 +215,9 @@ public sealed class AgentProbeReviewTests
             Judge(new AgentProbeVariant(null, [Change(crossover: Crossover("LinkwitzRiley", 2_000, 18))])));
         Assert.Contains("below the processor's Nyquist",
             Judge(new AgentProbeVariant(null, [Change(crossover: Crossover("LinkwitzRiley", 60_000, 24))])));
-        Assert.Contains($"at most {AgentProtocol.MaxProbeVariants} variants",
-            Judge(Enumerable.Range(0, AgentProtocol.MaxProbeVariants + 1)
-                .Select(index => new AgentProbeVariant($"v{index}", [Change(gainDb: -index)]))
+        Assert.Contains($"at most {AgentProtocol.MaxProbeVariantsPerImport} probe variants",
+            Judge(Enumerable.Range(0, AgentProtocol.MaxProbeVariantsPerImport + 1)
+                .Select(index => new AgentProbeVariant($"v{index}", [Change(gainDb: -0.1 * index)]))
                 .ToArray()));
     }
 
@@ -252,23 +252,46 @@ public sealed class AgentProbeReviewTests
     }
 
     [Fact]
-    public void Review_CountsAProbeOncePerReadingAndJunction()
+    public void Review_LetsAReplyAskTheSameJunctionSeveralQuestions()
     {
+        // A probe writes nothing, so a second one on the same junction is
+        // another question about it — not a second run of an engine, which is
+        // what the once-per-import rule exists to stop.
         AgentProposalReview review = AgentProposalValidator.Review(
             Proposal(
                 Junction(),
-                Junction("op-2"),
+                Junction("op-2", variants: new AgentProbeVariant("and this", [Change(delayMs: 3)])),
                 Junction("op-3", "left:A-B",
                     new AgentProbeVariant("sub 1 dB down", [Change("A:mono", gainDb: -1)])),
                 new ProbeOperation("op-4", "", AgentProtocol.JunctionDelayProbe, "left:B-C", null)),
             Session());
 
+        Assert.All(review.Verdicts, verdict => Assert.True(verdict.Applicable));
+    }
+
+    [Fact]
+    public void Review_BudgetsTheVariantsOverTheWholeImport_NotPerProbe()
+    {
+        // The budget is the user's wait and the size of the text they paste, so
+        // it cannot be dodged by splitting one long list into two probes.
+        AgentProbeVariant[] Variants(int count, int from) =>
+            Enumerable.Range(from, count)
+                .Select(index => new AgentProbeVariant($"v{index}", [Change(gainDb: -0.1 * index)]))
+                .ToArray();
+
+        int budget = AgentProtocol.MaxProbeVariantsPerImport;
+        AgentProposalReview review = AgentProposalValidator.Review(
+            Proposal(
+                Junction(variants: Variants(budget - 1, 0)),
+                Junction("op-2", variants: Variants(2, 100)),
+                Junction("op-3", variants: Variants(1, 200))),
+            Session());
+
         Assert.True(review.Verdicts[0].Applicable);
+        // Two more would pass the budget; one still fits after it.
         Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
-        Assert.Contains("Already requested by op-1", review.Verdicts[1].Message);
-        // Another junction, and another reading of the same junction, both stand.
+        Assert.Contains($"{budget - 1} are already asked for above", review.Verdicts[1].Message);
         Assert.True(review.Verdicts[2].Applicable);
-        Assert.True(review.Verdicts[3].Applicable);
     }
 
     [Fact]

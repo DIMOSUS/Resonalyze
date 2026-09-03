@@ -76,13 +76,21 @@ internal static class AgentProtocol
         "limits.probes lists the ones it does.";
 
     /// <summary>
-    /// How many variants one probe may ask about, and how many channels one
-    /// variant may change. A probe runs the whole junction analysis per variant,
-    /// so a reply asking for a hundred would be asking the user to wait for a
-    /// search it could have asked the junction tune to do instead; and a
-    /// junction has two channels, which is what a variant may change.
+    /// How many probe variants one IMPORT reads, however the reply splits them
+    /// between probes, and how many channels one variant may change.
+    /// <para>
+    /// The budget is the user's, not the machine's: the readings run while they
+    /// wait, with no progress and nothing to cancel, and the answer is a text
+    /// they have to paste. On a reference session a variant costs about 65 ms
+    /// and 0.8 KB, so this budget is a second or two and a text about the size
+    /// of a package. Counting per IMPORT rather than per probe is what makes it
+    /// mean anything: a per-probe cap is dodged by sending two probes. A reply
+    /// that wants more than this searched should ask for the junction tune,
+    /// which searches a window properly and reports what matters.
+    /// </para>
+    /// A variant may change two channels because a junction has two.
     /// </summary>
-    public const int MaxProbeVariants = 10;
+    public const int MaxProbeVariantsPerImport = 24;
     public const int MaxProbeChanges = 2;
 
     // Raw files, not the GitHub page around them: an assistant that can fetch a

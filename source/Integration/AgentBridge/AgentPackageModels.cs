@@ -59,7 +59,7 @@ internal sealed record AgentPackageLimits(
     // once — a reply asking for a probe not on this list is refused as one
     // asking for an operation the build does not run.
     IReadOnlyList<string> Probes,
-    int ProbeVariants,
+    int ProbeVariantsPerImport,
     int ProbeChanges);
 
 internal sealed record AgentPackageAnalysis(

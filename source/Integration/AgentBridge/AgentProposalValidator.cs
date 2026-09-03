@@ -185,6 +185,7 @@ internal static class AgentProposalValidator
 
         RejectEngineRequestsOnAStaleSession(verdicts, stale);
         RejectRepeatedEngineRequests(verdicts);
+        RejectProbesOverTheVariantBudget(verdicts);
         RejectDisagreeingTargetLevels(verdicts);
         RejectJunctionTunesUnderTheWizard(verdicts);
         RejectOverwrittenSettings(verdicts, session);
@@ -313,13 +314,17 @@ internal static class AgentProposalValidator
     // The panel runs each engine once per import, and a second request for the
     // same one carries a second set of inputs. The first is kept rather than the
     // set silently deciding which won — the reply listed them in an order.
+    // Probes are exempt: a probe writes nothing, so a second one on the same
+    // junction is another QUESTION about it, not a second run of the same
+    // engine. What bounds them is the variant budget below.
     private static void RejectRepeatedEngineRequests(List<AgentOperationVerdict> verdicts)
     {
         var first = new Dictionary<(string Op, string? ChannelId), string>();
         for (int index = 0; index < verdicts.Count; index++)
         {
             AgentOperationVerdict verdict = verdicts[index];
-            if (!verdict.Applicable || verdict.Operation is null or AgentSettingsOperation)
+            if (!verdict.Applicable ||
+                verdict.Operation is null or AgentSettingsOperation or ProbeOperation)
             {
                 continue;
             }
@@ -337,6 +342,48 @@ internal static class AgentProposalValidator
             {
                 first[key] = verdict.Id;
             }
+        }
+    }
+
+    /// <summary>
+    /// One import reads at most <see cref="AgentProtocol.MaxProbeVariantsPerImport"/>
+    /// variants, however the reply splits them between probes. The bound is the
+    /// user's: the readings run while they wait, with no progress bar and
+    /// nothing to cancel, and the answer is a text they have to paste — about
+    /// 65 ms and 0.8 KB per variant on a reference session, so the budget is a
+    /// second or two and a text the size of a package. A reply that wants more
+    /// than this searched is asking for the junction tune, which searches a
+    /// window properly and reports the few candidates that matter.
+    /// </summary>
+    private static void RejectProbesOverTheVariantBudget(List<AgentOperationVerdict> verdicts)
+    {
+        int spent = 0;
+        for (int index = 0; index < verdicts.Count; index++)
+        {
+            AgentOperationVerdict verdict = verdicts[index];
+            if (!verdict.Applicable ||
+                verdict.Operation is not ProbeOperation { Variants: { } variants })
+            {
+                continue;
+            }
+
+            if (spent + variants.Count > AgentProtocol.MaxProbeVariantsPerImport)
+            {
+                verdicts[index] = verdict with
+                {
+                    Status = AgentVerdictStatus.Rejected,
+                    Message = spent == 0
+                        ? $"An import reads at most {AgentProtocol.MaxProbeVariantsPerImport} " +
+                            $"probe variants; this one asks for {variants.Count}. Ask for the " +
+                            "junction tune to search a window instead."
+                        : $"An import reads at most {AgentProtocol.MaxProbeVariantsPerImport} " +
+                            $"probe variants and {spent} are already asked for above; this row " +
+                            $"asks for {variants.Count} more."
+                };
+                continue;
+            }
+
+            spent += variants.Count;
         }
     }
 
@@ -890,11 +937,6 @@ internal static class AgentProposalValidator
         {
             return "A junction probe names no variant to read the junction under; the junction " +
                 "as it stands is read beside them and is not one of them.";
-        }
-        if (variants.Count > AgentProtocol.MaxProbeVariants)
-        {
-            return $"A probe reads at most {AgentProtocol.MaxProbeVariants} variants; this one " +
-                $"names {variants.Count}. Ask for the junction tune to search a window instead.";
         }
 
         foreach (AgentProbeVariant variant in variants)

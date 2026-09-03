@@ -202,7 +202,7 @@ internal static class AgentPackageBuilder
             [0, CrossoverFilter.MaximumChebyshevRippleDb],
             AgentProtocol.Operations,
             AgentProtocol.Probes,
-            AgentProtocol.MaxProbeVariants,
+            AgentProtocol.MaxProbeVariantsPerImport,
             AgentProtocol.MaxProbeChanges);
 
     private static AgentPackageAnalysis BuildAnalysis(

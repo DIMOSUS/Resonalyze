@@ -155,9 +155,12 @@ The **minimum-phase** part follows its magnitude, so a PEQ that flattens a
 resonance straightens that phase with it — such a band helps the sum. The
 **excess** part does not: the arrival itself and later arrivals — reflections,
 a second path — which no PEQ touches. The **Excess group delay** diagnostic
-separates them: ask for it as a probe (§6), or by its menu path when you would
-rather the user fetched it — *AI assistant… → Copy diagnostics for AI → Excess
-group delay*. Read its SHAPE, not its
+separates them. Two doors, and the cheaper one for the user decides: when the
+curve is all you need, name the menu path — *AI assistant… → Copy diagnostics
+for AI → Excess group delay* — which is a click and a paste, with no proposal
+to import. Ask for it as a probe (§6) when you are asking for junction readings
+anyway: one document, one paste, all of it read off the same session. Read its
+SHAPE, not its
 level: flat means no excess dispersion; two flat curves at different levels
 mean a plain timing offset, Auto delay's work; bending or swinging inside the
 junction band means reflections or a second path, which timing, polarity, an

@@ -155,9 +155,12 @@ The **minimum-phase** part follows its magnitude, so a PEQ that flattens a
 resonance straightens that phase with it — such a band helps the sum. The
 **excess** part does not: the arrival itself and later arrivals — reflections,
 a second path — which no PEQ touches. The **Excess group delay** diagnostic
-separates them: ask for it as a probe (§6), or by its menu path when you would
-rather the user fetched it — *AI assistant… → Copy diagnostics for AI → Excess
-group delay*. Read its SHAPE, not its
+separates them. Two doors, and the cheaper one for the user decides: when the
+curve is all you need, name the menu path — *AI assistant… → Copy diagnostics
+for AI → Excess group delay* — which is a click and a paste, with no proposal
+to import. Ask for it as a probe (§6) when you are asking for junction readings
+anyway: one document, one paste, all of it read off the same session. Read its
+SHAPE, not its
 level: flat means no excess dispersion; two flat curves at different levels
 mean a plain timing offset, Auto delay's work; bending or swinging inside the
 junction band means reflections or a second path, which timing, polarity, an
@@ -344,7 +347,10 @@ changes or an engine to request, end with exactly one JSON object whose
   requests refused and its settings rows offered unticked — ask for a new
   package when the user reports that.
 - One operation per channel and parameter, each with a `reason` in a sentence
-  or two: the user reads it in the review.
+  or two, and a `summary` over the whole reply: the user reads them in the
+  review, beside the values, to decide. Neither is required — a row that
+  forgets one is still offered, marked "(no reason given)" — so write them
+  because the user is about to act on them, not because the importer insists.
 - Use only what `limits.operations` names; everything else goes in `advice`.
 - A reply with no block is a normal reply. One that only advises, or only asks,
   is often the right one.

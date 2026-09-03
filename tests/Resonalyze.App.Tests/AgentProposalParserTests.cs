@@ -400,7 +400,6 @@ public sealed class AgentProposalParserTests
     [Theory]
     [InlineData("\"kind\": \"resonalyze.agent-proposal\"", "\"kind\": \"something-else\"", "not a Resonalyze proposal")]
     [InlineData("\"protocolVersion\": 1", "\"protocolVersion\": 2", "protocol version 2")]
-    [InlineData("\"summary\": \"The left mid/tweeter junction cancels near 3.1 kHz.\"", "\"summary\": \"\"", "no summary")]
     [InlineData("\"advice\": [\"Run Auto delay afterwards.\"]", "\"advice\": [\"Run Auto delay afterwards.\"],", "not the JSON")]
     [InlineData("\"packageId\":", "// a comment\n \"packageId\":", "not the JSON")]
     [InlineData("\"proposed\": -2.6", "\"proposed\": NaN", "not the JSON")]
@@ -435,7 +434,8 @@ public sealed class AgentProposalParserTests
         string json = FiveOperations
             // An operation nobody supports, a path-like target.
             .Replace("\"op\": \"setGainDb\"", "\"op\": \"setProjectProperty\"")
-            // A delay without its reason.
+            // A delay without its reason: kept, because the prose is wanted and
+            // not required — the shapes around it are what a reply is refused for.
             .Replace(", \"reason\": \"Arrival.\"", "")
             // A crossover with a stray field.
             .Replace("\"reason\": \"Lower the top.\"", "\"reason\": \"Lower the top.\", \"path\": \"pairs[0]\"");
@@ -444,7 +444,8 @@ public sealed class AgentProposalParserTests
 
         Assert.True(result.Succeeded, result.Error);
         AgentProposal proposal = result.Proposal!;
-        Assert.Equal(["op-1", "op-5"], proposal.Operations.Select(op => op.Id));
+        Assert.Equal(["op-1", "op-3", "op-5"], proposal.Operations.Select(op => op.Id));
+        Assert.Null(proposal.Operations.Single(op => op.Id == "op-3").Reason);
         Assert.Collection(proposal.Rejected,
             rejected =>
             {
@@ -453,14 +454,64 @@ public sealed class AgentProposalParserTests
             },
             rejected =>
             {
-                Assert.Equal("op-3", rejected.Id);
-                Assert.Contains("shape", rejected.Problem);
-            },
-            rejected =>
-            {
                 Assert.Equal("op-4", rejected.Id);
                 Assert.Contains("shape", rejected.Problem);
             });
+    }
+
+    [Fact]
+    public void Parse_ReadsABlankReasonAsNoReason()
+    {
+        // "reason": "" says exactly as much as no field at all, and the review
+        // can only mark what it can tell apart.
+        string json = FiveOperations.Replace("\"reason\": \"Arrival.\"", "\"reason\": \"  \"");
+
+        AgentProposal proposal = AgentProposalParser.Parse(Begin + json + End).Proposal!;
+
+        Assert.Null(proposal.Operations.Single(op => op.Id == "op-3").Reason);
+        Assert.All(
+            proposal.Operations.Where(op => op.Id != "op-3"),
+            op => Assert.False(string.IsNullOrWhiteSpace(op.Reason)));
+    }
+
+    [Fact]
+    public void Parse_RefusesABlankReasonThatIsOverTheLengthLimit()
+    {
+        // Blank counts as missing, but the limits are what stop a reply from
+        // being any size it likes: collapsing an over-limit string to "missing"
+        // would let it through the very check it fails.
+        string json = FiveOperations.Replace(
+            "\"reason\": \"Arrival.\"",
+            "\"reason\": \"" + new string(' ', AgentProtocol.MaxStringLength + 1) + "\"");
+
+        AgentProposal proposal = AgentProposalParser.Parse(Begin + json + End).Proposal!;
+
+        Assert.DoesNotContain(proposal.Operations, op => op.Id == "op-3");
+        AgentRejectedOperation rejected = Assert.Single(proposal.Rejected);
+        Assert.Equal("op-3", rejected.Id);
+        Assert.Contains("too long", rejected.Problem);
+    }
+
+    [Fact]
+    public void Parse_KeepsAReplyThatLeftTheSummaryOut()
+    {
+        // The words are for the user, and losing the whole reply over them
+        // sends the user back to the chat for a sentence — with the operations
+        // they were about to read thrown away on the way.
+        foreach (string json in new[]
+        {
+            FiveOperations.Replace(
+                "\"summary\": \"The left mid/tweeter junction cancels near 3.1 kHz.\",", ""),
+            FiveOperations.Replace(
+                "\"The left mid/tweeter junction cancels near 3.1 kHz.\"", "\"   \"")
+        })
+        {
+            AgentProposalParseResult result = AgentProposalParser.Parse(Begin + json + End);
+
+            Assert.True(result.Succeeded, result.Error);
+            Assert.Null(result.Proposal!.Summary);
+            Assert.Equal(5, result.Proposal.Operations.Count);
+        }
     }
 
     [Fact]

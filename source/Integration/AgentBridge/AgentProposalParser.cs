@@ -76,10 +76,6 @@ internal static class AgentProposalParser
                 $"The proposal uses protocol version {wire.ProtocolVersion}; this build " +
                 $"reads version {AgentProtocol.Version}.");
         }
-        if (string.IsNullOrWhiteSpace(wire.Summary))
-        {
-            return AgentProposalParseResult.Fail("The proposal has no summary.");
-        }
         // `required` only requires the member to be PRESENT; a JSON null passes it.
         if (wire.Operations == null)
         {
@@ -151,7 +147,7 @@ internal static class AgentProposalParser
 
         return AgentProposalParseResult.Success(new AgentProposal(
             string.IsNullOrWhiteSpace(wire.PackageId) ? null : wire.PackageId,
-            wire.Summary,
+            Prose(wire.Summary),
             advice,
             sources,
             operations,
@@ -391,6 +387,19 @@ internal static class AgentProposalParser
         }
     }
 
+    // Blank is missing. A reply that writes "reason": "" has said as much as one
+    // that left the field out, and the review can only mark what it can tell
+    // apart — so the two arrive as the same thing, exactly as a blank summary
+    // does. (An operation the PARSER refused carries an empty reason on its
+    // verdict, set by the validator, and keeps its blank: its problem is the
+    // explanation.)
+    // A blank that is too long is still too long: only what the limits already
+    // allow is collapsed, so CheckStrings still sees an over-limit string and
+    // refuses it. (The summary is length-checked on the wire value above, before
+    // it ever reaches here.)
+    private static string? Prose(string? value) =>
+        string.IsNullOrWhiteSpace(value) && WithinLength(value) ? null : value;
+
     private static string? CheckStrings(AgentOperation operation)
     {
         if (string.IsNullOrWhiteSpace(operation.Id) || !WithinLength(operation.Id))
@@ -402,9 +411,9 @@ internal static class AgentProposalParser
         {
             return "The channel id is missing or too long.";
         }
-        if (operation.Reason == null || !WithinLength(operation.Reason))
+        if (!WithinLength(operation.Reason))
         {
-            return "The reason is missing or too long.";
+            return "The reason is too long.";
         }
 
         return operation switch
@@ -462,20 +471,20 @@ internal static class AgentProposalParser
 
     private static AgentOperation? Map(GainWire? wire) => wire == null
         ? null
-        : new SetGainOperation(wire.Id, wire.ChannelId, wire.Reason, wire.ExpectedCurrent, wire.Proposed);
+        : new SetGainOperation(wire.Id, wire.ChannelId, Prose(wire.Reason), wire.ExpectedCurrent, wire.Proposed);
 
     private static AgentOperation? Map(DelayWire? wire) => wire == null
         ? null
-        : new SetDelayOperation(wire.Id, wire.ChannelId, wire.Reason, wire.ExpectedCurrent, wire.Proposed);
+        : new SetDelayOperation(wire.Id, wire.ChannelId, Prose(wire.Reason), wire.ExpectedCurrent, wire.Proposed);
 
     private static AgentOperation? Map(PolarityWire? wire) => wire == null
         ? null
-        : new SetPolarityOperation(wire.Id, wire.ChannelId, wire.Reason, wire.ExpectedCurrent, wire.Proposed);
+        : new SetPolarityOperation(wire.Id, wire.ChannelId, Prose(wire.Reason), wire.ExpectedCurrent, wire.Proposed);
 
     private static AgentOperation? Map(CrossoverWire? wire) => wire == null
         ? null
         : new SetCrossoverOperation(
-            wire.Id, wire.ChannelId, wire.Reason,
+            wire.Id, wire.ChannelId, Prose(wire.Reason),
             Map(NotNull(wire.ExpectedCurrent, "expectedCurrent")),
             Map(NotNull(wire.Proposed, "proposed")));
 
@@ -501,7 +510,7 @@ internal static class AgentProposalParser
         PeqBankWire bank = NotNull(wire.Proposed, "proposed");
         List<PeqBandWire> bands = NotNull(bank.Bands, "proposed.bands");
         return new ReplacePeqBankOperation(
-            wire.Id, wire.ChannelId, wire.Reason, wire.ExpectedCurrentHash,
+            wire.Id, wire.ChannelId, Prose(wire.Reason), wire.ExpectedCurrentHash,
             new AgentPeqBank(
                 bank.PreampDb,
                 bands
@@ -513,17 +522,17 @@ internal static class AgentProposalParser
     private static AgentOperation? Map(AutoDelayWire? wire) => wire == null
         ? null
         : new RunAutoDelayOperation(
-            wire.Id, wire.Reason, wire.SceneOffsetMs, wire.RightHandDrive, wire.AdjustGains,
+            wire.Id, Prose(wire.Reason), wire.SceneOffsetMs, wire.RightHandDrive, wire.AdjustGains,
             wire.NearSideCutDb, wire.RearFillOffsetMs);
 
     private static AgentOperation? Map(AutoCrossoverWire? wire) => wire == null
         ? null
-        : new RunAutoCrossoverOperation(wire.Id, wire.Reason);
+        : new RunAutoCrossoverOperation(wire.Id, Prose(wire.Reason));
 
     private static AgentOperation? Map(TuneJunctionWire? wire) => wire == null
         ? null
         : new TuneJunctionOperation(
-            wire.Id, wire.Reason, wire.JunctionId, wire.MinHz, wire.MaxHz,
+            wire.Id, Prose(wire.Reason), wire.JunctionId, wire.MinHz, wire.MaxHz,
             wire.Families, wire.Slopes, wire.IndependentSlopes);
 
     // Every nested element goes through NotNull: `"variants": [null]` and
@@ -534,7 +543,7 @@ internal static class AgentProposalParser
         ? null
         : new ProbeOperation(
             wire.Id,
-            wire.Reason,
+            Prose(wire.Reason),
             wire.Probe,
             wire.JunctionId,
             wire.Variants?.Select(item =>
@@ -567,12 +576,12 @@ internal static class AgentProposalParser
     private static AgentOperation? Map(AutoTuneWire? wire) => wire == null
         ? null
         : new AutoTunePeqOperation(
-            wire.Id, wire.ChannelId, wire.Reason, wire.TargetLevelDb, wire.MinHz, wire.MaxHz,
+            wire.Id, wire.ChannelId, Prose(wire.Reason), wire.TargetLevelDb, wire.MinHz, wire.MaxHz,
             wire.AllowShelves, wire.CutsOnly, wire.Source);
 
     private static AgentOperation? Map(SpatialAverageWire? wire) => wire == null
         ? null
-        : new UseSpatialAverageOperation(wire.Id, wire.Reason, wire.Mode, wire.Hybrid);
+        : new UseSpatialAverageOperation(wire.Id, Prose(wire.Reason), wire.Mode, wire.Hybrid);
 
     private static bool WithinLength(string? value) =>
         value == null || value.Length <= AgentProtocol.MaxStringLength;
@@ -618,7 +627,12 @@ internal static class AgentProposalParser
         public required string Kind { get; init; }
         public required int ProtocolVersion { get; init; }
         public string? PackageId { get; init; }
-        public required string Summary { get; init; }
+        // Wanted, not required. An assistant that leaves the prose out has still
+        // said what it wants done in the operations, and refusing the whole
+        // reply over a missing sentence costs the user a round trip through the
+        // chat to get back a sentence they were about to read anyway. The
+        // review says the reply gave none.
+        public string? Summary { get; init; }
         public List<string>? Advice { get; init; }
         public List<SourceWire>? Sources { get; init; }
         public required List<JsonElement> Operations { get; init; }
@@ -636,7 +650,8 @@ internal static class AgentProposalParser
     {
         public required string Op { get; init; }
         public required string Id { get; init; }
-        public required string Reason { get; init; }
+        /// <summary>Wanted, not required — see <c>ProposalWire.Summary</c>.</summary>
+        public string? Reason { get; init; }
         public JsonElement? Extensions { get; init; }
     }
 

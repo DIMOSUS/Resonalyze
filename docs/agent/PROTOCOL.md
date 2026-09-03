@@ -394,19 +394,24 @@ open door: an `extensions` object, whose content is ignored).
 | `kind` | yes | `"resonalyze.agent-proposal"` |
 | `protocolVersion` | yes | `1` |
 | `packageId` | for engine requests | Echo of the package's id. Required when `operations[]` holds an engine request — one without it is refused; a reply of settings rows alone may leave it out, each row carrying its own expected current value. A package the session cannot vouch for (§2.2) is shown as a warning, refuses the engine requests and offers the settings rows unticked. |
-| `summary` | yes | One paragraph, shown at the top of the review. |
+| `summary` | wanted | One paragraph, shown at the top of the review. A reply without one is still read — the operations are the proposal — and the review says the reply gave none. Write it: it is what the user reads first. |
 | `advice[]` | no | Changes that are not operations — engines to run, things to re-measure. Shown, never applied. |
 | `sources[]` | no | `{ url, title?, factsUsed[] }`; `url` must be `http(s)`. Shown as text, never opened. |
 | `operations[]` | yes | The typed changes, see 2.2. May be empty when the reply is advice only. |
 | `extensions` | no | Ignored. |
 
 Limits: 1 MiB of clipboard text, 64 operations, 32 advice lines / sources /
-facts per source, 2000 characters per string, JSON depth 8.
+facts per source, 2000 characters per string, JSON depth 8. A string that is
+present must stay within them; the two prose fields may be absent.
 
 ### 2.2 Operations
 
-Every operation has `id` (unique in the reply), `op` and `reason` (shown in the
-review). There are two families. The five below WRITE one channel's settings:
+Every operation has `id` (unique in the reply) and `op`, and should have
+`reason` — the sentence the review shows the user beside the values. A `reason`
+is wanted rather than required: an operation without one — or with an empty one,
+which says as much — is read and offered like any other, marked "(no reason
+given)" in the review, since refusing a sound change over a missing sentence
+costs the user a round trip and gets them no sentence either. There are two families. The five below WRITE one channel's settings:
 they add `channelId` (an id from the package) and what they believe the
 **current** value is, copied from the package. A current value that no longer
 matches means the tune moved on since the package was copied, and the operation

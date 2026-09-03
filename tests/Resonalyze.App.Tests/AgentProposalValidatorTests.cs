@@ -1009,6 +1009,49 @@ public sealed class AgentProposalValidatorTests
             Fingerprint: fingerprint);
     }
 
+    [Fact]
+    public void Review_SaysWhenTheReplyLeftItsProseOut()
+    {
+        // Not a refusal: the operations are the proposal, and the user reads
+        // the values either way. But the missing words are exactly what they
+        // would have read to decide, so the review names their absence.
+        // Three operations, ONE of them unexplained: with two the count of the
+        // explained and of the unexplained are the same number, and a sentence
+        // that named the wrong one would read true.
+        AgentProposal proposal = new(
+            Package, null, [], [],
+            [
+                new SetGainOperation("op-1", "A:right", null, -2.0, -2.6),
+                new SetDelayOperation("op-2", "A:right", "arrival", 1.42, 1.37),
+                new SetPolarityOperation("op-3", "B:left", "phase", false, true)
+            ],
+            []);
+
+        AgentProposalReview review = AgentProposalValidator.Review(proposal, Session());
+
+        Assert.Equal(2, review.Warnings.Count);
+        Assert.Contains("no summary", review.Warnings[0]);
+        Assert.Contains("1 of 3 operations do not say why", review.Warnings[1]);
+        Assert.All(review.Verdicts, verdict => Assert.True(verdict.Applicable, verdict.Message));
+        Assert.Null(review.Verdicts[0].Reason);
+        Assert.Equal("arrival", review.Verdicts[1].Reason);
+    }
+
+    [Fact]
+    public void Review_SaysWhenNoOperationSaysWhy()
+    {
+        AgentProposal proposal = new(
+            Package, "the words that go on top", [], [],
+            [new SetGainOperation("op-1", "A:right", null, -2.0, -2.6)],
+            []);
+
+        AgentProposalReview review = AgentProposalValidator.Review(proposal, Session());
+
+        string warning = Assert.Single(review.Warnings);
+        Assert.Contains("No operation says why", warning);
+        Assert.Contains("1 row", warning);
+    }
+
     private static AgentProposal Proposal(params AgentOperation[] operations) =>
         new(Package, "summary", [], [], operations, []);
 

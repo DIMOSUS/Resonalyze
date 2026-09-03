@@ -19,7 +19,7 @@ namespace Resonalyze.Integration.AgentBridge;
 /// </param>
 internal sealed record AgentProposal(
     string? PackageId,
-    string Summary,
+    string? Summary,
     IReadOnlyList<string> Advice,
     IReadOnlyList<AgentSource> Sources,
     IReadOnlyList<AgentOperation> Operations,
@@ -41,7 +41,7 @@ internal sealed record AgentRejectedOperation(string? Id, string? Op, string Pro
 /// engine's inputs instead, because what an engine will write is not knowable
 /// until it has run.
 /// </summary>
-internal abstract record AgentOperation(string Id, string Reason)
+internal abstract record AgentOperation(string Id, string? Reason)
 {
     /// <summary>The protocol's name for the operation: what its <c>op</c> said.</summary>
     public abstract string Op { get; }
@@ -54,7 +54,7 @@ internal abstract record AgentOperation(string Id, string Reason)
 }
 
 /// <summary>An operation addressed at one physical channel, by the package's id for it.</summary>
-internal abstract record AgentChannelOperation(string Id, string ChannelId, string Reason)
+internal abstract record AgentChannelOperation(string Id, string ChannelId, string? Reason)
     : AgentOperation(Id, Reason);
 
 /// <summary>
@@ -62,11 +62,11 @@ internal abstract record AgentChannelOperation(string Id, string ChannelId, stri
 /// the bridge has always had. These are the only operations the importer applies
 /// itself; everything else it asks an engine to do.
 /// </summary>
-internal abstract record AgentSettingsOperation(string Id, string ChannelId, string Reason)
+internal abstract record AgentSettingsOperation(string Id, string ChannelId, string? Reason)
     : AgentChannelOperation(Id, ChannelId, Reason);
 
 internal sealed record SetGainOperation(
-    string Id, string ChannelId, string Reason, double ExpectedCurrentDb, double ProposedDb)
+    string Id, string ChannelId, string? Reason, double ExpectedCurrentDb, double ProposedDb)
     : AgentSettingsOperation(Id, ChannelId, Reason)
 {
     public override string Op => AgentProtocol.SetGainDb;
@@ -75,7 +75,7 @@ internal sealed record SetGainOperation(
 }
 
 internal sealed record SetDelayOperation(
-    string Id, string ChannelId, string Reason, double ExpectedCurrentMs, double ProposedMs)
+    string Id, string ChannelId, string? Reason, double ExpectedCurrentMs, double ProposedMs)
     : AgentSettingsOperation(Id, ChannelId, Reason)
 {
     public override string Op => AgentProtocol.SetDelayMs;
@@ -84,7 +84,7 @@ internal sealed record SetDelayOperation(
 }
 
 internal sealed record SetPolarityOperation(
-    string Id, string ChannelId, string Reason, bool ExpectedCurrentInverted, bool ProposedInverted)
+    string Id, string ChannelId, string? Reason, bool ExpectedCurrentInverted, bool ProposedInverted)
     : AgentSettingsOperation(Id, ChannelId, Reason)
 {
     public override string Op => AgentProtocol.SetPolarity;
@@ -93,7 +93,7 @@ internal sealed record SetPolarityOperation(
 }
 
 internal sealed record SetCrossoverOperation(
-    string Id, string ChannelId, string Reason, AgentCrossover ExpectedCurrent, AgentCrossover Proposed)
+    string Id, string ChannelId, string? Reason, AgentCrossover ExpectedCurrent, AgentCrossover Proposed)
     : AgentSettingsOperation(Id, ChannelId, Reason)
 {
     public override string Op => AgentProtocol.SetCrossover;
@@ -106,7 +106,7 @@ internal sealed record SetCrossoverOperation(
 /// standing in for the whole current bank so the reply need not repeat it.
 /// </param>
 internal sealed record ReplacePeqBankOperation(
-    string Id, string ChannelId, string Reason, string ExpectedCurrentHash, AgentPeqBank Proposed)
+    string Id, string ChannelId, string? Reason, string ExpectedCurrentHash, AgentPeqBank Proposed)
     : AgentSettingsOperation(Id, ChannelId, Reason)
 {
     public override string Op => AgentProtocol.ReplacePeqBank;
@@ -127,7 +127,7 @@ internal sealed record ReplacePeqBankOperation(
 /// </param>
 internal sealed record RunAutoDelayOperation(
     string Id,
-    string Reason,
+    string? Reason,
     double? SceneOffsetMs,
     bool? RightHandDrive,
     bool? AdjustGains,
@@ -144,7 +144,7 @@ internal sealed record RunAutoDelayOperation(
 /// from the drivers' own bands, and the choices it does offer are made in its
 /// own dialog, in front of the user.
 /// </summary>
-internal sealed record RunAutoCrossoverOperation(string Id, string Reason)
+internal sealed record RunAutoCrossoverOperation(string Id, string? Reason)
     : AgentOperation(Id, Reason)
 {
     public override string Op => AgentProtocol.RunAutoCrossover;
@@ -174,7 +174,7 @@ internal sealed record RunAutoCrossoverOperation(string Id, string Reason)
 /// </param>
 internal sealed record ProbeOperation(
     string Id,
-    string Reason,
+    string? Reason,
     string Probe,
     string? JunctionId,
     IReadOnlyList<AgentProbeVariant>? Variants) : AgentOperation(Id, Reason)
@@ -221,7 +221,7 @@ internal sealed record AgentProbeChange(
 /// </summary>
 internal sealed record TuneJunctionOperation(
     string Id,
-    string Reason,
+    string? Reason,
     string JunctionId,
     double? MinHz,
     double? MaxHz,
@@ -245,7 +245,7 @@ internal sealed record TuneJunctionOperation(
 internal sealed record AutoTunePeqOperation(
     string Id,
     string ChannelId,
-    string Reason,
+    string? Reason,
     double? TargetLevelDb,
     double? MinHz,
     double? MaxHz,
@@ -268,7 +268,7 @@ internal sealed record AutoTunePeqOperation(
 /// has a reason to ask for, and refusing it costs nothing.
 /// </param>
 internal sealed record UseSpatialAverageOperation(
-    string Id, string Reason, string Mode, bool Hybrid) : AgentOperation(Id, Reason)
+    string Id, string? Reason, string Mode, bool Hybrid) : AgentOperation(Id, Reason)
 {
     public override string Op => AgentProtocol.UseSpatialAverage;
 

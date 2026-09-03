@@ -24,7 +24,7 @@ internal sealed record AgentOperationVerdict(
     string Proposed,
     AgentVerdictStatus Status,
     string Message,
-    string Reason,
+    string? Reason,
     AgentOperation? Operation,
     AgentChannelSnapshot? Channel)
 {
@@ -149,6 +149,24 @@ internal static class AgentProposalValidator
         if (stale != null)
         {
             warnings.Add(stale);
+        }
+
+        // The prose is wanted and not required, so its absence is reported
+        // rather than refused: the user reads the summary and the reasons to
+        // decide, and a reply that left them out is exactly the reply they
+        // should be told about before they tick anything.
+        if (proposal.Summary == null)
+        {
+            warnings.Add("The reply gave no summary of what it is proposing.");
+        }
+        int unexplained = proposal.Operations.Count(operation => operation.Reason == null);
+        if (unexplained > 0)
+        {
+            warnings.Add(unexplained == proposal.Operations.Count
+                ? $"No operation says why: judge the {unexplained} row" +
+                    $"{(unexplained == 1 ? "" : "s")} below by the values alone."
+                : $"{unexplained} of {proposal.Operations.Count} operations do not say why; " +
+                    "they are marked in the reason column.");
         }
 
         var verdicts = new List<AgentOperationVerdict>();

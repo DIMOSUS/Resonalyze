@@ -1,4 +1,4 @@
-﻿# Resonalyze Reference
+# Resonalyze Reference
 
 Every mode, panel, setting and graph gesture, with the reasoning behind the ones
 whose behaviour is not obvious — why a window is anchored where it is, why a
@@ -2868,7 +2868,15 @@ this: the clipboard is the only transport, and you are the one who pastes.
 
   Every proposed change is shown against the value the channel holds *now*, with
   the reason the assistant gave; an engine request is shown against the settings
-  the engine would start from, with what it will write over. Auto crossover
+  the engine would start from, with what it will write over. The words are the
+  assistant's to write and not the importer's to demand: a reply that leaves out
+  its summary, or a row's reason, is still read and still offered — refusing it
+  would send you back to the chat for a sentence and lose the rest of the reply
+  on the way. What is missing is said rather than hidden: the warnings above the
+  table count the rows that do not say why, the summary reads *(the reply gave
+  no summary)*, and each such row reads *(no reason given)* in its reason
+  column. A row the importer itself refused shows the refusal instead, which is
+  its explanation. Auto crossover
   then opens its wizard as the button does; Auto delay runs without its dialog
   — the button's own checks, search and commit, with the report it would have
   shown returned in the import's summary and the alignment log; Auto-tune runs

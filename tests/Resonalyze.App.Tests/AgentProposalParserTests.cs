@@ -475,6 +475,24 @@ public sealed class AgentProposalParserTests
     }
 
     [Fact]
+    public void Parse_RefusesABlankReasonThatIsOverTheLengthLimit()
+    {
+        // Blank counts as missing, but the limits are what stop a reply from
+        // being any size it likes: collapsing an over-limit string to "missing"
+        // would let it through the very check it fails.
+        string json = FiveOperations.Replace(
+            "\"reason\": \"Arrival.\"",
+            "\"reason\": \"" + new string(' ', AgentProtocol.MaxStringLength + 1) + "\"");
+
+        AgentProposal proposal = AgentProposalParser.Parse(Begin + json + End).Proposal!;
+
+        Assert.DoesNotContain(proposal.Operations, op => op.Id == "op-3");
+        AgentRejectedOperation rejected = Assert.Single(proposal.Rejected);
+        Assert.Equal("op-3", rejected.Id);
+        Assert.Contains("too long", rejected.Problem);
+    }
+
+    [Fact]
     public void Parse_KeepsAReplyThatLeftTheSummaryOut()
     {
         // The words are for the user, and losing the whole reply over them

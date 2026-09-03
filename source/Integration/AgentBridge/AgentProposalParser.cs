@@ -393,8 +393,12 @@ internal static class AgentProposalParser
     // does. (An operation the PARSER refused carries an empty reason on its
     // verdict, set by the validator, and keeps its blank: its problem is the
     // explanation.)
+    // A blank that is too long is still too long: only what the limits already
+    // allow is collapsed, so CheckStrings still sees an over-limit string and
+    // refuses it. (The summary is length-checked on the wire value above, before
+    // it ever reaches here.)
     private static string? Prose(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value;
+        string.IsNullOrWhiteSpace(value) && WithinLength(value) ? null : value;
 
     private static string? CheckStrings(AgentOperation operation)
     {

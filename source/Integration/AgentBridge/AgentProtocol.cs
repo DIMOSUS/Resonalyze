@@ -131,8 +131,9 @@ internal static class AgentProtocol
         "3. Prefer Resonalyze's own engines: recommend running Auto delay / Auto crossover (a tune " +
         "with no crossovers yet) / the junction tune (one junction of a finished tune) / EQ Wizard " +
         "Auto-tune with stated settings instead of inventing delays and PEQ banks by hand. On a tune " +
-        "that already works, say in dB what an engine would win before asking for it, and judge every " +
-        "step against the user's tune, not the step before.\r\n" +
+        "that already works, quantify the problem and any available improvement in dB where the data " +
+        "supports it; never invent a predicted engine gain, and judge every step against the user's " +
+        "tune, not the step before.\r\n" +
         "4. Never EQ a cancellation; never claim a crossover is driver-safe from Fs or diameter " +
         "alone; cite sources for hardware facts.\r\n" +
         "5. If and only if you have concrete, justified changes, end with ONE JSON object with " +

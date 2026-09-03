@@ -700,10 +700,14 @@ END_RESONALYZE_AGENT_PROBE_JSON
 document is read:
 
 - an entry's `sides[]` are read on the entry's OWN junction band (`bandHz`, an
-  octave each side of its corner), which is what the panel and the package show
-  for it; `shared` is the same three figures on the one band every entry of the
-  probe was read on (`sharedBandHz`). Entries whose corners differ are
-  comparable only on `shared`.
+  octave each side of where its two edges hand over — their geometric middle
+  when they differ), which is what the panel and the package show for a
+  junction; `shared` is the same three figures on the one band every entry of
+  the probe was read on (`sharedBandHz`, drawn from every edge of every entry).
+  Entries whose corners differ are comparable only on `shared` — and where a
+  variant holds its two edges more than two octaves apart, which is a hole
+  rather than a handover, `shared` is also the only band that contains them
+  both.
 - `afterBestDelay` is what the junction would measure once the alignment had
   been re-run for THAT entry. The delays in the tune were set for the tune as it
   stands, so it is the fair comparison between entries; a reply that wants that

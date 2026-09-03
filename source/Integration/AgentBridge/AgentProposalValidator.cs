@@ -884,6 +884,63 @@ internal static class AgentProposalValidator
         return null;
     }
 
+    /// <summary>
+    /// The OTHER junctions a set of changed channels takes part in: a channel
+    /// hands over twice — once below and once above — so a variant that gives a
+    /// midrange a new crossover, bank or gain moves a junction the probe was
+    /// never asked about. The probe report names them so the assistant is told
+    /// rather than trusted to remember.
+    /// </summary>
+    /// <param name="junctionId">The junction being probed, left out of the answer.</param>
+    /// <param name="changedChannelIds">Channel ids, as the package writes them.</param>
+    public static IReadOnlyList<string> NeighbourJunctionIds(
+        AgentSessionSnapshot session, string junctionId, IReadOnlyCollection<string> changedChannelIds)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var found = new List<string>();
+        if (changedChannelIds == null || changedChannelIds.Count == 0)
+        {
+            return found;
+        }
+
+        // Every adjacency of every side and group, held to the same rule the
+        // probe itself is: a candidate is named only if ResolveJunction accepts
+        // it, so the report never points at a junction a probe would refuse.
+        foreach (AgentChannelSide side in new[] { AgentChannelSide.Left, AgentChannelSide.Right })
+        {
+            IEnumerable<IGrouping<VirtualCrossoverAlignmentStage, AgentChannelSnapshot>> groups = session.Channels
+                .Where(channel => channel.PlaysOn(side) && channel.HasMeasurement &&
+                    channel.Enabled && !channel.Bypass)
+                .GroupBy(channel => VirtualCrossoverAlignmentStages.StageOf(channel.Zone));
+            foreach (IGrouping<VirtualCrossoverAlignmentStage, AgentChannelSnapshot> group in groups)
+            {
+                List<AgentChannelSnapshot> byBand = group
+                    .OrderBy(channel => VirtualCrossoverJunctions.BandCenterHz(channel.Settings))
+                    .ToList();
+                for (int index = 0; index + 1 < byBand.Count; index++)
+                {
+                    if (!changedChannelIds.Contains(byBand[index].Id, StringComparer.Ordinal) &&
+                        !changedChannelIds.Contains(byBand[index + 1].Id, StringComparer.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    string id = AgentJunctionIds.Format(side, byBand[index].Block, byBand[index + 1].Block);
+                    if (string.Equals(id, junctionId, StringComparison.Ordinal) ||
+                        found.Contains(id, StringComparer.Ordinal) ||
+                        ResolveJunction(session, id, out _, out _) != null)
+                    {
+                        continue;
+                    }
+
+                    found.Add(id);
+                }
+            }
+        }
+
+        return found;
+    }
+
     private static bool PlaysWithin(VirtualCrossoverChannelSettings settings, double lowHz, double highHz)
     {
         (double channelLow, double channelHigh) = VirtualCrossoverJunctions.GetChannelBand(settings);

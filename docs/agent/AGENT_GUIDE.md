@@ -273,6 +273,12 @@ and `excessGroupDelay` (the curve). A probe reads the side its junction id
 names, so weigh a crossover with two probes, one per side. Ask, wait for the
 paste, then propose — and propose what you probed.
 
+**A channel hands over twice.** A midrange meets the woofer below it and the
+tweeter above it, and a probe answers for the junction you named and no other,
+so a variant that wins there can spoil the one on the channel's other side. The
+report names those junctions in `affectedJunctions`; probe each of them under
+the same variant before you propose it.
+
 **The engines**, when `limits.operations` names them (see PROTOCOL §2.2 for
 every input and what each refuses):
 

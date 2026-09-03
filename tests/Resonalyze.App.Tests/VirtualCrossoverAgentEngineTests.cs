@@ -388,6 +388,79 @@ public sealed class VirtualCrossoverAgentEngineTests
     }
 
     [Fact]
+    public void Probe_NamesTheOtherJunctionsAVariantsChannelHandsOverAt()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            VirtualCrossoverChannel woofer = Channels(panel)[0];
+            VirtualCrossoverChannel mid = Channels(panel)[1];
+            VirtualCrossoverChannel tweeter = Channels(panel)[2];
+            var lowJunction = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 300, 24);
+            var highJunction = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
+            foreach (VirtualCrossoverChannel channel in new[] { woofer, mid, tweeter })
+            {
+                foreach (bool rightSide in new[] { false, true })
+                {
+                    VirtualCrossoverChannelState state = channel.SideState(rightSide);
+                    var impulse = new System.Numerics.Complex[16_384];
+                    impulse[480] = System.Numerics.Complex.One;
+                    state.TransferImpulseResponse = impulse;
+                    state.TransferPeakIndex = 480;
+                    state.SampleRate = 48_000;
+                }
+            }
+
+            // A three-way: the midrange hands over twice, which is the whole
+            // point of the field the probe reports.
+            foreach (bool rightSide in new[] { false, true })
+            {
+                woofer.SideSettings(rightSide).CrossoverKind = CrossoverKind.LowPass;
+                woofer.SideSettings(rightSide).LowPassEdge = lowJunction;
+                mid.SideSettings(rightSide).CrossoverKind = CrossoverKind.BandPass;
+                mid.SideSettings(rightSide).HighPassEdge = lowJunction;
+                mid.SideSettings(rightSide).LowPassEdge = highJunction;
+                tweeter.SideSettings(rightSide).CrossoverKind = CrossoverKind.HighPass;
+                tweeter.SideSettings(rightSide).HighPassEdge = highJunction;
+            }
+
+            string? copied = null;
+            Action<string> write = AgentClipboard.WriteText;
+            AgentClipboard.WriteText = text => copied = text;
+            var summary = new List<string>();
+            try
+            {
+                bool ran = RunProbes(panel,
+                    [
+                        Row(new ProbeOperation("op-1", "steeper into the tweeter",
+                            AgentProtocol.JunctionProbe, $"left:{mid.Name}-{tweeter.Name}",
+                            [
+                                new AgentProbeVariant("BW48 on the mid",
+                                    [new AgentProbeChange($"{mid.Name}:left", null, null, null,
+                                        new AgentCrossover("BandPass",
+                                            new AgentCrossoverEdge("LinkwitzRiley", 300, 24, null),
+                                            new AgentCrossoverEdge("Butterworth", 2_000, 48, null)), null)])
+                            ]), "Probe")
+                    ],
+                    summary);
+
+                Assert.True(ran, string.Join(" | ", summary));
+            }
+            finally
+            {
+                AgentClipboard.WriteText = write;
+            }
+
+            // The variant rewrites the midrange, so the junction BELOW it moves
+            // too — and this reading says nothing about that one.
+            string text = Assert.IsType<string>(copied);
+            Assert.Contains(
+                $"\"affectedJunctions\":[\"left:{woofer.Name}-{mid.Name}\"]", text);
+            Assert.DoesNotContain($"\"left:{mid.Name}-{tweeter.Name}\"]", text);
+        });
+    }
+
+    [Fact]
     public void Commit_WritesNothing_WhenTheTuneMovedWhileTheProbesRan()
     {
         StaTest.Run(() =>

@@ -937,6 +937,16 @@ public partial class VirtualCrossoverPanel
             return Unavailable(exception.Message.TrimEnd('.'));
         }
 
+        // A channel hands over twice, and this reading covers one of those
+        // handovers. The other ones the variants touch are named, so a change
+        // that wins here is not proposed without their being looked at.
+        IReadOnlyList<string> affected = AgentProposalValidator.NeighbourJunctionIds(
+            BuildAgentSessionSnapshot(), probe.JunctionId ?? string.Empty,
+            (probe.Variants ?? [])
+                .SelectMany(variant => variant.Changes)
+                .Select(change => change.ChannelId)
+                .Distinct(StringComparer.Ordinal)
+                .ToList());
         return new AgentProbeReport(
             probe.Id, probe.Probe, probe.JunctionId, lowerSnapshot!.Id, upperSnapshot!.Id, null,
             [
@@ -945,7 +955,8 @@ public partial class VirtualCrossoverPanel
             ],
             probed.Entries.Select(AgentProbeEntryOf).ToList(),
             null,
-            null);
+            null,
+            affected.Count > 0 ? affected : null);
     }
 
     // The FIRST entry is the tune as it stands, because the panel builds it

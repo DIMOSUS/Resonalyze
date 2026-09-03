@@ -674,6 +674,7 @@ BEGIN_RESONALYZE_AGENT_PROBE_JSON
   "probes": [
     { "id": "op-1", "probe": "junction", "junctionId": "left:C-D",
       "lower": "C:left", "upper": "D:left", "sharedBandHz": [875, 4800],
+      "affectedJunctions": ["left:B-C"],
       "entries": [
         { "label": "current", "current": true,
           "lowPass": { "family": "Butterworth", "frequencyHz": 2000, "slopeDbPerOctave": 48, "rippleDb": 1 },
@@ -715,6 +716,12 @@ document is read:
 - `phase` is the pair's cross-phase over the same window as the sums. Compare it
   BETWEEN the entries of one probe; the package's `junctions[].phase` is read
   through the panel's own gate and is not the same number.
+
+`affectedJunctions` is written when the variants change a channel that also
+hands over somewhere else — a midrange meets a woofer below and a tweeter above,
+and this reading covers one of those two handovers. The junctions it names are
+the ones a winning variant may have spoiled; probing them under the same variant
+is what tells you.
 
 `packageId` names the package the reading belongs beside, and
 `sessionMatchesPackage` says whether the session still is the one that package

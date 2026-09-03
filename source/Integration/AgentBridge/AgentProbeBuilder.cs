@@ -28,6 +28,10 @@ internal sealed record AgentProbeDocument(
 /// One probe's answer. The fields a kind does not use are absent, as everywhere
 /// else in the protocol.
 /// </summary>
+/// <param name="AffectedJunctions">
+/// The other junctions the variants' channels take part in, written only when
+/// there are any: this reading does not cover them.
+/// </param>
 internal sealed record AgentProbeReport(
     string Id,
     string Probe,
@@ -38,7 +42,8 @@ internal sealed record AgentProbeReport(
     double[]? SharedBandHz,
     IReadOnlyList<AgentProbeEntry>? Entries,
     IReadOnlyList<AgentProbeDelaySide>? Sides,
-    IReadOnlyList<AgentDiagnosticSeries>? Channels);
+    IReadOnlyList<AgentDiagnosticSeries>? Channels,
+    IReadOnlyList<string>? AffectedJunctions = null);
 
 /// <param name="Current">Whether this entry is the tune as it stands.</param>
 internal sealed record AgentProbeEntry(
@@ -147,6 +152,11 @@ internal static class AgentProbeBuilder
                 "reaches it and whether it inverts. Compare these BETWEEN the probe's entries; " +
                 "the package's junctions[].phase is read through the panel's own gate and is not " +
                 "the same number",
+            ["affectedJunctions"] =
+                "the OTHER junctions the variants' channels hand over at, which this reading does " +
+                "not cover: a channel meets a neighbour below it and another above it, so a " +
+                "variant that changes one can improve the junction asked about and spoil one of " +
+                "these. Probe them under the same variant before proposing the change",
             ["nothingWasChanged"] =
                 "the tune was not touched to produce any of this: the readings are computed on " +
                 "copies of the responses, and the session is exactly as it was",

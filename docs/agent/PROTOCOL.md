@@ -89,8 +89,10 @@ the catalog does not know it.
               "Bessel": [6,12,18,24,36,48], "Chebyshev": [6,12,18,24,30,36,42,48] },
   "chebyshevRippleDb": [0, 3],
   "operations": ["setGainDb", "setDelayMs", "setPolarity", "setCrossover",
-                 "replacePeqBank", "useSpatialAverage", "runAutoCrossover",
-                 "runAutoDelay", "autoTunePeq"] }
+                 "replacePeqBank", "probe", "useSpatialAverage", "runAutoCrossover",
+                 "tuneJunction", "runAutoDelay", "autoTunePeq"],
+  "probes": ["junction", "junctionDelay", "excessGroupDelay"],
+  "probeVariantsPerImport": 24, "probeChanges": 2 }
 ```
 
 These are Virtual DSP's own limits, not the device's. A reply outside them is
@@ -262,7 +264,8 @@ measured, single-position sum.
   "curves": { "columns": ["frequencyHz","lowerDb","upperDb","sumDb","lossDb"], "rows": [ … ] } }
 ```
 
-Every block is the panel's own read-out, unchanged:
+Every block is the panel's own read-out, unchanged. `id` is what a
+`tuneJunction` request names (§2.2).
 
 - `sumLoss`: the **Sum loss** row for this junction — dB ≤ 0, how far the
   coherent sum falls short of the magnitude sum over the band; `averageDb` over
@@ -311,7 +314,7 @@ same chat as a second text:
 RESONALYZE_AGENT_DIAGNOSTIC_V1
 …
 BEGIN_RESONALYZE_AGENT_DIAGNOSTIC_JSON
-{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.3",
+{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.5",
   "diagnostic": "excessGroupDelay", "packageId": "…", "createdAtUtc": "…",
   "conventions": { … },
   "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } }, … ] }
@@ -327,7 +330,7 @@ out where the reading could not be made.
 
 | `diagnostic` | What the series holds |
 | --- | --- |
-| `excessGroupDelay` | Each measured channel's excess group delay in ms: its group delay less the minimum-phase part the magnitude dictates (which a minimum-phase PEQ straightens along with the magnitude), read off the raw impulse response through the project's phase gate at the channel's own arrival, at the group-delay view's own default smoothing, 1/12 octave, whatever the display shows — a group delay is a phase slope, and the package's psychoacoustic width is a hearing model for levels, not for time. What remains is arrivals and reflections — the part of a junction's phase mismatch that no PEQ can touch. |
+| `excessGroupDelay` | Each measured channel's excess group delay in ms: its group delay less the minimum-phase part the magnitude dictates (which a minimum-phase PEQ straightens along with the magnitude), read off the raw impulse response through the project's phase gate at the channel's own arrival, at the group-delay view's own default smoothing, 1/12 octave, whatever the display shows — a group delay is a phase slope, and the package's psychoacoustic width is a hearing model for levels, not for time. What remains is arrivals and reflections — the part of a junction's phase mismatch that no PEQ can touch. The chain does not enter it: the curve is the same with any PEQ bank in place or none. |
 
 ## 2. The reply
 
@@ -432,12 +435,13 @@ device (the tuning sheets).
 
 #### Engine requests
 
-The four operations below carry no value of their own. Three ask for one of the
-panel's engines to be opened with the inputs stated; the fourth,
-`useSpatialAverage`, puts the panel into the state the others should be read in.
-They exist because the engines compute what no reading of a curve can, and
-because a user who has been told to "run Auto delay with a 0.25 ms scene offset"
-otherwise has to find the dialog and retype the numbers.
+The operations below carry no value of their own. Four ask for one of the
+panel's engines to be run with the inputs stated; `useSpatialAverage` puts the
+panel into the state the others should be read in; and `probe` asks a question
+and changes nothing at all. They exist because the engines compute what no
+reading of a curve can, because a user told to "run Auto delay with a 0.25 ms
+scene offset" otherwise has to find the dialog and retype the numbers, and
+because "what would this do" deserves an answer that costs the user no undo.
 
 They carry no `expectedCurrent`: what the engine writes is what the run decides.
 The review is the gate. `runAutoDelay` then runs **without its dialog** — the
@@ -464,18 +468,22 @@ asked for and the hybrid view is not drawing it, or when the target level sits
 3 dB or more above the curve (10 dB or more below), which is the question the
 wizard would have asked. `runAutoCrossover` opens the wizard: its rows
 are where the driver types are confirmed, and cancelling it skips that
-operation while the rest of the import carries on.
+operation while the rest of the import carries on. `tuneJunction` runs
+without a dialog, on one junction, and is described after the table.
 
-`runAutoDelay`, `runAutoCrossover` and `useSpatialAverage` take **no**
-`channelId`: they address the whole project, and a `channelId` on one is refused
-as a property the protocol does not name. Every other input is optional, and one
-that is left out means the value the panel would open with — so a reply that
-wants only the scene offset changed states only that.
+`runAutoDelay`, `runAutoCrossover`, `tuneJunction` and `useSpatialAverage`
+take **no** `channelId`: the first three address the whole project or a
+junction of it, and a `channelId` on one is refused as a property the protocol
+does not name. Every other input is optional, and one that is left out means
+the value the panel would open with — so a reply that wants only the scene
+offset changed states only that.
 
 | `op` | Fields | Checked against |
 | --- | --- | --- |
 | `runAutoDelay` | `sceneOffsetMs?`, `rightHandDrive?`, `adjustGains?`, `nearSideCutDb?`, `rearFillOffsetMs?` | the dialog's own fields: scene offset 0–5 ms in steps of 0.01, near-side cut 0–6 dB in steps of 0.1, rear fill offset 0–30 ms in steps of 0.1. `nearSideCutDb` is a magnitude: the LHD/RHD toggle owns the sign. Stereo or single-sided is the panel's decision, as it is for the button |
+| `probe` | `probe`, `junctionId?`, `variants?` | `probe` is one of `limits.probes`; `junctionId` a `junctions[].id` of this package, required by every probe but `excessGroupDelay`, and resolved as `tuneJunction` resolves it. For `junction`: at least one variant and, across every probe of the reply together, at most `limits.probeVariantsPerImport`; each variant 1…`limits.probeChanges` changes, each change naming one of the junction's OWN two channels once and stating at least one of `gainDb`, `delayMs`, `invertPolarity`, `crossover`, `peq` — every stated value held to the limit the settings operation that writes it is held to |
 | `runAutoCrossover` | none | the wizard has no inputs: the families, the corner window and the chain order are chosen in its own dialog |
+| `tuneJunction` | `junctionId`, `minHz?`, `maxHz?`, `families?`, `slopes?`, `independentSlopes?` | `junctionId` is a `junctions[].id` of this package (`left:C-D`): both blocks on that side with a measurement, in the sum, not bypassed, in one group, neighbours along the spectrum that hand over to each other; each stated edge within 20 Hz–20 kHz and below the processor's Nyquist, the window as the run will use it — a stated edge with half an octave from the current corner for the one left out — ordered; `families` names from `limits.slopes` (left out: the families the two facing edges use today); `slopes` offered by one of those families (left out: every slope from 12 dB/oct up); `independentSlopes` left out is `false` — one slope for both edges |
 | `autoTunePeq` | `channelId`, `targetLevelDb?`, `minHz?`, `maxHz?`, `allowShelves?`, `cutsOnly?`, `source?` | the channel exists, has a measurement and is on the side on screen; target level −120…60 dB in whole dB, the same in every request that states one; each stated edge within the wizard's From/To fields (20 Hz–20 kHz) and below the processor's Nyquist, and the window as the run will use it — a stated edge with the channel's passband edge for the one left out — ordered; `source` is `point` or `spatialAverage`, and `spatialAverage` needs the channel to carry one |
 | `useSpatialAverage` | `mode`, `hybrid` | `mode` is `MovingMic` or `MicArray` and at least one channel carries that family (`channels[].source.spatialAverageCaptures`); `hybrid` must be `true`; a mode already in force with Hybrid already ticked is refused as "no change" |
 
@@ -488,11 +496,95 @@ wants only the scene offset changed states only that.
 ] }
 ```
 
+### `probe` — reading without changing
+
+`probe` is the one operation that writes NOTHING. It asks what the tune WOULD
+measure under settings the reply names, Resonalyze computes it on copies, puts
+the answer on the clipboard as a `resonalyze.agent-probe` text (§2.4) and asks
+the user to paste it into the same chat. There is nothing to undo, nothing to
+be careful about, and no reason to ask the user to apply something and put it
+back afterwards.
+
+```json
+{ "operations": [
+  { "id": "op-1", "op": "probe", "probe": "junction", "junctionId": "left:C-D",
+    "variants": [
+      { "label": "no bank on C",
+        "changes": [ { "channelId": "C:left", "peq": { "preampDb": 0, "bands": [] } } ] },
+      { "label": "BW48 at 2.4 k",
+        "changes": [
+          { "channelId": "C:left", "crossover": { "kind": "BandPass",
+              "highPass": { "family": "LinkwitzRiley", "frequencyHz": 350, "slopeDbPerOctave": 36 },
+              "lowPass":  { "family": "Butterworth", "frequencyHz": 2400, "slopeDbPerOctave": 48 } } },
+          { "channelId": "D:left", "crossover": { "kind": "HighPass",
+              "highPass": { "family": "Butterworth", "frequencyHz": 2400, "slopeDbPerOctave": 48 } } } ] }
+    ],
+    "reason": "Read both before proposing either." },
+  { "id": "op-2", "op": "probe", "probe": "junctionDelay", "junctionId": "left:C-D",
+    "reason": "What a delay search would find here, without moving anything." }
+] }
+```
+
+A `junction` probe's variant is a set of changes stated exactly as the settings
+operations state them — the same five parameters, the same shapes, the same
+limits — so a variant that reads well converts to a proposal word for word. A
+change states only what it moves; everything it leaves out the channel keeps.
+An empty `peq` bank (no bands, no preamp) is the bank CLEARED, which is how a
+reply asks the diagnostic pass's question without the user applying and undoing
+anything. The junction as it stands is always read beside the variants as the
+`current` entry, so a probe answers "what have I got, and what would I get".
+
+`junctionDelay` answers what an alignment search would find at the junction as
+it stands — the delay and polarity it would pick for the upper channel, and the
+rival lobes it weighed — without writing any of it. `excessGroupDelay` is the
+diagnostic of the same name, asked for in the reply rather than found in a menu;
+it names no junction.
+
+A probe reads the side its `junctionId` names, since a variant's changes are
+that side's channels'. A crossover is one filter for both sides, so a reply
+weighing one asks for both junctions (`left:C-D` and `right:C-D`); the
+once-per-import rule counts a probe per reading AND junction, so those are two
+rows, not a repeat.
+
+Probes run BEFORE anything else in the import — a probe answers a question about
+the tune as it stands, and reading it after the import's own rows had landed
+would answer a different one — and every probe of one import goes into ONE
+document, so the clipboard holds one text and the user pastes once. A probe is
+refused only where its question cannot be answered (a junction the package could
+not have printed, a variant outside the settings limits, a reading this build
+does not compute); it survives a package the session can no longer vouch for,
+where every engine request is refused, because what it reads is the session as
+it is now — the document says whether that session still matches the package.
+
+`tuneJunction` is the crossover engine for a tuned system, where the wizard is
+not: it searches ONE junction's two facing edges — the lower block's low-pass
+and the upper block's high-pass; corner on the wizard's lattice, family,
+slopes — and scores every candidate on the pair's coherent sum **at the
+current delays and polarity**, through the whole current chains (PEQ
+included), on every side the pair is measured on: the summation loss, its
+dip, and the ripple of the sum, read on one band shared by every candidate
+(an octave outside the corner window and the current corner, so the car's
+own ripple is the same term for all of them) and again on the candidate's own
+band, an octave each side of its corner — the band the panel's Sum loss row
+and the package read a junction on. No slope is preferred. Gains, delays,
+polarity, PEQ and every other junction stay exactly as they are; one
+crossover is written to both sides of both blocks, as the wizard writes one.
+The current crossover keeps its place unless a candidate beats it by 0.5 dB
+on the shared-band score and reads no worse on its own band, and the summary
+says either way: the two edges before and after, per side the own-band loss,
+dip and ripple before and after, and what the best delay of the upper block
+would leave — the reading that says whether `runAutoDelay` should follow. One
+import may carry both (they run in that order), though the guide asks for the
+realignment in the reply AFTER the tune has been read, since the second cannot
+be judged while the first is unread.
+
 An import runs what it was given in one fixed order, whatever order the reply
-listed: the five settings operations first, then `useSpatialAverage` (it decides
-which curves the rest are read on), then `runAutoCrossover`, then `runAutoDelay`,
-then `autoTunePeq`. One summary at the end says what was applied and what was
-skipped, and *Undo AI import* puts back everything the whole sequence moved.
+listed: the probes first (they read the tune as it stands), then the five
+settings operations, then `useSpatialAverage` (it decides which curves the rest
+are read on), then `runAutoCrossover`, then `tuneJunction`, then `runAutoDelay`,
+then `autoTunePeq`. One summary at the end
+says what was applied and what was skipped, and *Undo AI import* puts back
+everything the whole sequence moved.
 
 An engine request is refused when the reply names no package, or names one the
 session cannot vouch for: no package copied since the session opened, another
@@ -515,14 +607,17 @@ erased it. The engine keeps its row: it is the one that computes the number.
 | Requesting | Rejects |
 | --- | --- |
 | `runAutoDelay` | `setDelayMs` and `setPolarity` on any channel; `setGainDb` too when the run balances gains |
-| `runAutoCrossover` | `setCrossover` and `setGainDb` on any channel (the wizard writes a cut-only gain with every corner) |
+| `runAutoCrossover` | `setCrossover` and `setGainDb` on any channel (the wizard writes a cut-only gain with every corner), and every `tuneJunction` (the wizard rewrites every junction of the chain) |
+| `tuneJunction` | `setCrossover` on either of its two blocks, either side |
+| `probe` | nothing — it writes nothing, and nothing writes over it |
 | `autoTunePeq` | `replacePeqBank` on the same channel |
 
 An engine this build cannot run erases nothing, so its request is refused and the
 hand-written rows are left to do the work instead. Request each engine once: a
 repeat is refused, naming the first. `autoTunePeq` counts per channel — one fit
 per channel is the point of it — so a second request for the SAME channel is the
-one that is refused.
+one that is refused; `tuneJunction` counts per junction the same way, and
+`probe` per reading and junction.
 
 Beyond the operations of this section, nothing in a session can be addressed:
 not the target, the processor, the gates, the sources, the calibration, the
@@ -550,8 +645,8 @@ showed (a crossover moved without the bank that went with it).
    already shown in the review does not block a settings row the user deliberately
    ticked; a row that is no longer applicable does. A failure writes nothing.
 5. Runs the ticked engine requests, in the fixed order above — the spatial
-   average straight onto the panel, Auto crossover through its wizard, Auto
-   delay and Auto-tune without their dialogs — and
+   average straight onto the panel, Auto crossover through its wizard, the
+   junction tune, Auto delay and Auto-tune without their dialogs — and
    ends with one summary of what was applied and what was skipped. Undo is armed
    before the first of these writes, so an import that stops part-way is still
    undone in one step.
@@ -563,6 +658,81 @@ showed (a crossover moved without the bank that went with it).
    package copied *after* the import — the guide's diagnostic pass — no longer
    does, and a reply answering it has its engine requests refused until a new
    package is copied.
+
+### 2.4 The probe result
+
+What a probe answers comes back the way a diagnostic does — a text of its own,
+copied to the clipboard, pasted into the same chat:
+
+```text
+RESONALYZE_AGENT_PROBE_V1
+…
+BEGIN_RESONALYZE_AGENT_PROBE_JSON
+{ "kind": "resonalyze.agent-probe", "protocolVersion": 1, "guideVersion": "1.5",
+  "packageId": "…", "sessionMatchesPackage": true, "createdAtUtc": "…",
+  "conventions": { … },
+  "probes": [
+    { "id": "op-1", "probe": "junction", "junctionId": "left:C-D",
+      "lower": "C:left", "upper": "D:left", "sharedBandHz": [875, 4800],
+      "entries": [
+        { "label": "current", "current": true,
+          "lowPass": { "family": "Butterworth", "frequencyHz": 2000, "slopeDbPerOctave": 48, "rippleDb": 1 },
+          "highPass": { … }, "bandHz": [1000, 4000],
+          "sides": [ { "side": "left", "sumLossDb": -0.4, "dipDb": -1.2, "rippleDb": 3.1,
+                       "shared": { "sumLossDb": -0.3, "dipDb": -1.2, "rippleDb": 3.4 },
+                       "afterBestDelay": { "extraDelayMs": 0.08, "invertUpper": false,
+                                           "sumLossDb": -0.1, "dipDb": -0.4 },
+                       "phase": { "phaseAtCrossoverDeg": -12.4, "consistency": 0.82,
+                                  "currentScore": 0.79, "bestScore": 0.88,
+                                  "bestExtraDelayMs": 0.08, "bestInvert": false, "fitRmsDeg": 14 } } ] },
+        { "label": "no bank on C", "affectedJunctions": ["left:B-C"], … } ] },
+    { "id": "op-2", "probe": "junctionDelay", "junctionId": "left:C-D",
+      "sides": [ { "side": "left", "bandHz": [1000, 4000], "searchHalfWindowMs": 2,
+                   "candidates": [ { "extraDelayMs": 0.08, "invertUpper": false, "scoreDb": -0.2,
+                                     "sumLossDb": -0.1, "dipDb": -0.4, "chosen": true }, … ] } ] },
+    { "id": "op-3", "probe": "excessGroupDelay",
+      "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } } ] }
+  ] }
+END_RESONALYZE_AGENT_PROBE_JSON
+```
+
+`conventions` spells out what each figure is; three of them decide how the
+document is read:
+
+- an entry's `sides[]` are read on the entry's OWN junction band (`bandHz`, an
+  octave each side of where its two edges hand over — their geometric middle
+  when they differ), which is what the panel and the package show for a
+  junction; `shared` is the same three figures on the one band every entry of
+  the probe was read on (`sharedBandHz`, drawn from every edge of every entry).
+  Entries whose corners differ are comparable only on `shared` — and where a
+  variant holds its two edges more than two octaves apart, which is a hole
+  rather than a handover, `shared` is also the only band that contains them
+  both.
+- `afterBestDelay` is what the junction would measure once the alignment had
+  been re-run for THAT entry. The delays in the tune were set for the tune as it
+  stands, so it is the fair comparison between entries; a reply that wants that
+  delay applied asks for `runAutoDelay`.
+- `phase` is the pair's cross-phase over the same window as the sums. Compare it
+  BETWEEN the entries of one probe; the package's `junctions[].phase` is read
+  through the panel's own gate and is not the same number.
+
+An entry's `affectedJunctions` is written when THAT entry changes a channel that
+also hands over somewhere else — a midrange meets a woofer below and a tweeter
+above, and this reading covers one of those two handovers. It is per entry
+because two entries of one probe may touch opposite ends of the junction: the
+list belongs to the change that would have to be proposed, and the baseline,
+which changes nothing, carries none. Before proposing an entry, probe each
+junction it names, carrying the part of the entry that reaches that junction —
+the change to the channel the two junctions share.
+
+`packageId` names the package the reading belongs beside, and
+`sessionMatchesPackage` says whether the session still is the one that package
+described. `sessionChangedWhileReading` appears, true, when the tune moved across any
+reading's boundary — the readings then do not all describe one state, and a
+fresh probe settles it. Its absence means every reading here was taken off the
+same session (an edit made and undone entirely inside one reading changes
+nothing it holds, and is not flagged). An entry or a whole probe that could not be read carries
+`unavailable` with the reason, and the others still stand.
 
 ## 3. Privacy
 

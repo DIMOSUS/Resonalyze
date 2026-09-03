@@ -2842,16 +2842,26 @@ this: the clipboard is the only transport, and you are the one who pastes.
   paste it into the same chat as a second text, named after the package it
   belongs beside. **Excess group delay** is each measured channel's group delay
   less its minimum-phase part — the part of a junction's phase mismatch that no
-  PEQ can touch, arrivals and reflections — read through the phase gate as the
-  analyzer's group-delay view shows it for one measurement.
+  PEQ can touch, arrivals and reflections — read off the measurement through
+  the phase gate as the analyzer's group-delay view shows it, so the chain does
+  not enter it and it is the same whatever the PEQ bank holds.
 - **Import AI proposal…** reads the assistant's reply back off the clipboard —
   copy the whole reply, not just the JSON — and opens a review. The reply may
   address five things on one channel: gain, delay, polarity, the crossover, and
-  the whole PEQ bank. It may also **ask for an engine to be run**: **Auto
+  the whole PEQ bank. It may also **ask a question that changes nothing**: a
+  **probe** measures the tune as it would be under settings the reply names —
+  a crossover, a PEQ bank, a gain, a delay, a polarity, on the two channels of
+  one junction, a couple of dozen variants at a time — and hands you one text to paste
+  back into the chat, with the junction as it stands read beside them; two more
+  probes answer what a delay search would find at a junction and what every
+  channel's excess group delay is. Nothing is applied and there is nothing to
+  undo, which is why an assistant should ask before it proposes. It may also
+  **ask for an engine to be run**: **Auto
   crossover**, or the spatial average — the capture family and the **Hybrid**
   tick together, which is how an assistant that has noticed unused averages puts
-  them to work in one tick — and **Auto delay** and the EQ Wizard's
-  **Auto-tune**, which run without their dialogs as described below. The
+  them to work in one tick — and **Auto delay**, the EQ Wizard's
+  **Auto-tune** and the **junction tune**, which run without their dialogs as
+  described below. The
   package tells the assistant which operations the build can run. Nothing else
   in a session can be reached from a reply, and an unknown request is listed as
   rejected.
@@ -2867,7 +2877,28 @@ this: the clipboard is the only transport, and you are the one who pastes.
   Filters, Gain min/max, Max Q, Cuts only, Shelves) for whatever the reply
   leaves out, keeps the bank's all-pass bands, lands the fit the way the wizard's
   **Return** lands it, and skips itself — with the reason — where the wizard
-  would have asked about the [target level](#eq-wizard). The package is
+  would have asked about the [target level](#eq-wizard). The junction tune has
+  no button of its own: it is the crossover engine for a tune that already
+  works, where the wizard is not — one junction, named by the package's id
+  for it, the lower block's low-pass and the upper block's high-pass searched
+  over corner (on the wizard's lattice), family and slopes, and every
+  candidate scored on the pair's coherent sum *at the current delays and
+  polarity*, through the whole current chains, on every side the pair is
+  measured on — the summation loss, its dip and the ripple of the sum, read on
+  one band every candidate shares for the ranking and on the candidate's own
+  octave-each-side band for what you will see, with no slope preferred. Gains,
+  delays, polarity, PEQ and every other junction stay exactly as they are; one
+  crossover is written to both sides of both blocks, as the wizard writes one.
+  The current crossover keeps its place unless a candidate beats it by 0.5 dB
+  on the shared-band score and reads no worse on its own band, and the summary
+  says either way: the edges before and after, per side the loss, dip and
+  ripple before and after, and what the best delay of the upper block would
+  still leave —
+  the figure that says whether an Auto delay should follow, which the same
+  reply may ask for. The review refuses a junction the package could not have
+  printed (a block without a measurement, disabled or bypassed, two blocks in
+  different groups or not neighbours along the spectrum) and a tune beside
+  the wizard, which rewrites every junction. The package is
   fingerprinted when it is copied — the blocks and their order, each side's
   measurement and captures, every chain, the gates, the scene and the target —
   and the reply is checked against the session as it stands: a reply answering
@@ -2900,13 +2931,22 @@ this: the clipboard is the only transport, and you are the one who pastes.
   bank or crossover the device's own limits were not checked
   against because the catalog does not know them, an engine that will write over
   more than the rows name — is a word in the Status column, not only a colour.
+  While any of this runs — gathering a package, computing a diagnostic, or an
+  import that probes, tunes a junction and realigns — a small window names the
+  step under way and lists the ones behind it, so a computation that takes
+  seconds does not look like a hang. It has no Cancel: each step is one
+  computation that cannot be stopped part-way without leaving a half-written
+  tune.
+
   **Apply selected** looks at the ticked rows once more against the live settings
   — and at what the ticked subset leaves behind, since the review judged the
   rows together and unticking one can leave a state it never showed, which then
   asks before applying — writes them as one set, then runs the engine requests
-  in a fixed order (the spatial average first, since it decides which curves the
-  rest are read on, then Auto crossover, then Auto delay, then Auto-tune, which
-  fits to everything the others left behind) and closes with one
+  in a fixed order (the probes first, since they read the tune as it stands and
+  write nothing, then the spatial average, since it decides which curves the
+  rest are read on, then Auto crossover, then the junction tune, then Auto
+  delay, then Auto-tune, which fits to everything the others left behind) and
+  closes with one
   summary of what was applied and what was skipped. Cancelling the wizard, or
   a check Auto delay's button would have refused on (fewer than two measured
   channels, a bypassed participant, a misplaced gate, no crossover anywhere),

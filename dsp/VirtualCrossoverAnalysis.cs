@@ -31,6 +31,15 @@ public sealed record AlignmentCandidate(
     double DipDb = 0);
 
 /// <summary>
+/// One read of a junction's coherent sum at its current timing (see
+/// <see cref="VirtualCrossoverAnalysis.MeasureJunctionSpectrum"/>): the
+/// summation loss (dB ≤ 0, the log-weighted band average), its 1/6-octave
+/// dip, and the ripple of the summed magnitude over the band (dB RMS about
+/// its mean, ≥ 0).
+/// </summary>
+public sealed record JunctionSpectrumReading(double LossDb, double DipDb, double RippleDb);
+
+/// <summary>
 /// The broadband leading-edge onset of one processed IR (see
 /// <see cref="VirtualCrossoverAnalysis.EstimateBroadbandOnset"/>): the
 /// Hilbert-envelope crossings of 10 % (<see cref="EarlyMs"/>), 25 %
@@ -3244,6 +3253,67 @@ public static class VirtualCrossoverAnalysis
         }
 
         return DetailedLoss(bins, weightSum, delayMs: 0, invert: false);
+    }
+
+    /// <summary>
+    /// What a junction's coherent sum measures at the responses' current
+    /// timing, in one read of the same gated bins as <see cref="MeasureSumLoss"/>:
+    /// the loss and its 1/6-octave dip, and the RIPPLE of the sum itself — the
+    /// log-weighted RMS deviation of the summed magnitude (dB) from its mean
+    /// over the band. The loss says how much the pair cancels; the ripple says
+    /// whether what is left is flat, which the loss cannot (two drivers both
+    /// wide open at the corner sum coherently into a 6 dB hump and lose
+    /// nothing). A crossover search reads both. Null when the band holds no
+    /// usable bins.
+    /// </summary>
+    public static JunctionSpectrumReading? MeasureJunctionSpectrum(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
+    {
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            fixedImpulseResponses,
+            sampleRate,
+            minFrequencyHz,
+            maxFrequencyHz,
+            minDelayMs: -1,
+            maxDelayMs: 1,
+            levelMatch: false,
+            gateAnchorSample: null,
+            variableValidRange,
+            fixedValidRanges);
+        if (bins.Count == 0)
+        {
+            return null;
+        }
+
+        double weightSum = 0;
+        double levelSum = 0;
+        var levels = new double[bins.Count];
+        for (int i = 0; i < bins.Count; i++)
+        {
+            AlignmentBin bin = bins[i];
+            weightSum += bin.LogWeight;
+            double magnitude = (bin.FixedSum + bin.Variable).Magnitude;
+            levels[i] = 20 * Math.Log10(Math.Max(magnitude, 1e-12));
+            levelSum += bin.LogWeight * levels[i];
+        }
+
+        double mean = levelSum / weightSum;
+        double variance = 0;
+        for (int i = 0; i < bins.Count; i++)
+        {
+            double deviation = levels[i] - mean;
+            variance += bins[i].LogWeight * deviation * deviation;
+        }
+
+        (double lossDb, double dipDb) = DetailedLoss(bins, weightSum, delayMs: 0, invert: false);
+        return new JunctionSpectrumReading(lossDb, dipDb, Math.Sqrt(variance / weightSum));
     }
 
     /// <summary>

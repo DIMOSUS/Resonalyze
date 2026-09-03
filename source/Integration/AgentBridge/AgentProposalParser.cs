@@ -367,6 +367,8 @@ internal static class AgentProposalParser
                 AgentProtocol.ReplacePeqBank => Map(element.Deserialize<PeqWire>(Strict)),
                 AgentProtocol.RunAutoDelay => Map(element.Deserialize<AutoDelayWire>(Strict)),
                 AgentProtocol.RunAutoCrossover => Map(element.Deserialize<AutoCrossoverWire>(Strict)),
+                AgentProtocol.TuneJunction => Map(element.Deserialize<TuneJunctionWire>(Strict)),
+                AgentProtocol.Probe => Map(element.Deserialize<ProbeWire>(Strict)),
                 AgentProtocol.AutoTunePeq => Map(element.Deserialize<AutoTuneWire>(Strict)),
                 AgentProtocol.UseSpatialAverage => Map(element.Deserialize<SpatialAverageWire>(Strict)),
                 _ => null
@@ -417,6 +419,33 @@ internal static class AgentProposalParser
                 "The PEQ bank is incomplete.",
             AutoTunePeqOperation tune when !WithinLength(tune.Source) =>
                 "The auto-tune source is too long.",
+            TuneJunctionOperation junction when
+                string.IsNullOrWhiteSpace(junction.JunctionId) || !WithinLength(junction.JunctionId) =>
+                "The junction id is missing or too long.",
+            TuneJunctionOperation junction when
+                junction.Families != null &&
+                (junction.Families.Count > AgentProtocol.MaxListItems ||
+                    junction.Families.Any(family => string.IsNullOrWhiteSpace(family) || !WithinLength(family))) =>
+                "The junction's family list is incomplete or too long.",
+            TuneJunctionOperation junction when
+                junction.Slopes != null && junction.Slopes.Count > AgentProtocol.MaxListItems =>
+                "The junction's slope list is too long.",
+            ProbeOperation probe when
+                string.IsNullOrWhiteSpace(probe.Probe) || !WithinLength(probe.Probe) =>
+                "The probe is missing or too long.",
+            ProbeOperation probe when !WithinLength(probe.JunctionId) =>
+                "The junction id is too long.",
+            ProbeOperation probe when
+                probe.Variants != null &&
+                probe.Variants.Any(variant =>
+                    !WithinLength(variant.Label) ||
+                    variant.Changes == null ||
+                    variant.Changes.Any(change =>
+                        string.IsNullOrWhiteSpace(change.ChannelId) || !WithinLength(change.ChannelId) ||
+                        CheckCrossover(change.Crossover) != null && change.Crossover != null ||
+                        change.Peq?.Bands == null && change.Peq != null ||
+                        change.Peq?.Bands.Any(band => band == null || band.Type == null) == true)) =>
+                "A probe variant's changes are incomplete.",
             UseSpatialAverageOperation spatial when
                 string.IsNullOrWhiteSpace(spatial.Mode) || !WithinLength(spatial.Mode) =>
                 "The spatial average mode is missing or too long.",
@@ -490,6 +519,50 @@ internal static class AgentProposalParser
     private static AgentOperation? Map(AutoCrossoverWire? wire) => wire == null
         ? null
         : new RunAutoCrossoverOperation(wire.Id, wire.Reason);
+
+    private static AgentOperation? Map(TuneJunctionWire? wire) => wire == null
+        ? null
+        : new TuneJunctionOperation(
+            wire.Id, wire.Reason, wire.JunctionId, wire.MinHz, wire.MaxHz,
+            wire.Families, wire.Slopes, wire.IndependentSlopes);
+
+    // Every nested element goes through NotNull: `"variants": [null]` and
+    // `"changes": [null]` are valid JSON that `required` does not catch, and
+    // dereferencing one would leave the parser with a NullReferenceException —
+    // which nothing above catches — instead of one rejected operation.
+    private static AgentOperation? Map(ProbeWire? wire) => wire == null
+        ? null
+        : new ProbeOperation(
+            wire.Id,
+            wire.Reason,
+            wire.Probe,
+            wire.JunctionId,
+            wire.Variants?.Select(item =>
+            {
+                ProbeVariantWire variant = NotNull(item, "variants[]");
+                return new AgentProbeVariant(
+                    variant.Label,
+                    (variant.Changes ?? []).Select(entry =>
+                    {
+                        ProbeChangeWire change = NotNull(entry, "changes[]");
+                        return new AgentProbeChange(
+                            change.ChannelId,
+                            change.GainDb,
+                            change.DelayMs,
+                            change.InvertPolarity,
+                            change.Crossover == null ? null : Map(change.Crossover),
+                            change.Peq == null
+                                ? null
+                                : new AgentPeqBank(
+                                    change.Peq.PreampDb,
+                                    NotNull(change.Peq.Bands, "peq.bands")
+                                        .Select(band => Map(NotNull(band, "peq.bands[]")))
+                                        .ToList()));
+                    }).ToList());
+            }).ToList());
+
+    private static AgentPeqBand Map(PeqBandWire wire) =>
+        new(wire.Type, wire.FrequencyHz, wire.Q, wire.GainDb);
 
     private static AgentOperation? Map(AutoTuneWire? wire) => wire == null
         ? null
@@ -648,6 +721,46 @@ internal static class AgentProposalParser
 
     private sealed class AutoCrossoverWire : OperationWire
     {
+    }
+
+    // The junction is what the request cannot be understood without; every
+    // choice about the search is the tuner's own where the reply leaves it out.
+    private sealed class TuneJunctionWire : OperationWire
+    {
+        public required string JunctionId { get; init; }
+        public double? MinHz { get; init; }
+        public double? MaxHz { get; init; }
+        public List<string>? Families { get; init; }
+        public List<int>? Slopes { get; init; }
+        public bool? IndependentSlopes { get; init; }
+    }
+
+    // A probe carries what its own kind needs and nothing else; the review holds
+    // each kind to its fields, so a missing one is a reason rather than a
+    // silently different reading.
+    private sealed class ProbeWire : OperationWire
+    {
+        public required string Probe { get; init; }
+        public string? JunctionId { get; init; }
+        public List<ProbeVariantWire>? Variants { get; init; }
+    }
+
+    private sealed class ProbeVariantWire
+    {
+        public string? Label { get; init; }
+        public required List<ProbeChangeWire> Changes { get; init; }
+    }
+
+    // The same five parameters a settings operation writes, all optional: what
+    // a variant leaves out, the channel keeps.
+    private sealed class ProbeChangeWire
+    {
+        public required string ChannelId { get; init; }
+        public double? GainDb { get; init; }
+        public double? DelayMs { get; init; }
+        public bool? InvertPolarity { get; init; }
+        public CrossoverSpecWire? Crossover { get; init; }
+        public PeqBankWire? Peq { get; init; }
     }
 
     private sealed class AutoTuneWire : ChannelOperationWire

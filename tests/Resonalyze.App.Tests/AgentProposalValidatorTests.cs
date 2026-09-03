@@ -605,7 +605,8 @@ public sealed class AgentProposalValidatorTests
         // The list the package publishes is the list the review holds a reply to.
         Assert.Equal(
             ["setGainDb", "setDelayMs", "setPolarity", "setCrossover", "replacePeqBank",
-                "useSpatialAverage", "runAutoCrossover", "runAutoDelay", "autoTunePeq"],
+                "probe", "useSpatialAverage", "runAutoCrossover", "tuneJunction", "runAutoDelay",
+                "autoTunePeq"],
             AgentProtocol.Operations);
     }
 

@@ -47,17 +47,80 @@ internal static class AgentChannelIds
 /// list the package prints as <c>source.spatialAverageCaptures</c>. What the mode
 /// currently READS is the session's business, not the channel's.
 /// </param>
+/// <param name="Zone">
+/// The block's zone, which decides the group it can hold a junction in: a front
+/// channel and a rear fill are neighbours along the spectrum with no filter
+/// handing anything between them.
+/// </param>
+/// <param name="Enabled">Whether the block is in the sum at all.</param>
+/// <param name="Bypass">Whether the block's chain is bypassed — no crossover to tune.</param>
 internal sealed record AgentChannelSnapshot(
     string Block,
     AgentChannelSide Side,
     VirtualCrossoverChannelSettings Settings,
     bool HasMeasurement,
-    IReadOnlyList<string> SpatialAverageCaptures)
+    IReadOnlyList<string> SpatialAverageCaptures,
+    VirtualCrossoverZone Zone = VirtualCrossoverZone.Front,
+    bool Enabled = true,
+    bool Bypass = false)
 {
     public string Id => AgentChannelIds.Format(Block, Side);
 
     /// <summary>How the review names the channel: <c>B left</c>, <c>C mono</c>.</summary>
     public string Label => $"{Block} {AgentChannelIds.SideName(Side)}";
+
+    /// <summary>
+    /// Whether the channel plays on the given side: its own side, or either
+    /// for a mono block, which the panel routes to both.
+    /// </summary>
+    public bool PlaysOn(AgentChannelSide side) =>
+        Side == AgentChannelSide.Mono || Side == side;
+}
+
+/// <summary>
+/// The id a junction goes by in a package (<c>left:B-C</c>): the side it was
+/// read on, a colon, and the lower and upper blocks joined by a dash. A mono
+/// block appears under the side it was summed on, as the package prints it.
+/// </summary>
+internal static class AgentJunctionIds
+{
+    public static string Format(AgentChannelSide side, string lowerBlock, string upperBlock) =>
+        $"{AgentChannelIds.SideName(side)}:{lowerBlock}-{upperBlock}";
+
+    public static bool TryParse(
+        string? id, out AgentChannelSide side, out string lowerBlock, out string upperBlock)
+    {
+        side = AgentChannelSide.Left;
+        lowerBlock = string.Empty;
+        upperBlock = string.Empty;
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return false;
+        }
+
+        int colon = id.IndexOf(':', StringComparison.Ordinal);
+        int dash = id.IndexOf('-', StringComparison.Ordinal);
+        if (colon <= 0 || dash <= colon + 1 || dash == id.Length - 1)
+        {
+            return false;
+        }
+
+        side = id[..colon] switch
+        {
+            "left" => AgentChannelSide.Left,
+            "right" => AgentChannelSide.Right,
+            _ => AgentChannelSide.Mono
+        };
+        if (side == AgentChannelSide.Mono)
+        {
+            return false;
+        }
+
+        lowerBlock = id[(colon + 1)..dash];
+        upperBlock = id[(dash + 1)..];
+        return lowerBlock.Length > 0 && upperBlock.Length > 0 &&
+            !lowerBlock.Contains(':') && !upperBlock.Contains('-') && !upperBlock.Contains(':');
+    }
 }
 
 /// <summary>

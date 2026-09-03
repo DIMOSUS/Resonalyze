@@ -1112,14 +1112,23 @@ archiving a finished tune and for sharing.
 ### Optional: a second opinion from a chat assistant
 
 Press **AI assistant... → Copy for AI**, paste the clipboard into whichever assistant
-you use, and answer its questions about the drivers and the car (the **Notes for AI**
-field in the **DSP processor...** dialog saves retyping them). It reads the same
+you use. It should open by telling you what your measurements support and then asking
+what you want from it — the whole system tuned, or advice on the crossovers, the stage
+or the tonal balance, or a look over the tune you already made — so say which, and
+answer its questions about the drivers and the car (the **Notes for AI** field in the
+**DSP processor...** dialog saves retyping them, and telling it there what you are
+after saves the first question). It reads the same
 read-outs you have — sum loss, junction phase, the delay lobes, the L/R deltas — and
 should send you back to **Auto delay** or **Auto crossover** with settings rather than
 numbers. **Import AI proposal…** shows every change against the current value and
 applies only what you tick, with **Undo AI import** one click away; a reply can also ask
-to open **Auto crossover** or to switch the tune onto its spatial averages with
-**Hybrid**, and those arrive as rows you tick like any other. It cannot hear the car or
+to open **Auto crossover**, to tune one junction of a finished tune (the two facing
+crossover edges, scored on the pair's sum at your delays, everything else kept) or to
+switch the tune onto its spatial averages with **Hybrid**, and those arrive as rows you
+tick like any other. A reply can also ask a question instead of proposing a change: a
+**probe** measures what one junction would do under settings it names — another
+crossover, a PEQ bank cleared, a different gain or delay — without touching your tune,
+copies the answer to the clipboard and asks you to paste it back into the chat. It cannot hear the car or
 know your drivers unless you tell it — treat its advice as a colleague's, not as a
 measurement. [REFERENCE.md](REFERENCE.md#ai-assistant-bridge) describes the bridge.
 

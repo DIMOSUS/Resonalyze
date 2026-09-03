@@ -1,5 +1,7 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
+using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
@@ -185,6 +187,578 @@ public sealed class VirtualCrossoverAgentEngineTests
     }
 
     [Fact]
+    public void JunctionTune_RunHeadless_IsRefusedWithThePhraseTheSummaryQuotes()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            var summary = new List<string>();
+
+            // The run resolves the junction on the live session the way the
+            // review did: no block here carries a measurement, so the junction
+            // cannot be read, and the summary says which one and why.
+            bool ran = RunEngines(panel,
+                [Row(new TuneJunctionOperation("op-1", "", "left:A-B", null, null, null, null, null), "Junction tune")],
+                summary);
+
+            Assert.False(ran);
+            string line = Assert.Single(summary);
+            Assert.StartsWith("Junction tune left:A-B: skipped (", line);
+            Assert.Contains("has no measurement", line);
+        });
+    }
+
+    [Fact]
+    public void JunctionTune_WritesOneCrossoverToBothSidesOfBothBlocks_AndUndoPutsItBack()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            VirtualCrossoverChannel lower = Channels(panel)[0];
+            VirtualCrossoverChannel upper = Channels(panel)[1];
+            // Two flat drivers on both sides, crossed gently and apart: A's
+            // low-pass at 700 Hz, B's high-pass at 1200 Hz, 12 dB/oct each.
+            foreach (bool rightSide in new[] { false, true })
+            {
+                foreach (VirtualCrossoverChannel channel in new[] { lower, upper })
+                {
+                    VirtualCrossoverChannelState state = channel.SideState(rightSide);
+                    var impulse = new System.Numerics.Complex[16_384];
+                    impulse[480] = System.Numerics.Complex.One;
+                    state.TransferImpulseResponse = impulse;
+                    state.TransferPeakIndex = 480;
+                    state.SampleRate = 48_000;
+                }
+                VirtualCrossoverChannelSettings lowerSettings = lower.SideSettings(rightSide);
+                lowerSettings.CrossoverKind = CrossoverKind.LowPass;
+                lowerSettings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 700, 12);
+                lowerSettings.DelayMs = 0.5;
+                VirtualCrossoverChannelSettings upperSettings = upper.SideSettings(rightSide);
+                upperSettings.CrossoverKind = CrossoverKind.HighPass;
+                upperSettings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_200, 12);
+                // The same delay on both: aligned, so the crossover is what is
+                // wrong with this junction (with the two apart by 0.5 ms the
+                // tuner rightly keeps the crossover and points at the timing).
+                upperSettings.DelayMs = 0.5;
+                upperSettings.GainDb = -2.5;
+            }
+            object undo = Invoke(panel, "CaptureAgentUndo")!;
+            var summary = new List<string>();
+
+            bool ran = RunEnginesPumping(panel,
+                [
+                    Row(new TuneJunctionOperation("op-1", "meet in one corner",
+                        $"left:{lower.Name}-{upper.Name}", 900, 1_100, ["LinkwitzRiley"], [24], null), "Junction tune")
+                ],
+                summary);
+
+            Assert.True(ran, string.Join(" | ", summary));
+            Assert.StartsWith($"Junction tune {lower.Name}/{upper.Name}: applied — ", summary[0]);
+            Assert.Contains("LP BW12 700 Hz", summary[0]);
+            Assert.Contains("→", summary[0]);
+            // Per side, the readings before and after, and the after-delay figure.
+            Assert.Equal(3, summary.Count);
+            Assert.StartsWith("  left: sum loss ", summary[1]);
+            Assert.StartsWith("  right: sum loss ", summary[2]);
+            Assert.Contains("after the best delay", summary[1]);
+            foreach (bool rightSide in new[] { false, true })
+            {
+                VirtualCrossoverChannelSettings lowerSettings = lower.SideSettings(rightSide);
+                VirtualCrossoverChannelSettings upperSettings = upper.SideSettings(rightSide);
+                Assert.Equal(CrossoverKind.LowPass, lowerSettings.CrossoverKind);
+                Assert.Equal(CrossoverKind.HighPass, upperSettings.CrossoverKind);
+                Assert.Equal(CrossoverFilterFamily.LinkwitzRiley, lowerSettings.LowPassEdge.Family);
+                Assert.Equal(24, lowerSettings.LowPassEdge.SlopeDbPerOctave);
+                Assert.InRange(lowerSettings.LowPassEdge.FrequencyHz, 900, 1_100);
+                // One crossover: the same corner on both edges, and on both sides.
+                Assert.Equal(lowerSettings.LowPassEdge, upperSettings.HighPassEdge);
+                Assert.Equal(lower.SideSettings(false).LowPassEdge, lowerSettings.LowPassEdge);
+                // Everything the tune must not touch.
+                Assert.Equal(0.5, lowerSettings.DelayMs);
+                Assert.Equal(0.5, upperSettings.DelayMs);
+                Assert.Equal(-2.5, upperSettings.GainDb);
+            }
+
+            Set(panel, "agentUndo", undo);
+            Set(panel, "agentUndoGeneration", Field(panel, "projectGeneration"));
+            Invoke(panel, "UndoAiImport");
+
+            foreach (bool rightSide in new[] { false, true })
+            {
+                Assert.Equal(
+                    new CrossoverEdge(CrossoverFilterFamily.Butterworth, 700, 12),
+                    lower.SideSettings(rightSide).LowPassEdge);
+                Assert.Equal(
+                    new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_200, 12),
+                    upper.SideSettings(rightSide).HighPassEdge);
+            }
+        });
+    }
+
+    [Fact]
+    public void Probe_ReadsEveryVariantOntoTheClipboard_AndChangesNothing()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            VirtualCrossoverChannel lower = Channels(panel)[0];
+            VirtualCrossoverChannel upper = Channels(panel)[1];
+            var lr = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+            foreach (bool rightSide in new[] { false, true })
+            {
+                foreach (VirtualCrossoverChannel channel in new[] { lower, upper })
+                {
+                    VirtualCrossoverChannelState state = channel.SideState(rightSide);
+                    var impulse = new System.Numerics.Complex[16_384];
+                    impulse[480] = System.Numerics.Complex.One;
+                    state.TransferImpulseResponse = impulse;
+                    state.TransferPeakIndex = 480;
+                    state.SampleRate = 48_000;
+                }
+                lower.SideSettings(rightSide).CrossoverKind = CrossoverKind.LowPass;
+                lower.SideSettings(rightSide).LowPassEdge = lr;
+                lower.SideSettings(rightSide).PeqBands = [new PeqBand(1_000, 1.0, -9)];
+                upper.SideSettings(rightSide).CrossoverKind = CrossoverKind.HighPass;
+                upper.SideSettings(rightSide).HighPassEdge = lr;
+                upper.SideSettings(rightSide).GainDb = -2;
+            }
+
+            string? copied = null;
+            Action<string> write = AgentClipboard.WriteText;
+            AgentClipboard.WriteText = text => copied = text;
+            var summary = new List<string>();
+            try
+            {
+                bool ran = RunProbes(panel,
+                    [
+                        Row(new ProbeOperation("op-1", "is the bell the problem",
+                            AgentProtocol.JunctionProbe, $"left:{lower.Name}-{upper.Name}",
+                            [
+                                new AgentProbeVariant("no bell",
+                                    [new AgentProbeChange(
+                                        $"{lower.Name}:left", null, null, null, null, new AgentPeqBank(0, []))]),
+                                new AgentProbeVariant("BW48 instead",
+                                    [
+                                        new AgentProbeChange($"{lower.Name}:left", null, null, null,
+                                            new AgentCrossover("LowPass", null,
+                                                new AgentCrossoverEdge("Butterworth", 1_000, 48, null)), null),
+                                        new AgentProbeChange($"{upper.Name}:left", -3.5, null, null,
+                                            new AgentCrossover("HighPass",
+                                                new AgentCrossoverEdge("Butterworth", 1_000, 48, null), null), null)
+                                    ])
+                            ]), "Probe")
+                    ],
+                    summary);
+
+                Assert.True(ran, string.Join(" | ", summary));
+            }
+            finally
+            {
+                AgentClipboard.WriteText = write;
+            }
+
+            // The tune is exactly as it was: a probe reads copies.
+            foreach (bool rightSide in new[] { false, true })
+            {
+                Assert.Equal(lr, lower.SideSettings(rightSide).LowPassEdge);
+                Assert.Equal(lr, upper.SideSettings(rightSide).HighPassEdge);
+                Assert.Single(lower.SideSettings(rightSide).PeqBands);
+                Assert.Equal(-2, upper.SideSettings(rightSide).GainDb);
+            }
+            Assert.Null(Field(panel, "agentUndo"));
+
+            string text = Assert.IsType<string>(copied);
+            Assert.Contains(AgentProtocol.ProbeHeader, text);
+            Assert.Contains(AgentProtocol.ProbeJsonBegin, text);
+            Assert.Contains("\"kind\":\"resonalyze.agent-probe\"", text);
+            // The junction as it stands is read beside the variants, and every
+            // entry carries the figures the reply asked the question for.
+            Assert.Contains("\"label\":\"current\"", text);
+            Assert.Contains("\"label\":\"no bell\"", text);
+            Assert.Contains("\"label\":\"BW48 instead\"", text);
+            Assert.Contains("\"sumLossDb\"", text);
+            Assert.Contains("\"afterBestDelay\"", text);
+            Assert.Contains("\"phase\"", text);
+            Assert.Contains("\"shared\"", text);
+            string line = Assert.Single(summary);
+            Assert.Contains("1 of 1 reading computed and copied to the clipboard", line);
+            Assert.Contains("Nothing in the tune was changed", line);
+            Assert.Contains("paste the clipboard into the same chat", line);
+        });
+    }
+
+    [Fact]
+    public void Probe_NamesTheOtherJunctionsAVariantsChannelHandsOverAt()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            VirtualCrossoverChannel woofer = Channels(panel)[0];
+            VirtualCrossoverChannel mid = Channels(panel)[1];
+            VirtualCrossoverChannel tweeter = Channels(panel)[2];
+            var lowJunction = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 300, 24);
+            var highJunction = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
+            foreach (VirtualCrossoverChannel channel in new[] { woofer, mid, tweeter })
+            {
+                foreach (bool rightSide in new[] { false, true })
+                {
+                    VirtualCrossoverChannelState state = channel.SideState(rightSide);
+                    var impulse = new System.Numerics.Complex[16_384];
+                    impulse[480] = System.Numerics.Complex.One;
+                    state.TransferImpulseResponse = impulse;
+                    state.TransferPeakIndex = 480;
+                    state.SampleRate = 48_000;
+                }
+            }
+
+            // A three-way: the midrange hands over twice, which is the whole
+            // point of the field the probe reports.
+            foreach (bool rightSide in new[] { false, true })
+            {
+                woofer.SideSettings(rightSide).CrossoverKind = CrossoverKind.LowPass;
+                woofer.SideSettings(rightSide).LowPassEdge = lowJunction;
+                mid.SideSettings(rightSide).CrossoverKind = CrossoverKind.BandPass;
+                mid.SideSettings(rightSide).HighPassEdge = lowJunction;
+                mid.SideSettings(rightSide).LowPassEdge = highJunction;
+                tweeter.SideSettings(rightSide).CrossoverKind = CrossoverKind.HighPass;
+                tweeter.SideSettings(rightSide).HighPassEdge = highJunction;
+            }
+
+            string? copied = null;
+            Action<string> write = AgentClipboard.WriteText;
+            AgentClipboard.WriteText = text => copied = text;
+            var summary = new List<string>();
+            try
+            {
+                bool ran = RunProbes(panel,
+                    [
+                        Row(new ProbeOperation("op-1", "steeper into the tweeter",
+                            AgentProtocol.JunctionProbe, $"left:{mid.Name}-{tweeter.Name}",
+                            [
+                                new AgentProbeVariant("BW48 on the mid",
+                                    [new AgentProbeChange($"{mid.Name}:left", null, null, null,
+                                        new AgentCrossover("BandPass",
+                                            new AgentCrossoverEdge("LinkwitzRiley", 300, 24, null),
+                                            new AgentCrossoverEdge("Butterworth", 2_000, 48, null)), null)]),
+                                new AgentProbeVariant("trim the tweeter",
+                                    [new AgentProbeChange(
+                                        $"{tweeter.Name}:left", -1.5, null, null, null, null)])
+                            ]), "Probe")
+                    ],
+                    summary);
+
+                Assert.True(ran, string.Join(" | ", summary));
+            }
+            finally
+            {
+                AgentClipboard.WriteText = write;
+            }
+
+            // The list belongs to the entry, not to the probe: the variant that
+            // rewrites the midrange moves the junction BELOW it, and the one
+            // that only trims the tweeter — which hands over nowhere else —
+            // moves nothing, so it must not inherit the other's neighbour.
+            string text = Assert.IsType<string>(copied);
+            string below = $"\"affectedJunctions\":[\"left:{woofer.Name}-{mid.Name}\"]";
+            Assert.Contains(below, text);
+            Assert.Equal(1, text.Split("\"affectedJunctions\":[").Length - 1);
+            int mark = text.IndexOf(below, StringComparison.Ordinal);
+            int steeper = text.IndexOf("\"label\":\"BW48 on the mid\"", StringComparison.Ordinal);
+            int trim = text.IndexOf("\"label\":\"trim the tweeter\"", StringComparison.Ordinal);
+            Assert.True(steeper > 0 && trim > steeper);
+            Assert.InRange(mark, steeper, trim);
+            // The baseline changes nothing, so it carries no list at all.
+            Assert.True(mark > text.IndexOf("\"current\":true", StringComparison.Ordinal));
+        });
+    }
+
+    [Fact]
+    public void Commit_WritesNothing_WhenTheTuneMovedWhileTheProbesRan()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            VirtualCrossoverChannelSettings settings =
+                Channels(panel)[0].SideSettings(rightSide: false);
+            settings.GainDb = -1;
+
+            // A reply that trims the gain, reviewed and prepared against the
+            // tune as it was.
+            var proposal = new AgentProposal(
+                null, "trim it", [], [],
+                [new SetGainOperation("op-1", "A:left", "too hot", -1, -3)], []);
+            AgentSessionSnapshot reviewed = Snapshot(panel);
+            AgentProposalReview review = AgentProposalValidator.Review(proposal, reviewed);
+            Assert.True(review.Verdicts[0].Applicable);
+            var selected = new HashSet<string>(StringComparer.Ordinal) { "op-1" };
+            Assert.Null(AgentProposalApplier.Prepare(
+                proposal, selected, reviewed.Fingerprint, Snapshot(panel),
+                out List<AgentOperationVerdict> preparedBefore, out _));
+
+            // Then the user moves the very channel the row was judged against —
+            // which is what the seconds a probe takes leave room for, since the
+            // progress window takes nothing away from the panel.
+            settings.GainDb = -2;
+
+            var summary = new List<string>();
+            bool ran = Commit(panel, proposal, selected, reviewed.Fingerprint, review.Verdicts.Count, summary);
+
+            Assert.False(ran);
+            Assert.Equal(-2, settings.GainDb);
+            string line = Assert.Single(summary);
+            Assert.StartsWith("Nothing was written:", line);
+            Assert.Contains("changed while the review was open", line);
+            Assert.Null(Field(panel, "agentUndo"));
+
+            // What that guard is between: the applier re-checks nothing, so the
+            // rows prepared BEFORE the probes ran — the list the import used to
+            // carry across them — go straight over the edit the user just made.
+            AgentProposalApplier.Apply(preparedBefore);
+            Assert.Equal(-3, settings.GainDb);
+        });
+    }
+
+    [Fact]
+    public void Commit_WritesTheRows_WhenTheTuneStoodStill()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            VirtualCrossoverChannelSettings settings =
+                Channels(panel)[0].SideSettings(rightSide: false);
+            settings.GainDb = -1;
+            var proposal = new AgentProposal(
+                null, "trim it", [], [],
+                [new SetGainOperation("op-1", "A:left", "too hot", -1, -3)], []);
+            AgentSessionSnapshot reviewed = Snapshot(panel);
+            AgentProposalReview review = AgentProposalValidator.Review(proposal, reviewed);
+
+            var summary = new List<string>();
+            Commit(
+                panel, proposal, new HashSet<string> { "op-1" },
+                reviewed.Fingerprint, review.Verdicts.Count, summary);
+
+            Assert.Equal(-3, settings.GainDb);
+            Assert.Contains("Applied 1 of 1 proposed change.", summary);
+        });
+    }
+
+    [Fact]
+    public void Probe_MarksTheBaselineByItsPosition_NotByTheReplysLabel()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            MeasuredJunction(panel, out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
+            string? copied = null;
+            Action<string> write = AgentClipboard.WriteText;
+            AgentClipboard.WriteText = text => copied = text;
+            var summary = new List<string>();
+            try
+            {
+                // The label is the reply's own text, and a reply may call its
+                // variant whatever it likes — "current" included.
+                RunProbes(panel,
+                    [
+                        Row(new ProbeOperation("op-1", "", AgentProtocol.JunctionProbe,
+                            $"left:{lower.Name}-{upper.Name}",
+                            [
+                                new AgentProbeVariant("current",
+                                    [new AgentProbeChange($"{upper.Name}:left", -4, null, null, null, null)])
+                            ]), "Probe")
+                    ],
+                    summary);
+            }
+            finally
+            {
+                AgentClipboard.WriteText = write;
+            }
+
+            string text = Assert.IsType<string>(copied);
+            Assert.Equal(2, Regex.Matches(text, "\"label\":\"current\"").Count);
+            // Exactly one of them is the tune as it stands.
+            Assert.Single(Regex.Matches(text, "\"current\":true"));
+        });
+    }
+
+    [Fact]
+    public void Probe_TurnsAReadingThatThrowsIntoItsOwnUnavailableEntry()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            MeasuredJunction(panel, out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
+            // Both channels full range: the pair still resolves as a junction
+            // (they overlap everywhere), but there is no corner to read a delay
+            // band from — the state the review refuses and a session that moved
+            // between the review and Apply can still reach.
+            foreach (bool rightSide in new[] { false, true })
+            {
+                lower.SideSettings(rightSide).CrossoverKind = CrossoverKind.Off;
+                upper.SideSettings(rightSide).CrossoverKind = CrossoverKind.Off;
+            }
+
+            string? copied = null;
+            Action<string> write = AgentClipboard.WriteText;
+            AgentClipboard.WriteText = text => copied = text;
+            var summary = new List<string>();
+            try
+            {
+                bool ran = RunProbes(panel,
+                    [
+                        Row(new ProbeOperation("op-1", "", AgentProtocol.JunctionDelayProbe,
+                            $"left:{lower.Name}-{upper.Name}", null), "Probe"),
+                        Row(new ProbeOperation("op-2", "", AgentProtocol.ExcessGroupDelayProbe, null, null), "Probe")
+                    ],
+                    summary);
+
+                Assert.True(ran, string.Join(" | ", summary));
+            }
+            finally
+            {
+                AgentClipboard.WriteText = write;
+            }
+
+            // The one that could not be read says so; the other still answered
+            // and the document still reached the clipboard.
+            Assert.Contains("1 of 2 readings computed", summary[0]);
+            Assert.Contains("no crossover to read a band from", summary[1]);
+            string text = Assert.IsType<string>(copied);
+            Assert.Contains("\"probe\":\"excessGroupDelay\"", text);
+            Assert.Contains("\"unavailable\"", text);
+        });
+    }
+
+    // Two blocks with a measurement each and a Linkwitz-Riley pair between them.
+    private static void MeasuredJunction(
+        VirtualCrossoverPanel panel,
+        out VirtualCrossoverChannel lower,
+        out VirtualCrossoverChannel upper)
+    {
+        lower = Channels(panel)[0];
+        upper = Channels(panel)[1];
+        var lr = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        foreach (bool rightSide in new[] { false, true })
+        {
+            foreach (VirtualCrossoverChannel channel in new[] { lower, upper })
+            {
+                VirtualCrossoverChannelState state = channel.SideState(rightSide);
+                var impulse = new System.Numerics.Complex[16_384];
+                impulse[480] = System.Numerics.Complex.One;
+                state.TransferImpulseResponse = impulse;
+                state.TransferPeakIndex = 480;
+                state.SampleRate = 48_000;
+            }
+            lower.SideSettings(rightSide).CrossoverKind = CrossoverKind.LowPass;
+            lower.SideSettings(rightSide).LowPassEdge = lr;
+            upper.SideSettings(rightSide).CrossoverKind = CrossoverKind.HighPass;
+            upper.SideSettings(rightSide).HighPassEdge = lr;
+        }
+    }
+
+    [Fact]
+    public void Probe_SaysWhatItCouldNotRead_WithoutTakingTheOthersDown()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            string? copied = null;
+            Action<string> write = AgentClipboard.WriteText;
+            AgentClipboard.WriteText = text => copied = text;
+            var summary = new List<string>();
+            try
+            {
+                // No block here carries a measurement: the junction cannot be
+                // resolved, and the curve has nothing to read.
+                RunProbes(panel,
+                    [
+                        Row(new ProbeOperation("op-1", "", AgentProtocol.JunctionDelayProbe, "left:A-B", null), "Probe"),
+                        Row(new ProbeOperation("op-2", "", AgentProtocol.ExcessGroupDelayProbe, null, null), "Probe")
+                    ],
+                    summary);
+            }
+            finally
+            {
+                AgentClipboard.WriteText = write;
+            }
+
+            Assert.NotNull(copied);
+            Assert.Contains("0 of 2 readings computed", summary[0]);
+            Assert.Contains("has no measurement", summary[1]);
+            Assert.Contains("no channel has a measurement to read", summary[2]);
+        });
+    }
+
+    [Fact]
+    public void JunctionTune_KeepsATextbookJunction_AndSaysSo()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            VirtualCrossoverChannel lower = Channels(panel)[0];
+            VirtualCrossoverChannel upper = Channels(panel)[1];
+            var lr = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+            foreach (bool rightSide in new[] { false, true })
+            {
+                foreach (VirtualCrossoverChannel channel in new[] { lower, upper })
+                {
+                    VirtualCrossoverChannelState state = channel.SideState(rightSide);
+                    var impulse = new System.Numerics.Complex[16_384];
+                    impulse[480] = System.Numerics.Complex.One;
+                    state.TransferImpulseResponse = impulse;
+                    state.TransferPeakIndex = 480;
+                    state.SampleRate = 48_000;
+                }
+                lower.SideSettings(rightSide).CrossoverKind = CrossoverKind.LowPass;
+                lower.SideSettings(rightSide).LowPassEdge = lr;
+                upper.SideSettings(rightSide).CrossoverKind = CrossoverKind.HighPass;
+                upper.SideSettings(rightSide).HighPassEdge = lr;
+            }
+            var summary = new List<string>();
+
+            bool ran = RunEnginesPumping(panel,
+                [
+                    Row(new TuneJunctionOperation("op-1", "", $"left:{lower.Name}-{upper.Name}",
+                        900, 1_100, ["LinkwitzRiley"], [24], null), "Junction tune")
+                ],
+                summary);
+
+            // Nothing beats a Linkwitz-Riley pair on flat drivers by the keep
+            // margin, so nothing is written and Undo has nothing to arm for.
+            Assert.False(ran);
+            Assert.StartsWith($"Junction tune {lower.Name}/{upper.Name}: kept — ", summary[0]);
+            Assert.Contains("not 0.50 dB better", summary[0]);
+            Assert.Equal(lr, lower.SideSettings(true).LowPassEdge);
+            Assert.Equal(lr, upper.SideSettings(true).HighPassEdge);
+        });
+    }
+
+    [Fact]
+    public void EngineOrder_PutsTheJunctionTuneAfterTheWizard_AndBeforeAutoDelay()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            var summary = new List<string>();
+
+            // Listed backwards on purpose; every engine refuses on this empty
+            // panel, so the summary is the order alone.
+            RunEngines(panel,
+                [
+                    Row(new RunAutoDelayOperation("op-1", "", null, null, null, null, null), "Auto delay"),
+                    Row(new TuneJunctionOperation("op-2", "", "left:A-B", null, null, null, null, null), "Junction tune"),
+                    Row(new RunAutoCrossoverOperation("op-3", ""), "Auto crossover")
+                ],
+                summary);
+
+            Assert.Equal(3, summary.Count);
+            Assert.StartsWith("Auto crossover:", summary[0]);
+            Assert.StartsWith("Junction tune", summary[1]);
+            Assert.StartsWith("Auto delay:", summary[2]);
+        });
+    }
+
+    [Fact]
     public void AutoDelay_RunHeadless_IsRefusedWithThePhraseTheSummaryQuotes()
     {
         StaTest.Run(() =>
@@ -339,8 +913,61 @@ public sealed class VirtualCrossoverAgentEngineTests
 
     private static bool RunEngines(
         VirtualCrossoverPanel panel, List<AgentOperationVerdict> rows, List<string> summary) =>
-        ((Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary)!)
+        ((Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary, null)!)
             .GetAwaiter().GetResult();
+
+    private static AgentSessionSnapshot Snapshot(VirtualCrossoverPanel panel) =>
+        (AgentSessionSnapshot)Invoke(panel, "BuildAgentSessionSnapshot")!;
+
+    private static bool Commit(
+        VirtualCrossoverPanel panel,
+        AgentProposal proposal,
+        IReadOnlySet<string> selected,
+        string? reviewedFingerprint,
+        int proposedRows,
+        List<string> summary)
+    {
+        var task = (Task<bool>)Invoke(
+            panel, "CommitAgentImportAsync",
+            proposal, selected, reviewedFingerprint, proposedRows, summary, null)!;
+        while (!task.IsCompleted)
+        {
+            Application.DoEvents();
+            Thread.Sleep(5);
+        }
+
+        return task.GetAwaiter().GetResult();
+    }
+
+    private static bool RunProbes(
+        VirtualCrossoverPanel panel, List<AgentOperationVerdict> rows, List<string> summary)
+    {
+        // No progress window in a test: the panel takes a null reporter.
+        var task = (Task<bool>)Invoke(panel, "RunAgentProbesAsync", rows, summary, null)!;
+        while (!task.IsCompleted)
+        {
+            Application.DoEvents();
+            Thread.Sleep(5);
+        }
+
+        return task.GetAwaiter().GetResult();
+    }
+
+    // For an engine that awaits its compute: the continuation is posted to the
+    // STA thread's WinForms context, so the wait has to pump messages or the
+    // two deadlock — which is exactly what the panel's own UI thread does.
+    private static bool RunEnginesPumping(
+        VirtualCrossoverPanel panel, List<AgentOperationVerdict> rows, List<string> summary)
+    {
+        var task = (Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary, null)!;
+        while (!task.IsCompleted)
+        {
+            Application.DoEvents();
+            Thread.Sleep(5);
+        }
+
+        return task.GetAwaiter().GetResult();
+    }
 
     private static AgentOperationVerdict Row(AgentOperation operation, string parameter) =>
         new(operation.Id, AgentProposalValidator.AllChannels, parameter,

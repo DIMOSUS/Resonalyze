@@ -2931,6 +2931,13 @@ this: the clipboard is the only transport, and you are the one who pastes.
   bank or crossover the device's own limits were not checked
   against because the catalog does not know them, an engine that will write over
   more than the rows name — is a word in the Status column, not only a colour.
+  While any of this runs — gathering a package, computing a diagnostic, or an
+  import that probes, tunes a junction and realigns — a small window names the
+  step under way and lists the ones behind it, so a computation that takes
+  seconds does not look like a hang. It has no Cancel: each step is one
+  computation that cannot be stopped part-way without leaving a half-written
+  tune.
+
   **Apply selected** looks at the ticked rows once more against the live settings
   — and at what the ticked subset leaves behind, since the review judged the
   rows together and unticking one can leave a state it never showed, which then

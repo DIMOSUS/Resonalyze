@@ -330,37 +330,52 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
-            // The probes go FIRST, before anything is written: a probe answers a
-            // question about the tune as it stands, and reading it after this
-            // import's own rows had landed would answer a different one.
-            await RunAgentProbesAsync(toApply, summary);
+            // Everything from here can take tens of seconds — a probe of ten
+            // variants, a junction tune, a delay search, a bank fit — so it runs
+            // under a window that says which step is going, rather than behind a
+            // wait cursor that says only "busy".
+            bool ran = await AgentProgressDialog.RunAsync(
+                FindForm(),
+                "Import AI proposal",
+                "Reading the reply…",
+                async progress =>
+                {
+                    // The probes go FIRST, before anything is written: a probe
+                    // answers a question about the tune as it stands, and reading
+                    // it after this import's own rows had landed would answer a
+                    // different one.
+                    await RunAgentProbesAsync(toApply, summary, progress);
 
-            // Armed BEFORE the first write, not after the last one: an engine can
-            // throw with the settings rows already in the tune, and an import the
-            // user cannot undo is the worst thing this menu could leave behind.
-            // The previous import's undo is put back only if nothing moved at all.
-            AgentImportUndo undo = CaptureAgentUndo();
-            AgentImportUndo? previousUndo = agentUndo;
-            long previousUndoGeneration = agentUndoGeneration;
-            agentUndo = undo;
-            agentUndoGeneration = projectGeneration;
+                    // Armed BEFORE the first write, not after the last one: an
+                    // engine can throw with the settings rows already in the tune,
+                    // and an import the user cannot undo is the worst thing this
+                    // menu could leave behind. The previous import's undo is put
+                    // back only if nothing moved at all.
+                    AgentImportUndo undo = CaptureAgentUndo();
+                    AgentImportUndo? previousUndo = agentUndo;
+                    long previousUndoGeneration = agentUndoGeneration;
+                    agentUndo = undo;
+                    agentUndoGeneration = projectGeneration;
 
-            List<AgentUndoEntry> written = AgentProposalApplier.Apply(toApply);
-            if (written.Count > 0)
-            {
-                RefreshChannelsAfterAgentWrite(written);
-                int proposed = review.Verdicts.Count;
-                int rows = toApply.Count(verdict => verdict.Operation is AgentSettingsOperation);
-                summary.Add(
-                    $"Applied {rows} of {proposed} proposed change{(proposed == 1 ? "" : "s")}.");
-            }
+                    List<AgentUndoEntry> written = AgentProposalApplier.Apply(toApply);
+                    if (written.Count > 0)
+                    {
+                        RefreshChannelsAfterAgentWrite(written);
+                        int proposed = review.Verdicts.Count;
+                        int rows = toApply.Count(verdict => verdict.Operation is AgentSettingsOperation);
+                        summary.Add(
+                            $"Applied {rows} of {proposed} proposed change{(proposed == 1 ? "" : "s")}.");
+                    }
 
-            bool ran = await RunAgentEngineRequests(toApply, summary);
-            if (written.Count == 0 && !ran)
-            {
-                agentUndo = previousUndo;
-                agentUndoGeneration = previousUndoGeneration;
-            }
+                    bool engines = await RunAgentEngineRequests(toApply, summary, progress);
+                    if (written.Count == 0 && !engines)
+                    {
+                        agentUndo = previousUndo;
+                        agentUndoGeneration = previousUndoGeneration;
+                    }
+
+                    return engines;
+                });
 
             ScheduleSave();
             RedrawAll();
@@ -405,7 +420,9 @@ public partial class VirtualCrossoverPanel
     /// </summary>
     /// <returns>Whether any of them changed the project.</returns>
     private async Task<bool> RunAgentEngineRequests(
-        IReadOnlyList<AgentOperationVerdict> toApply, List<string> summary)
+        IReadOnlyList<AgentOperationVerdict> toApply,
+        List<string> summary,
+        AgentProgressDialog? progress = null)
     {
         bool ran = false;
         // One target level for every fit of this import, decided before the first
@@ -424,6 +441,13 @@ public partial class VirtualCrossoverPanel
             .OrderBy(verdict => AgentEngineOrder(verdict.Operation!)))
         {
             AgentOperation operation = verdict.Operation!;
+            // Named before it starts: a step that takes ten seconds must not be
+            // the one the user is watching a blank line for.
+            if (operation is not ProbeOperation)
+            {
+                progress?.Report(AgentStepText(operation, verdict));
+            }
+
             switch (operation)
             {
                 case UseSpatialAverageOperation spatial:
@@ -472,6 +496,20 @@ public partial class VirtualCrossoverPanel
 
         return ran;
     }
+
+    // What the progress window calls the step, in the words the summary will
+    // use for it afterwards.
+    private static string AgentStepText(AgentOperation operation, AgentOperationVerdict verdict) =>
+        operation switch
+        {
+            UseSpatialAverageOperation spatial => $"Spatial average: {spatial.Mode}…",
+            RunAutoCrossoverOperation => "Auto crossover: the wizard is opening…",
+            TuneJunctionOperation junction =>
+                $"Junction tune {verdict.ChannelLabel}: searching the crossover…",
+            RunAutoDelayOperation => "Auto delay: searching delays and polarities…",
+            AutoTunePeqOperation => $"Auto-tune {verdict.ChannelLabel}: fitting the bank…",
+            _ => $"{operation.Parameter}…"
+        };
 
     private static int AgentEngineOrder(AgentOperation operation) => operation switch
     {
@@ -668,7 +706,9 @@ public partial class VirtualCrossoverPanel
     /// </summary>
     /// <returns>Whether a document reached the clipboard.</returns>
     private async Task<bool> RunAgentProbesAsync(
-        IReadOnlyList<AgentOperationVerdict> toApply, List<string> summary)
+        IReadOnlyList<AgentOperationVerdict> toApply,
+        List<string> summary,
+        AgentProgressDialog? progress = null)
     {
         List<ProbeOperation> probes = toApply
             .Where(verdict => verdict.Applicable)
@@ -684,8 +724,13 @@ public partial class VirtualCrossoverPanel
         UseWaitCursor = true;
         try
         {
+            int index = 0;
             foreach (ProbeOperation probe in probes)
             {
+                index++;
+                progress?.Report(
+                    $"Probe {index} of {probes.Count} ({probe.Probe}" +
+                    $"{(probe.JunctionId is { } id ? " " + id : string.Empty)}): reading…");
                 // One reading that cannot be taken is one entry saying so: a
                 // probe reads several things the user ticked together, and a
                 // throw from any of them must not take the others — or the
@@ -1561,21 +1606,29 @@ public partial class VirtualCrossoverPanel
                 ? lastAgentPackageId
                 : null;
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            (AgentDiagnosticBuildResult result, int count) = await Task.Run(() =>
-            {
-                var channels = new List<AgentDiagnosticChannel>(measured.Count);
-                foreach ((string id, Complex[] response, int peakIndex, int sampleRate, MeasuredBand band) in measured)
+            // A gated FFT and a minimum-phase reconstruction per channel: on a
+            // large installation that is seconds, and the window names the
+            // channel each one is on.
+            (AgentDiagnosticBuildResult result, int count) = await AgentProgressDialog.RunAsync(
+                FindForm(),
+                "Copy diagnostics for AI",
+                "Excess group delay…",
+                progress => Task.Run(() =>
                 {
-                    IReadOnlyList<SignalPoint>? curve = BuildExcessGroupDelayCurve(
-                        response, peakIndex, sampleRate, band, gate);
-                    if (curve != null)
+                    var channels = new List<AgentDiagnosticChannel>(measured.Count);
+                    foreach ((string id, Complex[] response, int peakIndex, int sampleRate, MeasuredBand band) in measured)
                     {
-                        channels.Add(new AgentDiagnosticChannel(id, curve));
+                        progress.Report($"Excess group delay: {id}…");
+                        IReadOnlyList<SignalPoint>? curve = BuildExcessGroupDelayCurve(
+                            response, peakIndex, sampleRate, band, gate);
+                        if (curve != null)
+                        {
+                            channels.Add(new AgentDiagnosticChannel(id, curve));
+                        }
                     }
-                }
 
-                return (AgentDiagnosticBuilder.BuildExcessGroupDelay(channels, packageId, now), channels.Count);
-            });
+                    return (AgentDiagnosticBuilder.BuildExcessGroupDelay(channels, packageId, now), channels.Count);
+                }));
             if (IsDisposed)
             {
                 return;
@@ -1617,8 +1670,24 @@ public partial class VirtualCrossoverPanel
         RefreshAutoActionsEnabled();
         try
         {
+            // Two seconds or so on a large session, and the window is the only
+            // thing telling the user the click did anything.
             (AgentPackageInputs Inputs, string Fingerprint)? gathered =
-                await GatherAgentPackageAsync() ?? await GatherAgentPackageAsync();
+                await AgentProgressDialog.RunAsync(
+                    FindForm(),
+                    "Copy for AI",
+                    "Reading the tune…",
+                    async progress =>
+                    {
+                        (AgentPackageInputs, string)? first = await GatherAgentPackageAsync();
+                        if (first != null)
+                        {
+                            return first;
+                        }
+
+                        progress.Report("The tune moved while it was read — reading again…");
+                        return await GatherAgentPackageAsync();
+                    });
             if (IsDisposed)
             {
                 return;

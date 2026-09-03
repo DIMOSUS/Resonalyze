@@ -757,13 +757,14 @@ public sealed class VirtualCrossoverAgentEngineTests
 
     private static bool RunEngines(
         VirtualCrossoverPanel panel, List<AgentOperationVerdict> rows, List<string> summary) =>
-        ((Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary)!)
+        ((Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary, null)!)
             .GetAwaiter().GetResult();
 
     private static bool RunProbes(
         VirtualCrossoverPanel panel, List<AgentOperationVerdict> rows, List<string> summary)
     {
-        var task = (Task<bool>)Invoke(panel, "RunAgentProbesAsync", rows, summary)!;
+        // No progress window in a test: the panel takes a null reporter.
+        var task = (Task<bool>)Invoke(panel, "RunAgentProbesAsync", rows, summary, null)!;
         while (!task.IsCompleted)
         {
             Application.DoEvents();
@@ -779,7 +780,7 @@ public sealed class VirtualCrossoverAgentEngineTests
     private static bool RunEnginesPumping(
         VirtualCrossoverPanel panel, List<AgentOperationVerdict> rows, List<string> summary)
     {
-        var task = (Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary)!;
+        var task = (Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary, null)!;
         while (!task.IsCompleted)
         {
             Application.DoEvents();

@@ -756,12 +756,17 @@ public partial class VirtualCrossoverPanel
         }
 
         // The readings of one document are meant to describe one session. Each
-        // is taken off snapshots, so none of them can be torn — but the user is
-        // free to edit between two of them, and a document assembled from two
-        // states would let a reader compare figures that never coexisted. It is
-        // not refused (nothing was written, and each reading is still true of
-        // what it read); it is declared.
-        string sessionBefore = ComputeAgentFingerprint();
+        // is taken off snapshots of its own, so none of them can be torn — but
+        // the user is free to edit between two of them, and a document
+        // assembled from two states would let a reader compare figures that
+        // never coexisted. It is not refused (nothing was written, and each
+        // reading is still true of what it read); it is declared.
+        //
+        // Compared at EVERY reading's boundary, not once around the batch: a
+        // tune changed and changed back would pass a first-to-last comparison
+        // while the reading in between saw the other state.
+        string state = ComputeAgentFingerprint();
+        bool steady = true;
         var reports = new List<AgentProbeReport>(probes.Count);
         UseWaitCursor = true;
         try
@@ -791,6 +796,13 @@ public partial class VirtualCrossoverPanel
                 {
                     return false;
                 }
+
+                // This reading was taken off the state at the top of the loop;
+                // an edit that lands and is undone entirely within it changed
+                // nothing this document holds, and one that outlives it did.
+                string after = ComputeAgentFingerprint();
+                steady &= string.Equals(state, after, StringComparison.Ordinal);
+                state = after;
             }
         }
         finally
@@ -803,10 +815,8 @@ public partial class VirtualCrossoverPanel
 
         // The package the reading belongs beside, while this is still the
         // session it was copied from — the same rule the diagnostic follows.
-        string sessionAfter = ComputeAgentFingerprint();
         bool matches = lastAgentPackageFingerprint != null &&
-            lastAgentPackageFingerprint == sessionAfter;
-        bool steady = string.Equals(sessionBefore, sessionAfter, StringComparison.Ordinal);
+            lastAgentPackageFingerprint == state;
         AgentProbeBuildResult result = AgentProbeBuilder.Build(
             reports, matches ? lastAgentPackageId : null, matches, steady, DateTimeOffset.UtcNow);
         if (!AgentClipboard.TryWrite(result.Text, out string? error))

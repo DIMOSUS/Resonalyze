@@ -9,9 +9,9 @@ namespace Resonalyze.Integration.AgentBridge;
 internal sealed record AgentProbeBuildResult(string Text, int JsonBytes);
 
 /// <param name="SessionChangedWhileReading">
-/// Written only when it is true: the tune moved between two of the readings, so
-/// they do not all describe one state. Absent — the ordinary case — means every
-/// reading below was taken off the same session.
+/// Written only when it is true: the tune moved across one of the readings'
+/// boundaries, so they do not all describe one state. Absent — the ordinary
+/// case — means every reading below was taken off the same session.
 /// </param>
 internal sealed record AgentProbeDocument(
     string Kind,
@@ -151,10 +151,10 @@ internal static class AgentProbeBuilder
                 "the tune was not touched to produce any of this: the readings are computed on " +
                 "copies of the responses, and the session is exactly as it was",
             ["sessionChangedWhileReading"] =
-                "present and true only when the user edited the tune between two of the readings " +
-                "below, which then do not all describe one state — compare them with that in " +
-                "mind, and ask for the probe again if it matters. Absent means one session " +
-                "throughout"
+                "present and true when the tune moved across any reading's boundary, so the " +
+                "readings below do not all describe one state — compare them with that in mind, " +
+                "and ask for the probe again if it matters. Absent means every reading was taken " +
+                "off the same session"
         };
 
     public static AgentProbeBuildResult Build(

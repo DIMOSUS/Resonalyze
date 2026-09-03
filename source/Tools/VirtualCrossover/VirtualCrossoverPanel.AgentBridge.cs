@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Numerics;
+using System.Text;
 using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;
 
@@ -328,6 +330,11 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
+            // The probes go FIRST, before anything is written: a probe answers a
+            // question about the tune as it stands, and reading it after this
+            // import's own rows had landed would answer a different one.
+            await RunAgentProbesAsync(toApply, summary);
+
             // Armed BEFORE the first write, not after the last one: an engine can
             // throw with the settings rows already in the tune, and an import the
             // user cannot undo is the worst thing this menu could leave behind.
@@ -435,6 +442,15 @@ public partial class VirtualCrossoverPanel
                     ran |= refused == null;
                     break;
 
+                case TuneJunctionOperation junction:
+                    ran |= await RunAgentTuneJunctionAsync(junction, summary);
+                    break;
+
+                // Read before any of this ran, and wrote nothing; the import's
+                // own loop has nothing left to do with it.
+                case ProbeOperation:
+                    break;
+
                 case RunAutoDelayOperation delay:
                     ran |= await RunAgentAutoDelayAsync(delay, summary);
                     break;
@@ -461,8 +477,11 @@ public partial class VirtualCrossoverPanel
     {
         UseSpatialAverageOperation => 0,
         RunAutoCrossoverOperation => 1,
-        RunAutoDelayOperation => 2,
-        _ => 3
+        // After the wizard (the review refuses the pair together anyway) and
+        // before Auto delay, which realigns whatever the crossover became.
+        TuneJunctionOperation => 2,
+        RunAutoDelayOperation => 3,
+        _ => 4
     };
 
     // The mode and the tick together: either one alone leaves the point
@@ -586,6 +605,594 @@ public partial class VirtualCrossoverPanel
     }
 
     private const int AutoDelayReportLinesInSummary = 16;
+
+    // The junction tune without a dialog. The review resolved the junction on a
+    // session snapshot; the same two blocks are read off the live channels here,
+    // every side the pair is measured on goes to the tuner with its raw
+    // responses and its current chains, and the one crossover the tuner settles
+    // on is written to both sides of both blocks — as the wizard writes, and as
+    /// <summary>
+    /// The two blocks of a junction as the tuner and the probes read them: every
+    /// side that carries both measurements, with each side's own chain — or the
+    /// one side asked for, where a reading belongs to a single physical channel.
+    /// A mono block is routed to both sides, as the panel sums it.
+    /// </summary>
+    private static (List<JunctionTuneSide> Sides, string? Refusal) BuildJunctionTuneSides(
+        VirtualCrossoverChannel lower, VirtualCrossoverChannel upper, bool? rightSideOnly)
+    {
+        var sides = new List<JunctionTuneSide>();
+        foreach (bool rightSide in new[] { false, true })
+        {
+            if (rightSideOnly is { } only && only != rightSide)
+            {
+                continue;
+            }
+            if (rightSide && lower.Pair.Mono && upper.Pair.Mono && rightSideOnly == null)
+            {
+                continue;
+            }
+
+            VirtualCrossoverChannelState lowerState = lower.SideState(rightSide && !lower.Pair.Mono);
+            VirtualCrossoverChannelState upperState = upper.SideState(rightSide && !upper.Pair.Mono);
+            if (lowerState.TransferImpulseResponse == null || upperState.TransferImpulseResponse == null)
+            {
+                continue;
+            }
+            if (lowerState.SampleRate != upperState.SampleRate)
+            {
+                return ([], "the two measurements on the " +
+                    $"{(rightSide ? "right" : "left")} side have different sample rates");
+            }
+
+            sides.Add(new JunctionTuneSide(
+                rightSide ? "right" : "left",
+                lowerState.TransferImpulseResponse,
+                lower.SideSettings(rightSide && !lower.Pair.Mono).ToChain(),
+                upperState.TransferImpulseResponse,
+                upper.SideSettings(rightSide && !upper.Pair.Mono).ToChain(),
+                lowerState.SampleRate));
+        }
+
+        return sides.Count == 0
+            ? ([], "no side has both blocks measured")
+            : (sides, null);
+    }
+
+    /// <summary>
+    /// The probes of one import: readings the reply asked for, computed on the
+    /// tune as it stands and written NOWHERE. Every probe of the import goes
+    /// into ONE document — the clipboard holds one text, and the user pastes
+    /// once — and the summary says it is there and asks for it to be pasted
+    /// back. A probe that cannot be computed says so in its own entry rather
+    /// than taking the others down with it.
+    /// </summary>
+    /// <returns>Whether a document reached the clipboard.</returns>
+    private async Task<bool> RunAgentProbesAsync(
+        IReadOnlyList<AgentOperationVerdict> toApply, List<string> summary)
+    {
+        List<ProbeOperation> probes = toApply
+            .Where(verdict => verdict.Applicable)
+            .Select(verdict => verdict.Operation)
+            .OfType<ProbeOperation>()
+            .ToList();
+        if (probes.Count == 0)
+        {
+            return false;
+        }
+
+        var reports = new List<AgentProbeReport>(probes.Count);
+        UseWaitCursor = true;
+        try
+        {
+            foreach (ProbeOperation probe in probes)
+            {
+                // One reading that cannot be taken is one entry saying so: a
+                // probe reads several things the user ticked together, and a
+                // throw from any of them must not take the others — or the
+                // import around them — down.
+                try
+                {
+                    reports.Add(await BuildAgentProbeReportAsync(probe));
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
+                {
+                    reports.Add(new AgentProbeReport(
+                        probe.Id, probe.Probe, probe.JunctionId, null, null,
+                        exception.Message.TrimEnd('.'), null, null, null, null));
+                }
+                if (IsDisposed)
+                {
+                    return false;
+                }
+            }
+        }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                UseWaitCursor = false;
+            }
+        }
+
+        // The package the reading belongs beside, while this is still the
+        // session it was copied from — the same rule the diagnostic follows.
+        bool matches = lastAgentPackageFingerprint != null &&
+            lastAgentPackageFingerprint == ComputeAgentFingerprint();
+        AgentProbeBuildResult result = AgentProbeBuilder.Build(
+            reports, matches ? lastAgentPackageId : null, matches, DateTimeOffset.UtcNow);
+        if (!AgentClipboard.TryWrite(result.Text, out string? error))
+        {
+            summary.Add($"Probe: the reading was computed but not copied ({error}).");
+            return false;
+        }
+
+        int answered = reports.Count(report => report.Unavailable == null);
+        summary.Add(
+            $"Probe: {answered} of {reports.Count} reading{(reports.Count == 1 ? "" : "s")} " +
+            $"computed and copied to the clipboard ({(result.JsonBytes + 1023) / 1024} KB). " +
+            "Nothing in the tune was changed — paste the clipboard into the same chat as your reply.");
+        foreach (AgentProbeReport report in reports.Where(item => item.Unavailable != null))
+        {
+            summary.Add($"  {report.Probe} {report.JunctionId ?? string.Empty}: {report.Unavailable}");
+        }
+
+        return true;
+    }
+
+    // One probe's answer. Every reading is taken off snapshots — the responses,
+    // the chains, the gate — so the compute runs off the UI thread and the tune
+    // is never touched.
+    private async Task<AgentProbeReport> BuildAgentProbeReportAsync(ProbeOperation probe)
+    {
+        if (probe.Probe == AgentProtocol.ExcessGroupDelayProbe)
+        {
+            IReadOnlyList<AgentDiagnosticSeries> channels = await BuildAgentExcessGroupDelaySeriesAsync();
+            return new AgentProbeReport(
+                probe.Id, probe.Probe, null, null, null,
+                channels.Count == 0 ? "no channel has a measurement to read" : null,
+                null, null, null, channels.Count == 0 ? null : channels);
+        }
+
+        AgentProbeReport Unavailable(string reason) => new(
+            probe.Id, probe.Probe, probe.JunctionId, null, null, reason, null, null, null, null);
+
+        string? problem = AgentProposalValidator.ResolveJunction(
+            BuildAgentSessionSnapshot(), probe.JunctionId ?? string.Empty,
+            out AgentChannelSnapshot? lowerSnapshot, out AgentChannelSnapshot? upperSnapshot);
+        if (problem != null)
+        {
+            return Unavailable(problem.TrimEnd('.'));
+        }
+        if (GateIsMisplaced)
+        {
+            return Unavailable("the phase gate is misplaced");
+        }
+
+        VirtualCrossoverChannel? lower = channels.FirstOrDefault(channel =>
+            string.Equals(channel.Name, lowerSnapshot!.Block, StringComparison.Ordinal));
+        VirtualCrossoverChannel? upper = channels.FirstOrDefault(channel =>
+            string.Equals(channel.Name, upperSnapshot!.Block, StringComparison.Ordinal));
+        if (lower == null || upper == null)
+        {
+            return Unavailable("the blocks changed while the import ran");
+        }
+
+        // A probe reads the side its junction id names: a variant's changes are
+        // that side's channels' settings, and a reading of the other side would
+        // answer a question nobody asked. (A crossover is one filter for both
+        // sides, so a reply weighing one asks for both junctions.)
+        AgentChannelSide namedSide = AgentJunctionIds.TryParse(
+            probe.JunctionId, out AgentChannelSide side, out _, out _)
+            ? side
+            : AgentChannelSide.Left;
+        (List<JunctionTuneSide> sides, string? refusal) = BuildJunctionTuneSides(
+            lower, upper, namedSide == AgentChannelSide.Right);
+        if (refusal != null)
+        {
+            return Unavailable(refusal);
+        }
+
+        int processorRate = ProcessorSampleRateHz;
+        if (probe.Probe == AgentProtocol.JunctionDelayProbe)
+        {
+            IReadOnlyList<JunctionDelayProbeSide> read = await Task.Run(
+                () => CrossoverJunctionTuner.ProbeAlignment(sides, processorRate));
+            return new AgentProbeReport(
+                probe.Id, probe.Probe, probe.JunctionId, lowerSnapshot!.Id, upperSnapshot!.Id,
+                null, null, null,
+                read.Select(item => new AgentProbeDelaySide(
+                    item.Side,
+                    [AgentCurveSampling.Frequency(item.BandLowHz), AgentCurveSampling.Frequency(item.BandHighHz)],
+                    AgentCurveSampling.Round(item.SearchHalfWindowMs, 2),
+                    item.Unavailable,
+                    item.Candidates.Select(candidate => new AgentProbeDelayCandidate(
+                        AgentCurveSampling.Round(candidate.ExtraDelayMs, 3),
+                        candidate.InvertUpper,
+                        AgentCurveSampling.Round(candidate.ScoreDb, 2),
+                        AgentCurveSampling.Round(candidate.LossDb, 2),
+                        AgentCurveSampling.Round(candidate.DipDb, 2),
+                        candidate.Chosen)).ToList())).ToList(),
+                null);
+        }
+
+        (List<JunctionProbeVariant> variants, string? variantProblem) = BuildAgentProbeVariants(
+            probe, sides, lowerSnapshot!, upperSnapshot!, BuildAgentSessionSnapshot());
+        if (variantProblem != null)
+        {
+            return Unavailable(variantProblem);
+        }
+
+        JunctionProbeResult probed;
+        try
+        {
+            probed = await Task.Run(() => CrossoverJunctionTuner.Probe(sides, processorRate, variants));
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            return Unavailable(exception.Message.TrimEnd('.'));
+        }
+
+        return new AgentProbeReport(
+            probe.Id, probe.Probe, probe.JunctionId, lowerSnapshot!.Id, upperSnapshot!.Id, null,
+            [
+                AgentCurveSampling.Frequency(probed.SharedBandLowHz),
+                AgentCurveSampling.Frequency(probed.SharedBandHighHz)
+            ],
+            probed.Entries.Select(AgentProbeEntryOf).ToList(),
+            null,
+            null);
+    }
+
+    // The FIRST entry is the tune as it stands, because the panel builds it
+    // first — read off the position, never off the label, which is the reply's
+    // own text and may say anything, "current" included.
+    private static AgentProbeEntry AgentProbeEntryOf(JunctionProbeEntry entry, int index) =>
+        new(
+            entry.Label,
+            index == 0,
+            entry.LowerLowPass is { } low ? Edge(low) : null,
+            entry.UpperHighPass is { } high ? Edge(high) : null,
+            [
+                AgentCurveSampling.Frequency(entry.BandLowHz),
+                AgentCurveSampling.Frequency(entry.BandHighHz)
+            ],
+            entry.Unavailable,
+            entry.Sides.Select((reading, index) => new AgentProbeSide(
+                reading.Side,
+                AgentCurveSampling.Round(reading.LossDb, 2),
+                AgentCurveSampling.Round(reading.DipDb, 2),
+                AgentCurveSampling.Round(reading.RippleDb, 2),
+                index < entry.SharedBandSides.Count
+                    ? new AgentProbeBandReading(
+                        AgentCurveSampling.Round(entry.SharedBandSides[index].LossDb, 2),
+                        AgentCurveSampling.Round(entry.SharedBandSides[index].DipDb, 2),
+                        AgentCurveSampling.Round(entry.SharedBandSides[index].RippleDb, 2))
+                    : null,
+                entry.AfterDelay.FirstOrDefault(item => item.Side == reading.Side) is { } alignment
+                    ? new AgentProbeAfterDelay(
+                        AgentCurveSampling.Round(alignment.ExtraDelayMs, 3),
+                        alignment.InvertUpper,
+                        AgentCurveSampling.Round(alignment.LossDb, 2),
+                        AgentCurveSampling.Round(alignment.DipDb, 2))
+                    : null,
+                entry.Phase.FirstOrDefault(item => item.Side == reading.Side)?.Result is { } phase
+                    ? new AgentProbePhaseReading(
+                        AgentCurveSampling.Round(phase.PhaseAtCrossoverDeg, 1),
+                        AgentCurveSampling.Round(phase.PhaseConsistency, 2),
+                        AgentCurveSampling.Round(phase.CurrentScore, 2),
+                        AgentCurveSampling.Round(phase.BestScore, 2),
+                        AgentCurveSampling.Round(phase.BestExtraDelayMs, 3),
+                        phase.BestInvert,
+                        AgentCurveSampling.Round(phase.FitRmsDeg, 1))
+                    : null)).ToList());
+
+    private static AgentPackageEdge Edge(CrossoverEdge edge) =>
+        new(edge.Family.ToString(), AgentCurveSampling.Frequency(edge.FrequencyHz),
+            edge.SlopeDbPerOctave, edge.RippleDb);
+
+    /// <summary>
+    /// How a probe's own baseline entry — the tune as it stands — is labelled.
+    /// A reply's variant may carry the same word; what marks the baseline in
+    /// the document is its POSITION, not this text.
+    /// </summary>
+    internal const string AgentProbeCurrentLabel = "current";
+
+    // The settings a junction probe reads the junction under, the tune's own
+    // first. A variant's changes go onto COPIES of the two channels' settings —
+    // held to the same limits a settings operation is, through the validator's
+    // own path — and the chains come off those copies exactly as the panel
+    // builds its own. Nothing here touches a live setting.
+    private static (List<JunctionProbeVariant> Variants, string? Problem) BuildAgentProbeVariants(
+        ProbeOperation probe,
+        IReadOnlyList<JunctionTuneSide> sides,
+        AgentChannelSnapshot lower,
+        AgentChannelSnapshot upper,
+        AgentSessionSnapshot session)
+    {
+        var variants = new List<JunctionProbeVariant>
+        {
+            new(AgentProbeCurrentLabel,
+                sides.Select(side => new JunctionProbeChains(side.LowerChain, side.UpperChain)).ToList())
+        };
+        int index = 1;
+        foreach (AgentProbeVariant variant in probe.Variants ?? [])
+        {
+            VirtualCrossoverChannelSettings lowerCopy = AgentOperations.CloneEditable(lower.Settings);
+            VirtualCrossoverChannelSettings upperCopy = AgentOperations.CloneEditable(upper.Settings);
+            foreach (AgentProbeChange change in variant.Changes)
+            {
+                bool isLower = string.Equals(change.ChannelId, lower.Id, StringComparison.Ordinal);
+                if (!isLower && !string.Equals(change.ChannelId, upper.Id, StringComparison.Ordinal))
+                {
+                    return ([], $"'{change.ChannelId}' is not one of the junction's channels");
+                }
+
+                string? problem = AgentProposalValidator.ApplyProbeChange(
+                    change, session, isLower ? lowerCopy : upperCopy);
+                if (problem != null)
+                {
+                    return ([], problem.TrimEnd('.'));
+                }
+            }
+
+            // One side, and the snapshot's settings ARE that side's, so the
+            // copies' chains are the whole variant — nothing to merge.
+            var chains = new JunctionProbeChains(lowerCopy.ToChain(), upperCopy.ToChain());
+            variants.Add(new JunctionProbeVariant(
+                string.IsNullOrWhiteSpace(variant.Label) ? $"variant {index}" : variant.Label,
+                sides.Select(_ => chains).ToList()));
+            index++;
+        }
+
+        return (variants, null);
+    }
+
+    // Every measured channel's excess group delay as a diagnostic series — the
+    // menu item's own reading, computed the same way, for a probe that asked
+    // for it by name.
+    private async Task<IReadOnlyList<AgentDiagnosticSeries>> BuildAgentExcessGroupDelaySeriesAsync()
+    {
+        var measured = new List<(string Id, Complex[] Response, int PeakIndex, int SampleRate, MeasuredBand Band)>();
+        foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
+            in AgentChannelSlots())
+        {
+            VirtualCrossoverChannelState state = channel.SideState(rightSide);
+            if (state.TransferImpulseResponse is { } impulseResponse)
+            {
+                measured.Add((
+                    AgentChannelIds.Format(block, side), impulseResponse,
+                    state.TransferPeakIndex, state.SampleRate, state.MeasuredBand));
+            }
+        }
+        if (measured.Count == 0)
+        {
+            return [];
+        }
+
+        (double, double, double) gate =
+            (project.PhaseGateLeftMs, project.PhaseGatePlateauMs, project.PhaseGateRightMs);
+        return await Task.Run(() =>
+        {
+            var curves = new List<AgentDiagnosticChannel>(measured.Count);
+            foreach ((string id, Complex[] response, int peakIndex, int sampleRate, MeasuredBand band) in measured)
+            {
+                IReadOnlyList<SignalPoint>? curve = BuildExcessGroupDelayCurve(
+                    response, peakIndex, sampleRate, band, gate);
+                if (curve != null)
+                {
+                    curves.Add(new AgentDiagnosticChannel(id, curve));
+                }
+            }
+
+            return AgentDiagnosticBuilder.ExcessGroupDelaySeries(curves);
+        });
+    }
+
+    // Undo AI import puts back. The compute runs off the UI thread under a
+    // wait cursor, fingerprinted on both sides so an edit landing under it
+    // drops the result instead of being written over.
+    private async Task<bool> RunAgentTuneJunctionAsync(
+        TuneJunctionOperation operation, List<string> summary)
+    {
+        string? problem = AgentProposalValidator.ResolveJunction(
+            BuildAgentSessionSnapshot(), operation.JunctionId,
+            out AgentChannelSnapshot? lowerSnapshot, out AgentChannelSnapshot? upperSnapshot);
+        if (problem != null)
+        {
+            summary.Add($"Junction tune {operation.JunctionId}: skipped ({problem.TrimEnd('.')}).");
+            return false;
+        }
+
+        string label = $"Junction tune {lowerSnapshot!.Block}/{upperSnapshot!.Block}";
+        VirtualCrossoverChannel? lower = channels.FirstOrDefault(channel =>
+            string.Equals(channel.Name, lowerSnapshot.Block, StringComparison.Ordinal));
+        VirtualCrossoverChannel? upper = channels.FirstOrDefault(channel =>
+            string.Equals(channel.Name, upperSnapshot.Block, StringComparison.Ordinal));
+        if (lower == null || upper == null)
+        {
+            summary.Add($"{label}: skipped (the blocks changed while the import ran).");
+            return false;
+        }
+        if (GateIsMisplaced)
+        {
+            summary.Add($"{label}: skipped (the phase gate is misplaced).");
+            return false;
+        }
+
+        (List<JunctionTuneSide> sides, string? sideRefusal) = BuildJunctionTuneSides(lower, upper, null);
+        if (sideRefusal != null)
+        {
+            summary.Add($"{label}: skipped ({sideRefusal}).");
+            return false;
+        }
+
+        double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
+            lowerSnapshot.Settings, upperSnapshot.Settings);
+        (double defaultMinHz, double defaultMaxHz) = AgentProposalValidator.DefaultJunctionWindow(currentHz);
+        var families = new List<CrossoverFilterFamily>();
+        foreach (string name in operation.Families ?? [])
+        {
+            if (AgentOperations.TryParseName(name, out CrossoverFilterFamily family))
+            {
+                families.Add(family);
+            }
+        }
+        if (families.Count == 0)
+        {
+            families.AddRange(AgentProposalValidator.CurrentFamilies(
+                lowerSnapshot.Settings, upperSnapshot.Settings));
+        }
+        var options = new JunctionTuneOptions(
+            families,
+            operation.Slopes,
+            operation.MinHz ?? defaultMinHz,
+            operation.MaxHz ?? defaultMaxHz,
+            // One slope for both edges unless the reply frees them: a junction is
+            // one crossover, and the free search costs slopes² per corner.
+            operation.IndependentSlopes ?? false,
+            ProcessorSampleRateHz);
+
+        // The compute runs off the UI thread under a wait cursor, and the
+        // session is fingerprinted on both sides of it rather than the panel
+        // disabled around it: disabling and re-enabling a panel this size
+        // repaints every plot twice, which on a session with spatial averages
+        // costs seconds more than the tune itself. An edit that lands under the
+        // compute moves the fingerprint, and the result is then dropped rather
+        // than written against chains the tuner never saw.
+        string fingerprintBefore = ComputeAgentFingerprint();
+        JunctionTuneResult result;
+        UseWaitCursor = true;
+        try
+        {
+            result = await Task.Run(() => CrossoverJunctionTuner.Tune(sides, options));
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            summary.Add($"{label}: skipped ({exception.Message.TrimEnd('.')}).");
+            return false;
+        }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                UseWaitCursor = false;
+            }
+        }
+        if (IsDisposed)
+        {
+            return false;
+        }
+        if (!string.Equals(fingerprintBefore, ComputeAgentFingerprint(), StringComparison.Ordinal))
+        {
+            summary.Add($"{label}: skipped (the session changed while the tune ran; nothing was written).");
+            return false;
+        }
+
+        string before = JunctionText(result.Current, lower.Name, upper.Name);
+        string after = JunctionText(result.Best, lower.Name, upper.Name);
+        string window = $"{result.CandidatesEvaluated} candidates over {Hz(options.MinCrossoverHz)}–" +
+            $"{Hz(options.MaxCrossoverHz)}, ranked on {Hz(result.RankingBandLowHz)}–{Hz(result.RankingBandHighHz)}";
+        string scoreDelta = (result.Best.RankingScoreDb - result.Current.RankingScoreDb)
+            .ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + " dB on the score";
+        if (!result.Changed)
+        {
+            summary.Add(
+                $"{label}: kept — {before} stands; the best of {window} ({after}, {scoreDelta}) is not " +
+                $"{options.KeepMarginDb.ToString("0.00", CultureInfo.InvariantCulture)} dB better on the score" +
+                (result.Best.ScoreDb > result.Current.ScoreDb
+                    ? ", or reads worse on its own junction band."
+                    : "."));
+            AppendJunctionReadings(summary, result, best: false);
+            return false;
+        }
+
+        CrossoverEdge lowPass = result.Best.LowerLowPass!.Value;
+        CrossoverEdge highPass = result.Best.UpperHighPass!.Value;
+        foreach (bool rightSide in new[] { false, true })
+        {
+            if (!lower.Pair.Mono || !rightSide)
+            {
+                VirtualCrossoverChannelSettings settings = lower.SideSettings(rightSide);
+                settings.LowPassEdge = lowPass;
+                settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
+                    ? CrossoverKind.BandPass
+                    : CrossoverKind.LowPass;
+            }
+            if (!upper.Pair.Mono || !rightSide)
+            {
+                VirtualCrossoverChannelSettings settings = upper.SideSettings(rightSide);
+                settings.HighPassEdge = highPass;
+                settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
+                    ? CrossoverKind.BandPass
+                    : CrossoverKind.HighPass;
+            }
+        }
+        ApplySettingsToControl(lower);
+        ApplySettingsToControl(upper);
+        ScheduleSave();
+        RedrawAll();
+
+        summary.Add($"{label}: applied — {before} → {after} ({window}, {scoreDelta}).");
+        AppendJunctionReadings(summary, result, best: true);
+        return true;
+    }
+
+    // The readings per side on the junction's own octave-each-side band — the
+    // package's band, so they compare with what the assistant read: the current
+    // crossover's, and the applied one's where the tune changed something —
+    // loss, dip and ripple of the sum at the current delays, and what the best
+    // delay of the upper channel would leave.
+    private static void AppendJunctionReadings(List<string> summary, JunctionTuneResult result, bool best)
+    {
+        foreach (JunctionTuneReading current in result.Current.Sides)
+        {
+            JunctionTuneReading? tuned = best
+                ? result.Best.Sides.FirstOrDefault(side => side.Side == current.Side)
+                : null;
+            string Pair(double was, double now) => tuned == null
+                ? Db(was)
+                : $"{Db(was)} → {Db(now)}";
+            var line = new StringBuilder();
+            line.Append("  ").Append(current.Side).Append(": sum loss ")
+                .Append(Pair(current.LossDb, tuned?.LossDb ?? 0))
+                .Append(", dip ").Append(Pair(current.DipDb, tuned?.DipDb ?? 0))
+                .Append(", ripple ").Append(Pair(current.RippleDb, tuned?.RippleDb ?? 0));
+            JunctionTuneAlignment? alignment = (best ? result.BestAfterDelay : result.CurrentAfterDelay)
+                .FirstOrDefault(item => item.Side == current.Side);
+            if (alignment != null)
+            {
+                line.Append("; after the best delay ").Append(Db(alignment.LossDb))
+                    .Append(" at ").Append(alignment.ExtraDelayMs >= 0 ? "+" : string.Empty)
+                    .Append(alignment.ExtraDelayMs.ToString("0.00", CultureInfo.InvariantCulture))
+                    .Append(" ms on the upper block")
+                    .Append(alignment.InvertUpper ? ", inverted" : string.Empty);
+            }
+            summary.Add(line.Append('.').ToString());
+        }
+
+        static string Db(double value) =>
+            (value + 0).ToString("0.0", CultureInfo.InvariantCulture) + " dB";
+    }
+
+    private static string JunctionText(JunctionTuneCandidate candidate, string lowerBlock, string upperBlock) =>
+        $"{lowerBlock} {(candidate.LowerLowPass is { } low ? "LP " + AgentEdgeText(low) : "no low-pass")} + " +
+        $"{upperBlock} {(candidate.UpperHighPass is { } high ? "HP " + AgentEdgeText(high) : "no high-pass")}";
+
+    // The abbreviation the channel block's own family combo uses.
+    private static string AgentEdgeText(CrossoverEdge edge)
+    {
+        string family = edge.Family switch
+        {
+            CrossoverFilterFamily.LinkwitzRiley => "LR",
+            CrossoverFilterFamily.Butterworth => "BW",
+            CrossoverFilterFamily.Bessel => "Bessel",
+            _ => "Cheb"
+        };
+        return $"{family}{edge.SlopeDbPerOctave} {Hz(edge.FrequencyHz)}";
+    }
+
+    private static string Hz(double value) =>
+        value.ToString("0.###", CultureInfo.InvariantCulture) + " Hz";
 
     // Auto-tune without the wizard: the same handoff the PEQ menu would build
     // for the channel, the same curves and options the wizard would fit
@@ -1099,7 +1706,10 @@ public partial class VirtualCrossoverPanel
                     slot.Side,
                     slot.Channel.SideSettings(slot.RightSide),
                     slot.Channel.SideState(slot.RightSide).TransferImpulseResponse != null,
-                    AgentSpatialAverageCaptures(slot.Channel.SideState(slot.RightSide))))
+                    AgentSpatialAverageCaptures(slot.Channel.SideState(slot.RightSide)),
+                    slot.Channel.Pair.Zone,
+                    slot.Channel.Pair.Enabled,
+                    slot.Channel.Pair.Bypass))
                 .ToList(),
             ProcessorSampleRateHz,
             ProcessorProfile.MaxDelayMs,

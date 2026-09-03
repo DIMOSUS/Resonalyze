@@ -42,16 +42,12 @@ internal static class AgentDiagnosticBuilder
     };
 
     /// <summary>
-    /// The excess group delay of each measured channel on the package's
-    /// broadband grid: the group delay less its minimum-phase part — what the
-    /// magnitude dictates and a minimum-phase PEQ straightens along with it —
-    /// so what remains is what no PEQ can touch. <paramref name="packageId"/>
-    /// names the package the curves belong beside, when one was copied.
+    /// The excess group delay curves as series on the package's broadband grid,
+    /// a row left out where the reading could not be made. Shared with the probe
+    /// that asks for the same reading, so the two documents carry one shape.
     /// </summary>
-    public static AgentDiagnosticBuildResult BuildExcessGroupDelay(
-        IReadOnlyList<AgentDiagnosticChannel> channels,
-        string? packageId,
-        DateTimeOffset createdAtUtc)
+    public static IReadOnlyList<AgentDiagnosticSeries> ExcessGroupDelaySeries(
+        IReadOnlyList<AgentDiagnosticChannel> channels)
     {
         ArgumentNullException.ThrowIfNull(channels);
 
@@ -73,6 +69,24 @@ internal static class AgentDiagnosticBuilder
                 channel.Id, new AgentSeries(["frequencyHz", "excessGdMs"], rows)));
         }
 
+        return series;
+    }
+
+    /// <summary>
+    /// The excess group delay of each measured channel on the package's
+    /// broadband grid: the group delay less its minimum-phase part — what the
+    /// magnitude dictates and a minimum-phase PEQ straightens along with it —
+    /// so what remains is what no PEQ can touch. <paramref name="packageId"/>
+    /// names the package the curves belong beside, when one was copied.
+    /// </summary>
+    public static AgentDiagnosticBuildResult BuildExcessGroupDelay(
+        IReadOnlyList<AgentDiagnosticChannel> channels,
+        string? packageId,
+        DateTimeOffset createdAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+
+        IReadOnlyList<AgentDiagnosticSeries> series = ExcessGroupDelaySeries(channels);
         var diagnostic = new AgentDiagnostic(
             AgentProtocol.DiagnosticKind,
             AgentProtocol.Version,
@@ -88,7 +102,8 @@ internal static class AgentDiagnosticBuilder
                     "minimum-phase part the magnitude dictates (which a minimum-phase PEQ " +
                     "straightens along with the magnitude); what remains is arrivals and " +
                     "reflections, which no PEQ can touch — read off the raw impulse response " +
-                    "through the phase gate at the channel's own arrival, at the group-delay " +
+                    "through the phase gate at the channel's own arrival (the chain does not " +
+                    "enter it: the same with any PEQ bank in place or none), at the group-delay " +
                     "view's default 1/12-octave smoothing whatever the display shows; a row is " +
                     "absent where the response is too weak to read"
             },

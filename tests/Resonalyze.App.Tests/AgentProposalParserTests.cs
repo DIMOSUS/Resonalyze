@@ -166,6 +166,111 @@ public sealed class AgentProposalParserTests
             proposal.Operations.OfType<AgentChannelOperation>().Select(operation => operation.ChannelId));
     }
 
+    [Fact]
+    public void Parse_ReadsAProbe_WithItsVariantsStatedAsSettings()
+    {
+        const string json = """
+            { "kind": "resonalyze.agent-proposal", "protocolVersion": 1, "summary": "s",
+              "operations": [
+                { "id": "op-1", "op": "probe", "probe": "junction", "junctionId": "left:C-D",
+                  "variants": [
+                    { "label": "no bank on C", "changes": [ { "channelId": "C:left", "peq": { "preampDb": 0, "bands": [] } } ] },
+                    { "changes": [
+                        { "channelId": "C:left", "crossover": { "kind": "BandPass",
+                            "highPass": { "family": "LinkwitzRiley", "frequencyHz": 350, "slopeDbPerOctave": 36 },
+                            "lowPass": { "family": "Butterworth", "frequencyHz": 2400, "slopeDbPerOctave": 48 } } },
+                        { "channelId": "D:left", "gainDb": -1.5, "delayMs": 6.2, "invertPolarity": true } ] }
+                  ], "reason": "Which of these sums." },
+                { "id": "op-2", "op": "probe", "probe": "excessGroupDelay", "reason": "How much is not the PEQ's." },
+                { "id": "op-3", "op": "probe", "reason": "Read what?" },
+                { "id": "op-4", "op": "probe", "probe": "junction", "channelId": "C:left", "reason": "Not a channel op." }
+              ] }
+            """;
+
+        AgentProposalParseResult result = AgentProposalParser.Parse(Begin + json + End);
+
+        Assert.True(result.Succeeded, result.Error);
+        AgentProposal proposal = result.Proposal!;
+        Assert.Collection(proposal.Operations,
+            operation =>
+            {
+                var probe = Assert.IsType<ProbeOperation>(operation);
+                Assert.Equal("probe", probe.Op);
+                Assert.Equal("Probe", probe.Parameter);
+                Assert.Equal("junction", probe.Probe);
+                Assert.Equal("left:C-D", probe.JunctionId);
+                Assert.Equal(2, probe.Variants!.Count);
+                // An empty bank is the bank cleared — the diagnostic pass's
+                // question, asked without applying anything.
+                AgentProbeChange cleared = Assert.Single(probe.Variants[0].Changes);
+                Assert.Equal("C:left", cleared.ChannelId);
+                Assert.Empty(cleared.Peq!.Bands);
+                Assert.Null(cleared.GainDb);
+                // A variant may move two channels and any of the five parameters.
+                Assert.Null(probe.Variants[1].Label);
+                Assert.Equal(2, probe.Variants[1].Changes.Count);
+                Assert.Equal("BandPass", probe.Variants[1].Changes[0].Crossover!.Kind);
+                Assert.Equal(2400, probe.Variants[1].Changes[0].Crossover!.LowPass!.FrequencyHz);
+                Assert.Equal(-1.5, probe.Variants[1].Changes[1].GainDb);
+                Assert.Equal(6.2, probe.Variants[1].Changes[1].DelayMs);
+                Assert.True(probe.Variants[1].Changes[1].InvertPolarity);
+            },
+            operation =>
+            {
+                var probe = Assert.IsType<ProbeOperation>(operation);
+                Assert.Equal("excessGroupDelay", probe.Probe);
+                Assert.Null(probe.JunctionId);
+                Assert.Null(probe.Variants);
+            });
+        // What it reads is what the request cannot be understood without, and a
+        // probe is not addressed at a channel.
+        Assert.Equal(["op-3", "op-4"], proposal.Rejected.Select(rejected => rejected.Id));
+        Assert.Empty(proposal.Operations.OfType<AgentChannelOperation>());
+    }
+
+    [Fact]
+    public void Parse_ReadsAJunctionTune_WithOnlyWhatTheReplyStates()
+    {
+        const string json = """
+            { "kind": "resonalyze.agent-proposal", "protocolVersion": 1, "summary": "s",
+              "operations": [
+                { "id": "op-1", "op": "tuneJunction", "junctionId": "right:C-D", "reason": "The right C-D will not sum." },
+                { "id": "op-2", "op": "tuneJunction", "junctionId": "left:B-C", "minHz": 1400, "maxHz": 2800,
+                  "families": ["Butterworth"], "slopes": [36, 48], "independentSlopes": false, "reason": "Steeper." },
+                { "id": "op-3", "op": "tuneJunction", "reason": "Which one?" },
+                { "id": "op-4", "op": "tuneJunction", "junctionId": "left:B-C", "channelId": "B:left", "reason": "Not a channel op." }
+              ] }
+            """;
+
+        AgentProposal proposal = AgentProposalParser.Parse(Begin + json + End).Proposal!;
+
+        Assert.Collection(proposal.Operations,
+            operation =>
+            {
+                var tune = Assert.IsType<TuneJunctionOperation>(operation);
+                Assert.Equal("tuneJunction", tune.Op);
+                Assert.Equal("Junction tune", tune.Parameter);
+                Assert.Equal("right:C-D", tune.JunctionId);
+                Assert.Null(tune.MinHz);
+                Assert.Null(tune.Families);
+                Assert.Null(tune.Slopes);
+                Assert.Null(tune.IndependentSlopes);
+            },
+            operation =>
+            {
+                var tune = Assert.IsType<TuneJunctionOperation>(operation);
+                Assert.Equal(1400, tune.MinHz);
+                Assert.Equal(2800, tune.MaxHz);
+                Assert.Equal(["Butterworth"], tune.Families);
+                Assert.Equal([36, 48], tune.Slopes);
+                Assert.False(tune.IndependentSlopes);
+            });
+        // The junction is what the request cannot be understood without, and a
+        // channel id is a property the protocol does not give it.
+        Assert.Equal(["op-3", "op-4"], proposal.Rejected.Select(rejected => rejected.Id));
+        Assert.Empty(proposal.Operations.OfType<AgentChannelOperation>());
+    }
+
     [Theory]
     [InlineData("\"op\": \"runAutoCrossover\"", "\"op\": \"runAutoCrossover\", \"channelId\": \"B:left\"", "op-2")]
     [InlineData("\"op\": \"autoTunePeq\", \"channelId\": \"B:left\"", "\"op\": \"autoTunePeq\"", "op-4")]

@@ -297,7 +297,13 @@ public static class CrossoverAutoSetup
     private const double PostCheckMaxHalfWindowMs = 12.0;
     private const double PostCheckMissingJunctionPenaltyDb = 6.0;
 
-    private static double PostCheckHalfWindowMs(double junctionHz) =>
+    /// <summary>
+    /// Half the delay window (ms) the post-alignment check searches around a
+    /// junction's arrival difference: wider at low junctions, where the filter
+    /// group delay is larger, clamped to 2–12 ms. Shared with the junction
+    /// tuner's "after the best delay" reading.
+    /// </summary>
+    public static double PostCheckHalfWindowMs(double junctionHz) =>
         Math.Clamp(
             PostCheckWindowGroupDelayScaleHz / junctionHz,
             PostCheckMinHalfWindowMs,
@@ -332,10 +338,13 @@ public static class CrossoverAutoSetup
         return Math.Max(20, Math.Ceiling(frequencyHz / step) * step);
     }
 
-    // Every lattice frequency inside [low, high]; a window narrower than one
-    // lattice step collapses to its clamped, snapped midpoint so degenerate
-    // junction bounds still yield exactly one probe.
-    private static double[] LatticePoints(double low, double high)
+    /// <summary>
+    /// Every lattice frequency inside [low, high]; a window narrower than one
+    /// lattice step collapses to its clamped, snapped midpoint so degenerate
+    /// junction bounds still yield exactly one probe. Shared with the junction
+    /// tuner, so a corner it proposes is one the wizard could have.
+    /// </summary>
+    public static double[] LatticePoints(double low, double high)
     {
         var points = new List<double>();
         double f = RoundToLattice(low);

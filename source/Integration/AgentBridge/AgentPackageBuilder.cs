@@ -200,7 +200,10 @@ internal static class AgentPackageBuilder
                 family => family.ToString(),
                 family => CrossoverFilter.SupportedSlopes(family).ToArray()),
             [0, CrossoverFilter.MaximumChebyshevRippleDb],
-            AgentProtocol.Operations);
+            AgentProtocol.Operations,
+            AgentProtocol.Probes,
+            AgentProtocol.MaxProbeVariants,
+            AgentProtocol.MaxProbeChanges);
 
     private static AgentPackageAnalysis BuildAnalysis(
         AgentAnalysisInputs analysis,

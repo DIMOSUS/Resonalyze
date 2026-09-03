@@ -54,7 +54,13 @@ internal sealed record AgentPackageLimits(
     double[] CrossoverHz,
     IReadOnlyDictionary<string, int[]> Slopes,
     double[] ChebyshevRippleDb,
-    IReadOnlyList<string> Operations);
+    IReadOnlyList<string> Operations,
+    // What a `probe` operation may ask this build to read, and how much of it at
+    // once — a reply asking for a probe not on this list is refused as one
+    // asking for an operation the build does not run.
+    IReadOnlyList<string> Probes,
+    int ProbeVariants,
+    int ProbeChanges);
 
 internal sealed record AgentPackageAnalysis(
     string GroupView,

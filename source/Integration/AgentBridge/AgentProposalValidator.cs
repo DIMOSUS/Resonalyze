@@ -186,6 +186,7 @@ internal static class AgentProposalValidator
         RejectEngineRequestsOnAStaleSession(verdicts, stale);
         RejectRepeatedEngineRequests(verdicts);
         RejectDisagreeingTargetLevels(verdicts);
+        RejectJunctionTunesUnderTheWizard(verdicts);
         RejectOverwrittenSettings(verdicts, session);
 
         // Some warnings are about the channel as it would END UP, not about one
@@ -260,7 +261,11 @@ internal static class AgentProposalValidator
         for (int index = 0; index < verdicts.Count; index++)
         {
             AgentOperationVerdict verdict = verdicts[index];
-            if (verdict.Applicable && verdict.Operation is not AgentSettingsOperation)
+            // A probe stays: it writes nothing, and what it reads is the session
+            // as it is now — which is exactly what a reader of a stale package
+            // needs. Its result says whether the session still matches.
+            if (verdict.Applicable &&
+                verdict.Operation is not AgentSettingsOperation and not ProbeOperation)
             {
                 verdicts[index] = verdict with
                 {
@@ -319,7 +324,7 @@ internal static class AgentProposalValidator
                 continue;
             }
 
-            (string, string?) key = (verdict.Operation.Op, ChannelIdOf(verdict.Operation));
+            (string, string?) key = (verdict.Operation.Op, ScopeOf(verdict.Operation));
             if (first.TryGetValue(key, out string? owner))
             {
                 verdicts[index] = verdict with
@@ -362,6 +367,34 @@ internal static class AgentProposalValidator
                     Status = AgentVerdictStatus.Rejected,
                     Message = $"The target level is one datum for the whole project; " +
                         $"{stated.Id} already states {Db(stated.LevelDb)}."
+                };
+            }
+        }
+    }
+
+    // The crossover wizard rewrites every junction of the chain, so a junction
+    // tune beside it would tune a crossover the wizard is about to replace (the
+    // wizard runs first). The wizard keeps its row, as the engine that reaches
+    // further; the junction tune is refused naming it.
+    private static void RejectJunctionTunesUnderTheWizard(List<AgentOperationVerdict> verdicts)
+    {
+        AgentOperationVerdict? wizard = verdicts.FirstOrDefault(verdict =>
+            verdict.Applicable && verdict.Operation is RunAutoCrossoverOperation);
+        if (wizard == null)
+        {
+            return;
+        }
+
+        for (int index = 0; index < verdicts.Count; index++)
+        {
+            AgentOperationVerdict verdict = verdicts[index];
+            if (verdict.Applicable && verdict.Operation is TuneJunctionOperation)
+            {
+                verdicts[index] = verdict with
+                {
+                    Status = AgentVerdictStatus.Rejected,
+                    Message = $"Would be overwritten by {wizard.Parameter} ({wizard.Id}), which " +
+                        "rewrites every junction of the chain."
                 };
             }
         }
@@ -411,14 +444,32 @@ internal static class AgentProposalValidator
                 written is SetDelayOperation or SetPolarityOperation ||
                 (written is SetGainOperation && (delay.AdjustGains ?? session.AutoDelay.AdjustGains)),
             RunAutoCrossoverOperation => written is SetCrossoverOperation or SetGainOperation,
+            // The tune writes one crossover to both sides of the two blocks it
+            // names, so a hand-written crossover on either block, either side,
+            // is what it erases.
+            TuneJunctionOperation junction =>
+                written is SetCrossoverOperation &&
+                AgentJunctionIds.TryParse(junction.JunctionId, out _, out string lower, out string upper) &&
+                session.Find(written.ChannelId) is { } channel &&
+                (string.Equals(channel.Block, lower, StringComparison.Ordinal) ||
+                    string.Equals(channel.Block, upper, StringComparison.Ordinal)),
             AutoTunePeqOperation tune =>
                 written is ReplacePeqBankOperation &&
                 string.Equals(tune.ChannelId, written.ChannelId, StringComparison.Ordinal),
             _ => false
         };
 
-    private static string? ChannelIdOf(AgentOperation operation) =>
-        operation is AgentChannelOperation channel ? channel.ChannelId : null;
+    // What an engine request is scoped to, for the once-per-import rule: a
+    // channel for the per-channel engines, a junction for the junction tune and
+    // for a probe (which also counts per reading, since one junction can be
+    // asked two different questions), nothing for the whole-project ones.
+    private static string? ScopeOf(AgentOperation operation) => operation switch
+    {
+        AgentChannelOperation channel => channel.ChannelId,
+        TuneJunctionOperation junction => junction.JunctionId,
+        ProbeOperation probe => $"{probe.Probe}:{probe.JunctionId}",
+        _ => null
+    };
 
     private static void AddFinalStateNotes(List<AgentOperationVerdict> verdicts)
     {
@@ -593,7 +644,20 @@ internal static class AgentProposalValidator
     // A row that is not about one channel says which channels it is about rather
     // than leaving the column blank: the engines address the whole project.
     private static string LabelFor(AgentOperation operation, AgentChannelSnapshot? channel) =>
-        channel?.Label ?? (operation is AgentChannelOperation ? string.Empty : AllChannels);
+        channel?.Label ?? operation switch
+        {
+            AgentChannelOperation => string.Empty,
+            // The two blocks, both sides: one crossover is written to both.
+            TuneJunctionOperation junction =>
+                AgentJunctionIds.TryParse(junction.JunctionId, out _, out string lower, out string upper)
+                    ? $"{lower}/{upper}"
+                    : junction.JunctionId,
+            ProbeOperation { JunctionId: { } id } =>
+                AgentJunctionIds.TryParse(id, out _, out string lower, out string upper)
+                    ? $"{lower}/{upper}"
+                    : id,
+            _ => AllChannels
+        };
 
     /// <summary>
     /// An engine request judged on its INPUTS. There is no current value to
@@ -643,6 +707,20 @@ internal static class AgentProposalValidator
             "Auto-tune replaces this channel's whole PEQ bank (all-pass bands kept). It runs " +
             "without the EQ Wizard, on the curve the wizard would have opened on, and skips " +
             "itself when the target level sits too far from that curve."),
+        // The one row that is not a warning: a probe writes nothing at all.
+        ProbeOperation probe => (AgentVerdictStatus.Valid,
+            "Reads only — nothing in the tune is changed, and there is nothing to undo. " +
+            "The reading is computed on the tune as it stands" +
+            (probe.Probe == AgentProtocol.JunctionProbe
+                ? " (each variant is measured on a copy of the settings; the tune keeps its own)"
+                : string.Empty) +
+            ", copied to the clipboard, and the summary asks you to paste it into the same chat."),
+        TuneJunctionOperation => (AgentVerdictStatus.Warning,
+            "The junction tune rewrites the lower block's low-pass and the upper block's " +
+            "high-pass on both sides — corner, family and slopes — scored on the pair's sum " +
+            "at the current delays; gains, delays, polarity, PEQ and every other junction " +
+            "stay. It runs without a dialog and keeps the current crossover unless a " +
+            "candidate clearly beats it; its report goes into the import's summary."),
         _ => (AgentVerdictStatus.Valid, "OK")
     };
 
@@ -665,12 +743,355 @@ internal static class AgentProposalValidator
             case AutoTunePeqOperation tune:
                 return CheckAutoTune(tune, channel!, session);
 
+            case TuneJunctionOperation junction:
+                return CheckTuneJunction(junction, session);
+
+            case ProbeOperation probe:
+                return CheckProbe(probe, session);
+
             case UseSpatialAverageOperation spatial:
                 return CheckSpatialAverage(spatial, session);
 
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// The two channels a junction id names on the session, or why it names
+    /// none: the id must be the package's own shape, both blocks must be on
+    /// that side with a measurement, in the sum and not bypassed, in one group,
+    /// and neighbours along the spectrum that actually hand over to each other —
+    /// the same adjacency the panel's junction read-outs use.
+    /// </summary>
+    public static string? ResolveJunction(
+        AgentSessionSnapshot session, string junctionId,
+        out AgentChannelSnapshot? lower, out AgentChannelSnapshot? upper)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        lower = null;
+        upper = null;
+        if (!AgentJunctionIds.TryParse(junctionId, out AgentChannelSide side, out string lowerBlock, out string upperBlock))
+        {
+            return $"'{junctionId}' is not a junction id; the package names its junctions as " +
+                "side:lower-upper, for example left:B-C.";
+        }
+
+        AgentChannelSnapshot? lowerFound = session.Channels.FirstOrDefault(channel =>
+            channel.PlaysOn(side) && string.Equals(channel.Block, lowerBlock, StringComparison.Ordinal));
+        AgentChannelSnapshot? upperFound = session.Channels.FirstOrDefault(channel =>
+            channel.PlaysOn(side) && string.Equals(channel.Block, upperBlock, StringComparison.Ordinal));
+        if (lowerFound == null || upperFound == null)
+        {
+            return $"Unknown junction '{junctionId}'; the package names the junctions this session has.";
+        }
+        foreach (AgentChannelSnapshot channel in new[] { lowerFound, upperFound })
+        {
+            if (!channel.HasMeasurement)
+            {
+                return $"{channel.Label} has no measurement, so the junction cannot be read.";
+            }
+            if (!channel.Enabled || channel.Bypass)
+            {
+                return $"{channel.Label} is {(channel.Enabled ? "bypassed" : "disabled")}, so the " +
+                    "junction is not in the sum.";
+            }
+        }
+        if (VirtualCrossoverAlignmentStages.StageOf(lowerFound.Zone) !=
+            VirtualCrossoverAlignmentStages.StageOf(upperFound.Zone))
+        {
+            return $"{lowerFound.Label} and {upperFound.Label} are in different groups; no " +
+                "crossover hands over between them.";
+        }
+
+        // Neighbours along the spectrum among the side's summed channels of that
+        // group, and a real handover: both play inside the octave-each-way band
+        // around the pair's corner.
+        VirtualCrossoverAlignmentStage stage = VirtualCrossoverAlignmentStages.StageOf(lowerFound.Zone);
+        List<AgentChannelSnapshot> byBand = session.Channels
+            .Where(channel => channel.PlaysOn(side) && channel.HasMeasurement &&
+                channel.Enabled && !channel.Bypass &&
+                VirtualCrossoverAlignmentStages.StageOf(channel.Zone) == stage)
+            .OrderBy(channel => VirtualCrossoverJunctions.BandCenterHz(channel.Settings))
+            .ToList();
+        int lowerIndex = byBand.IndexOf(lowerFound);
+        int upperIndex = byBand.IndexOf(upperFound);
+        if (upperIndex != lowerIndex + 1)
+        {
+            return upperIndex < lowerIndex
+                ? $"{lowerFound.Label} plays above {upperFound.Label}; name the junction lower block first."
+                : $"{lowerFound.Label} and {upperFound.Label} are not neighbours along the spectrum.";
+        }
+
+        double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(lowerFound.Settings, upperFound.Settings);
+        (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
+        if (!PlaysWithin(lowerFound.Settings, bandLowHz, bandHighHz) ||
+            !PlaysWithin(upperFound.Settings, bandLowHz, bandHighHz))
+        {
+            return $"{lowerFound.Label} and {upperFound.Label} do not hand over to each other: " +
+                "one of them does not play within an octave of the pair's corner.";
+        }
+
+        lower = lowerFound;
+        upper = upperFound;
+        return null;
+    }
+
+    private static bool PlaysWithin(VirtualCrossoverChannelSettings settings, double lowHz, double highHz)
+    {
+        (double channelLow, double channelHigh) = VirtualCrossoverJunctions.GetChannelBand(settings);
+        return channelHigh > lowHz && channelLow < highHz;
+    }
+
+    /// <summary>
+    /// The corner window a junction tune searches when the reply states none:
+    /// half an octave each way, snapped to the wizard's lattice.
+    /// </summary>
+    public static (double MinHz, double MaxHz) DefaultJunctionWindow(double currentHz) =>
+        (Math.Max(EqAutoTuneHeadless.WindowMinHz, CrossoverAutoSetup.RoundToLattice(currentHz / Math.Sqrt(2))),
+            Math.Min(EqAutoTuneHeadless.WindowMaxHz, CrossoverAutoSetup.RoundToLattice(currentHz * Math.Sqrt(2))));
+
+    // A probe is held to what it can be computed from, and to nothing else: it
+    // writes nothing, so there is no value to protect — only a question that
+    // must be answerable. The settings a variant states are held to the very
+    // limits a settings operation is, since a variant that reads well is meant
+    // to become one.
+    private static string? CheckProbe(ProbeOperation probe, AgentSessionSnapshot session)
+    {
+        if (!AgentProtocol.Reads(probe.Probe))
+        {
+            return AgentProtocol.ProbeNotAvailable(probe.Probe);
+        }
+        if (probe.Probe == AgentProtocol.ExcessGroupDelayProbe)
+        {
+            return session.Channels.Any(channel => channel.HasMeasurement)
+                ? null
+                : "No channel in this session has a measurement to read.";
+        }
+
+        string? problem = ResolveJunction(
+            session, probe.JunctionId ?? string.Empty,
+            out AgentChannelSnapshot? lower, out AgentChannelSnapshot? upper);
+        if (problem != null)
+        {
+            return problem;
+        }
+        if (probe.Probe == AgentProtocol.JunctionDelayProbe)
+        {
+            return lower!.Settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass ||
+                upper!.Settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
+                ? null
+                : $"{lower.Label} and {upper!.Label} have no crossover between them, so there is " +
+                    "no junction band to search a delay in.";
+        }
+
+        IReadOnlyList<AgentProbeVariant> variants = probe.Variants ?? [];
+        if (variants.Count == 0)
+        {
+            return "A junction probe names no variant to read the junction under; the junction " +
+                "as it stands is read beside them and is not one of them.";
+        }
+        if (variants.Count > AgentProtocol.MaxProbeVariants)
+        {
+            return $"A probe reads at most {AgentProtocol.MaxProbeVariants} variants; this one " +
+                $"names {variants.Count}. Ask for the junction tune to search a window instead.";
+        }
+
+        foreach (AgentProbeVariant variant in variants)
+        {
+            if (variant.Changes.Count == 0)
+            {
+                return "A probe variant changes nothing, so it would read the same as the " +
+                    "junction as it stands.";
+            }
+            if (variant.Changes.Count > AgentProtocol.MaxProbeChanges)
+            {
+                return $"A probe variant changes at most {AgentProtocol.MaxProbeChanges} channels " +
+                    "— the two the junction is made of.";
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (AgentProbeChange change in variant.Changes)
+            {
+                AgentChannelSnapshot? channel =
+                    string.Equals(change.ChannelId, lower!.Id, StringComparison.Ordinal) ? lower
+                    : string.Equals(change.ChannelId, upper!.Id, StringComparison.Ordinal) ? upper
+                    : null;
+                if (channel == null)
+                {
+                    return $"'{change.ChannelId}' is not one of the junction's two channels " +
+                        $"({lower.Id} and {upper!.Id}); a probe reads the junction it names.";
+                }
+                if (!seen.Add(change.ChannelId))
+                {
+                    return $"A probe variant states {change.ChannelId} twice.";
+                }
+                if (change.StatesNothing)
+                {
+                    return $"A probe variant's change for {change.ChannelId} states no setting.";
+                }
+
+                problem = ApplyProbeChange(
+                    change, session, AgentOperations.CloneEditable(channel.Settings));
+                if (problem != null)
+                {
+                    return problem;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Applies one probe variant's change INTO <paramref name="copy"/> — which
+    /// must already be a copy of the channel's settings — holding every stated
+    /// value to the same limit a settings operation is held to: the probe reads
+    /// what a proposal could write, and nothing else. Returns the first problem,
+    /// or null with the copy carrying the variant.
+    /// </summary>
+    public static string? ApplyProbeChange(
+        AgentProbeChange change,
+        AgentSessionSnapshot session,
+        VirtualCrossoverChannelSettings copy)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(copy);
+
+        var notes = new List<string>();
+        foreach (AgentSettingsOperation operation in ProbeOperationsOf(change, copy))
+        {
+            string? problem = CheckValue(operation, session, copy, notes);
+            if (problem != null)
+            {
+                return $"{change.ChannelId}: {problem}";
+            }
+        }
+
+        return null;
+    }
+
+    // A change as the settings operations that would write it. The expected
+    // values are the copy's own — a probe writes nothing, so there is no tune to
+    // have moved under it, and the expected-value guard has nothing to guard.
+    private static IEnumerable<AgentSettingsOperation> ProbeOperationsOf(
+        AgentProbeChange change, VirtualCrossoverChannelSettings copy)
+    {
+        if (change.GainDb is { } gainDb)
+        {
+            yield return new SetGainOperation("probe", change.ChannelId, string.Empty, copy.GainDb, gainDb);
+        }
+        if (change.DelayMs is { } delayMs)
+        {
+            yield return new SetDelayOperation("probe", change.ChannelId, string.Empty, copy.DelayMs, delayMs);
+        }
+        if (change.InvertPolarity is { } inverted)
+        {
+            yield return new SetPolarityOperation(
+                "probe", change.ChannelId, string.Empty, copy.InvertPolarity, inverted);
+        }
+        if (change.Crossover is { } crossover)
+        {
+            yield return new SetCrossoverOperation(
+                "probe", change.ChannelId, string.Empty, crossover, crossover);
+        }
+        if (change.Peq is { } peq)
+        {
+            yield return new ReplacePeqBankOperation(
+                "probe", change.ChannelId, string.Empty, string.Empty, peq);
+        }
+    }
+
+    private static string? CheckTuneJunction(TuneJunctionOperation junction, AgentSessionSnapshot session)
+    {
+        string? problem = ResolveJunction(
+            session, junction.JunctionId, out AgentChannelSnapshot? lower, out AgentChannelSnapshot? upper);
+        if (problem != null)
+        {
+            return problem;
+        }
+
+        double nyquistHz = session.ProcessorSampleRateHz / 2.0;
+        problem = Edge(junction.MinHz, nyquistHz, "lower", "junction") ??
+            Edge(junction.MaxHz, nyquistHz, "upper", "junction");
+        if (problem != null)
+        {
+            return problem;
+        }
+
+        double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(lower!.Settings, upper!.Settings);
+        (double defaultMin, double defaultMax) = DefaultJunctionWindow(currentHz);
+        double minHz = junction.MinHz ?? defaultMin;
+        double maxHz = junction.MaxHz ?? defaultMax;
+        if (!(maxHz >= minHz))
+        {
+            return $"The junction's corner window would be {Hz(minHz)} to {Hz(maxHz)}: its lower " +
+                "edge must not sit above its upper edge.";
+        }
+
+        var families = new List<CrossoverFilterFamily>();
+        if (junction.Families != null)
+        {
+            foreach (string name in junction.Families)
+            {
+                if (!AgentOperations.TryParseName(name, out CrossoverFilterFamily family))
+                {
+                    return $"Unknown crossover family '{name}'; the package's limits.slopes names the families.";
+                }
+                families.Add(family);
+            }
+            if (families.Count == 0)
+            {
+                return "The junction's family list is empty.";
+            }
+        }
+        else
+        {
+            families.AddRange(CurrentFamilies(lower.Settings, upper.Settings));
+        }
+
+        if (junction.Slopes != null)
+        {
+            if (junction.Slopes.Count == 0)
+            {
+                return "The junction's slope list is empty.";
+            }
+            var offered = families.SelectMany(CrossoverFilter.SupportedSlopes).ToHashSet();
+            foreach (int slope in junction.Slopes)
+            {
+                if (!offered.Contains(slope))
+                {
+                    return $"No admitted family offers a {slope} dB/oct slope; the package's " +
+                        "limits.slopes lists the slopes per family.";
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // The families the junction's facing edges use today, the low-pass first;
+    // Linkwitz-Riley where neither edge exists yet.
+    public static IReadOnlyList<CrossoverFilterFamily> CurrentFamilies(
+        VirtualCrossoverChannelSettings lower, VirtualCrossoverChannelSettings upper)
+    {
+        var families = new List<CrossoverFilterFamily>();
+        if (lower.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass)
+        {
+            families.Add(lower.LowPassEdge.Family);
+        }
+        if (upper.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass &&
+            !families.Contains(upper.HighPassEdge.Family))
+        {
+            families.Add(upper.HighPassEdge.Family);
+        }
+        if (families.Count == 0)
+        {
+            families.Add(CrossoverFilterFamily.LinkwitzRiley);
+        }
+
+        return families;
     }
 
     private static string? CheckAutoTune(
@@ -769,14 +1190,14 @@ internal static class AgentProposalValidator
 
     // The From/To fields' own range, 20 Hz to 20 kHz, and the processor's Nyquist
     // where that is lower: what the review admits is what the run uses.
-    private static string? Edge(double? value, double nyquistHz, string name) =>
+    private static string? Edge(double? value, double nyquistHz, string name, string window = "auto-tune") =>
         value is not { } frequency ||
         (double.IsFinite(frequency) &&
             frequency >= EqAutoTuneHeadless.WindowMinHz &&
             frequency <= EqAutoTuneHeadless.WindowMaxHz &&
             frequency < nyquistHz)
             ? null
-            : $"The auto-tune window's {name} edge must sit between " +
+            : $"The {window} window's {name} edge must sit between " +
                 $"{Hz(EqAutoTuneHeadless.WindowMinHz)} and {Hz(EqAutoTuneHeadless.WindowMaxHz)}" +
                 (nyquistHz < EqAutoTuneHeadless.WindowMaxHz
                     ? $", below the processor's Nyquist of {Hz(nyquistHz)}."
@@ -795,10 +1216,34 @@ internal static class AgentProposalValidator
                 session.AutoDelay.RearFillOffsetMs),
             RunAutoCrossoverOperation => "the corners, slopes and gains as they stand",
             AutoTunePeqOperation => channel == null ? string.Empty : BankText(channel.Settings),
+            TuneJunctionOperation junction => JunctionStartText(junction.JunctionId, session),
+            // A probe changes nothing, so there is no "before" to set against an
+            // "after": the column says what it will read, once.
+            ProbeOperation probe => probe.JunctionId is { } id
+                ? JunctionStartText(id, session)
+                : "every measured channel",
             UseSpatialAverageOperation => SpatialAverageText(
                 session.SpatialAverageMode.ToString(), session.HybridTicked),
             _ => string.Empty
         };
+
+    // The junction's two facing edges as they stand — what a tune may replace,
+    // and what a probe reads beside its variants.
+    private static string JunctionStartText(string junctionId, AgentSessionSnapshot session)
+    {
+        if (ResolveJunction(session, junctionId, out AgentChannelSnapshot? lower, out AgentChannelSnapshot? upper) != null)
+        {
+            return string.Empty;
+        }
+
+        string lowPass = lower!.Settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
+            ? "LP " + Edge(lower.Settings.LowPassEdge)
+            : "no low-pass";
+        string highPass = upper!.Settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
+            ? "HP " + Edge(upper.Settings.HighPassEdge)
+            : "no high-pass";
+        return $"{lower.Block}: {lowPass}; {upper.Block}: {highPass}";
+    }
 
     private static string DescribeEngineRequest(
         AgentOperation operation, AgentSessionSnapshot session) => operation switch
@@ -811,9 +1256,83 @@ internal static class AgentProposalValidator
             delay.RearFillOffsetMs ?? session.AutoDelay.RearFillOffsetMs),
         RunAutoCrossoverOperation => "the wizard's corners, slopes and cut-only gains",
         AutoTunePeqOperation tune => AutoTuneText(tune),
+        TuneJunctionOperation junction => TuneJunctionText(junction),
+        ProbeOperation probe => ProbeText(probe),
         UseSpatialAverageOperation spatial => SpatialAverageText(spatial.Mode, spatial.Hybrid),
         _ => string.Empty
     };
+
+    // What the probe will read, in one phrase — the row's Proposed column, which
+    // for a probe is a question rather than a value.
+    private static string ProbeText(ProbeOperation probe) => probe.Probe switch
+    {
+        AgentProtocol.JunctionProbe =>
+            $"read this junction under {Count(probe.Variants?.Count ?? 0, "variant")} " +
+            $"({ProbeVariantText(probe)}) beside the settings it has now",
+        AgentProtocol.JunctionDelayProbe =>
+            "read what a delay search would find at this junction",
+        AgentProtocol.ExcessGroupDelayProbe =>
+            "read every measured channel's excess group delay",
+        _ => $"read '{probe.Probe}'"
+    };
+
+    // What the variants actually touch, so the row says what is being asked
+    // about rather than only how many questions there are.
+    private static string ProbeVariantText(ProbeOperation probe)
+    {
+        var parts = new List<string>();
+        IEnumerable<AgentProbeChange> changes =
+            (probe.Variants ?? []).SelectMany(variant => variant.Changes);
+        foreach (AgentProbeChange change in changes)
+        {
+            Add(change.Crossover != null, "crossover");
+            Add(change.Peq != null, "PEQ");
+            Add(change.GainDb != null, "gain");
+            Add(change.DelayMs != null, "delay");
+            Add(change.InvertPolarity != null, "polarity");
+        }
+
+        return parts.Count == 0 ? "nothing stated" : string.Join(", ", parts);
+
+        void Add(bool present, string name)
+        {
+            if (present && !parts.Contains(name))
+            {
+                parts.Add(name);
+            }
+        }
+    }
+
+    private static string Count(int count, string noun) =>
+        $"{count} {noun}{(count == 1 ? string.Empty : "s")}";
+
+    // Only what the reply states; an input it leaves out is the tuner's own.
+    private static string TuneJunctionText(TuneJunctionOperation junction)
+    {
+        var parts = new List<string>();
+        if (junction.MinHz != null || junction.MaxHz != null)
+        {
+            parts.Add(
+                (junction.MinHz is { } low ? Hz(low) : "half an octave below") + " to " +
+                (junction.MaxHz is { } high ? Hz(high) : "half an octave above"));
+        }
+        if (junction.Families is { Count: > 0 } families)
+        {
+            parts.Add(string.Join("/", families));
+        }
+        if (junction.Slopes is { Count: > 0 } slopes)
+        {
+            parts.Add(string.Join("/", slopes.Select(slope => slope.ToString(CultureInfo.InvariantCulture))) + " dB/oct");
+        }
+        if (junction.IndependentSlopes is { } independent)
+        {
+            parts.Add(independent ? "slopes free per edge" : "one slope for both edges");
+        }
+
+        return parts.Count == 0
+            ? "tune the junction with the tuner's own settings"
+            : "tune the junction: " + string.Join(", ", parts);
+    }
 
     // The near-side cut only where the gain balance is on: with it off the field
     // is an input to nothing, and printing it would read as a change.

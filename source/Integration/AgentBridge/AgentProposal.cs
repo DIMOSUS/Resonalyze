@@ -153,6 +153,88 @@ internal sealed record RunAutoCrossoverOperation(string Id, string Reason)
 }
 
 /// <summary>
+/// Read something and change NOTHING: the reply asks a question about the tune
+/// as it stands — what a set of crossovers would do at one junction, what
+/// clearing or replacing a PEQ bank would do there, what a delay search would
+/// find, the excess group delay of every channel — and the panel computes it,
+/// puts the answer on the clipboard and asks the user to paste it back. The
+/// tune is not touched, so there is nothing to undo and nothing to be careful
+/// about: a probe is the cheap way to ask before proposing.
+/// </summary>
+/// <param name="Probe">Which reading: one of <see cref="AgentProtocol.Probes"/>.</param>
+/// <param name="JunctionId">
+/// The junction the reading is about, as the package prints it
+/// (<c>left:C-D</c>); null for a probe that reads every channel.
+/// </param>
+/// <param name="Variants">
+/// For the <c>junction</c> probe: the settings to read the junction under,
+/// beside the ones it has now. Each variant is a set of changes to the
+/// junction's own channels, stated exactly as the settings operations state
+/// them — so a variant that reads well converts to a proposal word for word.
+/// </param>
+internal sealed record ProbeOperation(
+    string Id,
+    string Reason,
+    string Probe,
+    string? JunctionId,
+    IReadOnlyList<AgentProbeVariant>? Variants) : AgentOperation(Id, Reason)
+{
+    public override string Op => AgentProtocol.Probe;
+
+    public override string Parameter => "Probe";
+}
+
+/// <param name="Label">What the reply calls this variant; the result echoes it back.</param>
+internal sealed record AgentProbeVariant(string? Label, IReadOnlyList<AgentProbeChange> Changes);
+
+/// <summary>
+/// One channel read as if it held these settings. Every field is optional and
+/// the ones left out keep what the channel has: a variant that states only a
+/// crossover is asking about that crossover with everything else in place. An
+/// empty <see cref="Peq"/> bank (no bands, no preamp) is the bank cleared,
+/// which is how a reply asks the diagnostic pass's question without the user
+/// applying and undoing anything.
+/// </summary>
+internal sealed record AgentProbeChange(
+    string ChannelId,
+    double? GainDb,
+    double? DelayMs,
+    bool? InvertPolarity,
+    AgentCrossover? Crossover,
+    AgentPeqBank? Peq)
+{
+    public bool StatesNothing =>
+        GainDb == null && DelayMs == null && InvertPolarity == null &&
+        Crossover == null && Peq == null;
+}
+
+/// <summary>
+/// Tune ONE junction of the tune without its wizard: search the lower
+/// channel's low-pass and the upper channel's high-pass — corner, family,
+/// slopes — scored on the pair's coherent sum at the current delays and
+/// polarity, on every side the pair is measured on, and write one crossover to
+/// both sides. Gains, delays, polarity, PEQ and every other junction stay. The
+/// junction is named by the package's own id for it (<c>left:C-D</c>); a
+/// missing input means the tuner's own answer: the corner window half an
+/// octave each way from the current corner, the families the junction uses
+/// today, every practical slope, one slope for both edges.
+/// </summary>
+internal sealed record TuneJunctionOperation(
+    string Id,
+    string Reason,
+    string JunctionId,
+    double? MinHz,
+    double? MaxHz,
+    IReadOnlyList<string>? Families,
+    IReadOnlyList<int>? Slopes,
+    bool? IndependentSlopes) : AgentOperation(Id, Reason)
+{
+    public override string Op => AgentProtocol.TuneJunction;
+
+    public override string Parameter => "Junction tune";
+}
+
+/// <summary>
 /// Fit a PEQ bank to the target on one channel. A missing input means the
 /// wizard's own answer for it.
 /// </summary>

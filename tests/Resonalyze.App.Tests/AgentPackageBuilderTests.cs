@@ -375,7 +375,16 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(AgentProtocol.Operations, operations);
         Assert.Contains("useSpatialAverage", operations);
         Assert.Contains("runAutoCrossover", operations);
+        Assert.Contains("tuneJunction", operations);
         Assert.Contains("runAutoDelay", operations);
+        // A probe is an operation like any other, and what it may read is
+        // published beside the list, so a reply asks for one this build has.
+        Assert.Contains("probe", operations);
+        Assert.Equal(
+            AgentProtocol.Probes,
+            limits.GetProperty("probes").EnumerateArray().Select(probe => probe.GetString()!).ToArray());
+        Assert.Equal(AgentProtocol.MaxProbeVariants, limits.GetProperty("probeVariants").GetInt32());
+        Assert.Equal(AgentProtocol.MaxProbeChanges, limits.GetProperty("probeChanges").GetInt32());
         Assert.Contains("autoTunePeq", operations);
     }
 

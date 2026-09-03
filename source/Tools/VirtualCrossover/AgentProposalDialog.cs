@@ -13,6 +13,15 @@ namespace Resonalyze;
 internal sealed partial class AgentProposalDialog : Form
 {
     private static readonly Color RejectedText = Color.FromArgb(140, 146, 158);
+
+    /// <summary>
+    /// What stands where the reply's own prose would have been. The fields are
+    /// wanted and not required — a reply that leaves them out is still read —
+    /// so the review has to say the words are missing rather than show a blank
+    /// that reads like there was nothing to say.
+    /// </summary>
+    private const string NoSummaryText = "(the reply gave no summary)";
+    private const string NoReasonText = "(no reason given)";
     private static readonly Color WarningText = Color.FromArgb(230, 184, 0);
 
     private readonly AgentProposalReview review;
@@ -24,7 +33,7 @@ internal sealed partial class AgentProposalDialog : Form
         this.review = review;
 
         StyleGrid();
-        labelSummary.Text = review.Proposal.Summary;
+        labelSummary.Text = review.Proposal.Summary ?? NoSummaryText;
         labelWarnings.Text = review.Warnings.Count > 0
             ? string.Join(Environment.NewLine, review.Warnings)
             : string.Empty;
@@ -38,7 +47,11 @@ internal sealed partial class AgentProposalDialog : Form
                 verdict.Current,
                 verdict.Proposed,
                 StatusWord(verdict.Status),
-                verdict.Reason);
+                // A row the assistant explained shows its sentence; one it did
+                // not is marked, so the blank cannot be read as "no reason to
+                // give". A row the parser refused carries an empty reason and
+                // is left blank: its message IS the explanation.
+                verdict.Reason ?? NoReasonText);
             DataGridViewRow row = gridView.Rows[index];
             row.Tag = verdict;
             if (!verdict.Applicable)
@@ -134,9 +147,13 @@ internal sealed partial class AgentProposalDialog : Form
             {
                 lines.Add("Proposed: " + verdict.Proposed);
             }
-            if (verdict.Reason.Length > 0)
+            if (verdict.Reason is { Length: > 0 })
             {
                 lines.Add("Reason: " + verdict.Reason);
+            }
+            else if (verdict.Reason == null)
+            {
+                lines.Add("Reason: " + NoReasonText);
             }
         }
 

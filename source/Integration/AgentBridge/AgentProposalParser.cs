@@ -76,10 +76,6 @@ internal static class AgentProposalParser
                 $"The proposal uses protocol version {wire.ProtocolVersion}; this build " +
                 $"reads version {AgentProtocol.Version}.");
         }
-        if (string.IsNullOrWhiteSpace(wire.Summary))
-        {
-            return AgentProposalParseResult.Fail("The proposal has no summary.");
-        }
         // `required` only requires the member to be PRESENT; a JSON null passes it.
         if (wire.Operations == null)
         {
@@ -151,7 +147,7 @@ internal static class AgentProposalParser
 
         return AgentProposalParseResult.Success(new AgentProposal(
             string.IsNullOrWhiteSpace(wire.PackageId) ? null : wire.PackageId,
-            wire.Summary,
+            string.IsNullOrWhiteSpace(wire.Summary) ? null : wire.Summary,
             advice,
             sources,
             operations,
@@ -402,9 +398,9 @@ internal static class AgentProposalParser
         {
             return "The channel id is missing or too long.";
         }
-        if (operation.Reason == null || !WithinLength(operation.Reason))
+        if (!WithinLength(operation.Reason))
         {
-            return "The reason is missing or too long.";
+            return "The reason is too long.";
         }
 
         return operation switch
@@ -618,7 +614,12 @@ internal static class AgentProposalParser
         public required string Kind { get; init; }
         public required int ProtocolVersion { get; init; }
         public string? PackageId { get; init; }
-        public required string Summary { get; init; }
+        // Wanted, not required. An assistant that leaves the prose out has still
+        // said what it wants done in the operations, and refusing the whole
+        // reply over a missing sentence costs the user a round trip through the
+        // chat to get back a sentence they were about to read anyway. The
+        // review says the reply gave none.
+        public string? Summary { get; init; }
         public List<string>? Advice { get; init; }
         public List<SourceWire>? Sources { get; init; }
         public required List<JsonElement> Operations { get; init; }
@@ -636,7 +637,8 @@ internal static class AgentProposalParser
     {
         public required string Op { get; init; }
         public required string Id { get; init; }
-        public required string Reason { get; init; }
+        /// <summary>Wanted, not required — see <c>ProposalWire.Summary</c>.</summary>
+        public string? Reason { get; init; }
         public JsonElement? Extensions { get; init; }
     }
 

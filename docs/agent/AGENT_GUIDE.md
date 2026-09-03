@@ -344,7 +344,10 @@ changes or an engine to request, end with exactly one JSON object whose
   requests refused and its settings rows offered unticked — ask for a new
   package when the user reports that.
 - One operation per channel and parameter, each with a `reason` in a sentence
-  or two: the user reads it in the review.
+  or two, and a `summary` over the whole reply: the user reads them in the
+  review, beside the values, to decide. Neither is required — a row that
+  forgets one is still offered, marked "(no reason given)" — so write them
+  because the user is about to act on them, not because the importer insists.
 - Use only what `limits.operations` names; everything else goes in `advice`.
 - A reply with no block is a normal reply. One that only advises, or only asks,
   is often the right one.

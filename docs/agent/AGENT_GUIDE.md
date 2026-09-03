@@ -174,9 +174,11 @@ what the driver can survive there, which the measurement cannot tell you:
   passband, is what destroys small drivers, and a sweep run at a polite level
   proves nothing about the level the user listens at.
 - So a high-pass is judged on Xmax and rated power, not on Fs, cone size or
-  where the measured band happens to reach. A 4-inch door midrange asked for
-  real output below roughly 150–200 Hz runs out of excursion long before it
-  runs out of bandwidth, whatever its response shows.
+  where the measured band happens to reach. Many ordinary 4-inch door
+  midranges become excursion-limited when asked for high output around
+  150–200 Hz and below — which is a reason to CHECK one, never a corner to
+  propose from its size: verify Xmax, power, enclosure and the level the user
+  actually listens at.
 - **If the system has a driver whose job that band is — an underseat woofer, a
   midbass, a subwoofer — hand the band to it.** The small driver's corner
   belongs where the bigger one can take over cleanly, not as low as the small
@@ -275,23 +277,31 @@ every input and what each refuses):
 | --- | --- |
 | `runAutoDelay` | Delays and polarities per junction and across the sides. `adjustGains` is a cut-only STARTING balance — on a tuned system the L/R difference and the tweeter level are the user's decisions about the stage, so ask for it only on a fresh tune or by request. |
 | `runAutoCrossover` | The wizard, for a tune with NO crossovers yet or one to rebuild. Magnitude only, ideal alignment assumed, anchored on 24 dB/oct, and it writes a cut-only gain with every corner — on a finished tune that undoes slopes, phase and gains the user chose. It does not know any driver's limits: check every corner it proposes against them. |
-| `tuneJunction` | The crossover engine for a finished tune: ONE junction, both facing edges, scored on the pair's coherent sum at the current delays, everything else kept. Name steeper slopes in `slopes` when a ragged junction phase over a wide overlap is the problem. Its report says what the best delay would still take back — when that is far below the current loss, ask for `runAutoDelay` in the same reply. |
+| `tuneJunction` | The crossover engine for a finished tune: ONE junction, both facing edges, scored on the pair's coherent sum at the current delays, everything else kept. Name steeper slopes in `slopes` when a ragged junction phase over a wide overlap is the problem. Its report also says what the best delay would still take back: when that is far below the loss at the current timing, the junction wants realigning — ask for `runAutoDelay` in the NEXT reply, once the user has copied a package and you have read what the tune actually did. (An import can run both; the reason to separate them is that you cannot judge the second while the first is unread.) |
 | `autoTunePeq` | Fits a bank to the target over a channel's band, optionally on the spatial average. `targetLevelDb` moves the project's datum, so every request in a reply must state the same one. |
 | `useSpatialAverage` | The capture family and the Hybrid tick together. |
 
 Three rules: never send an engine beside a hand-written value that engine
 writes (the review rejects the hand-written row); never send the wizard and a
-junction tune together; and request each engine once — `autoTunePeq` per
-channel, `tuneJunction` and `probe` per junction. Ask for a new package
-afterwards to read the result.
+junction tune together; and request each engine that CHANGES something once per
+scope — `runAutoDelay` and `runAutoCrossover` per import, `autoTunePeq` per
+channel, `tuneJunction` per junction. Probes are not in that rule: they write
+nothing, so ask as many as the question needs, on the same junction or not,
+within `limits.probeVariantsPerImport` variants in the reply altogether. Ask
+for a new package after anything that changed something, to read the result.
 
 **On a tune that already works**, the user's tune is the baseline and every
 step is judged against it, not against the step before. Before asking for an
-engine, say in dB what it would win and what it puts at risk: a junction whose
-Sum loss is within about 3 dB with `currentScore` near `bestScore` is a working
-junction, and moving a corner or re-splitting a chain is a structural change
-the whole tune was built around. One engine per reply; a step that reads worse
-than the baseline is undone before the next one. One metric never leads — a
+engine, quantify the PROBLEM and what is available in dB wherever the data
+supports it — the junction's Sum loss and dip, how far `currentScore` sits
+below `bestScore`, what a probe measured — and say what the change puts at
+risk. Never invent a predicted gain: what a crossover search will find is what
+the search is for, and a number you made up is the one thing worse than no
+number. Where you want one before committing, a probe gives you a measured one.
+A junction whose Sum loss is within about 3 dB with `currentScore` near
+`bestScore` is a working junction, and moving a corner or re-splitting a chain
+is a structural change the whole tune was built around. One engine per reply; a
+step that reads worse than the baseline is undone before the next one. One metric never leads — a
 `fitRmsDeg` that improved while Sum loss got worse is a worse junction. Budget
 the experiments: two or three passes, then a conclusion. And when the tune has
 reached its targets, say so: "this is where it should be; what remains is not a

@@ -573,8 +573,10 @@ The current crossover keeps its place unless a candidate beats it by 0.5 dB
 on the shared-band score and reads no worse on its own band, and the summary
 says either way: the two edges before and after, per side the own-band loss,
 dip and ripple before and after, and what the best delay of the upper block
-would leave — the reading that says whether `runAutoDelay` should follow,
-which the same import may ask for.
+would leave — the reading that says whether `runAutoDelay` should follow. One
+import may carry both (they run in that order), though the guide asks for the
+realignment in the reply AFTER the tune has been read, since the second cannot
+be judged while the first is unread.
 
 An import runs what it was given in one fixed order, whatever order the reply
 listed: the probes first (they read the tune as it stands), then the five

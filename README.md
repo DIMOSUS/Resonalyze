@@ -97,6 +97,20 @@ clipboard is the whole transport, and the tune stays yours until you tick a box.
   −2.3&nbsp;dB.
 </p>
 
+<p align="center">
+  <img src="assets/images/ai_assistant.png" alt="Import AI proposal: three read-only probes from a chat assistant, reviewed before anything runs">
+</p>
+
+<p align="center">
+  <strong>A chat assistant that can measure.</strong> The reply to a pasted
+  package arrives as typed rows you tick, not as settings written behind your
+  back. Here it asks nothing to be changed at all: three <strong>probes</strong>
+  — twelve crossover candidates on the right C–D junction, the same twelve on the
+  already-good left one, and every channel's excess group delay — each measured
+  on a copy of the chain and handed back through the clipboard, with the tune
+  untouched and nothing to undo.
+</p>
+
 <table>
   <tr>
     <td width="50%">

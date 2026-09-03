@@ -30,6 +30,11 @@
          persists what it touches on close. Beside the executable this marker makes
          ApplicationDataPaths put the settings, history and overlays in the output
          folder instead of the developer's %LocalAppData%\Resonalyze. -->
+    <!-- The reply the AI-review figure is taken for: a real one, kept beside the
+         tool so the figure can be re-taken and the example can be edited. -->
+    <None Update="ai-proposal.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="portable.flag">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

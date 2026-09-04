@@ -131,6 +131,71 @@ public sealed class DspProcessorDialogTests
             .GetField("textBoxNotes", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(dialog)!;
 
+    [Fact]
+    public void NamingAnotherModel_LetsTheCatalogAnswerThePhaseQuestionAgain()
+    {
+        StaTest.Run(() =>
+        {
+            // The stored "yes" belongs to the device it was given for. Carried over
+            // to a model not known to have the control it would keep the project's
+            // phase rotations alive on hardware that cannot dial one — the project
+            // only clears them when this answer says the control is gone.
+            using Form dialog = Open(followsMeasurements: false, phaseControl: true);
+            Assert.True(PhaseControl(dialog));
+
+            SelectModel(dialog, DspProcessorCatalog.Preset("amp-panacea-v1-v2")!);
+
+            Assert.False(PhaseControl(dialog));
+
+            // And back the other way: a device that HAS one offers it again.
+            SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
+
+            Assert.True(PhaseControl(dialog));
+        });
+    }
+
+    [Fact]
+    public void TheStoredPhaseAnswer_SurvivesWhileTheModelDoes()
+    {
+        StaTest.Run(() =>
+        {
+            // Nothing renamed the device, so nothing re-opens the question: a user
+            // who turned the row off keeps it off, and one who turned it on for a
+            // Custom profile the catalog does not carry keeps it on.
+            using Form dialog = Open(followsMeasurements: false, phaseControl: true);
+            SelectRate(dialog, 96_000);
+
+            Assert.True(PhaseControl(dialog));
+
+            using Form off = Open(followsMeasurements: false, phaseControl: false);
+
+            Assert.False(PhaseControl(off));
+        });
+    }
+
+    [Fact]
+    public void APhaseAnswerGivenForThisModel_IsNotUndoneByLookingAtTheFields()
+    {
+        StaTest.Run(() =>
+        {
+            using Form dialog = Open(followsMeasurements: false, phaseControl: null);
+            SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
+            Assert.True(PhaseControl(dialog));
+
+            SetPhaseControl(dialog, false);
+            SelectRate(dialog, 96_000);
+
+            Assert.False(PhaseControl(dialog));
+        });
+    }
+
+    private static bool PhaseControl(Form dialog) => (bool)Property(dialog, "PhaseControl")!;
+
+    private static void SetPhaseControl(Form dialog, bool value) =>
+        ((CheckBox)dialog.GetType()
+            .GetField("checkBoxPhaseControl", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(dialog)!).Checked = value;
+
     private static Form Open(
         bool followsMeasurements,
         int measurementRateHz = MeasurementRate,

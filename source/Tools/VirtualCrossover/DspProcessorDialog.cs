@@ -34,9 +34,11 @@ internal sealed partial class DspProcessorDialog : Form
     private int customSampleRateHz;
     private PeqQConvention customQConvention;
     private bool customFollowsMeasurements;
+    private bool customPhaseControl;
     private bool suppressEvents;
-    // True once the user has answered the phase question themselves, after which the
-    // model list stops answering it for them.
+    // True while the answer on screen is one somebody gave for the device on screen —
+    // the project's stored one when the dialog opens, or the user's own tick. Naming
+    // another model clears it, because that answer was about another device.
     private bool phaseControlChosen;
 
     /// <param name="profile">The project's current processor.</param>
@@ -72,6 +74,7 @@ internal sealed partial class DspProcessorDialog : Form
         // answers it below; one that HAS been asked keeps its answer, including a
         // deliberate "no" on a device that offers the control.
         phaseControlChosen = phaseControl.HasValue;
+        customPhaseControl = phaseControl ?? false;
 
         AcceptButton = buttonOk;
         CancelButton = buttonCancel;
@@ -103,6 +106,13 @@ internal sealed partial class DspProcessorDialog : Form
             if (!suppressEvents)
             {
                 phaseControlChosen = true;
+                // Kept the way the rate and the convention are kept: a user who ticks
+                // it for a device the catalog does not list, looks at a preset and
+                // comes back to Custom finds their own answer again.
+                if (SelectedPreset == null)
+                {
+                    customPhaseControl = checkBoxPhaseControl.Checked;
+                }
             }
 
             UpdateStatus();
@@ -255,6 +265,14 @@ internal sealed partial class DspProcessorDialog : Form
             return;
         }
 
+        // Whatever answer stood, it was about the device that was selected a moment
+        // ago. Naming another one is new information about a different device, so the
+        // catalog proposes again — without this a project moved off a HELIX kept a
+        // control the new model is not known to have, and (since the project's stored
+        // answer outranks the catalog) kept every phase rotation with it, on a device
+        // that cannot dial one. The user can tick it back in the same breath; what
+        // they cannot do is carry the old device's answer over by not looking.
+        phaseControlChosen = false;
         ApplySelectedModel();
     }
 
@@ -284,13 +302,13 @@ internal sealed partial class DspProcessorDialog : Form
                 comboBoxQConvention.SelectedItem = preset.QConvention;
             }
 
-            // Proposed from the catalog while the user has not answered it: picking
-            // a HELIX offers the control, picking a device without one takes the
-            // offer back. Their own tick survives every later model change, because
-            // it is the one answer the catalog cannot make for them.
+            // Proposed from the catalog for the model on screen: picking a HELIX
+            // offers the control, picking a device not known to have one takes the
+            // offer back, and Custom answers with whatever the user last said for
+            // Custom. Only an answer given for THIS model stands in the way.
             if (!phaseControlChosen)
             {
-                checkBoxPhaseControl.Checked = preset?.PhaseControl ?? false;
+                checkBoxPhaseControl.Checked = preset?.PhaseControl ?? customPhaseControl;
             }
         }
         finally

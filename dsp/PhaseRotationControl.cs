@@ -88,10 +88,24 @@ public static class PhaseRotationControl
     public const int StepCount = 64;
 
     /// <summary>
-    /// The grid the control steps on: 360/64 = 5.625°. Audiotec-Fischer document it;
-    /// the measurement confirms it where nothing is capped (one step read -5.54°
-    /// against a nominal 5.625 at a 500 Hz reference, two steps -11.29 against 11.25).
+    /// The grid the control steps on: 360/64 = 5.625°.
     /// </summary>
+    /// <remarks>
+    /// Audiotec-Fischer's knowledge base states it for the control, and the
+    /// measurement confirms it where nothing is capped: one step read -5.54° against
+    /// a nominal 5.625 at a 500 Hz reference, two steps -11.29 against 11.25.
+    /// <para>
+    /// What that bench block was, though, is a channel defined as a SUBWOOFER — the
+    /// whole phase series ran on one — and the mid/high block beside it only ever
+    /// captured the 180° setting, which sits on a 5.625° grid and an 11.25° one
+    /// alike. Older generations of the tool are reported to step mid and high
+    /// channels by 11.25° while stepping a subwoofer by 5.625°, and nothing here has
+    /// checked that. So this constant is measured for a subwoofer channel and
+    /// assumed for the others; a device or a channel type that steps more coarsely
+    /// would need the grid to become a property of one, the way the crossover slopes
+    /// a device offers are not a property of one either.
+    /// </para>
+    /// </remarks>
     public const double StepDegrees = 360.0 / StepCount;
 
     /// <summary>

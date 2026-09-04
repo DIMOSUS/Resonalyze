@@ -1899,8 +1899,13 @@ Each channel runs through:
   processing rate, so at a crossover above about 1 kHz the smallest settings
   collapse onto one filter — the read-out turns amber there and states the angle
   the device really delivers. The behaviour is modelled from a bench measurement
-  of a HELIX DSP ULTRA S; the ceiling was measured at 96 kHz only, and reads as
-  rate-relative here
+  of a HELIX DSP ULTRA S. Two of its numbers are narrower than they look: the
+  ceiling was measured at 96 kHz only and reads as rate-relative here, and the
+  5.625° step was measured on a channel defined as a **subwoofer** — older
+  generations of the maker's tool are reported to step a mid or high channel by
+  11.25°, which nothing here has checked. Neither the availability of the control
+  per channel type nor its step size is enforced against the device, the same way
+  the crossover slope list and the manual delay range are not
 - **PEQ** — the channel's whole filter bank, bells and shelves and **all-pass
   bands (AP1 / AP2)** alike. An all-pass moves phase only, which makes it the
   tool for lining drivers up where a delay and a polarity flip are both too

@@ -2500,9 +2500,11 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </para>
     /// <para>
     /// Resolved over the set the wizard will DRAW — the edited channel plus the shown
-    /// neighbours — so a hidden driver cannot move the windows of the visible ones.
-    /// Null when the render is stale or the channel is not in it: a placement paired
-    /// with the previous chain would put the curves somewhere the plot never had them.
+    /// drivers it CROSSES WITH (see
+    /// <see cref="ProcessedChannels.PhaseNeighbourhood"/>) — so a hidden driver cannot
+    /// move the windows of the visible ones. Null when the render is stale or the
+    /// channel is not in it: a placement paired with the previous chain would put the
+    /// curves somewhere the plot never had them.
     /// </para>
     /// </remarks>
     private EqWizardPhaseContext? CapturePhaseContext(VirtualCrossoverChannel channel)
@@ -2513,11 +2515,8 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        List<ProcessedChannel> drawn = render.Channels
-            .Where(item =>
-                ReferenceEquals(item.Channel, channel) ||
-                item.Channel.Pair.ShowProcessedCurve)
-            .ToList();
+        List<ProcessedChannel> drawn =
+            ProcessedChannels.PhaseNeighbourhood(render.Channels, channel);
         int index = drawn.FindIndex(item => ReferenceEquals(item.Channel, channel));
         if (index < 0)
         {
@@ -3302,11 +3301,12 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The correlation view of the lower plot reads the same processed
-        // snapshot the acoustic plot draws; the redraw loop calls
-        // RedrawDspPlot right after this method, so the capture is fresh. It
-        // keeps the WHOLE set on purpose — that view answers about a junction the
-        // user picks by name, which the main plot's grouping has no say over.
+        // The junction views of the lower plot read the same processed snapshot
+        // the acoustic plot draws; the redraw loop calls RedrawDspPlot right
+        // after this method, so the capture is fresh. The WHOLE set is kept
+        // here — CurrentCorrelationPairs narrows it to the view's summing chain
+        // itself, and the opposite-side and cross-group read-outs below need
+        // channels this view does not draw.
         lastProcessedRender = render;
 
         // From here down the frame is about the view's part of the installation,
@@ -7538,11 +7538,16 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // The adjacent pairs of the correlation view, derived from the LAST
     // processed snapshot so the combo lists exactly what the plot can analyze
-    // (enabled channels with sources, active side, ordered by band).
+    // (enabled channels with sources, active side, ordered by band) — narrowed
+    // to the view's SUMMING chain, the same set the loss curve and the
+    // per-junction read-out describe.
+    //
+    // Band order alone is not a chain — see ProcessedChannels.JunctionsInView for
+    // what a rear fill and a centre do to one, and why a view spanning groups
+    // lists nothing.
     private List<AdjacentPair> CurrentCorrelationPairs() =>
         lastProcessedRender is { } render
-            ? ProcessedChannels.GetAdjacentPairs(
-                ProcessedChannels.OrderByBand(render.Channels))
+            ? ProcessedChannels.JunctionsInView(render.Channels, SelectedGroupView)
             : [];
 
     private void UpdateCorrelationPairChoices()

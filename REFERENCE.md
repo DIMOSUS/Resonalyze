@@ -1412,6 +1412,17 @@ crossover region, and the junction sums instead of cancelling. The neighbours do
 not move while the bank is edited — they are measurements of drivers nobody is
 editing — and they are re-read from their responses whenever the window changes,
 so they never become a curve gated one way drawn beside a curve gated another.
+
+Neighbouring means the drivers this one actually hands a band to: its junction
+partners inside its own zone's chain, with the subwoofers counting as the bottom
+of the stage above them. A driver two junctions away is not one, and neither is a
+driver from another listening group — a rear fill and a centre are high-passed
+with no upper corner, so ordering them along the spectrum beside a front stage
+wedges them into the middle of it and buries the junction being tuned under
+crossings that are not crossings at all. Which drivers those are is read from the
+channel's ZONE rather than from the panel's group selector, because a block's PEQ
+menu opens in every view and what it crosses with is a property of the car. A
+neighbour whose curve is hidden on the panel stays hidden here too.
 The **raw** handoff draws its own phase but no neighbours, and says so on the
 plot: that curve has no crossover, delay or polarity in front of it while they
 have all of theirs, so lining it up against them would line up a system nobody
@@ -1421,19 +1432,20 @@ is building.
 
 Above: the midrange of a four-way, handed over from Virtual DSP with its bank
 fitted. The channel under edit is the solid curve, its dashed twin is the same
-channel before the bank (**Without EQ**), and the neighbouring drivers keep the
-colours they had on the panel — the subwoofer, the midbass and the tweeter,
-frozen as it drew them. The white curve is the bank's own phase on the
-right-hand axis, which the **EQ curve** checkbox turns off.
+channel before the bank (**Without EQ**), and the two drivers it crosses with —
+the midbass below it and the tweeter above — keep the colours they had on the
+panel, frozen as it drew them. The subwoofer is a junction further down and stays
+behind. The white curve is the bank's own phase on the right-hand axis, which the
+**EQ curve** checkbox turns off.
 
 **Phase gate…** is the window those curves are read through — the same dialog,
 and the same settings, the Virtual DSP phase view uses, down to the impulse
 preview of every channel it draws. A handoff arrives with its gate already
 placed and every setting as it stands there — window mode, FDW cycles, the three
 durations, the **detrend mode** and the τ it resolved, and whether the offset was
-pinned: the panel worked that out over every driver on screen, so the wizard
-adopts it rather than deriving its own and drawing this channel somewhere the
-panel never had it. Changing the detrend to **Auto** here re-estimates τ from the
+pinned: the panel worked that out over the very set being handed over, so the
+wizard adopts it rather than deriving its own and drawing this channel somewhere
+the panel never had it. Changing the detrend to **Auto** here re-estimates τ from the
 earliest-arriving response of the set, once, when the gate changes — a reference
 that moved with the bank would slide every curve under its own correction. A measurement opened straight into the wizard has no neighbours to
 be comparable with, so its window simply opens on its own front and its τ
@@ -2230,6 +2242,17 @@ witness**: where the summation score is too close to call between a lag and its
 inverted rival, the wavefronts within a period or two of the front decide it,
 because that is the part of the record the drivers made and the room had not yet
 answered.
+
+The pair is chosen from a list of the junctions the current **group view** has:
+the chain that view SUMS, ordered along the spectrum — the same set its sum-loss
+read-out reports row by row. Band order over a whole installation is not a chain
+and cannot stand in for one: a rear fill and a centre are high-passed with no
+upper corner, so their band centre falls between the midrange's and the
+tweeter's, and listing them together with the front stage offers a
+midrange-to-rear-fill handover that is not a crossover while dropping the
+midrange/tweeter one that is. **Groups** and **Everything** span more than one
+chain, so they list no junctions at all — the silence the loss read-out already
+keeps there, for the same reason.
 
 The plot's **Coherence** mode reads the same junction per frequency instead of
 per lag: a sub-band probe slides across the pair band (sixth-octave steps,

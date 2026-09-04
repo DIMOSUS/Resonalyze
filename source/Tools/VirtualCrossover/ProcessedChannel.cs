@@ -302,6 +302,110 @@ internal static class ProcessedChannels
         channels.Count >= 2 &&
         GetAdjacentPairs(OrderByBand(channels)).Count == channels.Count - 1;
 
+    /// <summary>
+    /// The junctions a grouped view can speak about: those of the chain it SUMS,
+    /// which is the set its loss curve and its per-junction read-out describe.
+    /// Empty for a view spanning more than one listening group.
+    /// </summary>
+    /// <remarks>
+    /// Band order over a whole installation is not a chain. A rear fill and a
+    /// centre are high-passed with no upper corner, so their band centre lands
+    /// between the midrange's and the tweeter's: ordered together with the front
+    /// they wedge themselves into the middle of it, which invents junctions that
+    /// are not crossovers (a midrange handing over to a rear fill, a rear fill to
+    /// a centre) and hides the one that is — the front's own midrange/tweeter
+    /// pair stops being adjacent and never gets built. Filtering by zone is what
+    /// makes the ordering a chain again, and the centre drops out of every view
+    /// with it, for the reason
+    /// <see cref="VirtualCrossoverGroupViews.ParticipatesInTotalSum"/> states.
+    /// <para>
+    /// Views that span groups have no single chain to order, which is the
+    /// condition the loss read-out already goes silent under
+    /// (<see cref="VirtualCrossoverGroupViews.LossChainZone"/>): they list no
+    /// junctions rather than a merged ordering of two.
+    /// </para>
+    /// </remarks>
+    public static List<AdjacentPair> JunctionsInView(
+        IReadOnlyList<ProcessedChannel> processed,
+        VirtualCrossoverGroupView view)
+    {
+        ArgumentNullException.ThrowIfNull(processed);
+        if (VirtualCrossoverGroupViews.LossChainZone(view) == null)
+        {
+            return [];
+        }
+
+        return GetAdjacentPairs(OrderByBand(
+            [.. processed.Where(item =>
+                VirtualCrossoverGroupViews.ParticipatesInTotalSum(
+                    view, item.Channel.Pair.Zone))]));
+    }
+
+    /// <summary>
+    /// The set a phase view of one channel is about: that channel and the shown
+    /// drivers it actually hands a band to.
+    /// </summary>
+    /// <remarks>
+    /// Every driver whose curve happens to be on screen is not that set — see
+    /// <see cref="JunctionsInView"/> for what band-ordering a whole installation
+    /// does to a chain. The chain is taken from the channel's own ZONE rather
+    /// than from the group selector: a channel's PEQ menu opens from its block in
+    /// every view, and which drivers it crosses with is a property of the
+    /// installation, not of what the plot happens to show.
+    /// <para>
+    /// The result keeps band order and always holds the channel itself, whether
+    /// or not its own curve is shown; a neighbour travels only when it is drawn,
+    /// so hiding a curve in the panel hides it here too. Empty when the channel
+    /// is not in the set handed in.
+    /// </para>
+    /// </remarks>
+    public static List<ProcessedChannel> PhaseNeighbourhood(
+        IReadOnlyList<ProcessedChannel> processed,
+        VirtualCrossoverChannel channel)
+    {
+        ArgumentNullException.ThrowIfNull(processed);
+        ArgumentNullException.ThrowIfNull(channel);
+        IReadOnlyList<VirtualCrossoverZone> zones = JunctionZonesFor(channel.Pair.Zone);
+        List<ProcessedChannel> chain = OrderByBand(
+            [.. processed.Where(item => zones.Contains(item.Channel.Pair.Zone))]);
+
+        // Junctions, not band neighbours: a subwoofer stopping at 110 Hz beside a
+        // rear fill starting at 290 is adjacent in the ordering with nothing
+        // handed across, and its phase says nothing about the one being tuned.
+        var neighbours = new List<ProcessedChannel>();
+        foreach (AdjacentPair pair in GetAdjacentPairs(chain))
+        {
+            if (ReferenceEquals(pair.Lower.Channel, channel))
+            {
+                neighbours.Add(pair.Upper);
+            }
+            else if (ReferenceEquals(pair.Upper.Channel, channel))
+            {
+                neighbours.Add(pair.Lower);
+            }
+        }
+
+        return
+        [
+            .. chain.Where(item =>
+                ReferenceEquals(item.Channel, channel) ||
+                (item.Channel.Pair.ShowProcessedCurve &&
+                    neighbours.Any(near => ReferenceEquals(near, item))))
+        ];
+    }
+
+    // The zones a channel's junctions can live in: its own, plus the subwoofers
+    // for a stage that sits on top of them. The centre is alone because it sums
+    // with nothing (VirtualCrossoverGroupViews.ParticipatesInTotalSum) — a
+    // two-way centre still crosses inside itself, and that is the whole of it.
+    private static IReadOnlyList<VirtualCrossoverZone> JunctionZonesFor(
+        VirtualCrossoverZone zone) => zone switch
+    {
+        VirtualCrossoverZone.Center => [VirtualCrossoverZone.Center],
+        VirtualCrossoverZone.Rear => [VirtualCrossoverZone.Rear, VirtualCrossoverZone.Sub],
+        _ => [VirtualCrossoverZone.Front, VirtualCrossoverZone.Sub]
+    };
+
     private static bool PlaysWithin(ProcessedChannel channel, double lowHz, double highHz)
     {
         (double channelLow, double channelHigh) =

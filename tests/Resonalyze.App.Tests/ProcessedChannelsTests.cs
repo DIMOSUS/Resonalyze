@@ -17,6 +17,37 @@ public sealed class ProcessedChannelsTests
         return new ProcessedChannel(channel, [Complex.One], 0, 48_000, OxyColors.White);
     }
 
+    private static ProcessedChannel Channel(
+        string name,
+        VirtualCrossoverChannelSettings settings,
+        VirtualCrossoverZone zone,
+        bool shown = true)
+    {
+        var channel = new VirtualCrossoverChannel(name)
+        {
+            Pair = { Left = settings, Zone = zone, ShowProcessedCurve = shown }
+        };
+        return new ProcessedChannel(channel, [Complex.One], 0, 48_000, OxyColors.White);
+    }
+
+    // The reference installation: a two-subwoofer front three-way with a rear
+    // fill and a centre, both high-passed at 290 Hz with no upper corner.
+    private static List<ProcessedChannel> ReferenceCar(
+        bool tweeterShown = true,
+        bool midShown = true) =>
+    [
+        Channel("RSub", LowPass(50), VirtualCrossoverZone.Sub),
+        Channel("FSub", BandPass(50, 110), VirtualCrossoverZone.Sub),
+        Channel("MB", BandPass(110, 290), VirtualCrossoverZone.Front),
+        Channel("Mid", BandPass(290, 3_500), VirtualCrossoverZone.Front, midShown),
+        Channel("Tw", HighPass(3_500), VirtualCrossoverZone.Front, tweeterShown),
+        Channel("Rear", HighPass(290), VirtualCrossoverZone.Rear),
+        Channel("Centre", HighPass(290), VirtualCrossoverZone.Center)
+    ];
+
+    private static IEnumerable<string> Names(IEnumerable<AdjacentPair> pairs) =>
+        pairs.Select(pair => $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}");
+
     private static VirtualCrossoverChannelSettings LowPass(double hz) => new()
     {
         CrossoverKind = CrossoverKind.LowPass,
@@ -203,4 +234,100 @@ public sealed class ProcessedChannelsTests
         Assert.InRange(anchor, 1_900, 2_005);
     }
 
+    [Fact]
+    public void JunctionsInView_OrdersTheChainWithoutTheOtherGroupsInIt()
+    {
+        List<ProcessedChannel> car = ReferenceCar();
+
+        // What band order over the WHOLE installation does, and why the view has
+        // to narrow it first: a rear fill and a centre high-passed at 290 with no
+        // upper corner have a band centre of 2.4 kHz, which lands between the
+        // midrange's (1 kHz) and the tweeter's (8.4 kHz). They wedge themselves
+        // into the middle of the front chain — inventing a midrange/rear-fill
+        // handover at 3.5 kHz and a rear-fill/centre one at 290 — and the front's
+        // own midrange/tweeter pair stops being adjacent and is never built.
+        Assert.Equal(
+            ["RSub-FSub", "FSub-MB", "MB-Mid", "Mid-Rear", "Rear-Centre", "Centre-Tw"],
+            Names(ProcessedChannels.GetAdjacentPairs(ProcessedChannels.OrderByBand(car))));
+
+        Assert.Equal(
+            ["RSub-FSub", "FSub-MB", "MB-Mid", "Mid-Tw"],
+            Names(ProcessedChannels.JunctionsInView(
+                car, VirtualCrossoverGroupView.FrontAndSub)));
+    }
+
+    [Fact]
+    public void JunctionsInView_ListsEachGroupsOwnChain()
+    {
+        List<ProcessedChannel> car = ReferenceCar();
+
+        // Rear + Sub holds the subwoofers' junction and no other: the rear fill
+        // starts an octave and a half above where they stop.
+        Assert.Equal(
+            ["RSub-FSub"],
+            Names(ProcessedChannels.JunctionsInView(
+                car, VirtualCrossoverGroupView.RearAndSub)));
+
+        // Front + Center draws the centre and sums nothing of it, so it neither
+        // pairs with the front stage nor splits it; the subwoofers are not in this
+        // view at all, so the chain starts at the midbass.
+        Assert.Equal(
+            ["MB-Mid", "Mid-Tw"],
+            Names(ProcessedChannels.JunctionsInView(
+                car, VirtualCrossoverGroupView.FrontAndCenter)));
+    }
+
+    [Theory]
+    [InlineData(VirtualCrossoverGroupView.Everything)]
+    [InlineData(VirtualCrossoverGroupView.GroupsCompared)]
+    public void JunctionsInView_IsEmptyWhereTheViewSpansGroups(
+        VirtualCrossoverGroupView view)
+    {
+        // The condition the loss read-out already goes silent under: there is no
+        // one chain to order, and a merged ordering of two is the defect above.
+        Assert.Empty(ProcessedChannels.JunctionsInView(ReferenceCar(), view));
+    }
+
+    [Fact]
+    public void PhaseNeighbourhood_KeepsOnlyTheDriversTheChannelCrossesWith()
+    {
+        List<ProcessedChannel> car = ReferenceCar();
+        VirtualCrossoverChannel mid = car[3].Channel;
+
+        Assert.Equal(
+            ["MB", "Mid", "Tw"],
+            ProcessedChannels.PhaseNeighbourhood(car, mid)
+                .Select(item => item.Channel.Name));
+    }
+
+    [Fact]
+    public void PhaseNeighbourhood_TakesTheChannelsOwnZoneChain()
+    {
+        List<ProcessedChannel> car = ReferenceCar();
+
+        // The rear fill is tuned inside Rear + Sub, and nothing crosses into it
+        // there — the subwoofers stop at 110 Hz. It travels alone rather than with
+        // a subwoofer whose phase says nothing about it.
+        Assert.Equal(
+            ["Rear"],
+            ProcessedChannels.PhaseNeighbourhood(car, car[5].Channel)
+                .Select(item => item.Channel.Name));
+
+        // And a centre sums with nothing at all, in any view.
+        Assert.Equal(
+            ["Centre"],
+            ProcessedChannels.PhaseNeighbourhood(car, car[6].Channel)
+                .Select(item => item.Channel.Name));
+    }
+
+    [Fact]
+    public void PhaseNeighbourhood_DropsAHiddenNeighbourAndKeepsAHiddenSelf()
+    {
+        List<ProcessedChannel> car = ReferenceCar(tweeterShown: false, midShown: false);
+
+        Assert.Equal(
+            ["MB", "Mid"],
+            ProcessedChannels.PhaseNeighbourhood(car, car[3].Channel)
+                .Select(item => item.Channel.Name));
+    }
 }

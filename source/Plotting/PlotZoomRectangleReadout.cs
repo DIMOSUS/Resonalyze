@@ -366,6 +366,12 @@ internal static class PlotZoomRectangleReadout
 /// for as long as it then waits to be clicked. The annotation belongs to the model it
 /// was drawn over, so a rebuild — a new measurement, a mode switch — takes the box
 /// with it rather than leaving it floating over a different graph.
+///
+/// It also stops drawing itself the moment the axes under it stop meaning what they
+/// meant. The Virtual DSP view switch re-arms them and repaints in the same breath,
+/// and the controller does not hear about it until the next mouse event — so the box
+/// checks for itself rather than waiting to be told, and a reading in dB is never
+/// left on screen over a scale that has become degrees.
 /// </summary>
 internal sealed class PlotZoomRectangleAnnotation : Annotation
 {
@@ -390,6 +396,12 @@ internal sealed class PlotZoomRectangleAnnotation : Annotation
     /// <summary>What is framed, or null while no box is drawn.</summary>
     public PlotZoomBox? Box { get; set; }
 
+    /// <summary>
+    /// What the axes meant when the box was drawn. The box is only drawn while they
+    /// still mean it.
+    /// </summary>
+    public IReadOnlyList<PlotAxisIdentity> Axes { get; set; } = Array.Empty<PlotAxisIdentity>();
+
     /// <summary>The size of the framed area; empty when there is nothing to read yet.</summary>
     public string Text { get; set; } = string.Empty;
 
@@ -406,7 +418,7 @@ internal sealed class PlotZoomRectangleAnnotation : Annotation
 
     public override void Render(IRenderContext rc)
     {
-        if (Box is not PlotZoomBox box || box.IsEmpty || PlotModel == null)
+        if (Box is not PlotZoomBox box || box.IsEmpty || !StillDescribesItsPlot())
         {
             return;
         }
@@ -480,6 +492,13 @@ internal sealed class PlotZoomRectangleAnnotation : Annotation
             hintFontSize,
             ActualFontWeight);
     }
+
+    /// <summary>
+    /// Whether the plot still shows what the box was drawn against. Checked at every
+    /// paint because a re-arm is a repaint, and the pointer need never move again.
+    /// </summary>
+    internal bool StillDescribesItsPlot() =>
+        PlotModel != null && PlotAxisIdentities.Describe(PlotModel).SequenceEqual(Axes);
 
     private static bool TryIntersect(OxyRect rectangle, OxyRect area, out OxyRect intersection)
     {

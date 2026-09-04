@@ -382,6 +382,7 @@ internal sealed class PlotGestureController : PlotController
         }
 
         zoomBox.Box = box;
+        zoomBox.Axes = zoomBoxAxes;
         zoomBox.AnchorRight = current.X >= start.X;
         zoomBox.AnchorBottom = current.Y >= start.Y;
         zoomBox.Text = box?.Describe() ?? string.Empty;
@@ -404,6 +405,7 @@ internal sealed class PlotGestureController : PlotController
         zoomBoxModel.Annotations.Remove(zoomBox);
         zoomBoxModel = null;
         zoomBoxAxes = Array.Empty<PlotAxisIdentity>();
+        zoomBox.Axes = zoomBoxAxes;
         zoomBox.Box = null;
         zoomBox.Text = string.Empty;
         zoomBox.Hint = string.Empty;

@@ -68,6 +68,30 @@ public sealed class PlotAxisIdentitiesTests
         Assert.False(PlotAxisIdentities.Match(model, model, taken));
     }
 
+    [Fact]
+    public void ADrawnBoxStopsDrawingItselfTheMomentTheAxesAreRearmed()
+    {
+        PlotModel model = AcousticModel(out LogarithmicAxis frequency, out LinearAxis value);
+        var box = new PlotZoomRectangleAnnotation
+        {
+            Box = new PlotZoomBox(frequency, 500, 2_000, value, -40, -20),
+            Text = "1.50 kHz",
+            Axes = PlotAxisIdentities.Describe(model),
+        };
+        model.Annotations.Add(box);
+
+        Assert.True(box.StillDescribesItsPlot());
+
+        // The Virtual DSP view switch re-arms the axes and repaints in the same
+        // breath; the controller hears about it only on the next mouse event, which
+        // may never come. So the box answers for itself, at the paint.
+        value.Title = "deg";
+        value.AbsoluteMinimum = -180;
+        value.AbsoluteMaximum = 180;
+
+        Assert.False(box.StillDescribesItsPlot());
+    }
+
     // The shape of the Virtual DSP acoustic plot: a frequency axis and one value axis
     // that gets re-armed rather than replaced.
     private static PlotModel AcousticModel(out LogarithmicAxis frequency, out LinearAxis value)

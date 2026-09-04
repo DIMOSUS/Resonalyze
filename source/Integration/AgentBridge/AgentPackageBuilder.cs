@@ -311,7 +311,8 @@ internal static class AgentPackageBuilder
                 settings.PeqBands
                     .Select(band => new AgentPackageBand(
                         band.Type.ToString(), band.FrequencyHz, band.Q, band.GainDb))
-                    .ToList()));
+                    .ToList()),
+            settings.PhaseRotationDegrees > 0 ? settings.PhaseRotationDegrees : null);
 
         var packageSource = new AgentPackageSource(
             source != null,
@@ -357,7 +358,9 @@ internal static class AgentPackageBuilder
         List<double> grid = AgentCurveSampling.LogGrid(
             AgentCurveSampling.BroadbandLowHz, highHz, AgentCurveSampling.BroadbandPointsPerOctave);
 
-        DspChannelChain chain = channel.Bypass ? DspChannelChain.Identity : channel.Settings.ToChain();
+        DspChannelChain chain = channel.Bypass
+            ? DspChannelChain.Identity
+            : channel.Settings.ToChain(channel.Zone);
         bool hasChain = !channel.Bypass &&
             (channel.Settings.CrossoverKind != CrossoverKind.Off ||
              channel.Settings.PeqBands.Count > 0 || channel.Settings.PeqPreampDb != 0 ||

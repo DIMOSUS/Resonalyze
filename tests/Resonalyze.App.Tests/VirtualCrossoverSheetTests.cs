@@ -269,6 +269,21 @@ public sealed class VirtualCrossoverSheetTests
     }
 
     [Fact]
+    public void FormatText_PrintsThePhaseControl_OnlyWhereOneIsDialledIn()
+    {
+        // A sheet is a list of values to type into the device. Most devices have no
+        // phase control at all, so a "Phase 0" line on every channel would send the
+        // reader looking for a knob that is not there.
+        VirtualCrossoverProjectFile project = CreateProject();
+
+        Assert.DoesNotContain("Phase", VirtualCrossoverSheet.FormatText(project, null));
+
+        project.Pairs[0].Left.PhaseRotationDegrees = 56.25;
+
+        Assert.Contains("Phase      56.25", VirtualCrossoverSheet.FormatText(project, null));
+    }
+
+    [Fact]
     public void FormatText_SingleZoneProject_KeepsTheFlatSheetItAlwaysHad()
     {
         // One zone means one group, and a heading naming the only group there

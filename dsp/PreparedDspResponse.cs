@@ -62,6 +62,11 @@ public sealed class PreparedDspResponse
             AddCrossoverSections(sections, crossover, sampleRate);
         }
 
+        if (PhaseRotationControl.Realize(chain.PhaseRotation, sampleRate) is { } rotation)
+        {
+            sections.AddRange(AllPassFilter.BuildSections(rotation, sampleRate));
+        }
+
         if (chain.Peq is { } peq)
         {
             linearGain *= Math.Pow(10.0, peq.PreampDb / 20.0);

@@ -27,6 +27,9 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
     private readonly CheckBox invertBox = CreateScopeBox("Invert", checkedByDefault: false);
     private readonly CheckBox crossoverBox = CreateScopeBox("Crossover", checkedByDefault: true);
     private readonly CheckBox allPassBox = CreateScopeBox("All-pass", checkedByDefault: false);
+    // Off by default like Delay, and for the same reason: it is a timing tool, and
+    // the two sides are not at the same distance from the microphone.
+    private readonly CheckBox phaseBox = CreateScopeBox("Phase", checkedByDefault: false);
     private readonly CheckBox peqBox = CreateScopeBox("PEQ", checkedByDefault: true);
     private readonly Button copyButton =
         UiStyle.CreateDialogButton("Copy", DialogResult.OK, accent: true);
@@ -152,10 +155,11 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         InvertPolarity: invertBox.Checked,
         Crossover: crossoverBox.Checked,
         AllPass: allPassBox.Checked,
+        Phase: phaseBox.Checked,
         Peq: peqBox.Checked);
 
     private IEnumerable<CheckBox> ScopeBoxes =>
-        [gainBox, delayBox, invertBox, crossoverBox, allPassBox, peqBox];
+        [gainBox, delayBox, invertBox, crossoverBox, allPassBox, phaseBox, peqBox];
 
     private static CheckBox CreateScopeBox(string text, bool checkedByDefault)
     {
@@ -198,9 +202,10 @@ internal readonly record struct VirtualCrossoverCopyScope(
     bool InvertPolarity,
     bool Crossover,
     bool AllPass,
+    bool Phase,
     bool Peq)
 {
     /// <summary>True when the copy would carry nothing.</summary>
     public bool IsEmpty =>
-        !Gain && !Delay && !InvertPolarity && !Crossover && !AllPass && !Peq;
+        !Gain && !Delay && !InvertPolarity && !Crossover && !AllPass && !Phase && !Peq;
 }

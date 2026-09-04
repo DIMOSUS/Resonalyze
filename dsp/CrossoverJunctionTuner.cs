@@ -666,7 +666,7 @@ public static class CrossoverJunctionTuner
                 new CrossoverSpec(CrossoverKind.BandPass, lowPass, crossover.HighPassEdge),
             _ => new CrossoverSpec(CrossoverKind.LowPass, lowPass)
         };
-        return chain with { Crossover = replaced };
+        return WithMovedEdge(chain, LowPassOf(chain), lowPass) with { Crossover = replaced };
     }
 
     /// <summary>
@@ -683,8 +683,29 @@ public static class CrossoverJunctionTuner
                 new CrossoverSpec(CrossoverKind.BandPass, crossover.LowPassEdge, highPass),
             _ => new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: highPass)
         };
-        return chain with { Crossover = replaced };
+        return WithMovedEdge(chain, HighPassOf(chain), highPass) with { Crossover = replaced };
     }
+
+    // A channel phase control states its angle AT one of the channel's crossover
+    // corners, so a search that moves that corner has to move the filter the angle
+    // builds — or it would judge a candidate against an all-pass the device would
+    // not place there. Which of the two corners the angle belongs to is a property
+    // of the CHANNEL (the low-pass on a subwoofer, the high-pass otherwise) and not
+    // of a chain, so it is recognised rather than looked up: the reference follows
+    // the edge it currently sits on. A chain with no rotation, or one whose
+    // reference is the other edge, comes back untouched.
+    private static DspChannelChain WithMovedEdge(
+        DspChannelChain chain,
+        CrossoverEdge? replacedEdge,
+        CrossoverEdge newEdge) =>
+        !chain.PhaseRotation.IsTransparent &&
+        replacedEdge is { } old &&
+        old.FrequencyHz == chain.PhaseRotation.ReferenceHz
+            ? chain with
+            {
+                PhaseRotation = chain.PhaseRotation with { ReferenceHz = newEdge.FrequencyHz }
+            }
+            : chain;
 
     // The polarity the upper channel would END UP with. The search reads the
     // response the chain has already inverted, so its answer is a flip of THAT:

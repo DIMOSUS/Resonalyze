@@ -731,7 +731,7 @@ internal sealed class VirtualCrossoverMetrics
                     Source = source,
                     SampleRate = state.SampleRate,
                     ProcessorSampleRate = channel.ProcessorSampleRate,
-                    Chain = settings.ToChain(),
+                    Chain = settings.ToChain(channel.Pair.Zone),
                     Channel = channel
                 };
 
@@ -979,7 +979,7 @@ internal sealed class VirtualCrossoverMetrics
 
             DspChannelChain chain = channel.Pair.Bypass
                 ? DspChannelChain.Identity
-                : settings.ToChain();
+                : settings.ToChain(channel.Pair.Zone);
             jobs.Add(new SideProcessJob
             {
                 Id = nextId++,

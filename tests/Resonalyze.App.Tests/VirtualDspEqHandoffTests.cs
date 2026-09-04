@@ -43,14 +43,14 @@ public sealed class VirtualDspEqHandoffTests
         // does not — it is a band of the bank, and the bank is what is under edit.
         Complex[] expected = VirtualCrossoverAnalysis.ApplyChain(
             channel.TransferImpulseResponse!,
-            channel.Settings.ToChain() with { Peq = null },
+            channel.Settings.ToChain(channel.Pair.Zone) with { Peq = null },
             SampleRate,
             SampleRate);
         Assert.Equal(expected, request.Source.Measurement!.ImpulseResponse);
 
         Complex[] withPeq = VirtualCrossoverAnalysis.ApplyChain(
             channel.TransferImpulseResponse!,
-            channel.Settings.ToChain(),
+            channel.Settings.ToChain(channel.Pair.Zone),
             SampleRate,
             SampleRate);
         Assert.NotEqual(withPeq, request.Source.Measurement.ImpulseResponse);
@@ -143,7 +143,7 @@ public sealed class VirtualDspEqHandoffTests
         // The same rule the plot applies to a lone channel: the response START.
         Complex[] response = VirtualCrossoverAnalysis.ApplyChain(
             channel.TransferImpulseResponse!,
-            channel.Settings.ToChain() with { Peq = null },
+            channel.Settings.ToChain(channel.Pair.Zone) with { Peq = null },
             SampleRate,
             SampleRate,
             out ValidSampleRange validRange);
@@ -207,7 +207,7 @@ public sealed class VirtualDspEqHandoffTests
             new ImpulseMeasurementView(
                 VirtualCrossoverAnalysis.ApplyChain(
                     channel.TransferImpulseResponse!,
-                    channel.Settings.ToChain() with { Peq = null },
+                    channel.Settings.ToChain(channel.Pair.Zone) with { Peq = null },
                     SampleRate,
                     SampleRate),
                 480,
@@ -253,7 +253,7 @@ public sealed class VirtualDspEqHandoffTests
             new ImpulseMeasurementView(
                 VirtualCrossoverAnalysis.ApplyChain(
                     channel.TransferImpulseResponse!,
-                    channel.Settings.ToChain() with { Peq = bank },
+                    channel.Settings.ToChain(channel.Pair.Zone) with { Peq = bank },
                     SampleRate,
                     SampleRate),
                 480,
@@ -321,7 +321,7 @@ public sealed class VirtualDspEqHandoffTests
             new ImpulseMeasurementView(
                 VirtualCrossoverAnalysis.ApplyChain(
                     channel.TransferImpulseResponse!,
-                    channel.Settings.ToChain() with { Peq = null },
+                    channel.Settings.ToChain(channel.Pair.Zone) with { Peq = null },
                     SampleRate,
                     SampleRate),
                 480,
@@ -919,7 +919,7 @@ public sealed class VirtualDspEqHandoffTests
             ProjectGeneration: 1,
             channel.SideState(rightSide).SourceRevision,
             channel.Pair.Mono,
-            channel.SideSettings(rightSide).ToChain() with { Peq = null },
+            channel.Pair.ToChain(rightSide) with { Peq = null },
             WithChain: true,
             new PeqBankState(
                 channel.SideSettings(rightSide).PeqBands,

@@ -133,7 +133,8 @@ public sealed class DspProcessorDialogTests
 
     private static Form Open(
         bool followsMeasurements,
-        int measurementRateHz = MeasurementRate)
+        int measurementRateHz = MeasurementRate,
+        bool? phaseControl = null)
     {
         Type type = typeof(VirtualCrossoverPanel).Assembly
             .GetType("Resonalyze.DspProcessorDialog")!;
@@ -145,7 +146,8 @@ public sealed class DspProcessorDialogTests
                 DspProcessorProfile.Custom(measurementRateHz > 0 ? measurementRateHz : 48_000,
                     PeqQConvention.Rbj),
                 followsMeasurements,
-                measurementRateHz
+                measurementRateHz,
+                phaseControl
             ],
             culture: null)!;
     }

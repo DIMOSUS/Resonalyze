@@ -6,6 +6,46 @@ public sealed class CrossoverJunctionTunerTests
 {
     private const int SampleRate = 48_000;
 
+    [Fact]
+    public void ReplacingAnEdge_MovesAPhaseRotationStatedAtIt_AndLeavesTheOtherOneAlone()
+    {
+        // The search tries corners the channel does not have yet. Where a phase
+        // control states its angle at the corner being moved, the all-pass the device
+        // would place moves with it — judging the candidate against the old one would
+        // score a filter the hardware never builds.
+        var subwoofer = new DspChannelChain(
+            Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)),
+            // A subwoofer states its angle at its low-pass.
+            PhaseRotation: new PhaseRotationSpec(90, 80));
+
+        DspChannelChain moved = CrossoverJunctionTuner.WithLowPass(
+            subwoofer, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 65, 24));
+
+        Assert.Equal(65, moved.PhaseRotation.ReferenceHz);
+        Assert.Equal(90, moved.PhaseRotation.Degrees);
+
+        // A midbass states its angle at its HIGH-pass, so moving its low-pass — the
+        // edge it hands over to the midrange with — must not touch the rotation.
+        var midbass = new DspChannelChain(
+            Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 350, 24),
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)),
+            PhaseRotation: new PhaseRotationSpec(90, 80));
+
+        DspChannelChain untouched = CrossoverJunctionTuner.WithLowPass(
+            midbass, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 300, 24));
+
+        Assert.Equal(80, untouched.PhaseRotation.ReferenceHz);
+
+        DspChannelChain highMoved = CrossoverJunctionTuner.WithHighPass(
+            midbass, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 65, 24));
+
+        Assert.Equal(65, highMoved.PhaseRotation.ReferenceHz);
+    }
+
     // A flat driver: a unit impulse, so everything the junction measures is the
     // crossover's own doing.
     private static Complex[] Impulse(int position = 480, double amplitude = 1.0)

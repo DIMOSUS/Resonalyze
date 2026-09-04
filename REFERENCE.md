@@ -1883,6 +1883,24 @@ Each channel runs through:
   A Linkwitz-Riley pair sums flat only when its two halves are in phase:
   LR24 and LR48 are, LR12 and LR36 sit 180° apart, so one of the two
   channels needs **Invert** or the sum nulls at the corner
+- **Phase** — the channel phase control of the processors that have one, shown
+  only when [DSP processor](#dsp-processor) says the device does. It is not a
+  filter dialled in by frequency: the angle is what the user sets, in steps of
+  5.625° up to 354.375°, and the device works out the second-order all-pass
+  (Q = 1) whose phase equals that angle **at the channel's own crossover** — the
+  low-pass on a **Sub** block, the high-pass on every other one, and the
+  frequency as CONFIGURED even where that filter is bypassed or switched off.
+  The read-out beside the field names both: the crossover the angle is stated
+  at, and the all-pass corner it lands on. Two consequences follow, and both are
+  the hardware's rather than this simulation's — moving the crossover leaves the
+  same number building a different filter (which is why the read-out moves under
+  it, and why [Auto crossover](#auto-crossover) clears any rotation it finds
+  before writing new corners), and the corner has a ceiling of 3/16 of the
+  processing rate, so at a crossover above about 1 kHz the smallest settings
+  collapse onto one filter — the read-out turns amber there and states the angle
+  the device really delivers. The behaviour is modelled from a bench measurement
+  of a HELIX DSP ULTRA S; the ceiling was measured at 96 kHz only, and reads as
+  rate-relative here
 - **PEQ** — the channel's whole filter bank, bells and shelves and **all-pass
   bands (AP1 / AP2)** alike. An all-pass moves phase only, which makes it the
   tool for lining drivers up where a delay and a polarity flip are both too
@@ -1911,12 +1929,14 @@ Each channel runs through:
 **L→R** / **R→L** ask before they act: a dialog lists the stereo pairs (mono
 pairs have a single settings set, so they never appear) and the parts of the
 chain to carry over — **Gain**, **Delay**, **Invert**, **Crossover**,
-**All-pass** and **PEQ**. The crossover and the PEQ are ticked by default,
+**All-pass**, **Phase** and **PEQ**. The crossover and the PEQ are ticked by default,
 because the magnitude shape describes the driver. Everything that aligns a side
 against its own level and geometry starts unticked — gain, delay, polarity and
 the all-pass, which belongs with them precisely because it is the tool for a
 junction a delay and a polarity flip cannot fix, and that junction is the
-side's own. All-pass filters ride in the PEQ bank, so those last two ticks
+side's own. **Phase** starts unticked for the same reason, and travels as the
+ANGLE: its reference is the target side's own crossover, which is what the
+device would read. All-pass filters ride in the PEQ bank, so those last two ticks
 split one band list by shape: **PEQ** carries the bells and shelves,
 **All-pass** the phase-only bands, and whichever kind is left unticked stays as
 the target side already had it — copying a voicing across therefore leaves the
@@ -2472,6 +2492,15 @@ Mosconi, ESX, miniDSP and JL Audio — and its **processing rate** and
 [**Q convention**](#dsp-q-convention) come with it, locked. Pick **Custom** and
 state both by hand.
 
+**Channel phase control** is the third property, and the only one the model does
+not lock: ticking it gives every block a **Phase** field (see
+[the block's fields](#virtual-dsp)). The catalog proposes the answer — every
+HELIX runs the DSP PC-Tool, whose channel Phase control is what this models — and
+the tick stays yours after that, so a Custom profile standing in for a device the
+list does not carry can have it, and a device that has one can be left without
+the row. Turning it off never clears an angle already dialled in: the filter goes
+on being simulated, it is only the field that goes away.
+
 A catalog line may also state the model's **per-channel delay ceiling**, read
 from its manual. Automatic delay proposals are judged against it — a spread the
 device cannot dial refuses with the reason — while a model whose manual has not
@@ -2603,6 +2632,13 @@ subwoofers splits is left to the measured flatness and the re-rank below. Apply
 then
 expands ~50 near-optimal variants and re-ranks them by the junction loss
 actually achievable after the best per-junction delay.
+
+Apply also **clears every channel phase rotation** it finds, and says how many.
+That control states its angle at the channel's crossover, so a run that moves
+the corners leaves the same number building a different filter; a hand edit
+keeps the angle — that is what the device itself does, and the read-out moves
+under it where you can see — but a wizard rewriting every channel at once is not
+something to leave a stale all-pass under.
 
 ### Auto delay
 

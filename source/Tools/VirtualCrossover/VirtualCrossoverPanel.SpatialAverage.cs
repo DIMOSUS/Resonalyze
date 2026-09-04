@@ -528,7 +528,7 @@ public partial class VirtualCrossoverPanel
             // plot's: bypass contributes the raw measured signal.
             channel.Pair.Bypass
                 ? DspChannelChain.Identity
-                : channel.SideSettings(rightSide).ToChain(),
+                : channel.Pair.ToChain(rightSide),
             channel.ProcessorSampleRateFor(rightSide),
             SpatialAverageCalibrationFor(state),
             grid,
@@ -602,7 +602,7 @@ public partial class VirtualCrossoverPanel
                 // measured signal — the same rule the plot applies.
                 member.Channel.Pair.Bypass
                     ? DspChannelChain.Identity
-                    : member.Channel.SideSettings(rightSide).ToChain(),
+                    : member.Channel.Pair.ToChain(rightSide),
                 member.Channel.ProcessorSampleRateFor(rightSide),
                 SpatialAverageCalibrationFor(state),
                 grid,
@@ -963,7 +963,7 @@ public partial class VirtualCrossoverPanel
             // ignores the switch.
             channel.Pair.Bypass
                 ? DspChannelChain.Identity
-                : channel.SideSettings(rightSide).ToChain(),
+                : channel.Pair.ToChain(rightSide),
             // The PROCESSOR's rate: the chain is what the user's DSP will run, and it
             // runs at the device's rate — not at whatever the capture, or the
             // measurement beside it, was taken at. The capture's own rate is already

@@ -503,16 +503,16 @@ public sealed class VirtualCrossoverSheetPdfTests
         // Two stereo front pairs: each side has two chains to sum, so the
         // group gets a solid left sum and a dashed right sum — and, being the
         // front group, the subwoofer group's sum rides along in a pale tone.
-        (int, string, bool, VirtualCrossoverChannelSettings)[] front =
+        (int, string, bool, VirtualCrossoverChannelSettings, VirtualCrossoverZone)[] front =
         [
-            (0, VirtualCrossoverSheet.LeftSuffix, false, Loaded("mid L")),
-            (0, VirtualCrossoverSheet.RightSuffix, true, Loaded("mid R")),
-            (1, VirtualCrossoverSheet.LeftSuffix, false, Loaded("tw L")),
-            (1, VirtualCrossoverSheet.RightSuffix, true, Loaded("tw R"))
+            (0, VirtualCrossoverSheet.LeftSuffix, false, Loaded("mid L"), VirtualCrossoverZone.Front),
+            (0, VirtualCrossoverSheet.RightSuffix, true, Loaded("mid R"), VirtualCrossoverZone.Front),
+            (1, VirtualCrossoverSheet.LeftSuffix, false, Loaded("tw L"), VirtualCrossoverZone.Front),
+            (1, VirtualCrossoverSheet.RightSuffix, true, Loaded("tw R"), VirtualCrossoverZone.Front)
         ];
-        (int, string, bool, VirtualCrossoverChannelSettings)[] subs =
+        (int, string, bool, VirtualCrossoverChannelSettings, VirtualCrossoverZone)[] subs =
         [
-            (3, VirtualCrossoverSheet.MonoSuffix, false, Loaded("sub"))
+            (3, VirtualCrossoverSheet.MonoSuffix, false, Loaded("sub"), VirtualCrossoverZone.Sub)
         ];
 
         IReadOnlyList<VirtualCrossoverSheetPdf.ChainCurve> curves =
@@ -544,10 +544,10 @@ public sealed class VirtualCrossoverSheetPdfTests
     {
         // The centre's signal is derived from L and R, so no sum involving it
         // is honest — even a two-way centre's graph shows chains only.
-        (int, string, bool, VirtualCrossoverChannelSettings)[] centre =
+        (int, string, bool, VirtualCrossoverChannelSettings, VirtualCrossoverZone)[] centre =
         [
-            (2, VirtualCrossoverSheet.MonoSuffix, false, Loaded("centre lo")),
-            (3, VirtualCrossoverSheet.MonoSuffix, false, Loaded("centre hi"))
+            (2, VirtualCrossoverSheet.MonoSuffix, false, Loaded("centre lo"), VirtualCrossoverZone.Center),
+            (3, VirtualCrossoverSheet.MonoSuffix, false, Loaded("centre hi"), VirtualCrossoverZone.Center)
         ];
         Assert.DoesNotContain(
             VirtualCrossoverSheetPdf.GroupCurves(
@@ -556,10 +556,10 @@ public sealed class VirtualCrossoverSheetPdfTests
 
         // And a rear of one stereo pair has one chain per side: its "sum"
         // would retrace the channel, so none is drawn.
-        (int, string, bool, VirtualCrossoverChannelSettings)[] rear =
+        (int, string, bool, VirtualCrossoverChannelSettings, VirtualCrossoverZone)[] rear =
         [
-            (1, VirtualCrossoverSheet.LeftSuffix, false, Loaded("rear L")),
-            (1, VirtualCrossoverSheet.RightSuffix, true, Loaded("rear R"))
+            (1, VirtualCrossoverSheet.LeftSuffix, false, Loaded("rear L"), VirtualCrossoverZone.Rear),
+            (1, VirtualCrossoverSheet.RightSuffix, true, Loaded("rear R"), VirtualCrossoverZone.Rear)
         ];
         Assert.DoesNotContain(
             VirtualCrossoverSheetPdf.GroupCurves(
@@ -578,10 +578,10 @@ public sealed class VirtualCrossoverSheetPdfTests
         VirtualCrossoverChannelSettings rearSub = Loaded("rear sub");
         rearSub.InvertPolarity = true;
         rearSub.DelayMs = 5.73;
-        (int, string, bool, VirtualCrossoverChannelSettings)[] subs =
+        (int, string, bool, VirtualCrossoverChannelSettings, VirtualCrossoverZone)[] subs =
         [
-            (3, VirtualCrossoverSheet.MonoSuffix, false, rearSub),
-            (4, VirtualCrossoverSheet.MonoSuffix, false, Loaded("front sub"))
+            (3, VirtualCrossoverSheet.MonoSuffix, false, rearSub, VirtualCrossoverZone.Sub),
+            (4, VirtualCrossoverSheet.MonoSuffix, false, Loaded("front sub"), VirtualCrossoverZone.Sub)
         ];
 
         IReadOnlyList<VirtualCrossoverSheetPdf.ChainCurve> curves =
@@ -603,8 +603,8 @@ public sealed class VirtualCrossoverSheetPdfTests
         // Two identical flat chains sum to double the pressure: +6.02 dB, not
         // the +3 dB a power sum would claim. Pinned numerically so the sum
         // stays a COMPLEX sum of the chain responses.
-        var chain = new VirtualCrossoverChannelSettings().ToChain()
-            with { DelayMs = 0 };
+        var chain = new VirtualCrossoverChannelSettings()
+            .ToChain(VirtualCrossoverZone.Front) with { DelayMs = 0 };
         var curve = new VirtualCrossoverSheetPdf.ChainCurve(
             "Sum", OxyPlot.OxyColors.Black, OxyPlot.LineStyle.Solid, 2,
             [chain, chain]);
@@ -624,13 +624,13 @@ public sealed class VirtualCrossoverSheetPdfTests
         // carry it. A flat chain plus an inverted one at -6 dB is 1 - 0.5:
         // -6.02 dB, where a sum that quietly un-inverted the chain would
         // report 1 + 0.5 = +3.52 dB.
-        var flat = new VirtualCrossoverChannelSettings().ToChain()
-            with { DelayMs = 0 };
+        var flat = new VirtualCrossoverChannelSettings()
+            .ToChain(VirtualCrossoverZone.Front) with { DelayMs = 0 };
         var inverted = new VirtualCrossoverChannelSettings
         {
             GainDb = -6.0206,
             InvertPolarity = true
-        }.ToChain() with { DelayMs = 0 };
+        }.ToChain(VirtualCrossoverZone.Front) with { DelayMs = 0 };
         var curve = new VirtualCrossoverSheetPdf.ChainCurve(
             "Sum", OxyPlot.OxyColors.Black, OxyPlot.LineStyle.Solid, 2,
             [flat, inverted]);

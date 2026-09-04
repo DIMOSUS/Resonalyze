@@ -18,7 +18,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private bool muted;
     private bool collapsed;
     private double peqPreampDb;
-    private int expandedHeight;
+    private int fullHeight;
+    private int bottomMargin;
+    private bool phaseControlShown;
+    private int processorSampleRateHz = 48_000;
 
     public VirtualCrossoverChannelControl()
     {
@@ -37,7 +40,16 @@ public partial class VirtualCrossoverChannelControl : UserControl
         // flow list cannot stretch it; collapsing moves that pin, so the expanded
         // height has to be remembered before the first collapse overwrites it. Read
         // here in designer units — ScaleControl scales it with the rest of the block.
-        expandedHeight = MaximumSize.Height;
+        // The designer's height is the TALL one, with the phase row: the row is a
+        // real child at a real position, and a block without the control simply ends
+        // one row earlier (see ExpandedHeight).
+        fullHeight = MaximumSize.Height;
+        // The gap the block leaves under its lowest row, measured once while every
+        // child is still where the designer put it and none is hidden. Measured
+        // rather than stated because the rows are scaled for the current DPI, and
+        // captured here rather than on demand because a hidden phase row would make
+        // the same measurement read zero.
+        bottomMargin = Math.Max(0, fullHeight - Controls.Cast<Control>().Max(child => child.Bottom));
         // The ripple cap is the DSP's single source of truth (above it the Chebyshev
         // pole math is undefined); the designer value is only a default.
         numericHighPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
@@ -48,6 +60,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
         UpdateCrossoverAvailability();
         UpdateDelayDistance();
         UpdateTotalGain();
+        // Off until the project says otherwise, and applied here rather than left to
+        // the host: the block is measured and stacked by the flow list the moment it
+        // is added, and a block that arrives a row too tall makes the whole list jump.
+        ApplyPhaseAvailability();
     }
 
     /// <summary>
@@ -226,6 +242,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal DarkNumericUpDown LowPassRippleInput => numericLowPassRipple;
     internal Button MuteButton => buttonMute;
     internal Button CollapseButton => buttonCollapse;
+    internal DarkNumericUpDown PhaseInput => numericPhase;
+    internal Label PhaseLabel => labelPhase;
+    internal Label PhaseInfoLabel => labelPhaseInfo;
     internal Label PeqInfoLabel => labelPeqInfo;
     internal Button PeqMenuButton => buttonPeqMenu;
     internal Label TotalGainLabel => labelTotalGain;
@@ -248,6 +267,61 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     public CrossoverEdge LowPassEdge => ReadEdge(
         numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope, numericLowPassRipple);
+
+    /// <summary>
+    /// Whether this block shows the processor's channel phase control. Off leaves the
+    /// block a row shorter and the row itself out of the tab order; it does NOT clear
+    /// an angle already dialled in, which stays in the project and stays simulated —
+    /// hiding a control the project no longer offers is not the same as deciding the
+    /// filter is gone.
+    /// </summary>
+    [DefaultValue(false)]
+    public bool PhaseControlShown
+    {
+        get => phaseControlShown;
+        set
+        {
+            if (phaseControlShown == value)
+            {
+                return;
+            }
+
+            phaseControlShown = value;
+            ApplyPhaseAvailability();
+        }
+    }
+
+    /// <summary>
+    /// The rate the processor runs its filters at, pushed by the host. Read only to
+    /// say where the phase control's all-pass lands: the corner is solved in the
+    /// digital domain, so the same angle is a different frequency at another rate.
+    /// </summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int ProcessorSampleRateHz
+    {
+        get => processorSampleRateHz;
+        set
+        {
+            if (processorSampleRateHz == value || value <= 0)
+            {
+                return;
+            }
+
+            processorSampleRateHz = value;
+            UpdatePhaseReadout();
+        }
+    }
+
+    /// <summary>
+    /// The frequency the phase control states its angle at, as this block currently
+    /// stands: the low-pass corner on a subwoofer block, the high-pass corner
+    /// otherwise, and the CONFIGURED one either way (see
+    /// <see cref="VirtualCrossoverChannelSettings.PhaseReferenceHz"/>).
+    /// </summary>
+    private double PhaseReferenceHz => SelectedZone == VirtualCrossoverZone.Sub
+        ? (double)numericLowPassHz.Value
+        : (double)numericHighPassHz.Value;
 
     /// <summary>
     /// Ties the channel block to its plot curves: the header and the Processed
@@ -313,21 +387,21 @@ public partial class VirtualCrossoverChannelControl : UserControl
     // current DPI (AutoScaleMode.Dpi) and a pixel literal would cut the wrong one.
     private int FoldLine => comboBoxCrossoverKind.Top;
 
-    // The gap the expanded block leaves under its lowest row. Measured rather than
-    // stated for the same reason as the fold line, and off ALL the children: the ones
-    // below the fold are hidden while folded, but they never move.
-    private int BottomMargin()
-    {
-        int content = 0;
-        foreach (Control child in Controls)
-        {
-            content = Math.Max(content, child.Bottom);
-        }
+    // What the block stands at unfolded. The phase row is the last one, so a block
+    // whose processor has no phase control simply ends one row pitch earlier —
+    // measured off the live controls, like the fold line and for the same reason.
+    private int ExpandedHeight =>
+        phaseControlShown ? fullHeight : fullHeight - (numericPhase.Top - buttonPeqMenu.Top);
 
-        return Math.Max(0, expandedHeight - content);
-    }
+    // True for the three controls of the phase row, which a block without the
+    // control hides outright rather than clipping: a clipped field is still in the
+    // tab order, and still counts towards the height the fold is measured against.
+    private bool IsPhaseRow(Control child) =>
+        ReferenceEquals(child, labelPhase) ||
+        ReferenceEquals(child, numericPhase) ||
+        ReferenceEquals(child, labelPhaseInfo);
 
-    private void ApplyCollapsedState()
+    private void ApplyCollapsedState(bool raiseChanged = true)
     {
         buttonCollapse.Text = collapsed ? "+" : "−";
         // The rows below the fold are hidden, not merely clipped: hidden, they also
@@ -337,7 +411,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
         SuspendLayout();
         foreach (Control child in Controls)
         {
-            bool kept = !collapsed || child.Top < FoldLine;
+            bool kept = (!collapsed || child.Top < FoldLine) &&
+                (phaseControlShown || !IsPhaseRow(child));
             child.Visible = kept;
             if (kept)
             {
@@ -351,8 +426,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
         // expanded block leaves a margin under its lowest row; a folded one leaves
         // the same, which is also what keeps the bottom corners round.
         int height = collapsed
-            ? keptBottom + BottomMargin()
-            : expandedHeight;
+            ? keptBottom + bottomMargin
+            : ExpandedHeight;
         // The whole move runs inside one suspended parent layout: each size assignment
         // below asks the flow list to reflow, and a list laid out against a half-moved
         // pin stacks the next block over this one.
@@ -382,7 +457,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
             parent?.ResumeLayout(performLayout: true);
         }
 
-        CollapsedChanged?.Invoke(this, EventArgs.Empty);
+        if (raiseChanged)
+        {
+            CollapsedChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     // The block carries its sizes as designer units; the base scales the bounds and
@@ -395,7 +473,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
         base.ScaleControl(factor, specified);
         if ((specified & BoundsSpecified.Height) != 0)
         {
-            expandedHeight = (int)Math.Round(expandedHeight * factor.Height);
+            fullHeight = (int)Math.Round(fullHeight * factor.Height);
+            bottomMargin = (int)Math.Round(bottomMargin * factor.Height);
         }
     }
 
@@ -469,6 +548,14 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "Also the null test: with polarity flipped, the deepest\r\n" +
             "notch at the crossover frequency marks perfect alignment.");
         numericDelay.ApplyToolTip(toolTip, DelayTooltipText(delayDistanceMm));
+        numericPhase.ApplyToolTip(toolTip, PhaseTooltipText());
+        toolTip.SetToolTip(
+            labelPhaseInfo,
+            "What the angle beside it actually builds: the crossover it is\r\n" +
+            "stated at, and the all-pass corner the device places for it.\r\n" +
+            "Amber when the corner would have to go higher than the device\r\n" +
+            "will place one — then the setting delivers the angle shown\r\n" +
+            "instead, and every smaller setting delivers the same filter.");
         toolTip.SetToolTip(
             buttonCollapse,
             "Fold the block down to its header — source, gain, delay\r\n" +
@@ -745,6 +832,23 @@ public partial class VirtualCrossoverChannelControl : UserControl
         comboBoxZone.SelectedIndexChanged += (_, _) =>
         {
             UpdateZoneAvailability();
+            // The zone decides WHICH crossover the phase control reads.
+            UpdatePhaseReadout();
+            RaiseSettingsChanged();
+        };
+        numericPhase.ValueChanged += (_, _) =>
+        {
+            // The control has 64 positions and no others, so a typed angle lands on
+            // the nearest one. Re-entrant by design: the assignment raises this
+            // handler again with a value that is already on the grid.
+            var snapped = (decimal)PhaseRotationControl.SnapToGrid((double)numericPhase.Value);
+            if (snapped != numericPhase.Value)
+            {
+                numericPhase.Value = snapped;
+                return;
+            }
+
+            UpdatePhaseReadout();
             RaiseSettingsChanged();
         };
         comboBoxCrossoverKind.SelectedIndexChanged += (_, _) =>
@@ -767,7 +871,13 @@ public partial class VirtualCrossoverChannelControl : UserControl
         DarkComboBox slopeComboBox,
         DarkNumericUpDown rippleInput)
     {
-        frequencyInput.ValueChanged += (_, _) => RaiseSettingsChanged();
+        frequencyInput.ValueChanged += (_, _) =>
+        {
+            // A crossover corner IS the phase control's reference, so moving it moves
+            // the all-pass the same angle now builds.
+            UpdatePhaseReadout();
+            RaiseSettingsChanged();
+        };
         familyComboBox.SelectedIndexChanged += (_, _) =>
         {
             PopulateSlopes(familyComboBox, slopeComboBox);
@@ -860,6 +970,99 @@ public partial class VirtualCrossoverChannelControl : UserControl
     // in the Delay field's tooltip rather than on a label of its own — a block
     // now has to carry a zone selector too, and of the two the distance is the
     // one that is READ occasionally (against a tape measure) rather than set.
+    // Shows or hides the phase row and re-pins the block's height around it. Runs
+    // through the collapse path because that is the one place the pin is moved, and
+    // moving it anywhere else races the flow list's reflow.
+    private void ApplyPhaseAvailability()
+    {
+        // Through the fold's own path, because that is the one place the size pin is
+        // moved and a pin moved anywhere else races the flow list's reflow — but
+        // WITHOUT its event: the block is not folding, and a host that took this for
+        // one would write a fold state nobody asked for.
+        ApplyCollapsedState(raiseChanged: false);
+        UpdatePhaseReadout();
+    }
+
+    // What the angle actually builds, beside the field: the all-pass corner the
+    // device would place for it. Worth the space because the angle alone does not
+    // say what filter it is — the same number is a different filter on a channel
+    // crossed elsewhere, and moving the crossover moves this readout under it.
+    private void UpdatePhaseReadout()
+    {
+        double degrees = (double)numericPhase.Value;
+        double reference = PhaseReferenceHz;
+        var rotation = new PhaseRotationSpec(degrees, reference);
+        string text;
+        Color color = UiPalette.TextSecondary;
+        if (rotation.IsTransparent)
+        {
+            text = $"ref {FormatHz(reference)}";
+            color = UiPalette.TextDisabled;
+        }
+        else
+        {
+            AllPassSpec realized = PhaseRotationControl.Realize(rotation, processorSampleRateHz)!;
+            double delivered = PhaseRotationControl.DeliveredDegrees(
+                rotation, processorSampleRateHz);
+            bool capped = delivered > degrees + 0.05;
+            text = capped
+                ? $"ref {FormatHz(reference)} → {delivered:0.0}° min"
+                : $"ref {FormatHz(reference)} → AP2 {FormatHz(realized.FrequencyHz)}";
+            color = capped ? UiPalette.WarningAmber : UiPalette.TextSecondary;
+        }
+
+        labelPhaseInfo.Text = text;
+        labelPhaseInfo.ForeColor = color;
+        if (tooltipHost is { } host)
+        {
+            numericPhase.ApplyToolTip(host, PhaseTooltipText());
+        }
+    }
+
+    private static string FormatHz(double frequencyHz) =>
+        frequencyHz >= 10_000 ? $"{frequencyHz / 1_000:0.0} kHz" : $"{frequencyHz:0} Hz";
+
+    private string PhaseTooltipText()
+    {
+        double degrees = (double)numericPhase.Value;
+        double reference = PhaseReferenceHz;
+        string newLine = Environment.NewLine;
+        string head =
+            "The processor's channel Phase control: a second-order all-pass" + newLine +
+            "(Q = 1) whose corner the device places so that the phase equals" + newLine +
+            "this angle at the channel's own crossover — the low-pass on a" + newLine +
+            "subwoofer block, the high-pass on every other one, and the" + newLine +
+            "configured value even where that filter is switched off." + newLine +
+            $"Steps of {PhaseRotationControl.StepDegrees:0.###}°, up to " +
+            $"{PhaseRotationControl.MaximumDegrees:0.###}°." + newLine + newLine +
+            "Move the crossover and the same angle becomes a different" + newLine +
+            "filter — that is the control's own rule, not a simplification." +
+            newLine + newLine;
+        var rotation = new PhaseRotationSpec(degrees, reference);
+        if (rotation.IsTransparent)
+        {
+            return head + $"No rotation. The reference would be {FormatHz(reference)}.";
+        }
+
+        AllPassSpec realized = PhaseRotationControl.Realize(rotation, processorSampleRateHz)!;
+        double delivered = PhaseRotationControl.DeliveredDegrees(rotation, processorSampleRateHz);
+        double groupDelayMs = AllPassFilter.GroupDelaySeconds(
+            realized, reference, processorSampleRateHz) * 1_000;
+        string body =
+            $"Reference {FormatHz(reference)}, all-pass corner " +
+            $"{FormatHz(realized.FrequencyHz)}," + newLine +
+            $"{groupDelayMs:0.000} ms of group delay at the reference.";
+        return delivered > degrees + 0.05
+            ? head + body + newLine + newLine +
+                $"The device will not place a corner above " +
+                $"{FormatHz(PhaseRotationControl.MaximumCornerHz(processorSampleRateHz))}," +
+                newLine +
+                $"so this setting delivers {delivered:0.0}° rather than {degrees:0.###}°." +
+                newLine +
+                "Every smaller setting delivers the same filter."
+            : head + body;
+    }
+
     private void UpdateDelayDistance()
     {
         double millimeters = (double)numericDelay.Value * Acoustics.SpeedOfSoundAt20CMetersPerSecond;

@@ -11,7 +11,8 @@ using Resonalyze.Dsp;
 using Color = MigraDoc.DocumentObjectModel.Color;
 // One printed side of a channel pair, as the graphs consume it.
 using SheetEntry = (int Index, string SideSuffix, bool Dashed,
-    Resonalyze.VirtualCrossoverChannelSettings Channel);
+    Resonalyze.VirtualCrossoverChannelSettings Channel,
+    Resonalyze.VirtualCrossoverZone Zone);
 
 namespace Resonalyze;
 
@@ -151,7 +152,8 @@ internal static class VirtualCrossoverSheetPdf
                 {
                     participants.Add(
                         (i, sideSuffix,
-                         sideSuffix == VirtualCrossoverSheet.RightSuffix, channel));
+                         sideSuffix == VirtualCrossoverSheet.RightSuffix, channel,
+                         project.Pairs[i].Zone));
                 }
             }
         }
@@ -249,6 +251,13 @@ internal static class VirtualCrossoverSheetPdf
         AddPairRow(table, LowPassLabel,
             VirtualCrossoverSheet.DescribeLowPass(left),
             VirtualCrossoverSheet.DescribeLowPass(right));
+        // Printed only where one is dialled in: the control exists on some devices
+        // and not others, and a "0" on a sheet for one without it sends the reader
+        // looking for a knob that is not there.
+        if (HasPhaseRotation(left) || HasPhaseRotation(right))
+        {
+            AddPairRow(table, "Phase", PhaseText(left), PhaseText(right));
+        }
         if (HasPeq(left) || HasPeq(right))
         {
             AddPairRow(table, "PEQ", PeqSummary(left), PeqSummary(right));
@@ -269,6 +278,17 @@ internal static class VirtualCrossoverSheetPdf
 
     private static string PolarityText(VirtualCrossoverChannelSettings channel) =>
         channel.InvertPolarity ? "Inverted" : "Normal";
+
+    private static bool HasPhaseRotation(VirtualCrossoverChannelSettings channel) =>
+        channel.PhaseRotationDegrees > 0;
+
+    // The angle alone, which is what the device is set to. The all-pass corner it
+    // lands on is not printed: the device derives that itself from the crossover
+    // rows above, and a second frequency here would read as one more to type in.
+    private static string PhaseText(VirtualCrossoverChannelSettings channel) =>
+        HasPhaseRotation(channel)
+            ? $"{Number(channel.PhaseRotationDegrees, "0.###")} deg"
+            : "0 deg";
 
     private static Color PolarityColor(VirtualCrossoverChannelSettings channel) =>
         channel.InvertPolarity
@@ -391,6 +411,10 @@ internal static class VirtualCrossoverSheetPdf
         AddRow(table, "Polarity", PolarityText(channel), PolarityColor(channel));
         AddRow(table, HighPassLabel, VirtualCrossoverSheet.DescribeHighPass(channel));
         AddRow(table, LowPassLabel, VirtualCrossoverSheet.DescribeLowPass(channel));
+        if (HasPhaseRotation(channel))
+        {
+            AddRow(table, "Phase", PhaseText(channel));
+        }
         if (HasPeq(channel))
         {
             AddRow(table, "PEQ", PeqSummary(channel));
@@ -479,9 +503,8 @@ internal static class VirtualCrossoverSheetPdf
     // reasons therefore shows an electrical notch here — honestly: that
     // junction knits through timing this graph does not model, and the
     // acoustic summation lives on the panel's plot.
-    private static DspChannelChain DesignChain(
-        VirtualCrossoverChannelSettings channel) =>
-        channel.ToChain() with { DelayMs = 0 };
+    private static DspChannelChain DesignChain(SheetEntry entry) =>
+        entry.Channel.ToChain(entry.Zone) with { DelayMs = 0 };
 
     private static ChainCurve ChannelCurve(SheetEntry entry) =>
         new(
@@ -489,7 +512,7 @@ internal static class VirtualCrossoverSheetPdf
             ChainColors[entry.Index % ChainColors.Length],
             entry.Dashed ? LineStyle.Dash : LineStyle.Solid,
             CurveThickness,
-            [DesignChain(entry.Channel)]);
+            [DesignChain(entry)]);
 
     /// <summary>
     /// The curves of ONE group's graph: every member's own chain; the group's
@@ -534,7 +557,7 @@ internal static class VirtualCrossoverSheetPdf
         List<DspChannelChain> SideChains(string excludedSuffix) =>
             [.. members
                 .Where(member => member.SideSuffix != excludedSuffix)
-                .Select(member => DesignChain(member.Channel))];
+                .Select(DesignChain)];
 
         List<DspChannelChain> left = SideChains(VirtualCrossoverSheet.RightSuffix);
         List<DspChannelChain> right = SideChains(VirtualCrossoverSheet.LeftSuffix);

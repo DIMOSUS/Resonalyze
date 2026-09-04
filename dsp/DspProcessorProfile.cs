@@ -33,12 +33,19 @@ namespace Resonalyze.Dsp;
 /// dialable tune into a refusal (or the reverse), so a line states a number only
 /// when the manual does.
 /// </param>
+/// <param name="PhaseControl">
+/// Whether the device offers a per-channel PHASE control — an all-pass whose corner
+/// it derives from that channel's crossover, see <see cref="PhaseRotationControl"/>.
+/// False is the safe default: it is not a filter a device can be assumed to have,
+/// and a line claims it only where the maker's tool is known to show one.
+/// </param>
 public sealed record DspProcessorPreset(
     string Manufacturer,
     string ModelName,
     int SampleRateHz,
     PeqQConvention QConvention,
-    double? MaxDelayMs = null)
+    double? MaxDelayMs = null,
+    bool PhaseControl = false)
 {
     /// <summary>Stable file identity, e.g. <c>helix-dsp-ultra-s</c>.</summary>
     public string Id { get; } = MakeId(Manufacturer, ModelName);
@@ -151,24 +158,28 @@ public static class DspProcessorCatalog
         // AMP Panacea is a Cirrus Logic CS47048C; its Symmetric Q is confirmed by measurement.
         new("AMP", "Panacea v1/v2", 96_000, PeqQConvention.Symmetric),
 
-        new("HELIX", "NEXT DSP ULTRA XT", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "DSP ULTRA S", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "DSP ULTRA", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "DSP PRO MK3", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "DSP PRO MK2", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "DSP.3S", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "DSP.3", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "DSP MINI MK2", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "DSP MINI", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "P SIX DSP ULTIMATE", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "P SIX DSP MK2", 96_000, PeqQConvention.Rbj),
-        new("HELIX", "NEXT V EIGHT DSP ULTIMATE", 48_000, PeqQConvention.Rbj),
-        new("HELIX", "V EIGHT DSP MK2", 48_000, PeqQConvention.Rbj),
-        new("HELIX", "V TWELVE DSP MK2", 48_000, PeqQConvention.Rbj),
-        new("HELIX", "V TWELVE DSP", 48_000, PeqQConvention.Rbj),
-        new("HELIX", "V EIGHTEEN DSP", 48_000, PeqQConvention.Rbj),
-        new("HELIX", "M SIX DSP", 48_000, PeqQConvention.Rbj),
-        new("HELIX", "AMPLIFY 206 DSP", 48_000, PeqQConvention.Rbj),
+        // Every HELIX runs the DSP PC-Tool, whose channel Phase control is documented
+        // for the family and measured on a DSP ULTRA S (see PhaseRotationControl). The
+        // tool shows it on subwoofer and mid/high channels only; that gating is the
+        // device's, and this flag is only about the family offering the control at all.
+        new("HELIX", "NEXT DSP ULTRA XT", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "DSP ULTRA S", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "DSP ULTRA", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "DSP PRO MK3", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "DSP PRO MK2", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "DSP.3S", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "DSP.3", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "DSP MINI MK2", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "DSP MINI", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "P SIX DSP ULTIMATE", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "P SIX DSP MK2", 96_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "NEXT V EIGHT DSP ULTIMATE", 48_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "V EIGHT DSP MK2", 48_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "V TWELVE DSP MK2", 48_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "V TWELVE DSP", 48_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "V EIGHTEEN DSP", 48_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "M SIX DSP", 48_000, PeqQConvention.Rbj, PhaseControl: true),
+        new("HELIX", "AMPLIFY 206 DSP", 48_000, PeqQConvention.Rbj, PhaseControl: true),
 
         new("Audison", "Forza AF M12.14 bit", 96_000, PeqQConvention.Rbj),
         new("Audison", "Forza AF M8.14 bit", 96_000, PeqQConvention.Rbj),

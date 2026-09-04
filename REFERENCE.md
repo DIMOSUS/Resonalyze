@@ -1776,7 +1776,22 @@ which side the controls edit, **L→R** / **R→L** copy chain settings across s
 (a dialog picks the channels and which parts travel — see below),
 and a **Mono** checkbox turns a pair into a single shared driver — the typical
 one-subwoofer car layout — feeding both sides' sums. The setup grows from two up
-to twelve pairs, and **+/−** folds a block down to its header. Every channel in a
+to twelve pairs with **Add** and **Remove** under the block list, and **+/−**
+folds a block down to its header. **Reset** beside them starts the panel over:
+every block back to an empty default one, the list back to three, and the
+panel's own settings — target level, smoothing, gate, Show view, scene offset —
+with them. It asks first, and the question names what it takes and where the
+copy goes: the autosave is copied to `virtual-crossover.before-reset.json`
+beside it, so a misclick comes back through **Load session…**. That copy is the
+tool's own one-deep net, not an archive — the next reset overwrites it, so a
+tune worth keeping still wants **Save session…**. A copy that cannot be written
+stops the reset to ask again rather than discarding a tune with nothing behind
+it. Its name is its own on purpose: the `.backup` file beside it holds a project
+the tool could NOT read, and overwriting that with one it read perfectly well
+would throw away the only copy of a session the user is still deciding about.
+Two things survive a reset, because neither belongs to the tune: the microphone
+calibration selected in the panel (a property of the rig) and the shared EQ
+target curve, which the EQ Wizard owns. Every channel in a
 project must share one sample rate — the rate they were MEASURED at, which is a
 separate question from the rate the processor runs at (see
 [DSP processor](#dsp-processor)).
@@ -2824,7 +2839,12 @@ The remaining buttons in the column beside the plots:
   [Dropping a file on the window](#dropping-a-file-on-the-window)).
 
 The tool's autosaved state persists in `tools/virtual-crossover.json` and
-survives restarts. Accuracy holds within the usual physics: one microphone
+survives restarts. Two files can sit beside it: `virtual-crossover.json.backup`,
+where a project the tool could not read is moved aside so the next start has
+something to open — it is kept for salvage, not because it will load — and
+`virtual-crossover.before-reset.json`, the copy **Reset** takes before it clears
+the panel, which is an ordinary session file **Load session…** opens.
+Accuracy holds within the usual physics: one microphone
 position, the same playback chain for every measurement, and the linear
 (non-clipping) regime.
 

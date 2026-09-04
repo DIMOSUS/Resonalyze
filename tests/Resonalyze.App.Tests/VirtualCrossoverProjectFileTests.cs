@@ -1877,6 +1877,115 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
+    /// <summary>
+    /// Reset copies the autosave aside rather than moving it: the panel rewrites the
+    /// original on its way out, and a move would leave a window with no autosave at
+    /// all. The copy is an ordinary session file, so Load session… brings the tune
+    /// back whole.
+    /// </summary>
+    [Fact]
+    public void BackupBeforeReset_CopiesTheAutosaveAndLeavesItInPlace()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var project = new VirtualCrossoverProjectFile();
+            project.Pairs[0].Left.DelayMs = 4.87;
+            project.Save(root);
+
+            (string? path, string? error) =
+                VirtualCrossoverProjectFile.BackupBeforeReset(root);
+
+            Assert.Null(error);
+            Assert.Equal(VirtualCrossoverProjectFile.ResetBackupPath(root), path);
+            Assert.True(File.Exists(VirtualCrossoverProjectFile.GetPath(root)));
+            Assert.Equal(
+                4.87,
+                VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.DelayMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A first run has no autosave and nothing to lose, so there is nothing to report
+    /// either — answering with an error would have the panel ask about a file that
+    /// never existed.
+    /// </summary>
+    [Fact]
+    public void BackupBeforeReset_SaysNothingWhenThereIsNoAutosave()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            Assert.Equal(
+                (null, null), VirtualCrossoverProjectFile.BackupBeforeReset(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The reset copy has its own name because the other backup holds a file the tool
+    /// could NOT read: overwriting that with a tune it read perfectly well would throw
+    /// away the only copy of an unreadable project while the user was still deciding
+    /// what to do about it.
+    /// </summary>
+    [Fact]
+    public void BackupBeforeReset_LeavesTheUnreadableFileBackupAlone()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile().Save(root);
+            string unusable = VirtualCrossoverProjectFile.GetPath(root) + ".backup";
+            File.WriteAllText(unusable, "the project that could not be read");
+
+            VirtualCrossoverProjectFile.BackupBeforeReset(root);
+
+            Assert.Equal("the project that could not be read", File.ReadAllText(unusable));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// One copy is kept, and it is the reset just performed — the question a reset
+    /// leaves is "undo THAT", and a pile of dated files would be a second archive
+    /// beside the user's own exported sessions.
+    /// </summary>
+    [Fact]
+    public void BackupBeforeReset_KeepsOnlyTheMostRecentCopy()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var first = new VirtualCrossoverProjectFile();
+            first.Pairs[0].Left.DelayMs = 1.0;
+            first.Save(root);
+            VirtualCrossoverProjectFile.BackupBeforeReset(root);
+
+            var second = new VirtualCrossoverProjectFile();
+            second.Pairs[0].Left.DelayMs = 2.0;
+            second.Save(root);
+            (string? path, _) = VirtualCrossoverProjectFile.BackupBeforeReset(root);
+
+            Assert.Equal(
+                2.0,
+                VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.DelayMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTemporaryDirectory()
     {
         string path = Path.Combine(

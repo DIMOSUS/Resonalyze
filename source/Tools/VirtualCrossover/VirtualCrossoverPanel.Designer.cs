@@ -38,6 +38,7 @@ namespace Resonalyze
             channelListPanel = new FlowLayoutPanel();
             buttonAddChannel = new ReleaseClickButton();
             buttonRemoveChannel = new ReleaseClickButton();
+            buttonResetChannels = new ReleaseClickButton();
             sideSelectorPanel = new Panel();
             radioSideLeft = new ReleaseClickRadioButton();
             radioSideRight = new ReleaseClickRadioButton();
@@ -133,9 +134,9 @@ namespace Resonalyze
             buttonAddChannel.ForeColor = Color.White;
             buttonAddChannel.Location = new Point(6, 700);
             buttonAddChannel.Name = "buttonAddChannel";
-            buttonAddChannel.Size = new Size(158, 24);
+            buttonAddChannel.Size = new Size(112, 24);
             buttonAddChannel.TabIndex = 4;
-            buttonAddChannel.Text = "Add channel";
+            buttonAddChannel.Text = "Add";
             buttonAddChannel.UseVisualStyleBackColor = false;
             // 
             // buttonRemoveChannel
@@ -144,12 +145,25 @@ namespace Resonalyze
             buttonRemoveChannel.BackColor = Color.FromArgb(46, 51, 67);
             buttonRemoveChannel.FlatStyle = FlatStyle.Popup;
             buttonRemoveChannel.ForeColor = Color.White;
-            buttonRemoveChannel.Location = new Point(171, 700);
+            buttonRemoveChannel.Location = new Point(123, 700);
             buttonRemoveChannel.Name = "buttonRemoveChannel";
-            buttonRemoveChannel.Size = new Size(158, 24);
+            buttonRemoveChannel.Size = new Size(112, 24);
             buttonRemoveChannel.TabIndex = 5;
-            buttonRemoveChannel.Text = "Remove channel";
+            buttonRemoveChannel.Text = "Remove";
             buttonRemoveChannel.UseVisualStyleBackColor = false;
+            // 
+            // buttonResetChannels
+            // 
+            buttonResetChannels.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            buttonResetChannels.BackColor = Color.FromArgb(46, 51, 67);
+            buttonResetChannels.FlatStyle = FlatStyle.Popup;
+            buttonResetChannels.ForeColor = Color.White;
+            buttonResetChannels.Location = new Point(240, 700);
+            buttonResetChannels.Name = "buttonResetChannels";
+            buttonResetChannels.Size = new Size(113, 24);
+            buttonResetChannels.TabIndex = 6;
+            buttonResetChannels.Text = "Reset";
+            buttonResetChannels.UseVisualStyleBackColor = false;
             // 
             // sideSelectorPanel
             // 
@@ -693,6 +707,7 @@ namespace Resonalyze
             Controls.Add(channelListPanel);
             Controls.Add(buttonAddChannel);
             Controls.Add(buttonRemoveChannel);
+            Controls.Add(buttonResetChannels);
             Controls.Add(sideSelectorPanel);
             Controls.Add(dspPlotView);
             Controls.Add(mainPlotView);
@@ -720,6 +735,7 @@ namespace Resonalyze
         private FlowLayoutPanel channelListPanel;
         private ReleaseClickButton buttonAddChannel;
         private ReleaseClickButton buttonRemoveChannel;
+        private ReleaseClickButton buttonResetChannels;
         private Panel sideSelectorPanel;
         private ReleaseClickRadioButton radioSideLeft;
         private ReleaseClickRadioButton radioSideRight;

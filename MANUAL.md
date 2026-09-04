@@ -478,7 +478,10 @@ relative SPL, phase and absolute timing are exactly what Virtual DSP needs.
 The panel is dense, so here are its six regions:
 
 1. **The channel cards** — one per band, top to bottom in frequency order, each with
-   its source, gain, delay, polarity, crossover, PEQ and curve toggles. The **L / R**
+   its source, gain, delay, polarity, crossover, PEQ and curve toggles. **Add** and
+   **Remove** under the list change how many there are; **Reset** empties the panel
+   back to three blank cards and its default settings, asking first and putting a
+   copy of the current session aside so **Load session…** can undo it. The **L / R**
    selector at the bottom decides which side every card shows.
 2. **The acoustic plot** — each channel's processed response, the phase-aware **Sum**,
    and **Sum loss** against the right-hand axis.

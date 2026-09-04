@@ -535,6 +535,7 @@ public sealed class VirtualCrossoverProjectFile
     // letters (A, B, C…) and the plot palette both go up to this count.
     public const int MaximumChannelCount = 12;
     private const string FileName = "virtual-crossover.json";
+    private const string ResetBackupFileName = "virtual-crossover.before-reset.json";
 
     /// <summary>
     /// The widest scene offset (ms) the stereo Auto delay accepts: beyond a
@@ -981,6 +982,61 @@ public sealed class VirtualCrossoverProjectFile
         Path.Combine(
             rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory,
             FileName);
+
+    /// <summary>
+    /// Where <see cref="BackupBeforeReset"/> puts the copy it takes.
+    /// </summary>
+    public static string ResetBackupPath(string? rootDirectory = null) =>
+        Path.Combine(
+            rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory,
+            ResetBackupFileName);
+
+    /// <summary>
+    /// Copies the autosave aside before the panel replaces it wholesale, so a
+    /// Reset is not the end of the tune it discards: the copy is an ordinary
+    /// session file and comes back through <b>Load session…</b>.
+    /// </summary>
+    /// <returns>
+    /// The copy's path, or null with the reason it could not be written. Both
+    /// null when there was no autosave to copy — a first run has nothing to lose,
+    /// and reporting that as a failure would make the panel ask a question about
+    /// a file that never existed.
+    /// </returns>
+    /// <remarks>
+    /// A COPY rather than a move: the caller is about to rewrite the original, and
+    /// a move would leave a window in which the tool has no autosave at all. One
+    /// copy is kept and overwritten — the answer to "undo that reset" is always
+    /// the reset just performed, and a growing pile of dated files would be a
+    /// second archive beside the user's own exported sessions.
+    /// <para>
+    /// Its own name, not the <c>.backup</c> suffix
+    /// <see cref="BackupUnusableFile"/> uses: that one holds a file the tool could
+    /// not read, this one a tune it read perfectly well, and clobbering the first
+    /// with the second would throw away the only copy of an unreadable project
+    /// while the user was still deciding what to do about it. The <c>.json</c>
+    /// extension is deliberate too — it is what the Load session dialog offers.
+    /// </para>
+    /// </remarks>
+    public static (string? Path, string? Error) BackupBeforeReset(
+        string? rootDirectory = null)
+    {
+        string path = GetPath(rootDirectory);
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return (null, null);
+            }
+
+            string backupPath = ResetBackupPath(rootDirectory);
+            File.Copy(path, backupPath, overwrite: true);
+            return (backupPath, null);
+        }
+        catch (Exception exception)
+        {
+            return (null, exception.Message);
+        }
+    }
 
     public void Save(string? rootDirectory = null)
     {

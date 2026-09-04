@@ -249,6 +249,7 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonAudition.Click += async (_, _) => await AuditionTrackAsync();
         buttonAddChannel.Click += (_, _) => AddChannel();
         buttonRemoveChannel.Click += (_, _) => RemoveChannel();
+        buttonResetChannels.Click += async (_, _) => await ResetChannelsAsync();
         buttonCopyLeftToRight.Click += (_, _) => CopySideSettings(fromRight: false);
         buttonCopyRightToLeft.Click += (_, _) => CopySideSettings(fromRight: true);
 
@@ -1564,6 +1565,91 @@ public partial class VirtualCrossoverPanel : UserControl
 
         ScheduleSave();
         RedrawAll();
+    }
+
+    /// <summary>
+    /// Puts the panel back to what it shows on a machine that has never used it:
+    /// the default three empty blocks, every chain, zone and curve toggle at its
+    /// default, and the shared settings — target level, smoothing, gate, view,
+    /// scene offset — with them.
+    /// </summary>
+    /// <remarks>
+    /// One project object carries all of that, so the reset is the ordinary bind of
+    /// a fresh one — the very path the tool takes on first run. Doing it any other
+    /// way would mean a second definition of "default", and the two would drift.
+    /// <para>
+    /// Two things deliberately survive it, because neither belongs to the tune: the
+    /// microphone calibration selected in the panel (a property of the rig, and the
+    /// bind keeps it exactly as a session naming none would) and the shared EQ
+    /// target CURVE, which the EQ Wizard owns and other tools read. The target
+    /// LEVEL is the project's own and does reset.
+    /// </para>
+    /// <para>
+    /// Asked before it runs, and the question spells the loss out. The autosave is
+    /// copied aside first (see
+    /// <see cref="VirtualCrossoverProjectFile.BackupBeforeReset"/>), so the answer
+    /// to a misclick is Load session… on that copy — but the copy is the tool's own
+    /// one-deep safety net, not an archive: the NEXT reset overwrites it, which is
+    /// why the question still points at Save session… for a tune worth keeping.
+    /// </para>
+    /// </remarks>
+    private async Task ResetChannelsAsync()
+    {
+        // The load has to have finished, or the reset binds a project the pending
+        // one is about to replace — the same wait the session import takes.
+        await storedProjectLoad;
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        if (MessageBox.Show(
+                FindForm(),
+                "Reset every channel block to its default: the measurements come " +
+                "off, the crossovers, delays, gains, polarity, PEQ banks and zones " +
+                "go back to their defaults, and the list returns to " +
+                $"{DefaultChannelCount} blocks." +
+                Environment.NewLine + Environment.NewLine +
+                "The panel's own settings go with them — target level, smoothing, " +
+                "the gate, the Show view and the stereo scene offset. The " +
+                "microphone calibration and the shared EQ target curve stay." +
+                Environment.NewLine + Environment.NewLine +
+                "The current session is copied to" + Environment.NewLine +
+                VirtualCrossoverProjectFile.ResetBackupPath() +
+                Environment.NewLine +
+                "first, so Load session… brings it back. That copy is overwritten " +
+                "by the next reset — for a tune worth keeping, export it with Save " +
+                "session first." +
+                Environment.NewLine + Environment.NewLine +
+                "Reset now?",
+                "Virtual DSP",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        // Taken AFTER the question — a cancelled reset must not write a file —
+        // and before the bind, which is what makes the copy worth having.
+        (_, string? backupError) = VirtualCrossoverProjectFile.BackupBeforeReset();
+        if (backupError != null && MessageBox.Show(
+                FindForm(),
+                "The copy of the current session could not be written:" +
+                Environment.NewLine + backupError +
+                Environment.NewLine + Environment.NewLine +
+                "Resetting now would discard the tune with nothing to bring it " +
+                "back from. Reset anyway?",
+                "Virtual DSP",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        await ApplyProjectAsync(new VirtualCrossoverProjectFile(), imported: false);
+        // The bind alone leaves the reset in memory; the autosave is what makes it
+        // the state the tool opens on, exactly as an imported session does.
+        ScheduleSave();
     }
 
     // Folding a block only changes how much of it the list shows: the flow layout
@@ -2895,6 +2981,20 @@ public partial class VirtualCrossoverPanel : UserControl
             "deepest null — flipping polarity back then gives\r\n" +
             "the best summation.");
         toolTip.SetToolTip(
+            buttonAddChannel,
+            "Add a channel block to the bottom of the list.");
+        toolTip.SetToolTip(
+            buttonRemoveChannel,
+            "Drop the last channel block, with whatever is loaded in it.");
+        toolTip.SetToolTip(
+            buttonResetChannels,
+            "Start over: every block back to an empty default one, the list\r\n" +
+            $"back to {DefaultChannelCount} of them, and the panel's own settings —\r\n" +
+            "target level, smoothing, gate, view, scene offset — with them.\r\n" +
+            "The microphone calibration and the shared EQ target curve stay.\r\n" +
+            "Asks first, and copies the current session aside so Load session…\r\n" +
+            "brings it back — one copy, overwritten by the next reset.");
+        toolTip.SetToolTip(
             radioViewMagnitude,
             "Show the magnitude of the channels, the sum,\r\n" +
             "and the sum loss.");
@@ -3334,8 +3434,14 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             // The view is empty rather than broken — a rear view of a front-only
             // car. Say so instead of drawing the whole system as if nothing had
-            // been asked for.
-            acousticPlot.Draw(new AcousticRender(EmptyViewHint(groupView), [], null));
+            // been asked for. With NO channel resolved at all, though, the zone
+            // advice would be a lie in the other direction: nothing is filed
+            // wrongly, there is simply nothing loaded yet, which is the state a
+            // fresh project and the Reset button both leave behind.
+            acousticPlot.Draw(new AcousticRender(
+                processed.Count == 0 ? NoSourcesHint : EmptyViewHint(groupView),
+                [],
+                null));
             MetricChanged?.Invoke(string.Empty, string.Empty);
             // And the warning with it: a gate or calibration complaint left
             // standing beside an empty plot is about channels the user can no

@@ -758,7 +758,8 @@ capsule with its own file.
 both sides for a stereo band, once for a mono channel. The button reads **MMM** for
 none, **MMM ✓** when one is attached, **MMM ⚠** when the session refers to one it cannot
 read. When every playing channel has a capture, the **Hybrid** toggle under the graph
-becomes available. Tick it.
+becomes available — and turns **red** until you tick it, because until then the plot
+is still drawing one microphone position while the averages sit unused. Tick it.
 
 ![Each channel's MMM button, and the Hybrid toggle they enable](assets/images/manual/hybrid-enable.png)
 

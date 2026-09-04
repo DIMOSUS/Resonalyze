@@ -193,6 +193,12 @@ public partial class VirtualCrossoverPanel : UserControl
     // that cannot show it has a colour to come back to.
     private Color targetToggleColor;
 
+    // The colour the Hybrid toggle wears while it is live and TICKED. Captured from
+    // the designer once, for the reason UpdateTargetToggleLook states: the toggle is
+    // recoloured to say a capture is going unused, and the shared muting helper would
+    // memorize that reminder as the colour to come back to.
+    private Color hybridToggleColor;
+
     public VirtualCrossoverPanel()
     {
         InitializeComponent();
@@ -213,6 +219,7 @@ public partial class VirtualCrossoverPanel : UserControl
         checkBoxShowSum.ForeColor = Color.FromArgb(SumColor.R, SumColor.G, SumColor.B);
         checkBoxShowLoss.ForeColor = Color.FromArgb(LossColor.R, LossColor.G, LossColor.B);
         targetToggleColor = checkBoxShowTarget.ForeColor;
+        hybridToggleColor = checkBoxHybrid.ForeColor;
 
         metrics = new VirtualCrossoverMetrics(
             processingCoordinator,
@@ -967,7 +974,13 @@ public partial class VirtualCrossoverPanel : UserControl
     private void WirePanelEvents()
     {
         checkBoxShowSum.CheckedChanged += (_, _) => OnViewChanged();
-        checkBoxHybrid.CheckedChanged += (_, _) => OnViewChanged();
+        checkBoxHybrid.CheckedChanged += (_, _) =>
+        {
+            // The toggle's own colour carries the reminder that a capture is going
+            // unused, so it has to follow the tick and not only the coverage.
+            RefreshHybridAvailability();
+            OnViewChanged();
+        };
         checkBoxShowLoss.CheckedChanged += (_, _) => OnViewChanged();
         checkBoxShowTarget.CheckedChanged += (_, _) => OnViewChanged();
         numericTargetLevel.ValueChanged += (_, _) => OnViewChanged();
@@ -3607,7 +3620,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (VirtualCrossoverGroupViews.DrawsGroupSums(view))
         {
-            return new AcousticRender(hint, BuildGroupSumCurves(processed), null);
+            return new AcousticRender(
+                hint, BuildGroupSumCurves(processed, magnitudes, hybrid), null);
         }
 
         return new AcousticRender(
@@ -3625,34 +3639,67 @@ public partial class VirtualCrossoverPanel : UserControl
     // Every line is gated on ONE anchor, taken across all the shown channels
     // rather than per group: the whole point is to read the groups' relative
     // timing off the plot, and per-group anchors would each hide their own group's
-    // delay by construction.
-    private List<AcousticCurve> BuildGroupSumCurves(List<ProcessedChannel> shown)
+    // delay by construction. The gate offset comes from that shared anchor for the
+    // same reason — one window for every line, or the comparison is between
+    // windows rather than between groups.
+    //
+    // With the hybrid on, a group's line is built the way the Sum is built in every
+    // other view (BuildHybridSumCurve), over that group's members: their captures
+    // through their chains, held together by the phase their impulse responses
+    // measure. A group whose members cannot produce one falls back to its measured
+    // sum on its own — the alternative, dropping the line, would hide a whole group
+    // from the view that exists to compare them.
+    private List<AcousticCurve> BuildGroupSumCurves(
+        List<ProcessedChannel> shown,
+        IReadOnlyList<AnalysisCurve>? magnitudes,
+        HybridMagnitudes? hybrid)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildGroupSumCurves");
         int anchor = ProcessedChannels.SharedStartAnchorIndex(shown);
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        double gateOffsetMs = snapshot.ResolveGateOffsetMs(
+            oppositeSide: false, anchor, shown[0].SampleRate);
+        bool drawHybrid = hybrid != null && magnitudes != null &&
+            magnitudes.Count >= shown.Count;
         var curves = new List<AcousticCurve>();
         foreach (VirtualCrossoverZone zone in VirtualCrossoverZones.All)
         {
-            List<ProcessedChannel> members =
-                [.. shown.Where(item => item.Channel.Pair.Zone == zone)];
-            if (members.Count == 0)
+            // By POSITION, because the hybrid curves and the reference magnitudes
+            // are both indexed against the shown set and a packed member list would
+            // silently pair a zone's channels with another zone's captures.
+            List<int> positions =
+            [
+                .. Enumerable.Range(0, shown.Count)
+                    .Where(index => shown[index].Channel.Pair.Zone == zone)
+            ];
+            if (positions.Count == 0)
             {
                 continue;
             }
 
+            List<ProcessedChannel> members = [.. positions.Select(index => shown[index])];
+            List<SignalPoint>? points = drawHybrid
+                ? BuildHybridSumCurve(
+                    HybridSubset(hybrid!, positions),
+                    members,
+                    anchor,
+                    snapshot,
+                    gateOffsetMs,
+                    [
+                        .. positions.Select(index =>
+                            (IReadOnlyList<SignalPoint>)magnitudes![index].Points)
+                    ])
+                : null;
             curves.Add(new AcousticCurve(
                 VirtualCrossoverZones.DisplayName(zone),
-                BuildMeasuredSumCurve(members, anchor).Display.Points,
+                points ?? BuildMeasuredSumCurve(members, anchor).Display.Points,
                 GroupColor(zone),
                 2.0,
                 LineStyle.Solid));
         }
 
         // The target belongs here as much as anywhere: judging a rear fill's level
-        // against the house curve is half of what this view is for. (The hybrid
-        // does not — a spatial average is per DRIVER, and there is no honest way
-        // to hang one on a group's sum, so the checkbox is greyed out in this view
-        // rather than left as a switch that does nothing.)
+        // against the house curve is half of what this view is for.
         if (BuildTargetCurve() is { } target)
         {
             curves.Insert(0, target);
@@ -3660,6 +3707,33 @@ public partial class VirtualCrossoverPanel : UserControl
 
         return curves;
     }
+
+    /// <summary>
+    /// One group's slice of the set's hybrid, for a sum over that group alone.
+    /// </summary>
+    /// <remarks>
+    /// The per-channel lists are positional against the shown set, so they are
+    /// narrowed with it; the set OFFSET and its datums are not — they describe the
+    /// set the captures came from, which a subset does not change, and it is that
+    /// one offset that keeps every group's line on the same axis. Pure and
+    /// internal so the pairing can be pinned without a panel: a slice that shifted
+    /// by one would draw a zone's sum from another zone's captures, and the curve
+    /// would look entirely plausible.
+    /// </remarks>
+    internal static HybridMagnitudes HybridSubset(
+        HybridMagnitudes hybrid,
+        IReadOnlyList<int> positions) =>
+        hybrid with
+        {
+            Channels = [.. positions.Select(index => hybrid.Channels[index])],
+            UnsmoothedChannels =
+                [.. positions.Select(index => hybrid.UnsmoothedChannels[index])],
+            ChannelOffsetsDb =
+                [.. positions.Select(index => hybrid.ChannelOffsetsDb[index])],
+            PointMeasuredChannels = hybrid.PointMeasuredChannels.Count == 0
+                ? []
+                : [.. positions.Select(index => hybrid.PointMeasuredChannels[index])]
+        };
 
     // Semantic rather than positional: in this view a line IS a zone, so the
     // colour has to say which one whatever else the project contains.

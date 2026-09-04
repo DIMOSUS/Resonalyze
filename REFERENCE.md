@@ -1946,9 +1946,12 @@ point-measured row whole, marked in the tooltip. The Groups view exists
 for exactly that adjustment, which is why it draws the sums rather than the
 drivers: all its lines are gated on one shared anchor, so their relative timing
 is readable off the plot. The target is drawn there too — judging a rear fill's
-level against the house curve is half of what the view is for — but **Hybrid**
-is muted in it, because a spatial average belongs to one driver and there is
-nothing to hang one on when the plot shows only group sums. Groups is a
+level against the house curve is half of what the view is for — and so is
+**Hybrid**: a group's line is then built the way the Sum is built in every other
+view, over that group's members alone, so the plot and the ΔdB rows beside it
+describe the groups on one basis instead of two. A group whose members cannot
+produce one keeps its measured sum on its own line rather than vanishing from the
+view that exists to compare it. Groups is a
 magnitude view: it has no phase or impulse form, so picking it moves the view
 to **Magnitude** and mutes the other two rather than quietly falling back to
 per-driver curves under a selector that promises group sums.
@@ -2130,6 +2133,13 @@ is a magnitude toggle, greyed on the phase and impulse views — a spatial avera
 carries no phase. The tick itself survives all of that: it says what you want
 drawn, so re-attaching a capture brings the hybrid straight back instead of
 sending you to find the checkbox again.
+
+Where it is live and **not** ticked, the label turns red. Every playing channel
+has an average attached and the plot is drawing one microphone position's dips
+anyway — which is a tune about to be fitted to the wrong curve, and the one state
+of this toggle worth interrupting for. It says nothing on a view that cannot draw
+the hybrid: there the toggle is simply grey, as it is when the captures are
+missing.
 
 The set is checked while it draws. Every capture in one set is taken with one
 analyzer recipe at one input gain, so each channel should sit the same distance

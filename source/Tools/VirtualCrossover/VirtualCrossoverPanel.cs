@@ -1629,6 +1629,13 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // The copy is of the FILE, and the file lags the panel: every edit only
+        // schedules a save, two seconds behind. Copying without flushing first
+        // promises the session on screen and delivers whatever was last written —
+        // the tune minus its most recent edits, which is the shape of loss hardest
+        // to notice. Flushed here rather than inside the backup, which is about a
+        // file and knows nothing of a panel's pending state.
+        FlushProject();
         // Taken AFTER the question — a cancelled reset must not write a file —
         // and before the bind, which is what makes the copy worth having.
         (_, string? backupError) = VirtualCrossoverProjectFile.BackupBeforeReset();
@@ -3765,8 +3772,14 @@ public partial class VirtualCrossoverPanel : UserControl
         MagnitudeGateSnapshot snapshot = magnitudeGate;
         double gateOffsetMs = snapshot.ResolveGateOffsetMs(
             oppositeSide: false, anchor, shown[0].SampleRate);
+        // Every list the slice indexes, not just the magnitudes: BuildHybridSumCurve
+        // guards its own length and returns null, but the slice runs BEFORE it and
+        // would throw out of a redraw instead.
         bool drawHybrid = hybrid != null && magnitudes != null &&
-            magnitudes.Count >= shown.Count;
+            magnitudes.Count >= shown.Count &&
+            hybrid.Channels.Count >= shown.Count &&
+            hybrid.UnsmoothedChannels.Count >= shown.Count &&
+            hybrid.ChannelOffsetsDb.Count >= shown.Count;
         var curves = new List<AcousticCurve>();
         foreach (VirtualCrossoverZone zone in VirtualCrossoverZones.All)
         {

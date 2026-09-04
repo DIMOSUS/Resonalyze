@@ -64,12 +64,16 @@
             numericHighPassRipple = new DarkNumericUpDown();
             numericLowPassRipple = new DarkNumericUpDown();
             labelTotalGain = new Label();
+            labelPhase = new Label();
+            numericPhase = new DarkNumericUpDown();
+            labelPhaseInfo = new Label();
             (numericGain).BeginInit();
             (numericDelay).BeginInit();
             (numericHighPassHz).BeginInit();
             (numericLowPassHz).BeginInit();
             (numericHighPassRipple).BeginInit();
             (numericLowPassRipple).BeginInit();
+            (numericPhase).BeginInit();
             SuspendLayout();
             // 
             // labelChannel
@@ -385,9 +389,47 @@
             labelPeqInfo.Size = new Size(167, 19);
             labelPeqInfo.TabIndex = 21;
             labelPeqInfo.Text = "No PEQ";
-            // 
+            //
+            // labelPhase
+            //
+            labelPhase.AutoSize = true;
+            labelPhase.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelPhase.ForeColor = Color.FromArgb(210, 214, 222);
+            labelPhase.Location = new Point(8, 209);
+            labelPhase.Name = "labelPhase";
+            labelPhase.Size = new Size(40, 15);
+            labelPhase.TabIndex = 38;
+            labelPhase.Text = "Phase";
+            //
+            // numericPhase
+            //
+            numericPhase.BackColor = Color.FromArgb(55, 60, 72);
+            numericPhase.DecimalPlaces = 3;
+            numericPhase.ForeColor = Color.White;
+            numericPhase.Increment = new decimal(new int[] { 5625, 0, 0, 196608 });
+            numericPhase.Location = new Point(70, 207);
+            numericPhase.Maximum = new decimal(new int[] { 354375, 0, 0, 196608 });
+            numericPhase.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
+            numericPhase.MinimumSize = new Size(36, 19);
+            numericPhase.Name = "numericPhase";
+            numericPhase.Size = new Size(66, 19);
+            numericPhase.TabIndex = 39;
+            numericPhase.TextAlign = HorizontalAlignment.Right;
+            numericPhase.ThousandsSeparator = false;
+            numericPhase.Value = new decimal(new int[] { 0, 0, 0, 0 });
+            //
+            // labelPhaseInfo
+            //
+            labelPhaseInfo.AutoEllipsis = true;
+            labelPhaseInfo.ForeColor = Color.FromArgb(170, 176, 190);
+            labelPhaseInfo.Location = new Point(144, 209);
+            labelPhaseInfo.Name = "labelPhaseInfo";
+            labelPhaseInfo.Size = new Size(175, 19);
+            labelPhaseInfo.TabIndex = 40;
+            labelPhaseInfo.Text = "off";
+            //
             // labelCurves
-            // 
+            //
             labelCurves.AutoSize = true;
             labelCurves.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelCurves.ForeColor = Color.FromArgb(210, 214, 222);
@@ -539,6 +581,9 @@
             Controls.Add(numericLowPassHz);
             Controls.Add(comboBoxLowPassFamily);
             Controls.Add(comboBoxLowPassSlope);
+            Controls.Add(labelPhase);
+            Controls.Add(numericPhase);
+            Controls.Add(labelPhaseInfo);
             Controls.Add(labelPeq);
             Controls.Add(buttonPeqMenu);
             Controls.Add(labelPeqInfo);
@@ -548,16 +593,17 @@
             Controls.Add(checkBoxBypass);
             Font = new Font("Segoe UI", 9F);
             ForeColor = Color.White;
-            MaximumSize = new Size(324, 206);
-            MinimumSize = new Size(324, 206);
+            MaximumSize = new Size(324, 232);
+            MinimumSize = new Size(324, 232);
             Name = "VirtualCrossoverChannelControl";
-            Size = new Size(322, 204);
+            Size = new Size(322, 230);
             (numericGain).EndInit();
             (numericDelay).EndInit();
             (numericHighPassHz).EndInit();
             (numericLowPassHz).EndInit();
             (numericHighPassRipple).EndInit();
             (numericLowPassRipple).EndInit();
+            (numericPhase).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -591,6 +637,9 @@
         private Label labelPeq;
         private ReleaseClickButton buttonPeqMenu;
         private Label labelPeqInfo;
+        private Label labelPhase;
+        private DarkNumericUpDown numericPhase;
+        private Label labelPhaseInfo;
         private Label labelCurves;
         private ReleaseClickCheckBox checkBoxShowRaw;
         private ReleaseClickCheckBox checkBoxShowProcessed;

@@ -406,6 +406,7 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
     private readonly CrossoverSpec? crossover;
     private readonly double peqPreampDb;
     private readonly PeqBand[] peqBands;
+    private readonly PhaseRotationSpec phaseRotation;
 
     // Every stage of the chain must be represented here. This key exists only because
     // EqualizationCurve is a plain class with reference equality, so it cannot simply
@@ -421,6 +422,7 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
         crossover = chain.Crossover;
         peqPreampDb = chain.Peq?.PreampDb ?? 0;
         peqBands = chain.Peq?.Bands.ToArray() ?? Array.Empty<PeqBand>();
+        phaseRotation = chain.PhaseRotation;
     }
 
     public bool Equals(DspChannelChainCacheKey? other) =>
@@ -430,6 +432,7 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
         invertPolarity == other.invertPolarity &&
         EqualityComparer<CrossoverSpec?>.Default.Equals(crossover, other.crossover) &&
         peqPreampDb == other.peqPreampDb &&
+        phaseRotation == other.phaseRotation &&
         peqBands.SequenceEqual(other.peqBands);
 
     public override bool Equals(object? obj) =>
@@ -443,6 +446,7 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
         hash.Add(invertPolarity);
         hash.Add(crossover);
         hash.Add(peqPreampDb);
+        hash.Add(phaseRotation);
         foreach (PeqBand band in peqBands)
         {
             hash.Add(band);

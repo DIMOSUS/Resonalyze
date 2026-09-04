@@ -96,6 +96,14 @@ internal static class VirtualCrossoverSheet
             builder.AppendLine(
                 $"  Polarity   {(channel.InvertPolarity ? "Inverted" : "Normal")}");
             builder.AppendLine($"  Crossover  {DescribeCrossover(channel)}");
+            // Only where one is dialled in: the field exists on the devices that
+            // have the control, and a "Phase 0°" line on a sheet for one that does
+            // not is an instruction to go looking for a knob that is not there.
+            if (channel.PhaseRotationDegrees > 0)
+            {
+                builder.AppendLine(
+                    $"  Phase      {Number(channel.PhaseRotationDegrees, "0.###")}°");
+            }
             if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
             {
                 builder.AppendLine(

@@ -386,7 +386,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     channel.TransferImpulseResponse!,
                     channel.SampleRate,
                     channel.ProcessorSampleRate,
-                    channel.Settings.ToChain())).ToList(),
+                    channel.Settings.ToChain(channel.Pair.Zone))).ToList(),
                 log));
         IReadOnlyList<AlignmentSnapshot> initial = reprocessor.Reprocess(
             new Dictionary<IAlignmentChannel, AlignmentOverride>());
@@ -455,7 +455,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         foreach (VirtualCrossoverChannel channel in participants)
         {
             VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
-            DspChannelChain chain = channel.Settings.ToChain();
+            DspChannelChain chain = channel.Settings.ToChain(channel.Pair.Zone);
             if (overrideFor(channel) is { } over)
             {
                 chain = chain with

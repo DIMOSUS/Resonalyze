@@ -1722,6 +1722,10 @@ internal static class AgentOperations
             CrossoverKind = settings.CrossoverKind,
             LowPassEdge = settings.LowPassEdge,
             HighPassEdge = settings.HighPassEdge,
+            // No operation writes it, but the copy is what a probe's variant chains
+            // are built from: dropping it would evaluate the junction without a
+            // filter the tune is actually running.
+            PhaseRotationDegrees = settings.PhaseRotationDegrees,
             PeqPreampDb = settings.PeqPreampDb,
             PeqBands = new List<PeqBand>(settings.PeqBands),
             PeqSourceName = settings.PeqSourceName

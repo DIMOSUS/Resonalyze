@@ -127,6 +127,7 @@ public partial class VirtualCrossoverPanel
                 settings.SpatialAveragePath, Capture(state.SpatialAverage), Capture(state.ArrayCapture),
                 Number(settings.GainDb), Number(settings.DelayMs), settings.InvertPolarity,
                 settings.CrossoverKind, Edge(settings.HighPassEdge), Edge(settings.LowPassEdge),
+                Number(settings.PhaseRotationDegrees),
                 AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands)));
         }
 
@@ -720,9 +721,9 @@ public partial class VirtualCrossoverPanel
             sides.Add(new JunctionTuneSide(
                 rightSide ? "right" : "left",
                 lowerState.TransferImpulseResponse,
-                lower.SideSettings(rightSide && !lower.Pair.Mono).ToChain(),
+                lower.SideSettings(rightSide && !lower.Pair.Mono).ToChain(lower.Pair.Zone),
                 upperState.TransferImpulseResponse,
-                upper.SideSettings(rightSide && !upper.Pair.Mono).ToChain(),
+                upper.SideSettings(rightSide && !upper.Pair.Mono).ToChain(upper.Pair.Zone),
                 lowerState.SampleRate));
         }
 
@@ -1063,7 +1064,9 @@ public partial class VirtualCrossoverPanel
 
             // One side, and the snapshot's settings ARE that side's, so the
             // copies' chains are the whole variant — nothing to merge.
-            var chains = new JunctionProbeChains(lowerCopy.ToChain(), upperCopy.ToChain());
+            var chains = new JunctionProbeChains(
+                lowerCopy.ToChain(lower.Zone),
+                upperCopy.ToChain(upper.Zone));
             variants.Add(new JunctionProbeVariant(
                 string.IsNullOrWhiteSpace(variant.Label) ? $"variant {index}" : variant.Label,
                 sides.Select(_ => chains).ToList()));

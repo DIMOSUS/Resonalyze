@@ -666,7 +666,10 @@ public static class CrossoverJunctionTuner
                 new CrossoverSpec(CrossoverKind.BandPass, lowPass, crossover.HighPassEdge),
             _ => new CrossoverSpec(CrossoverKind.LowPass, lowPass)
         };
-        return chain with { Crossover = replaced };
+        return WithMovedReference(chain, lowPass, lowPassMoved: true) with
+        {
+            Crossover = replaced
+        };
     }
 
     /// <summary>
@@ -683,8 +686,34 @@ public static class CrossoverJunctionTuner
                 new CrossoverSpec(CrossoverKind.BandPass, crossover.LowPassEdge, highPass),
             _ => new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: highPass)
         };
-        return chain with { Crossover = replaced };
+        return WithMovedReference(chain, highPass, lowPassMoved: false) with
+        {
+            Crossover = replaced
+        };
     }
+
+    // A channel phase control states its angle AT one of the channel's crossover
+    // corners, so a search that moves that corner has to move the filter the angle
+    // builds — or it would judge a candidate against an all-pass the device would
+    // not place there, and applying the winner would then produce a response the
+    // search never scored. The spec says which corner it is (see
+    // PhaseRotationSpec.ReferenceIsLowPass) rather than it being inferred from the
+    // frequency: a channel can carry a reference on a filter its kind does not
+    // engage — a subwoofer with no low-pass dialled in yet is exactly the case a
+    // junction search starts from — and such an edge is not in the chain to compare
+    // against. A chain with no rotation, or one whose reference is the other
+    // corner, comes back untouched.
+    private static DspChannelChain WithMovedReference(
+        DspChannelChain chain,
+        CrossoverEdge newEdge,
+        bool lowPassMoved) =>
+        !chain.PhaseRotation.IsTransparent &&
+        chain.PhaseRotation.ReferenceIsLowPass == lowPassMoved
+            ? chain with
+            {
+                PhaseRotation = chain.PhaseRotation with { ReferenceHz = newEdge.FrequencyHz }
+            }
+            : chain;
 
     // The polarity the upper channel would END UP with. The search reads the
     // response the chain has already inverted, so its answer is a flip of THAT:

@@ -241,7 +241,7 @@ internal static class VirtualDspEqHandoff
         // identity: it is the measurement before any of the chain, so an edited bank is
         // all there is to apply.
         DspChannelChain previewChain = withChain
-            ? settings.ToChain() with { Peq = null }
+            ? settings.ToChain(channel.Pair.Zone) with { Peq = null }
             : DspChannelChain.Identity;
         if (withChain)
         {
@@ -564,7 +564,7 @@ internal static class VirtualDspEqHandoff
             !Equals(
                 Comparable(token.PreviewChain),
                 Comparable(
-                    token.Channel.Pair.SideFor(token.RightSide).ToChain() with
+                    token.Channel.Pair.ToChain(token.RightSide) with
                     {
                         Peq = null
                     })))

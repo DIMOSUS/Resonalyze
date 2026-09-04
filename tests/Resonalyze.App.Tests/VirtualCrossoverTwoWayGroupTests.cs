@@ -59,7 +59,7 @@ public sealed class VirtualCrossoverTwoWayGroupTests
                 member.TransferImpulseResponse!,
                 Rate,
                 Rate,
-                member.Settings.ToChain()))]);
+                member.Settings.ToChain(member.Pair.Zone)))]);
         IReadOnlyList<AlignmentSnapshot> initial = reprocessor.Reprocess(
             new Dictionary<IAlignmentChannel, AlignmentOverride>());
         Dictionary<IAlignmentChannel, AlignmentSnapshot> snapshots = members

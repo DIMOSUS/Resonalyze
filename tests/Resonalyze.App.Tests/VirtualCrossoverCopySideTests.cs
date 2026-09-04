@@ -29,7 +29,7 @@ public sealed class VirtualCrossoverCopySideTests
 
         Copy(from, to, new VirtualCrossoverCopyScope(
             Gain: false, Delay: false, InvertPolarity: false, Crossover: false,
-            AllPass: false, Peq: true));
+            AllPass: false, Phase: false, Peq: true));
 
         Assert.Equal([Bell, Shelf, TargetAllPass], to.PeqBands);
         Assert.Equal(from.PeqPreampDb, to.PeqPreampDb);
@@ -46,7 +46,7 @@ public sealed class VirtualCrossoverCopySideTests
 
         Copy(from, to, new VirtualCrossoverCopyScope(
             Gain: false, Delay: false, InvertPolarity: false, Crossover: false,
-            AllPass: true, Peq: false));
+            AllPass: true, Phase: false, Peq: false));
 
         Assert.Equal([new PeqBand(3_150, 4.0, -2.0), SourceAllPass], to.PeqBands);
         Assert.Equal(-1.0, to.PeqPreampDb);
@@ -61,7 +61,7 @@ public sealed class VirtualCrossoverCopySideTests
 
         Copy(from, to, new VirtualCrossoverCopyScope(
             Gain: false, Delay: false, InvertPolarity: false, Crossover: false,
-            AllPass: true, Peq: true));
+            AllPass: true, Phase: false, Peq: true));
 
         Assert.Equal([Bell, Shelf, SourceAllPass], to.PeqBands);
     }
@@ -78,7 +78,7 @@ public sealed class VirtualCrossoverCopySideTests
 
         Copy(from, to, new VirtualCrossoverCopyScope(
             Gain: false, Delay: false, InvertPolarity: false, Crossover: true,
-            AllPass: false, Peq: false));
+            AllPass: false, Phase: false, Peq: false));
 
         Assert.Same(before, to.PeqBands);
     }
@@ -109,7 +109,7 @@ public sealed class VirtualCrossoverCopySideTests
 
         Copy(from, to, new VirtualCrossoverCopyScope(
             Gain: false, Delay: false, InvertPolarity: false, Crossover: false,
-            AllPass: true, Peq: false));
+            AllPass: true, Phase: false, Peq: false));
 
         // Every one of the target's own filters is still there, in order.
         Assert.Equal(voicing, to.PeqBands.Take(voicing.Count));
@@ -135,11 +135,34 @@ public sealed class VirtualCrossoverCopySideTests
 
         Copy(from, to, new VirtualCrossoverCopyScope(
             Gain: false, Delay: false, InvertPolarity: false, Crossover: false,
-            AllPass: false, Peq: true));
+            AllPass: false, Phase: false, Peq: true));
 
         Assert.Equal(EqualizationCurve.MaxBandCount, to.PeqBands.Count);
         Assert.Equal(TargetAllPass, to.PeqBands[^1]);
         Assert.Equal(from.PeqBands.Take(EqualizationCurve.MaxBandCount - 1), to.PeqBands[..^1]);
+    }
+
+    [Fact]
+    public void ThePhaseRotation_TravelsOnItsOwnTick()
+    {
+        // Off by default and ticked separately, like the delay: the phase control is a
+        // timing tool, and the two sides are not the same distance from the listener.
+        // Copied as the NUMBER — its reference is the target side's own crossover,
+        // which is what the device would read.
+        var from = new VirtualCrossoverChannelSettings { PhaseRotationDegrees = 90 };
+        var to = new VirtualCrossoverChannelSettings { PhaseRotationDegrees = 22.5 };
+
+        Copy(from, to, new VirtualCrossoverCopyScope(
+            Gain: false, Delay: false, InvertPolarity: false, Crossover: true,
+            AllPass: true, Phase: false, Peq: true));
+
+        Assert.Equal(22.5, to.PhaseRotationDegrees);
+
+        Copy(from, to, new VirtualCrossoverCopyScope(
+            Gain: false, Delay: false, InvertPolarity: false, Crossover: false,
+            AllPass: false, Phase: true, Peq: false));
+
+        Assert.Equal(90, to.PhaseRotationDegrees);
     }
 
     // A source side voiced with two filters and aligned with one all-pass, against a

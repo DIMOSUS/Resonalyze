@@ -464,7 +464,8 @@ public sealed class VirtualCrossoverProjectFileTests
             }
         };
 
-        Complex response = settings.ToChain().Response(1_000, 48_000);
+        Complex response = settings.ToChain(VirtualCrossoverZone.Front)
+            .Response(1_000, 48_000);
 
         Assert.Equal(1.0, response.Magnitude, 9);
         Assert.Equal(-1.0, response.Real, 6);
@@ -1222,7 +1223,7 @@ public sealed class VirtualCrossoverProjectFileTests
             PeqBands = [new PeqBand(1_000, 1.0, 3.0)]
         };
 
-        DspChannelChain chain = channel.ToChain();
+        DspChannelChain chain = channel.ToChain(VirtualCrossoverZone.Front);
 
         Assert.Equal(-3, chain.GainDb);
         Assert.Equal(0.5, chain.DelayMs);
@@ -1239,7 +1240,7 @@ public sealed class VirtualCrossoverProjectFileTests
     {
         var channel = new VirtualCrossoverChannelSettings();
 
-        DspChannelChain chain = channel.ToChain();
+        DspChannelChain chain = channel.ToChain(VirtualCrossoverZone.Front);
 
         Assert.Equal(CrossoverKind.Off, chain.Crossover!.Kind);
         Assert.Null(chain.Peq);
@@ -2025,6 +2026,209 @@ public sealed class VirtualCrossoverProjectFileTests
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public void PhaseReference_IsTheLowPassOnASubwoofer_AndTheHighPassEverywhereElse()
+    {
+        // The device's own rule, and the reason ToChain has to be told the block's
+        // zone: the side alone cannot know which of its two corners the angle is
+        // stated at.
+        var settings = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.BandPass,
+            HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 250, 24),
+            LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_800, 24)
+        };
+
+        Assert.Equal(2_800, settings.PhaseReferenceHz(VirtualCrossoverZone.Sub));
+        Assert.Equal(250, settings.PhaseReferenceHz(VirtualCrossoverZone.Front));
+        Assert.Equal(250, settings.PhaseReferenceHz(VirtualCrossoverZone.Rear));
+        Assert.Equal(250, settings.PhaseReferenceHz(VirtualCrossoverZone.Center));
+    }
+
+    [Fact]
+    public void PhaseReference_IsTheConfiguredCorner_EvenWithTheFilterSwitchedOff()
+    {
+        // Measured on the bench: a bypassed filter and one set to slope = OFF both go
+        // on supplying the reference. Reading the ACTIVE crossover instead would put
+        // the all-pass somewhere else on every channel whose filter is disabled.
+        var settings = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.Off,
+            HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
+            LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 5_000, 24),
+            PhaseRotationDegrees = 180
+        };
+
+        Assert.Equal(500, settings.PhaseReferenceHz(VirtualCrossoverZone.Front));
+
+        DspChannelChain chain = settings.ToChain(VirtualCrossoverZone.Front);
+
+        Assert.Equal(CrossoverKind.Off, chain.Crossover!.Kind);
+        // 180 degrees puts the all-pass corner ON the reference, so the chain turns
+        // the phase exactly half a turn at 500 Hz while leaving the level alone.
+        Assert.Equal(-180.0, chain.Response(500, 96_000).Phase * 180.0 / Math.PI, 0.01);
+        Assert.Equal(1.0, chain.Response(500, 96_000).Magnitude, 9);
+    }
+
+    [Fact]
+    public void SaveToAndLoadFrom_CarryThePhaseRotationAndTheProcessorsPhaseSwitch()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new VirtualCrossoverProjectFile
+            {
+                DspProcessorPhaseControl = true
+            };
+            original.Pairs[0].Zone = VirtualCrossoverZone.Sub;
+            original.Pairs[0].Left.PhaseRotationDegrees = 56.25;
+            string path = Path.Combine(root, "session.json");
+
+            original.SaveTo(path);
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
+
+            Assert.Equal(56.25, loaded.Pairs[0].Left.PhaseRotationDegrees);
+            Assert.True(loaded.DspProcessorPhaseControl);
+            Assert.Equal(0, loaded.Pairs[1].Left.PhaseRotationDegrees);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_AProjectFromBeforeThePhaseControl_OpensWithNoRotation()
+    {
+        // v9 -> v10 is additive: an absent angle is no rotation and an absent switch
+        // is off, so the session opens as the simulation it was saved as.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile().Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 9;
+            file["pairs"]![0]!["left"]!.AsObject().Remove("phaseRotationDegrees");
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(VirtualCrossoverProjectFile.CurrentVersion, loaded.Version);
+            Assert.Equal(0, loaded.Pairs[0].Left.PhaseRotationDegrees);
+            Assert.Null(loaded.DspProcessorPhaseControl);
+            Assert.Null(loaded.MigrationNoticeText);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(360)]
+    [InlineData(double.NaN)]
+    public void Validate_RejectsAPhaseRotationOutsideTheControlsRange(double degrees)
+    {
+        var settings = new VirtualCrossoverChannelSettings { PhaseRotationDegrees = degrees };
+
+        Assert.Throws<InvalidDataException>(settings.Validate);
+    }
+
+    [Fact]
+    public void Validate_AcceptsAnAngleBetweenTwoPositions()
+    {
+        // Range only: the editors snap to the device's 64 positions, but an angle a
+        // hand-edited file states between two of them is still a filter this library
+        // can build, and refusing to OPEN the session over it would be worse.
+        var settings = new VirtualCrossoverChannelSettings { PhaseRotationDegrees = 7 };
+
+        settings.Validate();
+    }
+
+    [Fact]
+    public void LoadOrDefault_ClearsAPhaseRotationTheNamedProcessorCannotDial()
+    {
+        // The invariant: a non-zero angle in a session means a device that can dial
+        // one. Without it the all-pass would go on bending every curve with no field
+        // on screen to explain it, and the tuning sheet would go on naming a control
+        // the device does not have.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var project = new VirtualCrossoverProjectFile
+            {
+                DspProcessorModelId = "amp-panacea-v1-v2"
+            };
+            project.Pairs[0].Left.PhaseRotationDegrees = 90;
+            project.Save(root);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(0, loaded.Pairs[0].Left.PhaseRotationDegrees);
+            Assert.NotNull(loaded.MigrationNoticeText);
+            Assert.Contains("phase rotation", loaded.MigrationNoticeText!);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_KeepsAPhaseRotationTheProcessorCanDial()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var project = new VirtualCrossoverProjectFile
+            {
+                DspProcessorModelId = "helix-dsp-ultra-s"
+            };
+            project.Pairs[0].Left.PhaseRotationDegrees = 90;
+            project.Save(root);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(90, loaded.Pairs[0].Left.PhaseRotationDegrees);
+            Assert.Null(loaded.MigrationNoticeText);
+            // And a Custom profile the user vouched for keeps its own.
+            Assert.Equal(
+                0,
+                new VirtualCrossoverProjectFile { DspProcessorPhaseControl = true }
+                    .ClearUnavailablePhaseRotations());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolveDspPhaseControl_AsksTheCatalogUntilTheUserAnswers()
+    {
+        // A project naming a device that HAS the control finds it without hunting
+        // through a dialog; one that names something else, or nothing, does not.
+        var helix = new VirtualCrossoverProjectFile { DspProcessorModelId = "helix-dsp-ultra-s" };
+        var panacea = new VirtualCrossoverProjectFile { DspProcessorModelId = "amp-panacea-v1-v2" };
+        var custom = new VirtualCrossoverProjectFile();
+
+        Assert.True(helix.ResolveDspPhaseControl());
+        Assert.False(panacea.ResolveDspPhaseControl());
+        Assert.False(custom.ResolveDspPhaseControl());
+
+        // And a stored answer wins over the catalog in both directions.
+        helix.DspProcessorPhaseControl = false;
+        custom.DspProcessorPhaseControl = true;
+
+        Assert.False(helix.ResolveDspPhaseControl());
+        Assert.True(custom.ResolveDspPhaseControl());
     }
 
     private static string CreateTemporaryDirectory()

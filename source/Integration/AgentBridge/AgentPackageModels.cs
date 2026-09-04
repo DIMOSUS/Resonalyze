@@ -147,7 +147,12 @@ internal sealed record AgentPackageDsp(
     double DelayMs,
     bool InvertPolarity,
     AgentPackageCrossover Crossover,
-    AgentPackagePeq Peq);
+    AgentPackagePeq Peq,
+    // The channel phase control where one is dialled in, and absent otherwise —
+    // most devices have no such control and every channel would carry a zero. It
+    // is stated at the channel's own crossover (the low-pass on a subwoofer, the
+    // high-pass otherwise), so it cannot be read without the crossover above it.
+    double? PhaseRotationDeg = null);
 
 internal sealed record AgentPackageCrossover(
     string Kind,

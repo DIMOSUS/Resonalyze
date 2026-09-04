@@ -268,6 +268,16 @@ public sealed class VirtualCrossoverChannelSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? LegacyAllPassQ { get; set; }
 
+    /// <summary>
+    /// The channel phase control of the processor being designed for (degrees), 0
+    /// when it is not used — see <see cref="PhaseRotationControl"/>. The reference
+    /// this angle is stated at is NOT stored: it is the channel's own configured
+    /// crossover, so it follows the edges above rather than being a second copy of
+    /// them that could disagree. Absent from files written before schema v10, which
+    /// therefore open with no rotation.
+    /// </summary>
+    public double PhaseRotationDegrees { get; set; }
+
     public double PeqPreampDb { get; set; }
     public List<PeqBand> PeqBands { get; set; } = new();
     /// <summary>The PEQ file the bands came from; display only.</summary>
@@ -276,8 +286,17 @@ public sealed class VirtualCrossoverChannelSettings
     public bool HasSource =>
         HistoryEntryId.HasValue || !string.IsNullOrWhiteSpace(SourceFilePath);
 
-    /// <summary>The DSP chain these settings describe.</summary>
-    public DspChannelChain ToChain()
+    /// <summary>
+    /// The DSP chain these settings describe.
+    /// </summary>
+    /// <param name="zone">
+    /// Which part of the installation the BLOCK is, which the side alone cannot know.
+    /// It is read for one thing only — the phase control states its angle at the
+    /// low-pass on a subwoofer channel and at the high-pass everywhere else — but it
+    /// is a required argument rather than a defaulted one so that a call site building
+    /// a chain for a subwoofer cannot silently get the other rule.
+    /// </param>
+    public DspChannelChain ToChain(VirtualCrossoverZone zone)
     {
         CrossoverSpec crossover = CrossoverKind switch
         {
@@ -289,8 +308,49 @@ public sealed class VirtualCrossoverChannelSettings
         EqualizationCurve? peq = PeqBands.Count > 0 || PeqPreampDb != 0
             ? new EqualizationCurve(PeqBands, PeqPreampDb)
             : null;
-        return new DspChannelChain(GainDb, DelayMs, InvertPolarity, crossover, peq);
+        return new DspChannelChain(
+            GainDb,
+            DelayMs,
+            InvertPolarity,
+            crossover,
+            peq,
+            PhaseRotation(zone));
     }
+
+    /// <summary>
+    /// The channel phase control as the DSP reads it: the angle, the crossover corner
+    /// it is stated at, and WHICH of the channel's two corners that is.
+    /// </summary>
+    /// <remarks>
+    /// The last of the three is not decoration: a chain carries only the corners its
+    /// kind engages, so nothing downstream could tell a reference sitting on a
+    /// disengaged low-pass from one sitting on the high-pass beside it — and the
+    /// junction search, which moves one corner at a time, has to know which of them
+    /// the angle follows.
+    /// </remarks>
+    public PhaseRotationSpec PhaseRotation(VirtualCrossoverZone zone)
+    {
+        bool referenceIsLowPass = zone == VirtualCrossoverZone.Sub;
+        return new PhaseRotationSpec(
+            PhaseRotationDegrees,
+            (referenceIsLowPass ? LowPassEdge : HighPassEdge).FrequencyHz,
+            referenceIsLowPass);
+    }
+
+    /// <summary>
+    /// The frequency the phase control states its angle at: the low-pass corner on a
+    /// subwoofer channel, the high-pass corner on every other one.
+    /// </summary>
+    /// <remarks>
+    /// The edge AS CONFIGURED, whatever <see cref="CrossoverKind"/> currently engages
+    /// — measured behaviour, not a simplification: on the bench a bypassed low-pass
+    /// and one set to slope = OFF both went on supplying the reference, and reading
+    /// the active crossover instead put the corner in the wrong place on every
+    /// channel whose filter was switched off. Both edges are kept and validated
+    /// exactly so this stays a real number when the filter is not in use.
+    /// </remarks>
+    public double PhaseReferenceHz(VirtualCrossoverZone zone) =>
+        PhaseRotation(zone).ReferenceHz;
 
     public void Validate()
     {
@@ -309,6 +369,14 @@ public sealed class VirtualCrossoverChannelSettings
         }
         ValidateEdge(LowPassEdge);
         ValidateEdge(HighPassEdge);
+        // Range only, not the 5.625° grid the hardware steps on: the editors snap,
+        // and a hand-written angle between two positions is still a filter this
+        // library can build and draw honestly.
+        if (!double.IsFinite(PhaseRotationDegrees) ||
+            PhaseRotationDegrees is < 0 or > PhaseRotationControl.MaximumDegrees)
+        {
+            throw new InvalidDataException("The channel phase rotation is invalid.");
+        }
         if (!double.IsFinite(PeqPreampDb) || Math.Abs(PeqPreampDb) > 60)
         {
             throw new InvalidDataException("The PEQ preamp is invalid.");
@@ -407,6 +475,16 @@ public sealed class VirtualCrossoverChannelPairSettings
 
     public VirtualCrossoverChannelSettings Left { get; set; } = new();
     public VirtualCrossoverChannelSettings Right { get; set; } = new();
+
+    /// <summary>
+    /// The DSP chain one side of this block describes. Reads the block's
+    /// <see cref="Zone"/>, which is what tells the phase control which crossover
+    /// states its angle (see
+    /// <see cref="VirtualCrossoverChannelSettings.PhaseReferenceHz"/>) — so a caller
+    /// holding the pair should build a chain through here rather than reaching for
+    /// the side and answering that question itself.
+    /// </summary>
+    public DspChannelChain ToChain(bool rightSide) => SideFor(rightSide).ToChain(Zone);
 
     /// <summary>
     /// The settings the given side view edits and computes with: a mono pair
@@ -527,7 +605,7 @@ public sealed class VirtualCrossoverProjectFile
     // step in Migrate below. Files from a NEWER version (a downgraded app)
     // are never migrated: LoadOrDefault backs them up and starts fresh,
     // LoadFrom rejects them with an explicit error.
-    public const int CurrentVersion = 9;
+    public const int CurrentVersion = 10;
 
     // Raised from 8 for complex installs: a front three-way plus a rear pair, a
     // centre and two subwoofers already fills seven blocks, and splitting the
@@ -608,6 +686,29 @@ public sealed class VirtualCrossoverProjectFile
     public PeqQConvention DspProcessorQConvention { get; set; } = PeqQConvention.Rbj;
 
     /// <summary>
+    /// Whether the blocks show a phase control, or null while the user has not said
+    /// — in which case the catalog answers for the model (see
+    /// <see cref="ResolveDspPhaseControl"/>).
+    /// </summary>
+    /// <remarks>
+    /// Null resolves at read time rather than on save, the same way
+    /// <see cref="SpatialAverageMode"/> does, so an existing project naming a device
+    /// that HAS the control finds it without hunting through a dialog. The dialog
+    /// stores an explicit answer the first time it is confirmed.
+    /// <para>
+    /// It is not a view switch. Saying the device has no such control says the
+    /// rotations are not part of the tune, and
+    /// <see cref="ClearUnavailablePhaseRotations"/> makes that true rather than
+    /// leaving an invisible all-pass in every curve and a "Phase 90°" line on a
+    /// tuning sheet for a device with no such knob. The angles are cleared where the
+    /// user can see it happen — the dialog says how many — and never quietly on the
+    /// way past.
+    /// </para>
+    /// </remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? DspProcessorPhaseControl { get; set; }
+
+    /// <summary>
     /// What the user tells an AI assistant about the installation that no
     /// measurement can say: the car and the seat, which driver sits where, the
     /// amplifiers and the processor, and what the tune is for. Edited in the DSP
@@ -660,6 +761,52 @@ public sealed class VirtualCrossoverProjectFile
                 DspProcessorSampleRateHz ?? measurementSampleRateHz,
                 DspProcessorQConvention);
     }
+
+    /// <summary>
+    /// Zeroes every channel phase rotation when the processor this project names has
+    /// no such control, and answers how many it cleared. Nothing to do — and nothing
+    /// returned — for a project whose device HAS one.
+    /// </summary>
+    /// <remarks>
+    /// The invariant behind it: a non-zero angle in this file means a device that can
+    /// dial one. Without it a rotation dialled in on a HELIX and then re-pointed at
+    /// another processor would go on bending every curve while the block that shows
+    /// it is gone, and the tuning sheet would go on telling the user to set a knob
+    /// their device does not have. Run on load and whenever the processor changes,
+    /// which is every path that can make the answer false.
+    /// </remarks>
+    public int ClearUnavailablePhaseRotations()
+    {
+        if (ResolveDspPhaseControl())
+        {
+            return 0;
+        }
+
+        int cleared = 0;
+        foreach (VirtualCrossoverChannelPairSettings pair in Pairs)
+        {
+            foreach (VirtualCrossoverChannelSettings side in new[] { pair.Left, pair.Right })
+            {
+                if (side.PhaseRotationDegrees != 0)
+                {
+                    side.PhaseRotationDegrees = 0;
+                    cleared++;
+                }
+            }
+        }
+
+        return cleared;
+    }
+
+    /// <summary>
+    /// Whether this project shows the channel phase control: the user's own answer
+    /// where they have given one, and otherwise the catalog's for the named model —
+    /// so a HELIX project offers it and a Custom one does not until asked.
+    /// </summary>
+    public bool ResolveDspPhaseControl() =>
+        DspProcessorPhaseControl ??
+        DspProcessorCatalog.Preset(DspProcessorModelId)?.PhaseControl ??
+        false;
 
     /// <summary>
     /// Records a processor choice. <paramref name="followsMeasurements"/> stores the
@@ -1172,6 +1319,7 @@ public sealed class VirtualCrossoverProjectFile
             ?? throw new InvalidDataException("The session file is empty.");
         Migrate(file);
         file.Validate();
+        file.clearedPhaseRotations = file.ClearUnavailablePhaseRotations();
         file.ProjectDirectory = SafeDirectoryOf(path);
         return file;
     }
@@ -1394,6 +1542,17 @@ public sealed class VirtualCrossoverProjectFile
 
             file.Version = 9;
         }
+        if (file.Version == 9)
+        {
+            // v10 adds the channel phase control (PhaseRotationDegrees on each side,
+            // and the project-wide switch that shows it). Purely additive: an absent
+            // angle is no rotation and an absent switch is off, so a v9 project opens
+            // as the simulation it was saved as. The version is still bumped, because
+            // the reverse direction is not harmless — an older build would open a
+            // rotated tune and quietly draw it without the filter, and refusing the
+            // file is how it says so.
+            file.Version = 10;
+        }
 
         // The scene offset's wire SIGN and the layout flag state one fact
         // (see the properties): re-align them here for files that carry only
@@ -1427,13 +1586,37 @@ public sealed class VirtualCrossoverProjectFile
     // once (see MigrationNoticeText).
     private int migratedFullBanks;
 
+    // How many channel sides carried a phase rotation this project's processor has no
+    // control for. Only a hand-edited or hand-assembled file can be in that state —
+    // every path the app writes keeps the two agreeing — but silently dropping a
+    // filter is exactly what the notice below exists to prevent.
+    private int clearedPhaseRotations;
+
     /// <summary>
     /// What this load had to change beyond restating it, or null when nothing was
     /// lost. A migration that silently drops a filter is how a tune quietly stops
     /// being the tune that was saved.
     /// </summary>
     [JsonIgnore]
-    public string? MigrationNoticeText =>
+    public string? MigrationNoticeText => string.Join(
+        Environment.NewLine + Environment.NewLine,
+        new[] { FullBankNotice, PhaseRotationNotice }.Where(notice => notice != null))
+        is { Length: > 0 } text
+        ? text
+        : null;
+
+    private string? PhaseRotationNotice =>
+        clearedPhaseRotations == 0
+            ? null
+            : $"{clearedPhaseRotations} channel side" +
+                (clearedPhaseRotations == 1 ? " carried" : "s carried") +
+                " a phase rotation, and the processor this session names has no such " +
+                "control. The angle" + (clearedPhaseRotations == 1 ? " was" : "s were") +
+                " cleared rather than left bending a curve no field on screen " +
+                "explains. Name a device that has the control — or tick it yourself " +
+                "for a Custom profile — and dial them in again.";
+
+    private string? FullBankNotice =>
         migratedFullBanks == 0
             ? null
             : $"{migratedFullBanks} channel side" +
@@ -1476,6 +1659,7 @@ public sealed class VirtualCrossoverProjectFile
                 ?? throw new InvalidDataException("The project file is empty.");
             Migrate(file);
             file.Validate();
+            file.clearedPhaseRotations = file.ClearUnavailablePhaseRotations();
             return file;
         }
         catch

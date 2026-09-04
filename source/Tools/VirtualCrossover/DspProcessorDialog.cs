@@ -34,7 +34,12 @@ internal sealed partial class DspProcessorDialog : Form
     private int customSampleRateHz;
     private PeqQConvention customQConvention;
     private bool customFollowsMeasurements;
+    private bool customPhaseControl;
     private bool suppressEvents;
+    // True while the answer on screen is one somebody gave for the device on screen —
+    // the project's stored one when the dialog opens, or the user's own tick. Naming
+    // another model clears it, because that answer was about another device.
+    private bool phaseControlChosen;
 
     /// <param name="profile">The project's current processor.</param>
     /// <param name="followsMeasurements">
@@ -46,10 +51,15 @@ internal sealed partial class DspProcessorDialog : Form
     /// the band the simulation can speak for is visible. Zero when the project has no
     /// source yet.
     /// </param>
+    /// <param name="phaseControl">
+    /// The project's stored answer to "do the blocks show a phase control", or null
+    /// where it has never been asked - in which case the selected model answers it.
+    /// </param>
     public DspProcessorDialog(
         DspProcessorProfile profile,
         bool followsMeasurements,
-        int measurementSampleRateHz)
+        int measurementSampleRateHz,
+        bool? phaseControl)
     {
         ArgumentNullException.ThrowIfNull(profile);
         InitializeComponent();
@@ -60,6 +70,11 @@ internal sealed partial class DspProcessorDialog : Form
             : Fallback(measurementSampleRateHz);
         customQConvention = profile.QConvention;
         customFollowsMeasurements = followsMeasurements && profile.IsCustom;
+        // A project that has never been asked leaves this null, and the model list
+        // answers it below; one that HAS been asked keeps its answer, including a
+        // deliberate "no" on a device that offers the control.
+        phaseControlChosen = phaseControl.HasValue;
+        customPhaseControl = phaseControl ?? false;
 
         AcceptButton = buttonOk;
         CancelButton = buttonCancel;
@@ -76,6 +91,7 @@ internal sealed partial class DspProcessorDialog : Form
             comboBoxSampleRate.SelectedItem =
                 customFollowsMeasurements ? FollowItem : customSampleRateHz;
             comboBoxQConvention.SelectedItem = customQConvention;
+            checkBoxPhaseControl.Checked = phaseControl ?? false;
         }
         finally
         {
@@ -85,6 +101,22 @@ internal sealed partial class DspProcessorDialog : Form
         comboBoxModel.SelectedIndexChanged += (_, _) => OnModelChanged();
         comboBoxSampleRate.SelectedIndexChanged += (_, _) => OnCustomValueChanged();
         comboBoxQConvention.SelectedIndexChanged += (_, _) => OnCustomValueChanged();
+        checkBoxPhaseControl.CheckedChanged += (_, _) =>
+        {
+            if (!suppressEvents)
+            {
+                phaseControlChosen = true;
+                // Kept the way the rate and the convention are kept: a user who ticks
+                // it for a device the catalog does not list, looks at a preset and
+                // comes back to Custom finds their own answer again.
+                if (SelectedPreset == null)
+                {
+                    customPhaseControl = checkBoxPhaseControl.Checked;
+                }
+            }
+
+            UpdateStatus();
+        };
 
         ApplySelectedModel();
     }
@@ -105,6 +137,14 @@ internal sealed partial class DspProcessorDialog : Form
     /// </summary>
     public bool FollowsMeasurements =>
         SelectedPreset == null && ReferenceEquals(comboBoxSampleRate.SelectedItem, FollowItem);
+
+    /// <summary>
+    /// Whether the blocks should show the channel phase control. Unlike the rate and
+    /// the Q convention this is not locked to the preset — a Custom profile standing
+    /// in for a device the catalog does not list still has the control if the device
+    /// does — so the model list only proposes an answer until the user gives one.
+    /// </summary>
+    public bool PhaseControl => checkBoxPhaseControl.Checked;
 
     /// <summary>
     /// The user's description of the installation for an AI assistant (see
@@ -225,6 +265,14 @@ internal sealed partial class DspProcessorDialog : Form
             return;
         }
 
+        // Whatever answer stood, it was about the device that was selected a moment
+        // ago. Naming another one is new information about a different device, so the
+        // catalog proposes again — without this a project moved off a HELIX kept a
+        // control the new model is not known to have, and (since the project's stored
+        // answer outranks the catalog) kept every phase rotation with it, on a device
+        // that cannot dial one. The user can tick it back in the same breath; what
+        // they cannot do is carry the old device's answer over by not looking.
+        phaseControlChosen = false;
         ApplySelectedModel();
     }
 
@@ -252,6 +300,15 @@ internal sealed partial class DspProcessorDialog : Form
 
                 comboBoxSampleRate.SelectedItem = preset.SampleRateHz;
                 comboBoxQConvention.SelectedItem = preset.QConvention;
+            }
+
+            // Proposed from the catalog for the model on screen: picking a HELIX
+            // offers the control, picking a device not known to have one takes the
+            // offer back, and Custom answers with whatever the user last said for
+            // Custom. Only an answer given for THIS model stands in the way.
+            if (!phaseControlChosen)
+            {
+                checkBoxPhaseControl.Checked = preset?.PhaseControl ?? customPhaseControl;
             }
         }
         finally
@@ -306,6 +363,10 @@ internal sealed partial class DspProcessorDialog : Form
             ? "\r\nThe rate is not stated: it follows the project's measurements, " +
               "including after they are replaced at another rate."
             : string.Empty;
-        labelStatus.Text = band + "\r\n" + convention + follow;
+        string phase = checkBoxPhaseControl.Checked
+            ? "\r\nEach block gets a Phase field, stated at that channel's own " +
+              "crossover: move the crossover and the same angle builds another filter."
+            : string.Empty;
+        labelStatus.Text = band + "\r\n" + convention + follow + phase;
     }
 }

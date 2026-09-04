@@ -633,6 +633,9 @@ public partial class VirtualCrossoverPanel : UserControl
             comboBoxCorrelationPair.Enabled = JunctionPlotModeSelected() &&
                 comboBoxCorrelationPair.Items.Count > 0;
 
+            // Before the blocks are filled in: it re-pins their height, and doing it
+            // per block afterwards would reflow the list once per channel.
+            RefreshPhaseControlAvailability();
             for (int i = 0; i < channels.Count; i++)
             {
                 channels[i].Pair = project.Pairs[i];
@@ -683,6 +686,12 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         UpdateSideRadioTexts();
+        // Again, now that the sources have landed: a project that states no rate of
+        // its own takes the measurements', and the phase read-out solves its corner
+        // at THAT rate. Nothing the simulation computes was ever wrong — the chain is
+        // realized against the live rate — but the block would have gone on naming a
+        // corner solved at the fallback.
+        RefreshPhaseControlAvailability();
         // The final redraw is issued by ApplyProjectAsync after the loading
         // state clears, so it draws the real plot instead of the loading note.
     }
@@ -1189,6 +1198,15 @@ public partial class VirtualCrossoverPanel : UserControl
             to.LowPassEdge = from.LowPassEdge;
         }
 
+        // Its own tick rather than part of the crossover, even though it reads the
+        // crossover: the angle is a timing decision like the delay, and the two sides
+        // rarely want the same one. Copied as the NUMBER — the reference travels with
+        // the target side's own crossover, which is what the device would do.
+        if (scope.Phase)
+        {
+            to.PhaseRotationDegrees = from.PhaseRotationDegrees;
+        }
+
         // The all-pass filters live inside the PEQ bank as bands, but they answer a
         // different question than the EQ (they align this side rather than voice the
         // pair), so the two scopes split ONE list by band type: Peq moves the
@@ -1260,7 +1278,12 @@ public partial class VirtualCrossoverPanel : UserControl
             Font = new Font("Segoe UI", 9F),
             ForeColor = Color.White,
             Margin = new Padding(0, 0, 0, 6),
-            ChannelName = ChannelNameFor(index)
+            ChannelName = ChannelNameFor(index),
+            // Set before the block joins the list: the phase row changes its height,
+            // and a block measured at one height and re-pinned at another makes the
+            // whole list jump.
+            PhaseControlShown = project.ResolveDspPhaseControl(),
+            ProcessorSampleRateHz = ProcessorSampleRateHz
         };
 
         // The block header and curve checkboxes carry the channel's plot colour,
@@ -1440,7 +1463,8 @@ public partial class VirtualCrossoverPanel : UserControl
         using var dialog = new DspProcessorDialog(
             ProcessorProfile,
             ProcessorRateFollowsMeasurements,
-            MeasuredSampleRateHz ?? 0)
+            MeasuredSampleRateHz ?? 0,
+            project.DspProcessorPhaseControl)
         {
             Notes = project.AiNotes
         };
@@ -1466,15 +1490,53 @@ public partial class VirtualCrossoverPanel : UserControl
         // and they part company the moment those measurements are replaced — so
         // switching between them has to be stored, not read as a no-op.
         bool follows = dialog.FollowsMeasurements;
-        if (profile == ProcessorProfile && follows == ProcessorRateFollowsMeasurements)
+        // Confirming the dialog settles the phase question: what the box showed —
+        // the user's own tick, or the answer the catalog proposed — becomes the
+        // project's stored answer, so a later change of model cannot take a control
+        // away from a tune that is using it.
+        bool phaseControl = dialog.PhaseControl;
+        bool phaseControlChanged = project.DspProcessorPhaseControl != phaseControl;
+        if (profile == ProcessorProfile && follows == ProcessorRateFollowsMeasurements &&
+            !phaseControlChanged)
         {
             return;
         }
 
+        project.DspProcessorPhaseControl = phaseControl;
         project.SetDspProcessor(profile, follows);
+        // A device with no phase control means the rotations are not part of the
+        // tune, not that they are merely off screen: left in place they would go on
+        // bending every curve with no field on screen to explain them, and the tuning
+        // sheet would go on naming a knob this device does not have.
+        int clearedRotations = project.ClearUnavailablePhaseRotations();
+        if (clearedRotations > 0)
+        {
+            foreach (VirtualCrossoverChannel channel in channels)
+            {
+                ApplySettingsToControl(channel);
+            }
+        }
+
+        RefreshPhaseControlAvailability();
 
         ScheduleSave();
         RedrawAll();
+        if (clearedRotations > 0)
+        {
+            MessageBox.Show(
+                this,
+                $"{clearedRotations} channel side" +
+                (clearedRotations == 1 ? " had" : "s had") +
+                " a phase rotation dialled in, and this processor has no such " +
+                "control.\r\n\r\nThe angle" +
+                (clearedRotations == 1 ? " was" : "s were") +
+                " cleared: left in place it would go on bending the curves with " +
+                "nothing on screen to explain it, and the tuning sheet would go on " +
+                "naming a control this device does not have.",
+                "Virtual DSP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
     }
 
     // Channel names run A, B, C… by index; shared with the tuning sheets.
@@ -1904,6 +1966,8 @@ public partial class VirtualCrossoverPanel : UserControl
             control.LowPassSlopeComboBox.SelectedItem = settings.LowPassEdge.SlopeDbPerOctave;
             control.LowPassRippleInput.Value = control.LowPassRippleInput
                 .ClampValue(settings.LowPassEdge.RippleDb);
+            control.PhaseInput.Value = control.PhaseInput
+                .ClampValue(settings.PhaseRotationDegrees);
             // The block-wide settings come off the PAIR, so the block keeps
             // showing the same answer whichever side is on screen.
             control.ShowRawCheckBox.Checked = channel.Pair.ShowRawCurve;
@@ -1919,6 +1983,34 @@ public partial class VirtualCrossoverPanel : UserControl
         UpdatePeqReadouts(channel);
     }
 
+    // Shows or hides the phase row on every block, and hands each the rate its
+    // all-pass corner is solved at. Both answers come from the processor and the
+    // project, so this runs wherever either can have moved — including the redraw,
+    // which is what catches a project whose rate FOLLOWS measurements that were
+    // replaced. Nothing happens when nothing changed: the loop below is a pair of
+    // comparisons per block, and only a real difference reaches the flow list, which
+    // would otherwise be asked for a layout pass on every knob turn.
+    private void RefreshPhaseControlAvailability()
+    {
+        bool shown = project.ResolveDspPhaseControl();
+        int rate = ProcessorSampleRateHz;
+        bool changed = channelControls.Values.Any(control =>
+            control.PhaseControlShown != shown || control.ProcessorSampleRateHz != rate);
+        if (!changed)
+        {
+            return;
+        }
+
+        channelListPanel.SuspendLayout();
+        foreach (VirtualCrossoverChannelControl control in channelControls.Values)
+        {
+            control.ProcessorSampleRateHz = rate;
+            control.PhaseControlShown = shown;
+        }
+
+        channelListPanel.ResumeLayout(performLayout: true);
+    }
+
     private void ReadControlIntoSettings(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
@@ -1929,6 +2021,7 @@ public partial class VirtualCrossoverPanel : UserControl
         settings.CrossoverKind = control.SelectedCrossoverKind;
         settings.HighPassEdge = control.HighPassEdge;
         settings.LowPassEdge = control.LowPassEdge;
+        settings.PhaseRotationDegrees = (double)control.PhaseInput.Value;
         channel.Pair.ShowRawCurve = control.ShowRawCheckBox.Checked;
         channel.Pair.ShowProcessedCurve = control.ShowProcessedCheckBox.Checked;
         channel.Pair.Enabled = !control.Muted;
@@ -3209,6 +3302,10 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // Cheap and idempotent (see the method): here so a rate that moved with the
+        // measurements reaches the blocks' phase read-outs without every source path
+        // having to remember them.
+        RefreshPhaseControlAvailability();
         RequestRedraw();
     }
 
@@ -3353,7 +3450,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
                 DspChannelChain chain = channel.Pair.Bypass
                     ? DspChannelChain.Identity
-                    : channel.Settings.ToChain();
+                    : channel.Settings.ToChain(channel.Pair.Zone);
                 snapshots.Add(new VirtualCrossoverChannelSnapshot(
                     i,
                     new ProcessingSlotId(
@@ -6113,7 +6210,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     channel.TransferImpulseResponse!,
                     channel.SampleRate,
                     ProcessorSampleRateHz,
-                    channel.Settings.ToChain())).ToList(),
+                    channel.Settings.ToChain(channel.Pair.Zone))).ToList(),
                 log));
 
         IReadOnlyList<AlignmentSnapshot> initial = reprocessor.Reprocess(
@@ -6512,7 +6609,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     side.State.TransferImpulseResponse!,
                     side.State.SampleRate,
                     ProcessorSampleRateHz,
-                    side.Settings.ToChain())).ToList(),
+                    side.Settings.ToChain(side.Runtime.Pair.Zone))).ToList(),
                 log));
 
         IReadOnlyList<AlignmentSnapshot> initialSnapshots = reprocessor.Reprocess(
@@ -7718,7 +7815,7 @@ public partial class VirtualCrossoverPanel : UserControl
             // identity chain.
             DspChannelChain chain = channel.Pair.Bypass
                 ? DspChannelChain.Identity
-                : channel.Settings.ToChain() with { DelayMs = 0 };
+                : channel.Settings.ToChain(channel.Pair.Zone) with { DelayMs = 0 };
             curves.Add(new DspChainCurve(
                 $"{channel.Name} filter", chain, ProcessorSampleRateHz, ChannelColors[i]));
         }
@@ -8329,6 +8426,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return "cancelled in the wizard";
         }
 
+        int clearedRotations = 0;
         for (int i = 0; i < participating.Count; i++)
         {
             VirtualCrossoverChannel channel = participating[i];
@@ -8355,6 +8453,18 @@ public partial class VirtualCrossoverPanel : UserControl
                     settings.LowPassEdge = lowPass;
                 }
                 settings.GainDb = proposal.GainDb;
+                // The phase control states its angle AT the crossover, so a run that
+                // moves the crossover leaves the same number meaning a different
+                // filter. A hand edit keeps it — that is the hardware's own rule and
+                // the user is watching the readout move — but a wizard that rewrites
+                // every channel at once is not something to leave a stale all-pass
+                // under, so it starts from no rotation, and says so where it took one
+                // away.
+                if (settings.PhaseRotationDegrees != 0)
+                {
+                    settings.PhaseRotationDegrees = 0;
+                    clearedRotations++;
+                }
             }
 
             ApplySettingsToControl(channel);
@@ -8371,6 +8481,22 @@ public partial class VirtualCrossoverPanel : UserControl
 
         ScheduleSave();
         RedrawAll();
+        if (clearedRotations > 0)
+        {
+            MessageBox.Show(
+                this,
+                $"{clearedRotations} channel side" +
+                (clearedRotations == 1 ? " had" : "s had") +
+                " a phase rotation dialled in.\r\n\r\nThat control states its angle " +
+                "at the channel's crossover, so the filter it built is not the one " +
+                "the same number would build at the new corners — the rotations " +
+                "were cleared rather than left meaning something else. Dial them " +
+                "in again against the crossovers this run chose.",
+                "Virtual DSP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+
         return null;
     }
 

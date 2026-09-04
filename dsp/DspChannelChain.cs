@@ -5,7 +5,8 @@ namespace Resonalyze.Dsp;
 /// <summary>
 /// The linear DSP chain of one virtual-crossover channel, mirroring what a DSP
 /// applies before the driver: gain, delay, a polarity switch, the crossover
-/// filters and a PEQ stage. Phase-only all-pass filters live inside the PEQ bank
+/// filters, the channel phase control of the devices that have one, and a PEQ
+/// stage. Phase-only all-pass filters live inside the PEQ bank
 /// as bands (<see cref="PeqBandType.AllPassFirstOrder"/> /
 /// <see cref="PeqBandType.AllPassSecondOrder"/>), the way Audiotec-style hardware
 /// holds them in its EQ slot table. Because every stage is LTI, multiplying a
@@ -14,12 +15,19 @@ namespace Resonalyze.Dsp;
 /// LTI, the stages also commute: the order they are applied in here does not
 /// change the response.
 /// </summary>
+/// <param name="PhaseRotation">
+/// The channel's phase control, where the device being designed for has one — an
+/// all-pass the hardware derives from the crossover rather than from a corner the
+/// user types (see <see cref="PhaseRotationControl"/>). Default is no rotation, so
+/// every chain built before the control existed is unchanged.
+/// </param>
 public sealed record DspChannelChain(
     double GainDb = 0,
     double DelayMs = 0,
     bool InvertPolarity = false,
     CrossoverSpec? Crossover = null,
-    EqualizationCurve? Peq = null)
+    EqualizationCurve? Peq = null,
+    PhaseRotationSpec PhaseRotation = default)
 {
     /// <summary>
     /// The supported |GainDb| range of a channel chain — the ONE figure the
@@ -33,7 +41,7 @@ public sealed record DspChannelChain(
 
     /// <summary>
     /// Complex response of the whole chain at the given frequency:
-    /// gain · (±1) · e^{-jw·tau} · H_crossover · H_peq. The delay term realizes an
+    /// gain · (±1) · e^{-jw·tau} · H_crossover · H_phase · H_peq. The delay term realizes an
     /// exact fractional-sample delay; the filters are evaluated as the digital
     /// biquads a DSP would run at this sample rate.
     /// </summary>
@@ -46,6 +54,11 @@ public sealed record DspChannelChain(
         if (Crossover is { Kind: not CrossoverKind.Off } crossover)
         {
             response *= CrossoverFilter.Response(crossover, frequencyHz, sampleRateHz);
+        }
+
+        if (PhaseRotationControl.Realize(PhaseRotation, sampleRateHz) is { } rotation)
+        {
+            response *= AllPassFilter.Response(rotation, frequencyHz, sampleRateHz);
         }
 
         if (Peq is { } peq)

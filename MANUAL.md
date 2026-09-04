@@ -511,6 +511,9 @@ The same controls repeat on every block:
    one.
 6. **PEQ** — hand the channel to the EQ Wizard, load or clear its bank, and read how
    many bands and how much preamp it carries.
+7. **Phase** — the channel phase control, on the processors that have one. It is
+   absent above because that session's device does not; see
+   [the phase control](#the-phase-control-helix-and-relatives) below.
 
 ### Assign channel groups
 
@@ -594,6 +597,42 @@ Under the fields the dialog states what the choice buys — the design rate, the
 measurements keep, and how high the simulation is trustworthy. The choice travels with
 the project into the EQ Wizard and the tuning sheet's Q column;
 [REFERENCE.md](REFERENCE.md#dsp-processor) has the details.
+
+#### The phase control (HELIX and relatives)
+
+The dialog's third setting, **Channel phase control**, is ticked for you when the model
+you picked has one — every HELIX does, through the DSP PC-Tool — and you can tick it
+yourself for a Custom profile standing in for a device the catalog does not list. It
+adds a **Phase** field to every channel card.
+
+It is not only a view switch: unticking it, or naming a processor without such a
+control, clears the angles as well, and tells you how many. A filter you cannot see
+and your DSP cannot dial has no business in the prediction.
+
+That control is not an all-pass you dial in by frequency. You set an ANGLE, in steps of
+5.625° up to 354.375°, and the processor works out the second-order all-pass that turns
+the phase by exactly that much **at the channel's own crossover frequency** — its
+low-pass on a subwoofer channel, its high-pass on every other one. The read-out beside
+the field names both, so you can see what the number is really building:
+
+    Phase  90.000   ref 500 Hz → AP2 809 Hz
+
+Two things follow from the way the device works, and they are worth knowing before you
+use it:
+
+- **Move the crossover and the same angle becomes a different filter.** The reference
+  is the crossover frequency as configured — even when that filter is bypassed or
+  switched off. This is the hardware's own rule, so Resonalyze keeps it and shows you
+  the corner moving. Auto Crossover clears any rotation it finds rather than leave a
+  stale one behind, and tells you how many.
+- **At a high crossover the smallest steps stop working.** The device will not place
+  the all-pass corner above about 18 kHz (3/16 of its processing rate), so a tweeter
+  crossed at 5 kHz cannot turn its phase by less than about 29°: the first five
+  positions all give the same filter. The read-out turns amber and states what you
+  actually get.
+
+The behaviour was measured on a HELIX DSP ULTRA S rather than taken from a manual, and
+the model reproduces those measurements to about 0.2 %.
 
 ### Set the display correctly
 

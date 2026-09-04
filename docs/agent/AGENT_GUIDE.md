@@ -1,6 +1,6 @@
 # Resonalyze Agent Guide
 
-Guide version 1.5 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
+Guide version 1.6 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
 
 ## 0. The rules that also travel inside every package
 
@@ -82,7 +82,12 @@ ms, positive = plays later; `peqQ` is RBJ cookbook Q always (the device's own
 convention is applied by Resonalyze on the way out — do not convert). A missing
 property is unavailable, never a zero; where it matters an `unavailableReason`
 sits beside it. Both crossover edges are stored on every channel and
-`dsp.crossover.kind` says which act. Two sample rates matter: the measurement's
+`dsp.crossover.kind` says which act. `dsp.phaseRotationDeg`, where present, is
+that channel's Phase control on a device that has one: an angle the hardware
+turns into an all-pass at the channel's OWN crossover, already inside every
+curve. You cannot set it, and moving that crossover leaves the same angle
+building a different filter — so say so when you propose a corner on a channel
+that carries one. Two sample rates matter: the measurement's
 and `processor.sampleRateHz`, and every corner and band you propose must sit
 below half the processor's. Per channel, `preDspDb` is the measurement before
 the chain, `processedDb` through it, `chainDb` and `peqDb` the chain and the

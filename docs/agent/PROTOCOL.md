@@ -183,7 +183,8 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
                           "highPass": { "family": "LinkwitzRiley", "frequencyHz": 250, "slopeDbPerOctave": 24, "rippleDb": 1 },
                           "lowPass":  { "family": "LinkwitzRiley", "frequencyHz": 2800, "slopeDbPerOctave": 24, "rippleDb": 1 } },
            "peq": { "preampDb": -1, "hash": "3f9a1c0b7e2d",
-                    "bands": [ { "type": "Peaking", "frequencyHz": 820, "q": 2.1, "gainDb": -2.4 } ] } },
+                    "bands": [ { "type": "Peaking", "frequencyHz": 820, "q": 2.1, "gainDb": -2.4 } ] },
+           "phaseRotationDeg": 56.25 },
   "curves": { "broadband": { "columns": ["frequencyHz","preDspDb","processedDb","chainDb","peqDb","coherence"],
                              "rows": [ [20, null, null, -3.1, -1, null], … ] } } }
 ```
@@ -203,6 +204,15 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
 - Both crossover edges are always stored; `kind` says which act (`LowPass` uses
   `lowPass`, `HighPass` uses `highPass`, `BandPass` both, `Off` none). `rippleDb`
   matters only for `Chebyshev`.
+- `dsp.phaseRotationDeg` appears only where the channel has a phase rotation
+  dialled in — the per-channel Phase control of the processors that have one
+  (HELIX and relatives). It is an ANGLE, not a corner: the device places a
+  second-order all-pass (Q = 1) whose phase equals it at that channel's own
+  crossover — the low-pass on a `Sub` channel, the high-pass otherwise, as
+  configured even where that filter is off. It is part of the chain the package's
+  curves and every engine already account for, and read-only: no operation writes
+  it. Note that a `setCrossover` moving the corner leaves the SAME angle building
+  a different filter, exactly as it would on the device.
 - `peq.hash` is twelve hex digits of SHA-256 over the bands in order (type,
   frequency, Q, gain in round-trip form) and the preamp. A `replacePeqBank`
   reply echoes it instead of the whole current bank.
@@ -314,7 +324,7 @@ same chat as a second text:
 RESONALYZE_AGENT_DIAGNOSTIC_V1
 …
 BEGIN_RESONALYZE_AGENT_DIAGNOSTIC_JSON
-{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.5",
+{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.6",
   "diagnostic": "excessGroupDelay", "packageId": "…", "createdAtUtc": "…",
   "conventions": { … },
   "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } }, … ] }
@@ -673,7 +683,7 @@ copied to the clipboard, pasted into the same chat:
 RESONALYZE_AGENT_PROBE_V1
 …
 BEGIN_RESONALYZE_AGENT_PROBE_JSON
-{ "kind": "resonalyze.agent-probe", "protocolVersion": 1, "guideVersion": "1.5",
+{ "kind": "resonalyze.agent-probe", "protocolVersion": 1, "guideVersion": "1.6",
   "packageId": "…", "sessionMatchesPackage": true, "createdAtUtc": "…",
   "conventions": { … },
   "probes": [

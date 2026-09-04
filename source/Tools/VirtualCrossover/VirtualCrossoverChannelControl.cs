@@ -838,9 +838,25 @@ public partial class VirtualCrossoverChannelControl : UserControl
         };
         numericPhase.ValueChanged += (_, _) =>
         {
-            // The control has 64 positions and no others, so a typed angle lands on
-            // the nearest one. Re-entrant by design: the assignment raises this
-            // handler again with a value that is already on the grid.
+            // The control has 64 positions and no others, so an angle the USER types
+            // lands on the nearest one. Re-entrant by design: the assignment raises
+            // this handler again with a value that is already on the grid.
+            //
+            // Only the user's, though. A value the host is loading passes through
+            // untouched, because the alternative is worse both ways: snapping it
+            // without telling the project would leave the field showing one angle
+            // while the simulation ran another until some unrelated edit wrote the
+            // snapped one back, and snapping it INTO the project would silently
+            // rewrite a session the file format deliberately accepts (the DSP builds
+            // any angle; it is the device that has 64 positions). Shown as it stands,
+            // it is the session's own number, and one press of an arrow puts it on
+            // the grid.
+            if (suppressChangeEvents)
+            {
+                UpdatePhaseReadout();
+                return;
+            }
+
             var snapped = (decimal)PhaseRotationControl.SnapToGrid((double)numericPhase.Value);
             if (snapped != numericPhase.Value)
             {

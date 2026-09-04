@@ -314,7 +314,27 @@ public sealed class VirtualCrossoverChannelSettings
             InvertPolarity,
             crossover,
             peq,
-            new PhaseRotationSpec(PhaseRotationDegrees, PhaseReferenceHz(zone)));
+            PhaseRotation(zone));
+    }
+
+    /// <summary>
+    /// The channel phase control as the DSP reads it: the angle, the crossover corner
+    /// it is stated at, and WHICH of the channel's two corners that is.
+    /// </summary>
+    /// <remarks>
+    /// The last of the three is not decoration: a chain carries only the corners its
+    /// kind engages, so nothing downstream could tell a reference sitting on a
+    /// disengaged low-pass from one sitting on the high-pass beside it — and the
+    /// junction search, which moves one corner at a time, has to know which of them
+    /// the angle follows.
+    /// </remarks>
+    public PhaseRotationSpec PhaseRotation(VirtualCrossoverZone zone)
+    {
+        bool referenceIsLowPass = zone == VirtualCrossoverZone.Sub;
+        return new PhaseRotationSpec(
+            PhaseRotationDegrees,
+            (referenceIsLowPass ? LowPassEdge : HighPassEdge).FrequencyHz,
+            referenceIsLowPass);
     }
 
     /// <summary>
@@ -330,9 +350,7 @@ public sealed class VirtualCrossoverChannelSettings
     /// exactly so this stays a real number when the filter is not in use.
     /// </remarks>
     public double PhaseReferenceHz(VirtualCrossoverZone zone) =>
-        zone == VirtualCrossoverZone.Sub
-            ? LowPassEdge.FrequencyHz
-            : HighPassEdge.FrequencyHz;
+        PhaseRotation(zone).ReferenceHz;
 
     public void Validate()
     {

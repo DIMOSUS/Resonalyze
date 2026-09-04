@@ -153,6 +153,30 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
     }
 
     [Fact]
+    public void AnAngleTheHostLoads_IsShownAsTheSessionStatedIt()
+    {
+        // The file format accepts any angle in range — the DSP builds one, it is the
+        // DEVICE that has 64 positions — so a hand-edited session must not be quietly
+        // re-dialled by being displayed. Snapping it here without telling the project
+        // would leave the field and the simulation disagreeing until some unrelated
+        // edit wrote the snapped value back.
+        using var control = new VirtualCrossoverChannelControl { PhaseControlShown = true };
+        control.ProcessorSampleRateHz = 96_000;
+        control.HighPassFrequencyInput.Value = 500;
+
+        control.RunBatchUpdate(() => control.PhaseInput.Value = 7m);
+
+        Assert.Equal(7m, control.PhaseInput.Value);
+        // And it still says what that angle builds.
+        Assert.Contains("AP2", control.PhaseInfoLabel.Text);
+
+        // One press of an arrow puts it back on the grid.
+        control.PhaseInput.Value = 7m + (decimal)PhaseRotationControl.StepDegrees;
+
+        Assert.Equal(11.25m, control.PhaseInput.Value);
+    }
+
+    [Fact]
     public void TheAngle_RaisesTheSettingsEvent_SoTheChainIsRecomputed()
     {
         using var control = new VirtualCrossoverChannelControl { PhaseControlShown = true };

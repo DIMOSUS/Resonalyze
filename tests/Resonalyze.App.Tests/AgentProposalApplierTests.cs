@@ -226,6 +226,27 @@ public sealed class AgentProposalApplierTests
     }
 
     [Fact]
+    public void Restore_PutsBackAPhaseRotation_NoOperationEverWrote()
+    {
+        // Undo restores the whole editable chain, not just the fields an operation
+        // can write: a rotation dialled in between the import and the undo would
+        // otherwise be the one setting that survived it.
+        (AgentSessionSnapshot session, AgentProposal proposal) = Scene();
+        VirtualCrossoverChannelSettings aRight = session.Find("A:right")!.Settings;
+        aRight.PhaseRotationDegrees = 56.25;
+        Assert.Null(AgentProposalApplier.Prepare(
+            proposal, new HashSet<string>(["op-1"]),
+            session.Fingerprint, session, out List<AgentOperationVerdict> toApply, out _));
+
+        List<AgentUndoEntry> undo = AgentProposalApplier.Apply(toApply);
+        aRight.PhaseRotationDegrees = 90;
+
+        AgentProposalApplier.Restore(undo);
+
+        Assert.Equal(56.25, aRight.PhaseRotationDegrees);
+    }
+
+    [Fact]
     public void Apply_PutsBackWhatItWrote_WhenAWriteThrows()
     {
         (AgentSessionSnapshot session, AgentProposal proposal) = Scene();

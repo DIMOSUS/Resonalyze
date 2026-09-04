@@ -404,8 +404,18 @@ internal static class Shots
 
         if (wanted("manual/dsp-processor"))
         {
-            session.CaptureModal("manual/dsp-processor",
-                () => Reflect.Field<Button>(panel, "buttonDspProcessor").PerformClick());
+            // Built directly, like the model figure below it, and for a reason the
+            // live dialog cannot serve: the manual captions this one "as a new
+            // project opens it" — Custom, following its measurements — while the
+            // session behind these figures names a catalog model. Posed off the
+            // panel, the two figures would show the same preset and the pair would
+            // illustrate nothing.
+            session.CaptureDialog(
+                DspProcessorDialog(
+                    Dsp.DspProcessorProfile.Custom(96_000, Dsp.PeqQConvention.Rbj),
+                    follows: true,
+                    measurementRateHz: 96_000),
+                "manual/dsp-processor");
         }
 
         if (wanted("manual/dsp-processor-model"))
@@ -553,7 +563,10 @@ internal static class Shots
     }
 
     private static Form DspProcessorDialog(
-        Dsp.DspProcessorProfile profile, bool follows, int measurementRateHz)
+        Dsp.DspProcessorProfile profile,
+        bool follows,
+        int measurementRateHz,
+        bool? phaseControl = null)
     {
         Type type = typeof(VirtualCrossoverPanel).Assembly
             .GetType("Resonalyze.DspProcessorDialog")
@@ -564,7 +577,7 @@ internal static class Shots
             System.Reflection.BindingFlags.NonPublic |
             System.Reflection.BindingFlags.Public,
             binder: null,
-            [profile, follows, measurementRateHz],
+            [profile, follows, measurementRateHz, phaseControl],
             culture: null)!;
     }
 

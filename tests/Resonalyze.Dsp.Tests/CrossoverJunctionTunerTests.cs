@@ -18,7 +18,7 @@ public sealed class CrossoverJunctionTunerTests
                 CrossoverKind.LowPass,
                 new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)),
             // A subwoofer states its angle at its low-pass.
-            PhaseRotation: new PhaseRotationSpec(90, 80));
+            PhaseRotation: new PhaseRotationSpec(90, 80, ReferenceIsLowPass: true));
 
         DspChannelChain moved = CrossoverJunctionTuner.WithLowPass(
             subwoofer, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 65, 24));
@@ -33,7 +33,7 @@ public sealed class CrossoverJunctionTunerTests
                 CrossoverKind.BandPass,
                 new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 350, 24),
                 new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)),
-            PhaseRotation: new PhaseRotationSpec(90, 80));
+            PhaseRotation: new PhaseRotationSpec(90, 80, ReferenceIsLowPass: false));
 
         DspChannelChain untouched = CrossoverJunctionTuner.WithLowPass(
             midbass, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 300, 24));
@@ -44,6 +44,37 @@ public sealed class CrossoverJunctionTunerTests
             midbass, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 65, 24));
 
         Assert.Equal(65, highMoved.PhaseRotation.ReferenceHz);
+    }
+
+    [Fact]
+    public void ReplacingAnEdge_MovesAReferenceSittingOnAFilterTheChannelDoesNotYetUse()
+    {
+        // The case a junction search actually starts from: a subwoofer with no
+        // low-pass dialled in yet, carrying a rotation stated at the low-pass its
+        // PC-Tool page holds anyway. The chain has no low-pass to recognise the
+        // reference by, so the spec has to say which corner it follows — otherwise
+        // every candidate would be scored with the all-pass left at the old
+        // frequency, and applying the winner would build a different filter.
+        var subwoofer = new DspChannelChain(
+            Crossover: CrossoverSpec.Off,
+            PhaseRotation: new PhaseRotationSpec(90, 80, ReferenceIsLowPass: true));
+
+        DspChannelChain moved = CrossoverJunctionTuner.WithLowPass(
+            subwoofer, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 65, 24));
+
+        Assert.Equal(65, moved.PhaseRotation.ReferenceHz);
+        Assert.Equal(CrossoverKind.LowPass, moved.Crossover!.Kind);
+
+        // And the mirror: a channel with no high-pass engaged whose angle is stated
+        // at the high-pass its page holds.
+        var tweeter = new DspChannelChain(
+            Crossover: CrossoverSpec.Off,
+            PhaseRotation: new PhaseRotationSpec(90, 2_000));
+
+        DspChannelChain highMoved = CrossoverJunctionTuner.WithHighPass(
+            tweeter, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_500, 24));
+
+        Assert.Equal(3_500, highMoved.PhaseRotation.ReferenceHz);
     }
 
     // A flat driver: a unit impulse, so everything the junction measures is the

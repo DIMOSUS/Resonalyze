@@ -25,7 +25,18 @@ namespace Resonalyze.Dsp;
 /// The crossover frequency the angle is measured at — the channel's own, AS
 /// CONFIGURED. Zero (no reference) makes the setting transparent.
 /// </param>
-public readonly record struct PhaseRotationSpec(double Degrees, double ReferenceHz)
+/// <param name="ReferenceIsLowPass">
+/// WHICH of the channel's two corners <see cref="ReferenceHz"/> is: its low-pass
+/// on a subwoofer channel, its high-pass on every other one. The frequency alone
+/// cannot say, and a search that moves one corner has to know whether this is the
+/// one that moves — a chain carries only the corners its kind engages, so a
+/// channel whose reference sits on a filter it is not currently using would
+/// otherwise be unreadable.
+/// </param>
+public readonly record struct PhaseRotationSpec(
+    double Degrees,
+    double ReferenceHz,
+    bool ReferenceIsLowPass = false)
 {
     /// <summary>No rotation at all.</summary>
     public static PhaseRotationSpec None { get; }

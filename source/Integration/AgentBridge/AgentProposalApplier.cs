@@ -178,6 +178,10 @@ internal static class AgentProposalApplier
         to.CrossoverKind = from.CrossoverKind;
         to.LowPassEdge = from.LowPassEdge;
         to.HighPassEdge = from.HighPassEdge;
+        // No operation writes it, but this is the UNDO path as well: a phase
+        // rotation dialled in after an import would otherwise survive the undo
+        // while every setting beside it went back.
+        to.PhaseRotationDegrees = from.PhaseRotationDegrees;
         to.PeqPreampDb = from.PeqPreampDb;
         to.PeqBands = new List<PeqBand>(from.PeqBands);
         to.PeqSourceName = from.PeqSourceName;

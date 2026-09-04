@@ -535,6 +535,7 @@ public sealed class VirtualCrossoverProjectFile
     // letters (A, B, C…) and the plot palette both go up to this count.
     public const int MaximumChannelCount = 12;
     private const string FileName = "virtual-crossover.json";
+    private const string ResetBackupFileName = "virtual-crossover.before-reset.json";
 
     /// <summary>
     /// The widest scene offset (ms) the stereo Auto delay accepts: beyond a
@@ -982,12 +983,73 @@ public sealed class VirtualCrossoverProjectFile
             rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory,
             FileName);
 
-    public void Save(string? rootDirectory = null)
+    /// <summary>
+    /// Where <see cref="BackupBeforeReset"/> puts the copy it takes.
+    /// </summary>
+    public static string ResetBackupPath(string? rootDirectory = null) =>
+        Path.Combine(
+            rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory,
+            ResetBackupFileName);
+
+    /// <summary>
+    /// Writes THIS project aside before the panel replaces it wholesale, so a
+    /// Reset is not the end of the tune it discards: the file is an ordinary
+    /// session and comes back through <b>Load session…</b>.
+    /// </summary>
+    /// <returns>
+    /// The copy's path, or null with the reason it could not be written.
+    /// </returns>
+    /// <remarks>
+    /// The project in MEMORY, not the autosave on disk. The panel does not save on
+    /// edit, it schedules one behind a debounce, so the file lags the screen by up
+    /// to a couple of seconds — and by everything, on a session that has never
+    /// been written. Copying the file promised the user the session in front of
+    /// them and delivered the one before their last edits; worse, it reported a
+    /// missing file as "nothing to lose" while a whole tune stood in memory.
+    /// Serializing the object answers for exactly what the caller is about to
+    /// discard, and a failure to write it is reported rather than swallowed the
+    /// way the debounced autosave has to swallow one.
+    /// <para>
+    /// One copy is kept and overwritten — the answer to "undo that reset" is
+    /// always the reset just performed, and a growing pile of dated files would be
+    /// a second archive beside the user's own exported sessions.
+    /// </para>
+    /// <para>
+    /// Its own name, not the <c>.backup</c> suffix
+    /// <see cref="BackupUnusableFile"/> uses: that one holds a file the tool could
+    /// not read, this one a tune it read perfectly well, and clobbering the first
+    /// with the second would throw away the only copy of an unreadable project
+    /// while the user was still deciding what to do about it. The <c>.json</c>
+    /// extension is deliberate too — it is what the Load session dialog offers.
+    /// </para>
+    /// </remarks>
+    public (string? Path, string? Error) SaveResetBackup(string? rootDirectory = null)
+    {
+        string backupPath = ResetBackupPath(rootDirectory);
+        try
+        {
+            SaveAutosaveTo(backupPath);
+            return (backupPath, null);
+        }
+        catch (Exception exception)
+        {
+            return (null, exception.Message);
+        }
+    }
+
+    public void Save(string? rootDirectory = null) =>
+        SaveAutosaveTo(GetPath(rootDirectory));
+
+    // The autosave's own write, shared with the reset backup beside it. NOT the
+    // public SaveTo below: that one is the EXPORT, and it states each source's path
+    // relative to the file's own folder. Both of these live in the application data
+    // folder, where no measurement sits, so a relative path written there would be
+    // the confident wrong answer WriteWithExportRelativePaths exists to refuse.
+    private void SaveAutosaveTo(string path)
     {
         Validate();
         SavedAtUtc = DateTimeOffset.UtcNow;
 
-        string path = GetPath(rootDirectory);
         string directory = Path.GetDirectoryName(path)
             ?? throw new InvalidOperationException(
                 "The virtual crossover directory cannot be resolved.");

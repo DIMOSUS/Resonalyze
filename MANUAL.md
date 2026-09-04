@@ -478,7 +478,10 @@ relative SPL, phase and absolute timing are exactly what Virtual DSP needs.
 The panel is dense, so here are its six regions:
 
 1. **The channel cards** — one per band, top to bottom in frequency order, each with
-   its source, gain, delay, polarity, crossover, PEQ and curve toggles. The **L / R**
+   its source, gain, delay, polarity, crossover, PEQ and curve toggles. **Add** and
+   **Remove** under the list change how many there are; **Reset** empties the panel
+   back to three blank cards and its default settings, asking first and putting a
+   copy of the current session aside so **Load session…** can undo it. The **L / R**
    selector at the bottom decides which side every card shows.
 2. **The acoustic plot** — each channel's processed response, the phase-aware **Sum**,
    and **Sum loss** against the right-hand axis.
@@ -758,7 +761,8 @@ capsule with its own file.
 both sides for a stereo band, once for a mono channel. The button reads **MMM** for
 none, **MMM ✓** when one is attached, **MMM ⚠** when the session refers to one it cannot
 read. When every playing channel has a capture, the **Hybrid** toggle under the graph
-becomes available. Tick it.
+becomes available — and turns **red** until you tick it, because until then the plot
+is still drawing one microphone position while the averages sit unused. Tick it.
 
 ![Each channel's MMM button, and the Hybrid toggle they enable](assets/images/manual/hybrid-enable.png)
 

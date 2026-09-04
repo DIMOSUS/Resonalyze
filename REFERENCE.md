@@ -1442,6 +1442,17 @@ crossover region, and the junction sums instead of cancelling. The neighbours do
 not move while the bank is edited — they are measurements of drivers nobody is
 editing — and they are re-read from their responses whenever the window changes,
 so they never become a curve gated one way drawn beside a curve gated another.
+
+Neighbouring means the drivers this one actually hands a band to: its junction
+partners inside its own zone's chain, with the subwoofers counting as the bottom
+of the stage above them. A driver two junctions away is not one, and neither is a
+driver from another listening group — a rear fill and a centre are high-passed
+with no upper corner, so ordering them along the spectrum beside a front stage
+wedges them into the middle of it and buries the junction being tuned under
+crossings that are not crossings at all. Which drivers those are is read from the
+channel's ZONE rather than from the panel's group selector, because a block's PEQ
+menu opens in every view and what it crosses with is a property of the car. A
+neighbour whose curve is hidden on the panel stays hidden here too.
 The **raw** handoff draws its own phase but no neighbours, and says so on the
 plot: that curve has no crossover, delay or polarity in front of it while they
 have all of theirs, so lining it up against them would line up a system nobody
@@ -1451,19 +1462,20 @@ is building.
 
 Above: the midrange of a four-way, handed over from Virtual DSP with its bank
 fitted. The channel under edit is the solid curve, its dashed twin is the same
-channel before the bank (**Without EQ**), and the neighbouring drivers keep the
-colours they had on the panel — the subwoofer, the midbass and the tweeter,
-frozen as it drew them. The white curve is the bank's own phase on the
-right-hand axis, which the **EQ curve** checkbox turns off.
+channel before the bank (**Without EQ**), and the two drivers it crosses with —
+the midbass below it and the tweeter above — keep the colours they had on the
+panel, frozen as it drew them. The subwoofer is a junction further down and stays
+behind. The white curve is the bank's own phase on the right-hand axis, which the
+**EQ curve** checkbox turns off.
 
 **Phase gate…** is the window those curves are read through — the same dialog,
 and the same settings, the Virtual DSP phase view uses, down to the impulse
 preview of every channel it draws. A handoff arrives with its gate already
 placed and every setting as it stands there — window mode, FDW cycles, the three
 durations, the **detrend mode** and the τ it resolved, and whether the offset was
-pinned: the panel worked that out over every driver on screen, so the wizard
-adopts it rather than deriving its own and drawing this channel somewhere the
-panel never had it. Changing the detrend to **Auto** here re-estimates τ from the
+pinned: the panel worked that out over the very set being handed over, so the
+wizard adopts it rather than deriving its own and drawing this channel somewhere
+the panel never had it. Changing the detrend to **Auto** here re-estimates τ from the
 earliest-arriving response of the set, once, when the gate changes — a reference
 that moved with the bank would slide every curve under its own correction. A measurement opened straight into the wizard has no neighbours to
 be comparable with, so its window simply opens on its own front and its τ
@@ -1794,7 +1806,26 @@ which side the controls edit, **L→R** / **R→L** copy chain settings across s
 (a dialog picks the channels and which parts travel — see below),
 and a **Mono** checkbox turns a pair into a single shared driver — the typical
 one-subwoofer car layout — feeding both sides' sums. The setup grows from two up
-to twelve pairs, and **+/−** folds a block down to its header. Every channel in a
+to twelve pairs with **Add** and **Remove** under the block list, and **+/−**
+folds a block down to its header. **Reset** beside them starts the panel over:
+every block back to an empty default one, the list back to three, and the
+panel's own settings — target level, smoothing, gate, Show view, scene offset —
+with them. It asks first, and the question names what it takes and where the
+copy goes: the session ON SCREEN is written to
+`virtual-crossover.before-reset.json` beside the autosave, so a misclick comes
+back through **Load session…**. The panel's own state, not the autosave — that
+one is written behind a two-second debounce and on a session that has never been
+saved does not exist at all, so copying the file would have handed back the tune
+minus its last edits and called a missing file nothing to lose. That copy is the
+tool's own one-deep net, not an archive — the next reset overwrites it, so a
+tune worth keeping still wants **Save session…**. A copy that cannot be written
+stops the reset to ask again rather than discarding a tune with nothing behind
+it. Its name is its own on purpose: the `.backup` file beside it holds a project
+the tool could NOT read, and overwriting that with one it read perfectly well
+would throw away the only copy of a session the user is still deciding about.
+Two things survive a reset, because neither belongs to the tune: the microphone
+calibration selected in the panel (a property of the rig) and the shared EQ
+target curve, which the EQ Wizard owns. Every channel in a
 project must share one sample rate — the rate they were MEASURED at, which is a
 separate question from the rate the processor runs at (see
 [DSP processor](#dsp-processor)).
@@ -1964,9 +1995,12 @@ point-measured row whole, marked in the tooltip. The Groups view exists
 for exactly that adjustment, which is why it draws the sums rather than the
 drivers: all its lines are gated on one shared anchor, so their relative timing
 is readable off the plot. The target is drawn there too — judging a rear fill's
-level against the house curve is half of what the view is for — but **Hybrid**
-is muted in it, because a spatial average belongs to one driver and there is
-nothing to hang one on when the plot shows only group sums. Groups is a
+level against the house curve is half of what the view is for — and so is
+**Hybrid**: a group's line is then built the way the Sum is built in every other
+view, over that group's members alone, so the plot and the ΔdB rows beside it
+describe the groups on one basis instead of two. A group whose members cannot
+produce one keeps its measured sum on its own line rather than vanishing from the
+view that exists to compare it. Groups is a
 magnitude view: it has no phase or impulse form, so picking it moves the view
 to **Magnitude** and mutes the other two rather than quietly falling back to
 per-driver curves under a selector that promises group sums.
@@ -2149,6 +2183,13 @@ carries no phase. The tick itself survives all of that: it says what you want
 drawn, so re-attaching a capture brings the hybrid straight back instead of
 sending you to find the checkbox again.
 
+Where it is live and **not** ticked, the label turns red. Every playing channel
+has an average attached and the plot is drawing one microphone position's dips
+anyway — which is a tune about to be fitted to the wrong curve, and the one state
+of this toggle worth interrupting for. It says nothing on a view that cannot draw
+the hybrid: there the toggle is simply grey, as it is when the captures are
+missing.
+
 The set is checked while it draws. Every capture in one set is taken with one
 analyzer recipe at one input gain, so each channel should sit the same distance
 from its own impulse response — and when they disagree by more than **3 dB** the
@@ -2260,6 +2301,17 @@ witness**: where the summation score is too close to call between a lag and its
 inverted rival, the wavefronts within a period or two of the front decide it,
 because that is the part of the record the drivers made and the room had not yet
 answered.
+
+The pair is chosen from a list of the junctions the current **group view** has:
+the chain that view SUMS, ordered along the spectrum — the same set its sum-loss
+read-out reports row by row. Band order over a whole installation is not a chain
+and cannot stand in for one: a rear fill and a centre are high-passed with no
+upper corner, so their band centre falls between the midrange's and the
+tweeter's, and listing them together with the front stage offers a
+midrange-to-rear-fill handover that is not a crossover while dropping the
+midrange/tweeter one that is. **Groups** and **Everything** span more than one
+chain, so they list no junctions at all — the silence the loss read-out already
+keeps there, for the same reason.
 
 The plot's **Coherence** mode reads the same junction per frequency instead of
 per lag: a sub-band probe slides across the pair band (sixth-octave steps,
@@ -2821,7 +2873,12 @@ The remaining buttons in the column beside the plots:
   [Dropping a file on the window](#dropping-a-file-on-the-window)).
 
 The tool's autosaved state persists in `tools/virtual-crossover.json` and
-survives restarts. Accuracy holds within the usual physics: one microphone
+survives restarts. Two files can sit beside it: `virtual-crossover.json.backup`,
+where a project the tool could not read is moved aside so the next start has
+something to open — it is kept for salvage, not because it will load — and
+`virtual-crossover.before-reset.json`, where **Reset** writes the live session
+before it clears the panel — an ordinary session file **Load session…** opens.
+Accuracy holds within the usual physics: one microphone
 position, the same playback chain for every measurement, and the linear
 (non-clipping) regime.
 

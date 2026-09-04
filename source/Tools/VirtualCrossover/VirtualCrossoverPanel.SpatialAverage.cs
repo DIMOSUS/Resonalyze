@@ -772,15 +772,19 @@ public partial class VirtualCrossoverPanel
     // Whether this redraw should draw the hybrid. Both halves matter: the tick
     // survives a view switch, and a ticked toggle with no coverage behind it must not
     // put a half-built hybrid on the plot.
-    // Intent, coverage AND a view that can show it. The last clause is not
-    // cosmetic: muting the toggle only changed how it looks, so with the hybrid
-    // ticked before the switch the Groups view went on computing it — drawing
-    // plain point-measured group sums while the read-out reported a spatial
-    // average offset for curves that were not on the plot.
+    //
+    // The Groups view is INCLUDED. It once was not, on the grounds that a spatial
+    // average belongs to a driver and a group's line is a sum — but so is the Sum
+    // every other view draws, and it is built the hybrid way there: the members'
+    // captures through their chains, held together by the phase their impulse
+    // responses measure (BuildHybridSumCurve). A group's line is that same
+    // construction over that group's members. Leaving it out was the mismatch, not
+    // the fix: the view's own "vs Front ΔdB" rows already read the captures
+    // (HybridGroupLevelReader), so the read-out compared groups on one basis while
+    // the plot drew them on another.
     private bool HybridRequested =>
         checkBoxHybrid.Checked &&
-        hybridAvailable &&
-        !VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
+        hybridAvailable;
 
     private void RefreshHybridAvailability()
     {
@@ -792,30 +796,38 @@ public partial class VirtualCrossoverPanel
         LiveCaptureSetVerdict verdict = JudgeSpatialAverages;
         hybridAvailable = verdict.Coherent;
 
-        // Magnitude-only, muted the way the Sum and Sum loss toggles are (see
-        // UpdateViewDependentControls): a spatial average carries no phase, so there
-        // is no hybrid phase or impulse view to offer. MUTED and not unticked — a
-        // look at another view must not cost the tick. Through the shared helper
-        // rather than Enabled, because a CheckBox WinForms disables paints its text
-        // in a system grey that reads as near-black on this theme.
-        // The Groups view is muted for a third reason: it draws no channel curves
-        // at all, only one summed line per zone, and a spatial average is a
-        // property of one DRIVER. There is no honest way to hang one on a group's
-        // sum, so the toggle says so rather than sitting there doing nothing.
-        bool groupSums =
-            VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
-        bool live = hybridAvailable && radioViewMagnitude.Checked && !groupSums;
-        UiStyle.SetTextEnabledLook(checkBoxHybrid, live, interactive: true);
+        // Magnitude-only: a spatial average carries no phase, so there is no hybrid
+        // phase or impulse view to offer. MUTED and not unticked — a look at another
+        // view must not cost the tick. Coloured by hand rather than through
+        // UiStyle.SetTextEnabledLook, for the reason UpdateTargetToggleLook states:
+        // the helper memorizes the colour it mutes, and this toggle wears a REMINDER
+        // colour whenever it is live and unticked, which would then become the colour
+        // it comes back to. AutoCheck and TabStop carry the disabling, as they do
+        // there; WinForms' own disabled paint is a system grey that reads as
+        // near-black on this theme, which is why Enabled is not used.
+        bool live = hybridAvailable && radioViewMagnitude.Checked;
+        checkBoxHybrid.ForeColor = !live
+            ? UiPalette.TextDisabled
+            // Live, available and NOT ticked: captures are attached and the plot is
+            // ignoring them, drawing one microphone position's dips at every channel
+            // where an average was recorded. That is a tune about to be fitted to the
+            // wrong curve, so the toggle says so in the error colour rather than
+            // waiting to be noticed.
+            : checkBoxHybrid.Checked ? hybridToggleColor : UiPalette.ErrorSoft;
+        checkBoxHybrid.AutoCheck = live;
+        checkBoxHybrid.TabStop = live;
         toolTip.SetToolTip(
             checkBoxHybrid,
             !hybridAvailable
                 ? verdict.Reason ?? "Needs a spatial average on every channel that " +
                     "plays. Attach one per channel with the MMM button."
-                : groupSums && radioViewMagnitude.Checked
-                ? "The Groups view draws one summed line per zone rather than the " +
-                    "drivers, and a spatial average belongs to a driver — there is " +
-                    "nothing to hang one on here. Pick another Show view for the " +
-                    "hybrid."
+                : live && !checkBoxHybrid.Checked
+                ? "Every channel that plays has a spatial average attached and the " +
+                    "plot is not using one: these curves are the response at a " +
+                    "single microphone position, dips and all. Tick this to draw " +
+                    "them from the averages instead." +
+                    Environment.NewLine + Environment.NewLine +
+                    "What that changes is below."
                 : !radioViewMagnitude.Checked
                 ? "The hybrid is a magnitude view: a spatial average carries no " +
                     "phase, so the phase and impulse views keep reading the impulse " +

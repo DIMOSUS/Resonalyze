@@ -143,6 +143,59 @@ public sealed class VirtualCrossoverHybridSumTests
         return points;
     }
 
+    /// <summary>
+    /// The Groups view sums each zone on its own, so the set's hybrid is sliced by
+    /// POSITION — and a slice that shifted by one would draw a zone's line from
+    /// another zone's captures, which looks entirely plausible on the plot.
+    /// </summary>
+    [Fact]
+    public void HybridSubset_TakesEachListAtTheSamePositions()
+    {
+        var whole = new HybridMagnitudes(
+            [Flat(-1), Flat(-2), Flat(-3), Flat(-4)],
+            [Flat(-11), Flat(-12), Flat(-13), Flat(-14)],
+            [1.0, 2.0, 3.0, 4.0],
+            OffsetDb: 7.5)
+        {
+            PointMeasuredChannels = [false, true, false, true],
+            SetDatumsDb = []
+        };
+
+        HybridMagnitudes slice = VirtualCrossoverPanel.HybridSubset(whole, [1, 3]);
+
+        Assert.Equal([-2.0, -4.0], slice.Channels.Select(curve => curve[0].Y));
+        Assert.Equal(
+            [-12.0, -14.0], slice.UnsmoothedChannels.Select(curve => curve[0].Y));
+        Assert.Equal([2.0, 4.0], slice.ChannelOffsetsDb);
+        Assert.Equal([true, true], slice.PointMeasuredChannels);
+    }
+
+    /// <summary>
+    /// The set offset is not a property of the slice: it is what puts every group's
+    /// line on the impulse responses' one axis, so all of them have to carry it.
+    /// </summary>
+    [Fact]
+    public void HybridSubset_KeepsTheSetsOwnOffset()
+    {
+        var whole = new HybridMagnitudes(
+            [Flat(-1), Flat(-2)], [Flat(-1), Flat(-2)], [null, 2.0], OffsetDb: -3.25);
+
+        Assert.Equal(-3.25, VirtualCrossoverPanel.HybridSubset(whole, [0]).OffsetDb);
+    }
+
+    /// <summary>
+    /// A set that carried no per-channel fallback flags stays without them rather
+    /// than growing a false "point measured" answer for the slice.
+    /// </summary>
+    [Fact]
+    public void HybridSubset_LeavesAnEmptyFallbackListEmpty()
+    {
+        var whole = new HybridMagnitudes(
+            [Flat(-1), Flat(-2)], [Flat(-1), Flat(-2)], [1.0, 2.0], OffsetDb: 0);
+
+        Assert.Empty(VirtualCrossoverPanel.HybridSubset(whole, [1]).PointMeasuredChannels);
+    }
+
     private static LiveCaptureDocument SideCapture(
         Guid session, double? splAnchorOffsetDb = null) =>
         new()

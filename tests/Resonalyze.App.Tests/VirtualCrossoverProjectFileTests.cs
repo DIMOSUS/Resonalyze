@@ -1877,6 +1877,156 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
+    /// <summary>
+    /// Reset writes the project in MEMORY, not the autosave beside it: the panel
+    /// saves on a debounce, so the file lags the screen by up to two seconds and on
+    /// a never-saved session does not exist at all. The copy is an ordinary session
+    /// file, so Load session… brings the tune back whole.
+    /// </summary>
+    [Fact]
+    public void SaveResetBackup_WritesTheProjectItIsCalledOnRatherThanTheAutosave()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Pairs[0].Left.DelayMs = 5.0;
+            saved.Save(root);
+
+            // The panel's live project, an edit ahead of what reached the disk.
+            var live = new VirtualCrossoverProjectFile();
+            live.Pairs[0].Left.DelayMs = 7.0;
+
+            (string? path, string? error) = live.SaveResetBackup(root);
+
+            Assert.Null(error);
+            Assert.Equal(VirtualCrossoverProjectFile.ResetBackupPath(root), path);
+            Assert.Equal(
+                7.0,
+                VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.DelayMs);
+            // And the autosave it did not come from is untouched.
+            Assert.Equal(
+                5.0,
+                VirtualCrossoverProjectFile.LoadOrDefault(root).Pairs[0].Left.DelayMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A session that has never been written has the most to lose, not the least:
+    /// the old copy-the-file backup reported "nothing here" and let the reset run
+    /// with a whole tune standing in memory.
+    /// </summary>
+    [Fact]
+    public void SaveResetBackup_WritesEvenWhenNoAutosaveExists()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var live = new VirtualCrossoverProjectFile();
+            live.Pairs[0].Left.DelayMs = 3.25;
+
+            (string? path, string? error) = live.SaveResetBackup(root);
+
+            Assert.Null(error);
+            Assert.False(File.Exists(VirtualCrossoverProjectFile.GetPath(root)));
+            Assert.Equal(
+                3.25,
+                VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.DelayMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The backup lives in the application data folder, where no measurement sits,
+    /// so it writes source paths the way the autosave does — none at all. An EXPORT
+    /// states them relative to its own folder, and reusing that here would write a
+    /// confident wrong answer into a file meant to be loaded back.
+    /// </summary>
+    [Fact]
+    public void SaveResetBackup_WritesNoRelativeSourcePaths()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var live = new VirtualCrossoverProjectFile();
+            live.Pairs[0].Left.SourceFilePath = Path.Combine(root, "driver.json");
+            live.Pairs[0].Left.SourceRelativePath = @"..\elsewhere\driver.json";
+
+            (string? path, _) = live.SaveResetBackup(root);
+
+            Assert.Null(
+                VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.SourceRelativePath);
+            // The live project keeps the hint it was imported with.
+            Assert.Equal(@"..\elsewhere\driver.json", live.Pairs[0].Left.SourceRelativePath);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The reset copy has its own name because the other backup holds a file the tool
+    /// could NOT read: overwriting that with a tune it read perfectly well would throw
+    /// away the only copy of an unreadable project while the user was still deciding
+    /// what to do about it.
+    /// </summary>
+    [Fact]
+    public void SaveResetBackup_LeavesTheUnreadableFileBackupAlone()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile().Save(root);
+            string unusable = VirtualCrossoverProjectFile.GetPath(root) + ".backup";
+            File.WriteAllText(unusable, "the project that could not be read");
+
+            new VirtualCrossoverProjectFile().SaveResetBackup(root);
+
+            Assert.Equal("the project that could not be read", File.ReadAllText(unusable));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// One copy is kept, and it is the reset just performed — the question a reset
+    /// leaves is "undo THAT", and a pile of dated files would be a second archive
+    /// beside the user's own exported sessions.
+    /// </summary>
+    [Fact]
+    public void SaveResetBackup_KeepsOnlyTheMostRecentCopy()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var first = new VirtualCrossoverProjectFile();
+            first.Pairs[0].Left.DelayMs = 1.0;
+            first.SaveResetBackup(root);
+
+            var second = new VirtualCrossoverProjectFile();
+            second.Pairs[0].Left.DelayMs = 2.0;
+            (string? path, _) = second.SaveResetBackup(root);
+
+            Assert.Equal(
+                2.0,
+                VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.DelayMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTemporaryDirectory()
     {
         string path = Path.Combine(

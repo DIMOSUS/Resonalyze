@@ -193,6 +193,12 @@ public partial class VirtualCrossoverPanel : UserControl
     // that cannot show it has a colour to come back to.
     private Color targetToggleColor;
 
+    // The colour the Hybrid toggle wears while it is live and TICKED. Captured from
+    // the designer once, for the reason UpdateTargetToggleLook states: the toggle is
+    // recoloured to say a capture is going unused, and the shared muting helper would
+    // memorize that reminder as the colour to come back to.
+    private Color hybridToggleColor;
+
     public VirtualCrossoverPanel()
     {
         InitializeComponent();
@@ -213,6 +219,7 @@ public partial class VirtualCrossoverPanel : UserControl
         checkBoxShowSum.ForeColor = Color.FromArgb(SumColor.R, SumColor.G, SumColor.B);
         checkBoxShowLoss.ForeColor = Color.FromArgb(LossColor.R, LossColor.G, LossColor.B);
         targetToggleColor = checkBoxShowTarget.ForeColor;
+        hybridToggleColor = checkBoxHybrid.ForeColor;
 
         metrics = new VirtualCrossoverMetrics(
             processingCoordinator,
@@ -242,6 +249,7 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonAudition.Click += async (_, _) => await AuditionTrackAsync();
         buttonAddChannel.Click += (_, _) => AddChannel();
         buttonRemoveChannel.Click += (_, _) => RemoveChannel();
+        buttonResetChannels.Click += async (_, _) => await ResetChannelsAsync();
         buttonCopyLeftToRight.Click += (_, _) => CopySideSettings(fromRight: false);
         buttonCopyRightToLeft.Click += (_, _) => CopySideSettings(fromRight: true);
 
@@ -967,7 +975,13 @@ public partial class VirtualCrossoverPanel : UserControl
     private void WirePanelEvents()
     {
         checkBoxShowSum.CheckedChanged += (_, _) => OnViewChanged();
-        checkBoxHybrid.CheckedChanged += (_, _) => OnViewChanged();
+        checkBoxHybrid.CheckedChanged += (_, _) =>
+        {
+            // The toggle's own colour carries the reminder that a capture is going
+            // unused, so it has to follow the tick and not only the coverage.
+            RefreshHybridAvailability();
+            OnViewChanged();
+        };
         checkBoxShowLoss.CheckedChanged += (_, _) => OnViewChanged();
         checkBoxShowTarget.CheckedChanged += (_, _) => OnViewChanged();
         numericTargetLevel.ValueChanged += (_, _) => OnViewChanged();
@@ -1551,6 +1565,95 @@ public partial class VirtualCrossoverPanel : UserControl
 
         ScheduleSave();
         RedrawAll();
+    }
+
+    /// <summary>
+    /// Puts the panel back to what it shows on a machine that has never used it:
+    /// the default three empty blocks, every chain, zone and curve toggle at its
+    /// default, and the shared settings — target level, smoothing, gate, view,
+    /// scene offset — with them.
+    /// </summary>
+    /// <remarks>
+    /// One project object carries all of that, so the reset is the ordinary bind of
+    /// a fresh one — the very path the tool takes on first run. Doing it any other
+    /// way would mean a second definition of "default", and the two would drift.
+    /// <para>
+    /// Two things deliberately survive it, because neither belongs to the tune: the
+    /// microphone calibration selected in the panel (a property of the rig, and the
+    /// bind keeps it exactly as a session naming none would) and the shared EQ
+    /// target CURVE, which the EQ Wizard owns and other tools read. The target
+    /// LEVEL is the project's own and does reset.
+    /// </para>
+    /// <para>
+    /// Asked before it runs, and the question spells the loss out. The autosave is
+    /// copied aside first (see
+    /// <see cref="VirtualCrossoverProjectFile.BackupBeforeReset"/>), so the answer
+    /// to a misclick is Load session… on that copy — but the copy is the tool's own
+    /// one-deep safety net, not an archive: the NEXT reset overwrites it, which is
+    /// why the question still points at Save session… for a tune worth keeping.
+    /// </para>
+    /// </remarks>
+    private async Task ResetChannelsAsync()
+    {
+        // The load has to have finished, or the reset binds a project the pending
+        // one is about to replace — the same wait the session import takes.
+        await storedProjectLoad;
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        if (MessageBox.Show(
+                FindForm(),
+                "Reset every channel block to its default: the measurements come " +
+                "off, the crossovers, delays, gains, polarity, PEQ banks and zones " +
+                "go back to their defaults, and the list returns to " +
+                $"{DefaultChannelCount} blocks." +
+                Environment.NewLine + Environment.NewLine +
+                "The panel's own settings go with them — target level, smoothing, " +
+                "the gate, the Show view and the stereo scene offset. The " +
+                "microphone calibration and the shared EQ target curve stay." +
+                Environment.NewLine + Environment.NewLine +
+                "The current session is copied to" + Environment.NewLine +
+                VirtualCrossoverProjectFile.ResetBackupPath() +
+                Environment.NewLine +
+                "first, so Load session… brings it back. That copy is overwritten " +
+                "by the next reset — for a tune worth keeping, export it with Save " +
+                "session first." +
+                Environment.NewLine + Environment.NewLine +
+                "Reset now?",
+                "Virtual DSP",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        // The project in MEMORY, which is what the user is looking at. The autosave
+        // behind it is up to a debounce out of date and on a never-saved session
+        // does not exist at all, so copying the FILE would promise the session on
+        // screen and hand back the one before the last edits — and call a missing
+        // file "nothing to lose" with a whole tune standing in memory. Taken AFTER
+        // the question, because a cancelled reset must not write anything.
+        (_, string? backupError) = project.SaveResetBackup();
+        if (backupError != null && MessageBox.Show(
+                FindForm(),
+                "The copy of the current session could not be written:" +
+                Environment.NewLine + backupError +
+                Environment.NewLine + Environment.NewLine +
+                "Resetting now would discard the tune with nothing to bring it " +
+                "back from. Reset anyway?",
+                "Virtual DSP",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        await ApplyProjectAsync(new VirtualCrossoverProjectFile(), imported: false);
+        // The bind alone leaves the reset in memory; the autosave is what makes it
+        // the state the tool opens on, exactly as an imported session does.
+        ScheduleSave();
     }
 
     // Folding a block only changes how much of it the list shows: the flow layout
@@ -2500,9 +2603,11 @@ public partial class VirtualCrossoverPanel : UserControl
     /// </para>
     /// <para>
     /// Resolved over the set the wizard will DRAW — the edited channel plus the shown
-    /// neighbours — so a hidden driver cannot move the windows of the visible ones.
-    /// Null when the render is stale or the channel is not in it: a placement paired
-    /// with the previous chain would put the curves somewhere the plot never had them.
+    /// drivers it CROSSES WITH (see
+    /// <see cref="ProcessedChannels.PhaseNeighbourhood"/>) — so a hidden driver cannot
+    /// move the windows of the visible ones. Null when the render is stale or the
+    /// channel is not in it: a placement paired with the previous chain would put the
+    /// curves somewhere the plot never had them.
     /// </para>
     /// </remarks>
     private EqWizardPhaseContext? CapturePhaseContext(VirtualCrossoverChannel channel)
@@ -2513,11 +2618,8 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        List<ProcessedChannel> drawn = render.Channels
-            .Where(item =>
-                ReferenceEquals(item.Channel, channel) ||
-                item.Channel.Pair.ShowProcessedCurve)
-            .ToList();
+        List<ProcessedChannel> drawn =
+            ProcessedChannels.PhaseNeighbourhood(render.Channels, channel);
         int index = drawn.FindIndex(item => ReferenceEquals(item.Channel, channel));
         if (index < 0)
         {
@@ -2882,6 +2984,20 @@ public partial class VirtualCrossoverPanel : UserControl
             "Tip: invert one channel and tune the delay for the\r\n" +
             "deepest null — flipping polarity back then gives\r\n" +
             "the best summation.");
+        toolTip.SetToolTip(
+            buttonAddChannel,
+            "Add a channel block to the bottom of the list.");
+        toolTip.SetToolTip(
+            buttonRemoveChannel,
+            "Drop the last channel block, with whatever is loaded in it.");
+        toolTip.SetToolTip(
+            buttonResetChannels,
+            "Start over: every block back to an empty default one, the list\r\n" +
+            $"back to {DefaultChannelCount} of them, and the panel's own settings —\r\n" +
+            "target level, smoothing, gate, view, scene offset — with them.\r\n" +
+            "The microphone calibration and the shared EQ target curve stay.\r\n" +
+            "Asks first, and copies the current session aside so Load session…\r\n" +
+            "brings it back — one copy, overwritten by the next reset.");
         toolTip.SetToolTip(
             radioViewMagnitude,
             "Show the magnitude of the channels, the sum,\r\n" +
@@ -3302,11 +3418,12 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The correlation view of the lower plot reads the same processed
-        // snapshot the acoustic plot draws; the redraw loop calls
-        // RedrawDspPlot right after this method, so the capture is fresh. It
-        // keeps the WHOLE set on purpose — that view answers about a junction the
-        // user picks by name, which the main plot's grouping has no say over.
+        // The junction views of the lower plot read the same processed snapshot
+        // the acoustic plot draws; the redraw loop calls RedrawDspPlot right
+        // after this method, so the capture is fresh. The WHOLE set is kept
+        // here — CurrentCorrelationPairs narrows it to the view's summing chain
+        // itself, and the opposite-side and cross-group read-outs below need
+        // channels this view does not draw.
         lastProcessedRender = render;
 
         // From here down the frame is about the view's part of the installation,
@@ -3321,8 +3438,14 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             // The view is empty rather than broken — a rear view of a front-only
             // car. Say so instead of drawing the whole system as if nothing had
-            // been asked for.
-            acousticPlot.Draw(new AcousticRender(EmptyViewHint(groupView), [], null));
+            // been asked for. With NO channel resolved at all, though, the zone
+            // advice would be a lie in the other direction: nothing is filed
+            // wrongly, there is simply nothing loaded yet, which is the state a
+            // fresh project and the Reset button both leave behind.
+            acousticPlot.Draw(new AcousticRender(
+                processed.Count == 0 ? NoSourcesHint : EmptyViewHint(groupView),
+                [],
+                null));
             MetricChanged?.Invoke(string.Empty, string.Empty);
             // And the warning with it: a gate or calibration complaint left
             // standing beside an empty plot is about channels the user can no
@@ -3607,7 +3730,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (VirtualCrossoverGroupViews.DrawsGroupSums(view))
         {
-            return new AcousticRender(hint, BuildGroupSumCurves(processed), null);
+            return new AcousticRender(
+                hint, BuildGroupSumCurves(processed, magnitudes, hybrid), null);
         }
 
         return new AcousticRender(
@@ -3625,34 +3749,73 @@ public partial class VirtualCrossoverPanel : UserControl
     // Every line is gated on ONE anchor, taken across all the shown channels
     // rather than per group: the whole point is to read the groups' relative
     // timing off the plot, and per-group anchors would each hide their own group's
-    // delay by construction.
-    private List<AcousticCurve> BuildGroupSumCurves(List<ProcessedChannel> shown)
+    // delay by construction. The gate offset comes from that shared anchor for the
+    // same reason — one window for every line, or the comparison is between
+    // windows rather than between groups.
+    //
+    // With the hybrid on, a group's line is built the way the Sum is built in every
+    // other view (BuildHybridSumCurve), over that group's members: their captures
+    // through their chains, held together by the phase their impulse responses
+    // measure. A group whose members cannot produce one falls back to its measured
+    // sum on its own — the alternative, dropping the line, would hide a whole group
+    // from the view that exists to compare them.
+    private List<AcousticCurve> BuildGroupSumCurves(
+        List<ProcessedChannel> shown,
+        IReadOnlyList<AnalysisCurve>? magnitudes,
+        HybridMagnitudes? hybrid)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildGroupSumCurves");
         int anchor = ProcessedChannels.SharedStartAnchorIndex(shown);
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        double gateOffsetMs = snapshot.ResolveGateOffsetMs(
+            oppositeSide: false, anchor, shown[0].SampleRate);
+        // Every list the slice indexes, not just the magnitudes: BuildHybridSumCurve
+        // guards its own length and returns null, but the slice runs BEFORE it and
+        // would throw out of a redraw instead.
+        bool drawHybrid = hybrid != null && magnitudes != null &&
+            magnitudes.Count >= shown.Count &&
+            hybrid.Channels.Count >= shown.Count &&
+            hybrid.UnsmoothedChannels.Count >= shown.Count &&
+            hybrid.ChannelOffsetsDb.Count >= shown.Count;
         var curves = new List<AcousticCurve>();
         foreach (VirtualCrossoverZone zone in VirtualCrossoverZones.All)
         {
-            List<ProcessedChannel> members =
-                [.. shown.Where(item => item.Channel.Pair.Zone == zone)];
-            if (members.Count == 0)
+            // By POSITION, because the hybrid curves and the reference magnitudes
+            // are both indexed against the shown set and a packed member list would
+            // silently pair a zone's channels with another zone's captures.
+            List<int> positions =
+            [
+                .. Enumerable.Range(0, shown.Count)
+                    .Where(index => shown[index].Channel.Pair.Zone == zone)
+            ];
+            if (positions.Count == 0)
             {
                 continue;
             }
 
+            List<ProcessedChannel> members = [.. positions.Select(index => shown[index])];
+            List<SignalPoint>? points = drawHybrid
+                ? BuildHybridSumCurve(
+                    HybridSubset(hybrid!, positions),
+                    members,
+                    anchor,
+                    snapshot,
+                    gateOffsetMs,
+                    [
+                        .. positions.Select(index =>
+                            (IReadOnlyList<SignalPoint>)magnitudes![index].Points)
+                    ])
+                : null;
             curves.Add(new AcousticCurve(
                 VirtualCrossoverZones.DisplayName(zone),
-                BuildMeasuredSumCurve(members, anchor).Display.Points,
+                points ?? BuildMeasuredSumCurve(members, anchor).Display.Points,
                 GroupColor(zone),
                 2.0,
                 LineStyle.Solid));
         }
 
         // The target belongs here as much as anywhere: judging a rear fill's level
-        // against the house curve is half of what this view is for. (The hybrid
-        // does not — a spatial average is per DRIVER, and there is no honest way
-        // to hang one on a group's sum, so the checkbox is greyed out in this view
-        // rather than left as a switch that does nothing.)
+        // against the house curve is half of what this view is for.
         if (BuildTargetCurve() is { } target)
         {
             curves.Insert(0, target);
@@ -3660,6 +3823,33 @@ public partial class VirtualCrossoverPanel : UserControl
 
         return curves;
     }
+
+    /// <summary>
+    /// One group's slice of the set's hybrid, for a sum over that group alone.
+    /// </summary>
+    /// <remarks>
+    /// The per-channel lists are positional against the shown set, so they are
+    /// narrowed with it; the set OFFSET and its datums are not — they describe the
+    /// set the captures came from, which a subset does not change, and it is that
+    /// one offset that keeps every group's line on the same axis. Pure and
+    /// internal so the pairing can be pinned without a panel: a slice that shifted
+    /// by one would draw a zone's sum from another zone's captures, and the curve
+    /// would look entirely plausible.
+    /// </remarks>
+    internal static HybridMagnitudes HybridSubset(
+        HybridMagnitudes hybrid,
+        IReadOnlyList<int> positions) =>
+        hybrid with
+        {
+            Channels = [.. positions.Select(index => hybrid.Channels[index])],
+            UnsmoothedChannels =
+                [.. positions.Select(index => hybrid.UnsmoothedChannels[index])],
+            ChannelOffsetsDb =
+                [.. positions.Select(index => hybrid.ChannelOffsetsDb[index])],
+            PointMeasuredChannels = hybrid.PointMeasuredChannels.Count == 0
+                ? []
+                : [.. positions.Select(index => hybrid.PointMeasuredChannels[index])]
+        };
 
     // Semantic rather than positional: in this view a line IS a zone, so the
     // colour has to say which one whatever else the project contains.
@@ -7538,11 +7728,16 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // The adjacent pairs of the correlation view, derived from the LAST
     // processed snapshot so the combo lists exactly what the plot can analyze
-    // (enabled channels with sources, active side, ordered by band).
+    // (enabled channels with sources, active side, ordered by band) — narrowed
+    // to the view's SUMMING chain, the same set the loss curve and the
+    // per-junction read-out describe.
+    //
+    // Band order alone is not a chain — see ProcessedChannels.JunctionsInView for
+    // what a rear fill and a centre do to one, and why a view spanning groups
+    // lists nothing.
     private List<AdjacentPair> CurrentCorrelationPairs() =>
         lastProcessedRender is { } render
-            ? ProcessedChannels.GetAdjacentPairs(
-                ProcessedChannels.OrderByBand(render.Channels))
+            ? ProcessedChannels.JunctionsInView(render.Channels, SelectedGroupView)
             : [];
 
     private void UpdateCorrelationPairChoices()

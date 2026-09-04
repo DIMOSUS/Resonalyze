@@ -605,6 +605,10 @@ you picked has one — every HELIX does, through the DSP PC-Tool — and you can
 yourself for a Custom profile standing in for a device the catalog does not list. It
 adds a **Phase** field to every channel card.
 
+It is not only a view switch: unticking it, or naming a processor without such a
+control, clears the angles as well, and tells you how many. A filter you cannot see
+and your DSP cannot dial has no business in the prediction.
+
 That control is not an all-pass you dial in by frequency. You set an ANGLE, in steps of
 5.625° up to 354.375°, and the processor works out the second-order all-pass that turns
 the phase by exactly that much **at the channel's own crossover frequency** — its

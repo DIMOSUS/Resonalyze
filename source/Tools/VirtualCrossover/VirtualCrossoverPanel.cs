@@ -1504,10 +1504,39 @@ public partial class VirtualCrossoverPanel : UserControl
 
         project.DspProcessorPhaseControl = phaseControl;
         project.SetDspProcessor(profile, follows);
+        // A device with no phase control means the rotations are not part of the
+        // tune, not that they are merely off screen: left in place they would go on
+        // bending every curve with no field on screen to explain them, and the tuning
+        // sheet would go on naming a knob this device does not have.
+        int clearedRotations = project.ClearUnavailablePhaseRotations();
+        if (clearedRotations > 0)
+        {
+            foreach (VirtualCrossoverChannel channel in channels)
+            {
+                ApplySettingsToControl(channel);
+            }
+        }
+
         RefreshPhaseControlAvailability();
 
         ScheduleSave();
         RedrawAll();
+        if (clearedRotations > 0)
+        {
+            MessageBox.Show(
+                this,
+                $"{clearedRotations} channel side" +
+                (clearedRotations == 1 ? " had" : "s had") +
+                " a phase rotation dialled in, and this processor has no such " +
+                "control.\r\n\r\nThe angle" +
+                (clearedRotations == 1 ? " was" : "s were") +
+                " cleared: left in place it would go on bending the curves with " +
+                "nothing on screen to explain it, and the tuning sheet would go on " +
+                "naming a control this device does not have.",
+                "Virtual DSP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
     }
 
     // Channel names run A, B, C… by index; shared with the tuning sheets.

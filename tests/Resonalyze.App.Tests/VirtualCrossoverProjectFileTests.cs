@@ -2151,6 +2151,66 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void LoadOrDefault_ClearsAPhaseRotationTheNamedProcessorCannotDial()
+    {
+        // The invariant: a non-zero angle in a session means a device that can dial
+        // one. Without it the all-pass would go on bending every curve with no field
+        // on screen to explain it, and the tuning sheet would go on naming a control
+        // the device does not have.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var project = new VirtualCrossoverProjectFile
+            {
+                DspProcessorModelId = "amp-panacea-v1-v2"
+            };
+            project.Pairs[0].Left.PhaseRotationDegrees = 90;
+            project.Save(root);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(0, loaded.Pairs[0].Left.PhaseRotationDegrees);
+            Assert.NotNull(loaded.MigrationNoticeText);
+            Assert.Contains("phase rotation", loaded.MigrationNoticeText!);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_KeepsAPhaseRotationTheProcessorCanDial()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var project = new VirtualCrossoverProjectFile
+            {
+                DspProcessorModelId = "helix-dsp-ultra-s"
+            };
+            project.Pairs[0].Left.PhaseRotationDegrees = 90;
+            project.Save(root);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(90, loaded.Pairs[0].Left.PhaseRotationDegrees);
+            Assert.Null(loaded.MigrationNoticeText);
+            // And a Custom profile the user vouched for keeps its own.
+            Assert.Equal(
+                0,
+                new VirtualCrossoverProjectFile { DspProcessorPhaseControl = true }
+                    .ClearUnavailablePhaseRotations());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ResolveDspPhaseControl_AsksTheCatalogUntilTheUserAnswers()
     {
         // A project naming a device that HAS the control finds it without hunting

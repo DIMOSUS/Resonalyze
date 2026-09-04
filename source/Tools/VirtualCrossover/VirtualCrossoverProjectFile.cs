@@ -693,11 +693,17 @@ public sealed class VirtualCrossoverProjectFile
     /// <remarks>
     /// Null resolves at read time rather than on save, the same way
     /// <see cref="SpatialAverageMode"/> does, so an existing project naming a device
-    /// that HAS the control finds it without hunting through a dialog. It is a view
-    /// switch and not a filter: turning it off leaves any angle already dialled in
-    /// place and still simulated, because hiding a control is not the same as
-    /// clearing it. The dialog stores an explicit answer the first time it is
-    /// confirmed.
+    /// that HAS the control finds it without hunting through a dialog. The dialog
+    /// stores an explicit answer the first time it is confirmed.
+    /// <para>
+    /// It is not a view switch. Saying the device has no such control says the
+    /// rotations are not part of the tune, and
+    /// <see cref="ClearUnavailablePhaseRotations"/> makes that true rather than
+    /// leaving an invisible all-pass in every curve and a "Phase 90°" line on a
+    /// tuning sheet for a device with no such knob. The angles are cleared where the
+    /// user can see it happen — the dialog says how many — and never quietly on the
+    /// way past.
+    /// </para>
     /// </remarks>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? DspProcessorPhaseControl { get; set; }
@@ -754,6 +760,42 @@ public sealed class VirtualCrossoverProjectFile
             DspProcessorProfile.Custom(
                 DspProcessorSampleRateHz ?? measurementSampleRateHz,
                 DspProcessorQConvention);
+    }
+
+    /// <summary>
+    /// Zeroes every channel phase rotation when the processor this project names has
+    /// no such control, and answers how many it cleared. Nothing to do — and nothing
+    /// returned — for a project whose device HAS one.
+    /// </summary>
+    /// <remarks>
+    /// The invariant behind it: a non-zero angle in this file means a device that can
+    /// dial one. Without it a rotation dialled in on a HELIX and then re-pointed at
+    /// another processor would go on bending every curve while the block that shows
+    /// it is gone, and the tuning sheet would go on telling the user to set a knob
+    /// their device does not have. Run on load and whenever the processor changes,
+    /// which is every path that can make the answer false.
+    /// </remarks>
+    public int ClearUnavailablePhaseRotations()
+    {
+        if (ResolveDspPhaseControl())
+        {
+            return 0;
+        }
+
+        int cleared = 0;
+        foreach (VirtualCrossoverChannelPairSettings pair in Pairs)
+        {
+            foreach (VirtualCrossoverChannelSettings side in new[] { pair.Left, pair.Right })
+            {
+                if (side.PhaseRotationDegrees != 0)
+                {
+                    side.PhaseRotationDegrees = 0;
+                    cleared++;
+                }
+            }
+        }
+
+        return cleared;
     }
 
     /// <summary>
@@ -1277,6 +1319,7 @@ public sealed class VirtualCrossoverProjectFile
             ?? throw new InvalidDataException("The session file is empty.");
         Migrate(file);
         file.Validate();
+        file.clearedPhaseRotations = file.ClearUnavailablePhaseRotations();
         file.ProjectDirectory = SafeDirectoryOf(path);
         return file;
     }
@@ -1543,13 +1586,37 @@ public sealed class VirtualCrossoverProjectFile
     // once (see MigrationNoticeText).
     private int migratedFullBanks;
 
+    // How many channel sides carried a phase rotation this project's processor has no
+    // control for. Only a hand-edited or hand-assembled file can be in that state —
+    // every path the app writes keeps the two agreeing — but silently dropping a
+    // filter is exactly what the notice below exists to prevent.
+    private int clearedPhaseRotations;
+
     /// <summary>
     /// What this load had to change beyond restating it, or null when nothing was
     /// lost. A migration that silently drops a filter is how a tune quietly stops
     /// being the tune that was saved.
     /// </summary>
     [JsonIgnore]
-    public string? MigrationNoticeText =>
+    public string? MigrationNoticeText => string.Join(
+        Environment.NewLine + Environment.NewLine,
+        new[] { FullBankNotice, PhaseRotationNotice }.Where(notice => notice != null))
+        is { Length: > 0 } text
+        ? text
+        : null;
+
+    private string? PhaseRotationNotice =>
+        clearedPhaseRotations == 0
+            ? null
+            : $"{clearedPhaseRotations} channel side" +
+                (clearedPhaseRotations == 1 ? " carried" : "s carried") +
+                " a phase rotation, and the processor this session names has no such " +
+                "control. The angle" + (clearedPhaseRotations == 1 ? " was" : "s were") +
+                " cleared rather than left bending a curve no field on screen " +
+                "explains. Name a device that has the control — or tick it yourself " +
+                "for a Custom profile — and dial them in again.";
+
+    private string? FullBankNotice =>
         migratedFullBanks == 0
             ? null
             : $"{migratedFullBanks} channel side" +
@@ -1592,6 +1659,7 @@ public sealed class VirtualCrossoverProjectFile
                 ?? throw new InvalidDataException("The project file is empty.");
             Migrate(file);
             file.Validate();
+            file.clearedPhaseRotations = file.ClearUnavailablePhaseRotations();
             return file;
         }
         catch

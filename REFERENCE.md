@@ -2498,8 +2498,15 @@ not lock: ticking it gives every block a **Phase** field (see
 HELIX runs the DSP PC-Tool, whose channel Phase control is what this models — and
 the tick stays yours after that, so a Custom profile standing in for a device the
 list does not carry can have it, and a device that has one can be left without
-the row. Turning it off never clears an angle already dialled in: the filter goes
-on being simulated, it is only the field that goes away.
+the row.
+
+It is not a view switch, though. Saying the device has no such control says the
+rotations are not part of the tune, so turning it off — or naming a processor
+without one — **clears every angle dialled in**, and says how many it cleared.
+Left in place they would go on bending the curves with no field on screen to
+explain them, and the tuning sheet would go on naming a knob the device does not
+have. The same check runs on load, so a session cannot open in that state
+either.
 
 A catalog line may also state the model's **per-channel delay ceiling**, read
 from its manual. Automatic delay proposals are judged against it — a spread the

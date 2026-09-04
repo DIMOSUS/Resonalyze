@@ -77,13 +77,43 @@ preview, the history list — are fixed-scale by design and take none of this.)
 | `x` / **Shift**+`X` | Zooms the horizontal axis out / in by about two, around the pointer |
 | `y` / **Shift**+`Y` | The same for the vertical axis |
 | Middle-button drag | Variable zoom: right and left work the horizontal axis, up and down the vertical one |
-| **Ctrl** + right-button drag | Draws a zoom rectangle |
+| **Ctrl** + right-button drag | Draws a zoom box, labelled with the size of the area it frames in axis units; it stays on the graph until you click inside it to zoom there |
 | Right-button drag | Pans |
 | The **+** / **&minus;** buttons on the graph | Zoom the axis they sit against by about two, click after click; they appear while the pointer is over the plot, and hovering one names the axis it moves |
 | Double click | Opens the graph limits dialog |
 | **Ctrl+Z** | Steps back through the zoom-to-area, variable-zoom, zoom-button and fit-to-data moves (a wheel notch is its own undo — scroll it back) |
 | **Ctrl+Alt+F** / **Ctrl+Alt+Y** | Fit to data / fit the vertical axis to data |
 | **Home** or `A` | Back to the view's own default scale (also the **Defaults** button in the limits dialog) |
+| **F1** | Opens **Graph controls**, the card listing every gesture in this table |
+
+None of this is written anywhere on the graph itself, so **F1** over any graph
+opens **Graph controls** — the same list, on a card. It is a window, not a
+dialog: it stays open beside the graph while you try what it says, F1 brings
+it back to the front rather than opening a second one, and **Esc** or
+**Close** sends it away. The graph has to have been clicked once for the key
+to reach it, as with every other key in the table.
+
+The zoom box works the way REW's does, in two steps rather than one, and it is
+a ruler before it is a selection. The drag draws it, and a label beside it
+says how wide and how tall the framed area is in the units of the axes it is
+drawn over — `1.90 kHz × 20.0 dB`. Letting go of the button does not move the
+scale: the box stays on the graph, so the width of a suckout or the depth of a
+dip can be read and left at that. Clicking inside the box is what zooms there;
+a click anywhere else on the graph, or **Esc**, lets it go, and **Ctrl+Z**
+steps back a zoom the box did apply. If the box is too thin to zoom to, the
+click says which side is too small and leaves the box where it is rather than
+doing nothing at all.
+
+Both sides are measured whatever the axes allow, and only the zoom is
+conditional: over a scale that is locked — the Virtual DSP **Phase** view
+spans the whole ±180° a wrapped phase can occupy — the box is still the
+rectangle you dragged and still reads `1.30 kHz × 150°`, and a click then
+moves the frequency axis alone. Frequencies pass to kHz from 1 kHz up. The box
+is pinned to the data rather than to the screen, so panning or zooming while
+it waits leaves it around the same part of the curve, and it goes away when
+the graph stops showing what it framed: switching the Virtual DSP view between
+magnitude, phase and impulse re-arms an axis to another quantity, and numbers
+in units the graph no longer uses are not worth keeping.
 
 The **graph limits** dialog types the same ranges exactly — top, bottom, left and
 right as numbers, plus **Fit to data**, **Fit Y to data** and **Defaults**, which

@@ -1,6 +1,7 @@
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.WindowsForms;
+using Resonalyze.Ui.Dialogs;
 
 namespace Resonalyze;
 
@@ -20,11 +21,18 @@ namespace Resonalyze;
 /// opposite end where it is.</item>
 /// <item>x / Shift+X and y / Shift+Y — zoom one axis out / in by about two.</item>
 /// <item>middle drag — variable zoom (<see cref="PlotVariableZoomManipulator"/>);
-/// Ctrl + right drag — zoom to area. Both are undoable with Ctrl+Z.</item>
+/// Ctrl + right drag — a zoom box (<see cref="PlotZoomRectangleManipulator"/>), which
+/// like REW's is drawn first and applied second: the box stays on the graph with the
+/// size of the area it frames written beside it, a click inside it zooms there, any
+/// other click lets it go. It is a ruler before it is a selection, so it is drawn and
+/// measured over locked scales too — only the zoom is conditional. Both are undoable
+/// with Ctrl+Z.</item>
 /// <item>right drag — pan. Ctrl+Alt+F / Ctrl+Alt+Y — fit to data / fit Y to
 /// data. Double click — the graph limits dialog.</item>
 /// <item>the plus/minus buttons drawn against each axis while the pointer is over
 /// the plot (<see cref="PlotZoomButtons"/>).</item>
+/// <item>F1 — the whole map on a card (<see cref="GraphHelpDialog"/>). Every gesture
+/// here is one nobody is told about anywhere else in the window.</item>
 /// </list>
 /// Two bindings have no REW counterpart and are kept because they are what this app
 /// did before: Ctrl + wheel zooms the vertical axis only (the plain wheel used to,
@@ -40,17 +48,36 @@ internal sealed class PlotGestureController : PlotController
     /// </summary>
     private const int UndoDepth = 32;
 
-    /// <summary>How long the zoom buttons' hint stays up once shown, in milliseconds.</summary>
-    private const int ZoomButtonTipDurationMs = 4000;
+    /// <summary>How long a hint over the graph stays up once shown, in milliseconds.</summary>
+    private const int TipDurationMs = 4000;
 
     private readonly PlotView view;
     private readonly LinkedList<IReadOnlyList<PlotAxisViewport>> zoomUndo = new();
     private readonly PlotZoomButtonsAnnotation zoomButtons = new();
 
     // A plus and a minus against an axis do not say WHICH axis, or that they zoom
-    // at all, so the hovered one names itself. OxyPlot's own element tooltips are
-    // not wired up in its WinForms view, hence a plain ToolTip on the control.
-    private readonly ToolTip zoomButtonTip = new() { ShowAlways = true };
+    // at all, so the hovered one names itself, and a box too small to zoom to says so
+    // rather than being ignored. OxyPlot's own element tooltips are not wired up in
+    // its WinForms view, hence a plain ToolTip on the control.
+    private readonly ToolTip graphTip = new() { ShowAlways = true };
+
+    // REW's zoom box outlives the drag that draws it, so the controller owns it
+    // rather than the manipulator: the box waits on the graph, and the click that
+    // zooms to it (or lets it go) arrives long after that manipulator is gone.
+    private readonly PlotZoomRectangleAnnotation zoomBox = new();
+    private PlotModel? zoomBoxModel;
+    private bool zoomBoxPending;
+    private bool zoomBoxHovered;
+
+    // What the box was drawn against. The model reference is not enough: the
+    // Virtual DSP acoustic view re-arms its value axis between dB, degrees and a
+    // unitless impulse scale and swaps its bottom axis in place, all inside ONE
+    // model, and a box held across that would apply decibels to an impulse.
+    private IReadOnlyList<PlotAxisIdentity> zoomBoxAxes = Array.Empty<PlotAxisIdentity>();
+
+    // Set by the click that zooms to a box, so the DOUBLE click the second press of
+    // a quick double tap arrives as does not also open the limits dialog.
+    private bool zoomBoxJustClicked;
 
     // Where the pointer last was, in the view's coordinates. The keyboard zoom
     // commands need it: OxyPlot's key events carry no position, and REW zooms the
@@ -67,7 +94,7 @@ internal sealed class PlotGestureController : PlotController
     // re-arms ONE axis object between dB, degrees and milliseconds without
     // replacing the model, and the EQ wizard re-arms its dB axis for a new source.
     private PlotModel? undoModel;
-    private IReadOnlyList<AxisIdentity> undoAxes = Array.Empty<AxisIdentity>();
+    private IReadOnlyList<PlotAxisIdentity> undoAxes = Array.Empty<PlotAxisIdentity>();
 
     public PlotGestureController(PlotView view)
     {
@@ -75,7 +102,7 @@ internal sealed class PlotGestureController : PlotController
         this.view = view;
         view.MouseMove += (_, e) => TrackPointer(new ScreenPoint(e.X, e.Y));
         view.MouseLeave += (_, _) => HideZoomButtons();
-        view.Disposed += (_, _) => zoomButtonTip.Dispose();
+        view.Disposed += (_, _) => graphTip.Dispose();
 
         BindWheelGestures();
         BindMouseGestures();
@@ -109,19 +136,18 @@ internal sealed class PlotGestureController : PlotController
                     args);
             }));
 
-        // Same manipulator OxyPlot binds here; rebound only so the gesture records an
-        // undo step first.
+        // Replaces OxyPlot's zoom rectangle, which zooms the moment the button comes
+        // up. REW draws the box first and zooms on a click inside it, and the undo
+        // step is therefore recorded by that click rather than here — a box that is
+        // only read must not leave anything on the undo stack.
         this.BindMouseDown(
             OxyMouseButton.Right,
             OxyModifierKeys.Control,
             new DelegatePlotCommand<OxyMouseDownEventArgs>((target, controller, args) =>
-            {
-                PushZoomUndo();
                 controller.AddMouseManipulator(
                     target,
-                    new ZoomRectangleManipulator(target),
-                    args);
-            }));
+                    new PlotZoomRectangleManipulator(target, this),
+                    args)));
 
         // A second click on a zoom button arrives here as a DOUBLE click, so this
         // binding has to answer it as another zoom step: clicking a button twice is
@@ -132,6 +158,15 @@ internal sealed class PlotGestureController : PlotController
             clickCount: 2,
             new DelegatePlotCommand<OxyMouseDownEventArgs>((target, _, args) =>
             {
+                // The second press of a double tap inside a zoom box: the first
+                // press already zoomed there, and opening the limits dialog on top
+                // of that is not what the hand asked for.
+                if (zoomBoxJustClicked)
+                {
+                    zoomBoxJustClicked = false;
+                    return;
+                }
+
                 if (TryClickZoomButton(target, args.Position))
                 {
                     return;
@@ -140,13 +175,15 @@ internal sealed class PlotGestureController : PlotController
                 GraphLimitsDialog.ShowFor(view);
             }));
 
-        // A plain left press either hits an on-graph zoom button or does what
-        // OxyPlot binds it to — the snapping tracker.
+        // A plain left press answers a waiting zoom box first, then an on-graph zoom
+        // button, and otherwise does what OxyPlot binds it to — the snapping tracker.
         this.BindMouseDown(
             OxyMouseButton.Left,
             new DelegatePlotCommand<OxyMouseDownEventArgs>((target, controller, args) =>
             {
-                if (TryClickZoomButton(target, args.Position))
+                zoomBoxJustClicked = false;
+                if (TryClickZoomBox(target, args.Position) ||
+                    TryClickZoomButton(target, args.Position))
                 {
                     return;
                 }
@@ -194,7 +231,11 @@ internal sealed class PlotGestureController : PlotController
             return;
         }
 
+        // Before the buttons: their own attach returns early while the model is
+        // unchanged, and a re-armed axis is exactly the case that keeps the model.
+        DropZoomBoxOfAnotherView(model);
         AttachZoomButtons(model);
+        TrackZoomBoxHover(model, position);
         ScreenPoint? shown = model.PlotArea.Contains(position.X, position.Y)
             ? position
             : null;
@@ -222,7 +263,7 @@ internal sealed class PlotGestureController : PlotController
     {
         if (hovered is not PlotZoomButton button)
         {
-            zoomButtonTip.Hide(view);
+            graphTip.Hide(view);
             return;
         }
 
@@ -230,18 +271,16 @@ internal sealed class PlotGestureController : PlotController
         string name = axis == null
             ? (button.Horizontal ? "horizontal axis" : "vertical axis")
             : PlotAxisZoom.DescribeAxis(axis);
-        zoomButtonTip.Show(
-            $"{(button.ZoomIn ? "Zoom in" : "Zoom out")} — {name}",
-            view,
-            (int)position.X + 16,
-            (int)position.Y + 20,
-            ZoomButtonTipDurationMs);
+        ShowTip($"{(button.ZoomIn ? "Zoom in" : "Zoom out")} — {name}", position);
     }
+
+    private void ShowTip(string text, ScreenPoint position) =>
+        graphTip.Show(text, view, (int)position.X + 16, (int)position.Y + 20, TipDurationMs);
 
     private void HideZoomButtons()
     {
         hoveredButton = null;
-        zoomButtonTip.Hide(view);
+        graphTip.Hide(view);
         if (zoomButtons.Pointer == null)
         {
             return;
@@ -249,6 +288,164 @@ internal sealed class PlotGestureController : PlotController
 
         zoomButtons.Pointer = null;
         view.InvalidatePlot(false);
+    }
+
+    /// <summary>
+    /// Starts a box, dropping whatever was waiting: one box at a time, like one
+    /// selection at a time.
+    /// </summary>
+    public void BeginZoomBox()
+    {
+        DismissZoomBox();
+        if (view.ActualModel is not PlotModel model)
+        {
+            return;
+        }
+
+        zoomBoxModel = model;
+        zoomBoxAxes = PlotAxisIdentities.Describe(model);
+        model.Annotations.Add(zoomBox);
+    }
+
+    /// <summary>Redraws the box as the drag grows; <c>null</c> while it is still a dot.</summary>
+    public void UpdateZoomBox(PlotZoomBox? box, ScreenPoint start, ScreenPoint current) =>
+        ShowZoomBox(box, start, current, pending: false);
+
+    /// <summary>
+    /// Leaves the finished box on the graph, waiting to be read and perhaps clicked.
+    /// Every box that was actually drawn is kept, however thin: a box a millimetre
+    /// tall still measures a fraction of a decibel, and whether it can also be zoomed
+    /// to is a question for the click, not for the release. A Ctrl + right CLICK that
+    /// drew no box at all is simply forgotten.
+    /// </summary>
+    public void FinishZoomBox(PlotZoomBox box, ScreenPoint start, ScreenPoint end)
+    {
+        if (PlotZoomRectangleReadout.WasDrawn(start, end))
+        {
+            ShowZoomBox(box, start, end, pending: true);
+            return;
+        }
+
+        DismissZoomBox();
+    }
+
+    /// <summary>
+    /// The click REW zooms on. Inside the waiting box it takes the view there — and
+    /// only here is an undo step recorded, because only here does anything move. A
+    /// box too thin to zoom to keeps its place and says which side is too small, so
+    /// the reading survives the misfire. A click anywhere else lets the box go and
+    /// then goes on to do whatever it would have done: the box is an overlay, not a
+    /// state the graph is stuck in.
+    /// </summary>
+    private bool TryClickZoomBox(IPlotView target, ScreenPoint position)
+    {
+        if (!zoomBoxPending || zoomBox.Box is not PlotZoomBox box)
+        {
+            return false;
+        }
+
+        // Checked here as well as on every pointer move: a view can be re-armed
+        // without the mouse having gone anywhere, and this is the click that would
+        // otherwise act on it.
+        if (zoomBoxModel is not PlotModel model ||
+            !PlotAxisIdentities.Match(target.ActualModel, model, zoomBoxAxes) ||
+            !box.CanZoom ||
+            !box.Contains(model.PlotArea, position))
+        {
+            DismissZoomBox();
+            return false;
+        }
+
+        if (PlotZoomRectangleReadout.RefusalFor(box, box.Screen(model.PlotArea)) is string refusal)
+        {
+            ShowTip(refusal, position);
+            return true;
+        }
+
+        PushZoomUndo();
+        box.Zoom();
+        DismissZoomBox();
+        zoomBoxJustClicked = true;
+        target.InvalidatePlot(false);
+        return true;
+    }
+
+    private void ShowZoomBox(
+        PlotZoomBox? box,
+        ScreenPoint start,
+        ScreenPoint current,
+        bool pending)
+    {
+        if (zoomBoxModel == null)
+        {
+            return;
+        }
+
+        zoomBox.Box = box;
+        zoomBox.Axes = zoomBoxAxes;
+        zoomBox.AnchorRight = current.X >= start.X;
+        zoomBox.AnchorBottom = current.Y >= start.Y;
+        zoomBox.Text = box?.Describe() ?? string.Empty;
+        zoomBox.Hint = box is PlotZoomBox drawn
+            ? PlotZoomRectangleReadout.HintFor(drawn, pending)
+            : string.Empty;
+        zoomBoxPending = pending && box != null;
+        view.InvalidatePlot(false);
+    }
+
+    private void DismissZoomBox()
+    {
+        zoomBoxPending = false;
+        SetZoomBoxHovered(false);
+        if (zoomBoxModel == null)
+        {
+            return;
+        }
+
+        zoomBoxModel.Annotations.Remove(zoomBox);
+        zoomBoxModel = null;
+        zoomBoxAxes = Array.Empty<PlotAxisIdentity>();
+        zoomBox.Axes = zoomBoxAxes;
+        zoomBox.Box = null;
+        zoomBox.Text = string.Empty;
+        zoomBox.Hint = string.Empty;
+        view.InvalidatePlot(false);
+    }
+
+    // A box that is waiting to be clicked has to look clickable, or the instruction
+    // beside it is the only thing saying so.
+    private void TrackZoomBoxHover(PlotModel model, ScreenPoint position) =>
+        SetZoomBoxHovered(
+            zoomBoxPending &&
+            zoomBox.Box is PlotZoomBox box &&
+            box.CanZoom &&
+            box.Contains(model.PlotArea, position));
+
+    /// <summary>
+    /// Drops a box the plot has stopped agreeing with: another model, or the same
+    /// model with an axis re-armed to a different quantity under it. The box holds
+    /// AXIS VALUES, which is what lets it ride out a pan or a wheel notch — and
+    /// exactly what makes it nonsense once the axis means something else.
+    /// </summary>
+    private void DropZoomBoxOfAnotherView(PlotModel model)
+    {
+        if (zoomBoxModel == null || PlotAxisIdentities.Match(model, zoomBoxModel, zoomBoxAxes))
+        {
+            return;
+        }
+
+        DismissZoomBox();
+    }
+
+    private void SetZoomBoxHovered(bool hovered)
+    {
+        if (hovered == zoomBoxHovered)
+        {
+            return;
+        }
+
+        zoomBoxHovered = hovered;
+        view.Cursor = hovered ? Cursors.Hand : Cursors.Default;
     }
 
     // The models are rebuilt constantly and the annotation belongs to whichever one
@@ -282,6 +479,20 @@ internal sealed class PlotGestureController : PlotController
             OxyModifierKeys.Shift,
             KeyZoomCommand(horizontal: false, PlotAxisZoom.StepZoomInScale));
 
+        this.BindKeyDown(
+            OxyKey.Escape,
+            new DelegatePlotCommand<OxyKeyEventArgs>((_, _, _) => DismissZoomBox()));
+
+        // Handled here rather than left to Windows: answering the key ourselves is
+        // also what stops it reaching DefWindowProc, which would turn it into a
+        // second, empty help request.
+        this.BindKeyDown(
+            OxyKey.F1,
+            new DelegatePlotCommand<OxyKeyEventArgs>((_, _, args) =>
+            {
+                GraphHelpDialog.ShowFor(view.FindForm());
+                args.Handled = true;
+            }));
         this.BindKeyDown(
             OxyKey.Z,
             OxyModifierKeys.Control,
@@ -395,38 +606,13 @@ internal sealed class PlotGestureController : PlotController
     /// </summary>
     private void DropUndoOfAnotherModel()
     {
-        IReadOnlyList<AxisIdentity> axes = DescribeAxes(view.ActualModel);
-        if (ReferenceEquals(undoModel, view.ActualModel) && axes.SequenceEqual(undoAxes))
+        if (PlotAxisIdentities.Match(view.ActualModel, undoModel, undoAxes))
         {
             return;
         }
 
         zoomUndo.Clear();
         undoModel = view.ActualModel;
-        undoAxes = axes;
+        undoAxes = PlotAxisIdentities.Describe(view.ActualModel);
     }
-
-    private static IReadOnlyList<AxisIdentity> DescribeAxes(PlotModel? model) =>
-        model == null
-            ? Array.Empty<AxisIdentity>()
-            : model.Axes
-                .Select(axis => new AxisIdentity(
-                    axis.Key,
-                    axis.Title,
-                    axis.GetType(),
-                    axis.AbsoluteMinimum,
-                    axis.AbsoluteMaximum))
-                .ToList();
-
-    /// <summary>
-    /// What an axis MEANS, as far as a stored range is concerned: what it is called
-    /// and the hard limits it is armed with. Re-arming those is how the app says
-    /// "this axis now shows something else".
-    /// </summary>
-    private readonly record struct AxisIdentity(
-        string? Key,
-        string? Title,
-        Type AxisType,
-        double AbsoluteMinimum,
-        double AbsoluteMaximum);
 }

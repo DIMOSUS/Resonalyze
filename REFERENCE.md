@@ -1781,8 +1781,12 @@ folds a block down to its header. **Reset** beside them starts the panel over:
 every block back to an empty default one, the list back to three, and the
 panel's own settings — target level, smoothing, gate, Show view, scene offset —
 with them. It asks first, and the question names what it takes and where the
-copy goes: the autosave is copied to `virtual-crossover.before-reset.json`
-beside it, so a misclick comes back through **Load session…**. That copy is the
+copy goes: the session ON SCREEN is written to
+`virtual-crossover.before-reset.json` beside the autosave, so a misclick comes
+back through **Load session…**. The panel's own state, not the autosave — that
+one is written behind a two-second debounce and on a session that has never been
+saved does not exist at all, so copying the file would have handed back the tune
+minus its last edits and called a missing file nothing to lose. That copy is the
 tool's own one-deep net, not an archive — the next reset overwrites it, so a
 tune worth keeping still wants **Save session…**. A copy that cannot be written
 stops the reset to ask again rather than discarding a tune with nothing behind
@@ -2842,8 +2846,8 @@ The tool's autosaved state persists in `tools/virtual-crossover.json` and
 survives restarts. Two files can sit beside it: `virtual-crossover.json.backup`,
 where a project the tool could not read is moved aside so the next start has
 something to open — it is kept for salvage, not because it will load — and
-`virtual-crossover.before-reset.json`, the copy **Reset** takes before it clears
-the panel, which is an ordinary session file **Load session…** opens.
+`virtual-crossover.before-reset.json`, where **Reset** writes the live session
+before it clears the panel — an ordinary session file **Load session…** opens.
 Accuracy holds within the usual physics: one microphone
 position, the same playback chain for every measurement, and the linear
 (non-clipping) regime.

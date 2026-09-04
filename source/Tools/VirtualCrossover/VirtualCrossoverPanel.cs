@@ -1629,16 +1629,13 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The copy is of the FILE, and the file lags the panel: every edit only
-        // schedules a save, two seconds behind. Copying without flushing first
-        // promises the session on screen and delivers whatever was last written —
-        // the tune minus its most recent edits, which is the shape of loss hardest
-        // to notice. Flushed here rather than inside the backup, which is about a
-        // file and knows nothing of a panel's pending state.
-        FlushProject();
-        // Taken AFTER the question — a cancelled reset must not write a file —
-        // and before the bind, which is what makes the copy worth having.
-        (_, string? backupError) = VirtualCrossoverProjectFile.BackupBeforeReset();
+        // The project in MEMORY, which is what the user is looking at. The autosave
+        // behind it is up to a debounce out of date and on a never-saved session
+        // does not exist at all, so copying the FILE would promise the session on
+        // screen and hand back the one before the last edits — and call a missing
+        // file "nothing to lose" with a whole tune standing in memory. Taken AFTER
+        // the question, because a cancelled reset must not write anything.
+        (_, string? backupError) = project.SaveResetBackup();
         if (backupError != null && MessageBox.Show(
                 FindForm(),
                 "The copy of the current session could not be written:" +

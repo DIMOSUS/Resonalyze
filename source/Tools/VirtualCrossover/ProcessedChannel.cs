@@ -348,10 +348,12 @@ internal static class ProcessedChannels
     /// <remarks>
     /// Every driver whose curve happens to be on screen is not that set — see
     /// <see cref="JunctionsInView"/> for what band-ordering a whole installation
-    /// does to a chain. The chain is taken from the channel's own ZONE rather
+    /// does to a chain. The chains are taken from the channel's own ZONE rather
     /// than from the group selector: a channel's PEQ menu opens from its block in
     /// every view, and which drivers it crosses with is a property of the
-    /// installation, not of what the plot happens to show.
+    /// installation, not of what the plot happens to show. A subwoofer sits in
+    /// more than one (see <see cref="JunctionChains"/>), so tuning one from a car
+    /// with a rear stage under it sees that junction too.
     /// <para>
     /// The result keeps band order and always holds the channel itself, whether
     /// or not its own curve is shown; a neighbour travels only when it is drawn,
@@ -365,46 +367,74 @@ internal static class ProcessedChannels
     {
         ArgumentNullException.ThrowIfNull(processed);
         ArgumentNullException.ThrowIfNull(channel);
-        IReadOnlyList<VirtualCrossoverZone> zones = JunctionZonesFor(channel.Pair.Zone);
-        List<ProcessedChannel> chain = OrderByBand(
-            [.. processed.Where(item => zones.Contains(item.Channel.Pair.Zone))]);
-
-        // Junctions, not band neighbours: a subwoofer stopping at 110 Hz beside a
-        // rear fill starting at 290 is adjacent in the ordering with nothing
-        // handed across, and its phase says nothing about the one being tuned.
+        ProcessedChannel? self = null;
         var neighbours = new List<ProcessedChannel>();
-        foreach (AdjacentPair pair in GetAdjacentPairs(chain))
+        foreach (IReadOnlyList<VirtualCrossoverZone> zones in JunctionChains)
         {
-            if (ReferenceEquals(pair.Lower.Channel, channel))
+            if (!zones.Contains(channel.Pair.Zone))
             {
-                neighbours.Add(pair.Upper);
+                continue;
             }
-            else if (ReferenceEquals(pair.Upper.Channel, channel))
+
+            List<ProcessedChannel> chain = OrderByBand(
+                [.. processed.Where(item => zones.Contains(item.Channel.Pair.Zone))]);
+            self ??= chain.Find(item => ReferenceEquals(item.Channel, channel));
+
+            // Junctions, not band neighbours: a subwoofer stopping at 110 Hz beside
+            // a rear fill starting at 290 is adjacent in the ordering with nothing
+            // handed across, and its phase says nothing about the one being tuned.
+            foreach (AdjacentPair pair in GetAdjacentPairs(chain))
             {
-                neighbours.Add(pair.Lower);
+                ProcessedChannel? near =
+                    ReferenceEquals(pair.Lower.Channel, channel) ? pair.Upper
+                    : ReferenceEquals(pair.Upper.Channel, channel) ? pair.Lower
+                    : null;
+                if (near == null ||
+                    !near.Channel.Pair.ShowProcessedCurve ||
+                    neighbours.Any(seen => ReferenceEquals(seen, near)))
+                {
+                    continue;
+                }
+
+                neighbours.Add(near);
             }
         }
 
-        return
-        [
-            .. chain.Where(item =>
-                ReferenceEquals(item.Channel, channel) ||
-                (item.Channel.Pair.ShowProcessedCurve &&
-                    neighbours.Any(near => ReferenceEquals(near, item))))
-        ];
+        if (self == null)
+        {
+            return [];
+        }
+
+        neighbours.Add(self);
+        return OrderByBand(neighbours);
     }
 
-    // The zones a channel's junctions can live in: its own, plus the subwoofers
-    // for a stage that sits on top of them. The centre is alone because it sums
-    // with nothing (VirtualCrossoverGroupViews.ParticipatesInTotalSum) — a
-    // two-way centre still crosses inside itself, and that is the whole of it.
-    private static IReadOnlyList<VirtualCrossoverZone> JunctionZonesFor(
-        VirtualCrossoverZone zone) => zone switch
-    {
-        VirtualCrossoverZone.Center => [VirtualCrossoverZone.Center],
-        VirtualCrossoverZone.Rear => [VirtualCrossoverZone.Rear, VirtualCrossoverZone.Sub],
-        _ => [VirtualCrossoverZone.Front, VirtualCrossoverZone.Sub]
-    };
+    /// <summary>
+    /// The crossover chains a car is tuned in, as the zones each one holds. The
+    /// subwoofers belong to BOTH stages — they are the bottom of whichever one is
+    /// on screen with them, which is what
+    /// <see cref="VirtualCrossoverGroupViews.IsShown"/> already says — so a channel
+    /// can sit in more than one, and a subwoofer crossing into a rear fill has that
+    /// junction as surely as the one into the midbass.
+    /// </summary>
+    /// <remarks>
+    /// Separate chains rather than one set of zones, because the union of the zones
+    /// is exactly the ordering this type exists to refuse: a front stage and a rear
+    /// fill sorted together invent a handover between them (see
+    /// <see cref="JunctionsInView"/>). Each chain is ordered and read on its own,
+    /// and only the junctions they actually produce are collected.
+    /// <para>
+    /// The centre is a chain of its own because it sums with nothing
+    /// (<see cref="VirtualCrossoverGroupViews.ParticipatesInTotalSum"/>) — a two-way
+    /// centre still crosses inside itself, and that is the whole of it.
+    /// </para>
+    /// </remarks>
+    private static readonly IReadOnlyList<VirtualCrossoverZone>[] JunctionChains =
+    [
+        [VirtualCrossoverZone.Front, VirtualCrossoverZone.Sub],
+        [VirtualCrossoverZone.Rear, VirtualCrossoverZone.Sub],
+        [VirtualCrossoverZone.Center]
+    ];
 
     private static bool PlaysWithin(ProcessedChannel channel, double lowHz, double highHz)
     {

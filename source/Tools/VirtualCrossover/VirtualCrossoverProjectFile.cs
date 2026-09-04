@@ -992,22 +992,28 @@ public sealed class VirtualCrossoverProjectFile
             ResetBackupFileName);
 
     /// <summary>
-    /// Copies the autosave aside before the panel replaces it wholesale, so a
-    /// Reset is not the end of the tune it discards: the copy is an ordinary
-    /// session file and comes back through <b>Load session…</b>.
+    /// Writes THIS project aside before the panel replaces it wholesale, so a
+    /// Reset is not the end of the tune it discards: the file is an ordinary
+    /// session and comes back through <b>Load session…</b>.
     /// </summary>
     /// <returns>
-    /// The copy's path, or null with the reason it could not be written. Both
-    /// null when there was no autosave to copy — a first run has nothing to lose,
-    /// and reporting that as a failure would make the panel ask a question about
-    /// a file that never existed.
+    /// The copy's path, or null with the reason it could not be written.
     /// </returns>
     /// <remarks>
-    /// A COPY rather than a move: the caller is about to rewrite the original, and
-    /// a move would leave a window in which the tool has no autosave at all. One
-    /// copy is kept and overwritten — the answer to "undo that reset" is always
-    /// the reset just performed, and a growing pile of dated files would be a
-    /// second archive beside the user's own exported sessions.
+    /// The project in MEMORY, not the autosave on disk. The panel does not save on
+    /// edit, it schedules one behind a debounce, so the file lags the screen by up
+    /// to a couple of seconds — and by everything, on a session that has never
+    /// been written. Copying the file promised the user the session in front of
+    /// them and delivered the one before their last edits; worse, it reported a
+    /// missing file as "nothing to lose" while a whole tune stood in memory.
+    /// Serializing the object answers for exactly what the caller is about to
+    /// discard, and a failure to write it is reported rather than swallowed the
+    /// way the debounced autosave has to swallow one.
+    /// <para>
+    /// One copy is kept and overwritten — the answer to "undo that reset" is
+    /// always the reset just performed, and a growing pile of dated files would be
+    /// a second archive beside the user's own exported sessions.
+    /// </para>
     /// <para>
     /// Its own name, not the <c>.backup</c> suffix
     /// <see cref="BackupUnusableFile"/> uses: that one holds a file the tool could
@@ -1017,19 +1023,12 @@ public sealed class VirtualCrossoverProjectFile
     /// extension is deliberate too — it is what the Load session dialog offers.
     /// </para>
     /// </remarks>
-    public static (string? Path, string? Error) BackupBeforeReset(
-        string? rootDirectory = null)
+    public (string? Path, string? Error) SaveResetBackup(string? rootDirectory = null)
     {
-        string path = GetPath(rootDirectory);
+        string backupPath = ResetBackupPath(rootDirectory);
         try
         {
-            if (!File.Exists(path))
-            {
-                return (null, null);
-            }
-
-            string backupPath = ResetBackupPath(rootDirectory);
-            File.Copy(path, backupPath, overwrite: true);
+            SaveAutosaveTo(backupPath);
             return (backupPath, null);
         }
         catch (Exception exception)
@@ -1038,12 +1037,19 @@ public sealed class VirtualCrossoverProjectFile
         }
     }
 
-    public void Save(string? rootDirectory = null)
+    public void Save(string? rootDirectory = null) =>
+        SaveAutosaveTo(GetPath(rootDirectory));
+
+    // The autosave's own write, shared with the reset backup beside it. NOT the
+    // public SaveTo below: that one is the EXPORT, and it states each source's path
+    // relative to the file's own folder. Both of these live in the application data
+    // folder, where no measurement sits, so a relative path written there would be
+    // the confident wrong answer WriteWithExportRelativePaths exists to refuse.
+    private void SaveAutosaveTo(string path)
     {
         Validate();
         SavedAtUtc = DateTimeOffset.UtcNow;
 
-        string path = GetPath(rootDirectory);
         string directory = Path.GetDirectoryName(path)
             ?? throw new InvalidOperationException(
                 "The virtual crossover directory cannot be resolved.");

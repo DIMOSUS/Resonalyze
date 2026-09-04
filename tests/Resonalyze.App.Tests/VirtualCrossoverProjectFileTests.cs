@@ -1878,29 +1878,63 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     /// <summary>
-    /// Reset copies the autosave aside rather than moving it: the panel rewrites the
-    /// original on its way out, and a move would leave a window with no autosave at
-    /// all. The copy is an ordinary session file, so Load session… brings the tune
-    /// back whole.
+    /// Reset writes the project in MEMORY, not the autosave beside it: the panel
+    /// saves on a debounce, so the file lags the screen by up to two seconds and on
+    /// a never-saved session does not exist at all. The copy is an ordinary session
+    /// file, so Load session… brings the tune back whole.
     /// </summary>
     [Fact]
-    public void BackupBeforeReset_CopiesTheAutosaveAndLeavesItInPlace()
+    public void SaveResetBackup_WritesTheProjectItIsCalledOnRatherThanTheAutosave()
     {
         string root = CreateTemporaryDirectory();
         try
         {
-            var project = new VirtualCrossoverProjectFile();
-            project.Pairs[0].Left.DelayMs = 4.87;
-            project.Save(root);
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Pairs[0].Left.DelayMs = 5.0;
+            saved.Save(root);
 
-            (string? path, string? error) =
-                VirtualCrossoverProjectFile.BackupBeforeReset(root);
+            // The panel's live project, an edit ahead of what reached the disk.
+            var live = new VirtualCrossoverProjectFile();
+            live.Pairs[0].Left.DelayMs = 7.0;
+
+            (string? path, string? error) = live.SaveResetBackup(root);
 
             Assert.Null(error);
             Assert.Equal(VirtualCrossoverProjectFile.ResetBackupPath(root), path);
-            Assert.True(File.Exists(VirtualCrossoverProjectFile.GetPath(root)));
             Assert.Equal(
-                4.87,
+                7.0,
+                VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.DelayMs);
+            // And the autosave it did not come from is untouched.
+            Assert.Equal(
+                5.0,
+                VirtualCrossoverProjectFile.LoadOrDefault(root).Pairs[0].Left.DelayMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A session that has never been written has the most to lose, not the least:
+    /// the old copy-the-file backup reported "nothing here" and let the reset run
+    /// with a whole tune standing in memory.
+    /// </summary>
+    [Fact]
+    public void SaveResetBackup_WritesEvenWhenNoAutosaveExists()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var live = new VirtualCrossoverProjectFile();
+            live.Pairs[0].Left.DelayMs = 3.25;
+
+            (string? path, string? error) = live.SaveResetBackup(root);
+
+            Assert.Null(error);
+            Assert.False(File.Exists(VirtualCrossoverProjectFile.GetPath(root)));
+            Assert.Equal(
+                3.25,
                 VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.DelayMs);
         }
         finally
@@ -1910,18 +1944,27 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     /// <summary>
-    /// A first run has no autosave and nothing to lose, so there is nothing to report
-    /// either — answering with an error would have the panel ask about a file that
-    /// never existed.
+    /// The backup lives in the application data folder, where no measurement sits,
+    /// so it writes source paths the way the autosave does — none at all. An EXPORT
+    /// states them relative to its own folder, and reusing that here would write a
+    /// confident wrong answer into a file meant to be loaded back.
     /// </summary>
     [Fact]
-    public void BackupBeforeReset_SaysNothingWhenThereIsNoAutosave()
+    public void SaveResetBackup_WritesNoRelativeSourcePaths()
     {
         string root = CreateTemporaryDirectory();
         try
         {
-            Assert.Equal(
-                (null, null), VirtualCrossoverProjectFile.BackupBeforeReset(root));
+            var live = new VirtualCrossoverProjectFile();
+            live.Pairs[0].Left.SourceFilePath = Path.Combine(root, "driver.json");
+            live.Pairs[0].Left.SourceRelativePath = @"..\elsewhere\driver.json";
+
+            (string? path, _) = live.SaveResetBackup(root);
+
+            Assert.Null(
+                VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.SourceRelativePath);
+            // The live project keeps the hint it was imported with.
+            Assert.Equal(@"..\elsewhere\driver.json", live.Pairs[0].Left.SourceRelativePath);
         }
         finally
         {
@@ -1936,7 +1979,7 @@ public sealed class VirtualCrossoverProjectFileTests
     /// what to do about it.
     /// </summary>
     [Fact]
-    public void BackupBeforeReset_LeavesTheUnreadableFileBackupAlone()
+    public void SaveResetBackup_LeavesTheUnreadableFileBackupAlone()
     {
         string root = CreateTemporaryDirectory();
         try
@@ -1945,7 +1988,7 @@ public sealed class VirtualCrossoverProjectFileTests
             string unusable = VirtualCrossoverProjectFile.GetPath(root) + ".backup";
             File.WriteAllText(unusable, "the project that could not be read");
 
-            VirtualCrossoverProjectFile.BackupBeforeReset(root);
+            new VirtualCrossoverProjectFile().SaveResetBackup(root);
 
             Assert.Equal("the project that could not be read", File.ReadAllText(unusable));
         }
@@ -1961,20 +2004,18 @@ public sealed class VirtualCrossoverProjectFileTests
     /// beside the user's own exported sessions.
     /// </summary>
     [Fact]
-    public void BackupBeforeReset_KeepsOnlyTheMostRecentCopy()
+    public void SaveResetBackup_KeepsOnlyTheMostRecentCopy()
     {
         string root = CreateTemporaryDirectory();
         try
         {
             var first = new VirtualCrossoverProjectFile();
             first.Pairs[0].Left.DelayMs = 1.0;
-            first.Save(root);
-            VirtualCrossoverProjectFile.BackupBeforeReset(root);
+            first.SaveResetBackup(root);
 
             var second = new VirtualCrossoverProjectFile();
             second.Pairs[0].Left.DelayMs = 2.0;
-            second.Save(root);
-            (string? path, _) = VirtualCrossoverProjectFile.BackupBeforeReset(root);
+            (string? path, _) = second.SaveResetBackup(root);
 
             Assert.Equal(
                 2.0,

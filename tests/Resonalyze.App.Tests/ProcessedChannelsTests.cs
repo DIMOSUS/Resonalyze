@@ -320,6 +320,39 @@ public sealed class ProcessedChannelsTests
                 .Select(item => item.Channel.Name));
     }
 
+    /// <summary>
+    /// A subwoofer sits under BOTH stages, so a car that crosses it into a rear fill
+    /// as well as a front one has two junctions on it. Tuning it saw only the front
+    /// one while the rear block, tuned from its own card, saw the subwoofer — an
+    /// asymmetry in which one of the two views of one junction was missing a driver.
+    /// </summary>
+    [Fact]
+    public void PhaseNeighbourhood_SeesBothStagesFromASubwoofer()
+    {
+        List<ProcessedChannel> car =
+        [
+            Channel("Sub", LowPass(100), VirtualCrossoverZone.Sub),
+            Channel("Front", HighPass(100), VirtualCrossoverZone.Front),
+            Channel("Rear", HighPass(100), VirtualCrossoverZone.Rear)
+        ];
+
+        Assert.Equal(
+            ["Sub", "Front", "Rear"],
+            ProcessedChannels.PhaseNeighbourhood(car, car[0].Channel)
+                .Select(item => item.Channel.Name));
+
+        // And the chains stay apart: neither stage gains the other as a neighbour,
+        // which is the invented handover this whole rule exists to refuse.
+        Assert.Equal(
+            ["Sub", "Front"],
+            ProcessedChannels.PhaseNeighbourhood(car, car[1].Channel)
+                .Select(item => item.Channel.Name));
+        Assert.Equal(
+            ["Sub", "Rear"],
+            ProcessedChannels.PhaseNeighbourhood(car, car[2].Channel)
+                .Select(item => item.Channel.Name));
+    }
+
     [Fact]
     public void PhaseNeighbourhood_DropsAHiddenNeighbourAndKeepsAHiddenSelf()
     {

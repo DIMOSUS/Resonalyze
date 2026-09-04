@@ -69,6 +69,16 @@ internal sealed class PlotGestureController : PlotController
     private bool zoomBoxPending;
     private bool zoomBoxHovered;
 
+    // What the box was drawn against. The model reference is not enough: the
+    // Virtual DSP acoustic view re-arms its value axis between dB, degrees and a
+    // unitless impulse scale and swaps its bottom axis in place, all inside ONE
+    // model, and a box held across that would apply decibels to an impulse.
+    private IReadOnlyList<PlotAxisIdentity> zoomBoxAxes = Array.Empty<PlotAxisIdentity>();
+
+    // Set by the click that zooms to a box, so the DOUBLE click the second press of
+    // a quick double tap arrives as does not also open the limits dialog.
+    private bool zoomBoxJustClicked;
+
     // Where the pointer last was, in the view's coordinates. The keyboard zoom
     // commands need it: OxyPlot's key events carry no position, and REW zooms the
     // axis around the pointer rather than around the centre of the plot.
@@ -84,7 +94,7 @@ internal sealed class PlotGestureController : PlotController
     // re-arms ONE axis object between dB, degrees and milliseconds without
     // replacing the model, and the EQ wizard re-arms its dB axis for a new source.
     private PlotModel? undoModel;
-    private IReadOnlyList<AxisIdentity> undoAxes = Array.Empty<AxisIdentity>();
+    private IReadOnlyList<PlotAxisIdentity> undoAxes = Array.Empty<PlotAxisIdentity>();
 
     public PlotGestureController(PlotView view)
     {
@@ -148,6 +158,15 @@ internal sealed class PlotGestureController : PlotController
             clickCount: 2,
             new DelegatePlotCommand<OxyMouseDownEventArgs>((target, _, args) =>
             {
+                // The second press of a double tap inside a zoom box: the first
+                // press already zoomed there, and opening the limits dialog on top
+                // of that is not what the hand asked for.
+                if (zoomBoxJustClicked)
+                {
+                    zoomBoxJustClicked = false;
+                    return;
+                }
+
                 if (TryClickZoomButton(target, args.Position))
                 {
                     return;
@@ -162,6 +181,7 @@ internal sealed class PlotGestureController : PlotController
             OxyMouseButton.Left,
             new DelegatePlotCommand<OxyMouseDownEventArgs>((target, controller, args) =>
             {
+                zoomBoxJustClicked = false;
                 if (TryClickZoomBox(target, args.Position) ||
                     TryClickZoomButton(target, args.Position))
                 {
@@ -211,6 +231,9 @@ internal sealed class PlotGestureController : PlotController
             return;
         }
 
+        // Before the buttons: their own attach returns early while the model is
+        // unchanged, and a re-armed axis is exactly the case that keeps the model.
+        DropZoomBoxOfAnotherView(model);
         AttachZoomButtons(model);
         TrackZoomBoxHover(model, position);
         ScreenPoint? shown = model.PlotArea.Contains(position.X, position.Y)
@@ -280,6 +303,7 @@ internal sealed class PlotGestureController : PlotController
         }
 
         zoomBoxModel = model;
+        zoomBoxAxes = PlotAxisIdentities.Describe(model);
         model.Annotations.Add(zoomBox);
     }
 
@@ -320,8 +344,11 @@ internal sealed class PlotGestureController : PlotController
             return false;
         }
 
+        // Checked here as well as on every pointer move: a view can be re-armed
+        // without the mouse having gone anywhere, and this is the click that would
+        // otherwise act on it.
         if (zoomBoxModel is not PlotModel model ||
-            !ReferenceEquals(model, target.ActualModel) ||
+            !PlotAxisIdentities.Match(target.ActualModel, model, zoomBoxAxes) ||
             !box.CanZoom ||
             !box.Contains(model.PlotArea, position))
         {
@@ -338,6 +365,7 @@ internal sealed class PlotGestureController : PlotController
         PushZoomUndo();
         box.Zoom();
         DismissZoomBox();
+        zoomBoxJustClicked = true;
         target.InvalidatePlot(false);
         return true;
     }
@@ -375,6 +403,7 @@ internal sealed class PlotGestureController : PlotController
 
         zoomBoxModel.Annotations.Remove(zoomBox);
         zoomBoxModel = null;
+        zoomBoxAxes = Array.Empty<PlotAxisIdentity>();
         zoomBox.Box = null;
         zoomBox.Text = string.Empty;
         zoomBox.Hint = string.Empty;
@@ -386,10 +415,25 @@ internal sealed class PlotGestureController : PlotController
     private void TrackZoomBoxHover(PlotModel model, ScreenPoint position) =>
         SetZoomBoxHovered(
             zoomBoxPending &&
-            ReferenceEquals(zoomBoxModel, model) &&
             zoomBox.Box is PlotZoomBox box &&
             box.CanZoom &&
             box.Contains(model.PlotArea, position));
+
+    /// <summary>
+    /// Drops a box the plot has stopped agreeing with: another model, or the same
+    /// model with an axis re-armed to a different quantity under it. The box holds
+    /// AXIS VALUES, which is what lets it ride out a pan or a wheel notch — and
+    /// exactly what makes it nonsense once the axis means something else.
+    /// </summary>
+    private void DropZoomBoxOfAnotherView(PlotModel model)
+    {
+        if (zoomBoxModel == null || PlotAxisIdentities.Match(model, zoomBoxModel, zoomBoxAxes))
+        {
+            return;
+        }
+
+        DismissZoomBox();
+    }
 
     private void SetZoomBoxHovered(bool hovered)
     {
@@ -410,16 +454,6 @@ internal sealed class PlotGestureController : PlotController
         if (ReferenceEquals(buttonsModel, model))
         {
             return;
-        }
-
-        // The box belongs to the model it was drawn over: a rebuild takes it away, so
-        // the waiting state goes with it rather than surviving onto another graph.
-        // Guarded on the box's OWN model, not on this one having changed: the first
-        // pointer event of all can arrive during the drag that draws the box, and
-        // that must not drop the box being drawn.
-        if (!ReferenceEquals(zoomBoxModel, model))
-        {
-            DismissZoomBox();
         }
 
         buttonsModel?.Annotations.Remove(zoomButtons);
@@ -570,38 +604,13 @@ internal sealed class PlotGestureController : PlotController
     /// </summary>
     private void DropUndoOfAnotherModel()
     {
-        IReadOnlyList<AxisIdentity> axes = DescribeAxes(view.ActualModel);
-        if (ReferenceEquals(undoModel, view.ActualModel) && axes.SequenceEqual(undoAxes))
+        if (PlotAxisIdentities.Match(view.ActualModel, undoModel, undoAxes))
         {
             return;
         }
 
         zoomUndo.Clear();
         undoModel = view.ActualModel;
-        undoAxes = axes;
+        undoAxes = PlotAxisIdentities.Describe(view.ActualModel);
     }
-
-    private static IReadOnlyList<AxisIdentity> DescribeAxes(PlotModel? model) =>
-        model == null
-            ? Array.Empty<AxisIdentity>()
-            : model.Axes
-                .Select(axis => new AxisIdentity(
-                    axis.Key,
-                    axis.Title,
-                    axis.GetType(),
-                    axis.AbsoluteMinimum,
-                    axis.AbsoluteMaximum))
-                .ToList();
-
-    /// <summary>
-    /// What an axis MEANS, as far as a stored range is concerned: what it is called
-    /// and the hard limits it is armed with. Re-arming those is how the app says
-    /// "this axis now shows something else".
-    /// </summary>
-    private readonly record struct AxisIdentity(
-        string? Key,
-        string? Title,
-        Type AxisType,
-        double AbsoluteMinimum,
-        double AbsoluteMaximum);
 }

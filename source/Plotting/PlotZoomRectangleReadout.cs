@@ -173,11 +173,14 @@ internal static class PlotZoomRectangleReadout
     private const double KilohertzThreshold = 1000;
 
     /// <summary>
-    /// Longest title that still reads as a UNIT rather than as the name of the
-    /// quantity: "samples" fits, "Coherence γ²" does not, and repeating the name of
-    /// the axis after the number reads worse than leaving the number bare.
+    /// The units these plots are actually measured in. A list rather than a rule
+    /// about short words, because a short word is just as often the NAME of a
+    /// dimensionless quantity — the impulse view's "step" axis, the correlation
+    /// views' "r" — and "0.420 step" reads as a unit that does not exist. A title
+    /// that is not one of these says nothing after the number.
     /// </summary>
-    private const int MaxUnitLength = 7;
+    private static readonly string[] KnownUnits =
+        ["dB", "ms", "s", "Hz", "kHz", "deg", "\u00B0", "%", "samples"];
 
     private const string Hertz = "Hz";
     private const string Kilohertz = "kHz";
@@ -314,11 +317,19 @@ internal static class PlotZoomRectangleReadout
 
         title = title.Trim();
         int opening = title.LastIndexOf('(');
-        string candidate = opening >= 0 && title.EndsWith(')')
-            ? title[(opening + 1)..^1].Trim()
-            : title.Split(' ', '\t')[0];
+        if (opening >= 0 && title.EndsWith(')'))
+        {
+            // Parentheses at the end of a title are the unit by convention, whatever
+            // is in them: "Sum loss (dB)", "delay added to the upper channel (ms)".
+            return title[(opening + 1)..^1].Trim();
+        }
 
-        return candidate.Length is > 0 and <= MaxUnitLength ? candidate : string.Empty;
+        // Otherwise the title has to BE a unit, whole or as its first word:
+        // "dB", "samples", "ms from peak".
+        string candidate = title.Split(' ', '\t')[0];
+        return KnownUnits.Contains(candidate, StringComparer.OrdinalIgnoreCase)
+            ? candidate
+            : string.Empty;
     }
 
     /// <summary>

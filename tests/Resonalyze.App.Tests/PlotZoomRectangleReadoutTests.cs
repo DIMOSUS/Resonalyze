@@ -287,9 +287,15 @@ public sealed class PlotZoomRectangleReadoutTests
     // A title that LEADS with the unit and then qualifies it.
     [InlineData("ms from peak", "12.4 ms")]
     [InlineData("dB re Main peak", "12.4 dB")]
-    // A title that is the name of the quantity rather than a unit: the number stands
-    // on its own rather than being followed by the axis's own name.
+    // A title that NAMES the quantity rather than stating a unit: the number stands
+    // on its own rather than being followed by the axis's own name. Short names are
+    // the trap here -- "step" and "r" are dimensionless quantities, not units, and
+    // "0.420 step" states one that does not exist.
     [InlineData("Coherence \u03B3\u00B2", "12.4")]
+    [InlineData("step", "12.4")]
+    [InlineData("r", "12.4")]
+    [InlineData("envelope r", "12.4")]
+    [InlineData("junction score (dB)", "12.4 dB")]
     public void FormatSpan_TakesItsUnitFromTheAxisTitle(string title, string expected)
     {
         var axis = new LinearAxis { Position = AxisPosition.Left, Title = title };

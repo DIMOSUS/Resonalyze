@@ -110,7 +110,10 @@ spans the whole ±180° a wrapped phase can occupy — the box is still the
 rectangle you dragged and still reads `1.30 kHz × 150°`, and a click then
 moves the frequency axis alone. Frequencies pass to kHz from 1 kHz up. The box
 is pinned to the data rather than to the screen, so panning or zooming while
-it waits leaves it around the same part of the curve.
+it waits leaves it around the same part of the curve, and it goes away when
+the graph stops showing what it framed: switching the Virtual DSP view between
+magnitude, phase and impulse re-arms an axis to another quantity, and numbers
+in units the graph no longer uses are not worth keeping.
 
 The **graph limits** dialog types the same ranges exactly — top, bottom, left and
 right as numbers, plus **Fit to data**, **Fit Y to data** and **Defaults**, which

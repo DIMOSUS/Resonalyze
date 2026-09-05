@@ -1143,7 +1143,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return series;
     }
 
-    private static void AddMainPeakMarkers(
+    internal static void AddMainPeakMarkers(
         PlotModel model,
         TimeAlignmentAnalysisResult mainResult,
         double referenceAmplitude)
@@ -1168,9 +1168,32 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 OxyColor.FromRgb(140, 170, 255),
                 PlotCalloutDirection.RightUp);
         }
+
+        AddCalloutMarker(
+            model,
+            "M Onset",
+            mainResult.EnergyOnsetDelayMilliseconds - mainResult.FirstArrivalDelayMilliseconds,
+            GetPeakMarkerDecibels(mainResult, referenceAmplitude, GetEnergyOnsetIndex(mainResult)),
+            OxyColor.FromRgb(96, 200, 120),
+            PlotCalloutDirection.LeftDown);
     }
 
-    private static void AddComparePeakMarkers(
+    // The envelope index of the energy onset: its sample rounded and wrapped
+    // into the (circular) envelope, since a complete record reports positions
+    // as signed delays (see TimeAlignmentAnalysisOptions.WrapPeakPositions).
+    internal static int GetEnergyOnsetIndex(TimeAlignmentAnalysisResult result)
+    {
+        int length = result.EnvelopeSamples.Length;
+        if (length == 0)
+        {
+            return 0;
+        }
+
+        long rounded = (long)Math.Round(result.EnergyOnsetSample);
+        return (int)(((rounded % length) + length) % length);
+    }
+
+    internal static void AddComparePeakMarkers(
         PlotModel model,
         TimeAlignmentAnalysisResult mainResult,
         TimeAlignmentAnalysisResult compareResult,
@@ -1236,6 +1259,29 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                     ? PlotCalloutDirection.RightUp
                     : PlotCalloutDirection.RightDown);
         }
+
+        double mainOnsetDecibels =
+            GetPeakMarkerDecibels(mainResult, referenceAmplitude, GetEnergyOnsetIndex(mainResult));
+        double compareOnsetDecibels =
+            GetPeakMarkerDecibels(compareResult, referenceAmplitude, GetEnergyOnsetIndex(compareResult));
+        AddCalloutMarker(
+            model,
+            "M Onset",
+            mainResult.EnergyOnsetDelayMilliseconds - mainResult.FirstArrivalDelayMilliseconds,
+            mainOnsetDecibels,
+            OxyColor.FromRgb(96, 200, 120),
+            mainOnsetDecibels >= compareOnsetDecibels
+                ? PlotCalloutDirection.LeftUp
+                : PlotCalloutDirection.LeftDown);
+        AddCalloutMarker(
+            model,
+            "C Onset",
+            compareResult.EnergyOnsetDelayMilliseconds - mainResult.FirstArrivalDelayMilliseconds,
+            compareOnsetDecibels,
+            OxyColor.FromArgb(145, 96, 200, 120),
+            compareOnsetDecibels > mainOnsetDecibels
+                ? PlotCalloutDirection.LeftUp
+                : PlotCalloutDirection.LeftDown);
     }
 
     private static void AddCalloutMarker(
@@ -1392,6 +1438,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendLevelsLine(levels);
         AppendSeparator();
         AppendDelayTable(result, reference);
+        AppendEnergyOnsetLine(result, reference);
         if (IsArrivalRecommendable(result, honestyProbe, bandMode, crosstalk != null))
         {
             AppendStrongestPeakHint(result);
@@ -1690,6 +1737,39 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                     reference?.StrongestPeakSample,
                     "0.0")) + "\r\n",
             UiPalette.TextPrimarySoft,
+            resultTableFont);
+    }
+
+    // The band's energy onset (see TimeAlignmentAnalysisResult): where a tenth
+    // of the band's energy has arrived. A third instant beside the two peaks,
+    // because on a slow low-frequency envelope the first PEAK is a coin — a
+    // front's hump that a fraction of a dB turns into a shoulder hands the
+    // read to the arrival behind it — while the running energy reads the
+    // front either way. It is the figure the stereo Auto delay's cross-side
+    // links read below 300 Hz, so the panel shows it where the tuner can
+    // check it against the two peaks; with a reference (the Compare table) it
+    // carries its delta like the table's cells.
+    private void AppendEnergyOnsetLine(
+        TimeAlignmentAnalysisResult result,
+        TimeAlignmentAnalysisResult? reference)
+    {
+        double leadMilliseconds =
+            result.FirstArrivalDelayMilliseconds - result.EnergyOnsetDelayMilliseconds;
+        AppendStatusText(
+            "Energy onset:".PadRight(DelayTableText.FirstColumn),
+            UiPalette.TextPrimarySoft,
+            resultTableFont);
+        AppendStatusText(
+            FormatValueWithDelta(
+                result.EnergyOnsetDelayMilliseconds,
+                reference?.EnergyOnsetDelayMilliseconds,
+                "0.000") + " ms",
+            UiPalette.TimeAlignmentEnergyOnset,
+            resultTableFont);
+        AppendStatusText(
+            $"  ({Math.Abs(leadMilliseconds):0.000} ms " +
+            $"{(leadMilliseconds >= 0 ? "before" : "after")} First Arrival)\r\n",
+            UiPalette.TextSecondarySoft,
             resultTableFont);
     }
 

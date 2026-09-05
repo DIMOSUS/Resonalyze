@@ -988,6 +988,24 @@ arrival, so a modal or reflected peak is not mistaken for the driver's real
 timing; the flag requires a real valley (6 dB) between the two peaks, since a
 low-frequency driver's direct sound can keep rising for milliseconds.
 
+A third instant, the **energy onset**, is reported under the delay table and
+marked `Onset` on the envelope plot: where a tenth of the band's energy has
+arrived, counting the envelope's running energy from the record's start up to
+60 ms past the strongest peak and ignoring samples 30 dB under it. It exists
+because on a slow low-frequency envelope the first peak is a coin: the direct
+front and an arrival a few milliseconds behind it merge into one climb, and
+whether the front's hump stands as a peak or melts into that climb is decided
+by a fraction of a dB — two identical midbasses read 14 and 21 ms that way,
+while their energy onsets sat 2 ms apart. The running energy is monotone, so
+it reads the front either way. It is the read the stereo
+[Auto delay](#auto-delay) uses for its cross-side links below 300 Hz, and the
+panel shows it so the figure can be checked against the two peaks; with a
+Compare record its delta prints like the table's cells. Take it as the
+alignment figure only on a band-limited low read with a clean record (the
+engine asks 40 dB of SNR): in wide bands the front is sharp and the first
+peak is the better instrument, and where a later arrival is much stronger
+than the direct sound the tenth of the energy can be reached in it.
+
 The mode recalculates when you switch into it and as you change the bandpass
 settings, and reports signal quality from the analysis envelope and the stored
 meter snapshot: a color-coded `Excellent` / `Good` / `Fair` / `Poor` **signal

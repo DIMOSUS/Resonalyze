@@ -1488,12 +1488,23 @@ public static class AutoAlignmentEngine
     /// </para>
     /// <para>
     /// Field case (2026-09-05, the reference car's 4300 Hz LR36 mid/tweeter
-    /// split): the full record's dominant extremum sat on the +0.746 ms peak
-    /// (r 0.42, in phase) while the direct cut read +0.642 ms (r 0.83) in the
-    /// inverted family the crossover sums in - the same lobe the whitened
-    /// trough named to within 2 us. The seed followed the peak, the search
-    /// settled a period late, and the tweeter came out 0.20 ms behind the lobe
-    /// the panel's own metric measures 0.24 dB better.
+    /// split): the direct cut read +0.642 ms (r 0.83) in the inverted family
+    /// the crossover sums in - the same lobe the whitened trough named, to
+    /// within 2 us - while the full record's dominant extremum sat on the
+    /// +0.746 ms peak (r 0.42, in phase). The seed followed the peak and the
+    /// search settled a period late.
+    /// </para>
+    /// <para>
+    /// What says so is the WAVEFRONT read, and only it: on the shipped tuning
+    /// the direct correlation reads 0.84 at the lobe it names against 0.57 at
+    /// the one that was applied. The summation metric happens to agree here
+    /// (0.24 dB on the in-band average, the dip unchanged) and is worth
+    /// recording, but it is not the criterion and must not be quoted as one -
+    /// at this class of junction it routinely cannot separate a lobe from its
+    /// half-period twin at all (see the DirectCoherence* constants, where the
+    /// same physics gives the direct sound the last word on polarity). A rule
+    /// resting on a fifth of a decibel of summation would be resting on
+    /// nothing; this one rests on the cut.
     /// </para>
     /// </summary>
     internal static bool SeedFamilyFollowsTheSettledPolarity(

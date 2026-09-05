@@ -4731,7 +4731,7 @@ public static class AutoAlignmentEngine
     /// 2.4 ms and convicted a plain BW48 80 Hz low-pass as an 18 ms modal
     /// latch (its unit tests). The peaks stay the timeline's instrument.
     /// </summary>
-    internal const double EnergyOnsetBandCenterHz = 300;
+    public const double EnergyOnsetBandCenterHz = 300;
 
     /// <summary>
     /// The SNR both sides of a link must show before its band is read by the
@@ -4747,7 +4747,7 @@ public static class AutoAlignmentEngine
     /// split is still one instrument against itself. Field records read
     /// 45-88 dB.
     /// </summary>
-    internal const double EnergyOnsetMinimumSnrDb = 40;
+    public const double EnergyOnsetMinimumSnrDb = 40;
 
     /// <summary>
     /// Whether a link band belongs to the energy onset by its centre alone

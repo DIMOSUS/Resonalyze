@@ -110,63 +110,42 @@ public sealed class TimeAlignmentArrivalRecommendationTests
             crosstalkDetected: false));
     }
 
-    // Which ROW of the delay table is marked: the energy onset on a
-    // band-limited read centred below the engine edge with the SNR the onset
-    // needs, the first arrival otherwise, none where a verdict disqualified
-    // the read. The strongest peak is never the pick.
+    // Which ROW of the delay table is marked: the first arrival when it
+    // stands, none where a verdict disqualified the read. The energy onset is
+    // never the pick here, however low the band and clean the record: its
+    // bias cancels only between the two sides of one driver pair (the
+    // engine's links), and this panel cannot know what two records are.
     [Fact]
-    public void RecommendedRow_PrefersTheEnergyOnsetOnALowBandWithEnoughSnr()
+    public void RecommendedRow_IsTheFirstArrivalWhereItStands()
     {
-        Assert.Equal(
-            TimeAlignmentPanelController.DelayRow.EnergyOnset,
-            TimeAlignmentPanelController.RecommendedRow(
-                Result(snrDb: 60),
-                Probe(AutoAlignmentEngine.ArrivalCertificate.Verified),
-                TimeAlignmentBandMode.ManualBand,
-                crosstalkDetected: false,
-                bandCenterHz: 114));
-        // ... even where the first peak was convicted: the onset is what
-        // reads the front there.
-        Assert.Equal(
-            TimeAlignmentPanelController.DelayRow.EnergyOnset,
-            TimeAlignmentPanelController.RecommendedRow(
-                Result(snrDb: 60),
-                Probe(AutoAlignmentEngine.ArrivalCertificate.Latched),
-                TimeAlignmentBandMode.AutoBand,
-                crosstalkDetected: false,
-                bandCenterHz: 200));
-    }
-
-    [Fact]
-    public void RecommendedRow_FallsBackToTheFirstArrivalOutsideTheOnsetRule()
-    {
-        // A low band, but under the SNR the onset needs.
-        Assert.Equal(
-            TimeAlignmentPanelController.DelayRow.FirstArrival,
-            TimeAlignmentPanelController.RecommendedRow(
-                Result(snrDb: 30),
-                Probe(AutoAlignmentEngine.ArrivalCertificate.Verified),
-                TimeAlignmentBandMode.ManualBand,
-                crosstalkDetected: false,
-                bandCenterHz: 114));
-        // A wide band centred above the edge.
         Assert.Equal(
             TimeAlignmentPanelController.DelayRow.FirstArrival,
             TimeAlignmentPanelController.RecommendedRow(
                 Result(snrDb: 60),
                 Probe(AutoAlignmentEngine.ArrivalCertificate.Verified),
                 TimeAlignmentBandMode.ManualBand,
-                crosstalkDetected: false,
-                bandCenterHz: 1000));
-        // A full-band read has no band centre to apply the rule to.
+                crosstalkDetected: false));
         Assert.Equal(
             TimeAlignmentPanelController.DelayRow.FirstArrival,
             TimeAlignmentPanelController.RecommendedRow(
                 Result(snrDb: 60),
                 honestyProbe: null,
                 TimeAlignmentBandMode.FullBand,
-                crosstalkDetected: false,
-                bandCenterHz: null));
+                crosstalkDetected: false));
+    }
+
+    [Fact]
+    public void RecommendedRow_NeverPicksTheEnergyOnsetOrTheStrongestPeak()
+    {
+        // A clean low band — the engine's own onset case — still marks the
+        // first arrival: the table shows the onset, it does not recommend it.
+        Assert.Equal(
+            TimeAlignmentPanelController.DelayRow.FirstArrival,
+            TimeAlignmentPanelController.RecommendedRow(
+                Result(snrDb: 70),
+                Probe(AutoAlignmentEngine.ArrivalCertificate.Verified),
+                TimeAlignmentBandMode.AutoBand,
+                crosstalkDetected: false));
     }
 
     [Fact]
@@ -176,19 +155,16 @@ public sealed class TimeAlignmentArrivalRecommendationTests
             Result(snrDb: 8),
             honestyProbe: null,
             TimeAlignmentBandMode.ManualBand,
-            crosstalkDetected: false,
-            bandCenterHz: 114));
+            crosstalkDetected: false));
         Assert.Null(TimeAlignmentPanelController.RecommendedRow(
             Result(snrDb: 60),
             Probe(AutoAlignmentEngine.ArrivalCertificate.Latched),
             TimeAlignmentBandMode.ManualBand,
-            crosstalkDetected: false,
-            bandCenterHz: 1000));
+            crosstalkDetected: false));
         Assert.Null(TimeAlignmentPanelController.RecommendedRow(
             Result(snrDb: 60),
             honestyProbe: null,
             TimeAlignmentBandMode.FullBand,
-            crosstalkDetected: true,
-            bandCenterHz: null));
+            crosstalkDetected: true));
     }
 }

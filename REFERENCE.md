@@ -1000,10 +1000,15 @@ while their energy onsets sat 2 ms apart. The running energy is monotone, so
 it reads the front either way. It is the read the stereo
 [Auto delay](#auto-delay) uses for its cross-side links below 300 Hz, and the
 panel shows it so the figure can be checked against the two peaks; with a
-Compare record its delta prints like the table's cells. Take it as the
-alignment figure only on a band-limited low read with a clean record (the
-engine asks 40 dB of SNR): in wide bands the front is sharp and the first
-peak is the better instrument, and where a later arrival is much stronger
+Compare record its delta prints like the table's cells. It is NOT a general
+alignment figure, and the table never recommends it: an onset is a statistic
+of how the band's energy is distributed, so its distance from the front
+depends on the response's tail and on the chain it played through (the same
+two midbass fronts read 2 ms apart through their chains and 1 ms raw). That
+bias cancels between the two sides of one driver pair through near-identical
+chains — the only case the engine reads it in — and need not cancel between a
+subwoofer and a midbass. In wide bands the front is sharp and the first peak
+is the better instrument anyway, and where a later arrival is much stronger
 than the direct sound the tenth of the energy can be reached in it.
 
 The mode recalculates when you switch into it and as you change the bandpass
@@ -1017,12 +1022,14 @@ normal for band-limited low-frequency drivers); peak and RMS levels in dBFS; a
 The **delay table** has a row per instant — `First Arrival`, `Strongest
 Peak`, `Energy onset` — and a column per unit: milliseconds, samples, meters
 at 20 °C. The row the analysis trusts most is printed bright, marked `◀` and
-named under the table, the others dimmed: the energy onset on a band-limited read
-centred below 300 Hz with 40 dB of SNR (the engine's own rule for such
-bands), the first arrival otherwise, and none when a verdict above has
-disqualified the read — a near-noise record, a modal latch, a full-band read
-over detected crosstalk. The strongest peak is never the recommendation: a
-later, stronger peak is a mode or a reflection, not the driver's timing. Every cell is
+named under the table, the others dimmed: the first arrival, unless a verdict
+above has disqualified it — a near-noise record, a modal latch, a full-band
+read over detected crosstalk — in which case no row is marked. The strongest
+peak is never the recommendation: a later, stronger peak is a mode or a
+reflection, not the driver's timing. Nor is the energy onset, for the reason
+given above: it is a figure for one driver pair's two sides, and two arbitrary
+records — a subwoofer against a midbass is the ordinary use of this panel —
+differ in the shape of their energy as well as in time. Every cell is
 clickable: click it to copy just the numeric value to the clipboard (a Compare
 cell copies its value, not the delta). With the bandpass window
 enabled, a frequency-domain preview of the pass band is shown along with the

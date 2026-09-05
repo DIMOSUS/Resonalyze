@@ -325,8 +325,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             outcome.Compare,
             outcome.CompareProbe,
             outcome.CompareCrosstalk,
-            outcome.CompareWarning,
-            outcome.BandCenterHz);
+            outcome.CompareWarning);
         UpdateEnvelopePreview(
             outcome.MainResult,
             outcome.MainSource.SampleRate,
@@ -427,10 +426,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 compareProbe,
                 compareCrosstalk,
                 compareWarning,
-                Message: null,
-                BandCenterHz: request.BandMode == TimeAlignmentBandMode.FullBand
-                    ? null
-                    : analysisOptions.BandpassCenterHz);
+                Message: null);
         }
         catch (Exception exception)
         {
@@ -466,11 +462,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         TimeAlignmentArrivalProbe? CompareProbe,
         CrosstalkHeadGate? CompareCrosstalk,
         string? CompareWarning,
-        string? Message,
-        // The centre of the band the read was taken in; null for a full-band
-        // read. The recommendation reads it: below the engine's energy-onset
-        // edge the onset row is the figure to align from.
-        double? BandCenterHz = null)
+        string? Message)
     {
         public static AnalysisOutcome Failed(
             string message,
@@ -1376,24 +1368,21 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         TimeAlignmentCompareAnalysis? compareAnalysis,
         TimeAlignmentArrivalProbe? compareProbe,
         CrosstalkHeadGate? compareCrosstalk,
-        string? compareWarning,
-        double? bandCenterHz)
+        string? compareWarning)
     {
         statusTextBox.BeginUpdate();
         try
         {
             statusTextBox.Clear();
             AppendMeasurementResult(
-                bandMode, "Main", mainSource.Levels, mainResult, mainProbe, mainCrosstalk,
-                bandCenterHz);
+                bandMode, "Main", mainSource.Levels, mainResult, mainProbe, mainCrosstalk);
             AppendCompareResult(
                 bandMode,
                 mainResult,
                 compareAnalysis,
                 compareProbe,
                 compareCrosstalk,
-                compareWarning,
-                bandCenterHz);
+                compareWarning);
             statusTextBox.SelectionStart = 0;
             statusTextBox.SelectionLength = 0;
         }
@@ -1409,8 +1398,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         TimeAlignmentCompareAnalysis? compareAnalysis,
         TimeAlignmentArrivalProbe? compareProbe,
         CrosstalkHeadGate? compareCrosstalk,
-        string? warning,
-        double? bandCenterHz)
+        string? warning)
     {
         if (compareAnalysis == null && warning == null)
         {
@@ -1434,7 +1422,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             compareAnalysis.Value.Result,
             compareProbe,
             compareCrosstalk,
-            bandCenterHz,
             mainResult);
     }
 
@@ -1445,7 +1432,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         TimeAlignmentAnalysisResult result,
         TimeAlignmentArrivalProbe? honestyProbe,
         CrosstalkHeadGate? crosstalk,
-        double? bandCenterHz,
         TimeAlignmentAnalysisResult? reference = null)
     {
         AppendSignalQuality(title, result);
@@ -1455,7 +1441,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendLevelsLine(levels);
         AppendSeparator();
         DelayRow? recommended = RecommendedRow(
-            result, honestyProbe, bandMode, crosstalk != null, bandCenterHz);
+            result, honestyProbe, bandMode, crosstalk != null);
         AppendDelayTable(result, reference, recommended);
         if (recommended is { } row)
         {
@@ -1481,39 +1467,28 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     };
 
     // Which row of the delay table the analysis trusts most — the one the
-    // table marks and the hint below it names. None on a near-noise record,
-    // a modal latch or a contaminated full-band read (see
-    // IsArrivalRecommendable). In a band-limited read whose band is centred
-    // below the engine's energy-onset edge, with the SNR the onset needs, the
-    // energy onset outranks the first peak for the reason the engine's
-    // cross-side links read it: on a slow low-frequency envelope the first
-    // peak is a coin. Everywhere else the first arrival is the figure, as the
-    // strongest peak never is — a later, stronger peak is a mode or a
-    // reflection, not the driver's timing.
+    // table marks and names below. The first arrival when nothing has
+    // disqualified it (see IsArrivalRecommendable), otherwise none. Never the
+    // strongest peak: a later, stronger peak is a mode or a reflection, not
+    // the driver's timing. And never the energy onset, although the engine's
+    // cross-side links read it below 300 Hz: an onset is a statistic of how
+    // the band's energy is distributed, and its distance from the front
+    // depends on the response's tail and chain — on the field midbass pair
+    // the same two fronts read 2.2 ms apart through their chains and 1.1 ms
+    // raw. Between the two sides of ONE driver pair that bias cancels, which
+    // is the only case the engine reads it in; this panel cannot know what
+    // two records are (a subwoofer against a midbass is the ordinary use),
+    // and there the difference of two onsets is partly shape, not time. The
+    // onset row is shown for the tuner to read against the peaks, not
+    // recommended.
     internal static DelayRow? RecommendedRow(
         TimeAlignmentAnalysisResult result,
         TimeAlignmentArrivalProbe? honestyProbe,
         TimeAlignmentBandMode bandMode,
-        bool crosstalkDetected,
-        double? bandCenterHz)
-    {
-        if (result.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
-        {
-            return null;
-        }
-
-        if (bandMode != TimeAlignmentBandMode.FullBand &&
-            bandCenterHz is { } centerHz &&
-            centerHz < AutoAlignmentEngine.EnergyOnsetBandCenterHz &&
-            result.SignalToNoiseDecibels >= AutoAlignmentEngine.EnergyOnsetMinimumSnrDb)
-        {
-            return DelayRow.EnergyOnset;
-        }
-
-        return IsArrivalRecommendable(result, honestyProbe, bandMode, crosstalkDetected)
+        bool crosstalkDetected) =>
+        IsArrivalRecommendable(result, honestyProbe, bandMode, crosstalkDetected)
             ? DelayRow.FirstArrival
             : null;
-    }
 
     // Whether the First Arrival may be RECOMMENDED as the alignment figure.
     // The strongest-peak hint ends with "Use First Arrival for alignment",

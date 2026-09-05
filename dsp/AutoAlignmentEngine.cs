@@ -1336,6 +1336,58 @@ public static class AutoAlignmentEngine
         }
     }
 
+    /// <summary>
+    /// Whether the coarse seed must be read from the polarity family the
+    /// junction's own crossover asks for, rather than from the dominant
+    /// extremum of the whitened surface.
+    /// <para>
+    /// A whitened surface's peak and trough are one comb read under the two
+    /// polarity assumptions: half a period apart by construction, and their
+    /// |r| difference measures the analysed band's WIDTH, not which of them is
+    /// the junction's (see <see cref="PhatSeedMinRivalDominance"/>). So where a
+    /// matched split settles the polarity — the same question stage 2 forces an
+    /// answer to, behind the same frequency fence (see
+    /// <see cref="ExpectsRelativeInversion"/>) — the other family is not a lobe
+    /// this pair can be tuned to. Seeding from it centres the fine window half a
+    /// period off the lobe stage 2 will then force the polarity of, and hands
+    /// the loss search a choice between two aliases it cannot separate: at a
+    /// mid/tweeter junction the field pair below reads them 0.20 dB apart while
+    /// the direct wavefronts read 0.84 against 0.57.
+    /// </para>
+    /// <para>
+    /// <paramref name="directSeed"/> — the direct-sound cut's own extremum,
+    /// already held to its trust gates — is REQUIRED to agree, and that is the
+    /// whole guard. The filters state how the two FILTERS relate, not how the
+    /// drivers are wired, so on its own the design would overrule an honest
+    /// measurement of a driver connected backwards: such a pair reads |r| near
+    /// 1.0 in the family the crossover forbids and offers nothing usable in the
+    /// one it asks for, and moving its seed half a period would strand the
+    /// delay. Stage 2 makes that trade knowingly for the polarity it APPLIES (a
+    /// matched split's flip is not undone by Auto delay, nor its in-phase twin
+    /// corrected); the seed must not, because a position half a period out is a
+    /// lobe error everything downstream inherits.
+    /// </para>
+    /// <para>
+    /// Field case (2026-09-05, the reference car's 4300 Hz LR36 mid/tweeter
+    /// split): the full record's dominant extremum sat on the +0.746 ms peak
+    /// (r 0.42, in phase) while the direct cut read the trough at +0.642 ms
+    /// (r 0.83) — the same lobe the whitened trough named to within 2 us — and
+    /// the crossover sums only inverted. The seed followed the peak, the search
+    /// settled a period late, and the tweeter came out 0.20 ms behind the lobe
+    /// the panel's own metric measures 0.24 dB better.
+    /// </para>
+    /// </summary>
+    internal static bool SeedFamilyFollowsTheCrossover(
+        bool? filterInversion,
+        CorrelationDelayCandidate dominant,
+        CorrelationDelayCandidate? directSeed)
+    {
+        ArgumentNullException.ThrowIfNull(dominant);
+        return filterInversion is bool designed &&
+            dominant.InvertPolarity != designed &&
+            directSeed?.InvertPolarity == designed;
+    }
+
     // Stage 1: coarse offsets from band-limited first arrivals, refined by the
     // GCC-PHAT peak where it is trustworthy. Arrivals of different drivers are
     // only comparable inside a SHARED band — a woofer's envelope in its own low
@@ -1919,6 +1971,13 @@ public static class AutoAlignmentEngine
                 seed.InvertPolarity ? phat.NegativeRival : phat.PositiveRival;
             string seedLabel = seed.InvertPolarity ? "trough" : "peak";
             double seedOffsetMs = seed.DelayMs - centerLagMs;
+            // The polarity the junction's own filters settle, where they
+            // settle one at all — read here so the seed below can be held to
+            // the same answer stage 2 will force (see ExpectsRelativeInversion
+            // and the reseat further down), behind the same frequency fence.
+            bool? filterInversion = pair.CrossoverHz >= DirectSeedMinCrossoverHz
+                ? ExpectsRelativeInversion(pair)
+                : null;
             // Declared ahead of the trust gate below, which reads the witness
             // (a local function cannot capture a variable declared after it).
             CorrelationAlignmentResult? directPhat = null;
@@ -2236,6 +2295,30 @@ public static class AutoAlignmentEngine
                 {
                     directSeed = directBest;
                 }
+            }
+
+            if (SeedFamilyFollowsTheCrossover(filterInversion, seed, directSeed))
+            {
+                bool designedInversion = filterInversion!.Value;
+                CorrelationDelayCandidate aliased = seed;
+                seed = designedInversion ? phat.NegativeTrough : phat.PositivePeak;
+                sameSignRival =
+                    seed.InvertPolarity ? phat.NegativeRival : phat.PositiveRival;
+                seedLabel = seed.InvertPolarity ? "trough" : "peak";
+                seedOffsetMs = seed.DelayMs - centerLagMs;
+                log.AppendLine(
+                    $"  {pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
+                    $"the matched {pair.CrossoverHz:0} Hz split sums " +
+                    (designedInversion ? "only inverted" : "in phase") +
+                    ", and the direct-sound cut agrees " +
+                    $"(r {directSeed!.Coefficient:+0.000;-0.000} at " +
+                    $"{directSeed.DelayMs:+0.000;-0.000} ms), so the seed reads " +
+                    $"the whitened {seedLabel} ({seed.DelayMs:+0.000;-0.000} ms, " +
+                    $"r {seed.Coefficient:+0.000;-0.000}) and not the dominant " +
+                    $"{(aliased.InvertPolarity ? "trough" : "peak")} " +
+                    $"({aliased.DelayMs:+0.000;-0.000} ms, " +
+                    $"r {aliased.Coefficient:+0.000;-0.000}) half a period from " +
+                    "it — that one is the polarity this crossover cannot sum in");
             }
 
             string? distrust = Distrust();

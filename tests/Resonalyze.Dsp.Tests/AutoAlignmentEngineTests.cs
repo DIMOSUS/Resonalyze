@@ -52,6 +52,29 @@ public sealed class AutoAlignmentEngineTests
             bypassed);
     }
 
+    // A late copy of the impulse, the synthetic stand-in for a cabin
+    // reflection: far enough behind the front that the direct-sound cut never
+    // reaches it, so the full record and the cut can be made to disagree.
+    private static Complex[] WithTail(
+        Complex[] impulse, (int Samples, double Amplitude)? tail)
+    {
+        if (tail is not { } copy)
+        {
+            return impulse;
+        }
+
+        var withTail = (Complex[])impulse.Clone();
+        for (int i = 0; i < impulse.Length; i++)
+        {
+            if (impulse[i] != Complex.Zero && i + copy.Samples < impulse.Length)
+            {
+                withTail[i + copy.Samples] += impulse[i] * copy.Amplitude;
+            }
+        }
+
+        return withTail;
+    }
+
     private static Complex[] UnitImpulse(int position, double amplitude = 1.0)
     {
         var ir = new Complex[IrLength];
@@ -450,6 +473,76 @@ public sealed class AutoAlignmentEngineTests
             log.ToString());
     }
 
+    [Theory]
+    // The filters say nothing (a staggered split, a channel with no crossover,
+    // a junction under the frequency fence): the dominant extremum stands,
+    // whatever the direct cut read.
+    [InlineData(null, true, true, false)]
+    [InlineData(null, false, true, false)]
+    // The dominant extremum is already the family the crossover sums in —
+    // nothing to move.
+    [InlineData(true, true, true, false)]
+    [InlineData(false, false, false, false)]
+    // The dominant extremum is the family the crossover CANNOT sum in, and the
+    // direct-sound cut names the one it can: the record is following the
+    // cabin, and the seed follows the design and the wavefronts instead.
+    [InlineData(true, false, true, true)]
+    [InlineData(false, true, false, true)]
+    // ... but only then. With no usable direct witness, or with one that reads
+    // the same family the record does, the measurement is unopposed — a driver
+    // wired backwards behind a matched split looks exactly like this, and
+    // moving its seed half a period would strand the delay.
+    [InlineData(true, false, null, false)]
+    [InlineData(false, true, null, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, true, true, false)]
+    public void SeedFamilyFollowsTheCrossover_MovesOnlyOnAgreementWithTheCut(
+        bool? filterInversion,
+        bool dominantInverted,
+        bool? directInverted,
+        bool expected)
+    {
+        var dominant = new CorrelationDelayCandidate(0.5, 0.4, dominantInverted);
+        CorrelationDelayCandidate? direct = directInverted is bool inverted
+            ? new CorrelationDelayCandidate(0.4, 0.8, inverted)
+            : null;
+
+        Assert.Equal(
+            expected,
+            AutoAlignmentEngine.SeedFamilyFollowsTheCrossover(
+                filterInversion, dominant, direct));
+    }
+
+    [Fact]
+    public void Compute_MatchedOddOrderSplit_SeedsTheFamilyTheCrossoverSumsIn()
+    {
+        // The field failure this rule exists for, as a fixture. Both drivers
+        // arrive together behind a matched LR36 split, so the pair sums only
+        // inverted and the whitened TROUGH is its lobe — but each channel also
+        // carries a late cabin copy, and the two copies sit half a period
+        // apart, which grows a whitened PEAK the full record likes better. The
+        // direct-sound cut, one period of wavefront, never sees those copies
+        // and reads the trough. The seed must follow the cut and the
+        // crossover, not the record's dominant extremum: half a period is the
+        // one error the fine search below inherits whole.
+        var log = new StringBuilder();
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            RunFilteredJunction(
+                CrossoverFilterFamily.LinkwitzRiley, 36, upperCornerHz: 2_000,
+                log: log,
+                lowerTail: (240, 2.0),
+                upperTail: (228, -2.0)).Alignment;
+
+        string trace = log.ToString();
+        Assert.Contains("sums only inverted, and the direct-sound cut agrees", trace);
+        Assert.Contains("phat trough", trace);
+        Assert.DoesNotContain("phat peak", trace);
+        Assert.InRange(
+            alignment[alignment.Keys.Single(item => item.Name == "T")].DelayMs,
+            -0.12,
+            0.12);
+    }
+
     [Fact]
     public void Compute_MatchedEvenOrderSplit_KeepsInPhaseAgainstTheSumsWishes()
     {
@@ -529,7 +622,9 @@ public sealed class AutoAlignmentEngineTests
         int slopeDbPerOctave,
         double upperCornerHz,
         StringBuilder log,
-        double upperAmplitude = 1.0)
+        double upperAmplitude = 1.0,
+        (int Samples, double Amplitude)? lowerTail = null,
+        (int Samples, double Amplitude)? upperTail = null)
     {
         const double lowerCornerHz = 2_000;
         var lowPass = new DspChannelChain(Crossover: new CrossoverSpec(
@@ -539,9 +634,12 @@ public sealed class AutoAlignmentEngineTests
             CrossoverKind.HighPass,
             HighPassEdge: new CrossoverEdge(family, upperCornerHz, slopeDbPerOctave)));
 
-        AlignmentSnapshot lower = PredictableSnapshot("W", UnitImpulse(BasePosition), lowPass);
+        AlignmentSnapshot lower = PredictableSnapshot(
+            "W", WithTail(UnitImpulse(BasePosition), lowerTail), lowPass);
         AlignmentSnapshot upper = PredictableSnapshot(
-            "T", UnitImpulse(BasePosition, upperAmplitude), highPass);
+            "T",
+            WithTail(UnitImpulse(BasePosition, upperAmplitude), upperTail),
+            highPass);
         var junction = new AlignmentJunction(
             lower, upper, lowerCornerHz, lowerCornerHz / 2, lowerCornerHz * 2);
 

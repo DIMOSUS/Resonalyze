@@ -2699,7 +2699,9 @@ single-stage path, which is the same engine call it always took.
 **Auto delay** aligns in two stages: band-limited first arrivals, refined by a
 GCC-PHAT cross-correlation whose dominant extremum of either polarity seeds the
 junction (an inverted junction — a subwoofer against its midbass is the classic
-— seeds from the trough); then a fractional-delay search minimizing the
+— seeds from the trough), unless the junction's own crossover has already
+settled the polarity, which is the exception described under *Polarity* below;
+then a fractional-delay search minimizing the
 sum-loss metric at each junction, through a direct-sound window so late room
 reflections do not steer it. Above ~1 kHz the seeding correlation is taken on
 the two channels' **direct sound alone**: across a whole record a mid/tweeter
@@ -2773,6 +2775,19 @@ not only the flip — and only the delay is searched. A split whose filters answ
 neither way is left alone: a Butterworth 18 crosses at 90°, and two corners that
 merely meet overlap across a region instead of crossing at a point, so neither
 states a phase relation to read.
+
+Reading the polarity off the filters also settles which extremum **seeds** such
+a junction. A whitened correlation's peak and trough are one comb read under
+the two polarity assumptions — half a period apart, and which of them is taller
+measures how wide the analysed band is rather than which one is the junction's
+— so where the crossover has answered, and the direct-sound cut agrees with it,
+the seed reads that family even when the whole record's dominant extremum sits
+in the other. The cut's agreement is required, not decoration: the filters state
+how the two FILTERS relate, not how the drivers are wired, and a driver
+connected backwards behind a matched split reads strongly in the family its
+crossover forbids. Auto delay does not correct such a driver — the same trade
+the forced polarity already makes — but neither does it move its seed half a
+period away from what the measurement plainly says.
 
 Where two candidates of opposite polarity still score within a fraction of a
 decibel — at a mid/tweeter junction the summation metric frequently cannot tell

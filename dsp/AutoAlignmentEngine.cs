@@ -4169,16 +4169,35 @@ public static class AutoAlignmentEngine
                 // See ClassifyArrival for the direction semantics: LATCHED
                 // poisons the read (ladder/donors), UNVERIFIED keeps it usable
                 // without the certificate, VERIFIED on both sides earns it.
-                ArrivalCertificate leftCertificate = ClassifyArrival(
+                ArrivalCertificate leftCertificate = ClassifyLinkArrival(
                     left, leftProbe,
                     LinkProbeToleranceMs(
                         leftSnapshot, left, leftProbe, energyOnset,
-                        lowHz, probeLowHz, highHz));
-                ArrivalCertificate rightCertificate = ClassifyArrival(
+                        lowHz, probeLowHz, highHz),
+                    energyOnset);
+                ArrivalCertificate rightCertificate = ClassifyLinkArrival(
                     right, rightProbe,
                     LinkProbeToleranceMs(
                         rightSnapshot, right, rightProbe, energyOnset,
-                        lowHz, probeLowHz, highHz));
+                        lowHz, probeLowHz, highHz),
+                    energyOnset);
+                if (energyOnset)
+                {
+                    foreach ((string name, TimeAlignmentAnalysisResult probeRead) in
+                        new[] { (link.Left.Name, leftProbe), (rightChannel.Name, rightProbe) })
+                    {
+                        if (probeRead.IsValid &&
+                            probeRead.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
+                            probeRead.SignalToNoiseDecibels < EnergyOnsetMinimumSnrDb)
+                        {
+                            log.AppendLine(
+                                $"  cross-side link {rightChannel.Name}: {name} " +
+                                $"{probeLowHz:0}-{highHz:0} Hz half at " +
+                                $"{probeRead.SignalToNoiseDecibels:0.0} dB cannot " +
+                                "witness an energy onset — read left uncertified");
+                        }
+                    }
+                }
                 if (leftCertificate == ArrivalCertificate.Latched ||
                     rightCertificate == ArrivalCertificate.Latched)
                 {
@@ -4379,7 +4398,7 @@ public static class AutoAlignmentEngine
                             // contribute no geometry).
                             return full.IsValid &&
                                 full.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
-                                ClassifyArrival(full, probe, tolerance2) ==
+                                ClassifyLinkArrival(full, probe, tolerance2, energyOnset2) ==
                                     ArrivalCertificate.Verified;
                         }
 
@@ -4752,6 +4771,27 @@ public static class AutoAlignmentEngine
         LinkBandReadsEnergyOnset(bandLowHz, bandHighHz) &&
         leftSignalToNoiseDb >= EnergyOnsetMinimumSnrDb &&
         rightSignalToNoiseDb >= EnergyOnsetMinimumSnrDb;
+
+    /// <summary>
+    /// The certificate of a link read: <see cref="ClassifyArrival"/>, except
+    /// that an energy-onset read whose upper-half probe sits under
+    /// <see cref="EnergyOnsetMinimumSnrDb"/> is UNVERIFIED rather than judged.
+    /// The onset decision is taken from the two FULL-band reads, and a steep
+    /// low-pass or a weak upper half can leave the probe half far noisier than
+    /// the band it is cut from — between the 12 dB admission and the 40 dB an
+    /// onset needs, exactly where the onset drifts into the noise ahead of the
+    /// front. Such a probe can neither convict the clean full-band onset as a
+    /// latch nor certify it; the read stays usable as a lobe pin, without the
+    /// certificate, as an unmeasurable half leaves it already.
+    /// </summary>
+    internal static ArrivalCertificate ClassifyLinkArrival(
+        TimeAlignmentAnalysisResult full,
+        TimeAlignmentAnalysisResult probe,
+        double toleranceMs,
+        bool energyOnset) =>
+        energyOnset && probe.SignalToNoiseDecibels < EnergyOnsetMinimumSnrDb
+            ? ArrivalCertificate.Unverified
+            : ClassifyArrival(full, probe, toleranceMs);
 
     /// <summary>
     /// A band read restated by its energy onset: the ARRIVAL fields swapped

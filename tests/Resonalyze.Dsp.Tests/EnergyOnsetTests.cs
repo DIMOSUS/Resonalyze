@@ -236,4 +236,35 @@ public sealed class EnergyOnsetTests
             cropped.EnergyOnsetDelayMilliseconds - whole.EnergyOnsetDelayMilliseconds,
             -0.2, 0.2);
     }
+
+    // The onset decision is taken from the full-band reads; the upper-half
+    // probe that certifies them can be far noisier (a steep low-pass leaves
+    // little above the corner). Under the onset admission such a probe is no
+    // witness either way: it must not convict a clean onset as a latch, nor
+    // certify it — the read stays uncertified, as with an unmeasurable half.
+    [Fact]
+    public void ClassifyLinkArrival_LeavesAnOnsetReadUncertifiedWhenItsProbeIsTooNoisy()
+    {
+        TimeAlignmentAnalysisResult full = TimeAlignmentAnalysis.Analyze(
+            Pulses((60.0, 1.0)), SampleRate, MidbassBand);
+        // A probe read that would CONVICT (it sits 10 ms ahead of the full
+        // read) but carries only 25 dB of SNR.
+        TimeAlignmentAnalysisResult noisyProbe = full with
+        {
+            FirstArrivalDelayMilliseconds = full.FirstArrivalDelayMilliseconds - 10.0,
+            SignalToNoiseDecibels = 25.0
+        };
+        TimeAlignmentAnalysisResult cleanProbe = noisyProbe with { SignalToNoiseDecibels = 60.0 };
+
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Latched,
+            AutoAlignmentEngine.ClassifyLinkArrival(full, cleanProbe, 1.0, energyOnset: true));
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Unverified,
+            AutoAlignmentEngine.ClassifyLinkArrival(full, noisyProbe, 1.0, energyOnset: true));
+        // A peak read keeps the ordinary rule: 25 dB is a measurable half.
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Latched,
+            AutoAlignmentEngine.ClassifyLinkArrival(full, noisyProbe, 1.0, energyOnset: false));
+    }
 }

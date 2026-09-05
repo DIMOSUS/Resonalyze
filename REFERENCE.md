@@ -2931,7 +2931,7 @@ midbass pair the left dipped 0.5 dB after its hump and read 14 ms, the right
 never dipped and read 21 ms, a 7 ms split no cabin produces, which the scene
 pin then enforced. The running energy is monotone, so it reads the front
 whether or not it peaks (the same pair read 2 ms apart). The run's log names
-such a read `energy onsets`; it needs 40 dB of SNR on both sides, below which
+such a read `energy onsets`; it needs 30 dB of SNR on both sides, below which
 the pair is read by first peaks on both. The junction searches and their
 seeds keep the first arrivals: a link compares one driver pair through
 near-identical chains, where the onset's own bias cancels, which the

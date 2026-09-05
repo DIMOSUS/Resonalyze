@@ -4739,15 +4739,26 @@ public static class AutoAlignmentEngine
     /// (<see cref="TimeAlignmentAnalysis.EnergyOnsetGateDb"/>) so that the
     /// read is a property of the signal alone; the price is that noise above
     /// the gate integrates into the total, and the window ahead of the front
-    /// is ~80 ms long. A Rayleigh floor 40 dB down clears the gate in a
-    /// fraction of a percent of its samples and moves the onset by nothing
-    /// measurable; at 35 dB a fifth of them clear it and the onset drifts
-    /// tenths of a millisecond; at 20 dB the tenth is reached in the noise.
-    /// Below this the link falls back to first peaks — on BOTH sides, so the
-    /// split is still one instrument against itself. Field records read
-    /// 45-88 dB.
+    /// is ~80 ms long. Below this the link falls back to first peaks — on
+    /// BOTH sides, so the split is still one instrument against itself.
+    ///
+    /// Thirty, measured, not the forty a Rayleigh-tail estimate first put
+    /// here. The fallback is not free: on the field midbass pair the first
+    /// peaks ARE the coin, so every decibel of admission the onset does not
+    /// need hands the pair back to it. With white noise added to the right
+    /// record, its 65-200 Hz onset read 16.602 ms at 63 dB, 16.600 at 38,
+    /// 16.494 at 32.6 and 16.581 at 27.8 — never 0.11 ms off — while the
+    /// forty-dB rule sent the link to first peaks from 38 dB down and the
+    /// 4.5 ms lobe error returned (5.78 ms of L/R split against the tuned
+    /// 1.35); only under 28 dB did the witness convict the peak and the donors
+    /// take over. A chain-shaped front with a 1.4× arrival 7 ms behind it
+    /// drifts 0.05 ms at 36.6 dB and 0.03 at 30.4, where its first PEAK has
+    /// already broken to the noise; a bare band-limited delta — the thinnest
+    /// packet the band can carry — reaches the tenth in the noise at 20 dB.
+    /// Thirty sits above every measured break with the delta's margin left.
+    /// Field records read 45-88 dB.
     /// </summary>
-    internal const double EnergyOnsetMinimumSnrDb = 40;
+    internal const double EnergyOnsetMinimumSnrDb = 30;
 
     /// <summary>
     /// Whether a link band belongs to the energy onset by its centre alone
@@ -4778,7 +4789,7 @@ public static class AutoAlignmentEngine
     /// <see cref="EnergyOnsetMinimumSnrDb"/> is UNVERIFIED rather than judged.
     /// The onset decision is taken from the two FULL-band reads, and a steep
     /// low-pass or a weak upper half can leave the probe half far noisier than
-    /// the band it is cut from — between the 12 dB admission and the 40 dB an
+    /// the band it is cut from — between the 12 dB admission and the 30 dB an
     /// onset needs, exactly where the onset drifts into the noise ahead of the
     /// front. Such a probe can neither convict the clean full-band onset as a
     /// latch nor certify it; the read stays usable as a lobe pin, without the

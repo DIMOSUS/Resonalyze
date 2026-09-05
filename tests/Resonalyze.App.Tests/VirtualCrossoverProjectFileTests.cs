@@ -1060,21 +1060,23 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
-    public void SumLossWindow_DefaultsToTheDirectRead_AndKeepsTheOlderToggleWritten()
+    public void SumLossWindow_DefaultsToTheDirectRead_ButAnOldShownCurveStaysFull()
     {
         // A file written before the selector existed carries only the curve
-        // toggle, whose own default was off — so on nearly every such file "false"
-        // is an untouched default, not a refusal, and the file opens on the
-        // selector's default either way. Setting the selector writes the toggle
+        // toggle. Its default was off, so "false" cannot be told from a toggle
+        // never touched and gets the new default, like a fresh project. "True"
+        // was set by hand, and the curve it turned on was the steady-state one:
+        // that file keeps Full rather than silently swapping the meaning of a
+        // number its user chose to watch. Setting the selector writes the toggle
         // alongside, so a build that knows only the toggle still draws (or hides)
         // the curve this file asks for.
         var fresh = new VirtualCrossoverProjectFile();
         var legacyShown = new VirtualCrossoverProjectFile { ShowLossCurve = true };
         var legacyHidden = new VirtualCrossoverProjectFile { ShowLossCurve = false };
         Assert.Null(fresh.LossWindow);
-        Assert.True(fresh.ShowLossCurve);
+        Assert.False(fresh.ShowLossCurve);
         Assert.Equal(SumLossWindow.Direct, fresh.SumLossWindowMode);
-        Assert.Equal(SumLossWindow.Direct, legacyShown.SumLossWindowMode);
+        Assert.Equal(SumLossWindow.Full, legacyShown.SumLossWindowMode);
         Assert.Equal(SumLossWindow.Direct, legacyHidden.SumLossWindowMode);
 
         legacyHidden.SumLossWindowMode = SumLossWindow.Full;

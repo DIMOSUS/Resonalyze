@@ -2020,7 +2020,9 @@ keeps fills the notch. The two families of numbers are not comparable with each
 other. **Disable** draws no curve and leaves the column on the Full read. The
 drawn Sum stays the steady-state one under every setting, and the AI package
 and the tuning sheet always quote Full. A session saved before the selector
-existed opens on FDW-8.
+existed opens on Full if its Sum loss curve was ticked on — that curve was the
+steady-state one, and the number its user watched keeps its meaning — and on
+FDW-8 otherwise.
 
 ### Show: which part of the installation the plot is about
 

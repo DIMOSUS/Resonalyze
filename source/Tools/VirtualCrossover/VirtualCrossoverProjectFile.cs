@@ -903,35 +903,37 @@ public sealed class VirtualCrossoverProjectFile
     // ShowSumCurveOnPhase).
     public bool ShowSumCurve { get; set; } = true;
     public bool? ShowSumCurvePhase { get; set; }
-    // The loss curve's older on/off flag. Kept written by the selector below (on
-    // for everything but Disable) so a build that knows only the flag still draws,
-    // or hides, the curve a newer file asks for; true by default because the
-    // selector's default draws the curve.
-    public bool ShowLossCurve { get; set; } = true;
+    // The loss curve's older on/off flag, off by default as it always was. Kept
+    // written by the selector below (on for everything but Disable) so a build that
+    // knows only the flag still draws, or hides, the curve a newer file asks for.
+    public bool ShowLossCurve { get; set; }
 
     /// <summary>
     /// The window the Sum loss is measured through (see <see cref="SumLossWindow"/>).
-    /// Additive: a file written before the selector existed carries none and opens
-    /// on the default, <see cref="SumLossWindow.Direct"/>.
+    /// Additive: a file written before the selector existed carries none, and
+    /// <see cref="SumLossWindowMode"/> answers for it from the flag above.
     /// </summary>
     public SumLossWindow? LossWindow { get; set; }
 
     /// <summary>
-    /// The selector's effective answer: the stored window, or the default where a
-    /// file carries none. Setting it writes <see cref="LossWindow"/> and keeps
-    /// <see cref="ShowLossCurve"/> in step.
+    /// The selector's effective answer: the stored window; for a file without one,
+    /// <see cref="SumLossWindow.Full"/> when the older flag is on and the default,
+    /// <see cref="SumLossWindow.Direct"/>, otherwise. Setting it writes
+    /// <see cref="LossWindow"/> and keeps <see cref="ShowLossCurve"/> in step.
     /// </summary>
     /// <remarks>
-    /// The older flag is deliberately NOT consulted for a file without the window:
-    /// its default was off, so on nearly every such file "false" means the toggle
-    /// was never touched, not that the curve was refused — and a migration that
-    /// reads an untouched default as a decision would open every old session with
-    /// the loss hidden, where the owner wants the direct read by default.
+    /// The two legacy answers are not symmetric, and deliberately so. The flag's
+    /// own default was off, so "false" on an old file cannot be told from a toggle
+    /// never touched — it gets the new default, as a fresh project does. "True"
+    /// could only have been set by hand, and the curve it turned on was always the
+    /// steady-state one; opening that file on the direct read would swap the
+    /// meaning of a number the user chose to watch, and the two families are not
+    /// comparable. So it keeps Full, until the selector is moved.
     /// </remarks>
     [JsonIgnore]
     public SumLossWindow SumLossWindowMode
     {
-        get => LossWindow ?? SumLossWindow.Direct;
+        get => LossWindow ?? (ShowLossCurve ? SumLossWindow.Full : SumLossWindow.Direct);
         set
         {
             LossWindow = value;

@@ -94,9 +94,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         this.saveSettings = saveSettings;
         this.getImpulseResponseFileName = getImpulseResponseFileName;
         this.getCompareMeasurement = getCompareMeasurement;
+        // One step over the panel font, not four: the delay table is three
+        // rows of three cells with Compare deltas (66 characters with every
+        // delta), and at +4 the status box wrapped the meters cell.
         resultTableFont = new Font(
             FontFamily.GenericMonospace,
-            owner.Font.Size + 4.0f,
+            owner.Font.Size + 1.0f,
             FontStyle.Bold);
 
         sourceSummaryLabel = panel.SourceSummaryLabel;
@@ -1456,7 +1459,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendDelayTable(result, reference, recommended);
         if (recommended is { } row)
         {
-            AppendStrongestPeakHint(result, row);
+            AppendStatusText("Recommended for alignment: ", UiPalette.TextPrimarySoft);
+            AppendStatusText(RowLabel(row) + "\r\n", UiPalette.SuccessGreen);
+            AppendStrongestPeakHint(result);
         }
     }
 
@@ -1627,7 +1632,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // a room mode or reflection well after the direct sound, so the two columns
     // disagree. Point the reader at the first arrival instead of the misleading
     // strongest peak.
-    private void AppendStrongestPeakHint(TimeAlignmentAnalysisResult result, DelayRow recommended)
+    private void AppendStrongestPeakHint(TimeAlignmentAnalysisResult result)
     {
         if (!result.StrongestPeakIsSeparateArrival)
         {
@@ -1636,8 +1641,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         AppendStatusText(
             $"⚠ Strongest peak is ~{result.StrongestPeakSeparationMilliseconds:0.0} ms " +
-            "after first arrival — likely a room mode or reflection.\r\n" +
-            $"Use {RowLabel(recommended)} for alignment.\r\n",
+            "after first arrival — likely a room mode or reflection.\r\n",
             UiPalette.WarningAmber);
     }
 
@@ -1740,8 +1744,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // Rows are the instants the analysis reads, columns the units. With a
     // reference (the Compare table) every cell shows its delta against the
     // Main value in parentheses, e.g. "1.006 (+0.010)". The recommended row
-    // (see RecommendedRow) is printed bright and marked at its end; the
-    // others dimmed, so the eye lands on the figure to align from.
+    // (see RecommendedRow) is printed bright and marked at its end, and named
+    // on the line under the table; the others dimmed, so the eye lands on the
+    // figure to align from.
     private void AppendDelayTable(
         TimeAlignmentAnalysisResult result,
         TimeAlignmentAnalysisResult? reference,

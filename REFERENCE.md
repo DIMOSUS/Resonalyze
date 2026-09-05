@@ -1016,14 +1016,13 @@ normal for band-limited low-frequency drivers); peak and RMS levels in dBFS; a
 
 The **delay table** has a row per instant — `First Arrival`, `Strongest
 Peak`, `Energy onset` — and a column per unit: milliseconds, samples, meters
-at 20 °C. The row the analysis trusts most is printed bright and marked
-`◀ recommended`, the others dimmed: the energy onset on a band-limited read
+at 20 °C. The row the analysis trusts most is printed bright, marked `◀` and
+named under the table, the others dimmed: the energy onset on a band-limited read
 centred below 300 Hz with 40 dB of SNR (the engine's own rule for such
 bands), the first arrival otherwise, and none when a verdict above has
 disqualified the read — a near-noise record, a modal latch, a full-band read
 over detected crosstalk. The strongest peak is never the recommendation: a
-later, stronger peak is a mode or a reflection, not the driver's timing, and
-the hint under the table says which row to align from instead. Every cell is
+later, stronger peak is a mode or a reflection, not the driver's timing. Every cell is
 clickable: click it to copy just the numeric value to the clipboard (a Compare
 cell copies its value, not the delta). With the bandpass window
 enabled, a frequency-domain preview of the pass band is shown along with the

@@ -9,11 +9,15 @@ namespace Resonalyze;
 /// </summary>
 internal static class DelayTableText
 {
+    // Sized to the widest cell each column can hold with a Compare delta and
+    // one space of separation — "163.000 (+2.604)" ms (a chain latency past
+    // 100 ms) is 16 characters, "15650.3 (+116.2)" samples is 16 — so a row
+    // with every delta runs 66 characters: what the status box shows at the
+    // table font without wrapping. Wider columns wrapped the meters cell onto
+    // a second line on the field record that first showed all three rows.
     public const int MillisecondsColumn = 16;
-    // Wide enough for a Compare cell's "value (Δ)" without touching the next
-    // column: "12.345 (+0.010)" is 15 characters.
-    public const int SamplesColumn = 34;
-    public const int MetersColumn = 52;
+    public const int SamplesColumn = 33;
+    public const int MetersColumn = 50;
 
     public const string FirstArrivalLabel = "First Arrival";
     public const string StrongestPeakLabel = "Strongest Peak";
@@ -21,10 +25,11 @@ internal static class DelayTableText
 
     /// <summary>
     /// Appended after the meters cell of the row the analysis recommends for
-    /// alignment. At the END of the line on purpose: a glyph of uncertain
-    /// width ahead of the cells would shift the columns it marks.
+    /// alignment; the word itself goes on a line under the table. At the END
+    /// of the row on purpose: a glyph of uncertain width ahead of the cells
+    /// would shift the columns it marks, and a word beside it wrapped the row.
     /// </summary>
-    public const string RecommendedMarker = "  ◀ recommended";
+    public const string RecommendedMarker = " ◀";
 
     private static readonly string[] RowLabels =
         [FirstArrivalLabel, StrongestPeakLabel, EnergyOnsetLabel];

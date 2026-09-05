@@ -94,9 +94,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         this.saveSettings = saveSettings;
         this.getImpulseResponseFileName = getImpulseResponseFileName;
         this.getCompareMeasurement = getCompareMeasurement;
+        // One step over the panel font, not four: the delay table is three
+        // rows of three cells with Compare deltas (66 characters with every
+        // delta), and at +4 the status box wrapped the meters cell.
         resultTableFont = new Font(
             FontFamily.GenericMonospace,
-            owner.Font.Size + 4.0f,
+            owner.Font.Size + 1.0f,
             FontStyle.Bold);
 
         sourceSummaryLabel = panel.SourceSummaryLabel;
@@ -1143,7 +1146,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return series;
     }
 
-    private static void AddMainPeakMarkers(
+    internal static void AddMainPeakMarkers(
         PlotModel model,
         TimeAlignmentAnalysisResult mainResult,
         double referenceAmplitude)
@@ -1168,9 +1171,32 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 OxyColor.FromRgb(140, 170, 255),
                 PlotCalloutDirection.RightUp);
         }
+
+        AddCalloutMarker(
+            model,
+            "M Onset",
+            mainResult.EnergyOnsetDelayMilliseconds - mainResult.FirstArrivalDelayMilliseconds,
+            GetPeakMarkerDecibels(mainResult, referenceAmplitude, GetEnergyOnsetIndex(mainResult)),
+            OxyColor.FromRgb(96, 200, 120),
+            PlotCalloutDirection.LeftDown);
     }
 
-    private static void AddComparePeakMarkers(
+    // The envelope index of the energy onset: its sample rounded and wrapped
+    // into the (circular) envelope, since a complete record reports positions
+    // as signed delays (see TimeAlignmentAnalysisOptions.WrapPeakPositions).
+    internal static int GetEnergyOnsetIndex(TimeAlignmentAnalysisResult result)
+    {
+        int length = result.EnvelopeSamples.Length;
+        if (length == 0)
+        {
+            return 0;
+        }
+
+        long rounded = (long)Math.Round(result.EnergyOnsetSample);
+        return (int)(((rounded % length) + length) % length);
+    }
+
+    internal static void AddComparePeakMarkers(
         PlotModel model,
         TimeAlignmentAnalysisResult mainResult,
         TimeAlignmentAnalysisResult compareResult,
@@ -1236,6 +1262,29 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                     ? PlotCalloutDirection.RightUp
                     : PlotCalloutDirection.RightDown);
         }
+
+        double mainOnsetDecibels =
+            GetPeakMarkerDecibels(mainResult, referenceAmplitude, GetEnergyOnsetIndex(mainResult));
+        double compareOnsetDecibels =
+            GetPeakMarkerDecibels(compareResult, referenceAmplitude, GetEnergyOnsetIndex(compareResult));
+        AddCalloutMarker(
+            model,
+            "M Onset",
+            mainResult.EnergyOnsetDelayMilliseconds - mainResult.FirstArrivalDelayMilliseconds,
+            mainOnsetDecibels,
+            OxyColor.FromRgb(96, 200, 120),
+            mainOnsetDecibels >= compareOnsetDecibels
+                ? PlotCalloutDirection.LeftUp
+                : PlotCalloutDirection.LeftDown);
+        AddCalloutMarker(
+            model,
+            "C Onset",
+            compareResult.EnergyOnsetDelayMilliseconds - mainResult.FirstArrivalDelayMilliseconds,
+            compareOnsetDecibels,
+            OxyColor.FromArgb(145, 96, 200, 120),
+            compareOnsetDecibels > mainOnsetDecibels
+                ? PlotCalloutDirection.LeftUp
+                : PlotCalloutDirection.LeftDown);
     }
 
     private static void AddCalloutMarker(
@@ -1391,12 +1440,55 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendCrosstalkFlag(bandMode, crosstalk);
         AppendLevelsLine(levels);
         AppendSeparator();
-        AppendDelayTable(result, reference);
-        if (IsArrivalRecommendable(result, honestyProbe, bandMode, crosstalk != null))
+        DelayRow? recommended = RecommendedRow(
+            result, honestyProbe, bandMode, crosstalk != null);
+        AppendDelayTable(result, reference, recommended);
+        if (recommended is { } row)
         {
+            AppendStatusText("Recommended for alignment: ", UiPalette.TextPrimarySoft);
+            AppendStatusText(RowLabel(row) + "\r\n", UiPalette.SuccessGreen);
             AppendStrongestPeakHint(result);
         }
     }
+
+    /// <summary>The instants the delay table reports, one row each.</summary>
+    internal enum DelayRow
+    {
+        FirstArrival,
+        StrongestPeak,
+        EnergyOnset
+    }
+
+    internal static string RowLabel(DelayRow row) => row switch
+    {
+        DelayRow.FirstArrival => DelayTableText.FirstArrivalLabel,
+        DelayRow.StrongestPeak => DelayTableText.StrongestPeakLabel,
+        _ => DelayTableText.EnergyOnsetLabel
+    };
+
+    // Which row of the delay table the analysis trusts most — the one the
+    // table marks and names below. The first arrival when nothing has
+    // disqualified it (see IsArrivalRecommendable), otherwise none. Never the
+    // strongest peak: a later, stronger peak is a mode or a reflection, not
+    // the driver's timing. And never the energy onset, although the engine's
+    // cross-side links read it below 300 Hz: an onset is a statistic of how
+    // the band's energy is distributed, and its distance from the front
+    // depends on the response's tail and chain — on the field midbass pair
+    // the same two fronts read 2.2 ms apart through their chains and 1.1 ms
+    // raw. Between the two sides of ONE driver pair that bias cancels, which
+    // is the only case the engine reads it in; this panel cannot know what
+    // two records are (a subwoofer against a midbass is the ordinary use),
+    // and there the difference of two onsets is partly shape, not time. The
+    // onset row is shown for the tuner to read against the peaks, not
+    // recommended.
+    internal static DelayRow? RecommendedRow(
+        TimeAlignmentAnalysisResult result,
+        TimeAlignmentArrivalProbe? honestyProbe,
+        TimeAlignmentBandMode bandMode,
+        bool crosstalkDetected) =>
+        IsArrivalRecommendable(result, honestyProbe, bandMode, crosstalkDetected)
+            ? DelayRow.FirstArrival
+            : null;
 
     // Whether the First Arrival may be RECOMMENDED as the alignment figure.
     // The strongest-peak hint ends with "Use First Arrival for alignment",
@@ -1524,8 +1616,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         AppendStatusText(
             $"⚠ Strongest peak is ~{result.StrongestPeakSeparationMilliseconds:0.0} ms " +
-            "after first arrival — likely a room mode or reflection.\r\n" +
-            "Use First Arrival for alignment.\r\n",
+            "after first arrival — likely a room mode or reflection.\r\n",
             UiPalette.WarningAmber);
     }
 
@@ -1625,72 +1716,82 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             resultTableFont);
     }
 
-    // When reference is supplied (the Compare table), each value shows its delta against
-    // the Source value in parentheses, e.g. "1.006 (+0.010)".
+    // Rows are the instants the analysis reads, columns the units. With a
+    // reference (the Compare table) every cell shows its delta against the
+    // Main value in parentheses, e.g. "1.006 (+0.010)". The recommended row
+    // (see RecommendedRow) is printed bright and marked at its end, and named
+    // on the line under the table; the others dimmed, so the eye lands on the
+    // figure to align from.
     private void AppendDelayTable(
         TimeAlignmentAnalysisResult result,
-        TimeAlignmentAnalysisResult? reference = null)
+        TimeAlignmentAnalysisResult? reference,
+        DelayRow? recommended)
     {
-        double firstArrivalMeters = DelayMeters(result.FirstArrivalDelayMilliseconds);
-        double strongestMeters = DelayMeters(result.StrongestDelayMilliseconds);
-
-        // Header split into segments so the two peak labels carry a light colour accent
-        // matching their envelope markers, while keeping the column alignment.
         AppendStatusText(
-            "Measured delay:".PadRight(DelayTableText.FirstColumn),
+            DelayTableText.FormatHeader() + "\r\n",
             UiPalette.TextPrimarySoft,
             resultTableFont);
-        AppendStatusText(
-            "First Arrival".PadRight(DelayTableText.SecondColumn - DelayTableText.FirstColumn),
+        AppendDelayRow(
+            DelayRow.FirstArrival,
             UiPalette.TimeAlignmentFirstArrival,
-            resultTableFont);
-        AppendStatusText(
-            "Strongest Peak\r\n",
+            result.FirstArrivalDelayMilliseconds,
+            result.FirstArrivalPeakSample,
+            reference?.FirstArrivalDelayMilliseconds,
+            reference?.FirstArrivalPeakSample,
+            recommended);
+        AppendDelayRow(
+            DelayRow.StrongestPeak,
             UiPalette.TimeAlignmentStrongestPeak,
+            result.StrongestDelayMilliseconds,
+            result.StrongestPeakSample,
+            reference?.StrongestDelayMilliseconds,
+            reference?.StrongestPeakSample,
+            recommended);
+        AppendDelayRow(
+            DelayRow.EnergyOnset,
+            UiPalette.TimeAlignmentEnergyOnset,
+            result.EnergyOnsetDelayMilliseconds,
+            result.EnergyOnsetSample,
+            reference?.EnergyOnsetDelayMilliseconds,
+            reference?.EnergyOnsetSample,
+            recommended);
+    }
+
+    private void AppendDelayRow(
+        DelayRow row,
+        Color labelColor,
+        double milliseconds,
+        double samples,
+        double? referenceMilliseconds,
+        double? referenceSamples,
+        DelayRow? recommended)
+    {
+        bool isRecommended = recommended == row;
+        // The label carries the row's accent (matching its envelope marker);
+        // the cells are one segment so the click-to-copy columns stay exact.
+        AppendStatusText(
+            RowLabel(row).PadRight(DelayTableText.MillisecondsColumn),
+            labelColor,
             resultTableFont);
         AppendStatusText(
-            FormatDelayTableLine(
-                "ms",
+            DelayTableText.FormatCells(
+                FormatValueWithDelta(milliseconds, referenceMilliseconds, "0.000"),
+                FormatValueWithDelta(samples, referenceSamples, "0.0"),
                 FormatValueWithDelta(
-                    result.FirstArrivalDelayMilliseconds,
-                    reference?.FirstArrivalDelayMilliseconds,
-                    "0.000"),
-                FormatValueWithDelta(
-                    result.StrongestDelayMilliseconds,
-                    reference?.StrongestDelayMilliseconds,
-                    "0.000")) + "\r\n",
-            UiPalette.TextPrimarySoft,
+                    DelayMeters(milliseconds),
+                    referenceMilliseconds is { } referenceMs ? DelayMeters(referenceMs) : null,
+                    "0.000")),
+            isRecommended ? UiPalette.TextPrimarySoft : UiPalette.TextSecondarySoft,
             resultTableFont);
-        AppendStatusText(
-            FormatDelayTableLine(
-                "meters (20\u00B0C)",
-                FormatValueWithDelta(
-                    firstArrivalMeters,
-                    reference == null
-                        ? null
-                        : DelayMeters(reference.Value.FirstArrivalDelayMilliseconds),
-                    "0.000"),
-                FormatValueWithDelta(
-                    strongestMeters,
-                    reference == null
-                        ? null
-                        : DelayMeters(reference.Value.StrongestDelayMilliseconds),
-                    "0.000")) + "\r\n",
-            UiPalette.TextPrimarySoft,
-            resultTableFont);
-        AppendStatusText(
-            FormatDelayTableLine(
-                "samples",
-                FormatValueWithDelta(
-                    result.FirstArrivalPeakSample,
-                    reference?.FirstArrivalPeakSample,
-                    "0.0"),
-                FormatValueWithDelta(
-                    result.StrongestPeakSample,
-                    reference?.StrongestPeakSample,
-                    "0.0")) + "\r\n",
-            UiPalette.TextPrimarySoft,
-            resultTableFont);
+        if (isRecommended)
+        {
+            AppendStatusText(
+                DelayTableText.RecommendedMarker,
+                UiPalette.SuccessGreen,
+                resultTableFont);
+        }
+
+        AppendStatusText("\r\n", UiPalette.TextPrimarySoft, resultTableFont);
     }
 
     private static double DelayMeters(double delayMilliseconds) =>
@@ -1733,12 +1834,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             AppendStatusText(" FULL SCALE", UiPalette.TextSecondarySoft);
         }
     }
-
-    private static string FormatDelayTableLine(
-        string label,
-        string firstArrival,
-        string strongestPeak) =>
-        DelayTableText.FormatLine(label, firstArrival, strongestPeak);
 
     private void AppendStatusText(string text, Color color, Font? font = null)
     {
@@ -1786,20 +1881,16 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
 
         string lineText = statusTextBox.Lines[line];
-        if (!lineText.StartsWith("ms", StringComparison.Ordinal) &&
-            !lineText.StartsWith("meters", StringComparison.Ordinal) &&
-            !lineText.StartsWith("samples", StringComparison.Ordinal))
+        if (!DelayTableText.IsDelayRow(lineText))
         {
             return false;
         }
 
         int lineStart = statusTextBox.GetFirstCharIndexFromLine(line);
         int column = Math.Max(0, index - lineStart);
-        value = column >= DelayTableText.SecondColumn
-            ? GetDelayTableValue(lineText, DelayTableText.SecondColumn)
-            : column >= DelayTableText.FirstColumn
-                ? GetDelayTableValue(lineText, DelayTableText.FirstColumn)
-                : string.Empty;
+        value = DelayTableText.CellAt(column) is { } cellStart
+            ? GetDelayTableValue(lineText, cellStart)
+            : string.Empty;
         return !string.IsNullOrWhiteSpace(value);
     }
 

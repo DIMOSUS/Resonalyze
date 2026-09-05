@@ -988,6 +988,29 @@ arrival, so a modal or reflected peak is not mistaken for the driver's real
 timing; the flag requires a real valley (6 dB) between the two peaks, since a
 low-frequency driver's direct sound can keep rising for milliseconds.
 
+A third instant, the **energy onset**, has its own row in the delay table and
+is marked `Onset` on the envelope plot: where a tenth of the band's energy has
+arrived, counting the envelope's running energy from the record's start up to
+60 ms past the strongest peak and ignoring samples 30 dB under it. It exists
+because on a slow low-frequency envelope the first peak is a coin: the direct
+front and an arrival a few milliseconds behind it merge into one climb, and
+whether the front's hump stands as a peak or melts into that climb is decided
+by a fraction of a dB — two identical midbasses read 14 and 21 ms that way,
+while their energy onsets sat 2 ms apart. The running energy is monotone, so
+it reads the front either way. It is the read the stereo
+[Auto delay](#auto-delay) uses for its cross-side links below 300 Hz, and the
+panel shows it so the figure can be checked against the two peaks; with a
+Compare record its delta prints like the table's cells. It is NOT a general
+alignment figure, and the table never recommends it: an onset is a statistic
+of how the band's energy is distributed, so its distance from the front
+depends on the response's tail and on the chain it played through (the same
+two midbass fronts read 2 ms apart through their chains and 1 ms raw). That
+bias cancels between the two sides of one driver pair through near-identical
+chains — the only case the engine reads it in — and need not cancel between a
+subwoofer and a midbass. In wide bands the front is sharp and the first peak
+is the better instrument anyway, and where a later arrival is much stronger
+than the direct sound the tenth of the energy can be reached in it.
+
 The mode recalculates when you switch into it and as you change the bandpass
 settings, and reports signal quality from the analysis envelope and the stored
 meter snapshot: a color-coded `Excellent` / `Good` / `Fair` / `Poor` **signal
@@ -996,8 +1019,19 @@ the strongest peak (a low value means the pick sits on a broad leading edge —
 normal for band-limited low-frequency drivers); peak and RMS levels in dBFS; a
 `CLIP` warning; and a `FULL SCALE` marker for a loopback reference at 0 dBFS.
 
-The measured time, distance, and sample count are clickable: click a result line
-to copy just the numeric value to the clipboard. With the bandpass window
+The **delay table** has a row per instant — `First Arrival`, `Strongest
+Peak`, `Energy onset` — and a column per unit: milliseconds, samples, meters
+at 20 °C. The row the analysis trusts most is printed bright, marked `◀` and
+named under the table, the others dimmed: the first arrival, unless a verdict
+above has disqualified it — a near-noise record, a modal latch, a full-band
+read over detected crosstalk — in which case no row is marked. The strongest
+peak is never the recommendation: a later, stronger peak is a mode or a
+reflection, not the driver's timing. Nor is the energy onset, for the reason
+given above: it is a figure for one driver pair's two sides, and two arbitrary
+records — a subwoofer against a midbass is the ordinary use of this panel —
+differ in the shape of their energy as well as in time. Every cell is
+clickable: click it to copy just the numeric value to the clipboard (a Compare
+cell copies its value, not the delta). With the bandpass window
 enabled, a frequency-domain preview of the pass band is shown along with the
 envelope around the detected peak; selecting a [Compare](#compare) reference
 overlays its envelope there and adds a second delay-table block. Both envelopes
@@ -2884,7 +2918,24 @@ channel where a candidate puts it.
 With stereo pairs, Auto delay tunes **both sides in one run**, and an
 **LHD / RHD** toggle says which seat you are tuning for. The driver's side is
 the reference: it aligns first, the top pair is bridged to it by band-limited
-envelope arrivals, and the far side descends junction by junction. The **scene
+envelope arrivals, and the far side descends junction by junction. Each far
+channel's search is aimed at its **cross-side target** — the delay that lands
+its band-limited arrival the scene offset ahead of its settled twin's — and
+for a pair whose shared band is centred below 300 Hz that arrival is the
+band's **energy onset** rather than its first envelope peak: the point where a
+tenth of the band's energy (counted up to 60 ms past the strongest peak,
+samples 30 dB under it ignored) has arrived. A slow low-frequency envelope
+climbs for milliseconds, and whether its first hump stands as a peak or melts
+into the arrival behind it is decided by a fraction of a dB — on one measured
+midbass pair the left dipped 0.5 dB after its hump and read 14 ms, the right
+never dipped and read 21 ms, a 7 ms split no cabin produces, which the scene
+pin then enforced. The running energy is monotone, so it reads the front
+whether or not it peaks (the same pair read 2 ms apart). The run's log names
+such a read `energy onsets`; it needs 40 dB of SNR on both sides, below which
+the pair is read by first peaks on both. The junction searches and their
+seeds keep the first arrivals: a link compares one driver pair through
+near-identical chains, where the onset's own bias cancels, which the
+front-predicting junction machinery cannot rely on. The **scene
 offset** is entered as a non-negative magnitude — how far the far side leads —
 so switching LHD/RHD never means re-entering a sign, and the level tilt is
 entered the same way, as a cut on the near side. The gain balance itself is

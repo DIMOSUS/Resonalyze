@@ -77,6 +77,27 @@ public readonly record struct TimeAlignmentAnalysisResult(
     bool FirstArrivalRefinedByPhat,
     double StrongestConfidence,
     bool StrongestRefinedByPhat,
+    // The band's ENERGY ONSET: where the running energy of the envelope (its
+    // square, summed from the start of the search window) first reaches
+    // <see cref="TimeAlignmentAnalysis.EnergyOnsetFraction"/> of the energy
+    // inside the window that ends <see cref="TimeAlignmentAnalysis.EnergyOnsetTailSeconds"/>
+    // after the strongest peak. Sub-sample (the crossing is interpolated
+    // inside its sample), in the same coordinates as FirstArrivalPeakSample.
+    // A DIFFERENT estimator from the first peak, for the band-limited low end
+    // where the first peak is a coin: a direct front of rise time ~1/bandwidth
+    // and an arrival a few milliseconds behind it merge into one long climb
+    // with a shoulder, and whether that shoulder turns into a local maximum
+    // is decided by a fraction of a dB. Measured on a midbass pair in
+    // 65-200 Hz: the left envelope dipped 0.5 dB after its first hump and
+    // read 14.4 ms, the right never dipped and read 21.3 ms — a 7 ms split no
+    // cabin geometry produces — while the running energy, monotone by
+    // construction, put the two onsets 2.2 ms apart (1.1 ms on the raw
+    // responses, the owner's hand-tuned split). The same idea is the Hinkley
+    // criterion of acoustic-emission onset picking and the energy-ratio
+    // detectors that won the room-impulse-response onset comparison of
+    // Defrance, Daudet and Polack (JASA 2008) over every maximum-based method.
+    double EnergyOnsetSample = 0.0,
+    double EnergyOnsetDelayMilliseconds = 0.0,
     // False when the analysis band carried no energy at all (silence, or a
     // bandpass entirely outside the measured band): with a flat-zero envelope
     // every sample "passes" the thresholds and the peak walk would fabricate a
@@ -110,6 +131,39 @@ public static class TimeAlignmentAnalysis
     // cap, which is what keeps a pathological transform bounded.
     private const double BandpassGuardCycles = 20.0;
     private const double MaxBandpassGuardSeconds = 2.0;
+
+    /// <summary>
+    /// The share of the windowed band energy at which the ENERGY ONSET is read
+    /// (see <see cref="TimeAlignmentAnalysisResult.EnergyOnsetDelayMilliseconds"/>),
+    /// and how far past the strongest peak the window that defines "all" of the
+    /// energy runs. Measured on the field midbass pair (65-200 Hz, raw and
+    /// processed responses): the L/R onset split is flat from 2 % to 15 % of
+    /// the energy (0.75-1.11 ms raw, 2.2-2.4 ms processed), then slides into
+    /// the second hump of the envelope (0.46 ms at 20 %, sign flip at 30 %) —
+    /// 10 % sits in the middle of the plateau with margin to both cliffs. The
+    /// tail bound makes the total independent of the record's reverberant
+    /// length: on those bands 99.5 % of the energy sits within 80 ms of the
+    /// front, and the onset moved by at most 0.15 ms between a whole-record
+    /// total and a 50 ms one (0.4 ms on the subwoofer's 33-130 Hz band, where
+    /// the modal tail is longest).
+    /// </summary>
+    public const double EnergyOnsetFraction = 0.10;
+    public const double EnergyOnsetTailSeconds = 0.060;
+
+    /// <summary>
+    /// The energy onset's gate: envelope samples this far under the strongest
+    /// peak contribute nothing. FIXED against the peak, never against the
+    /// record's noise: the onset must be a property of the signal alone, or
+    /// two identical drivers measured with different noise would read
+    /// different fronts (a gate at the noise floor moves up the front as the
+    /// SNR falls, and at the 12 dB admission floor it would sit on the peak
+    /// itself). What the gate is for is the noise far below the front — the
+    /// window ahead of the peak is ~80 ms long and even a quiet floor
+    /// integrates over it — so it sits where a Rayleigh floor 40 dB down
+    /// clears it in a fraction of a percent of samples, and the CONSUMER
+    /// guards the SNR: <see cref="AutoAlignmentEngine.EnergyOnsetMinimumSnrDb"/>.
+    /// </summary>
+    public const double EnergyOnsetGateDb = 30;
 
     public static TimeAlignmentAnalysisResult Analyze(
         IReadOnlyList<double> impulseResponse,
@@ -265,6 +319,10 @@ public static class TimeAlignmentAnalysis
             envelopePeakIndex, searchRotation, envelope.Length);
         int relativeStrongest = RelativeToSearchWindow(
             strongestPeakIndex, searchRotation, envelope.Length);
+        double signalToNoiseDb = SignalEnvelope.EstimatePeakConfidenceDecibels(
+            envelope, strongestPeak);
+        double energyOnsetSample = EnergyOnsetSample(
+            envelope, searchRotation, relativeStrongest, sampleRate);
         double separationMilliseconds =
             (relativeStrongest - relativeFirst) * 1000.0 / sampleRate;
         double valleyDepthDb = ValleyDepthDb(
@@ -294,6 +352,9 @@ public static class TimeAlignmentAnalysis
             strongestPeakSample = ToSignedDelaySamples(
                 strongestPeakSample,
                 envelope.Length);
+            energyOnsetSample = ToSignedDelaySamples(
+                energyOnsetSample,
+                envelope.Length);
         }
 
         return new TimeAlignmentAnalysisResult(
@@ -302,9 +363,7 @@ public static class TimeAlignmentAnalysis
             envelopePeak,
             strongestPeakIndex,
             strongestPeak,
-            SignalEnvelope.EstimatePeakConfidenceDecibels(
-                envelope,
-                strongestPeak),
+            signalToNoiseDb,
             strongestPeak > 0.0
                 ? DataHelper.AmplitudeToDecibels(envelopePeak / strongestPeak)
                 : 0.0,
@@ -317,7 +376,75 @@ public static class TimeAlignmentAnalysis
             firstArrival.Confidence,
             firstArrival.RefinedByPhat,
             strongest.Confidence,
-            strongest.RefinedByPhat);
+            strongest.RefinedByPhat,
+            energyOnsetSample,
+            energyOnsetSample * 1000.0 / sampleRate);
+    }
+
+    // The energy onset (see the result field): the running energy of the
+    // envelope, read in the SEARCH WINDOW's frame from its start, crossing
+    // EnergyOnsetFraction of the energy accumulated up to EnergyOnsetTailSeconds
+    // past the strongest peak. The crossing is interpolated inside its sample
+    // and mapped back through the window rotation. Reads the rotated frame for
+    // the same reason the separation does: a re-anchored window straddles the
+    // buffer seam, and the contiguous geometry lives around the peak.
+    //
+    // Samples under the gate (EnergyOnsetGateDb under the strongest peak)
+    // contribute nothing. Without a gate the onset is a function of how much
+    // record precedes the front: noise power is small per sample but the
+    // window in front of the peak is ~80 ms long, so at 20 dB SNR the noise
+    // ahead of a 7 ms packet holds about a fifth of the total and the tenth
+    // is reached in the noise, at the window's start. This is the Hinkley
+    // criterion's detrending in gate form — with the gate fixed to the signal,
+    // not the noise, so the read does not move with the record's SNR.
+    private static double EnergyOnsetSample(
+        IReadOnlyList<double> envelope,
+        int rotation,
+        int relativeStrongest,
+        int sampleRate)
+    {
+        int length = envelope.Count;
+        int tailSamples = (int)Math.Round(EnergyOnsetTailSeconds * sampleRate);
+        int end = Math.Min(length - 1, relativeStrongest + tailSamples);
+        double gate = envelope[(relativeStrongest + rotation) % length] *
+            Math.Pow(10.0, -EnergyOnsetGateDb / 20.0);
+        double Power(int i)
+        {
+            double value = envelope[(i + rotation) % length];
+            return value >= gate ? value * value : 0.0;
+        }
+
+        double total = 0.0;
+        for (int i = 0; i <= end; i++)
+        {
+            total += Power(i);
+        }
+
+        if (!(total > 0.0) || !double.IsFinite(total))
+        {
+            return (relativeStrongest + rotation) % length;
+        }
+
+        double target = EnergyOnsetFraction * total;
+        double previous = 0.0;
+        double running = 0.0;
+        double relative = end;
+        for (int i = 0; i <= end; i++)
+        {
+            running += Power(i);
+            if (running >= target)
+            {
+                double step = running - previous;
+                double fraction = step > 0.0 ? (target - previous) / step : 1.0;
+                relative = Math.Max(0.0, i - 1 + fraction);
+                break;
+            }
+
+            previous = running;
+        }
+
+        double original = relative + rotation;
+        return original >= length ? original - length : original;
     }
 
     /// <summary>

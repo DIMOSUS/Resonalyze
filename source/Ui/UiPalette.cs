@@ -97,6 +97,7 @@ internal static class UiPalette
     // strongest peak blue.
     public static Color TimeAlignmentFirstArrival => Color.FromArgb(236, 148, 148);
     public static Color TimeAlignmentStrongestPeak => Color.FromArgb(150, 180, 250);
+    public static Color TimeAlignmentEnergyOnset => Color.FromArgb(150, 220, 160);
 
     // Chrome of the OxyPlot graphs — the surface a plot is drawn on and the axis
     // furniture on top of it. OxyPlot's own defaults are a light theme (black tick

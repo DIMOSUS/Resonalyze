@@ -955,7 +955,10 @@ public static class VirtualCrossoverAnalysis
                     result.FirstArrivalDelayMilliseconds + startMs,
                 StrongestPeakSample = result.StrongestPeakSample + startSample,
                 StrongestDelayMilliseconds =
-                    result.StrongestDelayMilliseconds + startMs
+                    result.StrongestDelayMilliseconds + startMs,
+                EnergyOnsetSample = result.EnergyOnsetSample + startSample,
+                EnergyOnsetDelayMilliseconds =
+                    result.EnergyOnsetDelayMilliseconds + startMs
             };
         }
         return result;

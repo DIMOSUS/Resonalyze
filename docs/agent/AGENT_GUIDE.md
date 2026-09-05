@@ -94,9 +94,10 @@ the chain, `processedDb` through it, `chainDb` and `peqDb` the chain and the
 bank alone, and `hybridPreDspDb` / `hybridProcessedDb` the same two off the
 spatial average.
 
-**One smoothing.** Every magnitude, sum and Sum loss in a package is computed
-at psychoacoustic smoothing whatever the user's screen shows, so two packages
-compare. The exception is the hybrid (spatial-average) columns and sums, which
+**One smoothing, one window.** Every magnitude, sum and Sum loss in a package
+is computed at psychoacoustic smoothing whatever the user's screen shows, and
+the Sum loss always through the Full (steady-state) window whatever the
+panel's Sum loss selector shows, so two packages compare. The exception is the hybrid (spatial-average) columns and sums, which
 travel at 1/12 octave with the smoothing off — compare a hybrid column with the
 measured one beside it by SHAPE, not by a narrow feature's depth.
 

@@ -51,15 +51,22 @@ internal static class VirtualCrossoverMetric
     /// at one decimal the read-out cannot show which of two settings is
     /// better — the very comparison this column exists for.
     /// </summary>
-    public static string FormatCompact(IReadOnlyList<Entry> entries)
+    /// <param name="direct">
+    /// Whether the entries were read through the direct-sound window
+    /// (<see cref="SumLossWindow.Direct"/>) rather than the steady-state one: the
+    /// header says so, because the two families of numbers must never be
+    /// compared with each other.
+    /// </param>
+    public static string FormatCompact(IReadOnlyList<Entry> entries, bool direct = false)
     {
-        const string Header = "Sum loss (dB)\r\n         avg /   dip\r\n\r\n";
+        string header = (direct ? "Sum loss (direct, dB)" : "Sum loss (dB)") +
+            "\r\n         avg /   dip\r\n\r\n";
         if (entries.Count == 0)
         {
-            return Header + "—";
+            return header + "—";
         }
 
-        var builder = new System.Text.StringBuilder(Header);
+        var builder = new System.Text.StringBuilder(header);
         foreach (Entry entry in entries)
         {
             string name = (entry.IsTotal ? "Total" : entry.Junction).PadRight(6);
@@ -581,19 +588,25 @@ internal static class VirtualCrossoverMetric
     /// read-out per line, including the band each was measured over. Two
     /// decimals, like the column it explains (see <see cref="FormatCompact"/>).
     /// </summary>
-    public static string FormatDetail(IReadOnlyList<Entry> entries)
+    public static string FormatDetail(IReadOnlyList<Entry> entries, bool direct = false)
     {
+        string title = direct ? "Sum loss (direct) avg" : "Sum loss avg";
         if (entries.Count == 0)
         {
-            return "Sum loss avg: —";
+            return title + ": —";
         }
 
-        return "Sum loss avg\r\n" + string.Join("\r\n", entries.Select(entry =>
+        return title + "\r\n" + string.Join("\r\n", entries.Select(entry =>
         {
             string name = entry.IsTotal ? "Total" : entry.Junction;
             string dip = entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.00} dB" : "";
             return $"{name}: {entry.AverageDb:0.00} dB avg{dip} " +
                 $"({FrequencyText.Format(entry.LowHz)} – {FrequencyText.Format(entry.HighHz)})";
-        }));
+        })) + (direct
+            ? "\r\nDirect: each channel through the Junction phase block's 8-cycle\r\n" +
+              "window at its own front — the loss of the direct sound, not of the\r\n" +
+              "sum the cabin hears. Deeper and more seat-sensitive than the Full\r\n" +
+              "read; the two are not comparable."
+            : string.Empty);
     }
 }

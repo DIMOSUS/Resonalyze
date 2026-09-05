@@ -279,7 +279,8 @@ Every block is the panel's own read-out, unchanged. `id` is what a
 
 - `sumLoss`: the **Sum loss** row for this junction — dB ≤ 0, how far the
   coherent sum falls short of the magnitude sum over the band; `averageDb` over
-  the band, `dipDb` at its worst point.
+  the band, `dipDb` at its worst point. Always the **Full** (steady-state)
+  read, whatever the panel's Sum loss selector shows.
 - `phase`: the **Junction phase** row. `bestExtraDelayMs` and `bestInvert` are
   applied to the **lower** channel; scores run −1…1, higher is better;
   `lobeMargin` below about 0.05 means a whole-period hop cannot be ruled out.

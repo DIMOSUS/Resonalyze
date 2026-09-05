@@ -36,11 +36,9 @@ public partial class VirtualCrossoverPanel
         foreach (Control control in new Control[]
         {
             labelCurves,
-            checkBoxShowSum,
-            checkBoxShowLoss,
-            checkBoxShowTarget,
-            numericTargetLevel,
-            buttonTargetSettings,
+            // The Sum toggle, the Sum loss selector and the target controls ride
+            // inside this card, so it is the card that follows the plot.
+            curvesPanel,
             labelCalibration,
             comboBoxCalibration,
             checkBoxHybrid,

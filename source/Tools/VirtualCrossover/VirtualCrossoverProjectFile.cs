@@ -903,7 +903,41 @@ public sealed class VirtualCrossoverProjectFile
     // ShowSumCurveOnPhase).
     public bool ShowSumCurve { get; set; } = true;
     public bool? ShowSumCurvePhase { get; set; }
-    public bool ShowLossCurve { get; set; }
+    // The loss curve's older on/off flag. Kept written by the selector below (on
+    // for everything but Disable) so a build that knows only the flag still draws,
+    // or hides, the curve a newer file asks for; true by default because the
+    // selector's default draws the curve.
+    public bool ShowLossCurve { get; set; } = true;
+
+    /// <summary>
+    /// The window the Sum loss is measured through (see <see cref="SumLossWindow"/>).
+    /// Additive: a file written before the selector existed carries none and opens
+    /// on the default, <see cref="SumLossWindow.Direct"/>.
+    /// </summary>
+    public SumLossWindow? LossWindow { get; set; }
+
+    /// <summary>
+    /// The selector's effective answer: the stored window, or the default where a
+    /// file carries none. Setting it writes <see cref="LossWindow"/> and keeps
+    /// <see cref="ShowLossCurve"/> in step.
+    /// </summary>
+    /// <remarks>
+    /// The older flag is deliberately NOT consulted for a file without the window:
+    /// its default was off, so on nearly every such file "false" means the toggle
+    /// was never touched, not that the curve was refused — and a migration that
+    /// reads an untouched default as a decision would open every old session with
+    /// the loss hidden, where the owner wants the direct read by default.
+    /// </remarks>
+    [JsonIgnore]
+    public SumLossWindow SumLossWindowMode
+    {
+        get => LossWindow ?? SumLossWindow.Direct;
+        set
+        {
+            LossWindow = value;
+            ShowLossCurve = value != SumLossWindow.Off;
+        }
+    }
 
     /// <summary>
     /// Which part of the installation the main plot describes — see

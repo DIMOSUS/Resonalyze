@@ -111,7 +111,9 @@ internal sealed class VirtualCrossoverMetrics
         // absolute and shared by construction; the anchor is the
         // Auto-placement fallback. The magnitude always reads the FIXED gate —
         // FDW would need per-channel windows here, exactly what the shared
-        // window exists to prevent — so FDW shapes the phase view only.)
+        // window exists to prevent — so FDW shapes the phase view, and the direct
+        // loss of BuildDirectLossCurve, which sums per-channel SPECTRA; never
+        // these curves.)
         // The arrival is each channel's estimated START, not its peak: a
         // crossover's group delay puts the peak behind the front, and the
         // window has to open ahead of every channel's front, not of its
@@ -318,6 +320,76 @@ internal sealed class VirtualCrossoverMetrics
         }
 
         return entries;
+    }
+
+    /// <summary>
+    /// The summation loss of the DIRECT sound: the channels' complex sum against
+    /// their magnitude sum, both read from <paramref name="spectra"/> — the
+    /// junction phase block's per-channel 8-cycle windows
+    /// (<see cref="JunctionPhaseSpectra.Build"/>), each at its own front and
+    /// rotated into one absolute time frame, so adding them is superposition and
+    /// the loss stays at or under 0 dB by the triangle inequality. What the
+    /// panel's Sum loss selector shows on <see cref="SumLossWindow.Direct"/>.
+    /// Null where there is no metric: fewer than two channels, or channels at
+    /// different rates, whose bins do not line up.
+    /// </summary>
+    /// <remarks>
+    /// Same arithmetic as <see cref="BuildCurves"/> — unsmoothed operands, each
+    /// masked to what it measured, the sum with every channel's own microphone
+    /// correction inside it, the ratio smoothed afterwards — under other windows.
+    /// The drawn Sum is not rebuilt to match: the magnitude view is a steady-state
+    /// picture (see the panel's RequestRedraw), and this curve is read beside it,
+    /// not out of it. What the two windows measure differently, on a
+    /// seven-position grid: the direct window cuts the seat-to-seat scatter of
+    /// the group delay by 3–5 times, but its loss figures scatter MORE between
+    /// seats than the full read's and run deeper — the early reflections a car
+    /// puts within 1–3 ms of the direct sound sit inside any window that still
+    /// resolves a sixth of an octave, and the late tail the full window keeps
+    /// fills the notch. The owner tunes by this one (it is the selector's
+    /// default); the Auto delay battery, the AI package and the tuning sheet
+    /// stay on the full read. See <see cref="SumLossWindow"/>.
+    /// </remarks>
+    /// <param name="channels">
+    /// The summing channels, in the order <paramref name="spectra"/> answers them.
+    /// </param>
+    public List<SignalPoint>? BuildDirectLossCurve(
+        IReadOnlyList<ProcessedChannel> channels,
+        IReadOnlyList<Complex[]> spectra,
+        int smoothingInverseOctaves)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(spectra);
+        if (channels.Count < 2 || spectra.Count != channels.Count)
+        {
+            return null;
+        }
+
+        int sampleRate = channels[0].SampleRate;
+        if (sampleRate <= 0 || channels.Any(channel => channel.SampleRate != sampleRate))
+        {
+            return null;
+        }
+
+        var operands = new List<IReadOnlyList<SignalPoint>>(channels.Count);
+        var bands = new List<(double LowestHz, double HighestHz)>(channels.Count);
+        var calibrations = new List<CalibrationFile?>(channels.Count);
+        for (int i = 0; i < channels.Count; i++)
+        {
+            MeasuredBand band = channels[i].MeasuredBand;
+            CalibrationFile? calibration = channelCalibration(channels[i]);
+            operands.Add(DataHelper.GetGatedMagnitude(
+                spectra[i], sampleRate, band.LowEdgeHz, band.HighEdgeHz,
+                calibration, smoothingInverseOctaves: 0).Points);
+            bands.Add((band.LowEdgeHz, band.HighEdgeHz));
+            calibrations.Add(calibration);
+        }
+
+        (_, AnalysisCurve sum) = DataHelper.GetGatedMeasuredMagnitudeSumPair(
+            spectra, sampleRate, bands, calibrations, smoothingInverseOctaves: 0);
+        return VirtualCrossoverAnalysis.SumLossCurve(
+            ProcessedChannels.MeasuredBySomeChannel(sum.Points, channels),
+            operands,
+            smoothingInverseOctaves);
     }
 
     /// <summary>

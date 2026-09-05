@@ -2002,6 +2002,26 @@ level, so it is drawn against its own amber **Sum loss (dB)** axis on the right
 while the curve is shown; it zooms and pans on its own, separately from the
 left dB scale.
 
+The **Sum loss** selector beside the Sum toggle picks the window the loss — the
+curve and the read-out column together, so they always quote one number — is
+measured through. **FDW-8** (the default) reads each channel through the
+Junction phase block's own 8-cycle window — placed at each channel's own front,
+or at the pinned gate when one is set, exactly as that block places it — and
+adds the spectra in one time frame: the loss of the direct sound, headed
+**Sum loss (direct)** on the plot and in the column. **Full** is the steady-state window the magnitude
+curves read: the loss of the sum the cabin hears, and what the Auto delay
+battery is judged by. On a seven-position grid in the reference car the FDW-8
+window cut the seat-to-seat scatter of the group delay by three to five times —
+the late reflections are what it removes — but its loss figures scatter MORE
+between seats than the Full read's and run deeper, because the early
+reflections a car puts within 1–3 ms of the direct sound sit inside any window
+that still resolves a sixth of an octave, while the late tail the Full window
+keeps fills the notch. The two families of numbers are not comparable with each
+other. **Disable** draws no curve and leaves the column on the Full read. The
+drawn Sum stays the steady-state one under every setting, and the AI package
+and the tuning sheet always quote Full. A session saved before the selector
+existed opens on FDW-8.
+
 ### Show: which part of the installation the plot is about
 
 A car with a rear fill and a centre has more drivers playing one band than a
@@ -2301,7 +2321,10 @@ window with frequency and never lengthens it, so the gate stays the outer limit 
 The gate's durations shape the **phase and impulse views only**. The magnitude
 view — channels, Sum, Sum loss and the read-out built from them — deliberately
 reads a long fixed **steady-state window** (~680 ms, clamped to 32768 samples at
-high rates) that only takes the gate's OFFSET, saying where it opens. The two
+high rates) that only takes the gate's OFFSET, saying where it opens. (The one
+exception is the Sum loss selector's **FDW-8**, which reads the loss alone
+through the Junction phase block's windows; see
+[the plots and read-outs](#the-panel-gates-plots-and-read-outs).) The two
 views answer different questions: phase is timed on the direct sound, where
 cutting before the first reflection is the point, while tonal balance is what
 the ear hears with the cabin — and a junction-length gate cannot even contain a
@@ -3101,12 +3124,14 @@ this: the clipboard is the only transport, and you are the one who pastes.
   against each side's sum — the measured one, and the hybrid one while the
   hybrid view is drawn — so a datum typed too high or too low is named
   before a PEQ is proposed around it. The numbers are the screen's numbers,
-  with one deliberate exception: the package is built from the same
+  with two deliberate exceptions: the package is built from the same
   computations, for the same **Show** view, but always at psychoacoustic
   smoothing whatever the panel's smoothing selector shows — a Sum loss read at
   1/48 octave and one read at 1/6 are different numbers, and packages have to
   compare across sessions and across users, so the panel's own read-out at
-  another smoothing may differ from the package's. The hybrid curves and their
+  another smoothing may differ from the package's — and always through the
+  **Full** loss window, whatever the panel's Sum loss selector shows, for the
+  same reason. The hybrid curves and their
   sum are the exception to the exception: an average is read with the
   smoothing off, as the [Hybrid](#hybrid-spatial-averages-under-the-prediction)
   section says, and off cannot travel on the package's 12-point-per-octave

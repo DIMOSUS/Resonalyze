@@ -2667,15 +2667,84 @@ corner.
 
 The later groups are placed rather than searched, because there is nothing
 between them and the front stage to search: no filter hands a band from one to
-the other. A **rear fill** is read against the front stage of its own side (its
-left and right are different drivers at different distances, so each gets its
-own delay) and then pushed back by the **Rear fill** offset in the dialog. A
-**centre** has no side at all, so it is read against BOTH front sums and placed
-at the midpoint; the two readings are each other's witness, since they should
+the other. A **rear fill** is read against the front of its own side (its left
+and right are different drivers at different distances, so each gets its own
+delay) and then pushed back by the **Rear fill** offset in the dialog. A
+**centre** has no side at all, so it is read against BOTH sides and placed at
+the midpoint; the two readings are each other's witness, since they should
 differ by the scene offset, and a disagreement is reported instead of averaged
 away. Relative polarity comes out of the same correlation as its sign — but it
 is only applied where no fill offset is in play, because past a few
 milliseconds the two groups no longer sum in any way the ear resolves.
+
+Each of those readings is taken against **one front driver, not the front stage
+summed**: the one whose overlap with the group covers most of **1–4 kHz** — a
+centre channel is there for the voice, and that is the band a voice is heard in —
+and only over the band the two share. The trace names it. A
+summed stage is the wrong reference because a band-limited arrival belongs to
+whatever plays *earliest* inside the band being read — for a centre high-passed at
+400 Hz that is the tweeter, which it barely overlaps, rather than the midrange it
+plays alongside. It is also what a tuner does by hand: mute the rest of the front
+and match the centre to what is left. The obvious rule, widest overlap, is not
+the one used: a channel with only a high-pass is booked to 20 kHz whether it
+plays there or not, so on an ordinary 3-way front "widest" is a contest between
+two fictions and the tweeter wins it.
+
+A centre needs the same driver on both sides, since its two readings are each
+other's witness. Where the sides carry different corners and the rule picks
+different drivers — or where one *mono* block would answer for both sides, which
+is one measurement counted twice — the run falls back to the summed stages rather
+than average two different things.
+
+The correlation that refines the reading is then confined to **the one extremum
+the arrival points at** — a quarter period at the band's centre, and never more
+than 2 ms. A correlation's peaks and troughs alternate every half period, so a
+wider window offers the search lobes the arrival never saw, and between two
+sources playing the same programme from different places they are all about
+equally tall: on the reference car the four candidates inside the old flat 2 ms
+stood between |r| 0.20 and 0.29 across 2.4 ms of delay, and the centre landed
+half a millisecond from where its own arrivals put it — in front of both front
+stages on one run and behind both on the next. Below 125 Hz the 2 ms cap governs
+and the width is what it always was; the *reference*, though, changed at every
+frequency, so a low-frequency placement is not unchanged — only the window it
+refines in is.
+
+The narrow window has a failure mode of its own, and the trace names it too: when
+the extremum comes back **pinned to the refinement edge**, the correlation found
+nothing interior, and the placement falls back to the arrival estimate itself —
+not to the boundary the clamped search stopped at, which would sit a whole window
+away from the arrival it is standing on. **No polarity is read from a pinned
+search either**: an inversion decided by where a window was cut is a fact about
+the window. That is the safe degradation — the arrival is the reading this whole
+step is anchored on — but it is not a corroborated phase measurement, so the
+placement is reported at low confidence rather than presented like one the
+correlation confirmed.
+
+Where the two sides do not offer the same block, each is summed from **what it
+plays that the other side does not**, and never from the stage entire. A *mono*
+front block is one response belonging to both sides, so summing them whole would
+put it into both references and leave the witness comparing two copies of it. The
+band is then taken from **what those references actually cover**, not from what
+the sides were before the shared response came out of them, and not from the span
+between a side's lowest and highest corner either. A side left with a midbass and
+a tweeter and nothing between them covers two stretches with a hole in the middle,
+and a band picked out of that hole would have one side answering with filter
+leakage — which correlates about as well as anything else that quiet. Two drivers
+of one side meeting at a crossover, on the other hand, do cover straight through
+it.
+
+The centre is **not placed at all** when either of those leaves nothing to work
+with: a side with no content of its own, or two sides whose own content shares no
+band wide enough to time in. There are then not two views of the centre to
+average, and a "midpoint" between one reading and itself — or between two readings
+of different things — is not a placement between two sides. The trace says which
+of the two it was, since one is an installation fact and the other a crossover
+fact, and the centre keeps the delay it had.
+
+When a centre placement is not corroborated, the note says **which** of the tests
+failed — the sides reading opposite polarities, differing by more than the scene
+offset, a reading pinned to its edge, or a correlation too weak to trust — and all
+of them when more than one did.
 
 A group the run cannot measure keeps the delay it had, and says so in the trace.
 

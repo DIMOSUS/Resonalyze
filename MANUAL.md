@@ -1019,8 +1019,13 @@ Auto Delay works in stages rather than treating the car as one chain:
    subwoofer to the highest front driver;
 2. it aligns the drivers inside a multi-way **Rear** or **Center** group with each
    other;
-3. it places each rear side against the front stage on that side, and the mono centre
-   between the two front sums, without retuning the settled front chain.
+3. it places each rear side against the front on that side, and the mono centre
+   between the two sides, without retuning the settled front chain. Each of those
+   readings is taken against the one front driver that carries **1–4 kHz** — the band
+   the voice a centre exists for is heard in, which is the front midrange on most
+   cars — rather than against the front stage summed. That is the same thing you would do by hand: mute the rest of the front
+   and match the centre to what is left. The trace names the driver it used, and
+   says so when the two sides could not be read against the same one.
 
 With a Rear block in the project the dialog enables **Rear fill ms**: how far *behind*
 the front stage the rear should arrive, on top of the delay that merely makes the

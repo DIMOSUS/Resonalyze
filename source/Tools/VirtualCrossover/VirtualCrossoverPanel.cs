@@ -5273,10 +5273,25 @@ public partial class VirtualCrossoverPanel : UserControl
 
             string name = string.Join("+", members.Select(item => item.Name));
             (double sideLow, double sideHigh) = BandOf(members);
-            double lowHz = Math.Max(far ? farLow : referenceLow, sideLow);
-            double highHz = Math.Min(far ? farHigh : referenceHigh, sideHigh);
+            // ONE front driver, not the side's front stage summed: the sum's
+            // band-limited arrival belongs to whatever plays earliest inside the
+            // read band, which for a rear fill is a tweeter it barely overlaps.
+            (VirtualCrossoverSideAlignmentChannel Channel, double LowHz, double HighHz)? pick =
+                VirtualCrossoverGroupPlacement.ChooseReference(
+                    far ? chainFar : chainReference,
+                    item => VirtualCrossoverJunctions.GetChannelBand(item.Settings),
+                    sideLow,
+                    sideHigh);
+            Complex[] against = pick is { } chosen
+                ? byChannel[chosen.Channel].ImpulseResponse
+                : far ? farSum : referenceSum;
+            string againstName = pick is { } named
+                ? named.Channel.Name
+                : "this side's front stage";
+            double lowHz = pick?.LowHz ?? Math.Max(far ? farLow : referenceLow, sideLow);
+            double highHz = pick?.HighHz ?? Math.Min(far ? farHigh : referenceHigh, sideHigh);
             GroupPlacement? placement = VirtualCrossoverGroupPlacement.Place(
-                far ? farSum : referenceSum,
+                against,
                 SumOf(members),
                 sampleRate,
                 lowHz,
@@ -5285,7 +5300,8 @@ public partial class VirtualCrossoverPanel : UserControl
             {
                 log.AppendLine(
                     $"  rear {name}: not placed - no reliable arrival in " +
-                    $"{lowHz:0}-{highHz:0} Hz. Its current delay stands.");
+                    $"{lowHz:0}-{highHz:0} Hz against {againstName}. " +
+                    "Its current delay stands.");
                 foreach (VirtualCrossoverSideAlignmentChannel member in members)
                 {
                     alignment[member] = new AlignmentOverride(
@@ -5294,7 +5310,7 @@ public partial class VirtualCrossoverPanel : UserControl
                         AlignmentDecisionKind.Locked,
                         null,
                         $"not placed: no reliable arrival in {lowHz:0}-{highHz:0} Hz " +
-                        "against this side's front stage, so the current delay stands");
+                        $"against {againstName}, so the current delay stands");
                 }
 
                 continue;
@@ -5310,8 +5326,13 @@ public partial class VirtualCrossoverPanel : UserControl
                 (rearFillOffsetMs != 0
                     ? $" plus {rearFillOffsetMs:0.##} ms fill"
                     : string.Empty) +
-                $"), r {placement.Coefficient:0.00}" +
-                (invert ? ", inverted" : string.Empty));
+                $"), against {againstName} in {lowHz:0}-{highHz:0} Hz, " +
+                $"r {placement.Coefficient:0.00}" +
+                (invert ? ", inverted" : string.Empty) +
+                (placement.EdgePinned
+                    ? ", pinned to the refinement edge (the arrival stands, " +
+                        "no polarity claimed)"
+                    : string.Empty));
             foreach (VirtualCrossoverSideAlignmentChannel member in members)
             {
                 double innerMs = inner.TryGetValue(member, out AlignmentOverride own)
@@ -5324,8 +5345,8 @@ public partial class VirtualCrossoverPanel : UserControl
                     innerMs + delayMs, innerInvert ^ invert);
                 decisions[member] = PlacementDecision(
                     placement.Coefficient,
-                    corroborated: true,
-                    "placed as a rear group against this side's front stage in " +
+                    corroborated: !placement.EdgePinned,
+                    $"placed as a rear group against {againstName} in " +
                     $"{lowHz:0}-{highHz:0} Hz, r {placement.Coefficient:0.00}" +
                     (rearFillOffsetMs != 0
                         ? $", held back {rearFillOffsetMs:0.##} ms"
@@ -5363,22 +5384,72 @@ public partial class VirtualCrossoverPanel : UserControl
                 string.Join("+", centreMembers.Select(item => item.Name));
             // The centre is read against BOTH sides and the two readings are
             // averaged and compared, so they have to be taken over the SAME band:
-            // the intersection of what both front stages play, narrowed to what
+            // the intersection of what both references play, narrowed to what
             // the centre plays.
             (double centreLow, double centreHigh) = BandOf(centreMembers);
-            double lowHz = Math.Max(Math.Max(referenceLow, farLow), centreLow);
-            double highHz = Math.Min(Math.Min(referenceHigh, farHigh), centreHigh);
+            // ONE front driver per side where the two sides offer the same
+            // block, each side's own content otherwise, and no plan at all when
+            // they share everything they play here - see
+            // VirtualCrossoverGroupPlacement.ChooseCentreReferences. This is the
+            // owner's own recipe for a centre by hand: mute the rest of the front
+            // and match the centre to the driver that holds the voice band. The
+            // choice lives in that helper rather than here because this method
+            // cannot be unit-tested and the choice is the part that has to be
+            // right.
+            CentreReferenceChoice<VirtualCrossoverSideAlignmentChannel> choice =
+                VirtualCrossoverGroupPlacement.ChooseCentreReferences(
+                    chainReference,
+                    chainFar,
+                    item => VirtualCrossoverJunctions.GetChannelBand(item.Settings),
+                    (near, far) => near.Runtime == far.Runtime && near != far,
+                    centreLow,
+                    centreHigh);
+            if (choice.Plan is not { } plan)
+            {
+                // No plan is a refusal, and there is nothing wider to reach for:
+                // the summed stages are what the choice REJECTED. A midpoint
+                // between two readings that share no content is not a midpoint,
+                // and it must not be presented as a placement between two sides.
+                // The reason comes from the chooser, which is the only thing that
+                // knows which of them applies.
+                log.AppendLine(
+                    $"  centre {centreName}: not placed - {choice.Refusal}. " +
+                    "Its current delay stands.");
+                foreach (VirtualCrossoverSideAlignmentChannel member in centreMembers)
+                {
+                    alignment[member] = new AlignmentOverride(
+                        member.Settings.DelayMs, member.Settings.InvertPolarity);
+                    decisions[member] = new AlignmentDecision(
+                        AlignmentDecisionKind.Locked,
+                        null,
+                        $"not placed: {choice.Refusal}, so there is no midpoint " +
+                        "to place the centre between and the current delay stands");
+                }
+
+                return fillCarriers;
+            }
+
+            double lowHz = plan.LowHz;
+            double highHz = plan.HighHz;
+            string Describe(IReadOnlyList<VirtualCrossoverSideAlignmentChannel> side) =>
+                (plan.Peers ? string.Empty : "the own content ") +
+                string.Join("+", side.Select(item => item.Name));
+            string nearName = Describe(plan.Near);
+            string farName = Describe(plan.Far);
+            Complex[] nearIr = SumOf(plan.Near);
+            Complex[] farIr = SumOf(plan.Far);
+
             Complex[] centreIr = SumOf(centreMembers);
             GroupPlacement? againstReference = VirtualCrossoverGroupPlacement.Place(
-                referenceSum, centreIr, sampleRate, lowHz, highHz);
+                nearIr, centreIr, sampleRate, lowHz, highHz);
             GroupPlacement? againstFar = VirtualCrossoverGroupPlacement.Place(
-                farSum, centreIr, sampleRate, lowHz, highHz);
+                farIr, centreIr, sampleRate, lowHz, highHz);
             if (againstReference == null || againstFar == null)
             {
                 log.AppendLine(
                     $"  centre {centreName}: not placed - no reliable arrival " +
                     $"in {lowHz:0}-{highHz:0} Hz against " +
-                    (againstReference == null ? "the reference side" : "the far side") +
+                    (againstReference == null ? nearName : farName) +
                     ". Its current delay stands.");
                 foreach (VirtualCrossoverSideAlignmentChannel member in centreMembers)
                 {
@@ -5388,13 +5459,13 @@ public partial class VirtualCrossoverPanel : UserControl
                         AlignmentDecisionKind.Locked,
                         null,
                         $"not placed: no reliable arrival in {lowHz:0}-{highHz:0} Hz " +
-                        "against both front stages, so the current delay stands");
+                        $"against {nearName} and {farName}, so the current delay stands");
                 }
 
                 return fillCarriers;
             }
 
-            (double delayMs, bool inverted, bool confident) =
+            (double delayMs, bool inverted, CentreCorroboration corroboration) =
                 VirtualCrossoverGroupPlacement.Midpoint(
                     againstReference,
                     againstFar,
@@ -5403,11 +5474,13 @@ public partial class VirtualCrossoverPanel : UserControl
             log.AppendLine(
                 $"  centre {centreName}: {delayMs:+0.00;-0.00;0.00} ms - midway " +
                 $"between {againstReference.CoArrivalDelayMs:+0.00;-0.00;0.00} " +
-                $"(reference side, r {againstReference.Coefficient:0.00}) and " +
+                $"(vs {nearName}, r {againstReference.Coefficient:0.00}) and " +
                 $"{againstFar.CoArrivalDelayMs:+0.00;-0.00;0.00} " +
-                $"(far side, r {againstFar.Coefficient:0.00})" +
+                $"(vs {farName}, r {againstFar.Coefficient:0.00}) in " +
+                $"{lowHz:0}-{highHz:0} Hz" +
                 (inverted ? ", inverted" : string.Empty) +
-                (confident ? string.Empty : " - LOW CONFIDENCE"));
+                $" - {corroboration.Describe()}" +
+                (corroboration.Confident ? string.Empty : " - LOW CONFIDENCE"));
             foreach (VirtualCrossoverSideAlignmentChannel member in centreMembers)
             {
                 double innerMs = inner.TryGetValue(member, out AlignmentOverride own)
@@ -5420,13 +5493,9 @@ public partial class VirtualCrossoverPanel : UserControl
                     innerMs + delayMs, innerInvert ^ inverted);
                 decisions[member] = PlacementDecision(
                     Math.Min(againstReference.Coefficient, againstFar.Coefficient),
-                    confident,
-                    "placed midway between the two front stages in " +
-                    $"{lowHz:0}-{highHz:0} Hz" +
-                    (confident
-                        ? " - the two sides corroborate each other"
-                        : " - the two sides DISAGREE by more than the scene offset, " +
-                            "so this placement is a best guess"));
+                    corroboration.Confident,
+                    $"placed midway between {nearName} and {farName} in " +
+                    $"{lowHz:0}-{highHz:0} Hz - {corroboration.Describe()}");
             }
         }
 
@@ -5655,18 +5724,30 @@ public partial class VirtualCrossoverPanel : UserControl
             }
 
             (double groupLow, double groupHigh) = GroupBandOf(members);
-            double lowHz = Math.Max(chainLow, groupLow);
-            double highHz = Math.Min(chainHigh, groupHigh);
+            // ONE front driver, not the chain summed - see
+            // VirtualCrossoverGroupPlacement.ChooseReference.
+            (VirtualCrossoverChannel Channel, double LowHz, double HighHz)? pick =
+                VirtualCrossoverGroupPlacement.ChooseReference(
+                    chain,
+                    item => VirtualCrossoverJunctions.GetChannelBand(item.Settings),
+                    groupLow,
+                    groupHigh);
+            Complex[] against = pick is { } chosen
+                ? byChannel[chosen.Channel].ImpulseResponse
+                : reference;
+            string againstName = pick is { } named ? named.Channel.Name : "the front stage";
+            double lowHz = pick?.LowHz ?? Math.Max(chainLow, groupLow);
+            double highHz = pick?.HighHz ?? Math.Min(chainHigh, groupHigh);
             GroupPlacement? placement = VirtualCrossoverGroupPlacement.Place(
-                reference, SumOf(members), sampleRate, lowHz, highHz);
+                against, SumOf(members), sampleRate, lowHz, highHz);
             if (placement == null)
             {
                 // Its CURRENT delay stands, written explicitly rather than left
                 // absent: an absent override means zero to the reprocessor, which
                 // would silently move a group this run could not measure.
                 log.AppendLine(
-                    $"  {stage}: not placed - the band it shares with the front " +
-                    $"stage ({lowHz:0}-{highHz:0} Hz) holds no reliable arrival. " +
+                    $"  {stage}: not placed - the band it shares with {againstName} " +
+                    $"({lowHz:0}-{highHz:0} Hz) holds no reliable arrival. " +
                     "Its current delay stands.");
                 foreach (VirtualCrossoverChannel member in members)
                 {
@@ -5676,7 +5757,7 @@ public partial class VirtualCrossoverPanel : UserControl
                         AlignmentDecisionKind.Locked,
                         null,
                         $"not placed: no reliable arrival in {lowHz:0}-{highHz:0} Hz " +
-                        "against the front stage, so the current delay stands");
+                        $"against {againstName}, so the current delay stands");
                 }
 
                 continue;
@@ -5699,9 +5780,16 @@ public partial class VirtualCrossoverPanel : UserControl
                 $"  {stage}: {delayMs:+0.00;-0.00;0.00} ms (co-arrival " +
                 $"{placement.CoArrivalDelayMs:+0.00;-0.00;0.00}" +
                 (offsetMs != 0 ? $" plus {offsetMs:0.##} ms fill" : string.Empty) +
-                $"), r {placement.Coefficient:0.00}" +
+                $"), against {againstName} in {lowHz:0}-{highHz:0} Hz, " +
+                $"r {placement.Coefficient:0.00}" +
                 (invert ? ", inverted" : string.Empty) +
-                (placement.Coefficient < VirtualCrossoverGroupPlacement.MinimumTrustedCoefficient
+                (placement.EdgePinned
+                    ? ", pinned to the refinement edge (the arrival stands, " +
+                        "no polarity claimed)"
+                    : string.Empty) +
+                (placement.EdgePinned ||
+                    placement.Coefficient <
+                        VirtualCrossoverGroupPlacement.MinimumTrustedCoefficient
                     ? " - LOW CONFIDENCE"
                     : string.Empty));
             foreach (VirtualCrossoverChannel member in members)
@@ -5718,8 +5806,8 @@ public partial class VirtualCrossoverPanel : UserControl
                     innerMs + delayMs, innerInvert ^ invert);
                 decisions[member] = PlacementDecision(
                     placement.Coefficient,
-                    corroborated: true,
-                    $"placed as a {stage} group against the front stage in " +
+                    corroborated: !placement.EdgePinned,
+                    $"placed as a {stage} group against {againstName} in " +
                     $"{lowHz:0}-{highHz:0} Hz, r {placement.Coefficient:0.00}" +
                     (offsetMs != 0 ? $", held back {offsetMs:0.##} ms" : string.Empty));
             }

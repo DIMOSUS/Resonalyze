@@ -157,9 +157,36 @@ public sealed class EnergyOnsetTests
             -0.1, 0.1);
     }
 
-    // ... and below the admission the onset is NOT trusted, because at that
-    // SNR the noise ahead of the front does reach the gate and the read drifts
-    // — this is what EnergyOnsetMinimumSnrDb exists for.
+    // The admission itself, on a front shaped like the field's: a midbass
+    // front through its crossover with a 1.4× arrival 7 ms behind it, under
+    // white noise that leaves the record at ~30 dB. The onset holds within a
+    // fraction of the band's rise while the first PEAK has already broken to
+    // the noise — which is why the admission sits at 30 and not higher: every
+    // decibel above what the onset needs hands the pair back to the peaks,
+    // and on the field pair the peaks are the coin.
+    [Fact]
+    public void Analyze_EnergyOnsetHoldsAtTheAdmissionSnrOnAShapedFront()
+    {
+        double[] clean = FrontWithLaterArrival(7.0, 1.4);
+        double peak = clean.Max(Math.Abs);
+        double[] noisy = WithNoise(clean, 0.2 * peak, seed: 42);
+
+        TimeAlignmentAnalysisResult cleanRead = TimeAlignmentAnalysis.Analyze(
+            clean, SampleRate, MidbassBand);
+        TimeAlignmentAnalysisResult noisyRead = TimeAlignmentAnalysis.Analyze(
+            noisy, SampleRate, MidbassBand);
+
+        Assert.InRange(noisyRead.SignalToNoiseDecibels, 28.0, 34.0);
+        Assert.InRange(
+            noisyRead.EnergyOnsetDelayMilliseconds - cleanRead.EnergyOnsetDelayMilliseconds,
+            -0.2, 0.2);
+        Assert.True(AutoAlignmentEngine.LinkReadsEnergyOnset(
+            65, 200, cleanRead.SignalToNoiseDecibels, noisyRead.SignalToNoiseDecibels));
+    }
+
+    // ... and well below the admission the onset is NOT trusted, because at
+    // that SNR the noise ahead of the front does reach the gate and the read
+    // drifts — this is what EnergyOnsetMinimumSnrDb exists for.
     [Fact]
     public void Analyze_EnergyOnsetDriftsUnderTheAdmissionSnr_WhichTheLinkGuards()
     {
@@ -197,8 +224,9 @@ public sealed class EnergyOnsetTests
         // The SNR guard is for BOTH sides: one noisy side sends the whole link
         // back to first peaks, never one side each.
         Assert.True(AutoAlignmentEngine.LinkReadsEnergyOnset(65, 200, 60, 45));
-        Assert.False(AutoAlignmentEngine.LinkReadsEnergyOnset(65, 200, 60, 30));
-        Assert.False(AutoAlignmentEngine.LinkReadsEnergyOnset(65, 200, 30, 60));
+        Assert.True(AutoAlignmentEngine.LinkReadsEnergyOnset(65, 200, 60, 32));
+        Assert.False(AutoAlignmentEngine.LinkReadsEnergyOnset(65, 200, 60, 25));
+        Assert.False(AutoAlignmentEngine.LinkReadsEnergyOnset(65, 200, 25, 60));
         Assert.False(AutoAlignmentEngine.LinkReadsEnergyOnset(200, 1610, 60, 60));
     }
 

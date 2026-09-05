@@ -2884,7 +2884,24 @@ channel where a candidate puts it.
 With stereo pairs, Auto delay tunes **both sides in one run**, and an
 **LHD / RHD** toggle says which seat you are tuning for. The driver's side is
 the reference: it aligns first, the top pair is bridged to it by band-limited
-envelope arrivals, and the far side descends junction by junction. The **scene
+envelope arrivals, and the far side descends junction by junction. Each far
+channel's search is aimed at its **cross-side target** — the delay that lands
+its band-limited arrival the scene offset ahead of its settled twin's — and
+for a pair whose shared band is centred below 300 Hz that arrival is the
+band's **energy onset** rather than its first envelope peak: the point where a
+tenth of the band's energy (counted up to 60 ms past the strongest peak,
+samples 30 dB under it ignored) has arrived. A slow low-frequency envelope
+climbs for milliseconds, and whether its first hump stands as a peak or melts
+into the arrival behind it is decided by a fraction of a dB — on one measured
+midbass pair the left dipped 0.5 dB after its hump and read 14 ms, the right
+never dipped and read 21 ms, a 7 ms split no cabin produces, which the scene
+pin then enforced. The running energy is monotone, so it reads the front
+whether or not it peaks (the same pair read 2 ms apart). The run's log names
+such a read `energy onsets`; it needs 40 dB of SNR on both sides, below which
+the pair is read by first peaks on both. The junction searches and their
+seeds keep the first arrivals: a link compares one driver pair through
+near-identical chains, where the onset's own bias cancels, which the
+front-predicting junction machinery cannot rely on. The **scene
 offset** is entered as a non-negative magnitude — how far the far side leads —
 so switching LHD/RHD never means re-entering a sign, and the level tilt is
 entered the same way, as a cut on the near side. The gain balance itself is

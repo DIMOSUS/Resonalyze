@@ -4048,7 +4048,8 @@ public static class AutoAlignmentEngine
 
         // The delay that Δ-aligns this right channel to its settled left
         // counterpart — landing its arrival exactly the scene offset ahead,
-        // measured by envelope arrivals in the given band. Used as the search
+        // measured by envelope arrivals in the given band (the band's energy
+        // onset where LinkReadsEnergyOnset says so, on both sides). Used as the search
         // prior (a gentle, polarity-blind pull toward the other side's timing
         // that breaks near-ties between lobes the junction sum cannot
         // distinguish) and as the pin of a scene lock, which measures the
@@ -4123,6 +4124,27 @@ public static class AutoAlignmentEngine
                     return (null, false, false, false, false, null);
                 }
 
+                // One instrument for the whole link — both sides, full band and
+                // upper half alike — decided from the band and BOTH sides' SNR
+                // (see LinkReadsEnergyOnset), so a split never subtracts a peak
+                // from an onset.
+                bool energyOnset = LinkReadsEnergyOnset(
+                    lowHz, highHz,
+                    left.SignalToNoiseDecibels, right.SignalToNoiseDecibels);
+                if (LinkBandReadsEnergyOnset(lowHz, highHz) && !energyOnset)
+                {
+                    log.AppendLine(
+                        $"  cross-side link {rightChannel.Name}: {lowHz:0}-{highHz:0} Hz " +
+                        $"read by first peaks — the energy onset needs " +
+                        $"{EnergyOnsetMinimumSnrDb:0} dB on both sides " +
+                        $"(L {left.SignalToNoiseDecibels:0.0}, R {right.SignalToNoiseDecibels:0.0} dB)");
+                }
+                if (energyOnset)
+                {
+                    left = AsEnergyOnset(left);
+                    right = AsEnergyOnset(right);
+                }
+
                 double probeLowHz = Math.Sqrt(lowHz * highHz);
                 if (highHz <
                     probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
@@ -4138,21 +4160,24 @@ public static class AutoAlignmentEngine
                     VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                         rightIr, rightChannel.SampleRate, probeLowHz, highHz,
                         rightSnapshot.ValidRange);
+                if (energyOnset)
+                {
+                    leftProbe = AsEnergyOnset(leftProbe);
+                    rightProbe = AsEnergyOnset(rightProbe);
+                }
 
                 // See ClassifyArrival for the direction semantics: LATCHED
                 // poisons the read (ladder/donors), UNVERIFIED keeps it usable
                 // without the certificate, VERIFIED on both sides earns it.
                 ArrivalCertificate leftCertificate = ClassifyArrival(
                     left, leftProbe,
-                    ArrivalProbeToleranceMs(
-                        leftSnapshot, left.FirstArrivalDelayMilliseconds,
-                        leftProbe.FirstArrivalDelayMilliseconds,
+                    LinkProbeToleranceMs(
+                        leftSnapshot, left, leftProbe, energyOnset,
                         lowHz, probeLowHz, highHz));
                 ArrivalCertificate rightCertificate = ClassifyArrival(
                     right, rightProbe,
-                    ArrivalProbeToleranceMs(
-                        rightSnapshot, right.FirstArrivalDelayMilliseconds,
-                        rightProbe.FirstArrivalDelayMilliseconds,
+                    LinkProbeToleranceMs(
+                        rightSnapshot, right, rightProbe, energyOnset,
                         lowHz, probeLowHz, highHz));
                 if (leftCertificate == ArrivalCertificate.Latched ||
                     rightCertificate == ArrivalCertificate.Latched)
@@ -4318,18 +4343,34 @@ public static class AutoAlignmentEngine
                                 side.ImpulseResponse, side.Channel.SampleRate,
                                 lo, hi, side.ValidRange);
 
+                        // One instrument for the donor pair — both sides, full
+                        // band and upper half alike — decided from the band and
+                        // both sides' SNR (see LinkReadsEnergyOnset).
+                        TimeAlignmentAnalysisResult fullLeft = Read(otherLeft, lowHz2, highHz2);
+                        TimeAlignmentAnalysisResult fullRight = Read(otherRight, lowHz2, highHz2);
+                        bool energyOnset2 = LinkReadsEnergyOnset(
+                            lowHz2, highHz2,
+                            fullLeft.SignalToNoiseDecibels, fullRight.SignalToNoiseDecibels);
+
                         // A donor earns trust only if BOTH sides POSITIVELY read a
                         // clean direct arrival — full band AND its upper half
                         // valid, SNR-qualified, and agreeing. Absence of a proven
                         // latch is NOT proof of a direct read: an unmeasurable or
                         // low-SNR upper half leaves the split unverified, so skip.
-                        bool CleanDirect(AlignmentSnapshot side, out double rawMs)
+                        bool CleanDirect(
+                            AlignmentSnapshot side,
+                            TimeAlignmentAnalysisResult full,
+                            out double rawMs)
                         {
-                            TimeAlignmentAnalysisResult full = Read(side, lowHz2, highHz2);
                             TimeAlignmentAnalysisResult probe = Read(side, probeLow2, highHz2);
-                            double tolerance2 = ArrivalProbeToleranceMs(
-                                side, full.FirstArrivalDelayMilliseconds,
-                                probe.FirstArrivalDelayMilliseconds,
+                            if (energyOnset2)
+                            {
+                                full = AsEnergyOnset(full);
+                                probe = AsEnergyOnset(probe);
+                            }
+
+                            double tolerance2 = LinkProbeToleranceMs(
+                                side, full, probe, energyOnset2,
                                 lowHz2, probeLow2, highHz2);
                             rawMs = full.FirstArrivalDelayMilliseconds
                                 - alignment.GetValueOrDefault(side.Channel).DelayMs;
@@ -4342,8 +4383,8 @@ public static class AutoAlignmentEngine
                                     ArrivalCertificate.Verified;
                         }
 
-                        if (CleanDirect(otherLeft, out double rawLeft) &&
-                            CleanDirect(otherRight, out double rawRight))
+                        if (CleanDirect(otherLeft, fullLeft, out double rawLeft) &&
+                            CleanDirect(otherRight, fullRight, out double rawRight))
                         {
                             donorSplits.Add((rawRight - rawLeft,
                                 $"{other.Left.Name}/{other.Right.Name}"));
@@ -4407,6 +4448,12 @@ public static class AutoAlignmentEngine
                 $"(L arrival {arrivals.Left.FirstArrivalDelayMilliseconds:0.000}, " +
                 $"raw R {arrivals.Right.FirstArrivalDelayMilliseconds:0.000} ms " +
                 $"in {usedLowHz:0}-{usedHighHz:0} Hz" +
+                (LinkReadsEnergyOnset(
+                    usedLowHz, usedHighHz,
+                    arrivals.Left.SignalToNoiseDecibels,
+                    arrivals.Right.SignalToNoiseDecibels)
+                    ? ", energy onsets"
+                    : "") +
                 $"{(measured.Verified ? "" : "; arrival not certified by the upper-half probe — lobe pin only")})");
             return (target, !measured.Verified, false);
         }
@@ -4629,6 +4676,122 @@ public static class AutoAlignmentEngine
     /// number that times a whole side.
     /// </summary>
     public const double MinimumArrivalSnrDb = 12;
+
+    /// <summary>
+    /// Below this band CENTRE a cross-side LINK reads the ENERGY ONSET of the
+    /// band (<see cref="TimeAlignmentAnalysisResult.EnergyOnsetDelayMilliseconds"/>)
+    /// instead of its first envelope peak. In the band-limited low end the
+    /// first peak is a coin: the direct front (rise time ~1/bandwidth, 7 ms in
+    /// 65-200 Hz) and an arrival a few milliseconds behind it merge into one
+    /// climb, and whether the front's hump turns into a local maximum is
+    /// decided by a fraction of a dB — on the field midbass pair the left
+    /// dipped 0.5 dB after its hump and read 14.4 ms, the right never dipped
+    /// and read 21.3 ms, a 7 ms L/R split that no cabin geometry produces,
+    /// that the upper-half probe certified (the half sat on the same mode) and
+    /// that the scene lock then enforced. The running energy is monotone, so
+    /// the shoulder counts whether or not it peaks: the same pair read 2.2 ms
+    /// apart (1.1 ms on the raw responses, the owner's hand-tuned split).
+    /// Where the band is wide the front is sharp and the first peak is the
+    /// better instrument: on the mid and tweeter pairs the peak L/R split
+    /// holds to ±0.06 ms across their bands where the energy onset wanders
+    /// ±0.3 ms with the early-reflection structure. The rule is by band
+    /// centre, not low edge, because the coin is a matter of rise time: a
+    /// mid pair's 200-1610 Hz link band has a 0.7 ms rise and a sharp front
+    /// however low its edge sits. The centre and the decision belong to the
+    /// FULL band and to both sides: their upper-half probes are read with the
+    /// same instrument (see <see cref="LinkReadsEnergyOnset"/>), or the
+    /// certificate would compare an onset against a peak.
+    ///
+    /// The LINK only, not the junction timelines: a link compares the two
+    /// sides of ONE driver pair through near-identical chains, so whatever
+    /// bias the onset carries cancels in the split. The timeline machinery
+    /// instead predicts a processed read from the bypassed front plus a chain
+    /// shift measured on a reference impulse, and an energy onset is a
+    /// distribution statistic that no impulse-measured shift transfers: read
+    /// through it, the predictor missed a plain BW36 70-200 Hz band-pass by
+    /// 2.4 ms and convicted a plain BW48 80 Hz low-pass as an 18 ms modal
+    /// latch (its unit tests). The peaks stay the timeline's instrument.
+    /// </summary>
+    internal const double EnergyOnsetBandCenterHz = 300;
+
+    /// <summary>
+    /// The SNR both sides of a link must show before its band is read by the
+    /// energy onset. The onset's gate is fixed 30 dB under the peak
+    /// (<see cref="TimeAlignmentAnalysis.EnergyOnsetGateDb"/>) so that the
+    /// read is a property of the signal alone; the price is that noise above
+    /// the gate integrates into the total, and the window ahead of the front
+    /// is ~80 ms long. A Rayleigh floor 40 dB down clears the gate in a
+    /// fraction of a percent of its samples and moves the onset by nothing
+    /// measurable; at 35 dB a fifth of them clear it and the onset drifts
+    /// tenths of a millisecond; at 20 dB the tenth is reached in the noise.
+    /// Below this the link falls back to first peaks — on BOTH sides, so the
+    /// split is still one instrument against itself. Field records read
+    /// 45-88 dB.
+    /// </summary>
+    internal const double EnergyOnsetMinimumSnrDb = 40;
+
+    /// <summary>
+    /// Whether a link band belongs to the energy onset by its centre alone
+    /// (see <see cref="EnergyOnsetBandCenterHz"/>).
+    /// </summary>
+    internal static bool LinkBandReadsEnergyOnset(double bandLowHz, double bandHighHz) =>
+        Math.Sqrt(bandLowHz * bandHighHz) < EnergyOnsetBandCenterHz;
+
+    /// <summary>
+    /// Whether a link is read by its energy onset: the band's centre says so
+    /// AND both sides clear <see cref="EnergyOnsetMinimumSnrDb"/>. Decided
+    /// ONCE per link from both sides' full-band reads and applied to every
+    /// read of that link — both sides, their upper-half probes included — so
+    /// a split never subtracts a peak from an onset.
+    /// </summary>
+    internal static bool LinkReadsEnergyOnset(
+        double bandLowHz,
+        double bandHighHz,
+        double leftSignalToNoiseDb,
+        double rightSignalToNoiseDb) =>
+        LinkBandReadsEnergyOnset(bandLowHz, bandHighHz) &&
+        leftSignalToNoiseDb >= EnergyOnsetMinimumSnrDb &&
+        rightSignalToNoiseDb >= EnergyOnsetMinimumSnrDb;
+
+    /// <summary>
+    /// A band read restated by its energy onset: the ARRIVAL fields swapped
+    /// for <see cref="TimeAlignmentAnalysisResult.EnergyOnsetDelayMilliseconds"/>.
+    /// The peak-describing figures of the result (prominence, the strongest
+    /// peak, its separation, the SNR) keep their meaning: they describe the
+    /// envelope's peaks and the record, not the onset.
+    /// </summary>
+    internal static TimeAlignmentAnalysisResult AsEnergyOnset(
+        TimeAlignmentAnalysisResult read) =>
+        !read.IsValid
+            ? read
+            : read with
+            {
+                FirstArrivalPeakSample = read.EnergyOnsetSample,
+                FirstArrivalDelayMilliseconds = read.EnergyOnsetDelayMilliseconds
+            };
+
+    /// <summary>
+    /// The full-band-vs-upper-half tolerance for a link read. A peak read earns
+    /// the channel's own crossover smear as credit (<see cref="ArrivalProbeToleranceMs"/>,
+    /// graded against the front predictor); an energy-onset read cannot — the
+    /// predictor speaks in peaks, and grading an onset against it is grading
+    /// one instrument with another — so an energy-onset band keeps the generic
+    /// allowance: half a period at the probe's low edge, never under 1 ms.
+    /// </summary>
+    private static double LinkProbeToleranceMs(
+        AlignmentSnapshot side,
+        TimeAlignmentAnalysisResult full,
+        TimeAlignmentAnalysisResult probe,
+        bool energyOnset,
+        double bandLowHz,
+        double probeLowHz,
+        double bandHighHz) =>
+        energyOnset
+            ? Math.Max(1.0, 500.0 / probeLowHz)
+            : ArrivalProbeToleranceMs(
+                side, full.FirstArrivalDelayMilliseconds,
+                probe.FirstArrivalDelayMilliseconds,
+                bandLowHz, probeLowHz, bandHighHz);
 
     // The bridge-decision confidence bands over the weaker side's arrival
     // SNR: clean field measurements run 40-70 dB, so 30 dB still marks a

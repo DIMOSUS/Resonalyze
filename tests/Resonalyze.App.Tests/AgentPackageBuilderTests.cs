@@ -374,27 +374,39 @@ public sealed class AgentPackageBuilderTests
         int full = AgentPackageBuilder.Build(inputs, Id, Clock).JsonBytes;
 
         // Just under the full size as the TARGET: only the first optional series
-        // has to go, and the ceiling is not what decides.
+        // has to go — the direct loss's curve column, whose figures stay — and
+        // the ceiling is not what decides.
         AgentPackageBuildResult trimmed = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: full - 1);
         Assert.True(trimmed.Succeeded, trimmed.Error);
-        Assert.Equal(["junctions[].sweep"], trimmed.Omitted);
+        Assert.Equal(["junctions[].curves.lossDirectDb"], trimmed.Omitted);
         JsonElement junction = Json(trimmed.Text!).GetProperty("junctions")[0];
-        Assert.False(junction.TryGetProperty("sweep", out _));
-        Assert.True(junction.TryGetProperty("lobes", out _));
-        Assert.Equal(["junctions[].sweep"], Json(trimmed.Text!).GetProperty("omitted").EnumerateArray().Select(o => o.GetString()));
+        Assert.True(junction.TryGetProperty("sweep", out _));
+        Assert.True(junction.TryGetProperty("sumLossDirect", out _));
+        Assert.DoesNotContain(
+            "lossDirectDb",
+            junction.GetProperty("curves").GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
+        Assert.Equal(["junctions[].curves.lossDirectDb"], Json(trimmed.Text!).GetProperty("omitted").EnumerateArray().Select(o => o.GetString()));
+
+        // One step further: the sweep goes next, and the lobes read off it stay.
+        AgentPackageBuildResult trimmedTwice = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: trimmed.JsonBytes - 1);
+        Assert.True(trimmedTwice.Succeeded, trimmedTwice.Error);
+        Assert.Equal(["junctions[].curves.lossDirectDb", "junctions[].sweep"], trimmedTwice.Omitted);
+        JsonElement twice = Json(trimmedTwice.Text!).GetProperty("junctions")[0];
+        Assert.False(twice.TryGetProperty("sweep", out _));
+        Assert.True(twice.TryGetProperty("lobes", out _));
 
         // Over the target every optional series goes, and the mandatory payload
         // may still grow up to the ceiling.
         AgentPackageBuildResult mandatory = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: 100, maxBytes: full);
         Assert.True(mandatory.Succeeded, mandatory.Error);
-        Assert.Equal(5, mandatory.Omitted.Count);
+        Assert.Equal(6, mandatory.Omitted.Count);
         Assert.True(mandatory.JsonBytes < full);
 
         // Nothing optional is enough: the failure names the size, and no text is handed out.
         AgentPackageBuildResult failed = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: 100, maxBytes: 100);
         Assert.False(failed.Succeeded);
         Assert.Null(failed.Text);
-        Assert.Equal(5, failed.Omitted.Count);
+        Assert.Equal(6, failed.Omitted.Count);
         Assert.Contains("limit is 0 KB", failed.Error);
     }
 

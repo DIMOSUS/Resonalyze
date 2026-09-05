@@ -35,11 +35,13 @@ target it drops optional series in this fixed order, listing what it dropped in
 `omitted`; once every optional series is gone, the mandatory payload may grow up
 to the 100 KB ceiling, and beyond that nothing is copied:
 
-1. `junctions[].sweep`
-2. `junctions[].coherenceLadder`
-3. `channels[].curves.broadband.coherence`
-4. `junctions[].correlation.curve`
-5. `junctions[].curves`
+1. `junctions[].curves.lossDirectDb` (the direct loss's curve column; its
+   figures `sumLossDirect` / `totalSumLossDirect` are mandatory and stay)
+2. `junctions[].sweep`
+3. `junctions[].coherenceLadder`
+4. `channels[].curves.broadband.coherence`
+5. `junctions[].correlation.curve`
+6. `junctions[].curves`
 
 ### 1.1 Top level
 
@@ -292,7 +294,8 @@ Every block is the panel's own read-out, unchanged. `id` is what a
   of numbers and are never to be compared with each other — the guide says
   which answers which question. The junction `curves` carry the direct loss as
   `lossDirectDb` beside `lossDb`; the column is left out when the read is
-  absent.
+  absent, and it is the first optional series dropped when the package is over
+  its size target (`omitted` then names it) — the figures always travel.
 - `phase`: the **Junction phase** row. `bestExtraDelayMs` and `bestInvert` are
   applied to the **lower** channel; scores run −1…1, higher is better;
   `lobeMargin` below about 0.05 means a whole-period hop cannot be ruled out.

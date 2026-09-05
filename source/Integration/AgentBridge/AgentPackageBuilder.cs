@@ -33,6 +33,12 @@ internal static class AgentPackageBuilder
     // `omitted` reports; the reader can tell what it is not seeing.
     private static readonly string[] OmissionOrder =
     [
+        // First out: the direct loss's CURVE column. Its figures (sumLossDirect,
+        // totalSumLossDirect) are mandatory and stay; the column is the shape,
+        // which the full loss's column beside it already gives, and on the
+        // reference car it alone tipped a package over the target and cost it
+        // the sweep — a series worth far more to a reader.
+        "junctions[].curves.lossDirectDb",
         "junctions[].sweep",
         "junctions[].coherenceLadder",
         "channels[].curves.broadband.coherence",
@@ -132,11 +138,12 @@ internal static class AgentPackageBuilder
         DateTimeOffset createdAtUtc,
         IReadOnlyList<string> omitted)
     {
-        bool keepSweep = !omitted.Contains(OmissionOrder[0]);
-        bool keepLadder = !omitted.Contains(OmissionOrder[1]);
-        bool keepCoherence = !omitted.Contains(OmissionOrder[2]);
-        bool keepCorrelationCurve = !omitted.Contains(OmissionOrder[3]);
-        bool keepJunctionCurves = !omitted.Contains(OmissionOrder[4]);
+        bool keepDirectLossColumn = !omitted.Contains(OmissionOrder[0]);
+        bool keepSweep = !omitted.Contains(OmissionOrder[1]);
+        bool keepLadder = !omitted.Contains(OmissionOrder[2]);
+        bool keepCoherence = !omitted.Contains(OmissionOrder[3]);
+        bool keepCorrelationCurve = !omitted.Contains(OmissionOrder[4]);
+        bool keepJunctionCurves = !omitted.Contains(OmissionOrder[5]);
 
         var junctions = new List<AgentPackageJunction>();
         var sides = new List<AgentPackageSide>();
@@ -147,7 +154,8 @@ internal static class AgentPackageBuilder
             {
                 junctions.Add(BuildJunction(
                     side, junction, inputs,
-                    keepSweep, keepLadder, keepCorrelationCurve, keepJunctionCurves));
+                    keepSweep, keepLadder, keepCorrelationCurve, keepJunctionCurves,
+                    keepDirectLossColumn));
             }
         }
 
@@ -473,7 +481,8 @@ internal static class AgentPackageBuilder
         bool keepSweep,
         bool keepLadder,
         bool keepCorrelationCurve,
-        bool keepJunctionCurves)
+        bool keepJunctionCurves,
+        bool keepDirectLossColumn)
     {
         string sideName = AgentChannelIds.SideName(side.Side);
         string name = $"{junction.LowerBlock}/{junction.UpperBlock}";
@@ -533,9 +542,10 @@ internal static class AgentPackageBuilder
             List<double> grid = AgentCurveSampling.JunctionGrid(
                 junction.CrossoverHz, AgentCurveSampling.BroadbandLowHz, AgentCurveSampling.BroadbandHighHz);
             // The direct loss rides as one more column — a few dozen numbers per
-            // junction — and only where the read exists, so a reader never meets a
-            // column of nulls standing for "no such read".
-            bool withDirect = side.DirectLoss != null;
+            // junction — only where the read exists, so a reader never meets a
+            // column of nulls standing for "no such read", and only while the
+            // size target allows it (it is the first optional series to go).
+            bool withDirect = side.DirectLoss != null && keepDirectLossColumn;
             List<string> columns = ["frequencyHz", "lowerDb", "upperDb", "sumDb", "lossDb"];
             if (withDirect)
             {

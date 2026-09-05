@@ -534,9 +534,15 @@ public sealed class AutoAlignmentEngineTests
                 upperTail: (228, -2.0)).Alignment;
 
         string trace = log.ToString();
-        Assert.Contains("sums only inverted, and the direct-sound cut agrees", trace);
-        Assert.Contains("phat trough", trace);
-        Assert.DoesNotContain("phat peak", trace);
+        // The seed goes to the cut, and the log says which extremum it refused
+        // and why. "concurs" is what the defect printed: the old positions-only
+        // agreement test, reporting two readings of opposite polarity as one.
+        Assert.Contains(
+            "direct-cut (the matched 2000 Hz split sums only inverted; " +
+            "the record's dominant peak",
+            trace);
+        Assert.Contains("is the polarity it cannot sum in)", trace);
+        Assert.DoesNotContain("concurs", trace);
         Assert.InRange(
             alignment[alignment.Keys.Single(item => item.Name == "T")].DelayMs,
             -0.12,

@@ -1337,9 +1337,9 @@ public static class AutoAlignmentEngine
     }
 
     /// <summary>
-    /// Whether the coarse seed must be read from the polarity family the
-    /// junction's own crossover asks for, rather than from the dominant
-    /// extremum of the whitened surface.
+    /// Whether the coarse seed must be handed to the direct-sound cut because
+    /// the whitened record's dominant extremum belongs to the polarity family
+    /// the junction's own crossover cannot sum in.
     /// <para>
     /// A whitened surface's peak and trough are one comb read under the two
     /// polarity assumptions: half a period apart by construction, and their
@@ -1355,24 +1355,38 @@ public static class AutoAlignmentEngine
     /// the direct wavefronts read 0.84 against 0.57.
     /// </para>
     /// <para>
+    /// The seed then goes to the CUT rather than to the record's best extremum
+    /// in the permitted family. The record has no statement to make about that
+    /// family's position: peak and trough are the window's strongest extrema
+    /// and may sit several lobes apart (which is why
+    /// <see cref="CorrelationAlignmentResult.PositiveOppositeNeighbor"/> exists
+    /// as a separate adjacency fact), and even the ADJACENT lobe is chosen by
+    /// distance alone — on the junction below the two neighbours of the
+    /// dominant peak sit 0.106 and 0.110 ms out, a four-microsecond tie
+    /// deciding a whole cycle. The cut has already named a lobe, on the
+    /// wavefronts, through its own trust gates, and above
+    /// <see cref="DirectSeedMinCrossoverHz"/> it is the better positional
+    /// witness anyway.
+    /// </para>
+    /// <para>
     /// <paramref name="directSeed"/> — the direct-sound cut's own extremum,
-    /// already held to its trust gates — is REQUIRED to agree, and that is the
-    /// whole guard. The filters state how the two FILTERS relate, not how the
-    /// drivers are wired, so on its own the design would overrule an honest
-    /// measurement of a driver connected backwards: such a pair reads |r| near
-    /// 1.0 in the family the crossover forbids and offers nothing usable in the
-    /// one it asks for, and moving its seed half a period would strand the
-    /// delay. Stage 2 makes that trade knowingly for the polarity it APPLIES (a
-    /// matched split's flip is not undone by Auto delay, nor its in-phase twin
-    /// corrected); the seed must not, because a position half a period out is a
-    /// lobe error everything downstream inherits.
+    /// already held to those gates — is REQUIRED to agree with the design, and
+    /// that is the whole guard. The filters state how the two FILTERS relate,
+    /// not how the drivers are wired, so on its own the design would overrule
+    /// an honest measurement of a driver connected backwards: such a pair reads
+    /// |r| near 1.0 in the family the crossover forbids and offers nothing
+    /// usable in the one it asks for, and moving its seed half a period would
+    /// strand the delay. Stage 2 makes that trade knowingly for the polarity it
+    /// APPLIES (a matched split's flip is not undone by Auto delay, nor its
+    /// in-phase twin corrected); the seed must not, because a position half a
+    /// period out is a lobe error everything downstream inherits.
     /// </para>
     /// <para>
     /// Field case (2026-09-05, the reference car's 4300 Hz LR36 mid/tweeter
     /// split): the full record's dominant extremum sat on the +0.746 ms peak
-    /// (r 0.42, in phase) while the direct cut read the trough at +0.642 ms
-    /// (r 0.83) — the same lobe the whitened trough named to within 2 us — and
-    /// the crossover sums only inverted. The seed followed the peak, the search
+    /// (r 0.42, in phase) while the direct cut read +0.642 ms (r 0.83) in the
+    /// inverted family the crossover sums in — the same lobe the whitened
+    /// trough named to within 2 us. The seed followed the peak, the search
     /// settled a period late, and the tweeter came out 0.20 ms behind the lobe
     /// the panel's own metric measures 0.24 dB better.
     /// </para>
@@ -2297,30 +2311,6 @@ public static class AutoAlignmentEngine
                 }
             }
 
-            if (SeedFamilyFollowsTheCrossover(filterInversion, seed, directSeed))
-            {
-                bool designedInversion = filterInversion!.Value;
-                CorrelationDelayCandidate aliased = seed;
-                seed = designedInversion ? phat.NegativeTrough : phat.PositivePeak;
-                sameSignRival =
-                    seed.InvertPolarity ? phat.NegativeRival : phat.PositiveRival;
-                seedLabel = seed.InvertPolarity ? "trough" : "peak";
-                seedOffsetMs = seed.DelayMs - centerLagMs;
-                log.AppendLine(
-                    $"  {pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
-                    $"the matched {pair.CrossoverHz:0} Hz split sums " +
-                    (designedInversion ? "only inverted" : "in phase") +
-                    ", and the direct-sound cut agrees " +
-                    $"(r {directSeed!.Coefficient:+0.000;-0.000} at " +
-                    $"{directSeed.DelayMs:+0.000;-0.000} ms), so the seed reads " +
-                    $"the whitened {seedLabel} ({seed.DelayMs:+0.000;-0.000} ms, " +
-                    $"r {seed.Coefficient:+0.000;-0.000}) and not the dominant " +
-                    $"{(aliased.InvertPolarity ? "trough" : "peak")} " +
-                    $"({aliased.DelayMs:+0.000;-0.000} ms, " +
-                    $"r {aliased.Coefficient:+0.000;-0.000}) half a period from " +
-                    "it — that one is the polarity this crossover cannot sum in");
-            }
-
             string? distrust = Distrust();
             bool trustPhat = distrust == null;
 
@@ -2351,7 +2341,25 @@ public static class AutoAlignmentEngine
             double increment;
             string seedSource;
             bool arrivalSeeded = false;
-            if (directSeed is { } adjudicated && trustPhat &&
+            if (SeedFamilyFollowsTheCrossover(filterInversion, seed, directSeed))
+            {
+                // The record's dominant extremum belongs to the polarity this
+                // crossover cannot sum in, and the cut's belongs to the one it
+                // asks for. The record is not merely outvoted on the position
+                // — it has no statement to make about it: every extremum it
+                // offers in the permitted family is a lobe crest it gives no
+                // ranking for, and the two nearest sit on either side of the
+                // dominant one, 0.106 and 0.110 ms out on the junction that
+                // exposed this. A four-microsecond tie is not what should
+                // choose a lobe. The cut named one, on the wavefronts and
+                // through its own trust gates, so the cut is the seed.
+                increment = -directSeed!.DelayMs;
+                string sums = filterInversion!.Value ? "only inverted" : "in phase";
+                seedSource = FormattableString.Invariant(
+                    $"direct-cut (the matched {pair.CrossoverHz:0} Hz split sums {sums}; the record's dominant {seedLabel} {seed.DelayMs:+0.000;-0.000} ms is the polarity it cannot sum in)");
+                RecordPartnerReach(directPhat!);
+            }
+            else if (directSeed is { } adjudicated && trustPhat &&
                 Math.Abs(adjudicated.DelayMs - seed.DelayMs) > halfPeriodAtFcMs)
             {
                 // Two trusted extrema on different lobes: adjudicate by JOINT

@@ -2776,16 +2776,20 @@ neither way is left alone: a Butterworth 18 crosses at 90°, and two corners tha
 merely meet overlap across a region instead of crossing at a point, so neither
 states a phase relation to read.
 
-Reading the polarity off the filters also settles which extremum **seeds** such
-a junction. A whitened correlation's peak and trough are one comb read under
-the two polarity assumptions — half a period apart, and which of them is taller
-measures how wide the analysed band is rather than which one is the junction's
-— so where the crossover has answered, and the direct-sound cut agrees with it,
-the seed reads that family even when the whole record's dominant extremum sits
-in the other. The cut's agreement is required, not decoration: the filters state
-how the two FILTERS relate, not how the drivers are wired, and a driver
-connected backwards behind a matched split reads strongly in the family its
-crossover forbids. Auto delay does not correct such a driver — the same trade
+Reading the polarity off the filters also settles what may **seed** such a
+junction. A whitened correlation's peak and trough are one comb read under the
+two polarity assumptions — half a period apart, and which of them is taller
+measures how wide the analysed band is rather than which one is the junction's.
+So where the crossover has answered and the whole record's dominant extremum
+sits in the other family, that extremum is not a lobe the pair can be tuned to,
+and the record has nothing to say about where the permitted one is: its own
+extrema in that family are lobe crests it gives no ranking for. The
+**direct-sound cut** seeds instead, having named a lobe on the wavefronts and
+through its own trust gates. The cut's agreement with the design is required,
+not decoration: the filters state how the two FILTERS relate, not how the
+drivers are wired, and a driver connected backwards behind a matched split
+reads strongly in the family its crossover forbids while offering nothing
+usable in the other. Auto delay does not correct such a driver — the same trade
 the forced polarity already makes — but neither does it move its seed half a
 period away from what the measurement plainly says.
 

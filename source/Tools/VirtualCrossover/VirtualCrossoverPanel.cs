@@ -3173,8 +3173,8 @@ public partial class VirtualCrossoverPanel : UserControl
             "shared anchor — the loss of the sum the cabin hears, reflections\r\n" +
             "included. The two families of numbers are not comparable.\r\n" +
             "Disable: no curve; the column keeps the Full read.\r\n" +
-            "The Auto delay battery, the AI package and the tuning sheet\r\n" +
-            "always quote Full.");
+            "The Auto delay battery and the tuning sheet quote Full; the AI\r\n" +
+            "package carries both reads whatever is selected here.");
         toolTip.SetToolTip(
             radioDspGroupDelay,
             "What the lower plot shows for each channel's DSP chain:\r\n" +

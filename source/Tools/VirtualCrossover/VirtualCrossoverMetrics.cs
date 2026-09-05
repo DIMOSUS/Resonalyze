@@ -346,8 +346,8 @@ internal sealed class VirtualCrossoverMetrics
     /// puts within 1–3 ms of the direct sound sit inside any window that still
     /// resolves a sixth of an octave, and the late tail the full window keeps
     /// fills the notch. The owner tunes by this one (it is the selector's
-    /// default); the Auto delay battery, the AI package and the tuning sheet
-    /// stay on the full read. See <see cref="SumLossWindow"/>.
+    /// default); the Auto delay battery and the tuning sheet stay on the full
+    /// read, and the AI package carries both. See <see cref="SumLossWindow"/>.
     /// </remarks>
     /// <param name="channels">
     /// The summing channels, in the order <paramref name="spectra"/> answers them.

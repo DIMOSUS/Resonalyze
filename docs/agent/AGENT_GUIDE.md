@@ -1,6 +1,6 @@
 # Resonalyze Agent Guide
 
-Guide version 1.6 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
+Guide version 1.7 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
 
 ## 0. The rules that also travel inside every package
 
@@ -94,10 +94,12 @@ the chain, `processedDb` through it, `chainDb` and `peqDb` the chain and the
 bank alone, and `hybridPreDspDb` / `hybridProcessedDb` the same two off the
 spatial average.
 
-**One smoothing, one window.** Every magnitude, sum and Sum loss in a package
-is computed at psychoacoustic smoothing whatever the user's screen shows, and
-the Sum loss always through the Full (steady-state) window whatever the
-panel's Sum loss selector shows, so two packages compare. The exception is the hybrid (spatial-average) columns and sums, which
+**One smoothing, both windows.** Every magnitude, sum and Sum loss in a package
+is computed at psychoacoustic smoothing whatever the user's screen shows, so two
+packages compare. The Sum loss travels in BOTH of its windows whatever the
+panel's Sum loss selector shows — `sumLoss` through the Full (steady-state)
+window and `sumLossDirect` through the direct-sound one; see the junction
+readings below for which answers which question. The exception is the hybrid (spatial-average) columns and sums, which
 travel at 1/12 octave with the smoothing off — compare a hybrid column with the
 measured one beside it by SHAPE, not by a narrow feature's depth.
 
@@ -139,10 +141,31 @@ before judging crossovers.
 
 **Junctions** (`junctions[]`, per adjacent pair per side):
 
-- `sumLoss.averageDb` / `dipDb` — what interference costs over the overlap.
-  Near 0 is good; a dip of several dB at the corner is the classic phase
-  mismatch. Sum loss moves with the two channels' LEVEL ratio as much as with
-  their phase, so it never settles a phase question on its own.
+- `sumLoss.averageDb` / `dipDb` — what interference costs over the overlap,
+  read through the **Full** window: the whole capture, the cabin's reflections
+  included. Near 0 is good; a dip of several dB at the corner is the classic
+  phase mismatch. Sum loss moves with the two channels' LEVEL ratio as much as
+  with their phase, so it never settles a phase question on its own.
+- `sumLossDirect.averageDb` / `dipDb` — the same figure through the
+  **direct-sound** window: each channel read over the first eight cycles of
+  every frequency from its own arrival, which drops the later reflections and
+  leaves what the two drivers do to each other at the junction. **Two
+  windows, two questions.** The ear localizes on the first arrival and
+  suppresses what follows it for some tens of milliseconds (the precedence
+  effect), so the stage — where a junction images, whether the two drivers
+  read as one source — is judged on `sumLossDirect` together with the
+  timing blocks below; that is the read to bring a delay or a polarity to.
+  Tonal balance is heard WITH the reflections, so the level of the sum, the
+  target and the EQ are judged on `sumLoss` and `sumDb`. The two are
+  different families of numbers — the direct read is usually deeper at a
+  high junction and moves more between microphone positions — so never
+  compare one to the other, and never average them. Read them against each
+  other instead: a deep `sumLossDirect` under a shallow `sumLoss` is a
+  timing or polarity fault the cabin happens to fill — the ear will still
+  localize the fault; a deep `sumLoss` under a shallow `sumLossDirect` is
+  the microphone position's own interference, not a fault of the junction,
+  and not a reason for a delay or a bell. The 3 dB working-junction rule
+  further down is written against `sumLoss`.
 - `phase` — `currentScore` against `bestScore`; `bestInvert` and
   `bestExtraDelayMs` apply to the **lower** channel; `lobeMargin` under about
   0.05 means a whole-period hop cannot be ruled out.

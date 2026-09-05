@@ -132,7 +132,12 @@ internal sealed record AgentSideInputs(
     IReadOnlyList<VirtualCrossoverMetric.Entry> Entries,
     IReadOnlyList<VirtualCrossoverMetric.PhaseEntry> PhaseEntries,
     IReadOnlyList<AgentJunctionInputs> Junctions,
-    string? UnavailableReason);
+    string? UnavailableReason,
+    // The same loss and read-outs through the direct-sound window (the panel's
+    // FDW-8 read, VirtualCrossoverMetrics.BuildDirectLossCurve). Null where that
+    // read has no metric; the package then carries the full read alone.
+    IReadOnlyList<SignalPoint>? DirectLoss = null,
+    IReadOnlyList<VirtualCrossoverMetric.Entry>? DirectEntries = null);
 
 /// <summary>
 /// One adjacent pair along the spectrum, with the two views the lower plot can

@@ -198,6 +198,40 @@ public sealed class AgentPackageBuilderTests
     }
 
     [Fact]
+    public void Build_CarriesBothSumLossWindows_AndDropsTheDirectOneWhereItHasNoRead()
+    {
+        // Both families travel whatever the panel shows, under their own names; the
+        // junction curves get the direct loss as one more column. A side whose direct
+        // read has no metric carries neither the figures nor the column — never a
+        // column of nulls standing for "no such read".
+        AgentPackageInputs inputs = Inputs();
+        JsonElement root = Json(AgentPackageBuilder.Build(inputs, Id, Clock).Text!);
+        JsonElement junction = root.GetProperty("junctions")[0];
+        Assert.Equal(-1.3, junction.GetProperty("sumLoss").GetProperty("averageDb").GetDouble());
+        Assert.Equal(-0.4, junction.GetProperty("sumLossDirect").GetProperty("averageDb").GetDouble());
+        Assert.Equal(-2.5, junction.GetProperty("sumLossDirect").GetProperty("dipDb").GetDouble());
+        Assert.Equal(-0.9, root.GetProperty("sides")[0].GetProperty("totalSumLossDirect").GetProperty("averageDb").GetDouble());
+        JsonElement curves = junction.GetProperty("curves");
+        Assert.Equal(
+            ["frequencyHz", "lowerDb", "upperDb", "sumDb", "lossDb", "lossDirectDb"],
+            curves.GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
+        JsonElement row = curves.GetProperty("rows").EnumerateArray()
+            .First(r => r[4].ValueKind == JsonValueKind.Number && r[5].ValueKind == JsonValueKind.Number);
+        // The fixture's direct curve is twice as deep as its full one at every
+        // point, so the column carries the direct read and not a copy of the full.
+        Assert.True(row[5].GetDouble() < row[4].GetDouble(),
+            $"direct {row[5].GetDouble()} should be deeper than full {row[4].GetDouble()}");
+
+        AgentSideInputs withoutDirect = inputs.Sides[0] with { DirectLoss = null, DirectEntries = null };
+        AgentPackageInputs stripped = inputs with { Sides = [withoutDirect, inputs.Sides[1]] };
+        JsonElement bare = Json(AgentPackageBuilder.Build(stripped, Id, Clock).Text!).GetProperty("junctions")[0];
+        Assert.False(bare.TryGetProperty("sumLossDirect", out _));
+        Assert.Equal(
+            ["frequencyHz", "lowerDb", "upperDb", "sumDb", "lossDb"],
+            bare.GetProperty("curves").GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
+    }
+
+    [Fact]
     public void Build_ReportsSidesStereoAndGroups()
     {
         JsonElement root = Json(AgentPackageBuilder.Build(Inputs(), Id, Clock).Text!);
@@ -562,7 +596,14 @@ public sealed class AgentPackageBuilderTests
             ],
             [new VirtualCrossoverMetric.PhaseEntry("B/A", "B", 80, 40, 160, phase)],
             [new AgentJunctionInputs("B", "A", 80, 40, 160, bProcessed, aLeftProcessed, correlation, coherence)],
-            null);
+            null,
+            // The direct-sound read: a different curve and different figures from
+            // the full one, so a test can tell which of the two a field carries.
+            Ramp(-1).Select(point => new SignalPoint(point.X, double.IsNaN(point.Y) ? point.Y : -Math.Abs(point.Y) / 2)).ToList(),
+            [
+                new VirtualCrossoverMetric.Entry("B/A", -0.4, -2.5, 40, 160, IsTotal: false),
+                new VirtualCrossoverMetric.Entry("total", -0.9, -2.5, 40, 2_800, IsTotal: true)
+            ]);
         var rightSide = new AgentSideInputs(
             AgentChannelSide.Right, [], null, null, null, [], [], [], "no channel with a source on this side");
 

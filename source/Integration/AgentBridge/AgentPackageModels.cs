@@ -182,6 +182,8 @@ internal sealed record AgentPackageSide(
     IReadOnlyList<string> Channels,
     AgentSeries? SumDb,
     AgentPackageLoss? TotalSumLoss,
+    // The same total through the direct-sound window; see AgentPackageJunction.
+    AgentPackageLoss? TotalSumLossDirect,
     // The median of sum minus target over the broadband grid: where the target
     // level datum sits against what the side actually plays. Sign: positive =
     // the side plays above the target. The hybrid twin reads the same off the
@@ -200,6 +202,10 @@ internal sealed record AgentPackageJunction(
     double CrossoverHz,
     double[] BandHz,
     AgentPackageLoss? SumLoss,
+    // The loss through the direct-sound window (the panel's FDW-8 read), beside
+    // the full one whatever the panel's selector shows: two families of numbers,
+    // never compared with each other — the guide says which answers what.
+    AgentPackageLoss? SumLossDirect,
     AgentPackagePhase? Phase,
     IReadOnlyList<AgentPackageLobe>? Lobes,
     AgentSeries? Sweep,

@@ -2021,6 +2021,12 @@ public partial class VirtualCrossoverPanel
             // makes for the active side (see RedrawMainPlotAsync), off the UI
             // thread, with only numbers crossing over.
             List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
+            // The direct-sound loss travels beside the full one whatever the panel's
+            // Sum loss selector shows — two families of numbers, labelled apart (see
+            // PROTOCOL §1.8) — read off the very spectra the junction phase block is
+            // built from, in the same task, exactly as RedrawMainPlotAsync does.
+            List<SignalPoint>? directLoss = null;
+            List<VirtualCrossoverMetric.Entry> directEntries = [];
             if (quotesJunctions)
             {
                 int phaseRate = summed[0].SampleRate;
@@ -2028,11 +2034,26 @@ public partial class VirtualCrossoverPanel
                 double gateLeftMs = gatePreview?.LeftMs ?? project.PhaseGateLeftMs;
                 double gatePlateauMs = gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs;
                 double gateRightMs = gatePreview?.RightMs ?? project.PhaseGateRightMs;
-                phaseEntries = await Task.Run(() => sideMetrics.BuildPhaseEntries(
-                    summed,
-                    ordered => JunctionPhaseSpectra.Build(
-                        ordered, phaseRate, pinnedOffsetMs,
-                        gateLeftMs, gatePlateauMs, gateRightMs)));
+                (phaseEntries, directLoss) = await Task.Run(() =>
+                {
+                    IReadOnlyList<ProcessedChannel>? orderedSet = null;
+                    IReadOnlyList<Complex[]>? spectra = null;
+                    List<VirtualCrossoverMetric.PhaseEntry> built = sideMetrics.BuildPhaseEntries(
+                        summed,
+                        ordered =>
+                        {
+                            orderedSet = ordered;
+                            spectra = JunctionPhaseSpectra.Build(
+                                ordered, phaseRate, pinnedOffsetMs,
+                                gateLeftMs, gatePlateauMs, gateRightMs);
+                            return spectra;
+                        });
+                    List<SignalPoint>? direct = spectra != null
+                        ? sideMetrics.BuildDirectLossCurve(orderedSet!, spectra, smoothing)
+                        : null;
+                    return (built, direct);
+                });
+                directEntries = sideMetrics.BuildEntries(shown, directLoss);
             }
             HybridMagnitudes? hybrid = hybridReferences != null
                 ? BuildHybridMagnitudes(shown, hybridReferences, rightSide, AgentHybridSmoothingInverseOctaves)
@@ -2118,7 +2139,9 @@ public partial class VirtualCrossoverPanel
                 junctions,
                 shown.Count == 0
                     ? $"no channels in {VirtualCrossoverGroupViews.DisplayName(groupView)} on this side"
-                    : null));
+                    : null,
+                directLoss,
+                directEntries));
 
             IReadOnlyList<SignalPoint>? MagnitudeOf(ProcessedChannel item) =>
                 curves.TryGetValue((item.Channel, rightSide), out var found) ? found.Processed : null;

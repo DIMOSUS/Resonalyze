@@ -63,7 +63,8 @@ internal static class AgentPackageBuilder
             ["peqPeak"] = "peakDb/peakHz = the highest point of the bank's NET response (preamp + all bands); above 0 dB the device is asked for more than unity there and a full-scale signal clips — lower the preamp by that much or trim the boost; a boost inside a wider cut or under a negative preamp is not a headroom problem",
             ["crossoverEdges"] = "both edges are stored; kind says which act: LowPass uses lowPass, HighPass uses highPass, BandPass both, Off none",
             ["curves"] = "preDspDb = measured response before the chain (Raw); processedDb = through the chain (Processed); chainDb = the chain alone; peqDb = the PEQ alone; hybridPreDspDb = the spatial average before the chain and hybridProcessedDb through it, both placed on the same level axis as the impulse-response curves (the hybrid datum applied) so all columns compare directly; null = not measured there",
-            ["sumLoss"] = "dB <= 0: how far the coherent sum falls short of the magnitude sum over the junction band; averageDb over the band, dipDb its worst point",
+            ["sumLoss"] = "dB <= 0: how far the coherent sum falls short of the magnitude sum over the junction band; averageDb over the band, dipDb its worst point; read through the FULL window (the whole capture, cabin reflections included)",
+            ["sumLossDirect"] = "the same figure through the DIRECT-sound window (each channel over the first eight cycles of every frequency from its own arrival; the later reflections dropped); a different family of numbers from sumLoss, never to be compared with it: judge the stage and the junction's timing on it, the tonal balance on sumLoss",
             ["phase"] = "junction phase read-out: bestExtraDelayMs and bestInvert are applied to the LOWER channel; scores in -1..1, higher is better",
             ["sweep"] = "summation score vs extra delay applied to the UPPER channel, both polarities; scoreDb <= 0, 0 = perfect; lobes are its local maxima",
             ["correlation"] = "GCC-PHAT between the pair: lagMs is the delay that, added to the UPPER channel, aligns it with the lower; a positive peak is a normal-polarity alignment, a negative trough the same with the upper channel inverted; arrivalLagMs = lower arrival minus upper arrival",
@@ -447,11 +448,16 @@ internal static class AgentPackageBuilder
             .Where(entry => entry.IsTotal)
             .Select(entry => (VirtualCrossoverMetric.Entry?)entry)
             .FirstOrDefault();
+        VirtualCrossoverMetric.Entry? directTotal = (side.DirectEntries ?? [])
+            .Where(entry => entry.IsTotal)
+            .Select(entry => (VirtualCrossoverMetric.Entry?)entry)
+            .FirstOrDefault();
         return new AgentPackageSide(
             sideName,
             channels,
             sum,
             total is { } t ? new AgentPackageLoss(Round1(t.AverageDb), AgentCurveSampling.Round(t.DipDb, 1)) : null,
+            directTotal is { } d ? new AgentPackageLoss(Round1(d.AverageDb), AgentCurveSampling.Round(d.DipDb, 1)) : null,
             sumVsTarget,
             hybridSumVsTarget,
             side.UnavailableReason ??
@@ -475,6 +481,10 @@ internal static class AgentPackageBuilder
         string upperId = ChannelIdOn(inputs, junction.UpperBlock, side.Side);
 
         VirtualCrossoverMetric.Entry? loss = side.Entries
+            .Where(entry => !entry.IsTotal && entry.Junction == name)
+            .Select(entry => (VirtualCrossoverMetric.Entry?)entry)
+            .FirstOrDefault();
+        VirtualCrossoverMetric.Entry? directLoss = (side.DirectEntries ?? [])
             .Where(entry => !entry.IsTotal && entry.Junction == name)
             .Select(entry => (VirtualCrossoverMetric.Entry?)entry)
             .FirstOrDefault();
@@ -522,15 +532,32 @@ internal static class AgentPackageBuilder
         {
             List<double> grid = AgentCurveSampling.JunctionGrid(
                 junction.CrossoverHz, AgentCurveSampling.BroadbandLowHz, AgentCurveSampling.BroadbandHighHz);
+            // The direct loss rides as one more column — a few dozen numbers per
+            // junction — and only where the read exists, so a reader never meets a
+            // column of nulls standing for "no such read".
+            bool withDirect = side.DirectLoss != null;
+            List<string> columns = ["frequencyHz", "lowerDb", "upperDb", "sumDb", "lossDb"];
+            if (withDirect)
+            {
+                columns.Add("lossDirectDb");
+            }
             curves = new AgentSeries(
-                ["frequencyHz", "lowerDb", "upperDb", "sumDb", "lossDb"],
-                grid.Select(frequency => new double?[]
+                columns,
+                grid.Select(frequency =>
                 {
-                    AgentCurveSampling.Frequency(frequency),
-                    Sample1(junction.LowerMagnitude, frequency),
-                    Sample1(junction.UpperMagnitude, frequency),
-                    Sample1(side.Sum, frequency),
-                    Sample1(side.Loss, frequency)
+                    var row = new List<double?>
+                    {
+                        AgentCurveSampling.Frequency(frequency),
+                        Sample1(junction.LowerMagnitude, frequency),
+                        Sample1(junction.UpperMagnitude, frequency),
+                        Sample1(side.Sum, frequency),
+                        Sample1(side.Loss, frequency)
+                    };
+                    if (withDirect)
+                    {
+                        row.Add(Sample1(side.DirectLoss, frequency));
+                    }
+                    return row.ToArray();
                 }).ToList());
         }
 
@@ -553,6 +580,7 @@ internal static class AgentPackageBuilder
             AgentCurveSampling.Frequency(junction.CrossoverHz),
             [AgentCurveSampling.Frequency(junction.BandLowHz), AgentCurveSampling.Frequency(junction.BandHighHz)],
             loss is { } l ? new AgentPackageLoss(Round1(l.AverageDb), AgentCurveSampling.Round(l.DipDb, 1)) : null,
+            directLoss is { } dl ? new AgentPackageLoss(Round1(dl.AverageDb), AgentCurveSampling.Round(dl.DipDb, 1)) : null,
             phase is { } p ? Phase(p.Result) : null,
             lobes,
             sweep,

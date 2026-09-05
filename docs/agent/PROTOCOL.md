@@ -243,7 +243,8 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
 `side`, `channels` (the ids that played on this side in the current view),
 `sumDb` (the coherent sum on the broadband grid), `totalSumLoss`
 (`averageDb`, `dipDb` — only where the chain is continuous and the view is one
-listening group), `sumVsTargetDb` (the median of `sumDb` minus `target.curve`
+listening group), `totalSumLossDirect` (the same total through the direct-sound
+window, §1.8; absent where that read has no metric), `sumVsTargetDb` (the median of `sumDb` minus `target.curve`
 over the grid: positive = the side plays above the target level; where the
 target datum sits, unmoved by a junction dip or a band edge),
 `hybridSumVsTargetDb` (the same reading off the sum the hybrid view draws —
@@ -259,6 +260,7 @@ measured, single-position sum.
 { "id": "left:B-C", "side": "left", "lower": "B:left", "upper": "C:left",
   "crossoverHz": 350, "bandHz": [175, 700],
   "sumLoss": { "averageDb": -0.2, "dipDb": -0.7 },
+  "sumLossDirect": { "averageDb": -0.4, "dipDb": -2.5 },
   "phase": { "phaseAtCrossoverDeg": 6.9, "consistency": 0.84, "currentScore": 0.84,
              "bestExtraDelayMs": 0.1, "bestInvert": false, "bestScore": 0.86,
              "oppositePolarityScore": 0.31, "rivalExtraDelayMs": 2.1, "rivalScore": 0.8,
@@ -271,7 +273,7 @@ measured, single-position sum.
                    "arrivalLagMs": 1.84,
                    "curve": { "columns": ["lagMs","fullRecordR","directR"], "rows": [ … ] } },
   "coherenceLadder": { "columns": ["frequencyHz","lagMs","peakR","currentR","halfPeriodMs"], "rows": [ … ] },
-  "curves": { "columns": ["frequencyHz","lowerDb","upperDb","sumDb","lossDb"], "rows": [ … ] } }
+  "curves": { "columns": ["frequencyHz","lowerDb","upperDb","sumDb","lossDb","lossDirectDb"], "rows": [ … ] } }
 ```
 
 Every block is the panel's own read-out, unchanged. `id` is what a
@@ -281,6 +283,16 @@ Every block is the panel's own read-out, unchanged. `id` is what a
   coherent sum falls short of the magnitude sum over the band; `averageDb` over
   the band, `dipDb` at its worst point. Always the **Full** (steady-state)
   read, whatever the panel's Sum loss selector shows.
+- `sumLossDirect`: the same row through the panel's **FDW-8** window — each
+  channel over the first eight cycles of every frequency from its own arrival
+  (or from the pinned gate), the spectra summed in one time frame: the loss of
+  the direct sound, without the cabin's later reflections. Always present
+  beside `sumLoss` whatever the selector shows; absent where that read has no
+  metric (channels at different sample rates). The two are different families
+  of numbers and are never to be compared with each other — the guide says
+  which answers which question. The junction `curves` carry the direct loss as
+  `lossDirectDb` beside `lossDb`; the column is left out when the read is
+  absent.
 - `phase`: the **Junction phase** row. `bestExtraDelayMs` and `bestInvert` are
   applied to the **lower** channel; scores run −1…1, higher is better;
   `lobeMargin` below about 0.05 means a whole-period hop cannot be ruled out.
@@ -325,7 +337,7 @@ same chat as a second text:
 RESONALYZE_AGENT_DIAGNOSTIC_V1
 …
 BEGIN_RESONALYZE_AGENT_DIAGNOSTIC_JSON
-{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.6",
+{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.7",
   "diagnostic": "excessGroupDelay", "packageId": "…", "createdAtUtc": "…",
   "conventions": { … },
   "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } }, … ] }
@@ -684,7 +696,7 @@ copied to the clipboard, pasted into the same chat:
 RESONALYZE_AGENT_PROBE_V1
 …
 BEGIN_RESONALYZE_AGENT_PROBE_JSON
-{ "kind": "resonalyze.agent-probe", "protocolVersion": 1, "guideVersion": "1.6",
+{ "kind": "resonalyze.agent-probe", "protocolVersion": 1, "guideVersion": "1.7",
   "packageId": "…", "sessionMatchesPackage": true, "createdAtUtc": "…",
   "conventions": { … },
   "probes": [

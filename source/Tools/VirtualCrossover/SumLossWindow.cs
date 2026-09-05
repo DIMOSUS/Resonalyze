@@ -7,8 +7,8 @@ namespace Resonalyze;
 /// <remarks>
 /// The two windows answer different questions, and neither replaces the other.
 /// <see cref="Full"/> reads the sum the ear hears in the cabin, reflections
-/// included; it is what the Auto delay battery is judged by, and what the AI
-/// package and the tuning sheet always quote. <see cref="Direct"/> — the
+/// included; it is what the Auto delay battery is judged by and what the tuning
+/// sheet quotes (the AI package carries both reads). <see cref="Direct"/> — the
 /// default the owner tunes with — reads the DIRECT sound, each channel through
 /// the junction phase block's 8-cycle window at its own front. On a
 /// seven-position grid in the reference car the direct read moved the

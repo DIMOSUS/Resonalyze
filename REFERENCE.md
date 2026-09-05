@@ -2018,8 +2018,9 @@ reflections a car puts within 1–3 ms of the direct sound sit inside any window
 that still resolves a sixth of an octave, while the late tail the Full window
 keeps fills the notch. The two families of numbers are not comparable with each
 other. **Disable** draws no curve and leaves the column on the Full read. The
-drawn Sum stays the steady-state one under every setting, and the AI package
-and the tuning sheet always quote Full. A session saved before the selector
+drawn Sum stays the steady-state one under every setting; the tuning sheet
+quotes Full, and the AI package carries both reads under their own names
+whatever the selector shows. A session saved before the selector
 existed opens on Full if its Sum loss curve was ticked on — that curve was the
 steady-state one, and the number its user watched keeps its meaning — and on
 FDW-8 otherwise.
@@ -3131,9 +3132,9 @@ this: the clipboard is the only transport, and you are the one who pastes.
   smoothing whatever the panel's smoothing selector shows — a Sum loss read at
   1/48 octave and one read at 1/6 are different numbers, and packages have to
   compare across sessions and across users, so the panel's own read-out at
-  another smoothing may differ from the package's — and always through the
-  **Full** loss window, whatever the panel's Sum loss selector shows, for the
-  same reason. The hybrid curves and their
+  another smoothing may differ from the package's — and the Sum loss in BOTH
+  of its windows, `sumLoss` (Full) and `sumLossDirect` (FDW-8), whatever the
+  panel's Sum loss selector shows, for the same reason. The hybrid curves and their
   sum are the exception to the exception: an average is read with the
   smoothing off, as the [Hybrid](#hybrid-spatial-averages-under-the-prediction)
   section says, and off cannot travel on the package's 12-point-per-octave

@@ -1285,6 +1285,10 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, double> timeline =
             BuildArrivalTimeline(
                 byBand, pairs, log,
+                // This walk searches polarity, so the junction's own crossover
+                // is what may settle it in advance - the same rule, and the
+                // same fence, AlignChannelAtJunction forces below.
+                CrossoverSettlesJunctionPolarity,
                 out HashSet<AlignmentJunction> untrustedSeeds,
                 out Dictionary<AlignmentJunction, double> seedPartnerReach);
 
@@ -1337,20 +1341,120 @@ public static class AutoAlignmentEngine
     }
 
     /// <summary>
+    /// The polarity a walk has already settled a junction on before its search
+    /// begins, with the phrase that says where the answer came from.
+    /// </summary>
+    /// <remarks>
+    /// Two walks, two authorities. A walk that searches polarity asks the
+    /// junction's own crossover (<see cref="CrossoverSettlesJunctionPolarity"/>);
+    /// the stereo far-side descent does not ask it at all, because every
+    /// twinned channel inherits its counterpart's sign
+    /// (<see cref="InheritedJunctionPolarity"/>). Stage 1 must be told WHICH,
+    /// or it centres the coarse window on a family stage 2 then forbids - the
+    /// same defect one stage up.
+    /// </remarks>
+    internal readonly record struct SettledJunctionPolarity(
+        bool Inverted,
+        string Because);
+
+    /// <summary>
+    /// The polarity the junction's own filters settle, for a walk that lets
+    /// them: a matched split at or above <see cref="DirectSeedMinCrossoverHz"/>,
+    /// the same rule and the same fence stage 2 forces with (see
+    /// <see cref="ExpectsRelativeInversion"/>). Null where the filters shrug,
+    /// where the split is staggered, or below the fence.
+    /// </summary>
+    internal static SettledJunctionPolarity? CrossoverSettlesJunctionPolarity(
+        AlignmentJunction pair)
+    {
+        ArgumentNullException.ThrowIfNull(pair);
+        if (pair.CrossoverHz < DirectSeedMinCrossoverHz ||
+            ExpectsRelativeInversion(pair) is not bool inverted)
+        {
+            return null;
+        }
+
+        string sums = inverted ? "only inverted" : "in phase";
+        return new SettledJunctionPolarity(
+            inverted,
+            FormattableString.Invariant(
+                $"the matched {pair.CrossoverHz:0} Hz split sums {sums}"));
+    }
+
+    /// <summary>
+    /// The polarity a FAR-side junction will be given: not its crossover's
+    /// answer but the one the reference side already settled, because polarity
+    /// is a property of the driver and each far channel inherits its
+    /// counterpart's sign (see the inheritance in the far-side descent, and
+    /// the bridge's own for the top pair).
+    /// <para>
+    /// This is what keeps stages 1 and 2 reading one junction the same way on
+    /// that side. The far descent hands its search an inherited polarity, which
+    /// outranks the crossover rule, so a stage-1 reseat toward the SPLIT's
+    /// design could centre the window on the family the search is then
+    /// forbidden to use - precisely the alias error the reseat exists to
+    /// prevent. Where the reference side settled the pair as its crossover
+    /// asks, the two answers coincide and nothing changes; where it did not
+    /// (its own seed was untrusted, or the channel was searched jointly with a
+    /// second neighbour, and the polarity rule stood down), this follows the
+    /// side that actually decided.
+    /// </para>
+    /// <para>
+    /// Null unless BOTH channels resolve to a settled counterpart - a mono
+    /// channel is its own, a twinned one is named by the pair link, and
+    /// anything else is a channel whose polarity this walk does not inherit.
+    /// Mixed authority across one junction is not a family the seed may be held
+    /// to, and null simply leaves the seed where the record put it.
+    /// </para>
+    /// </summary>
+    internal static SettledJunctionPolarity? InheritedJunctionPolarity(
+        AlignmentJunction pair,
+        IReadOnlyCollection<IAlignmentChannel> monoChannels,
+        IReadOnlyList<StereoPairLink>? pairLinks,
+        IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> alignment)
+    {
+        ArgumentNullException.ThrowIfNull(pair);
+        ArgumentNullException.ThrowIfNull(monoChannels);
+        ArgumentNullException.ThrowIfNull(alignment);
+
+        IAlignmentChannel? Counterpart(IAlignmentChannel channel) =>
+            monoChannels.Contains(channel)
+                ? channel
+                : pairLinks?.FirstOrDefault(link => link.Right == channel)?.Left;
+
+        if (Counterpart(pair.Lower.Channel) is not { } lower ||
+            Counterpart(pair.Upper.Channel) is not { } upper)
+        {
+            return null;
+        }
+
+        // GetValueOrDefault, exactly as the descent reads it: a walk's own
+        // reference channel carries no override, which reads as "not inverted".
+        bool inverted =
+            alignment.GetValueOrDefault(lower).InvertPolarity ^
+            alignment.GetValueOrDefault(upper).InvertPolarity;
+        string settled = inverted ? "inverted" : "in phase";
+        return new SettledJunctionPolarity(
+            inverted,
+            $"the reference side settled this pair {settled} and the far side " +
+            "inherits its polarity driver by driver");
+    }
+
+    /// <summary>
     /// Whether the coarse seed must be handed to the direct-sound cut because
     /// the whitened record's dominant extremum belongs to the polarity family
-    /// the junction's own crossover cannot sum in.
+    /// this junction will not be searched in.
     /// <para>
     /// A whitened surface's peak and trough are one comb read under the two
     /// polarity assumptions: half a period apart by construction, and their
     /// |r| difference measures the analysed band's WIDTH, not which of them is
-    /// the junction's (see <see cref="PhatSeedMinRivalDominance"/>). So where a
-    /// matched split settles the polarity — the same question stage 2 forces an
-    /// answer to, behind the same frequency fence (see
-    /// <see cref="ExpectsRelativeInversion"/>) — the other family is not a lobe
-    /// this pair can be tuned to. Seeding from it centres the fine window half a
-    /// period off the lobe stage 2 will then force the polarity of, and hands
-    /// the loss search a choice between two aliases it cannot separate: at a
+    /// the junction's (see <see cref="PhatSeedMinRivalDominance"/>). So where
+    /// the polarity is already settled - by the junction's own crossover on a
+    /// walk that asks it, by the other side on one that inherits (see
+    /// <see cref="SettledJunctionPolarity"/>) - the other family is not a lobe
+    /// this pair can be tuned to. Seeding from it centres the fine window half
+    /// a period off the lobe stage 2 then holds the polarity of, and hands the
+    /// loss search a choice between two aliases it cannot separate: at a
     /// mid/tweeter junction the field pair below reads them 0.20 dB apart while
     /// the direct wavefronts read 0.84 against 0.57.
     /// </para>
@@ -1361,83 +1465,48 @@ public static class AutoAlignmentEngine
     /// and may sit several lobes apart (which is why
     /// <see cref="CorrelationAlignmentResult.PositiveOppositeNeighbor"/> exists
     /// as a separate adjacency fact), and even the ADJACENT lobe is chosen by
-    /// distance alone — on the junction below the two neighbours of the
+    /// distance alone - on the junction below the two neighbours of the
     /// dominant peak sit 0.106 and 0.110 ms out, a four-microsecond tie
     /// deciding a whole cycle. The cut has already named a lobe, on the
-    /// wavefronts, through its own trust gates, and above
+    /// wavefronts, through its own trust gates, and at or above
     /// <see cref="DirectSeedMinCrossoverHz"/> it is the better positional
-    /// witness anyway.
+    /// witness anyway. Below that frequency there is no cut and this cannot
+    /// fire at all.
     /// </para>
     /// <para>
-    /// <paramref name="directSeed"/> — the direct-sound cut's own extremum,
-    /// already held to those gates — is REQUIRED to agree with the design, and
-    /// that is the whole guard. The filters state how the two FILTERS relate,
-    /// not how the drivers are wired, so on its own the design would overrule
-    /// an honest measurement of a driver connected backwards: such a pair reads
-    /// |r| near 1.0 in the family the crossover forbids and offers nothing
-    /// usable in the one it asks for, and moving its seed half a period would
-    /// strand the delay. Stage 2 makes that trade knowingly for the polarity it
-    /// APPLIES (a matched split's flip is not undone by Auto delay, nor its
-    /// in-phase twin corrected); the seed must not, because a position half a
-    /// period out is a lobe error everything downstream inherits.
+    /// <paramref name="directSeed"/> - the direct-sound cut's own extremum,
+    /// already held to those gates - is REQUIRED to agree with the settled
+    /// answer, and that is the whole guard. A matched split states how the two
+    /// FILTERS relate, not how the drivers are wired, so on its own it would
+    /// overrule an honest measurement of a driver connected backwards: such a
+    /// pair reads |r| near 1.0 in the family the crossover forbids and offers
+    /// nothing usable in the one it asks for, and moving its seed half a period
+    /// would strand the delay. Stage 2 makes that trade knowingly for the
+    /// polarity it APPLIES (a matched split's flip is not undone by Auto delay,
+    /// nor its in-phase twin corrected); the seed must not, because a position
+    /// half a period out is a lobe error everything downstream inherits.
     /// </para>
     /// <para>
     /// Field case (2026-09-05, the reference car's 4300 Hz LR36 mid/tweeter
     /// split): the full record's dominant extremum sat on the +0.746 ms peak
     /// (r 0.42, in phase) while the direct cut read +0.642 ms (r 0.83) in the
-    /// inverted family the crossover sums in — the same lobe the whitened
+    /// inverted family the crossover sums in - the same lobe the whitened
     /// trough named to within 2 us. The seed followed the peak, the search
     /// settled a period late, and the tweeter came out 0.20 ms behind the lobe
     /// the panel's own metric measures 0.24 dB better.
     /// </para>
     /// </summary>
-    internal static bool SeedFamilyFollowsTheCrossover(
-        bool? filterInversion,
+    internal static bool SeedFamilyFollowsTheSettledPolarity(
+        SettledJunctionPolarity? settled,
         CorrelationDelayCandidate dominant,
         CorrelationDelayCandidate? directSeed)
     {
         ArgumentNullException.ThrowIfNull(dominant);
-        return filterInversion is bool designed &&
-            dominant.InvertPolarity != designed &&
-            directSeed?.InvertPolarity == designed;
+        return settled is { } answer &&
+            dominant.InvertPolarity != answer.Inverted &&
+            directSeed?.InvertPolarity == answer.Inverted;
     }
 
-    // Stage 1: coarse offsets from band-limited first arrivals, refined by the
-    // GCC-PHAT peak where it is trustworthy. Arrivals of different drivers are
-    // only comparable inside a SHARED band — a woofer's envelope in its own low
-    // band rises milliseconds later than a tweeter's in its high band. So each
-    // adjacent pair is measured around its own crossover frequency, and the
-    // pairwise differences chain into one relative timeline. Only the
-    // differences matter downstream, so the anchor value of the first channel
-    // is arbitrary (zero).
-    /// <summary>
-    /// Whether the junction's own FILTERS ask for the two channels to be
-    /// relatively inverted — computed from the crossover settings alone, with no
-    /// measurement involved: the two chains' responses are summed across the
-    /// junction band in both relative polarities, and the inverted sum has to
-    /// win by <see cref="ExpectedInversionMarginDb"/>.
-    /// <para>
-    /// This is the piece the search could not see before. A crossover's summing
-    /// polarity is a property of its order: LR24 and LR48 sum in phase, LR12 and
-    /// LR36 sum INVERTED (their filters sit 180° apart at the corner), Butterworth
-    /// 12 likewise. Where the filters are that explicit, an inverted junction is
-    /// the crossover working as designed, and the invert preference in
-    /// <see cref="AlignmentSelection"/> — written for "a flipped driver is a
-    /// wiring fault worth several dB" — has to defend the OTHER polarity, or it
-    /// spends its 0.5 dB defending the null. Measured on the v6 cabin with the
-    /// mid/tweeter split set to LR36: on the correct alignment the in-phase sum
-    /// runs 4.8-5.8 dB below the inverted one, yet once each polarity is allowed
-    /// its own optimum delay the gap between them is only 0.28-0.49 dB, so the
-    /// undefended margin decided it — one side of the same cabin came out right
-    /// and the other wrong.
-    /// </para>
-    /// <para>
-    /// The gain, delay and polarity of each chain are neutralized first: gain
-    /// would weight one channel's filter over the other's, and delay and polarity
-    /// are exactly what the search is about to decide. What remains is the
-    /// crossover (and any PEQ, which does bend phase and belongs here).
-    /// </para>
-    /// </summary>
     private static bool? ExpectsRelativeInversion(AlignmentJunction pair)
     {
         double preferenceDb = FilterPolarityPreferenceDb(pair);
@@ -1520,13 +1589,18 @@ public static class AutoAlignmentEngine
             : double.NaN;
     }
 
+    // settledPolarity is the pass's polarity AUTHORITY, and it has no default
+    // on purpose: a caller that forgets it is a compile error rather than a
+    // walk that quietly seeds against the family its own stage 2 will hold.
     private static Dictionary<IAlignmentChannel, double> BuildArrivalTimeline(
         IReadOnlyList<AlignmentSnapshot> byBand,
         IReadOnlyList<AlignmentJunction> pairs,
         StringBuilder log,
+        Func<AlignmentJunction, SettledJunctionPolarity?> settledPolarity,
         out HashSet<AlignmentJunction> untrustedSeedJunctions,
         out Dictionary<AlignmentJunction, double> seedPartnerDistanceMs)
     {
+        ArgumentNullException.ThrowIfNull(settledPolarity);
         // Junctions whose coarse seed fell back to the arrival envelope because
         // the PHAT peak was untrusted (a low junction with too few in-band
         // periods): the coarse offset ACROSS such a junction can be a half period
@@ -1985,13 +2059,11 @@ public static class AutoAlignmentEngine
                 seed.InvertPolarity ? phat.NegativeRival : phat.PositiveRival;
             string seedLabel = seed.InvertPolarity ? "trough" : "peak";
             double seedOffsetMs = seed.DelayMs - centerLagMs;
-            // The polarity the junction's own filters settle, where they
-            // settle one at all — read here so the seed below can be held to
-            // the same answer stage 2 will force (see ExpectsRelativeInversion
-            // and the reseat further down), behind the same frequency fence.
-            bool? filterInversion = pair.CrossoverHz >= DirectSeedMinCrossoverHz
-                ? ExpectsRelativeInversion(pair)
-                : null;
+            // The polarity THIS pass will hold the junction to, whoever
+            // settles it (see SettledJunctionPolarity) - read here so the seed
+            // below can be held to the same answer, and read from the pass's
+            // own authority rather than assumed to be the crossover's.
+            SettledJunctionPolarity? settled = settledPolarity(pair);
             // Declared ahead of the trust gate below, which reads the witness
             // (a local function cannot capture a variable declared after it).
             CorrelationAlignmentResult? directPhat = null;
@@ -2341,7 +2413,7 @@ public static class AutoAlignmentEngine
             double increment;
             string seedSource;
             bool arrivalSeeded = false;
-            if (SeedFamilyFollowsTheCrossover(filterInversion, seed, directSeed))
+            if (SeedFamilyFollowsTheSettledPolarity(settled, seed, directSeed))
             {
                 // The record's dominant extremum belongs to the polarity this
                 // crossover cannot sum in, and the cut's belongs to the one it
@@ -2354,9 +2426,9 @@ public static class AutoAlignmentEngine
                 // choose a lobe. The cut named one, on the wavefronts and
                 // through its own trust gates, so the cut is the seed.
                 increment = -directSeed!.DelayMs;
-                string sums = filterInversion!.Value ? "only inverted" : "in phase";
+                string because = settled!.Value.Because;
                 seedSource = FormattableString.Invariant(
-                    $"direct-cut (the matched {pair.CrossoverHz:0} Hz split sums {sums}; the record's dominant {seedLabel} {seed.DelayMs:+0.000;-0.000} ms is the polarity it cannot sum in)");
+                    $"direct-cut ({because}; the record's dominant {seedLabel} {seed.DelayMs:+0.000;-0.000} ms is the polarity this junction will not be searched in)");
                 RecordPartnerReach(directPhat!);
             }
             else if (directSeed is { } adjudicated && trustPhat &&
@@ -3952,6 +4024,14 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, double> rightTimeline =
             BuildArrivalTimeline(
                 rightByBand, plan.RightPairs, log,
+                // NOT the crossover here: this descent hands every twinned
+                // channel the sign its counterpart settled, which outranks the
+                // split's design (see the inheritance in AlignRight below), so
+                // the reference side is what may settle a family in advance.
+                // Reading the crossover instead would let stage 1 centre the
+                // window on a polarity stage 2 is forbidden to search.
+                pair => InheritedJunctionPolarity(
+                    pair, plan.MonoChannels, plan.PairLinks, alignment),
                 out HashSet<AlignmentJunction> rightUntrustedSeeds,
                 out Dictionary<AlignmentJunction, double> rightSeedPartnerReach);
 

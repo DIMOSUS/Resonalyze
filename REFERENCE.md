@@ -2793,6 +2793,14 @@ usable in the other. Auto delay does not correct such a driver — the same trad
 the forced polarity already makes — but neither does it move its seed half a
 period away from what the measurement plainly says.
 
+On the far side of a stereo run the crossover is not the authority: polarity is
+a property of the driver, so each far channel takes the sign its counterpart
+settled, and the family that seed is held to is therefore the one the
+**reference side** settled rather than the one the split asks for. Where the two
+agree — the ordinary case — nothing changes; where the reference side's own
+junction was decided some other way, the far side follows it, so both stages of
+that walk read the junction the same way.
+
 Where two candidates of opposite polarity still score within a fraction of a
 decibel — at a mid/tweeter junction the summation metric frequently cannot tell
 a lobe from the flipped one half a period away at all — the **direct sound's

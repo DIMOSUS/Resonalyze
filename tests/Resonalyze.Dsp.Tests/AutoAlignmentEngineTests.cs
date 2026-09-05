@@ -474,43 +474,193 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Theory]
-    // The filters say nothing (a staggered split, a channel with no crossover,
-    // a junction under the frequency fence): the dominant extremum stands,
-    // whatever the direct cut read.
+    // Nobody settled the polarity in advance (a staggered split, a channel
+    // with no crossover, a junction under the frequency fence, or a far-side
+    // pair whose counterparts this walk cannot resolve): the dominant extremum
+    // stands, whatever the direct cut read.
     [InlineData(null, true, true, false)]
     [InlineData(null, false, true, false)]
-    // The dominant extremum is already the family the crossover sums in —
-    // nothing to move.
+    // The dominant extremum is already the family this junction will be
+    // searched in - nothing to move.
     [InlineData(true, true, true, false)]
     [InlineData(false, false, false, false)]
-    // The dominant extremum is the family the crossover CANNOT sum in, and the
-    // direct-sound cut names the one it can: the record is following the
-    // cabin, and the seed follows the design and the wavefronts instead.
+    // The dominant extremum is the family the search will not be given, and
+    // the direct-sound cut names the one it will: the record is following the
+    // cabin, and the seed goes to the cut instead.
     [InlineData(true, false, true, true)]
     [InlineData(false, true, false, true)]
     // ... but only then. With no usable direct witness, or with one that reads
-    // the same family the record does, the measurement is unopposed — a driver
+    // the same family the record does, the measurement is unopposed - a driver
     // wired backwards behind a matched split looks exactly like this, and
     // moving its seed half a period would strand the delay.
     [InlineData(true, false, null, false)]
     [InlineData(false, true, null, false)]
     [InlineData(true, false, false, false)]
     [InlineData(false, true, true, false)]
-    public void SeedFamilyFollowsTheCrossover_MovesOnlyOnAgreementWithTheCut(
-        bool? filterInversion,
+    public void SeedFamilyFollowsTheSettledPolarity_MovesOnlyOnAgreementWithTheCut(
+        bool? settledInversion,
         bool dominantInverted,
         bool? directInverted,
         bool expected)
     {
+        AutoAlignmentEngine.SettledJunctionPolarity? settled =
+            settledInversion is bool inverted
+                ? new AutoAlignmentEngine.SettledJunctionPolarity(inverted, "because")
+                : null;
         var dominant = new CorrelationDelayCandidate(0.5, 0.4, dominantInverted);
-        CorrelationDelayCandidate? direct = directInverted is bool inverted
-            ? new CorrelationDelayCandidate(0.4, 0.8, inverted)
+        CorrelationDelayCandidate? direct = directInverted is bool cut
+            ? new CorrelationDelayCandidate(0.4, 0.8, cut)
             : null;
 
         Assert.Equal(
             expected,
-            AutoAlignmentEngine.SeedFamilyFollowsTheCrossover(
-                filterInversion, dominant, direct));
+            AutoAlignmentEngine.SeedFamilyFollowsTheSettledPolarity(
+                settled, dominant, direct));
+    }
+
+    [Theory]
+    // The matched splits stage 2 forces an answer for, at a junction the
+    // crossover dominates: stage 1 must read the same answer.
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 36, 2_000, true)]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 24, 2_000, false)]
+    public void CrossoverSettlesJunctionPolarity_ReadsTheSplitAboveTheFence(
+        CrossoverFilterFamily family,
+        int slopeDbPerOctave,
+        double cornerHz,
+        bool expectInverted)
+    {
+        AutoAlignmentEngine.SettledJunctionPolarity? settled =
+            AutoAlignmentEngine.CrossoverSettlesJunctionPolarity(
+                FilteredJunction(family, slopeDbPerOctave, cornerHz));
+
+        Assert.NotNull(settled);
+        Assert.Equal(expectInverted, settled!.Value.Inverted);
+        Assert.Contains(
+            expectInverted ? "sums only inverted" : "sums in phase",
+            settled.Value.Because);
+    }
+
+    [Fact]
+    public void CrossoverSettlesJunctionPolarity_StaysOutBelowTheFence()
+    {
+        // Same matched LR36, at a corner where the cabin's modes shape the band
+        // instead of the crossover. Stage 2 does not force there and stage 1
+        // must not pre-empt it either: the archived cabins' matched Butterworth
+        // 36 splits at 70 and 180 Hz answer the polarity question by MOVING a
+        // period rather than by flipping.
+        Assert.Null(AutoAlignmentEngine.CrossoverSettlesJunctionPolarity(
+            FilteredJunction(CrossoverFilterFamily.LinkwitzRiley, 36, 180)));
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, false)]
+    public void InheritedJunctionPolarity_ReadsTheRelationTheReferenceSideSettled(
+        bool lowerReferenceInverted,
+        bool upperReferenceInverted,
+        bool expectInverted)
+    {
+        // The far side never asks its crossover: each channel takes the sign
+        // its counterpart settled, so the RELATION the far junction will be
+        // searched in is the reference side's, whatever the split asks for.
+        // The chains here say "matched LR36" — inverted by design — and three
+        // of the four cases deliberately disagree with that.
+        var lowerReference = new TestChannel("W ref", UnitImpulse(BasePosition));
+        var upperReference = new TestChannel("T ref", UnitImpulse(BasePosition));
+        AlignmentJunction far = FilteredJunction(
+            CrossoverFilterFamily.LinkwitzRiley, 36, 2_000);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [lowerReference] = new AlignmentOverride(0.0, lowerReferenceInverted),
+            [upperReference] = new AlignmentOverride(0.0, upperReferenceInverted)
+        };
+
+        AutoAlignmentEngine.SettledJunctionPolarity? settled =
+            AutoAlignmentEngine.InheritedJunctionPolarity(
+                far,
+                [],
+                [
+                    new StereoPairLink(
+                        lowerReference, far.Lower.Channel, 100, 10_000),
+                    new StereoPairLink(
+                        upperReference, far.Upper.Channel, 100, 10_000)
+                ],
+                alignment);
+
+        Assert.NotNull(settled);
+        Assert.Equal(expectInverted, settled!.Value.Inverted);
+        Assert.Contains("the far side", settled.Value.Because);
+        // ... and it is not the crossover's answer that got through: this split
+        // sums only inverted, yet two of these cases settle in phase.
+        Assert.True(
+            AutoAlignmentEngine.CrossoverSettlesJunctionPolarity(far)
+                is { Inverted: true });
+    }
+
+    [Fact]
+    public void InheritedJunctionPolarity_TakesAMonoChannelAsItsOwnCounterpart()
+    {
+        // A shared subwoofer is one instance on both sides and carries no pair
+        // link; its settled sign IS the one the far junction will see.
+        AlignmentJunction far = FilteredJunction(
+            CrossoverFilterFamily.LinkwitzRiley, 36, 2_000);
+        var upperReference = new TestChannel("T ref", UnitImpulse(BasePosition));
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [far.Lower.Channel] = new AlignmentOverride(0.0, true),
+            [upperReference] = new AlignmentOverride(0.0, false)
+        };
+
+        AutoAlignmentEngine.SettledJunctionPolarity? settled =
+            AutoAlignmentEngine.InheritedJunctionPolarity(
+                far,
+                [far.Lower.Channel],
+                [new StereoPairLink(upperReference, far.Upper.Channel, 100, 10_000)],
+                alignment);
+
+        Assert.NotNull(settled);
+        Assert.True(settled!.Value.Inverted);
+    }
+
+    [Fact]
+    public void InheritedJunctionPolarity_RefusesWhenOneSideHasNoCounterpart()
+    {
+        // Mixed authority across one junction: the searched channel would take
+        // an inherited sign and its neighbour would not, so there is no single
+        // family to hold the seed to. Null leaves the seed where the record put
+        // it — the behaviour that predates the rule.
+        AlignmentJunction far = FilteredJunction(
+            CrossoverFilterFamily.LinkwitzRiley, 36, 2_000);
+        var upperReference = new TestChannel("T ref", UnitImpulse(BasePosition));
+
+        Assert.Null(AutoAlignmentEngine.InheritedJunctionPolarity(
+            far,
+            [],
+            [new StereoPairLink(upperReference, far.Upper.Channel, 100, 10_000)],
+            new Dictionary<IAlignmentChannel, AlignmentOverride>()));
+        Assert.Null(AutoAlignmentEngine.InheritedJunctionPolarity(
+            far, [], null, new Dictionary<IAlignmentChannel, AlignmentOverride>()));
+    }
+
+    // One junction of two impulses behind a matched split, for the policies
+    // that read a pair's filters (or deliberately do not).
+    private static AlignmentJunction FilteredJunction(
+        CrossoverFilterFamily family, int slopeDbPerOctave, double cornerHz)
+    {
+        var lowPass = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            LowPassEdge: new CrossoverEdge(family, cornerHz, slopeDbPerOctave)));
+        var highPass = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.HighPass,
+            HighPassEdge: new CrossoverEdge(family, cornerHz, slopeDbPerOctave)));
+        return new AlignmentJunction(
+            PredictableSnapshot("W", UnitImpulse(BasePosition), lowPass),
+            PredictableSnapshot("T", UnitImpulse(BasePosition), highPass),
+            cornerHz,
+            cornerHz / 2,
+            cornerHz * 2);
     }
 
     [Fact]
@@ -541,7 +691,8 @@ public sealed class AutoAlignmentEngineTests
             "direct-cut (the matched 2000 Hz split sums only inverted; " +
             "the record's dominant peak",
             trace);
-        Assert.Contains("is the polarity it cannot sum in)", trace);
+        Assert.Contains(
+            "is the polarity this junction will not be searched in)", trace);
         Assert.DoesNotContain("concurs", trace);
         Assert.InRange(
             alignment[alignment.Keys.Single(item => item.Name == "T")].DelayMs,

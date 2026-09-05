@@ -26,8 +26,6 @@ internal sealed record AgentPackageBuildResult(
 internal static class AgentPackageBuilder
 {
     private const int MaxLobes = 5;
-    private const int MaxSweepRows = 48;
-    private const int MaxCorrelationRows = 48;
 
     // Which optional series are in, in the order they go out. Each name is what
     // `omitted` reports; the reader can tell what it is not seeing.
@@ -75,6 +73,7 @@ internal static class AgentPackageBuilder
             ["sweep"] = "summation score vs extra delay applied to the UPPER channel, both polarities; scoreDb <= 0, 0 = perfect; lobes are its local maxima",
             ["correlation"] = "GCC-PHAT between the pair: lagMs is the delay that, added to the UPPER channel, aligns it with the lower; a positive peak is a normal-polarity alignment, a negative trough the same with the upper channel inverted; arrivalLagMs = lower arrival minus upper arrival",
             ["coherenceLadder"] = "per band: lagMs = the upper channel's arrival relative to the lower at that frequency, peakR the best coherence found, currentR the coherence at the current alignment",
+            ["sampling"] = "the densities this package's curves were sampled at: points per octave on the broadband and junction grids, rows of the sweep and correlation series. Nominal is 12/24/48/48; a large installation is thinned step by step to fit the size target before any series is dropped. Every figure (sum loss, dips, phase, the target datum) is computed off the full-resolution curves and does not change with it; ask for a 'series' probe to read any series again at up to limits.seriesPointsPerOctave and limits.seriesRows, unthinned",
             ["stereo"] = "per block: deltaMs = left arrival minus right arrival (positive = the right side leads); levelDeltaDb = left minus right",
             ["groups"] = "each zone against the front stage: delayMs = the zone's arrival minus the front's; levelDb = the zone's level minus the front's"
         };
@@ -99,18 +98,30 @@ internal static class AgentPackageBuilder
         var omitted = new List<string>();
         string json = string.Empty;
         int bytes = 0;
-        for (int level = 0; level <= OmissionOrder.Length; level++)
+        // Thinning before omission: every series stays, sampled less densely,
+        // for as long as a step of the ladder brings the package under the
+        // target. Only when the thinnest package is still over it do whole
+        // optional series go, in the fixed order, at that thinnest density.
+        AgentSampling thinnest = AgentSampling.Ladder[^1];
+        foreach (AgentSampling sampling in AgentSampling.Ladder)
         {
-            AgentPackage package = Assemble(inputs, packageId, createdAtUtc, omitted);
+            AgentPackage package = Assemble(inputs, packageId, createdAtUtc, sampling, omitted);
             json = JsonSerializer.Serialize(package, Options);
             bytes = Encoding.UTF8.GetByteCount(json);
             if (bytes <= targetBytes)
             {
                 return new AgentPackageBuildResult(Envelope(json), bytes, omitted, null);
             }
-            if (level < OmissionOrder.Length)
+        }
+        foreach (string series in OmissionOrder)
+        {
+            omitted.Add(series);
+            AgentPackage package = Assemble(inputs, packageId, createdAtUtc, thinnest, omitted);
+            json = JsonSerializer.Serialize(package, Options);
+            bytes = Encoding.UTF8.GetByteCount(json);
+            if (bytes <= targetBytes)
             {
-                omitted.Add(OmissionOrder[level]);
+                return new AgentPackageBuildResult(Envelope(json), bytes, omitted, null);
             }
         }
 
@@ -136,6 +147,7 @@ internal static class AgentPackageBuilder
         AgentPackageInputs inputs,
         Guid packageId,
         DateTimeOffset createdAtUtc,
+        AgentSampling sampling,
         IReadOnlyList<string> omitted)
     {
         bool keepDirectLossColumn = !omitted.Contains(OmissionOrder[0]);
@@ -149,11 +161,11 @@ internal static class AgentPackageBuilder
         var sides = new List<AgentPackageSide>();
         foreach (AgentSideInputs side in inputs.Sides)
         {
-            sides.Add(BuildSide(side, inputs));
+            sides.Add(BuildSide(side, inputs, sampling));
             foreach (AgentJunctionInputs junction in side.Junctions)
             {
                 junctions.Add(BuildJunction(
-                    side, junction, inputs,
+                    side, junction, inputs, sampling,
                     keepSweep, keepLadder, keepCorrelationCurve, keepJunctionCurves,
                     keepDirectLossColumn));
             }
@@ -171,12 +183,13 @@ internal static class AgentPackageBuilder
             BuildProcessor(inputs.Processor),
             BuildLimits(),
             BuildAnalysis(inputs.Analysis, inputs.Channels, inputs.Sides),
-            BuildTarget(inputs.Target),
-            inputs.Channels.Select(channel => BuildChannel(channel, inputs, keepCoherence)).ToList(),
+            BuildTarget(inputs.Target, sampling),
+            inputs.Channels.Select(channel => BuildChannel(channel, inputs, keepCoherence, sampling)).ToList(),
             sides,
             junctions,
             inputs.Stereo.Select(BuildStereo).ToList(),
             inputs.Groups.Select(BuildGroup).ToList(),
+            sampling,
             omitted);
     }
 
@@ -212,7 +225,9 @@ internal static class AgentPackageBuilder
             AgentProtocol.Operations,
             AgentProtocol.Probes,
             AgentProtocol.MaxProbeVariantsPerImport,
-            AgentProtocol.MaxProbeChanges);
+            AgentProtocol.MaxProbeChanges,
+            AgentSampling.MaxPointsPerOctave,
+            AgentSampling.MaxRows);
 
     private static AgentPackageAnalysis BuildAnalysis(
         AgentAnalysisInputs analysis,
@@ -272,12 +287,13 @@ internal static class AgentPackageBuilder
             drawn);
     }
 
-    private static AgentPackageTarget BuildTarget(AgentTargetInputs target)
+    /// <summary>The target curve as a series on the broadband grid at the given density.</summary>
+    internal static AgentSeries TargetSeries(AgentTargetInputs target, AgentSampling sampling)
     {
         TargetCurveSpec spec = target.Spec;
         List<double> grid = AgentCurveSampling.LogGrid(
             AgentCurveSampling.BroadbandLowHz, AgentCurveSampling.BroadbandHighHz,
-            AgentCurveSampling.BroadbandPointsPerOctave);
+            sampling.BroadbandPointsPerOctave);
         var rows = grid
             .Select(frequency => new double?[]
             {
@@ -285,6 +301,12 @@ internal static class AgentPackageBuilder
                 AgentCurveSampling.Round(target.LevelDb + spec.Evaluate(frequency), 1)
             })
             .ToList();
+        return new AgentSeries(["frequencyHz", "targetDb"], rows);
+    }
+
+    private static AgentPackageTarget BuildTarget(AgentTargetInputs target, AgentSampling sampling)
+    {
+        TargetCurveSpec spec = target.Spec;
         return new AgentPackageTarget(
             target.LevelDb,
             target.Preset.ToString(),
@@ -294,11 +316,11 @@ internal static class AgentPackageBuilder
             new AgentPackageShelf(spec.PresenceGainDb, spec.PresenceFrequencyHz, spec.PresenceWidthOctaves),
             target.ToleranceDb,
             target.ImportedName,
-            new AgentSeries(["frequencyHz", "targetDb"], rows));
+            TargetSeries(target, sampling));
     }
 
     private static AgentPackageChannel BuildChannel(
-        AgentChannelInputs channel, AgentPackageInputs inputs, bool keepCoherence)
+        AgentChannelInputs channel, AgentPackageInputs inputs, bool keepCoherence, AgentSampling sampling)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
         AgentSourceInputs? source = channel.Source;
@@ -342,7 +364,7 @@ internal static class AgentPackageBuilder
             channel.Bypass,
             packageSource,
             dsp,
-            BuildChannelCurves(channel, keepCoherence));
+            BuildChannelCurves(channel, keepCoherence, sampling));
     }
 
     private static AgentPackageEdge Edge(CrossoverEdge edge) =>
@@ -352,8 +374,8 @@ internal static class AgentPackageBuilder
     // chain columns from the filters alone (built at the PROCESSOR's rate, as the
     // simulation builds them). A column the channel has nothing for is left out
     // of the series rather than filled with nulls.
-    private static AgentPackageChannelCurves? BuildChannelCurves(
-        AgentChannelInputs channel, bool keepCoherence)
+    internal static AgentPackageChannelCurves? BuildChannelCurves(
+        AgentChannelInputs channel, bool keepCoherence, AgentSampling sampling)
     {
         AgentSourceInputs? source = channel.Source;
         if (source == null || (source.PreDsp == null && source.Processed == null))
@@ -365,7 +387,7 @@ internal static class AgentPackageBuilder
             AgentCurveSampling.BroadbandHighHz,
             Math.Min(source.SampleRateHz, channel.ProcessorSampleRateHz) / 2.0);
         List<double> grid = AgentCurveSampling.LogGrid(
-            AgentCurveSampling.BroadbandLowHz, highHz, AgentCurveSampling.BroadbandPointsPerOctave);
+            AgentCurveSampling.BroadbandLowHz, highHz, sampling.BroadbandPointsPerOctave);
 
         DspChannelChain chain = channel.Bypass
             ? DspChannelChain.Identity
@@ -417,30 +439,49 @@ internal static class AgentPackageBuilder
     private static double Decibels(PreparedDspResponse response, double frequencyHz) =>
         DataHelper.AmplitudeToDecibels(response.Response(frequencyHz).Magnitude);
 
-    private static AgentPackageSide BuildSide(AgentSideInputs side, AgentPackageInputs inputs)
+    /// <summary>A side's coherent sum as a series on the broadband grid at the given density.</summary>
+    internal static AgentSeries? SumSeries(AgentSideInputs side, AgentSampling sampling)
+    {
+        if (side.Sum == null)
+        {
+            return null;
+        }
+
+        List<double> grid = AgentCurveSampling.LogGrid(
+            AgentCurveSampling.BroadbandLowHz, AgentCurveSampling.BroadbandHighHz,
+            sampling.BroadbandPointsPerOctave);
+        var rows = grid
+            .Select(frequency => new double?[]
+            {
+                AgentCurveSampling.Frequency(frequency),
+                AgentCurveSampling.Round(AgentCurveSampling.Sample(side.Sum, frequency), 1)
+            })
+            .Where(row => row[1] != null)
+            .ToList();
+        return new AgentSeries(["frequencyHz", "sumDb"], rows);
+    }
+
+    private static AgentPackageSide BuildSide(
+        AgentSideInputs side, AgentPackageInputs inputs, AgentSampling sampling)
     {
         string sideName = AgentChannelIds.SideName(side.Side);
         // The ids the capture says went into this side's sum — not every channel
         // with curves, since channels outside the view get curves of their own.
         List<string> channels = side.ChannelIds.ToList();
 
-        AgentSeries? sum = null;
+        AgentSeries? sum = SumSeries(side, sampling);
         double? sumVsTarget = null;
         if (side.Sum != null)
         {
-            List<double> grid = AgentCurveSampling.LogGrid(
-                AgentCurveSampling.BroadbandLowHz, AgentCurveSampling.BroadbandHighHz,
-                AgentCurveSampling.BroadbandPointsPerOctave);
-            var rows = grid
-                .Select(frequency => new double?[]
-                {
-                    AgentCurveSampling.Frequency(frequency),
-                    AgentCurveSampling.Round(AgentCurveSampling.Sample(side.Sum, frequency), 1)
-                })
-                .Where(row => row[1] != null)
-                .ToList();
-            sum = new AgentSeries(["frequencyHz", "sumDb"], rows);
-            sumVsTarget = MedianAboveTarget(side.Sum, grid, inputs.Target);
+            // The datum is a FIGURE, read on the nominal grid whatever density the
+            // rows went out at: thinning changes what the rows show, never what
+            // the numbers say.
+            sumVsTarget = MedianAboveTarget(
+                side.Sum,
+                AgentCurveSampling.LogGrid(
+                    AgentCurveSampling.BroadbandLowHz, AgentCurveSampling.BroadbandHighHz,
+                    AgentCurveSampling.BroadbandPointsPerOctave),
+                inputs.Target);
         }
 
         double? hybridSumVsTarget = side.HybridSum == null
@@ -474,10 +515,78 @@ internal static class AgentPackageBuilder
                     : null));
     }
 
+    /// <summary>The id a junction carries in the package: side, lower and upper block.</summary>
+    internal static string JunctionId(AgentSideInputs side, AgentJunctionInputs junction) =>
+        $"{AgentChannelIds.SideName(side.Side)}:{junction.LowerBlock}-{junction.UpperBlock}";
+
+    /// <summary>
+    /// The junction's frequency table — both channels, the sum, the full loss
+    /// and (when asked and available) the direct loss — on the dense grid around
+    /// its corner at the given density. Null where neither channel has a curve.
+    /// </summary>
+    internal static AgentSeries? JunctionCurves(
+        AgentSideInputs side, AgentJunctionInputs junction, AgentSampling sampling, bool withDirectLoss)
+    {
+        if (junction.LowerMagnitude == null && junction.UpperMagnitude == null)
+        {
+            return null;
+        }
+
+        List<double> grid = AgentCurveSampling.JunctionGrid(
+            junction.CrossoverHz, AgentCurveSampling.BroadbandLowHz, AgentCurveSampling.BroadbandHighHz,
+            sampling.JunctionPointsPerOctave);
+        // The direct loss rides as one more column — a few dozen numbers per
+        // junction — only where the read exists, so a reader never meets a
+        // column of nulls standing for "no such read", and only while the
+        // size target allows it (it is the first optional series to go).
+        bool withDirect = side.DirectLoss != null && withDirectLoss;
+        List<string> columns = ["frequencyHz", "lowerDb", "upperDb", "sumDb", "lossDb"];
+        if (withDirect)
+        {
+            columns.Add("lossDirectDb");
+        }
+        return new AgentSeries(
+            columns,
+            grid.Select(frequency =>
+            {
+                var row = new List<double?>
+                {
+                    AgentCurveSampling.Frequency(frequency),
+                    Sample1(junction.LowerMagnitude, frequency),
+                    Sample1(junction.UpperMagnitude, frequency),
+                    Sample1(side.Sum, frequency),
+                    Sample1(side.Loss, frequency)
+                };
+                if (withDirect)
+                {
+                    row.Add(Sample1(side.DirectLoss, frequency));
+                }
+                return row.ToArray();
+            }).ToList());
+    }
+
+    /// <summary>The coherence ladder as a series; null where the junction has none.</summary>
+    internal static AgentSeries? LadderSeries(AgentJunctionInputs junction) =>
+        junction.Coherence == null
+            ? null
+            : new AgentSeries(
+                ["frequencyHz", "lagMs", "peakR", "currentR", "halfPeriodMs"],
+                junction.Coherence.Ladder
+                    .Select(point => new double?[]
+                    {
+                        AgentCurveSampling.Frequency(point.FrequencyHz),
+                        Round2(point.LagMs),
+                        Round2(point.PeakR),
+                        Round2(point.CurrentR),
+                        Round2(point.HalfPeriodMs)
+                    })
+                    .ToList());
+
     private static AgentPackageJunction BuildJunction(
         AgentSideInputs side,
         AgentJunctionInputs junction,
         AgentPackageInputs inputs,
+        AgentSampling sampling,
         bool keepSweep,
         bool keepLadder,
         bool keepCorrelationCurve,
@@ -514,62 +623,15 @@ internal static class AgentPackageBuilder
                 .ToList();
             if (keepSweep)
             {
-                sweep = Sweep(correlation);
+                sweep = Sweep(correlation, sampling.SweepRows);
             }
-            phat = Correlation(correlation, keepCorrelationCurve);
+            phat = Correlation(correlation, keepCorrelationCurve, sampling.CorrelationRows);
         }
 
-        AgentSeries? ladder = null;
-        if (keepLadder && junction.Coherence != null)
-        {
-            ladder = new AgentSeries(
-                ["frequencyHz", "lagMs", "peakR", "currentR", "halfPeriodMs"],
-                junction.Coherence.Ladder
-                    .Select(point => new double?[]
-                    {
-                        AgentCurveSampling.Frequency(point.FrequencyHz),
-                        Round2(point.LagMs),
-                        Round2(point.PeakR),
-                        Round2(point.CurrentR),
-                        Round2(point.HalfPeriodMs)
-                    })
-                    .ToList());
-        }
-
-        AgentSeries? curves = null;
-        if (keepJunctionCurves && (junction.LowerMagnitude != null || junction.UpperMagnitude != null))
-        {
-            List<double> grid = AgentCurveSampling.JunctionGrid(
-                junction.CrossoverHz, AgentCurveSampling.BroadbandLowHz, AgentCurveSampling.BroadbandHighHz);
-            // The direct loss rides as one more column — a few dozen numbers per
-            // junction — only where the read exists, so a reader never meets a
-            // column of nulls standing for "no such read", and only while the
-            // size target allows it (it is the first optional series to go).
-            bool withDirect = side.DirectLoss != null && keepDirectLossColumn;
-            List<string> columns = ["frequencyHz", "lowerDb", "upperDb", "sumDb", "lossDb"];
-            if (withDirect)
-            {
-                columns.Add("lossDirectDb");
-            }
-            curves = new AgentSeries(
-                columns,
-                grid.Select(frequency =>
-                {
-                    var row = new List<double?>
-                    {
-                        AgentCurveSampling.Frequency(frequency),
-                        Sample1(junction.LowerMagnitude, frequency),
-                        Sample1(junction.UpperMagnitude, frequency),
-                        Sample1(side.Sum, frequency),
-                        Sample1(side.Loss, frequency)
-                    };
-                    if (withDirect)
-                    {
-                        row.Add(Sample1(side.DirectLoss, frequency));
-                    }
-                    return row.ToArray();
-                }).ToList());
-        }
+        AgentSeries? ladder = keepLadder ? LadderSeries(junction) : null;
+        AgentSeries? curves = keepJunctionCurves
+            ? JunctionCurves(side, junction, sampling, keepDirectLossColumn)
+            : null;
 
         string? unavailable = null;
         if (loss == null && phase == null && correlation == null)
@@ -615,11 +677,12 @@ internal static class AgentPackageBuilder
             Round2(result.FitDelayMs),
             Round1(result.FitRmsDeg));
 
-    private static AgentSeries Sweep(JunctionCorrelationView view)
+    /// <summary>The junction's delay-search surface, both polarities, at most <paramref name="maxRows"/> rows.</summary>
+    internal static AgentSeries Sweep(JunctionCorrelationView view, int maxRows)
     {
         // The two polarities are swept on one delay grid, so one row holds both.
-        List<SignalPoint> normal = AgentCurveSampling.Thin(view.ScoreNormal, MaxSweepRows);
-        List<SignalPoint> inverted = AgentCurveSampling.Thin(view.ScoreInverted, MaxSweepRows);
+        List<SignalPoint> normal = AgentCurveSampling.Thin(view.ScoreNormal, maxRows);
+        List<SignalPoint> inverted = AgentCurveSampling.Thin(view.ScoreInverted, maxRows);
         var rows = new List<double?[]>(normal.Count);
         for (int index = 0; index < normal.Count; index++)
         {
@@ -633,7 +696,25 @@ internal static class AgentPackageBuilder
         return new AgentSeries(["extraDelayMs", "scoreNormalDb", "scoreInvertedDb"], rows);
     }
 
-    private static AgentPackageCorrelation? Correlation(JunctionCorrelationView view, bool keepCurve)
+    /// <summary>The whitened correlation of the pair — whole capture and direct sound — at most <paramref name="maxRows"/> rows.</summary>
+    internal static AgentSeries CorrelationCurve(JunctionCorrelationView view, int maxRows)
+    {
+        List<SignalPoint> full = AgentCurveSampling.Thin(view.Whitened, maxRows);
+        var rows = new List<double?[]>(full.Count);
+        foreach (SignalPoint point in full)
+        {
+            rows.Add([
+                Round2(point.X),
+                Round2(point.Y),
+                AgentCurveSampling.Round(AgentCurveSampling.Sample(view.WhitenedDirect, point.X), 2)
+            ]);
+        }
+
+        return new AgentSeries(["lagMs", "fullRecordR", "directR"], rows);
+    }
+
+    private static AgentPackageCorrelation? Correlation(
+        JunctionCorrelationView view, bool keepCurve, int maxRows)
     {
         (double X, double Y)? peak = AgentCurveSampling.Extremum(view.Whitened, maximum: true);
         (double X, double Y)? trough = AgentCurveSampling.Extremum(view.Whitened, maximum: false);
@@ -648,19 +729,9 @@ internal static class AgentPackageBuilder
             ? Math.Max(Math.Abs(view.Whitened[0].X), Math.Abs(view.Whitened[^1].X))
             : 0;
 
-        List<SignalPoint> full = AgentCurveSampling.Thin(view.Whitened, keepCurve ? MaxCorrelationRows : 0);
-        var rows = new List<double?[]>(full.Count);
-        if (keepCurve)
-        {
-            foreach (SignalPoint point in full)
-            {
-                rows.Add([
-                    Round2(point.X),
-                    Round2(point.Y),
-                    AgentCurveSampling.Round(AgentCurveSampling.Sample(view.WhitenedDirect, point.X), 2)
-                ]);
-            }
-        }
+        AgentSeries curve = keepCurve
+            ? CorrelationCurve(view, maxRows)
+            : new AgentSeries(["lagMs", "fullRecordR", "directR"], []);
 
         return new AgentPackageCorrelation(
             Round2(range),
@@ -669,7 +740,7 @@ internal static class AgentPackageBuilder
             directPeak is { } dp ? new AgentPackagePeak(Round2(dp.X), Round2(dp.Y)) : null,
             directTrough is { } dt ? new AgentPackagePeak(Round2(dt.X), Round2(dt.Y)) : null,
             Round2(view.ArrivalLagMs),
-            new AgentSeries(["lagMs", "fullRecordR", "directR"], rows));
+            curve);
     }
 
     private static AgentPackageStereo BuildStereo(VirtualCrossoverMetric.StereoDelta delta) =>

@@ -172,12 +172,33 @@ internal sealed record RunAutoCrossoverOperation(string Id, string? Reason)
 /// junction's own channels, stated exactly as the settings operations state
 /// them — so a variant that reads well converts to a proposal word for word.
 /// </param>
+/// <param name="Series">
+/// For the <c>series</c> probe: which of the package's series to read again
+/// (<see cref="AgentProtocol.SeriesNames"/>), at the density the reply asks
+/// for and with no size target.
+/// </param>
+/// <param name="ChannelIds">
+/// For the <c>series</c> probe: the channels whose broadband curves are wanted;
+/// null means every channel that has them.
+/// </param>
+/// <param name="PointsPerOctave">
+/// For the <c>series</c> probe: the density of every frequency grid in the
+/// answer; null means the protocol's nominal densities.
+/// </param>
+/// <param name="Rows">
+/// For the <c>series</c> probe: the most rows of the sweep and correlation
+/// series; null means the protocol's nominal cap.
+/// </param>
 internal sealed record ProbeOperation(
     string Id,
     string? Reason,
     string Probe,
     string? JunctionId,
-    IReadOnlyList<AgentProbeVariant>? Variants) : AgentOperation(Id, Reason)
+    IReadOnlyList<AgentProbeVariant>? Variants,
+    IReadOnlyList<string>? Series = null,
+    IReadOnlyList<string>? ChannelIds = null,
+    int? PointsPerOctave = null,
+    int? Rows = null) : AgentOperation(Id, Reason)
 {
     public override string Op => AgentProtocol.Probe;
 

@@ -368,38 +368,60 @@ public sealed class AgentPackageBuilderTests
     }
 
     [Fact]
-    public void Build_ShedsOptionalSeriesInAFixedOrder_AndSaysWhichWent()
+    public void Build_ThinsBeforeItSheds_AndSaysBothInThePackage()
     {
         AgentPackageInputs inputs = Inputs();
-        int full = AgentPackageBuilder.Build(inputs, Id, Clock).JsonBytes;
+        AgentPackageBuildResult whole = AgentPackageBuilder.Build(inputs, Id, Clock);
+        int full = whole.JsonBytes;
+        JsonElement nominal = Json(whole.Text!).GetProperty("sampling");
+        Assert.Equal(12, nominal.GetProperty("broadbandPointsPerOctave").GetInt32());
+        Assert.Equal(24, nominal.GetProperty("junctionPointsPerOctave").GetInt32());
+        Assert.Equal(48, nominal.GetProperty("sweepRows").GetInt32());
+        Assert.Equal(48, nominal.GetProperty("correlationRows").GetInt32());
+        Assert.Empty(whole.Omitted);
 
-        // Just under the full size as the TARGET: only the first optional series
-        // has to go — the direct loss's curve column, whose figures stay — and
-        // the ceiling is not what decides.
-        AgentPackageBuildResult trimmed = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: full - 1);
-        Assert.True(trimmed.Succeeded, trimmed.Error);
-        Assert.Equal(["junctions[].curves.lossDirectDb"], trimmed.Omitted);
-        JsonElement junction = Json(trimmed.Text!).GetProperty("junctions")[0];
-        Assert.True(junction.TryGetProperty("sweep", out _));
+        // Just under the full size as the TARGET: the first step of the density
+        // ladder is taken and nothing is dropped — every series is still there,
+        // the junction grid and the lag series merely sparser.
+        AgentPackageBuildResult thinned = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: full - 1);
+        Assert.True(thinned.Succeeded, thinned.Error);
+        Assert.Empty(thinned.Omitted);
+        JsonElement root = Json(thinned.Text!);
+        JsonElement sampling = root.GetProperty("sampling");
+        Assert.Equal(12, sampling.GetProperty("broadbandPointsPerOctave").GetInt32());
+        Assert.Equal(16, sampling.GetProperty("junctionPointsPerOctave").GetInt32());
+        Assert.Equal(32, sampling.GetProperty("sweepRows").GetInt32());
+        JsonElement junction = root.GetProperty("junctions")[0];
+        Assert.True(junction.TryGetProperty("sweep", out JsonElement sweep));
+        Assert.True(sweep.GetProperty("rows").GetArrayLength() <= 32);
+        Assert.True(junction.TryGetProperty("curves", out _));
+        Assert.True(junction.TryGetProperty("coherenceLadder", out _));
         Assert.True(junction.TryGetProperty("sumLossDirect", out _));
-        Assert.DoesNotContain(
-            "lossDirectDb",
-            junction.GetProperty("curves").GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
-        Assert.Equal(["junctions[].curves.lossDirectDb"], Json(trimmed.Text!).GetProperty("omitted").EnumerateArray().Select(o => o.GetString()));
+        Assert.True(thinned.JsonBytes < full);
 
-        // One step further: the sweep goes next, and the lobes read off it stay.
-        AgentPackageBuildResult trimmedTwice = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: trimmed.JsonBytes - 1);
-        Assert.True(trimmedTwice.Succeeded, trimmedTwice.Error);
-        Assert.Equal(["junctions[].curves.lossDirectDb", "junctions[].sweep"], trimmedTwice.Omitted);
-        JsonElement twice = Json(trimmedTwice.Text!).GetProperty("junctions")[0];
-        Assert.False(twice.TryGetProperty("sweep", out _));
-        Assert.True(twice.TryGetProperty("lobes", out _));
+        // The figures do not move with the rows: the same sum loss, the same
+        // target datum, whatever density the curves went out at.
+        JsonElement wholeRoot = Json(whole.Text!);
+        Assert.Equal(
+            wholeRoot.GetProperty("junctions")[0].GetProperty("sumLoss").GetProperty("averageDb").GetDouble(),
+            junction.GetProperty("sumLoss").GetProperty("averageDb").GetDouble());
+        Assert.Equal(
+            wholeRoot.GetProperty("sides")[0].GetProperty("sumVsTargetDb").GetDouble(),
+            root.GetProperty("sides")[0].GetProperty("sumVsTargetDb").GetDouble());
 
-        // Over the target every optional series goes, and the mandatory payload
-        // may still grow up to the ceiling.
+        // Over the target at the thinnest density, the optional series go in the
+        // fixed order, and the mandatory payload may still grow up to the ceiling.
         AgentPackageBuildResult mandatory = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: 100, maxBytes: full);
         Assert.True(mandatory.Succeeded, mandatory.Error);
-        Assert.Equal(6, mandatory.Omitted.Count);
+        Assert.Equal(
+            [
+                "junctions[].curves.lossDirectDb", "junctions[].sweep", "junctions[].coherenceLadder",
+                "channels[].curves.broadband.coherence", "junctions[].correlation.curve", "junctions[].curves"
+            ],
+            mandatory.Omitted);
+        JsonElement thinnest = Json(mandatory.Text!).GetProperty("sampling");
+        Assert.Equal(4, thinnest.GetProperty("broadbandPointsPerOctave").GetInt32());
+        Assert.Equal(6, thinnest.GetProperty("junctionPointsPerOctave").GetInt32());
         Assert.True(mandatory.JsonBytes < full);
 
         // Nothing optional is enough: the failure names the size, and no text is handed out.
@@ -408,6 +430,62 @@ public sealed class AgentPackageBuilderTests
         Assert.Null(failed.Text);
         Assert.Equal(6, failed.Omitted.Count);
         Assert.Contains("limit is 0 KB", failed.Error);
+    }
+
+    [Fact]
+    public void SeriesProbe_AnswersTheSeriesAsked_AtTheDensityAsked_UnderNoSizeTarget()
+    {
+        // The package's own rows again: the broadband table of the one channel
+        // named, one junction's curves and sweep, at twice the nominal density
+        // and with twice the rows — built by the package's own methods, so the
+        // columns and ids are the package's.
+        AgentPackageInputs inputs = Inputs();
+        var probe = new ProbeOperation(
+            "op-9", "the package was thinned", AgentProtocol.SeriesProbe, "left:B-A", null,
+            Series: [AgentProtocol.BroadbandSeries, AgentProtocol.JunctionCurvesSeries, AgentProtocol.SweepSeries],
+            ChannelIds: ["A:left"],
+            PointsPerOctave: 24,
+            Rows: 96);
+
+        AgentProbeReport report = AgentSeriesProbe.Build(probe, inputs);
+
+        Assert.Null(report.Unavailable);
+        Assert.Equal(24, report.Sampling!.BroadbandPointsPerOctave);
+        Assert.Equal(24, report.Sampling.JunctionPointsPerOctave);
+        Assert.Equal(96, report.Sampling.SweepRows);
+        AgentDiagnosticSeries channel = Assert.Single(report.Channels!);
+        Assert.Equal("A:left", channel.Id);
+        Assert.Contains("processedDb", channel.Series.Columns);
+        // Twice the package's density over the same span: about twice the rows.
+        JsonElement packaged = Json(AgentPackageBuilder.Build(inputs, Id, Clock).Text!);
+        int packagedRows = packaged.GetProperty("channels").EnumerateArray()
+            .First(c => c.GetProperty("id").GetString() == "A:left")
+            .GetProperty("curves").GetProperty("broadband").GetProperty("rows").GetArrayLength();
+        Assert.InRange(channel.Series.Rows.Count, packagedRows * 2 - 2, packagedRows * 2 + 2);
+        AgentProbeJunctionSeries junction = Assert.Single(report.Junctions!);
+        Assert.Equal("left:B-A", junction.Id);
+        Assert.NotNull(junction.Curves);
+        Assert.Contains("lossDirectDb", junction.Curves!.Columns);
+        Assert.NotNull(junction.Sweep);
+        Assert.Null(junction.Correlation);
+        Assert.Null(junction.CoherenceLadder);
+        Assert.Null(report.Target);
+        Assert.Null(report.Sums);
+
+        // The whole answer travels in a probe document, whatever its size.
+        AgentProbeBuildResult document = AgentProbeBuilder.Build([report], Id.ToString("D"), true, true, Clock);
+        string text = document.Text;
+        int begin = text.IndexOf(AgentProtocol.ProbeJsonBegin, StringComparison.Ordinal) + AgentProtocol.ProbeJsonBegin.Length;
+        int end = text.IndexOf(AgentProtocol.ProbeJsonEnd, StringComparison.Ordinal);
+        JsonElement answered = JsonDocument.Parse(text[begin..end].Trim()).RootElement.GetProperty("probes")[0];
+        Assert.Equal("series", answered.GetProperty("probe").GetString());
+        Assert.Equal(96, answered.GetProperty("sampling").GetProperty("sweepRows").GetInt32());
+        Assert.Single(answered.GetProperty("junctions").EnumerateArray());
+
+        // Nothing named: the report says so instead of answering with nothing.
+        AgentProbeReport empty = AgentSeriesProbe.Build(
+            probe with { JunctionId = "right:B-A", Series = [AgentProtocol.SweepSeries] }, inputs);
+        Assert.NotNull(empty.Unavailable);
     }
 
     [Fact]

@@ -38,7 +38,30 @@ internal sealed record AgentProbeReport(
     double[]? SharedBandHz,
     IReadOnlyList<AgentProbeEntry>? Entries,
     IReadOnlyList<AgentProbeDelaySide>? Sides,
-    IReadOnlyList<AgentDiagnosticSeries>? Channels);
+    // The excess group delay probe's curves, and the series probe's broadband
+    // curves: one {id, series} per channel either way.
+    IReadOnlyList<AgentDiagnosticSeries>? Channels,
+    // The series probe's own blocks: what density it was read at, then the
+    // target curve, each side's sum and each junction's series, whichever the
+    // reply asked for.
+    AgentSampling? Sampling = null,
+    AgentSeries? Target = null,
+    IReadOnlyList<AgentProbeSumSeries>? Sums = null,
+    IReadOnlyList<AgentProbeJunctionSeries>? Junctions = null);
+
+/// <summary>One side's coherent sum for a series probe, on the requested grid.</summary>
+internal sealed record AgentProbeSumSeries(string Side, AgentSeries Series);
+
+/// <summary>
+/// One junction's series for a series probe: the fields a reply did not ask
+/// for are absent, as everywhere else in the protocol.
+/// </summary>
+internal sealed record AgentProbeJunctionSeries(
+    string Id,
+    AgentSeries? Curves,
+    AgentSeries? Sweep,
+    AgentSeries? Correlation,
+    AgentSeries? CoherenceLadder);
 
 /// <param name="Current">Whether this entry is the tune as it stands.</param>
 /// <param name="AffectedJunctions">
@@ -162,6 +185,12 @@ internal static class AgentProbeBuilder
             ["nothingWasChanged"] =
                 "the tune was not touched to produce any of this: the readings are computed on " +
                 "copies of the responses, and the session is exactly as it was",
+            ["series"] =
+                "a 'series' probe repeats the package's own rows at the density the reply asked " +
+                "for (sampling says which), unthinned and under no size target: channels[].series " +
+                "is the broadband table, target the target curve, sums[] each side's coherent " +
+                "sum, junctions[] the junction curves, sweep, correlation curve and coherence " +
+                "ladder — the same columns, units and conventions as in the package",
             ["sessionChangedWhileReading"] =
                 "present and true when the tune moved across any reading's boundary, so the " +
                 "readings below do not all describe one state — compare them with that in mind, " +

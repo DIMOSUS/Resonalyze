@@ -862,6 +862,17 @@ public partial class VirtualCrossoverPanel
         AgentProbeReport Unavailable(string reason) => new(
             probe.Id, probe.Probe, probe.JunctionId, null, null, reason, null, null, null, null);
 
+        if (probe.Probe == AgentProtocol.SeriesProbe)
+        {
+            // The package's own gather at the reply's density and under no size
+            // target: the same inputs Copy for AI reads, so every row lays beside
+            // the package's by channel and junction id.
+            AgentPackageInputs? inputs = await CaptureAgentPackageInputsAsync();
+            return inputs == null
+                ? Unavailable("the session changed while the reading was taken")
+                : AgentSeriesProbe.Build(probe, inputs);
+        }
+
         string? problem = AgentProposalValidator.ResolveJunction(
             BuildAgentSessionSnapshot(), probe.JunctionId ?? string.Empty,
             out AgentChannelSnapshot? lowerSnapshot, out AgentChannelSnapshot? upperSnapshot);

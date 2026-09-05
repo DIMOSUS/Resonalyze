@@ -30,10 +30,20 @@ Anything unavailable is **absent** — a property is not written when it has no
 value — and where the absence needs a reason, a sibling `unavailableReason`
 says it. Nothing is ever a zero standing in for "unknown".
 
-Size: Resonalyze aims under 80 KB of JSON and never exceeds 100 KB — a seven-channel, six-junction car fits the target whole; a larger installation is trimmed. Over the
-target it drops optional series in this fixed order, listing what it dropped in
-`omitted`; once every optional series is gone, the mandatory payload may grow up
-to the 100 KB ceiling, and beyond that nothing is copied:
+Size: Resonalyze aims under 80 KB of JSON and never exceeds 100 KB. Over the
+target it first **thins** every curve rather than dropping any: the densities
+step down a fixed ladder — points per octave on the broadband and junction
+grids, rows of the sweep and correlation series — until the package fits, and
+`sampling` states the densities it went out at (nominal: 12 / 24 / 48 / 48;
+the steps: 12/16/32/32, 8/12/24/24, 6/8/16/16, 4/6/12/12). Every figure in the
+package — sum loss, dips, phase read-outs, the target datum — is computed off
+the full-resolution curves before sampling, so thinning changes what the rows
+show, never what the numbers say. Any series can be read again at up to
+`limits.seriesPointsPerOctave` and `limits.seriesRows`, unthinned and under no
+size target, with a `series` probe (§2.2). Only when the thinnest package is
+still over the target do optional series go, in this fixed order at that
+density, listed in `omitted`; once every optional series is gone, the mandatory
+payload may grow up to the 100 KB ceiling, and beyond that nothing is copied:
 
 1. `junctions[].curves.lossDirectDb` (the direct loss's curve column; its
    figures `sumLossDirect` / `totalSumLossDirect` are mandatory and stay)
@@ -64,7 +74,8 @@ to the 100 KB ceiling, and beyond that nothing is copied:
 | `junctions[]` | Each adjacent pair along the spectrum, per side. See 1.8. |
 | `stereo[]` | Left-vs-right arrival and level per block. See 1.9. |
 | `groups[]` | Each zone against the front stage. See 1.9. |
-| `omitted[]` | Optional series left out to fit the size limit. |
+| `sampling` | The densities the curves were sampled at: `broadbandPointsPerOctave`, `junctionPointsPerOctave`, `sweepRows`, `correlationRows`. Nominal when the package fit whole; thinner where it had to be brought under the size target. |
+| `omitted[]` | Optional series left out to fit the size limit, after thinning could not. |
 
 ### 1.2 `processor`
 
@@ -93,8 +104,9 @@ the catalog does not know it.
   "operations": ["setGainDb", "setDelayMs", "setPolarity", "setCrossover",
                  "replacePeqBank", "probe", "useSpatialAverage", "runAutoCrossover",
                  "tuneJunction", "runAutoDelay", "autoTunePeq"],
-  "probes": ["junction", "junctionDelay", "excessGroupDelay"],
-  "probeVariantsPerImport": 24, "probeChanges": 2 }
+  "probes": ["junction", "junctionDelay", "excessGroupDelay", "series"],
+  "probeVariantsPerImport": 24, "probeChanges": 2,
+  "seriesPointsPerOctave": 48, "seriesRows": 192 }
 ```
 
 These are Virtual DSP's own limits, not the device's. A reply outside them is
@@ -170,7 +182,7 @@ the channels that have a measurement:
 The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
 `trebleShelf`, `presence` as `{ gainDb, frequencyHz, widthOctaves }`,
 `toleranceDb`, `importedName`) and the resulting curve as a series
-`{ columns: ["frequencyHz", "targetDb"], rows }` at 12 points per octave from
+`{ columns: ["frequencyHz", "targetDb"], rows }` at up to 12 points per octave (`sampling`) from
 20 Hz to 20 kHz. Read-only: a reply cannot change the target.
 
 ### 1.6 `channels[]`
@@ -228,7 +240,8 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
   signal clips. A boost inside a wider cut, or under a negative preamp, is not
   a headroom problem; the sign of one band says nothing.
 - `curves.broadband` runs 20 Hz to the lower of 20 kHz and half of either sample
-  rate, at **12 points per octave**, endpoints included. Columns present only
+  rate, at **up to 12 points per octave** (`sampling.broadbandPointsPerOctave`
+  says how many), endpoints included. Columns present only
   when the channel has them: `preDspDb` (the measured response before the chain —
   the panel's Raw curve), `processedDb` (through the chain, sharing the side's
   window), `chainDb` (the chain alone, built at the processor's rate), `peqDb`
@@ -302,7 +315,7 @@ Every block is the panel's own read-out, unchanged. `id` is what a
   Absent, with `unavailableReason`, where the pair's phase is not consistent
   enough across the band.
 - `sweep`: the summation score against an extra delay applied to the **upper**
-  channel, both polarities, at most 48 rows; `scoreDb` ≤ 0, 0 is perfect.
+  channel, both polarities, at most `sampling.sweepRows` rows (48 nominal); `scoreDb` ≤ 0, 0 is perfect.
   `lobes` are its local maxima, best first, at most five — the candidates an
   Auto delay run would weigh.
 - `correlation`: GCC-PHAT between the pair. `lagMs` is the delay that, added to
@@ -314,7 +327,8 @@ Every block is the panel's own read-out, unchanged. `id` is what a
   the lower at that frequency, `peakR` the best coherence found, `currentR` the
   coherence at the current alignment.
 - `curves`: the two channels, the side's sum and the loss on a dense grid an
-  octave to each side of the crossover at **24 points per octave**, the crossover
+  octave to each side of the crossover at **up to 24 points per octave**
+  (`sampling.junctionPointsPerOctave`), the crossover
   frequency itself always a point.
 
 ### 1.9 `stereo[]` and `groups[]`
@@ -512,7 +526,7 @@ offset changed states only that.
 | `op` | Fields | Checked against |
 | --- | --- | --- |
 | `runAutoDelay` | `sceneOffsetMs?`, `rightHandDrive?`, `adjustGains?`, `nearSideCutDb?`, `rearFillOffsetMs?` | the dialog's own fields: scene offset 0–5 ms in steps of 0.01, near-side cut 0–6 dB in steps of 0.1, rear fill offset 0–30 ms in steps of 0.1. `nearSideCutDb` is a magnitude: the LHD/RHD toggle owns the sign. Stereo or single-sided is the panel's decision, as it is for the button |
-| `probe` | `probe`, `junctionId?`, `variants?` | `probe` is one of `limits.probes`; `junctionId` a `junctions[].id` of this package, required by every probe but `excessGroupDelay`, and resolved as `tuneJunction` resolves it. For `junction`: at least one variant and, across every probe of the reply together, at most `limits.probeVariantsPerImport`; each variant 1…`limits.probeChanges` changes, each change naming one of the junction's OWN two channels once and stating at least one of `gainDb`, `delayMs`, `invertPolarity`, `crossover`, `peq` — every stated value held to the limit the settings operation that writes it is held to |
+| `probe` | `probe`, `junctionId?`, `variants?` | `probe` is one of `limits.probes`; `junctionId` a `junctions[].id` of this package, required by `junction` and `junctionDelay`, optional for `series` (one junction; every junction of the view when absent), absent for `excessGroupDelay`; resolved as `tuneJunction` resolves it. For `series`: `series` (one or more of `broadband`, `target`, `sum`, `junctionCurves`, `sweep`, `correlation`, `coherenceLadder`), `channelIds?` (whose broadband curves; every channel when absent), `pointsPerOctave?` (1…`limits.seriesPointsPerOctave`, every frequency grid of the answer; the nominal densities when absent), `rows?` (2…`limits.seriesRows` for the sweep and correlation series; 48 when absent). For `junction`: at least one variant and, across every probe of the reply together, at most `limits.probeVariantsPerImport`; each variant 1…`limits.probeChanges` changes, each change naming one of the junction's OWN two channels once and stating at least one of `gainDb`, `delayMs`, `invertPolarity`, `crossover`, `peq` — every stated value held to the limit the settings operation that writes it is held to |
 | `runAutoCrossover` | none | the wizard has no inputs: the families, the corner window and the chain order are chosen in its own dialog |
 | `tuneJunction` | `junctionId`, `minHz?`, `maxHz?`, `families?`, `slopes?`, `independentSlopes?` | `junctionId` is a `junctions[].id` of this package (`left:C-D`): both blocks on that side with a measurement, in the sum, not bypassed, in one group, neighbours along the spectrum that hand over to each other; each stated edge within 20 Hz–20 kHz and below the processor's Nyquist, the window as the run will use it — a stated edge with half an octave from the current corner for the one left out — ordered; `families` names from `limits.slopes` (left out: the families the two facing edges use today); `slopes` offered by one of those families (left out: every slope from 12 dB/oct up); `independentSlopes` left out is `false` — one slope for both edges |
 | `autoTunePeq` | `channelId`, `targetLevelDb?`, `minHz?`, `maxHz?`, `allowShelves?`, `cutsOnly?`, `source?` | the channel exists, has a measurement and is on the side on screen; target level −120…60 dB in whole dB, the same in every request that states one; each stated edge within the wizard's From/To fields (20 Hz–20 kHz) and below the processor's Nyquist, and the window as the run will use it — a stated edge with the channel's passband edge for the one left out — ordered; `source` is `point` or `spatialAverage`, and `spatialAverage` needs the channel to carry one |
@@ -570,6 +584,21 @@ it stands — the delay and polarity it would pick for the upper channel, and th
 rival lobes it weighed — without writing any of it. `excessGroupDelay` is the
 diagnostic of the same name, asked for in the reply rather than found in a menu;
 it names no junction.
+
+`series` reads the package's own series again — the broadband tables, the
+target curve, the sides' sums, the junction curves, the sweep, the correlation
+curve, the coherence ladder, any of them — at the density the reply asks for
+and under no size target. It is the answer to a thinned package: when
+`sampling` sits below nominal, or `omitted` names a series, ask for exactly the
+rows the question needs — one junction's curves and sweep, two channels'
+broadband tables — rather than for everything, since the user pastes the
+answer. It writes nothing and names no variants.
+
+```json
+{ "id": "op-4", "op": "probe", "probe": "series", "junctionId": "left:C-D",
+  "series": ["junctionCurves", "sweep"], "pointsPerOctave": 24, "rows": 96,
+  "reason": "The package was thinned; the dip's shape at this junction decides the corner." }
+```
 
 A probe reads the side its `junctionId` names, since a variant's changes are
 that side's channels'. A crossover is one filter for both sides, so a reply
@@ -722,7 +751,12 @@ BEGIN_RESONALYZE_AGENT_PROBE_JSON
                    "candidates": [ { "extraDelayMs": 0.08, "invertUpper": false, "scoreDb": -0.2,
                                      "sumLossDb": -0.1, "dipDb": -0.4, "chosen": true }, … ] } ] },
     { "id": "op-3", "probe": "excessGroupDelay",
-      "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } } ] }
+      "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } } ] },
+    { "id": "op-4", "probe": "series", "junctionId": "left:C-D",
+      "sampling": { "broadbandPointsPerOctave": 24, "junctionPointsPerOctave": 24, "sweepRows": 96, "correlationRows": 96 },
+      "junctions": [ { "id": "left:C-D",
+                       "curves": { "columns": ["frequencyHz","lowerDb","upperDb","sumDb","lossDb","lossDirectDb"], "rows": [ … ] },
+                       "sweep": { "columns": ["extraDelayMs","scoreNormalDb","scoreInvertedDb"], "rows": [ … ] } } ] }
   ] }
 END_RESONALYZE_AGENT_PROBE_JSON
 ```
@@ -755,6 +789,13 @@ list belongs to the change that would have to be proposed, and the baseline,
 which changes nothing, carries none. Before proposing an entry, probe each
 junction it names, carrying the part of the entry that reaches that junction —
 the change to the channel the two junctions share.
+
+A `series` probe's answer carries `sampling` (the densities it was read at)
+and then only the blocks asked for: `channels[]` (`id`, `series` — the
+broadband table with the package's columns), `target`, `sums[]` (`side`,
+`series`), `junctions[]` (`id` and any of `curves`, `sweep`, `correlation`,
+`coherenceLadder`). Same columns, units, rounding and ids as the package, so
+each lays beside its thinned twin.
 
 `packageId` names the package the reading belongs beside, and
 `sessionMatchesPackage` says whether the session still is the one that package

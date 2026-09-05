@@ -3115,7 +3115,9 @@ this: the clipboard is the only transport, and you are the one who pastes.
   edges, the PEQ bank), the processor and its limits, the target, the analysis
   settings that decide what the numbers mean, your
   [Notes for AI](#dsp-processor), and the diagnostics the panel itself shows —
-  each channel's Raw and Processed curves at 12 points per octave, the side sums,
+  each channel's Raw and Processed curves at up to 12 points per octave (a
+  large installation is sampled less densely rather than losing whole series,
+  and the assistant can ask for any series again at full density), the side sums,
   the [Sum loss](#the-panel-gates-plots-and-read-outs) and Junction phase rows,
   the delay-search lobes and the PHAT read of every junction, the coherence
   ladder, and the Δ L−R and group blocks — plus two readings the assistant is

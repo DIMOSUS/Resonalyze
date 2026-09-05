@@ -24,6 +24,10 @@ internal sealed record AgentPackage(
     IReadOnlyList<AgentPackageJunction> Junctions,
     IReadOnlyList<AgentPackageStereo> Stereo,
     IReadOnlyList<AgentPackageGroup> Groups,
+    // The densities this package's curves were sampled at (see AgentSampling):
+    // nominal when it fit whole, thinner where a large installation had to be
+    // brought under the size target. Figures are unaffected by it.
+    AgentSampling Sampling,
     IReadOnlyList<string> Omitted);
 
 internal sealed record AgentPackageApplication(string Name, string Version);
@@ -60,7 +64,11 @@ internal sealed record AgentPackageLimits(
     // asking for an operation the build does not run.
     IReadOnlyList<string> Probes,
     int ProbeVariantsPerImport,
-    int ProbeChanges);
+    int ProbeChanges,
+    // The densest a `series` probe may ask for: points per octave on the
+    // frequency grids, rows of the two lag series.
+    int SeriesPointsPerOctave,
+    int SeriesRows);
 
 internal sealed record AgentPackageAnalysis(
     string GroupView,

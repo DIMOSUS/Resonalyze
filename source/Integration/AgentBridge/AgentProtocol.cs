@@ -60,12 +60,42 @@ internal static class AgentProtocol
     public const string JunctionDelayProbe = "junctionDelay";
     public const string ExcessGroupDelayProbe = ExcessGroupDelayDiagnostic;
 
+    /// <summary>
+    /// The package's own series again, at the density the reply asks for and
+    /// with no size target: a package over its target is thinned, and this is
+    /// how a reader gets the rows it was thinned out of — any of the series,
+    /// for any channels or one junction, up to <see cref="AgentSampling.MaxPointsPerOctave"/>
+    /// points per octave and <see cref="AgentSampling.MaxRows"/> lag rows.
+    /// </summary>
+    public const string SeriesProbe = "series";
+
+    /// <summary>What a <see cref="SeriesProbe"/> may name in its <c>series</c> list.</summary>
+    public const string BroadbandSeries = "broadband";
+    public const string TargetSeries = "target";
+    public const string SumSeries = "sum";
+    public const string JunctionCurvesSeries = "junctionCurves";
+    public const string SweepSeries = "sweep";
+    public const string CorrelationSeries = "correlation";
+    public const string CoherenceLadderSeries = "coherenceLadder";
+
+    public static readonly IReadOnlyList<string> SeriesNames =
+    [
+        BroadbandSeries,
+        TargetSeries,
+        SumSeries,
+        JunctionCurvesSeries,
+        SweepSeries,
+        CorrelationSeries,
+        CoherenceLadderSeries
+    ];
+
     /// <summary>The probes this build computes, published as <c>limits.probes</c>.</summary>
     public static readonly IReadOnlyList<string> Probes =
     [
         JunctionProbe,
         JunctionDelayProbe,
-        ExcessGroupDelayProbe
+        ExcessGroupDelayProbe,
+        SeriesProbe
     ];
 
     public static bool Reads(string probe) => Probes.Contains(probe, StringComparer.Ordinal);

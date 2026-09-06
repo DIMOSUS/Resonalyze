@@ -673,6 +673,12 @@ public partial class VirtualCrossoverPanel
             int rows = toApply.Count(verdict => verdict.Operation is AgentSettingsOperation);
             summary.Add(
                 $"Applied {rows} of {proposedRows} proposed change{(proposedRows == 1 ? "" : "s")}.");
+            // The rows name their sides, and the dialog showed exactly those: the
+            // side lock takes them as written rather than carrying a row for the
+            // shown side onto the hidden one behind the dialog's back. HERE, before
+            // the engines — a junction tune saves on its own inside them, and that
+            // save would read the rows as a hand edit first.
+            sideLock.Remember(channels.Select(channel => channel.Pair));
         }
 
         bool engines = await RunAgentEngineRequests(toApply, summary, progress);
@@ -1620,6 +1626,12 @@ public partial class VirtualCrossoverPanel
         }
 
         RefreshHybridAvailability();
+        // The restored state is the record, on every side: the side lock takes it as
+        // it stands. Read as a difference it could put a side the import never
+        // touched somewhere it never was (L=A, R=B; the import wrote L=B and the
+        // lock had nothing to carry; the undo restores L=A alone, and a difference
+        // would then carry A onto R).
+        sideLock.Remember(channels.Select(channel => channel.Pair));
         ScheduleSave();
         RedrawAll();
     }

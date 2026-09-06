@@ -105,6 +105,8 @@ public partial class VirtualCrossoverPanel : UserControl
         SmoothingInverseOctaves: 12);
 
     private readonly List<VirtualCrossoverChannel> channels = new();
+    // The Lock beside the side radios; reads at every ScheduleSave, see the class.
+    private readonly VirtualCrossoverSideLock sideLock = new();
 
     // The EQ Wizard's own export machinery, reused whole so a channel's bank leaves
     // through exactly the formats, shelf/preamp rules and warnings the wizard uses.
@@ -253,6 +255,11 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonResetChannels.Click += async (_, _) => await ResetChannelsAsync();
         buttonCopyLeftToRight.Click += (_, _) => CopySideSettings(fromRight: false);
         buttonCopyRightToLeft.Click += (_, _) => CopySideSettings(fromRight: true);
+        checkBoxSideLock.CheckedChanged += (_, _) => OnSideLockChanged();
+        // The designer ticks the box before this handler exists, so the lock it
+        // stands for is engaged here by hand; the pairs come under it as the
+        // project binds (BindProjectAsync hands them to Remember).
+        OnSideLockChanged();
 
         saveTimer.Tick += (_, _) => FlushProject();
         // The designer file owns Dispose; the unsaved project state and the
@@ -649,6 +656,11 @@ public partial class VirtualCrossoverPanel : UserControl
             suppressProjectEvents = false;
         }
 
+        // The blocks now hold the loaded pair objects; the lock, if it is on, starts
+        // over from them — otherwise the first edit after a load would meet an unknown
+        // pair and be recorded as its starting state instead of carried across.
+        sideLock.Remember(channels.Select(channel => channel.Pair));
+
         // Outside the suppressed block, because everything above was applied with
         // the selectors' own events silenced: the controls a view mutes (the
         // hybrid, the Sum and loss toggles, the phase and impulse radios) are
@@ -741,6 +753,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void ScheduleSave()
     {
+        // Every change passes through here, so this is where the side lock reads:
+        // what moved on the shown side since the previous save goes onto the hidden
+        // one now, ahead of the redraw that follows every call and the save itself.
+        sideLock.Follow(channels.Select(channel => channel.Pair), project.ActiveSideRight);
         savePending = true;
         saveTimer.Stop();
         saveTimer.Start();
@@ -1163,6 +1179,24 @@ public partial class VirtualCrossoverPanel : UserControl
 
         ScheduleSave();
         RedrawAll();
+    }
+
+    // The Lock beside those two: engaging copies nothing — the sides are remembered
+    // as they stand and only what moves from here on is carried across, at every
+    // ScheduleSave (see VirtualCrossoverSideLock for the rules). On by default — a
+    // car tune is symmetric far more often than not — and not stored with the
+    // session: unticking it is the exception, for the one side being worked alone,
+    // and the next opening starts symmetric again.
+    private void OnSideLockChanged()
+    {
+        if (checkBoxSideLock.Checked)
+        {
+            sideLock.Engage(channels.Select(channel => channel.Pair));
+        }
+        else
+        {
+            sideLock.Release();
+        }
     }
 
     // The parts of one side's chain the dialog ticked, written onto the other side;
@@ -3264,6 +3298,21 @@ public partial class VirtualCrossoverPanel : UserControl
             "default, gain, delay, polarity and the all-pass on request.\r\n" +
             "Sources stay with their side; mono channels are not\r\n" +
             "offered.");
+        toolTip.SetToolTip(
+            checkBoxSideLock,
+            "Lock the crossover and the polarity of the two sides together:\r\n" +
+            "while this is ticked, a crossover or polarity change made on\r\n" +
+            "the side shown is written onto the other side of the same\r\n" +
+            "pair as it is made. Ticking it copies nothing — whatever\r\n" +
+            "already differs stays until that setting is next touched.\r\n" +
+            "The crossover travels as one (kind and both corners),\r\n" +
+            "polarity on its own. Gain, delay, phase and the PEQ are not\r\n" +
+            "locked; mono pairs have one settings set already. A run that\r\n" +
+            "writes both sides itself (Auto delay, the crossover wizard)\r\n" +
+            "keeps its own answer for the hidden side, and an AI import\r\n" +
+            "and its undo land exactly as their rows say.\r\n" +
+            "On by default; untick it to tune one side alone. The state is\r\n" +
+            "not stored with the session, so it is on again next time.");
         toolTip.SetToolTip(
             buttonDspProcessor,
             "The processor this project is designed for: pick a model and\r\n" +
@@ -6285,6 +6334,10 @@ public partial class VirtualCrossoverPanel : UserControl
             project.StereoLevelDifferenceDb = result.Request.LevelDifferenceDb;
         }
 
+        // The run decided polarity per side, and "keep the hidden side's" is a
+        // decision the side lock cannot see in a difference — so the lock is told to
+        // take the result as it stands rather than carry the shown side's flip over.
+        sideLock.Remember(channels.Select(channel => channel.Pair));
         ScheduleSave();
         RedrawAll();
         WriteAlignmentLog(result.Log.ToString());

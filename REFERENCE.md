@@ -1850,7 +1850,8 @@ workflow taken to its conclusion: measure each driver once, then design the whol
 DSP setup virtually. Channels (A, B, C, …) are stereo **L/R pairs**, each side
 picking its own measurement and running its own chain. **L / R** radios switch
 which side the controls edit, **L→R** / **R→L** copy chain settings across sides
-(a dialog picks the channels and which parts travel — see below),
+(a dialog picks the channels and which parts travel — see below), **Lock** keeps
+the two sides' crossovers and polarity in step while it is on (also below),
 and a **Mono** checkbox turns a pair into a single shared driver — the typical
 one-subwoofer car layout — feeding both sides' sums. The setup grows from two up
 to twelve pairs with **Add** and **Remove** under the block list, and **+/−**
@@ -1996,6 +1997,27 @@ other side's own alignment standing. Sources are never copied: every side keeps
 its own measurement.
 **Mute**, **Bypass** and the two curve toggles are absent from the list because
 they are shared by the two sides already — there is nothing to copy.
+
+**Lock**, beside them, is for the tune that is meant to be symmetric: while it is
+ticked, a crossover or polarity change made on the side shown is written onto the
+other side of the same pair as it is made, so the crossovers stay equal without an
+**L→R** after every corner moved. It reads by difference at every autosave, and
+that sets its boundaries. Ticking it copies nothing — whatever already differed
+between the sides stays until that setting is next touched, so the two sides can
+be compared before deciding which one to type over. The crossover travels as one
+(kind and both corners): a lock that carried only the corner turned would leave
+the other side's second corner where it was, and the two crossovers unequal after
+an edit meant to equalize them. Polarity travels on its own, so moving a corner
+never flips the other side. Gain, delay, the phase angle and the PEQ are not
+locked, for the reason they start unticked in the copy dialog; mono pairs have one
+settings set and need no lock. A run that writes both sides itself — **Auto
+delay**, which decides polarity per side, or the crossover wizard — keeps its own
+answer for the hidden side: the lock is for the hand on the knob, which only
+reaches the side shown. An AI import and its undo land exactly as their rows
+say, for the same reason: the rows name their sides, and the dialog showed
+those. It is on by default, because a car tune is symmetric far
+more often than not; untick it to work one side alone. The state is not stored
+with the session, so the next opening starts symmetric again.
 
 Because every stage is linear and the measurements are loopback-referenced
 transfer IRs, multiplying each measurement by its chain and summing the results

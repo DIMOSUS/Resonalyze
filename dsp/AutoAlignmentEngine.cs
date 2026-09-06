@@ -4725,8 +4725,11 @@ public static class AutoAlignmentEngine
     /// sides of ONE driver pair through near-identical chains, so whatever
     /// bias the onset carries cancels in the split. The Virtual DSP arrival
     /// read-out (its L / R / Δ block) is the same comparison on the final
-    /// processed sides and reads by the same rules, so the two never
-    /// disagree about a pair. The timeline machinery
+    /// processed sides and reads by the same rules with the same detector —
+    /// on its own analysis window rather than the reprocessor's crop, which
+    /// agrees to the thousandth of a millisecond on a clean record (the
+    /// pre-front stretch integrates nothing) and can drift apart from it
+    /// only as the SNR nears the admission floor. The timeline machinery
     /// instead predicts a processed read from the bypassed front plus a chain
     /// shift measured on a reference impulse, and an energy onset is a
     /// distribution statistic that no impulse-measured shift transfers: read

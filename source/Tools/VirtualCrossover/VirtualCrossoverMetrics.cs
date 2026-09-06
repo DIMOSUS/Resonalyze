@@ -755,6 +755,10 @@ internal sealed class VirtualCrossoverMetrics
         Func<VirtualCrossoverChannelPairSettings, bool>? includePair = null,
         Func<VirtualCrossoverChannel, double, double, double?>? hybridLevelDeltaDb = null)
     {
+        static bool Reliable(TimeAlignmentAnalysisResult arrival) =>
+            arrival.IsValid &&
+            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb;
+
         var jobs = new List<StereoDeltaJob>();
         int nextId = 0;
         for (int channelIndex = 0; channelIndex < channels.Count; channelIndex++)
@@ -917,7 +921,12 @@ internal sealed class VirtualCrossoverMetrics
                             side.LevelDb = VirtualCrossoverAnalysis.MeasureBandLevelDb(
                                 side.ProcessedIr!, side.SampleRate,
                                 job.LowHz, job.HighHz);
-                            side.Probe = ReadUpperHalf(side, job.LowHz, job.HighHz);
+                            // A full read too weak to be reported earns no
+                            // probe (the certificate would abstain anyway),
+                            // and a silent band costs no second Hilbert pass.
+                            side.Probe = Reliable(side.Arrival.Value)
+                                ? ReadUpperHalf(side, job.LowHz, job.HighHz)
+                                : null;
                         }
                     }
                 }
@@ -941,10 +950,6 @@ internal sealed class VirtualCrossoverMetrics
                 }
             }
         }
-
-        static bool Reliable(TimeAlignmentAnalysisResult arrival) =>
-            arrival.IsValid &&
-            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb;
 
         return jobs
             .Select(job =>
@@ -998,7 +1003,12 @@ internal sealed class VirtualCrossoverMetrics
                     RightLatched: IsModalLatched(
                         right, job.Right.Probe, job.LowHz, job.HighHz, energyOnset),
                     LevelFromSpatialAverage: job.HybridLevelDeltaDb.HasValue,
-                    EnergyOnset: energyOnset);
+                    EnergyOnset: energyOnset,
+                    // The band asked for onsets and both sides are on the
+                    // row, yet one is under the 30 dB the onset needs: the
+                    // row is back on the coin, and must say so.
+                    EnergyOnsetWithheld: !energyOnset && leftReliable && rightReliable &&
+                        AutoAlignmentEngine.LinkBandReadsEnergyOnset(job.LowHz, job.HighHz));
             })
             .ToList();
     }

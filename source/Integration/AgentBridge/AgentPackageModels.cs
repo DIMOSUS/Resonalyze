@@ -261,7 +261,8 @@ internal sealed record AgentPackageStereo(
     bool LeftLatched,
     bool RightLatched,
     bool LevelFromSpatialAverage,
-    bool EnergyOnset);
+    bool EnergyOnset,
+    bool EnergyOnsetWithheld);
 
 internal sealed record AgentPackageGroup(
     string Zone,

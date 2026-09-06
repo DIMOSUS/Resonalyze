@@ -212,6 +212,24 @@ public sealed class VirtualCrossoverMetricTests
     }
 
     [Fact]
+    public void FormatStereoDeltasDetail_SaysWhenALowPairIsBackOnFirstPeaks()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+            [
+                new VirtualCrossoverMetric.StereoDelta(
+                    "B", 16.628, 22.248, 65, 200, EnergyOnsetWithheld: true)
+            ]);
+
+            Assert.Contains(
+                "(65 Hz – 200 Hz, first peaks: a side is under the 30 dB an energy onset needs)",
+                text);
+            Assert.DoesNotContain("Energy onsets:", text);
+        });
+    }
+
+    [Fact]
     public void FormatStereoDeltasCompact_EmptyListRendersNothing()
     {
         Assert.Equal(

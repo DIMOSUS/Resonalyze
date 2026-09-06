@@ -119,7 +119,12 @@ internal static class VirtualCrossoverMetric
         // band is centred below 300 Hz with 30 dB of SNR on both sides (see
         // VirtualCrossoverMetrics.ComputeStereoDeltasAsync). Both sides and
         // their latch probes read the same instrument; the legend names it.
-        bool EnergyOnset = false)
+        bool EnergyOnset = false,
+        // The band qualifies for onsets but a side sits under the SNR the
+        // onset needs, so both sides read first peaks — the instrument the
+        // band is a coin on. The row names the fallback, so a low pair back
+        // on peaks is not mistaken for a pair the onset cleared.
+        bool EnergyOnsetWithheld = false)
     {
         public double? DeltaMs => LeftMs.HasValue && RightMs.HasValue
             ? LeftMs.Value - RightMs.Value
@@ -238,7 +243,13 @@ internal static class VirtualCrossoverMetric
                     $"\u0394 {deltaText}{levelText} " +
                     $"({FrequencyText.Format(delta.LowHz)} \u2013 " +
                     $"{FrequencyText.Format(delta.HighHz)}" +
-                    (delta.EnergyOnset ? ", energy onsets" : string.Empty) + ")";
+                    (delta.EnergyOnset
+                        ? ", energy onsets"
+                        : delta.EnergyOnsetWithheld
+                            ? ", first peaks: a side is under the " +
+                                $"{AutoAlignmentEngine.EnergyOnsetMinimumSnrDb:0} dB " +
+                                "an energy onset needs"
+                            : string.Empty) + ")";
             })) +
             (deltas.Any(delta => delta.EnergyOnset)
                 ? "\r\nEnergy onsets: a pair whose shared band is centred " +

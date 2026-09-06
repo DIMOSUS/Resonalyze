@@ -757,7 +757,8 @@ internal static class AgentPackageBuilder
             delta.LeftLatched,
             delta.RightLatched,
             delta.LevelFromSpatialAverage,
-            delta.EnergyOnset);
+            delta.EnergyOnset,
+            delta.EnergyOnsetWithheld);
 
     private static AgentPackageGroup BuildGroup(VirtualCrossoverMetric.GroupDelta delta) =>
         new(

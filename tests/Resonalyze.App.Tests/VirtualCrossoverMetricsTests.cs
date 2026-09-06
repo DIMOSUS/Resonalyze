@@ -687,11 +687,59 @@ public sealed class VirtualCrossoverMetricsTests
             await metrics.ComputeStereoDeltasAsync([channel], revision);
 
         VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        // 100–400 Hz is centred at 200 Hz and both records are clean, so the
+        // pair reads energy onsets — and the latch shows on that instrument
+        // too: a tenth of the full band's energy sits in the build-up, a
+        // tenth of the upper half's in the wavelet.
+        Assert.True(delta.EnergyOnset);
         Assert.True(delta.LeftLatched);
         Assert.False(delta.RightLatched);
         // The upper-half probe the verdict is graded against rides in the
         // per-side cache with the arrival; the verdict itself is per pair.
         Assert.NotNull(channel.PhysicalSideState(false).ArrivalCache!.Value.Probe);
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_TheCoinTheFieldPairTossed_ReadsTheSameSplitByOnsets()
+    {
+        // The engine's coin, on the read-out: a front and a 1.4× arrival
+        // 8 ms behind it on the left, 7 ms on the right, through the same
+        // BW36 65 Hz / BW48 200 Hz band-pass. The first peaks read the two
+        // sides 5 ms apart (the left's hump stands as a peak, the right's
+        // melts into the arrival) for a true skew of zero; the onsets read
+        // them within 0.2 ms, and the row reads the onsets.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        long revision = coordinator.Invalidate();
+        var channel = new VirtualCrossoverChannel("B");
+        foreach (bool rightSide in new[] { false, true })
+        {
+            var ir = new Complex[16_384];
+            ir[2_400] = Complex.One;
+            ir[2_400 + (rightSide ? 7 : 8) * 48] += 1.4;
+            VirtualCrossoverChannelState state = channel.PhysicalSideState(rightSide);
+            state.TransferImpulseResponse = ir;
+            state.SampleRate = 48_000;
+            VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
+            settings.CrossoverKind = CrossoverKind.BandPass;
+            settings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 65, 36);
+            settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 200, 48);
+        }
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync([channel], revision);
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        TimeAlignmentAnalysisResult left = channel.PhysicalSideState(false).ArrivalCache!.Value.Result;
+        TimeAlignmentAnalysisResult right = channel.PhysicalSideState(true).ArrivalCache!.Value.Result;
+        // The fixture IS the coin: the peaks disagree by milliseconds.
+        Assert.True(
+            Math.Abs(left.FirstArrivalDelayMilliseconds - right.FirstArrivalDelayMilliseconds) > 3.0,
+            $"peaks split {left.FirstArrivalDelayMilliseconds - right.FirstArrivalDelayMilliseconds:0.00} ms");
+        Assert.True(delta.EnergyOnset);
+        Assert.InRange(delta.DeltaMs!.Value, -0.3, 0.3);
+        Assert.False(delta.LeftLatched);
+        Assert.False(delta.RightLatched);
     }
 
     // A stereo pair whose both sides play the given response through a
@@ -793,6 +841,9 @@ public sealed class VirtualCrossoverMetricsTests
             AutoAlignmentEngine.MinimumArrivalSnrDb,
             AutoAlignmentEngine.EnergyOnsetMinimumSnrDb - 0.01);
         Assert.False(delta.EnergyOnset);
+        // ...and the row says the onset was withheld, not that the band
+        // never asked for one.
+        Assert.True(delta.EnergyOnsetWithheld);
         Assert.Equal(left.FirstArrivalDelayMilliseconds, delta.LeftMs!.Value, 9);
         Assert.Equal(right.FirstArrivalDelayMilliseconds, delta.RightMs!.Value, 9);
     }
@@ -814,6 +865,7 @@ public sealed class VirtualCrossoverMetricsTests
 
         VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
         Assert.False(delta.EnergyOnset);
+        Assert.False(delta.EnergyOnsetWithheld);
         TimeAlignmentAnalysisResult left = channel.PhysicalSideState(false).ArrivalCache!.Value.Result;
         Assert.Equal(left.FirstArrivalDelayMilliseconds, delta.LeftMs!.Value, 9);
     }

@@ -349,7 +349,10 @@ rather than the direct rise — the number is real but overstates the skew),
 of the band's energy has arrived — rather than first envelope peaks: the rule
 the stereo Auto delay's cross-side target follows for a pair whose shared band
 is centred below 300 Hz with 30 dB of SNR on both sides; false where the pair
-reads first peaks), `levelFromSpatialAverage`.
+reads first peaks), `energyOnsetWithheld` (the band qualifies for onsets but a
+side is under the 30 dB an onset needs, so both sides read first peaks — the
+instrument that band is a coin on; treat such a `deltaMs` with the caution
+`latched` asks for), `levelFromSpatialAverage`.
 
 `groups[]`, per zone compared against the front stage: `delayMs` (the zone's
 arrival minus the front's), `levelDb` (the zone's level minus the front's),

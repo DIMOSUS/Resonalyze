@@ -172,7 +172,8 @@ internal static class AgentProtocol
         "scratch, advice on the crossovers, on the stage, on the tonal balance, a look over a " +
         "tune they already made, or something they hear in the car. Do not run the whole " +
         "analysis unasked. Then ask only what that answer needs (driver models and locations, " +
-        "amplifier power, DSP model, goals), in small groups.\r\n" +
+        "amplifier power, DSP model, goals), in small groups. Notes or a message that already say " +
+        "what the user is after ARE the answer: take that route and do not ask again.\r\n" +
         "3. Prefer Resonalyze's own engines: recommend running Auto delay / Auto crossover (a tune " +
         "with no crossovers yet) / the junction tune (one junction of a finished tune) / EQ Wizard " +
         "Auto-tune with stated settings instead of inventing delays and PEQ banks by hand. On a tune " +
@@ -181,15 +182,21 @@ internal static class AgentProtocol
         "tune, not the step before.\r\n" +
         "4. Never EQ a cancellation; never claim a crossover is driver-safe from Fs or diameter " +
         "alone; cite sources for hardware facts.\r\n" +
-        "5. If and only if you have concrete, justified changes, end with ONE JSON object with " +
-        "\"kind\": \"" + ProposalKind + "\" following the protocol, in a fenced code block; " +
-        "copy packageId, channel ids and current values from this package exactly.\r\n" +
+        "5. End with ONE JSON object with \"kind\": \"" + ProposalKind + "\" following the " +
+        "protocol, in a fenced code block, if and only if you have concrete, justified changes, " +
+        "an engine to run, or a probe to ask for; copy packageId, channel ids and current values " +
+        "from this package exactly. Settings operations state END states: a \"flip\" or an " +
+        "\"extra delay\" a read-out recommends is applied to the current value first.\r\n" +
         "6. Readings the package leaves out are diagnostics the user copies for you from " +
         "AI assistant… → Copy diagnostics for AI (Excess group delay); when you ask for one, " +
         "name that path.\r\n" +
         "7. To find out what a setting WOULD do, ask for a \"" + Probe + "\" operation instead " +
         "of asking the user to apply and undo anything: it changes nothing and its answer comes " +
-        "back through the clipboard.";
+        "back through the clipboard.\r\n" +
+        "8. What this build can do is in the package, not in the guide: use only operations " +
+        "named in limits.operations and probes named in limits.probes. A field the guide " +
+        "describes that the package lacks (sampling, sumLossDirect, a probe kind) means an " +
+        "older build, not a faulty measurement.";
 
     /// <summary>
     /// The version of the guide this build was written against, printed in the

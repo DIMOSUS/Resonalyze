@@ -183,7 +183,9 @@ The parametric terms (`levelDb`, `preset`, `tiltDbPerOctave`, `bassShelf`,
 `trebleShelf`, `presence` as `{ gainDb, frequencyHz, widthOctaves }`,
 `toleranceDb`, `importedName`) and the resulting curve as a series
 `{ columns: ["frequencyHz", "targetDb"], rows }` at up to 12 points per octave (`sampling`) from
-20 Hz to 20 kHz. Read-only: a reply cannot change the target.
+20 Hz to 20 kHz. Its SHAPE is read-only — no operation edits the terms or the
+curve; its LEVEL moves through `autoTunePeq.targetLevelDb` (§2.2), and nothing
+else in a reply touches it.
 
 ### 1.6 `channels[]`
 
@@ -310,7 +312,13 @@ Every block is the panel's own read-out, unchanged. `id` is what a
   absent, and it is the first optional series dropped when the package is over
   its size target (`omitted` then names it) — the figures always travel.
 - `phase`: the **Junction phase** row. `bestExtraDelayMs` and `bestInvert` are
-  applied to the **lower** channel; scores run −1…1, higher is better;
+  applied to the **lower** channel and are RELATIVE to it as it stands:
+  `bestInvert` is a flip of its present polarity, `bestExtraDelayMs` an
+  addition to its present delay. Settings operations state end states, so a
+  reply that acts on them writes `setPolarity.proposed = current XOR
+  bestInvert` and `setDelayMs.proposed = current + bestExtraDelayMs` (a negative
+  addition on a channel at 0 ms goes onto the UPPER channel as a positive
+  one). Scores run −1…1, higher is better;
   `lobeMargin` below about 0.05 means a whole-period hop cannot be ruled out.
   Absent, with `unavailableReason`, where the pair's phase is not consistent
   enough across the band.
@@ -408,8 +416,8 @@ open door: an `extensions` object, whose content is ignored).
   "operations": [
     { "id": "op-1", "op": "setPolarity", "channelId": "B:left", "expectedCurrent": false, "proposed": true,
       "reason": "Phase opposition at the B/C junction: score 0.3 now, 0.68 inverted." },
-    { "id": "op-2", "op": "setGainDb", "channelId": "A:right", "expectedCurrent": -2, "proposed": -2.6,
-      "reason": "Level Δ L−R of +0.6 dB in the mid band." },
+    { "id": "op-2", "op": "setGainDb", "channelId": "A:left", "expectedCurrent": -2, "proposed": -2.6,
+      "reason": "Level Δ L−R of +0.6 dB in the shared band: the LEFT side plays louder, so it is the left that comes down." },
     { "id": "op-3", "op": "setDelayMs", "channelId": "A:right", "expectedCurrent": 1.42, "proposed": 1.37,
       "reason": "Δ L−R of −0.36 ms in the shared band." },
     { "id": "op-4", "op": "setCrossover", "channelId": "B:left",
@@ -420,6 +428,14 @@ open door: an `extensions` object, whose content is ignored).
                            "highPass": { "family": "LinkwitzRiley", "frequencyHz": 250, "slopeDbPerOctave": 24 },
                            "lowPass":  { "family": "LinkwitzRiley", "frequencyHz": 2600, "slopeDbPerOctave": 24 } },
       "reason": "Keeps the mid's beaming out of the overlap; datasheet recommends up to 3 kHz." },
+    { "id": "op-4b", "op": "setCrossover", "channelId": "B:right",
+      "expectedCurrent": { "kind": "BandPass",
+                           "highPass": { "family": "LinkwitzRiley", "frequencyHz": 250, "slopeDbPerOctave": 24 },
+                           "lowPass":  { "family": "LinkwitzRiley", "frequencyHz": 2800, "slopeDbPerOctave": 24 } },
+      "proposed":        { "kind": "BandPass",
+                           "highPass": { "family": "LinkwitzRiley", "frequencyHz": 250, "slopeDbPerOctave": 24 },
+                           "lowPass":  { "family": "LinkwitzRiley", "frequencyHz": 2600, "slopeDbPerOctave": 24 } },
+      "reason": "The same crossover on the right side: one filter for both sides of the block." },
     { "id": "op-5", "op": "replacePeqBank", "channelId": "B:left", "expectedCurrentHash": "3f9a1c0b7e2d",
       "proposed": { "preampDb": -1, "bands": [ { "type": "Peaking", "frequencyHz": 820, "q": 2.1, "gainDb": -2.4 } ] },
       "reason": "Door resonance at 820 Hz in both the point measurement and the spatial average." }
@@ -465,7 +481,7 @@ below ask for one of the panel's own engines instead.
 | `setGainDb` | `expectedCurrent`, `proposed` (dB) | `limits.gainDb`, `limits.gainStepDb` |
 | `setDelayMs` | `expectedCurrent`, `proposed` (ms) | `limits.delayMs`, `limits.delayStepMs`; above `processor.maxDelayMs` is a warning |
 | `setPolarity` | `expectedCurrent`, `proposed` (booleans, true = inverted) | — |
-| `setCrossover` | `expectedCurrent`, `proposed` (a crossover object) | kind and family names exactly as in the package; slopes per family; corner in `limits.crossoverHz` and below the processor's Nyquist; ripple in `limits.chebyshevRippleDb` for Chebyshev |
+| `setCrossover` | `expectedCurrent`, `proposed` (a crossover object) | kind and family names exactly as in the package; slopes per family; corner in `limits.crossoverHz` and below the processor's Nyquist; ripple in `limits.chebyshevRippleDb` for Chebyshev. Writes the NAMED channel only: a stereo block's crossover is one filter for both sides, so a reply that moves it proposes both channels (`B:left` and `B:right`), each with its own `expectedCurrent`. The two facing edges of a junction — the lower block's low-pass and the upper block's high-pass — may differ; the two sides of one block should not. `tuneJunction` writes both sides itself |
 | `replacePeqBank` | `expectedCurrentHash`, `proposed` `{ preampDb, bands[] }` | at most `limits.peqBands` bands; every band `frequencyHz > 0` and below the processor's Nyquist, `q > 0`, finite `gainDb`, `type` one of `Peaking`, `LowShelf`, `HighShelf`, `AllPassFirstOrder`, `AllPassSecondOrder`; preamp within ±`limits.peqPreampDb`; a net response rising above 0 dB is a warning naming the peak and the preamp that would absorb it; a bell with Q > 2 within an octave of one of the channel's own active crossover corners is a warning naming the corner — judged on the channel as it would end up after every applicable row on it, so a crossover row that moves a corner onto an existing bell warns too |
 
 A crossover object is `{ kind, highPass?, lowPass? }` with each edge
@@ -594,7 +610,9 @@ rows the question needs — one junction's curves and sweep, two channels'
 broadband tables — rather than for everything, since the user pastes the
 answer. It writes nothing and names no variants. An import reads **one**
 series probe (`limits.seriesProbesPerImport`); a second is refused, so put
-every series, channel and junction the question needs into that one. Its
+every series and channel the question needs into that one, for the one
+junction it names or for every junction of the view (`junctionId` takes one
+id or is absent; there is no list). Its
 answer is not thinned, but it is not unbounded either: a document over 1 MB
 of JSON is not copied, and the import's summary says to ask for fewer series,
 fewer channels or a lower density.
@@ -607,9 +625,11 @@ fewer channels or a lower density.
 
 A probe reads the side its `junctionId` names, since a variant's changes are
 that side's channels'. A crossover is one filter for both sides, so a reply
-weighing one asks for both junctions (`left:C-D` and `right:C-D`); the
-once-per-import rule counts a probe per reading AND junction, so those are two
-rows, not a repeat.
+weighing one asks for both junctions (`left:C-D` and `right:C-D`). Probes are
+not held to the once-per-import rule at all — a second probe on the same
+junction is another question about it, not a second run of an engine — so
+those are two ordinary rows; what bounds probes is the variant budget across
+the reply, and the `series` probe its own count of one.
 
 Probes run BEFORE anything else in the import — a probe answers a question about
 the tune as it stands, and reading it after the import's own rows had landed
@@ -681,8 +701,10 @@ An engine this build cannot run erases nothing, so its request is refused and th
 hand-written rows are left to do the work instead. Request each engine once: a
 repeat is refused, naming the first. `autoTunePeq` counts per channel — one fit
 per channel is the point of it — so a second request for the SAME channel is the
-one that is refused; `tuneJunction` counts per junction the same way, and
-`probe` per reading and junction.
+one that is refused; `tuneJunction` counts per junction the same way. `probe`
+is not counted: it writes nothing, so a second one on the same junction is
+another question; its bounds are `limits.probeVariantsPerImport` variants
+across the reply and one `series` probe per import.
 
 Beyond the operations of this section, nothing in a session can be addressed:
 not the target, the processor, the gates, the sources, the calibration, the
@@ -781,10 +803,23 @@ document is read:
 - `afterBestDelay` is what the junction would measure once the alignment had
   been re-run for THAT entry. The delays in the tune were set for the tune as it
   stands, so it is the fair comparison between entries; a reply that wants that
-  delay applied asks for `runAutoDelay`.
-- `phase` is the pair's cross-phase over the same window as the sums. Compare it
-  BETWEEN the entries of one probe; the package's `junctions[].phase` is read
-  through the panel's own gate and is not the same number.
+  delay applied asks for `runAutoDelay`. Its `invertUpper` is the upper
+  channel's RESULTING polarity — an end state a `setPolarity.proposed` can
+  copy — unlike the package's `phase.bestInvert`, which is a flip.
+- `phase` is the pair's cross-phase read off the same processed responses and
+  the same band as the entry's sums, through the phase analysis's own window —
+  not the window the sums are read through, and not the panel's gate. Compare
+  it BETWEEN the entries of one probe; the package's `junctions[].phase` is
+  read through the panel's own gate and is not the same number, and no phase
+  score is comparable with a sum's dB figure.
+
+The windows, so nothing is compared across them: the package's `sumLoss`
+reads the full steady-state window; the package's `sumLossDirect` and
+`junctions[].phase` read the Junction phase block's FDW-8 windows; a probe
+entry's `sumLossDb`, `dipDb` and `rippleDb` read the alignment window of the
+band they are stated on; a probe entry's `phase` reads the phase analysis's
+own window. A variant is compared with the probe's `current` entry, a package
+with the previous package, a metric with itself.
 
 An entry's `affectedJunctions` is written when THAT entry changes a channel that
 also hands over somewhere else — a midrange meets a woofer below and a tweeter

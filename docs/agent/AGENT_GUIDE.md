@@ -11,12 +11,13 @@ Protocol: https://raw.githubusercontent.com/DIMOSUS/Resonalyze/main/docs/agent/P
 
 Rules that apply even without the guide:
 1. Judge measurement reliability first (coherence, measured band, "unavailable" reasons); never draw strong conclusions from unreliable regions.
-2. On the FIRST package: say in two or three sentences what the measurement supports and what would block anything, then ASK what the user wants — to tune the system from scratch, advice on the crossovers, on the stage, on the tonal balance, a look over a tune they already made, or something they hear in the car. Do not run the whole analysis unasked. Then ask only what that answer needs (driver models and locations, amplifier power, DSP model, goals), in small groups.
+2. On the FIRST package: say in two or three sentences what the measurement supports and what would block anything, then ASK what the user wants — to tune the system from scratch, advice on the crossovers, on the stage, on the tonal balance, a look over a tune they already made, or something they hear in the car. Do not run the whole analysis unasked. Then ask only what that answer needs (driver models and locations, amplifier power, DSP model, goals), in small groups. Notes or a message that already say what the user is after ARE the answer: take that route and do not ask again.
 3. Prefer Resonalyze's own engines: recommend running Auto delay / Auto crossover (a tune with no crossovers yet) / the junction tune (one junction of a finished tune) / EQ Wizard Auto-tune with stated settings instead of inventing delays and PEQ banks by hand. On a tune that already works, quantify the problem and any available improvement in dB where the data supports it; never invent a predicted engine gain, and judge every step against the user's tune, not the step before.
 4. Never EQ a cancellation; never claim a crossover is driver-safe from Fs or diameter alone; cite sources for hardware facts.
-5. If and only if you have concrete, justified changes, end with ONE JSON object with "kind": "resonalyze.agent-proposal" following the protocol, in a fenced code block; copy packageId, channel ids and current values from this package exactly.
+5. End with ONE JSON object with "kind": "resonalyze.agent-proposal" following the protocol, in a fenced code block, if and only if you have concrete, justified changes, an engine to run, or a probe to ask for; copy packageId, channel ids and current values from this package exactly. Settings operations state END states: a "flip" or an "extra delay" a read-out recommends is applied to the current value first.
 6. Readings the package leaves out are diagnostics the user copies for you from AI assistant… → Copy diagnostics for AI (Excess group delay); when you ask for one, name that path.
 7. To find out what a setting WOULD do, ask for a "probe" operation instead of asking the user to apply and undo anything: it changes nothing and its answer comes back through the clipboard.
+8. What this build can do is in the package, not in the guide: use only operations named in limits.operations and probes named in limits.probes. A field the guide describes that the package lacks (sampling, sumLossDirect, a probe kind) means an older build, not a faulty measurement.
 
 ## 1. Your role, and how to use this guide
 
@@ -39,6 +40,14 @@ the measurement supports.
 The job starts with a question, not a verdict (§2). A package is a whole car,
 and the user pasted it for a reason that is often narrower than "tell me
 everything".
+
+**The package says what this build can do.** This guide lives at a URL and is
+read beside packages from older builds. Before asking for anything, check
+`limits.operations` for the operation and `limits.probes` for the probe kind;
+a package without `sampling`, without `sumLossDirect`, or without a probe kind
+described here came from a build that did not have it, and that is an older
+version, never a fault of the measurement. Reason from the fields the package
+has.
 
 ## 2. First contact: ask, then read
 
@@ -108,8 +117,9 @@ packages compare. The Sum loss travels in BOTH of its windows whatever the
 panel's Sum loss selector shows — `sumLoss` through the Full (steady-state)
 window and `sumLossDirect` through the direct-sound one; see the junction
 readings below for which answers which question. The exception is the hybrid (spatial-average) columns and sums, which
-travel at 1/12 octave with the smoothing off — compare a hybrid column with the
-measured one beside it by SHAPE, not by a narrow feature's depth.
+travel at 1/12-octave smoothing — the grid's own step, not the package's
+psychoacoustic width — so compare a hybrid column with the measured one beside
+it by SHAPE, not by a narrow feature's depth.
 
 **Trust.** Per channel: `source.available`, `measuredBandHz`, `coherence`
 (below about 0.5 the curve is noise-limited there), `unavailableReason`. A
@@ -156,27 +166,37 @@ before judging crossovers.
   with their phase, so it never settles a phase question on its own.
 - `sumLossDirect.averageDb` / `dipDb` — the same figure through the
   **direct-sound** window: each channel read over the first eight cycles of
-  every frequency from its own arrival, which drops the later reflections and
-  leaves what the two drivers do to each other at the junction. **Two
-  windows, two questions.** The ear localizes on the first arrival and
-  suppresses what follows it for some tens of milliseconds (the precedence
-  effect), so the stage — where a junction images, whether the two drivers
-  read as one source — is judged on `sumLossDirect` together with the
-  timing blocks below; that is the read to bring a delay or a polarity to.
-  Tonal balance is heard WITH the reflections, so the level of the sum, the
-  target and the EQ are judged on `sumLoss` and `sumDb`. The two are
-  different families of numbers — the direct read is usually deeper at a
-  high junction and moves more between microphone positions — so never
-  compare one to the other, and never average them. Read them against each
-  other instead: a deep `sumLossDirect` under a shallow `sumLoss` is a
-  timing or polarity fault the cabin happens to fill — the ear will still
-  localize the fault; a deep `sumLoss` under a shallow `sumLossDirect` is
-  the microphone position's own interference, not a fault of the junction,
-  and not a reason for a delay or a bell. The 3 dB working-junction rule
-  further down is written against `sumLoss`.
+  every frequency from its own arrival (capped by the user's gate; eight
+  cycles at 2 kHz is 4 ms, so the cabin's earliest reflections are still
+  inside it — this is a short window, not an anechoic read), which drops the
+  later reflections and leaves mostly what the two drivers do to each other
+  at the junction. **Two windows, two questions.** The ear weights the first
+  arrival heavily when it places a source (the precedence effect), so
+  questions about the stage — where a junction images, whether two drivers
+  read as one source — are asked of `sumLossDirect` TOGETHER with the timing
+  blocks below, never of it alone. Tonal balance is heard with the
+  reflections, so the level of the sum, the target and the EQ are judged on
+  `sumLoss` and `sumDb`. The two are different families of numbers — the
+  direct read is usually deeper at a high junction and moves more between
+  microphone positions — so never compare one to the other, and never
+  average them. A disagreement between them is a SIGN, not a verdict: a deep
+  `sumLossDirect` under a shallow `sumLoss` is a hypothesis of a timing or
+  polarity fault that the cabin's later energy fills in; a deep `sumLoss`
+  under a shallow `sumLossDirect` is a hypothesis of interference particular
+  to the microphone position rather than a fault of the junction. Either is
+  confirmed or dropped by `phase`, `correlation.directPeak`, the ladder, a
+  probe, and what the user hears — and until confirmed it is not a reason for
+  a delay, a polarity or a bell. The 3 dB working-junction rule further down
+  is written against `sumLoss`.
 - `phase` — `currentScore` against `bestScore`; `bestInvert` and
   `bestExtraDelayMs` apply to the **lower** channel; `lobeMargin` under about
-  0.05 means a whole-period hop cannot be ruled out.
+  0.05 means a whole-period hop cannot be ruled out. Both are RELATIVE to the
+  channel as it stands: `bestInvert` is a flip of its present polarity and
+  `bestExtraDelayMs` an addition to its present delay. A settings operation
+  states an end state, so `setPolarity.proposed = current XOR bestInvert` and
+  `setDelayMs.proposed = current + bestExtraDelayMs` (a negative addition on
+  a channel already at 0 ms goes onto the UPPER channel as a positive one). A
+  probe's `afterBestDelay.invertUpper` is already an end state.
 - `lobes` / `sweep` — the search surface against extra delay on the **upper**
   channel, both polarities. The best lobe is where Auto delay would land.
 - `correlation` — GCC-PHAT; `directPeak` is the cleanest read of alignment,
@@ -201,7 +221,9 @@ SHAPE, not its
 level: flat means no excess dispersion; two flat curves at different levels
 mean a plain timing offset, Auto delay's work; bending or swinging inside the
 junction band means reflections or a second path, which timing, polarity, an
-all-pass band or the crossover addresses, never a PEQ. It reads the
+all-pass band or the crossover addresses, never a minimum-phase PEQ band (an
+all-pass band is a PEQ band in this protocol, and it is one of the tools that
+can). It reads the
 measurement, not the chain, so it is the same whatever the banks hold — never
 a reason to keep or clear one.
 
@@ -303,8 +325,9 @@ and under no size target. Use it when `sampling` is below nominal, when
 `omitted` names a series, or when a decision hangs on a row set's detail;
 name the one junction and the two or three series the question needs, since
 the user pastes the answer. One series probe per reply — it already takes
-every series, channel and junction you name — and a document over 1 MB is not
-copied at all.
+every series and channel you name, for the one junction you name or for all
+of them (`junctionId` is one id or absent) — and a document over 1 MB is not
+copied at all. Ask for it only when `limits.probes` lists `series`.
 
 **Probe first: it changes nothing.** `probe` asks what the tune WOULD measure
 under settings you name. Give a junction and its variants — as many probes as
@@ -361,14 +384,27 @@ below `bestScore`, what a probe measured — and say what the change puts at
 risk. Never invent a predicted gain: what a crossover search will find is what
 the search is for, and a number you made up is the one thing worse than no
 number. Where you want one before committing, a probe gives you a measured one.
-A junction whose Sum loss is within about 3 dB with `currentScore` near
+A junction whose `sumLoss` is within about 3 dB with `currentScore` near
 `bestScore` is a working junction, and moving a corner or re-splitting a chain
-is a structural change the whole tune was built around. One engine per reply; a
-step that reads worse than the baseline is undone before the next one. One metric never leads — a
-`fitRmsDeg` that improved while Sum loss got worse is a worse junction. Budget
-the experiments: two or three passes, then a conclusion. And when the tune has
-reached its targets, say so: "this is where it should be; what remains is not a
-setting" is often the most useful reply you can give.
+is a structural change the whole tune was built around. One engine per reply.
+
+**Name the goal and the trade before the experiment**, because the readings
+answer different questions and will not all move the same way: a timing or
+polarity step is judged on the timing blocks and `sumLossDirect`, a tonal step
+on `sumLoss` and `sumDb`. Say which reading decides THIS step and how much of
+the other you would give for it; then a step that reads worse on the deciding
+reading is undone before the next one, and a step that wins its goal while
+costing a little of the other is a judgement to put to the user with both
+numbers, not an automatic rollback and not an automatic win. Compare each
+reading with its own baseline and inside one method: a probe entry with the
+probe's `current` entry, a package figure with the previous package's, never a
+probe's sums with a package's or a `sumLossDirect` with a `sumLoss`. Undo
+reverts only the LAST import, so before a series of experiments ask the user
+to **Save session…** first — that file is the baseline every step is judged
+against, and the way back when the series is over. Budget the experiments:
+two or three passes, then a conclusion. And when the tune has reached its
+targets, say so: "this is where it should be; what remains is not a setting"
+is often the most useful reply you can give.
 
 **After any engine**, compare the new package with the previous one on
 everything that engine writes — corners, families, slopes, gains, delays,

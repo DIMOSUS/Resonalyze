@@ -53,10 +53,18 @@ internal static class DroppedFile
     internal static bool HasOpenableExtension(string path)
     {
         string extension = Path.GetExtension(path);
-        return string.Equals(extension, ".json", StringComparison.OrdinalIgnoreCase) ||
+        return HasJsonExtension(path) ||
             string.Equals(extension, ".wav", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Whether the file is a <c>.json</c> — the one extension the Compare button
+    /// takes, as its own file dialog does. Answered while a drag hovers, on the same
+    /// terms as <see cref="HasOpenableExtension"/>: by the name alone.
+    /// </summary>
+    internal static bool HasJsonExtension(string path) =>
+        string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// What <paramref name="path"/> holds, or <see cref="DroppedFileKind.Unknown"/>

@@ -813,8 +813,11 @@ was capped, is cut when it loads.
 
 The **Compare** button overlays a second measurement on top of the current one,
 so two responses can be read side by side with the *same* analysis settings.
-Choose the reference from a file (**Choose file…**) or from a **History** entry;
-the button then shows its name, and **Clear** removes it. Compare is applied
+Choose the reference from a file (**Choose file…**) or from a **History** entry,
+or drag an impulse-response `.json` from Explorer straight onto the **Compare**
+button — the one place on the window where a dropped file becomes the reference
+rather than [the measurement](#dropping-a-file-on-the-window). The button then
+shows the reference's name, and **Clear** removes it. Compare is applied
 everywhere it is meaningful, always recomputed with the current mode's settings:
 
 - **Time Alignment** — the reference envelope is overlaid on the peak preview
@@ -1129,6 +1132,16 @@ time — the shell holds one measurement, so a drag carrying several is refused
 while it hovers, the cursor showing that no drop will happen. The same refusal
 covers a drag arriving while a sweep is running, or while a dialog is up: a file
 opened underneath one would replace the very measurement it is asking about.
+
+The one exception is the [**Compare**](#compare) button. An impulse response
+dropped on it becomes the Compare reference instead of replacing the
+measurement — the button's own **Choose file…** without the dialog. The button
+takes only what that dialog offers, a `.json`: a sweep recording or a REW export
+is refused while it hovers there, and any other Resonalyze document (a capture, a
+session, an overlay slot) is named for what it is rather than loaded as a
+reference. A capture or a session dropped elsewhere on the window still opens
+where it belongs.
+
 ### Sending a measurement to REW
 
 **Export** imports the current measurement's loopback transfer function into a

@@ -170,12 +170,14 @@ internal static class AgentProbeBuilder
                 "entries, since the delays in the tune were set for the tune as it stands; a " +
                 "reply that wants that delay applied asks for runAutoDelay",
             ["phase"] =
-                "the pair's cross-phase over the same window as the sums above: the phase at the " +
-                "corner, the consistency (below about 0.5 the phase cannot be read there), the " +
-                "score as the entry stands and the best any delay could reach, the delay that " +
-                "reaches it and whether it inverts. Compare these BETWEEN the probe's entries; " +
-                "the package's junctions[].phase is read through the panel's own gate and is not " +
-                "the same number",
+                "the pair's cross-phase read off the same processed responses and band as the sums " +
+                "above, through the phase analysis's own window (not the alignment window the sums " +
+                "use, not the panel's gate): the phase at the corner, the consistency (below about " +
+                "0.5 the phase cannot be read there), the score as the entry stands and the best any " +
+                "delay could reach, the delay that reaches it and whether it inverts. Compare these " +
+                "BETWEEN the probe's entries only; the package's junctions[].phase is read through " +
+                "the panel's own gate and is not the same number, and no phase score compares with " +
+                "a sum's dB figure",
             ["affectedJunctions"] =
                 "on an ENTRY: the other junctions that entry's own changed channels hand over at, " +
                 "which this reading does not cover. A channel meets a neighbour below it and " +

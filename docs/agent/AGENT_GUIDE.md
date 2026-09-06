@@ -17,7 +17,7 @@ Rules that apply even without the guide:
 5. End with ONE JSON object with "kind": "resonalyze.agent-proposal" following the protocol, in a fenced code block, if and only if you have concrete, justified changes, an engine to run, or a probe to ask for; copy packageId, channel ids and current values from this package exactly. Settings operations state END states: a "flip" or an "extra delay" a read-out recommends is applied to the current value first.
 6. Readings the package leaves out are diagnostics the user copies for you from AI assistant… → Copy diagnostics for AI (Excess group delay); when you ask for one, name that path.
 7. To find out what a setting WOULD do, ask for a "probe" operation instead of asking the user to apply and undo anything: it changes nothing and its answer comes back through the clipboard.
-8. What this build can do is in the package, not in the guide: use only operations named in limits.operations and probes named in limits.probes. A field the guide describes that the package lacks (sampling, sumLossDirect, a probe kind) means an older build, not a faulty measurement.
+8. What this build can do is in the package, not in the guide: use only operations named in limits.operations and probes named in limits.probes. A field the guide describes that the package lacks means an older build (check application.version and those lists) or a reading this build could not take (an unavailableReason says so where one is due) — never a faulty measurement.
 
 ## 1. Your role, and how to use this guide
 
@@ -43,11 +43,15 @@ everything".
 
 **The package says what this build can do.** This guide lives at a URL and is
 read beside packages from older builds. Before asking for anything, check
-`limits.operations` for the operation and `limits.probes` for the probe kind;
-a package without `sampling`, without `sumLossDirect`, or without a probe kind
-described here came from a build that did not have it, and that is an older
-version, never a fault of the measurement. Reason from the fields the package
-has.
+`limits.operations` for the operation and `limits.probes` for the probe kind.
+A field this guide describes that the package lacks has one of two meanings,
+and the package tells them apart: an older build that did not have it
+(`application.version`, and the capability lists above — a build without the
+`series` probe has no `sampling` either), or a reading this build could not
+take, which the protocol marks with a sibling `unavailableReason` where one
+is due (`sumLossDirect` is absent where the two channels' sample rates
+differ, whatever the build). Neither is a fault of the measurement. Reason
+from the fields the package has.
 
 ## 2. First contact: ask, then read
 
@@ -422,9 +426,9 @@ across its band is tuned: say so and propose nothing for it.
 ## 7. The reply
 
 Write your analysis in prose. Then, **only if** you have concrete, justified
-changes or an engine to request, end with exactly one JSON object whose
-`"kind"` is `"resonalyze.agent-proposal"`, in a fenced code block, as
-[PROTOCOL.md](PROTOCOL.md) §2 describes. In it:
+changes, an engine to request or a probe to request, end with exactly one
+JSON object whose `"kind"` is `"resonalyze.agent-proposal"`, in a fenced code
+block, as [PROTOCOL.md](PROTOCOL.md) §2 describes. In it:
 
 - Copy `packageId`, every `channelId` and every expected current value from the
   package exactly; a changed current value refuses the operation. A reply

@@ -195,8 +195,9 @@ internal static class AgentProtocol
         "back through the clipboard.\r\n" +
         "8. What this build can do is in the package, not in the guide: use only operations " +
         "named in limits.operations and probes named in limits.probes. A field the guide " +
-        "describes that the package lacks (sampling, sumLossDirect, a probe kind) means an " +
-        "older build, not a faulty measurement.";
+        "describes that the package lacks means an older build (check application.version and " +
+        "those lists) or a reading this build could not take (an unavailableReason says so " +
+        "where one is due) — never a faulty measurement.";
 
     /// <summary>
     /// The version of the guide this build was written against, printed in the

@@ -44,6 +44,7 @@ namespace Resonalyze
             radioSideRight = new ReleaseClickRadioButton();
             buttonCopyLeftToRight = new ReleaseClickButton();
             buttonCopyRightToLeft = new ReleaseClickButton();
+            checkBoxSideLock = new ReleaseClickCheckBox();
             labelView = new Label();
             labelGroupView = new Label();
             comboBoxGroupView = new DarkComboBox();
@@ -180,6 +181,7 @@ namespace Resonalyze
             sideSelectorPanel.Controls.Add(radioSideRight);
             sideSelectorPanel.Controls.Add(buttonCopyLeftToRight);
             sideSelectorPanel.Controls.Add(buttonCopyRightToLeft);
+            sideSelectorPanel.Controls.Add(checkBoxSideLock);
             sideSelectorPanel.Location = new Point(6, 730);
             sideSelectorPanel.Name = "sideSelectorPanel";
             sideSelectorPanel.Size = new Size(347, 24);
@@ -234,7 +236,25 @@ namespace Resonalyze
             buttonCopyRightToLeft.TabIndex = 3;
             buttonCopyRightToLeft.Text = "R→L";
             buttonCopyRightToLeft.UseVisualStyleBackColor = false;
-            // 
+            //
+            // checkBoxSideLock
+            //
+            checkBoxSideLock.Appearance = Appearance.Button;
+            checkBoxSideLock.BackColor = Color.FromArgb(46, 51, 67);
+            checkBoxSideLock.Checked = true;
+            checkBoxSideLock.CheckState = CheckState.Checked;
+            checkBoxSideLock.FlatAppearance.CheckedBackColor = Color.FromArgb(80, 100, 140);
+            checkBoxSideLock.FlatStyle = FlatStyle.Flat;
+            checkBoxSideLock.ForeColor = Color.White;
+            checkBoxSideLock.Location = new Point(239, 0);
+            checkBoxSideLock.Name = "checkBoxSideLock";
+            checkBoxSideLock.Size = new Size(56, 23);
+            checkBoxSideLock.TabIndex = 4;
+            checkBoxSideLock.Text = "Lock";
+            checkBoxSideLock.TextAlign = ContentAlignment.MiddleCenter;
+            checkBoxSideLock.UseCompatibleTextRendering = true;
+            checkBoxSideLock.UseVisualStyleBackColor = false;
+            //
             // labelView
             // 
             labelView.AutoSize = true;
@@ -795,6 +815,7 @@ namespace Resonalyze
         private ReleaseClickRadioButton radioSideRight;
         private ReleaseClickButton buttonCopyLeftToRight;
         private ReleaseClickButton buttonCopyRightToLeft;
+        private ReleaseClickCheckBox checkBoxSideLock;
         private Label labelView;
         private Label labelGroupView;
         private DarkComboBox comboBoxGroupView;

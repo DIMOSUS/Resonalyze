@@ -839,12 +839,10 @@ namespace Resonalyze.Options
             // names the loopback availability, which a static line here cannot.
             toolTip.SetToolTip(
                 signalTypeComboBox,
-                "Excitation noise played during the measurement.\r\n" +
-                "• Pink noise (periodic): one FFT-length period of exactly pink noise, looped. Deterministic and leakage-free, so the transfer function converges fastest. Recommended.\r\n" +
-                "• Pink noise: continuous random pink noise, -3 dB/octave.\r\n" +
-                "• Brown / red noise: -6 dB/octave, more low-frequency drive for subwoofer and room-mode work.\r\n" +
-                "• White noise: equal energy per hertz.\r\n" +
-                "• Silent (RTA mode only): no excitation — measures whatever the microphone hears (ambient noise or an external source).");
+                "Excitation noise. Pink (periodic): one looped FFT period,\r\n" +
+                "leakage-free — recommended. Pink: continuous. Brown: more LF\r\n" +
+                "drive. White: equal energy per hertz. Silent: RTA only, no\r\n" +
+                "excitation.");
             toolTip.SetToolTip(
                 sequenceLengthComboBox,
                 "Sets the FFT block size. Longer sequences give finer frequency resolution but slower visual updates.");

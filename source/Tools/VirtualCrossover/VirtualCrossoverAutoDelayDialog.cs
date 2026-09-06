@@ -58,22 +58,14 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         toolTip.SetToolTip(radioRightHandDrive, layoutTip);
         toolTip.SetToolTip(
             numericSceneOffset,
-            "Stereo scene offset (ms).\r\n" +
-            "The far side arrives earlier by this much, pulling the image\r\n" +
-            "from the driver's axis toward the dash center: on LHD the\r\n" +
-            "right side leads, on RHD the left side does.\r\n" +
-            "Typical: 0.2–0.3 ms.\r\n" +
-            "0 = image centered on the measurement position.");
+            "Stereo scene offset (ms): the far side arrives earlier by this\r\n" +
+            "much, pulling the image toward the dash centre.\r\n" +
+            "Typical 0.2–0.3 ms; 0 = centred on the mic position.");
         toolTip.SetToolTip(
             checkBoxGains,
-            "Starting-point level balance, cut-only: channels whose band\r\n" +
-            "meaningfully reaches above 300 Hz are levelled by their\r\n" +
-            "per-octave band energy — the board to one target, left vs\r\n" +
-            "right offset by the L-R level below. Subwoofers, mono channels\r\n" +
-            "and channels without a crossover keep their gain. This is a\r\n" +
-            "starting balance, not a final tonal decision — which is why it\r\n" +
-            "is off unless you ask for it: a run then writes delays and\r\n" +
-            "polarity, and leaves every level as you set it.");
+            "Starting level balance, cut-only, for channels reaching above\r\n" +
+            "300 Hz. Subs, mono and crossover-less channels keep their\r\n" +
+            "gain. Off: a run leaves every level as you set it.");
         numericNearSideCut.ApplyToolTip(
             toolTip,
             "How much quieter the NEAR (driver's) side plays than the far\r\n" +

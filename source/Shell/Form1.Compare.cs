@@ -71,16 +71,55 @@ public partial class Form1
             return;
         }
 
+        await LoadCompareFileAsync(dialog.FileName);
+    }
+
+    /// <summary>
+    /// An impulse response dropped on the Compare button from Explorer: the
+    /// button's Choose file... without the dialog, so it lands as the reference
+    /// rather than replacing the measurement the way a drop anywhere else on the
+    /// window does. The window has already checked the extension; what the file
+    /// holds is read here, once, and only an impulse response is taken — the other
+    /// documents the shell opens have no meaning as a Compare partner, and are
+    /// named for what they are rather than reported as a failed load.
+    /// </summary>
+    private async Task OpenDroppedCompareFileAsync(string path)
+    {
+        DroppedFileKind kind = DroppedFile.Classify(path);
+        if (kind == DroppedFileKind.ImpulseResponse)
+        {
+            await LoadCompareFileAsync(path);
+            return;
+        }
+
+        string what = kind switch
+        {
+            DroppedFileKind.SpatialAverageCapture => "a moving-mic capture",
+            DroppedFileKind.VirtualDspSession => "a Virtual DSP session",
+            DroppedFileKind.OverlaySlot => "an overlay slot file",
+            _ => "not a Resonalyze impulse response"
+        };
+        MessageBox.Show(
+            this,
+            $"Compare takes a Resonalyze impulse response (.json), and " +
+            $"'{Path.GetFileName(path)}' is {what}.\r\n\r\nDrop it elsewhere on " +
+            "the window to open it as the measurement instead.",
+            "Compare",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+    }
+
+    // Shared by Choose file... and by a file dropped on the Compare button, so both
+    // install the same reference in the same way and report a bad file alike.
+    private async Task LoadCompareFileAsync(string path)
+    {
         try
         {
-            ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(dialog.FileName);
+            ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
             MeasurementHistorySnapshot snapshot =
                 MeasurementHistoryService.CreateSnapshot(file);
-            compareSelection.Set(
-                Path.GetFileName(dialog.FileName),
-                dialog.FileName,
-                snapshot);
-            UpdateLastImpulseResponseDirectory(dialog.FileName);
+            compareSelection.Set(Path.GetFileName(path), path, snapshot);
+            UpdateLastImpulseResponseDirectory(path);
         }
         catch (Exception exception)
         {

@@ -11,7 +11,9 @@ namespace Resonalyze.App.Tests;
 /// every control on it has to be registered as a drop target: drag events do not
 /// bubble, and a control that never registered refuses the drag where it stands.
 /// These pin that reach, and the two things it must not do — take a drag that
-/// belongs to somebody else, or open a file while a dialog has the window.
+/// belongs to somebody else, or open a file while a dialog has the window — and
+/// that the shell is told which control the file landed on, since the Compare
+/// button reads the same file differently from the rest of the window.
 /// </summary>
 public sealed class FileDropTargetTests
 {
@@ -24,7 +26,7 @@ public sealed class FileDropTargetTests
         panel.Controls.Add(button);
         form.Controls.Add(panel);
 
-        FileDropTarget.Attach(form, _ => true, _ => { });
+        FileDropTarget.Attach(form, (_, _) => true, (_, _) => { });
 
         Assert.True(form.AllowDrop);
         Assert.True(panel.AllowDrop);
@@ -39,7 +41,7 @@ public sealed class FileDropTargetTests
         using Form form = ShownForm();
         var panel = new Panel();
         form.Controls.Add(panel);
-        FileDropTarget.Attach(form, _ => true, _ => { });
+        FileDropTarget.Attach(form, (_, _) => true, (_, _) => { });
 
         var late = new Label();
         var laterStill = new Button();
@@ -62,7 +64,7 @@ public sealed class FileDropTargetTests
         var box = new RichTextBox { Size = new Size(100, 60), ReadOnly = true };
         form.Controls.Add(box);
 
-        FileDropTarget.Attach(form, _ => true, _ => { });
+        FileDropTarget.Attach(form, (_, _) => true, (_, _) => { });
         box.CreateControl();
         DragEventArgs drag = RaiseDragOver(box, Files("measurement.json"));
 
@@ -75,7 +77,7 @@ public sealed class FileDropTargetTests
     {
         using Form form = ShownForm();
         Button button = DeepChild(form);
-        FileDropTarget.Attach(form, _ => true, _ => { });
+        FileDropTarget.Attach(form, (_, _) => true, (_, _) => { });
 
         DragEventArgs drag = RaiseDragOver(button, Files("measurement.json"));
 
@@ -87,7 +89,7 @@ public sealed class FileDropTargetTests
     {
         using Form form = ShownForm();
         Button button = DeepChild(form);
-        FileDropTarget.Attach(form, _ => false, _ => Assert.Fail("must not open"));
+        FileDropTarget.Attach(form, (_, _) => false, (_, _) => Assert.Fail("must not open"));
 
         DragEventArgs drag = RaiseDragOver(button, Files("photo.png"));
         RaiseDragDrop(button, Files("photo.png"));
@@ -103,7 +105,7 @@ public sealed class FileDropTargetTests
         // here would cancel a move the bank had already accepted.
         using Form form = ShownForm();
         Button button = DeepChild(form);
-        FileDropTarget.Attach(form, _ => true, _ => Assert.Fail("must not open"));
+        FileDropTarget.Attach(form, (_, _) => true, (_, _) => Assert.Fail("must not open"));
 
         var payload = new DataObject();
         payload.SetData("a PEQ strip");
@@ -119,11 +121,50 @@ public sealed class FileDropTargetTests
         using Form form = ShownForm();
         Button button = DeepChild(form);
         List<string>? opened = null;
-        FileDropTarget.Attach(form, _ => true, files => opened = [.. files]);
+        FileDropTarget.Attach(form, (_, _) => true, (_, files) => opened = [.. files]);
 
         RaiseDragDrop(button, Files("capture.json"));
 
         Assert.Equal(["capture.json"], opened);
+    });
+
+    [Fact]
+    public void TheControlTheFileLandedOnIsNamedWithIt() => StaTest.Run(() =>
+    {
+        // The Compare button takes the same impulse response as the reference rather
+        // than as the measurement, so the shell has to be told where a drop landed —
+        // and the control raising the event is the one under the pointer, since drag
+        // events reach no other.
+        using Form form = ShownForm();
+        Button button = DeepChild(form);
+        Control? landedOn = null;
+        FileDropTarget.Attach(form, (_, _) => true, (over, _) => landedOn = over);
+
+        RaiseDragDrop(button, Files("measurement.json"));
+
+        Assert.Same(button, landedOn);
+    });
+
+    [Fact]
+    public void AControlMayRefuseWhatTheRestOfTheWindowTakes() => StaTest.Run(() =>
+    {
+        // A sweep recording hovering over the Compare button is refused there and
+        // taken anywhere else: the answer is asked per control, on the hover as well
+        // as on the drop.
+        using Form form = ShownForm();
+        Button button = DeepChild(form);
+        Control panel = button.Parent!;
+        FileDropTarget.Attach(
+            form,
+            (over, _) => over != button,
+            (over, _) => Assert.NotSame(button, over));
+
+        DragEventArgs overButton = RaiseDragOver(button, Files("sweep.wav"));
+        DragEventArgs overPanel = RaiseDragOver(panel, Files("sweep.wav"));
+        RaiseDragDrop(button, Files("sweep.wav"));
+
+        Assert.Equal(DragDropEffects.None, overButton.Effect);
+        Assert.Equal(DragDropEffects.Copy, overPanel.Effect);
     });
 
     [Fact]
@@ -134,7 +175,7 @@ public sealed class FileDropTargetTests
         // measurement the dialog is asking about.
         using Form form = ShownForm();
         Button button = DeepChild(form);
-        FileDropTarget.Attach(form, _ => true, _ => Assert.Fail("must not open"));
+        FileDropTarget.Attach(form, (_, _) => true, (_, _) => Assert.Fail("must not open"));
         form.Enabled = false;
 
         DragEventArgs drag = RaiseDragOver(button, Files("measurement.json"));
@@ -171,7 +212,7 @@ public sealed class FileDropTargetTests
         var plot = new PlotView();
         form.Controls.AddRange([wizard, virtualDsp, timeAlignment, plot]);
 
-        FileDropTarget.Attach(form, _ => true, _ => { });
+        FileDropTarget.Attach(form, (_, _) => true, (_, _) => { });
 
         foreach (Control control in Descendants(form))
         {

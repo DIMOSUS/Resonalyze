@@ -18,6 +18,13 @@ namespace Resonalyze.Ui;
 /// working, because a payload that is not a file drop leaves the effect exactly as the
 /// other handler left it.
 /// </para>
+/// <para>
+/// The control the pointer is over is handed to the window with the files, because
+/// where a file is dropped can be part of what the user means by it: the same
+/// impulse response dropped on the Compare button is the reference, not the
+/// measurement. That is the window's decision, not this class's — this only says
+/// which control took the drop.
+/// </para>
 /// </remarks>
 internal sealed class FileDropTarget
 {
@@ -26,13 +33,13 @@ internal sealed class FileDropTarget
     // copy of the handlers.
     private readonly HashSet<Control> registered = [];
     private readonly Control root;
-    private readonly Func<IReadOnlyList<string>, bool> accepts;
-    private readonly Action<IReadOnlyList<string>> dropped;
+    private readonly Func<Control, IReadOnlyList<string>, bool> accepts;
+    private readonly Action<Control, IReadOnlyList<string>> dropped;
 
     private FileDropTarget(
         Control root,
-        Func<IReadOnlyList<string>, bool> accepts,
-        Action<IReadOnlyList<string>> dropped)
+        Func<Control, IReadOnlyList<string>, bool> accepts,
+        Action<Control, IReadOnlyList<string>> dropped)
     {
         this.root = root;
         this.accepts = accepts;
@@ -43,14 +50,18 @@ internal sealed class FileDropTarget
     /// Makes <paramref name="root"/> and everything inside it accept dropped files.
     /// </summary>
     /// <param name="accepts">
-    /// Whether this set of files can be opened right now. Asked on every drag move, so
-    /// it must be cheap, and asked again on the drop.
+    /// Whether this set of files can be opened right now, over the control it is
+    /// hovering. Asked on every drag move, so it must be cheap, and asked again on
+    /// the drop.
     /// </param>
-    /// <param name="dropped">Opens the files. Called on the UI thread.</param>
+    /// <param name="dropped">
+    /// Opens the files, given the control they were dropped on. Called on the UI
+    /// thread.
+    /// </param>
     internal static void Attach(
         Control root,
-        Func<IReadOnlyList<string>, bool> accepts,
-        Action<IReadOnlyList<string>> dropped)
+        Func<Control, IReadOnlyList<string>, bool> accepts,
+        Action<Control, IReadOnlyList<string>> dropped)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(accepts);
@@ -117,23 +128,30 @@ internal sealed class FileDropTarget
             return;
         }
 
-        e.Effect = CanAccept(files) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effect = CanAccept(Over(sender), files)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
     }
 
     private void HandleDragDrop(object? sender, DragEventArgs e)
     {
         IReadOnlyList<string> files = FilesOf(e.Data);
-        if (files.Count == 0 || !CanAccept(files))
+        Control over = Over(sender);
+        if (files.Count == 0 || !CanAccept(over, files))
         {
             return;
         }
 
         e.Effect = DragDropEffects.Copy;
-        dropped(files);
+        dropped(over, files);
     }
 
-    private bool CanAccept(IReadOnlyList<string> files) =>
-        IsTakingInput() && accepts(files);
+    // The control raising the event is the one under the pointer: drag events are
+    // delivered to it alone, which is the very reason every control had to register.
+    private Control Over(object? sender) => sender as Control ?? root;
+
+    private bool CanAccept(Control over, IReadOnlyList<string> files) =>
+        IsTakingInput() && accepts(over, files);
 
     /// <summary>
     /// Whether the window is taking input at all. A modal dialog — the application's

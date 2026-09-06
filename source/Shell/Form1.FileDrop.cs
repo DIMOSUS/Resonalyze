@@ -6,6 +6,10 @@ namespace Resonalyze;
 // the analyzers, a spatial average to the live analyzer, a session to Virtual DSP.
 // It is the Load button's own routing (see Form1.FileOperations), reached without
 // the dialog.
+//
+// The one place where WHERE the file lands does matter is the Compare button: an
+// impulse response dropped on it is the reference, not the measurement — the
+// button's own Choose file... reached without the dialog (see Form1.Compare).
 public partial class Form1
 {
     // One at a time. Two files opening at once would each install a measurement,
@@ -17,16 +21,20 @@ public partial class Form1
         FileDropTarget.Attach(this, CanOpenDroppedFiles, OpenDroppedFiles);
 
     // Answered on every drag move, so it stops at the extension: what the file
-    // holds is read once, on the drop.
-    private bool CanOpenDroppedFiles(IReadOnlyList<string> files) =>
+    // holds is read once, on the drop. The Compare button takes only what its
+    // dialog offers — a .json — so a sweep recording or a REW export hovering over
+    // it is refused there, while the rest of the window still takes it.
+    private bool CanOpenDroppedFiles(Control over, IReadOnlyList<string> files) =>
         files.Count == 1 &&
         !openingDroppedFile &&
         !expSweepMeasurement.InProgress &&
-        DroppedFile.HasOpenableExtension(files[0]);
+        (over == buttonCompare
+            ? DroppedFile.HasJsonExtension(files[0])
+            : DroppedFile.HasOpenableExtension(files[0]));
 
-    private async void OpenDroppedFiles(IReadOnlyList<string> files)
+    private async void OpenDroppedFiles(Control over, IReadOnlyList<string> files)
     {
-        if (!CanOpenDroppedFiles(files))
+        if (!CanOpenDroppedFiles(over, files))
         {
             return;
         }
@@ -34,7 +42,14 @@ public partial class Form1
         openingDroppedFile = true;
         try
         {
-            await OpenDroppedFileAsync(files[0]);
+            if (over == buttonCompare)
+            {
+                await OpenDroppedCompareFileAsync(files[0]);
+            }
+            else
+            {
+                await OpenDroppedFileAsync(files[0]);
+            }
         }
         finally
         {

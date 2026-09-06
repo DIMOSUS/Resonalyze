@@ -709,8 +709,12 @@ internal sealed class VirtualCrossoverMetrics
     /// needs both sides present and unbypassed.
     ///
     /// Which instant is "the arrival" follows the alignment engine's
-    /// cross-side link, because this row IS that comparison on the final
-    /// chains: a pair whose shared band is centred below
+    /// cross-side link, because this row is that comparison on the final
+    /// chains — the selection RULE, applied to the row's own shared band;
+    /// the engine may read a narrower band of the same pair (a scene-locked
+    /// pair is timed on its part above the localization edge), so the two
+    /// share the rule, not always the figure. A pair whose shared band is
+    /// centred below
     /// <see cref="AutoAlignmentEngine.EnergyOnsetBandCenterHz"/> is timed by
     /// its bands' energy onsets, provided both sides clear
     /// <see cref="AutoAlignmentEngine.EnergyOnsetMinimumSnrDb"/>; every other
@@ -924,8 +928,16 @@ internal sealed class VirtualCrossoverMetrics
                             // A full read too weak to be reported earns no
                             // probe (the certificate would abstain anyway),
                             // and a silent band costs no second Hilbert pass.
+                            // The probe is cached beside the full read, so
+                            // it drops its envelope on the way in: the
+                            // certificate reads validity, SNR and the two
+                            // instants, and a second full-length envelope
+                            // per side per redraw is memory for nothing.
                             side.Probe = Reliable(side.Arrival.Value)
                                 ? ReadUpperHalf(side, job.LowHz, job.HighHz)
+                                    is { } probe
+                                    ? probe with { EnvelopeSamples = [] }
+                                    : null
                                 : null;
                         }
                     }

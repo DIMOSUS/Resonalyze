@@ -258,9 +258,10 @@ internal static class VirtualCrossoverMetric
                     "arrived, not by its first envelope peak \u2014 a slow " +
                     "low-frequency\r\nenvelope's first hump is a coin toss " +
                     "(a fraction of a dB decides whether it peaks),\r\nand the " +
-                    "stereo Auto delay's cross-side target reads the same " +
-                    $"instant. Both sides need {AutoAlignmentEngine.EnergyOnsetMinimumSnrDb:0} dB\r\n" +
-                    "of SNR, or the pair reads first peaks."
+                    "stereo Auto delay's cross-side target picks its instrument " +
+                    "by the same rule\r\n(on the band it reads, which may be " +
+                    $"narrower). Both sides need {AutoAlignmentEngine.EnergyOnsetMinimumSnrDb:0} dB " +
+                    "of SNR,\r\nor the pair reads first peaks."
                 : string.Empty) +
             (deltas.Any(delta => delta.AnyLatched)
                 ? "\r\n~: the full-band envelope timed the room's modal " +

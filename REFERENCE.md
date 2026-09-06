@@ -2483,11 +2483,14 @@ from. A **Δ L−R** block
 below reports each pair's inter-side state — the two sides' band-limited envelope
 arrivals with their difference (positive means the right side leads, the scene
 offset's convention), plus a **Level Δ L−R** row for the by-ear gain trim that
-finishes the centering. The arrivals are read by the same rule as the stereo
-Auto delay's [cross-side target](#auto-delay): a pair whose shared band is
-centred below 300 Hz is timed by its bands' **energy onsets** (the instant a
-tenth of the band's energy has arrived), every other pair by its first envelope
-peaks — on a slow low-frequency envelope the first peak is a coin toss, and on
+finishes the centering. The arrivals pick their instrument by the rule the
+stereo Auto delay's [cross-side target](#auto-delay) uses, applied to the row's
+own shared band (Auto delay may read a narrower band of the same pair — a pair
+that reaches the localization region is locked on its part above 300 Hz — so
+the two are the same rule, not always the same figure): a pair whose shared
+band is centred below 300 Hz is timed by its bands' **energy onsets** (the
+instant a tenth of the band's energy has arrived), every other pair by its
+first envelope peaks — on a slow low-frequency envelope the first peak is a coin toss, and on
 one measured midbass pair the peaks read a 5.6 ms split where the onsets read
 1.0 ms. Both sides need 30 dB of SNR for the onset, or the pair reads first
 peaks on both; a mono channel, with no twin to cancel the onset's bias against,

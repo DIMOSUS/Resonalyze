@@ -3300,19 +3300,9 @@ public partial class VirtualCrossoverPanel : UserControl
             "offered.");
         toolTip.SetToolTip(
             checkBoxSideLock,
-            "Lock the crossover and the polarity of the two sides together:\r\n" +
-            "while this is ticked, a crossover or polarity change made on\r\n" +
-            "the side shown is written onto the other side of the same\r\n" +
-            "pair as it is made. Ticking it copies nothing — whatever\r\n" +
-            "already differs stays until that setting is next touched.\r\n" +
-            "The crossover travels as one (kind and both corners),\r\n" +
-            "polarity on its own. Gain, delay, phase and the PEQ are not\r\n" +
-            "locked; mono pairs have one settings set already. A run that\r\n" +
-            "writes both sides itself (Auto delay, the crossover wizard)\r\n" +
-            "keeps its own answer for the hidden side, and an AI import\r\n" +
-            "and its undo land exactly as their rows say.\r\n" +
-            "On by default; untick it to tune one side alone. The state is\r\n" +
-            "not stored with the session, so it is on again next time.");
+            "Keep both sides' crossover and polarity in step: a change\r\n" +
+            "on the side shown is written onto the other side as it is\r\n" +
+            "made. Gain, delay, phase and PEQ are not locked.");
         toolTip.SetToolTip(
             buttonDspProcessor,
             "The processor this project is designed for: pick a model and\r\n" +

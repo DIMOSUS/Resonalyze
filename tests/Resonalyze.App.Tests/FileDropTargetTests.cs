@@ -157,7 +157,7 @@ public sealed class FileDropTargetTests
         FileDropTarget.Attach(
             form,
             (over, _) => over != button,
-            (over, _) => Assert.NotSame(button, over));
+            (_, _) => Assert.Fail("must not open on the refusing control"));
 
         DragEventArgs overButton = RaiseDragOver(button, Files("sweep.wav"));
         DragEventArgs overPanel = RaiseDragOver(panel, Files("sweep.wav"));

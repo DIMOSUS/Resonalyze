@@ -92,18 +92,26 @@ public partial class Form1
             return;
         }
 
+        // Where to take it instead is said only for the documents the window opens
+        // somewhere: an overlay slot is refused everywhere (the overlay panel owns
+        // those, by slot), and a file nobody recognizes has nowhere to go.
         string what = kind switch
         {
-            DroppedFileKind.SpatialAverageCapture => "a moving-mic capture",
-            DroppedFileKind.VirtualDspSession => "a Virtual DSP session",
-            DroppedFileKind.OverlaySlot => "an overlay slot file",
-            _ => "not a Resonalyze impulse response"
+            DroppedFileKind.SpatialAverageCapture =>
+                "a moving-mic capture. Drop it elsewhere on the window to open it in " +
+                "Live Spectrum",
+            DroppedFileKind.VirtualDspSession =>
+                "a Virtual DSP session. Drop it elsewhere on the window to open it in " +
+                "Virtual DSP",
+            DroppedFileKind.OverlaySlot =>
+                "an overlay slot file — this application's own storage for one slot " +
+                "of one mode, which comes back with its mode on its own",
+            _ => "not one"
         };
         MessageBox.Show(
             this,
             $"Compare takes a Resonalyze impulse response (.json), and " +
-            $"'{Path.GetFileName(path)}' is {what}.\r\n\r\nDrop it elsewhere on " +
-            "the window to open it as the measurement instead.",
+            $"'{Path.GetFileName(path)}' is {what}.",
             "Compare",
             MessageBoxButtons.OK,
             MessageBoxIcon.Warning);

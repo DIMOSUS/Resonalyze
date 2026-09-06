@@ -1139,7 +1139,8 @@ measurement — the button's own **Choose file…** without the dialog. The butt
 takes only what that dialog offers, a `.json`: a sweep recording or a REW export
 is refused while it hovers there, and any other Resonalyze document (a capture, a
 session, an overlay slot) is named for what it is rather than loaded as a
-reference. Drop those elsewhere on the window to open them as the measurement.
+reference. A capture or a session dropped elsewhere on the window still opens
+where it belongs.
 
 ### Sending a measurement to REW
 

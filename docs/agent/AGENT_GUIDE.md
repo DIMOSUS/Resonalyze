@@ -1,6 +1,6 @@
 # Resonalyze Agent Guide
 
-Guide version 1.7 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
+Guide version 1.8 · for protocol v1 · [PROTOCOL.md](PROTOCOL.md) is the schema.
 
 ## 0. The rules that also travel inside every package
 
@@ -261,7 +261,10 @@ what the driver can survive there, which the measurement cannot tell you:
 **Stage.** `stereo[]` per block: `deltaMs` is left − right arrival (positive:
 the right side leads), `levelDeltaDb` is left − right. `groups[]`: each zone
 against the front. A `latched` flag means the arrival timed the room's modal
-build-up — real, but it overstates the skew.
+build-up — real, but it overstates the skew. `energyOnset` means a low pair's
+arrivals are its energy onsets, not first peaks — the instrument Auto delay
+times such a pair with; compare its `deltaMs` with the scene offset as usual,
+never with a first-peak figure from elsewhere in the package.
 
 **Target and tonal balance.** `sides[].sumVsTargetDb` is the median of the
 side's sum against the target curve; `hybridSumVsTargetDb` is the same off the

@@ -148,12 +148,17 @@ internal sealed class VirtualCrossoverChannelState
     // and the Hilbert analysis of a full-length IR is far too heavy to
     // repeat when nothing changed. The level rides in the same cache
     // entry: it is measured over the same band from the same response.
-    // Latched: the full-band envelope timed the room's modal build-up rather
-    // than the direct rise (its upper-half read lands much earlier) — the
-    // same detection the alignment engine's cross-side links run, so the
-    // read-out can mark the number instead of presenting it as a clean skew.
+    // Probe: the SAME response read in the band's upper half (from the
+    // geometric-mean frequency up), or null where the band is too narrow to
+    // cut one. The read-out grades the full read against it — the alignment
+    // engine's modal-latch detection — but the verdict is NOT cached: which
+    // instrument the pair reads by (first peaks or energy onsets, see
+    // VirtualCrossoverMetrics.ComputeStereoDeltasAsync) depends on the OTHER
+    // side's SNR too, so it is decided at assembly, per pair, from what both
+    // sides' caches hold.
     public (Complex[] ProcessedIr, double LowHz, double HighHz,
-        TimeAlignmentAnalysisResult Result, double? LevelDb, bool Latched)?
+        TimeAlignmentAnalysisResult Result, double? LevelDb,
+        TimeAlignmentAnalysisResult? Probe)?
         ArrivalCache
     { get; set; }
 

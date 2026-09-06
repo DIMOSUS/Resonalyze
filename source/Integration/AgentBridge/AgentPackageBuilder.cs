@@ -756,7 +756,8 @@ internal static class AgentPackageBuilder
             AgentCurveSampling.Round(delta.LevelDeltaDb, 1),
             delta.LeftLatched,
             delta.RightLatched,
-            delta.LevelFromSpatialAverage);
+            delta.LevelFromSpatialAverage,
+            delta.EnergyOnset);
 
     private static AgentPackageGroup BuildGroup(VirtualCrossoverMetric.GroupDelta delta) =>
         new(

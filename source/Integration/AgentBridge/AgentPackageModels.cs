@@ -260,7 +260,8 @@ internal sealed record AgentPackageStereo(
     double? LevelDeltaDb,
     bool LeftLatched,
     bool RightLatched,
-    bool LevelFromSpatialAverage);
+    bool LevelFromSpatialAverage,
+    bool EnergyOnset);
 
 internal sealed record AgentPackageGroup(
     string Zone,

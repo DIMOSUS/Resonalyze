@@ -689,8 +689,156 @@ public sealed class VirtualCrossoverMetricsTests
         VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
         Assert.True(delta.LeftLatched);
         Assert.False(delta.RightLatched);
-        // The latch flag rides in the per-side cache with the arrival.
-        Assert.True(channel.PhysicalSideState(false).ArrivalCache!.Value.Latched);
+        // The upper-half probe the verdict is graded against rides in the
+        // per-side cache with the arrival; the verdict itself is per pair.
+        Assert.NotNull(channel.PhysicalSideState(false).ArrivalCache!.Value.Probe);
+    }
+
+    // A stereo pair whose both sides play the given response through a
+    // Linkwitz-Riley 24 band-pass between lowHz and highHz — the shared
+    // band the read-out times the pair in.
+    private static VirtualCrossoverChannel BandPassPair(
+        string name, double lowHz, double highHz, Complex[] left, Complex[] right)
+    {
+        var channel = new VirtualCrossoverChannel(name);
+        foreach (bool rightSide in new[] { false, true })
+        {
+            VirtualCrossoverChannelState state = channel.PhysicalSideState(rightSide);
+            state.TransferImpulseResponse = rightSide ? right : left;
+            state.SampleRate = 48_000;
+            VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
+            settings.CrossoverKind = CrossoverKind.BandPass;
+            settings.HighPassEdge = new CrossoverEdge(
+                CrossoverFilterFamily.LinkwitzRiley, lowHz, 24);
+            settings.LowPassEdge = new CrossoverEdge(
+                CrossoverFilterFamily.LinkwitzRiley, highHz, 24);
+        }
+
+        return channel;
+    }
+
+    // A clean midbass-like packet: one Hann-windowed 130 Hz burst.
+    private static Complex[] MidbassPacket(double amplitude = 1.0)
+    {
+        var ir = new Complex[8_192];
+        AddBurst(ir, toneHz: 130, cycles: 4, amplitude: amplitude, startMs: 25);
+        return ir;
+    }
+
+    private static void AddNoise(Complex[] ir, double rms, int seed)
+    {
+        var random = new Random(seed);
+        for (int i = 0; i < ir.Length; i++)
+        {
+            // Box-Muller: Gaussian noise of the given RMS.
+            double u1 = 1.0 - random.NextDouble();
+            double u2 = random.NextDouble();
+            ir[i] += rms * Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(Math.Tau * u2);
+        }
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_ReadsALowPairByItsEnergyOnsets()
+    {
+        // The pair's shared band is centred at 114 Hz, under the engine's
+        // 300 Hz rule, and both sides are clean: the row reads the bands'
+        // energy onsets — the instrument the stereo Auto delay's cross-side
+        // target uses — on BOTH sides, and says so.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        long revision = coordinator.Invalidate();
+        VirtualCrossoverChannel channel = BandPassPair(
+            "B", 65, 200, MidbassPacket(), MidbassPacket());
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync([channel], revision);
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        Assert.True(delta.EnergyOnset);
+        TimeAlignmentAnalysisResult left = channel.PhysicalSideState(false).ArrivalCache!.Value.Result;
+        TimeAlignmentAnalysisResult right = channel.PhysicalSideState(true).ArrivalCache!.Value.Result;
+        Assert.True(left.SignalToNoiseDecibels >= AutoAlignmentEngine.EnergyOnsetMinimumSnrDb);
+        Assert.Equal(left.EnergyOnsetDelayMilliseconds, delta.LeftMs!.Value, 9);
+        Assert.Equal(right.EnergyOnsetDelayMilliseconds, delta.RightMs!.Value, 9);
+        // The onset is a different instant from the first peak — on a Hann
+        // burst it leads the envelope's maximum — so the row visibly moved.
+        Assert.True(delta.LeftMs.Value < left.FirstArrivalDelayMilliseconds - 0.5);
+        Assert.False(delta.LeftLatched);
+        Assert.False(delta.RightLatched);
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_ALowPairReadsFirstPeaksOnBothSidesWhenOneCannotWitnessAnOnset()
+    {
+        // The right record is noisy: measurable (above the 12 dB arrival
+        // floor) but under the 30 dB an energy onset needs. The link rule
+        // then reads first peaks on BOTH sides — never a peak against an
+        // onset — and the row does not claim the onset instrument.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        long revision = coordinator.Invalidate();
+        Complex[] noisy = MidbassPacket();
+        AddNoise(noisy, rms: 0.4, seed: 7);
+        VirtualCrossoverChannel channel = BandPassPair(
+            "B", 65, 200, MidbassPacket(), noisy);
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync([channel], revision);
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        TimeAlignmentAnalysisResult left = channel.PhysicalSideState(false).ArrivalCache!.Value.Result;
+        TimeAlignmentAnalysisResult right = channel.PhysicalSideState(true).ArrivalCache!.Value.Result;
+        Assert.InRange(
+            right.SignalToNoiseDecibels,
+            AutoAlignmentEngine.MinimumArrivalSnrDb,
+            AutoAlignmentEngine.EnergyOnsetMinimumSnrDb - 0.01);
+        Assert.False(delta.EnergyOnset);
+        Assert.Equal(left.FirstArrivalDelayMilliseconds, delta.LeftMs!.Value, 9);
+        Assert.Equal(right.FirstArrivalDelayMilliseconds, delta.RightMs!.Value, 9);
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_APairCentredAboveTheOnsetRegionReadsFirstPeaks()
+    {
+        // 300–1200 Hz is centred at 600 Hz: a sharp front, where the first
+        // peak is the better instrument, as in the engine.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        long revision = coordinator.Invalidate();
+        var packet = new Complex[8_192];
+        AddBurst(packet, toneHz: 600, cycles: 4, amplitude: 1.0, startMs: 25);
+        VirtualCrossoverChannel channel = BandPassPair("C", 300, 1_200, packet, packet);
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync([channel], revision);
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        Assert.False(delta.EnergyOnset);
+        TimeAlignmentAnalysisResult left = channel.PhysicalSideState(false).ArrivalCache!.Value.Result;
+        Assert.Equal(left.FirstArrivalDelayMilliseconds, delta.LeftMs!.Value, 9);
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_AMonoChannelReadsItsFirstPeakEvenInAnOnsetBand()
+    {
+        // A mono channel has no twin for the onset's bias to cancel against:
+        // it keeps the first peak, the junction timelines' instrument,
+        // however low its band sits.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        long revision = coordinator.Invalidate();
+        VirtualCrossoverChannel channel = BandPassPair(
+            "A", 65, 200, MidbassPacket(), MidbassPacket());
+        channel.Pair.Mono = true;
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync([channel], revision);
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        Assert.False(delta.EnergyOnset);
+        Assert.Null(delta.RightMs);
+        TimeAlignmentAnalysisResult left = channel.PhysicalSideState(false).ArrivalCache!.Value.Result;
+        Assert.Equal(left.FirstArrivalDelayMilliseconds, delta.LeftMs!.Value, 9);
     }
 
     [Fact]

@@ -185,6 +185,29 @@ public sealed class VirtualCrossoverMetricTests
             ]);
 
             Assert.DoesNotContain("modal", text);
+            Assert.DoesNotContain("nergy onset", text);
+        });
+    }
+
+    [Fact]
+    public void FormatStereoDeltasDetail_NamesTheEnergyOnsetRowsAndExplainsThem()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // The midbass pair reads its energy onsets, the mid pair its first
+            // peaks: the row says which, and the legend explains the
+            // instrument once.
+            string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+            [
+                new VirtualCrossoverMetric.StereoDelta(
+                    "B", 16.488, 17.512, 65, 200, EnergyOnset: true),
+                new VirtualCrossoverMetric.StereoDelta("C", 16.533, 16.213, 200, 1_610)
+            ]);
+
+            Assert.Contains("B: L 16.488 / R 17.512 ms, Δ -1.024 ms (65 Hz – 200 Hz, energy onsets)", text);
+            Assert.Contains("C: L 16.533 / R 16.213 ms, Δ +0.320 ms (200 Hz – 1.61 kHz)", text);
+            Assert.Contains("Energy onsets: a pair whose shared band is centred below 300 Hz", text);
+            Assert.Contains("30 dB", text);
         });
     }
 

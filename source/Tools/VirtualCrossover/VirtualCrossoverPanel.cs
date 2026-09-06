@@ -3134,13 +3134,9 @@ public partial class VirtualCrossoverPanel : UserControl
             "playing together.");
         toolTip.SetToolTip(
             labelSumLoss,
-            "How many dB the complex sum falls short of the\r\n" +
-            "phase-blind magnitude sum (<= 0).\r\n" +
-            "0 dB means the channels are perfectly in phase.\r\n" +
-            "Tip: invert one channel and tune the delay for the\r\n" +
-            "deepest null — flipping polarity back then gives\r\n" +
-            "the best summation.\r\n" +
-            "The selector beside it picks the window it is read through.");
+            "How many dB the complex sum falls short of the magnitude sum\r\n" +
+            "(<= 0): 0 dB is perfectly in phase. The selector beside it\r\n" +
+            "picks the window it is read through.");
         toolTip.SetToolTip(
             buttonAddChannel,
             "Add a channel block to the bottom of the list.");
@@ -3149,12 +3145,10 @@ public partial class VirtualCrossoverPanel : UserControl
             "Drop the last channel block, with whatever is loaded in it.");
         toolTip.SetToolTip(
             buttonResetChannels,
-            "Start over: every block back to an empty default one, the list\r\n" +
-            $"back to {DefaultChannelCount} of them, and the panel's own settings —\r\n" +
-            "target level, smoothing, gate, view, scene offset — with them.\r\n" +
-            "The microphone calibration and the shared EQ target curve stay.\r\n" +
-            "Asks first, and copies the current session aside so Load session…\r\n" +
-            "brings it back — one copy, overwritten by the next reset.");
+            $"Start over: {DefaultChannelCount} empty default blocks, and the panel's own\r\n" +
+            "settings with them; calibration and the EQ target stay.\r\n" +
+            "Asks first, and copies the session aside so Load session…\r\n" +
+            "brings it back.");
         toolTip.SetToolTip(
             radioViewMagnitude,
             "Show the magnitude of the channels, the sum,\r\n" +
@@ -3171,44 +3165,19 @@ public partial class VirtualCrossoverPanel : UserControl
             "Well-aligned drivers start together.");
         toolTip.SetToolTip(
             comboBoxGroupView,
-            "Which part of the installation the plot is about — the\r\n" +
-            "curves, the Sum, the loss and the read-out all follow it.\r\n" +
-            "Blocks are sorted by their Zone.\r\n" +
-            "Front + Sub is the crossover chain, and what a front-only\r\n" +
-            "car always showed.\r\n" +
-            "Groups draws one summed line per zone instead of the\r\n" +
-            "drivers, for setting the rear fill against the front.\r\n" +
-            "A centre is drawn but never summed: it plays a signal\r\n" +
-            "synthesised from L and R, so how much of the programme\r\n" +
-            "reaches it belongs to the track, not to the tune.\r\n" +
-            "Views spanning more than one group quote no summation\r\n" +
-            "loss — with no crossover between them the sum combs\r\n" +
-            "whatever the tune — and report each group's arrival and\r\n" +
-            "level against the front instead.");
+            "Which part of the installation the plot shows; the curves, the\r\n" +
+            "Sum, the loss and the read-out follow it. Groups sums one line\r\n" +
+            "per zone. A centre is drawn but never summed.");
         toolTip.SetToolTip(
             comboBoxSmoothing,
-            "Fractional-octave smoothing of the magnitude curves —\r\n" +
-            "and of the curves the Sum loss read-out is measured from,\r\n" +
-            "so it still moves those numbers in the Phase and Impulse\r\n" +
-            "views, where the drawn traces are not smoothed at all.\r\n" +
-            "Psychoacoustic: variable 1/3 to 1/6 octave with extra peak weighting\r\n" +
-            "narrower than half its window — narrow interference nulls\r\n" +
-            "the ear barely hears drop out, peaks and broad valleys stay.\r\n" +
-            "The junction metric numbers stay unsmoothed and honest.");
+            "Fractional-octave smoothing of the magnitude curves and the\r\n" +
+            "Sum loss read. Psychoacoustic: 1/3–1/6 octave with peak\r\n" +
+            "weighting. The junction metrics stay unsmoothed.");
         toolTip.SetToolTip(
             comboBoxSumLoss,
-            "The window the Sum loss — the curve and the read-out column — is\r\n" +
-            "measured through.\r\n" +
-            "FDW-8 (default): each channel through the Junction phase block's\r\n" +
-            "8-cycle window, placed as that block places it — the loss of the\r\n" +
-            "DIRECT sound. Deeper and more sensitive to the microphone\r\n" +
-            "position than Full.\r\n" +
-            "Full: the steady-state window the magnitude curves read, one\r\n" +
-            "shared anchor — the loss of the sum the cabin hears, reflections\r\n" +
-            "included. The two families of numbers are not comparable.\r\n" +
-            "Disable: no curve; the column keeps the Full read.\r\n" +
-            "The Auto delay battery and the tuning sheet quote Full; the AI\r\n" +
-            "package carries both reads whatever is selected here.");
+            "The window the Sum loss is read through. FDW-8: the direct\r\n" +
+            "sound, as the Junction phase block reads it. Full: the\r\n" +
+            "steady-state sum the cabin hears. The two are not comparable.");
         toolTip.SetToolTip(
             radioDspGroupDelay,
             "What the lower plot shows for each channel's DSP chain:\r\n" +
@@ -3216,17 +3185,9 @@ public partial class VirtualCrossoverPanel : UserControl
             "group delay in ms, excluding the channel's bulk delay).");
         toolTip.SetToolTip(
             radioDspCorrelation,
-            "Junction correlation: the selected adjacent pair's band-limited\r\n" +
-            "cross-correlation (corr + PHAT; negative lobes = the upper\r\n" +
-            "channel inverted) and the PRIOR-FREE acoustic score — the\r\n" +
-            "dip-penalized junction loss, honestly re-gated per point — versus\r\n" +
-            "an extra delay on the upper channel, in both polarities: the comb\r\n" +
-            "of alignment lobes. Auto delay weighs this acoustics TOGETHER\r\n" +
-            "with the arrival prior and the lobe/onset/scene gates, so its\r\n" +
-            "pick may deliberately sit off this curve's deepest lobe — the\r\n" +
-            "gap to the dashed envelope-arrival marker shows that trade.\r\n" +
-            "Channels enter with their current delays: 0 ms is the alignment\r\n" +
-            "as it stands.");
+            "Junction correlation of the selected pair, and its acoustic\r\n" +
+            "score, against an extra delay on the upper channel in both\r\n" +
+            "polarities. 0 ms is the alignment as it stands.");
         toolTip.SetToolTip(
             comboBoxCorrelationPair,
             "Which adjacent channel pair the correlation view analyzes\r\n" +
@@ -3245,37 +3206,19 @@ public partial class VirtualCrossoverPanel : UserControl
             "not with the target, so retuning the shape leaves it where it is.");
         toolTip.SetToolTip(
             buttonTargetSettings,
-            "Shape the target: a parametric shape (preset, tilt, bass and\r\n" +
-            "treble shelves, presence, colour and line style) previewed live\r\n" +
-            "on this plot (which switches to the Magnitude view, the only one\r\n" +
-            "a dB shape means anything on), or a house curve of your own\r\n" +
-            "imported from a text file. Either way it is the SAME target the\r\n" +
-            "EQ Wizard equalizes towards.");
+            "Shape the target — a parametric shape or an imported house\r\n" +
+            "curve — previewed on the Magnitude view. It is the SAME target\r\n" +
+            "the EQ Wizard equalizes towards.");
         toolTip.SetToolTip(
             comboBoxCalibration,
-            "Microphone calibration applied to the magnitude curves —\r\n" +
-            "and to the curves the Sum loss read-out is measured from,\r\n" +
-            "so it still moves those numbers in the Phase and Impulse\r\n" +
-            "views, where no calibrated trace is drawn.\r\n" +
-            "The measurement is loopback-referenced, so this is\r\n" +
-            "optional. The entries are the calibrations configured in\r\n" +
-            "Record Settings; a loaded session that carries its own\r\n" +
-            "curve adds it here as '(from session)'. The selection is\r\n" +
-            "saved into the session as the curve itself, so it travels.");
+            "Microphone calibration for the magnitude curves and the Sum\r\n" +
+            "loss read. Optional — the measurement is loopback-referenced.\r\n" +
+            "Saved into the session as the curve itself.");
         toolTip.SetToolTip(
             buttonAutoDelay,
-            "Open the Auto delay dialog: align the channels in two\r\n" +
-            "stages (band-limited first arrivals, then a phase search\r\n" +
-            "that fine-tunes delays and polarity), review the proposed\r\n" +
-            "before/after table and apply or discard it. The dialog\r\n" +
-            "holds the L/R scene offset and can also balance channel\r\n" +
-            "gains (cut-only).\r\n" +
-            "With both sides loaded the run is STEREO: the left side\r\n" +
-            "aligns first, the right top driver is timed to the left\r\n" +
-            "one (honoring the L/R offset), and the right side\r\n" +
-            "descends from it — so the stereo image stays put.\r\n" +
-            "Set the crossover filters first — the search targets\r\n" +
-            "the overlap region around their corner frequencies.");
+            "Align the channels: first arrivals, then a phase search for\r\n" +
+            "delays and polarity, reviewed as before/after. Set the\r\n" +
+            "crossovers first — the search reads their overlap.");
         toolTip.SetToolTip(
             radioSideLeft,
             "Show and edit the LEFT side of every channel pair.\r\n" +
@@ -3305,23 +3248,15 @@ public partial class VirtualCrossoverPanel : UserControl
             "made. Gain, delay, phase and PEQ are not locked.");
         toolTip.SetToolTip(
             buttonDspProcessor,
-            "The processor this project is designed for: pick a model and\r\n" +
-            "its processing rate and PEQ Q convention come with it, or\r\n" +
-            "pick Custom and state them yourself.\r\n" +
-            "The processing rate is the rate every simulated filter is\r\n" +
-            "BUILT at — independent of the rate the channels were\r\n" +
-            "measured at, so a 48 kHz sound card can simulate a 96 kHz\r\n" +
-            "processor exactly, up to its own Nyquist.\r\n" +
-            "The Q convention only restates the numbers on a tuning\r\n" +
-            "sheet; it never moves a filter.");
+            "The processor this project is designed for: its processing\r\n" +
+            "rate, which every simulated filter is built at, and its PEQ Q\r\n" +
+            "convention, which only restates the tuning sheet.");
         toolTip.SetToolTip(
             buttonAi,
-            "Work with a chat assistant through the clipboard:\r\n" +
-            "Copy for AI puts the current settings, your notes and a\r\n" +
-            "diagnostic summary on the clipboard for you to paste into\r\n" +
-            "any assistant; Import AI proposal reads its reply back and\r\n" +
-            "shows every proposed change against the current value before\r\n" +
-            "anything is applied. Nothing is sent anywhere by Resonalyze.");
+            "Work with a chat assistant through the clipboard: Copy for AI\r\n" +
+            "puts the tune on it, Import AI proposal reads the reply back\r\n" +
+            "and shows every change before it is applied.\r\n" +
+            "Nothing is sent anywhere by Resonalyze.");
         toolTip.SetToolTip(
             buttonAutoSetup,
             "Crossover wizard: detect each channel's driver type from\r\n" +
@@ -3331,26 +3266,9 @@ public partial class VirtualCrossoverPanel : UserControl
             "Run Auto delay afterward to phase-align the result.");
         toolTip.SetToolTip(
             buttonPhaseGate,
-            "Configure the gate for the phase and impulse views: offset\r\n" +
-            "and Tukey fades, with an IR preview — cut the window before\r\n" +
-            "the first reflection for clean traces.\r\n" +
-            "The MAGNITUDE view deliberately ignores these durations: it\r\n" +
-            "reads a long fixed steady-state window (what the ear hears,\r\n" +
-            "cabin included — and the full depth of a bass EQ band, which\r\n" +
-            "a junction-length gate cannot contain). Only the gate's\r\n" +
-            "OFFSET carries over, saying where that window opens.\r\n" +
-            "Where the gate SITS — its offset and the detrend τ — belongs\r\n" +
-            "to the side you are viewing (L or R): their drivers arrive at\r\n" +
-            "different times, so fitting one no longer disturbs the other.\r\n" +
-            "The Tukey lengths, window mode, detrend mode and FDW cycles\r\n" +
-            "are shared, so both sides read at one resolution and method.\r\n" +
-            "The Junction phase read-out follows this gate's OFFSET and\r\n" +
-            "durations, but always reads an 8-cycle frequency-dependent\r\n" +
-            "window — the mode and FDW selectors shape a curve for the eye,\r\n" +
-            "and the settings that suit one are measurably the wrong\r\n" +
-            "instrument for a number. In the default FDW mode the numbers and\r\n" +
-            "the drawn curves are the same window; in Fixed mode they are not,\r\n" +
-            "and the plot then shows a longer window than the figures do.");
+            "Gate for the phase and impulse views: offset, fades and an IR\r\n" +
+            "preview. The magnitude view takes only the offset. Offset and\r\n" +
+            "detrend belong to the side shown; lengths and mode are shared.");
         toolTip.SetToolTip(
             buttonSessionExport,
             "Save the whole session (sources, DSP chains, gate, view)\r\n" +
@@ -3361,16 +3279,9 @@ public partial class VirtualCrossoverPanel : UserControl
             "Sources are re-resolved from history or their file paths.");
         toolTip.SetToolTip(
             buttonAudition,
-            "Render a music file through the current tune and save it\r\n" +
-            "as a WAV: the left side's summed response on channel 1,\r\n" +
-            "the right side's on channel 2. Microphone calibration can\r\n" +
-            "be applied as a linear-phase FIR baked into both sides.\r\n" +
-            "Listen through HEADPHONES only: each ear gets its side's\r\n" +
-            "measured acoustic path (drivers, cabin, capsule) at the mic\r\n" +
-            "position — not a binaural head simulation. Played through\r\n" +
-            "the same system it would convolve the car twice.\r\n" +
-            "A track at another sample rate is converted to the project's;\r\n" +
-            "the measured responses are never resampled.");
+            "Render a music file through the tune into a stereo WAV: the\r\n" +
+            "left sum on channel 1, the right on channel 2.\r\n" +
+            "Listen through HEADPHONES only.");
         // The per-channel block tooltips are applied in CreateChannel, so every
         // block — including ones added after construction — carries them.
     }

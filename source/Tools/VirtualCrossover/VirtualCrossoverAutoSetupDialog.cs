@@ -499,29 +499,20 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         subElevation.ValueChanged += (_, _) => UpdatePreview();
         toolTip.SetToolTip(
             independentSlopes,
-            "Let the low-pass and high-pass of a junction take different slopes\r\n" +
-            "(they still share one crossover frequency), to compensate a driver's\r\n" +
-            "own roll-off. Off ties each DRIVER's two shoulders (its high-pass and\r\n" +
-            "low-pass) to one slope, so no driver ends up steep on one side and\r\n" +
-            "shallow on the other; different drivers may still take different\r\n" +
-            "slopes — the textbook crossover.");
+            "Let a junction's low-pass and high-pass take different slopes\r\n" +
+            "(one frequency still). Off ties each driver's two shoulders\r\n" +
+            "to one slope — the textbook crossover.");
         toolTip.SetToolTip(
             reorderBlocks,
-            "Put the channel blocks in the panel into the same order as this\r\n" +
-            "dialog: the groups one after another, and inside each the chain\r\n" +
-            "from the lowest driver up. The blocks are lettered by position, so\r\n" +
-            "the ones that move are re-lettered and take a new plot colour — and\r\n" +
-            "a tuning sheet exported before this names them by the OLD letters.\r\n" +
-            "Nothing else moves with them: sources, settings and measurements\r\n" +
-            "belong to the block.");
+            "Put the panel's blocks in this dialog's order: the groups one\r\n" +
+            "after another, each from the lowest driver up. Moved blocks are\r\n" +
+            "re-lettered and recoloured; a sheet exported before this names\r\n" +
+            "the OLD letters.");
         toolTip.SetToolTip(
             subElevation,
-            "How far the lowest driver (the sub, or the woofer/midbass when no\r\n" +
-            "sub is present) sits above the levelled midrange/tweeter. Starts at\r\n" +
-            "(and is capped by) the measured elevation — the bass at its own\r\n" +
-            "level; lower it to flatten the bottom. The midrange/tweeter are\r\n" +
-            "levelled to each other and the remaining drivers are only cut, never\r\n" +
-            "boosted, onto the resulting target.");
+            "How far the lowest driver sits above the levelled\r\n" +
+            "midrange/tweeter. Starts at, and is capped by, the measured\r\n" +
+            "elevation; lower it to flatten the bottom.");
     }
 
     // The order the wizard settled on, as Init indices, or null when the user

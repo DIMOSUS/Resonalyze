@@ -278,12 +278,9 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             "channel's placement while Auto is pressed.");
         toolTip.SetToolTip(
             checkAutoOffset,
-            "Auto places the gate automatically, following source and\r\n" +
-            "delay changes: the magnitude uses ONE window at the earliest\r\n" +
-            "arrival (so the Sum stays the exact sum of the drawn curves),\r\n" +
-            "while each phase curve is gated at its own arrival (so FDW\r\n" +
-            "keeps every channel's treble) with one common time reference.\r\n" +
-            "Release to pin one absolute window for everything instead.");
+            "Auto places the gate itself and follows source and delay\r\n" +
+            "changes: one window for the magnitude, each phase curve at\r\n" +
+            "its own arrival. Release to pin one absolute window.");
         numericLeft.ApplyToolTip(
             toolTip,
             "Tukey fade-in before the arrival, in milliseconds.\r\n" +

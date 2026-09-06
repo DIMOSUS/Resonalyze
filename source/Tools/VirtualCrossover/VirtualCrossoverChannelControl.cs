@@ -566,13 +566,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
         {
             toolTip.SetToolTip(
                 arrow,
-                "Move this block one place up or down the list.\r\n" +
-                "The blocks are lettered by their position, so the ones\r\n" +
-                "that move are re-lettered — and so are their colours.\r\n" +
-                "Nothing else about them changes: sources, settings and\r\n" +
-                "measurements travel with the block.\r\n" +
-                "Auto crossover can sort a whole system into crossover\r\n" +
-                "order in one go.");
+                "Move this block one place up or down. Blocks are lettered by\r\n" +
+                "position, so the ones that move are re-lettered and\r\n" +
+                "recoloured; sources and settings travel with them.");
         }
         toolTip.SetToolTip(
             buttonMute,
@@ -596,24 +592,14 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "junction it pins.");
         toolTip.SetToolTip(
             comboBoxZone,
-            "Which part of the installation this block is — the fact\r\n" +
-            "the crossover corners cannot give, because Front, Rear\r\n" +
-            "and Center can play the SAME band from different places.\r\n" +
-            "Center forces Mono: it plays a signal derived from L\r\n" +
-            "and R, so it has no side.\r\n" +
-            "For now the zone only labels the block and travels with\r\n" +
-            "the project. The sum, the metric and Auto delay still\r\n" +
-            "read every channel as one chain along the spectrum;\r\n" +
-            "the grouped views and the staged alignment that act on\r\n" +
-            "the zone come next.");
+            "Which part of the installation this block is: Front, Rear or\r\n" +
+            "Center. The grouped views and Auto delay's staging follow it.\r\n" +
+            "Center forces Mono — it has no side.");
         toolTip.SetToolTip(
             labelMeasuredPolarity,
-            "Acoustic polarity read from the measured IR\r\n" +
-            "(the sign of its first significant excursion).\r\n" +
-            "Normal — the driver pushes toward the mic first.\r\n" +
-            "Inverted — it pulls first (wired in reverse).\r\n" +
-            "Unknown — no source selected.\r\n" +
-            "Independent of the Invert switch.");
+            "Acoustic polarity read from the measured IR: Normal pushes\r\n" +
+            "toward the mic first, Inverted pulls first, Unknown has no\r\n" +
+            "source. Independent of the Invert switch.");
         toolTip.SetToolTip(
             comboBoxCrossoverKind,
             "This driver's crossover role:\r\n" +
@@ -663,12 +649,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
         toolTip.SetToolTip(
             buttonPeqMenu,
-            "This channel's parametric EQ: load it from a file\r\n" +
-            "(an EQ Wizard export or a compatible PEQ list), edit or\r\n" +
-            "create it in the EQ Wizard, or clear it. The bands add\r\n" +
-            "on top of the crossover in the processed response.\r\n" +
-            "All-pass filters (AP1/AP2) live here too, as bands of the\r\n" +
-            "bank — added or tuned in the EQ Wizard's phase view.");
+            "This channel's parametric EQ: load it from a file, edit it in\r\n" +
+            "the EQ Wizard, or clear it. All-pass filters live here too,\r\n" +
+            "as bands of the bank.");
 
         toolTip.SetToolTip(
             checkBoxShowRaw,

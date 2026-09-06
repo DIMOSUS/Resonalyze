@@ -2035,7 +2035,9 @@ read-out (avg / dip per junction plus a total). The loss is a dB gap, not a
 level, so it is drawn against its own amber **Sum loss (dB)** axis on the right
 (0 dB near the top, 6 dB steps, deepening to hold a notch) that appears only
 while the curve is shown; it zooms and pans on its own, separately from the
-left dB scale.
+left dB scale. A hand check that uses it: invert one channel of a junction and
+tune its delay for the deepest null, then flip the polarity back — the deepest
+null is the best summation.
 
 The **Sum loss** selector beside the Sum toggle picks the window the loss — the
 curve and the read-out column together, so they always quote one number — is
@@ -2770,7 +2772,9 @@ unchanged. Then it places each further group against that result: one reading
 per group, and no re-tuning of anything already settled. Walked as one chain
 those groups produce junctions that do not exist, which on a car with a rear
 fill means a front midrange "handing over" to it at the midrange's own low-pass
-corner.
+corner. Set the crossovers before running it: the search reads every junction
+in the overlap around its corners, and a chain without filters has no
+junctions to read.
 
 The later groups are placed rather than searched, because there is nothing
 between them and the front stage to search: no filter hands a band from one to

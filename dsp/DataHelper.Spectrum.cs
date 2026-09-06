@@ -311,6 +311,39 @@ namespace Resonalyze.Dsp
         }
 
         /// <summary>
+        /// The magnitude curve of a gated spectrum somebody else built — the same
+        /// resample, calibration, smoothing and measured-band mask
+        /// <see cref="GetGatedPrimarySpectrumPair"/> applies to the spectra it
+        /// builds itself, for a caller holding one already (the Virtual DSP
+        /// direct-sound loss reads the junction phase block's per-channel
+        /// spectra). <paramref name="spectrum"/> is a full complex FFT at
+        /// <paramref name="sampleRate"/>, as <see cref="GetPhaseAnalysisSpectrum"/>
+        /// returns it.
+        /// </summary>
+        public static AnalysisCurve GetGatedMagnitude(
+            Complex[] spectrum,
+            int sampleRate,
+            double lowestMeasuredFrequencyHz,
+            double highestMeasuredFrequencyHz,
+            CalibrationFile? calibration,
+            double smoothingInverseOctaves)
+        {
+            ArgumentNullException.ThrowIfNull(spectrum);
+            if (sampleRate <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(sampleRate));
+            }
+
+            return Masked(
+                ResampleGatedMagnitude(
+                    GatedMagnitudePoints(spectrum, sampleRate),
+                    calibration,
+                    smoothingInverseOctaves),
+                lowestMeasuredFrequencyHz,
+                highestMeasuredFrequencyHz);
+        }
+
+        /// <summary>
         /// The gated magnitude of a SUM of measured channels, at two smoothing widths,
         /// with each channel contributing only where it measured anything.
         /// </summary>
@@ -367,6 +400,54 @@ namespace Resonalyze.Dsp
                 return (empty, empty);
             }
 
+            var spectra = new List<Complex[]>(channels.Count);
+            var bands = new List<(double LowestHz, double HighestHz)>(channels.Count);
+            int sampleRate = 0;
+            foreach (IImpulseMeasurement measurement in channels)
+            {
+                spectra.Add(BuildAnalysisSpectrum(measurement, settings, out _));
+                bands.Add((
+                    measurement.LowestMeasuredFrequencyHz,
+                    measurement.HighestMeasuredFrequencyHz));
+                sampleRate = measurement.SampleRate;
+            }
+
+            return GetGatedMeasuredMagnitudeSumPair(
+                spectra, sampleRate, bands, calibrations, smoothingInverseOctaves);
+        }
+
+        /// <summary>
+        /// The same measured sum from spectra already gated — one per channel, every
+        /// one a full complex FFT of the same length at <paramref name="sampleRate"/>,
+        /// as <see cref="GetPhaseAnalysisSpectrum"/> returns them — with each
+        /// channel's measured band beside it. For the caller whose windows are not
+        /// one <see cref="PhaseAnalysisSettings"/>: the Virtual DSP direct-sound loss
+        /// adds the junction phase block's per-channel windows, each at its own
+        /// front and already rotated into one time frame.
+        /// </summary>
+        public static (AnalysisCurve Display, AnalysisCurve Unsmoothed)
+            GetGatedMeasuredMagnitudeSumPair(
+                IReadOnlyList<Complex[]> spectra,
+                int sampleRate,
+                IReadOnlyList<(double LowestHz, double HighestHz)> measuredBands,
+                IReadOnlyList<CalibrationFile?> calibrations,
+                double smoothingInverseOctaves)
+        {
+            ArgumentNullException.ThrowIfNull(spectra);
+            ArgumentNullException.ThrowIfNull(measuredBands);
+            ArgumentNullException.ThrowIfNull(calibrations);
+            if (spectra.Count != calibrations.Count || spectra.Count != measuredBands.Count)
+            {
+                throw new ArgumentException(
+                    "Every spectrum needs its own measured band and calibration entry.",
+                    nameof(spectra));
+            }
+            if (spectra.Count == 0)
+            {
+                AnalysisCurve empty = new(string.Empty, []);
+                return (empty, empty);
+            }
+
             // One microphone measured everything: keep the correction out of the sum
             // and let the resample apply it, exactly as before and exactly as the
             // channel curves do.
@@ -375,15 +456,11 @@ namespace Resonalyze.Dsp
             CalibrationFile? calibration = shared ? calibrations[0] : null;
 
             Complex[]? total = null;
-            int sampleRate = 0;
-            for (int channel = 0; channel < channels.Count; channel++)
+            for (int channel = 0; channel < spectra.Count; channel++)
             {
-                IImpulseMeasurement measurement = channels[channel];
-                Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
+                Complex[] spectrum = spectra[channel];
                 total ??= new Complex[spectrum.Length];
-                sampleRate = measurement.SampleRate;
-                double lowest = measurement.LowestMeasuredFrequencyHz;
-                double highest = measurement.HighestMeasuredFrequencyHz;
+                (double lowest, double highest) = measuredBands[channel];
                 // Null in the shared case, where the resample applies it instead.
                 CalibrationFile? own = shared ? null : calibrations[channel];
                 int usable = Math.Min(total.Length, spectrum.Length);

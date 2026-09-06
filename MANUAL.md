@@ -484,7 +484,8 @@ The panel is dense, so here are its six regions:
    copy of the current session aside so **Load session…** can undo it. The **L / R**
    selector at the bottom decides which side every card shows.
 2. **The acoustic plot** — each channel's processed response, the phase-aware **Sum**,
-   and **Sum loss** against the right-hand axis.
+   and **Sum loss** against the right-hand axis (its selector: **Full** for the sum
+   the cabin hears, **FDW-8** for the direct sound alone, **Disable** for no curve).
 3. **What the plot shows** — which curves are drawn, the target and its level, the
    microphone calibration, smoothing, the Hybrid toggle and the magnitude gate.
 4. **The actions** — the DSP processor, the two optimizers, the audition render,

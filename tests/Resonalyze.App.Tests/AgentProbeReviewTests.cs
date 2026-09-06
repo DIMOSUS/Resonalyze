@@ -85,6 +85,70 @@ public sealed class AgentProbeReviewTests
     private static AgentCrossover Crossover(string family, double hz, int slope) =>
         new("HighPass", new AgentCrossoverEdge(family, hz, slope, null), null);
 
+    [Theory]
+    [InlineData(null, new[] { "broadband", "sweep" }, null, null, null, null)]
+    [InlineData("left:B-C", new[] { "junctionCurves" }, new[] { "B:left" }, 48, 192, null)]
+    [InlineData(null, new string[0], null, null, null, "names nothing to read")]
+    [InlineData(null, new[] { "waterfall" }, null, null, null, "not a series a probe can read")]
+    [InlineData(null, new[] { "broadband" }, new[] { "Z:left" }, null, null, "not a channel of this session")]
+    [InlineData("left:A-D", new[] { "sweep" }, null, null, null, null)]
+    [InlineData(null, new[] { "broadband" }, null, 49, null, "points per octave")]
+    [InlineData(null, new[] { "sweep" }, null, null, 1, "rows of a lag series")]
+    public void Review_HoldsASeriesProbeToWhatThePackageCouldHavePrinted(
+        string? junctionId, string[] series, string[]? channelIds, int? pointsPerOctave, int? rows, string? refusal)
+    {
+        AgentProposalReview review = AgentProposalValidator.Review(
+            Proposal(new ProbeOperation(
+                "op-1", "the package was thinned", AgentProtocol.SeriesProbe, junctionId, null,
+                series, channelIds, pointsPerOctave, rows)),
+            Session());
+
+        AgentOperationVerdict verdict = Assert.Single(review.Verdicts);
+        // A-D is no junction of this session (A is the sub, D the rear fill):
+        // the junction check refuses it the way it refuses any other probe's.
+        if (refusal == null && junctionId == "left:A-D")
+        {
+            Assert.False(verdict.Applicable);
+            return;
+        }
+        if (refusal == null)
+        {
+            Assert.True(verdict.Applicable, verdict.Message);
+            Assert.Equal(AgentVerdictStatus.Valid, verdict.Status);
+            Assert.Contains("Reads only", verdict.Message);
+            Assert.Contains("unthinned", verdict.Proposed);
+        }
+        else
+        {
+            Assert.False(verdict.Applicable);
+            Assert.Contains(refusal, verdict.Message);
+        }
+    }
+
+    [Fact]
+    public void Review_ReadsOneSeriesProbePerImport_AndRefusesTheRest()
+    {
+        // A series probe names no variants, so the variant budget cannot see it,
+        // and the once-per-import rule exempts probes on purpose. Without a rule
+        // of its own a reply could re-gather the whole package at the densest
+        // grid in every operation slot; one already covers everything it names.
+        ProbeOperation Series(string id, string? junctionId = null) => new(
+            id, "rows", AgentProtocol.SeriesProbe, junctionId, null,
+            [AgentProtocol.BroadbandSeries, AgentProtocol.SweepSeries], null,
+            AgentSampling.MaxPointsPerOctave, AgentSampling.MaxRows);
+
+        AgentProposalReview review = AgentProposalValidator.Review(
+            Proposal(Series("op-1"), Series("op-2", "left:B-C"), Junction("op-3"), Series("op-4")),
+            Session());
+
+        Assert.Equal(
+            [AgentVerdictStatus.Valid, AgentVerdictStatus.Rejected, AgentVerdictStatus.Valid, AgentVerdictStatus.Rejected],
+            review.Verdicts.Select(verdict => verdict.Status));
+        Assert.Contains("at most 1 series probe", review.Verdicts[1].Message);
+        Assert.Contains("op-1", review.Verdicts[1].Message);
+        Assert.Equal(1, AgentProtocol.MaxSeriesProbesPerImport);
+    }
+
     [Fact]
     public void Review_OffersAProbeTicked_AndSaysItWritesNothing()
     {
@@ -270,7 +334,7 @@ public sealed class AgentProbeReviewTests
 
         Assert.Equal(AgentVerdictStatus.Rejected, verdict.Status);
         Assert.Contains("limits.probes", verdict.Message);
-        Assert.Equal(["junction", "junctionDelay", "excessGroupDelay"], AgentProtocol.Probes);
+        Assert.Equal(["junction", "junctionDelay", "excessGroupDelay", "series"], AgentProtocol.Probes);
     }
 
     [Fact]

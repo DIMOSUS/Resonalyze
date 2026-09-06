@@ -903,7 +903,43 @@ public sealed class VirtualCrossoverProjectFile
     // ShowSumCurveOnPhase).
     public bool ShowSumCurve { get; set; } = true;
     public bool? ShowSumCurvePhase { get; set; }
+    // The loss curve's older on/off flag, off by default as it always was. Kept
+    // written by the selector below (on for everything but Disable) so a build that
+    // knows only the flag still draws, or hides, the curve a newer file asks for.
     public bool ShowLossCurve { get; set; }
+
+    /// <summary>
+    /// The window the Sum loss is measured through (see <see cref="SumLossWindow"/>).
+    /// Additive: a file written before the selector existed carries none, and
+    /// <see cref="SumLossWindowMode"/> answers for it from the flag above.
+    /// </summary>
+    public SumLossWindow? LossWindow { get; set; }
+
+    /// <summary>
+    /// The selector's effective answer: the stored window; for a file without one,
+    /// <see cref="SumLossWindow.Full"/> when the older flag is on and the default,
+    /// <see cref="SumLossWindow.Direct"/>, otherwise. Setting it writes
+    /// <see cref="LossWindow"/> and keeps <see cref="ShowLossCurve"/> in step.
+    /// </summary>
+    /// <remarks>
+    /// The two legacy answers are not symmetric, and deliberately so. The flag's
+    /// own default was off, so "false" on an old file cannot be told from a toggle
+    /// never touched — it gets the new default, as a fresh project does. "True"
+    /// could only have been set by hand, and the curve it turned on was always the
+    /// steady-state one; opening that file on the direct read would swap the
+    /// meaning of a number the user chose to watch, and the two families are not
+    /// comparable. So it keeps Full, until the selector is moved.
+    /// </remarks>
+    [JsonIgnore]
+    public SumLossWindow SumLossWindowMode
+    {
+        get => LossWindow ?? (ShowLossCurve ? SumLossWindow.Full : SumLossWindow.Direct);
+        set
+        {
+            LossWindow = value;
+            ShowLossCurve = value != SumLossWindow.Off;
+        }
+    }
 
     /// <summary>
     /// Which part of the installation the main plot describes — see

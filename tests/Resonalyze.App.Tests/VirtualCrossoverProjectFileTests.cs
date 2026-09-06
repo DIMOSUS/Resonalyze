@@ -1060,6 +1060,35 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void SumLossWindow_DefaultsToTheDirectRead_ButAnOldShownCurveStaysFull()
+    {
+        // A file written before the selector existed carries only the curve
+        // toggle. Its default was off, so "false" cannot be told from a toggle
+        // never touched and gets the new default, like a fresh project. "True"
+        // was set by hand, and the curve it turned on was the steady-state one:
+        // that file keeps Full rather than silently swapping the meaning of a
+        // number its user chose to watch. Setting the selector writes the toggle
+        // alongside, so a build that knows only the toggle still draws (or hides)
+        // the curve this file asks for.
+        var fresh = new VirtualCrossoverProjectFile();
+        var legacyShown = new VirtualCrossoverProjectFile { ShowLossCurve = true };
+        var legacyHidden = new VirtualCrossoverProjectFile { ShowLossCurve = false };
+        Assert.Null(fresh.LossWindow);
+        Assert.False(fresh.ShowLossCurve);
+        Assert.Equal(SumLossWindow.Direct, fresh.SumLossWindowMode);
+        Assert.Equal(SumLossWindow.Full, legacyShown.SumLossWindowMode);
+        Assert.Equal(SumLossWindow.Direct, legacyHidden.SumLossWindowMode);
+
+        legacyHidden.SumLossWindowMode = SumLossWindow.Full;
+        Assert.Equal(SumLossWindow.Full, legacyHidden.LossWindow);
+        Assert.True(legacyHidden.ShowLossCurve);
+
+        legacyShown.SumLossWindowMode = SumLossWindow.Off;
+        Assert.Equal(SumLossWindow.Off, legacyShown.LossWindow);
+        Assert.False(legacyShown.ShowLossCurve);
+    }
+
+    [Fact]
     public void SaveToAndLoadFrom_RoundTripAnExportedSession()
     {
         string root = CreateTemporaryDirectory();
@@ -1070,11 +1099,13 @@ public sealed class VirtualCrossoverProjectFileTests
             original.Pairs[0].Left.DisplayName = "woofer";
             original.Pairs[0].Left.SourceFilePath = @"C:\m\woofer.json";
             original.Pairs[0].Right.DelayMs = 1.25;
+            original.SumLossWindowMode = SumLossWindow.Direct;
 
             original.SaveTo(path);
             VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
 
             Assert.True(loaded.ShowLossCurve);
+            Assert.Equal(SumLossWindow.Direct, loaded.SumLossWindowMode);
             Assert.Equal("woofer", loaded.Pairs[0].Left.DisplayName);
             Assert.Equal(1.25, loaded.Pairs[0].Right.DelayMs);
         }

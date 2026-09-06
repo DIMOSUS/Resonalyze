@@ -24,6 +24,10 @@ internal sealed record AgentPackage(
     IReadOnlyList<AgentPackageJunction> Junctions,
     IReadOnlyList<AgentPackageStereo> Stereo,
     IReadOnlyList<AgentPackageGroup> Groups,
+    // The densities this package's curves were sampled at (see AgentSampling):
+    // nominal when it fit whole, thinner where a large installation had to be
+    // brought under the size target. Figures are unaffected by it.
+    AgentSampling Sampling,
     IReadOnlyList<string> Omitted);
 
 internal sealed record AgentPackageApplication(string Name, string Version);
@@ -60,7 +64,13 @@ internal sealed record AgentPackageLimits(
     // asking for an operation the build does not run.
     IReadOnlyList<string> Probes,
     int ProbeVariantsPerImport,
-    int ProbeChanges);
+    int ProbeChanges,
+    // The densest a `series` probe may ask for: points per octave on the
+    // frequency grids, rows of the two lag series — and how many such probes an
+    // import reads (one; it already covers everything it names).
+    int SeriesPointsPerOctave,
+    int SeriesRows,
+    int SeriesProbesPerImport);
 
 internal sealed record AgentPackageAnalysis(
     string GroupView,
@@ -182,6 +192,8 @@ internal sealed record AgentPackageSide(
     IReadOnlyList<string> Channels,
     AgentSeries? SumDb,
     AgentPackageLoss? TotalSumLoss,
+    // The same total through the direct-sound window; see AgentPackageJunction.
+    AgentPackageLoss? TotalSumLossDirect,
     // The median of sum minus target over the broadband grid: where the target
     // level datum sits against what the side actually plays. Sign: positive =
     // the side plays above the target. The hybrid twin reads the same off the
@@ -200,6 +212,10 @@ internal sealed record AgentPackageJunction(
     double CrossoverHz,
     double[] BandHz,
     AgentPackageLoss? SumLoss,
+    // The loss through the direct-sound window (the panel's FDW-8 read), beside
+    // the full one whatever the panel's selector shows: two families of numbers,
+    // never compared with each other — the guide says which answers what.
+    AgentPackageLoss? SumLossDirect,
     AgentPackagePhase? Phase,
     IReadOnlyList<AgentPackageLobe>? Lobes,
     AgentSeries? Sweep,

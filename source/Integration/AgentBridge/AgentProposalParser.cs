@@ -445,6 +445,16 @@ internal static class AgentProposalParser
             ProbeOperation probe when !WithinLength(probe.JunctionId) =>
                 "The junction id is too long.",
             ProbeOperation probe when
+                probe.Series != null &&
+                (probe.Series.Count > AgentProtocol.MaxListItems ||
+                    probe.Series.Any(name => string.IsNullOrWhiteSpace(name) || !WithinLength(name))) =>
+                "The probe's series list is incomplete or too long.",
+            ProbeOperation probe when
+                probe.ChannelIds != null &&
+                (probe.ChannelIds.Count > AgentProtocol.MaxListItems ||
+                    probe.ChannelIds.Any(id => string.IsNullOrWhiteSpace(id) || !WithinLength(id))) =>
+                "The probe's channel list is incomplete or too long.",
+            ProbeOperation probe when
                 probe.Variants != null &&
                 probe.Variants.Any(variant =>
                     !WithinLength(variant.Label) ||
@@ -568,7 +578,11 @@ internal static class AgentProposalParser
                                         .Select(band => Map(NotNull(band, "peq.bands[]")))
                                         .ToList()));
                     }).ToList());
-            }).ToList());
+            }).ToList(),
+            wire.Series,
+            wire.ChannelIds,
+            wire.PointsPerOctave,
+            wire.Rows);
 
     private static AgentPeqBand Map(PeqBandWire wire) =>
         new(wire.Type, wire.FrequencyHz, wire.Q, wire.GainDb);
@@ -758,6 +772,11 @@ internal static class AgentProposalParser
         public required string Probe { get; init; }
         public string? JunctionId { get; init; }
         public List<ProbeVariantWire>? Variants { get; init; }
+        // The series probe's own fields: what to read, for whom, how densely.
+        public List<string>? Series { get; init; }
+        public List<string>? ChannelIds { get; init; }
+        public int? PointsPerOctave { get; init; }
+        public int? Rows { get; init; }
     }
 
     private sealed class ProbeVariantWire

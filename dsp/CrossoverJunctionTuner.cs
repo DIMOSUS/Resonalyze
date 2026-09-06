@@ -913,8 +913,10 @@ public static class CrossoverJunctionTuner
         }
 
         /// <summary>
-        /// One probe variant's cross-phase read per side, over the same window
-        /// the sums were read on.
+        /// One probe variant's cross-phase read per side: the same processed
+        /// responses and the same band the sums were read on, through the phase
+        /// analysis's own window (not the alignment window the sums use), so the
+        /// figure compares between entries of one probe and with nothing else.
         /// </summary>
         public List<JunctionProbePhase> PhaseOf(
             JunctionProbeVariant variant, double cornerHz, double bandLowHz, double bandHighHz)

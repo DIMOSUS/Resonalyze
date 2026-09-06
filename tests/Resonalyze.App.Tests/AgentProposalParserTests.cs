@@ -167,6 +167,45 @@ public sealed class AgentProposalParserTests
     }
 
     [Fact]
+    public void Parse_ReadsASeriesProbe_WithWhatToReadForWhomAndHowDensely()
+    {
+        const string json = """
+            { "kind": "resonalyze.agent-proposal", "protocolVersion": 1, "summary": "s",
+              "operations": [
+                { "id": "op-1", "op": "probe", "probe": "series", "junctionId": "left:C-D",
+                  "series": ["junctionCurves", "sweep"], "channelIds": ["C:left", "D:left"],
+                  "pointsPerOctave": 24, "rows": 96, "reason": "The package was thinned." },
+                { "id": "op-2", "op": "probe", "probe": "series", "series": ["broadband"] }
+              ] }
+            """;
+
+        AgentProposalParseResult result = AgentProposalParser.Parse(Begin + json + End);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Collection(result.Proposal!.Operations,
+            operation =>
+            {
+                var probe = Assert.IsType<ProbeOperation>(operation);
+                Assert.Equal("series", probe.Probe);
+                Assert.Equal("left:C-D", probe.JunctionId);
+                Assert.Equal(["junctionCurves", "sweep"], probe.Series);
+                Assert.Equal(["C:left", "D:left"], probe.ChannelIds);
+                Assert.Equal(24, probe.PointsPerOctave);
+                Assert.Equal(96, probe.Rows);
+                Assert.Null(probe.Variants);
+            },
+            operation =>
+            {
+                var probe = Assert.IsType<ProbeOperation>(operation);
+                Assert.Null(probe.JunctionId);
+                Assert.Equal(["broadband"], probe.Series);
+                Assert.Null(probe.ChannelIds);
+                Assert.Null(probe.PointsPerOctave);
+                Assert.Null(probe.Rows);
+            });
+    }
+
+    [Fact]
     public void Parse_ReadsAProbe_WithItsVariantsStatedAsSettings()
     {
         const string json = """

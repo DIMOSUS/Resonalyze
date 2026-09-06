@@ -61,6 +61,28 @@ public sealed class VirtualCrossoverMetricTests
     }
 
     [Fact]
+    public void DirectRead_IsHeadedAsSuch_SoItIsNeverMistakenForTheFullOne()
+    {
+        // The direct-sound loss (Sum loss selector on FDW-8) is deeper and more
+        // seat-sensitive than the steady-state read; the two must never be
+        // compared, so every rendering names the family it belongs to.
+        RunWithInvariantCulture(() =>
+        {
+            string compact = VirtualCrossoverMetric.FormatCompact([Junction], direct: true);
+            string detail = VirtualCrossoverMetric.FormatDetail([Junction], direct: true);
+
+            Assert.StartsWith("Sum loss (direct, dB)\r\n         avg /   dip\r\n\r\n", compact);
+            Assert.Contains("A/B    -1.23 / -6.50", compact);
+            Assert.StartsWith("Sum loss (direct) avg\r\nA/B: -1.23 dB avg, dip -6.50 dB", detail);
+            Assert.Contains("not comparable", detail);
+            Assert.Equal("Sum loss (direct, dB)\r\n         avg /   dip\r\n\r\n—",
+                VirtualCrossoverMetric.FormatCompact([], direct: true));
+            Assert.Equal("Sum loss (direct) avg: —",
+                VirtualCrossoverMetric.FormatDetail([], direct: true));
+        });
+    }
+
+    [Fact]
     public void FormatStereoDeltasCompact_ListsPerChannelArrivalsAndDashesUnreliableSides()
     {
         RunWithInvariantCulture(() =>

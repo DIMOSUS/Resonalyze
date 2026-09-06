@@ -60,12 +60,42 @@ internal static class AgentProtocol
     public const string JunctionDelayProbe = "junctionDelay";
     public const string ExcessGroupDelayProbe = ExcessGroupDelayDiagnostic;
 
+    /// <summary>
+    /// The package's own series again, at the density the reply asks for and
+    /// with no size target: a package over its target is thinned, and this is
+    /// how a reader gets the rows it was thinned out of — any of the series,
+    /// for any channels or one junction, up to <see cref="AgentSampling.MaxPointsPerOctave"/>
+    /// points per octave and <see cref="AgentSampling.MaxRows"/> lag rows.
+    /// </summary>
+    public const string SeriesProbe = "series";
+
+    /// <summary>What a <see cref="SeriesProbe"/> may name in its <c>series</c> list.</summary>
+    public const string BroadbandSeries = "broadband";
+    public const string TargetSeries = "target";
+    public const string SumSeries = "sum";
+    public const string JunctionCurvesSeries = "junctionCurves";
+    public const string SweepSeries = "sweep";
+    public const string CorrelationSeries = "correlation";
+    public const string CoherenceLadderSeries = "coherenceLadder";
+
+    public static readonly IReadOnlyList<string> SeriesNames =
+    [
+        BroadbandSeries,
+        TargetSeries,
+        SumSeries,
+        JunctionCurvesSeries,
+        SweepSeries,
+        CorrelationSeries,
+        CoherenceLadderSeries
+    ];
+
     /// <summary>The probes this build computes, published as <c>limits.probes</c>.</summary>
     public static readonly IReadOnlyList<string> Probes =
     [
         JunctionProbe,
         JunctionDelayProbe,
-        ExcessGroupDelayProbe
+        ExcessGroupDelayProbe,
+        SeriesProbe
     ];
 
     public static bool Reads(string probe) => Probes.Contains(probe, StringComparer.Ordinal);
@@ -92,6 +122,21 @@ internal static class AgentProtocol
     /// </summary>
     public const int MaxProbeVariantsPerImport = 24;
     public const int MaxProbeChanges = 2;
+
+    /// <summary>
+    /// One <see cref="SeriesProbe"/> per import. One already reads every series,
+    /// every channel and every junction at the densest grid, so the cap costs a
+    /// reader nothing; without it a reply could ask for the whole package
+    /// re-gathered at full density once per operation slot.
+    /// </summary>
+    public const int MaxSeriesProbesPerImport = 1;
+
+    /// <summary>
+    /// The ceiling on a probe document's JSON. A series probe is not thinned to
+    /// fit a chat, which is not the same as the clipboard growing without bound:
+    /// over this nothing is copied and the summary says what to ask for instead.
+    /// </summary>
+    public const int MaxProbeDocumentBytes = 1024 * 1024;
 
     // Raw files, not the GitHub page around them: an assistant that can fetch a
     // URL gets the Markdown itself rather than a rendered page it has to scrape.
@@ -127,7 +172,8 @@ internal static class AgentProtocol
         "scratch, advice on the crossovers, on the stage, on the tonal balance, a look over a " +
         "tune they already made, or something they hear in the car. Do not run the whole " +
         "analysis unasked. Then ask only what that answer needs (driver models and locations, " +
-        "amplifier power, DSP model, goals), in small groups.\r\n" +
+        "amplifier power, DSP model, goals), in small groups. Notes or a message that already say " +
+        "what the user is after ARE the answer: take that route and do not ask again.\r\n" +
         "3. Prefer Resonalyze's own engines: recommend running Auto delay / Auto crossover (a tune " +
         "with no crossovers yet) / the junction tune (one junction of a finished tune) / EQ Wizard " +
         "Auto-tune with stated settings instead of inventing delays and PEQ banks by hand. On a tune " +
@@ -136,22 +182,29 @@ internal static class AgentProtocol
         "tune, not the step before.\r\n" +
         "4. Never EQ a cancellation; never claim a crossover is driver-safe from Fs or diameter " +
         "alone; cite sources for hardware facts.\r\n" +
-        "5. If and only if you have concrete, justified changes, end with ONE JSON object with " +
-        "\"kind\": \"" + ProposalKind + "\" following the protocol, in a fenced code block; " +
-        "copy packageId, channel ids and current values from this package exactly.\r\n" +
+        "5. End with ONE JSON object with \"kind\": \"" + ProposalKind + "\" following the " +
+        "protocol, in a fenced code block, if and only if you have concrete, justified changes, " +
+        "an engine to run, or a probe to ask for; copy packageId, channel ids and current values " +
+        "from this package exactly. Settings operations state END states: a \"flip\" or an " +
+        "\"extra delay\" a read-out recommends is applied to the current value first.\r\n" +
         "6. Readings the package leaves out are diagnostics the user copies for you from " +
         "AI assistant… → Copy diagnostics for AI (Excess group delay); when you ask for one, " +
         "name that path.\r\n" +
         "7. To find out what a setting WOULD do, ask for a \"" + Probe + "\" operation instead " +
         "of asking the user to apply and undo anything: it changes nothing and its answer comes " +
-        "back through the clipboard.";
+        "back through the clipboard.\r\n" +
+        "8. What this build can do is in the package, not in the guide: use only operations " +
+        "named in limits.operations and probes named in limits.probes. A field the guide " +
+        "describes that the package lacks means an older build (check application.version and " +
+        "those lists) or a reading this build could not take (an unavailableReason says so " +
+        "where one is due) — never a faulty measurement.";
 
     /// <summary>
     /// The version of the guide this build was written against, printed in the
     /// package so an assistant reading a newer guide at the URL knows which
     /// methodology the package's author expected.
     /// </summary>
-    public const string GuideVersion = "1.6";
+    public const string GuideVersion = "1.7";
 
     /// <summary>The whole clipboard text, UTF-8 bytes, before any parsing.</summary>
     public const int MaxProposalBytes = 1024 * 1024;

@@ -204,6 +204,7 @@ internal static class AgentProposalValidator
         RejectEngineRequestsOnAStaleSession(verdicts, stale);
         RejectRepeatedEngineRequests(verdicts);
         RejectProbesOverTheVariantBudget(verdicts);
+        RejectSeriesProbesBeyondOne(verdicts);
         RejectDisagreeingTargetLevels(verdicts);
         RejectJunctionTunesUnderTheWizard(verdicts);
         RejectOverwrittenSettings(verdicts, session);
@@ -402,6 +403,45 @@ internal static class AgentProposalValidator
             }
 
             spent += variants.Count;
+        }
+    }
+
+    /// <summary>
+    /// One series probe per import (<see cref="AgentProtocol.MaxSeriesProbesPerImport"/>).
+    /// The variant budget above cannot see it — it names no variants — and the
+    /// once-per-import rule exempts probes on purpose, so without a rule of its
+    /// own a reply could re-gather the whole package at the densest grid once
+    /// per operation slot, each a full gather and each added to one clipboard
+    /// text. One already reads every series, channel and junction it names, so
+    /// the first is kept and the rest are refused.
+    /// </summary>
+    private static void RejectSeriesProbesBeyondOne(List<AgentOperationVerdict> verdicts)
+    {
+        int seen = 0;
+        string? owner = null;
+        for (int index = 0; index < verdicts.Count; index++)
+        {
+            AgentOperationVerdict verdict = verdicts[index];
+            if (!verdict.Applicable ||
+                verdict.Operation is not ProbeOperation { Probe: AgentProtocol.SeriesProbe })
+            {
+                continue;
+            }
+
+            if (seen >= AgentProtocol.MaxSeriesProbesPerImport)
+            {
+                verdicts[index] = verdict with
+                {
+                    Status = AgentVerdictStatus.Rejected,
+                    Message = $"An import reads at most {AgentProtocol.MaxSeriesProbesPerImport} series " +
+                        $"probe and {owner} already asks for one; put every series, channel and " +
+                        "junction the question needs into that one."
+                };
+                continue;
+            }
+
+            seen++;
+            owner = verdict.Id;
         }
     }
 
@@ -973,6 +1013,58 @@ internal static class AgentProposalValidator
         (Math.Max(EqAutoTuneHeadless.WindowMinHz, CrossoverAutoSetup.RoundToLattice(currentHz / Math.Sqrt(2))),
             Math.Min(EqAutoTuneHeadless.WindowMaxHz, CrossoverAutoSetup.RoundToLattice(currentHz * Math.Sqrt(2))));
 
+    // A series probe asks for the package's own rows again, so it is held to
+    // what the package could have printed: known series names, channels the
+    // session has, a junction it can resolve when one is named, and a density
+    // inside the published ceilings.
+    private static string? CheckSeriesProbe(ProbeOperation probe, AgentSessionSnapshot session)
+    {
+        IReadOnlyList<string> series = probe.Series ?? [];
+        if (series.Count == 0)
+        {
+            return "A series probe names nothing to read; its `series` lists one or more of " +
+                string.Join(", ", AgentProtocol.SeriesNames) + ".";
+        }
+        foreach (string name in series)
+        {
+            if (!AgentProtocol.SeriesNames.Contains(name, StringComparer.Ordinal))
+            {
+                return $"'{name}' is not a series a probe can read; the names are " +
+                    string.Join(", ", AgentProtocol.SeriesNames) + ".";
+            }
+        }
+        foreach (string id in probe.ChannelIds ?? [])
+        {
+            if (!session.Channels.Any(channel => string.Equals(channel.Id, id, StringComparison.Ordinal)))
+            {
+                return $"'{id}' is not a channel of this session; the package's channel ids are " +
+                    "block and side, as in 'C:left'.";
+            }
+        }
+        if (probe.JunctionId != null)
+        {
+            string? problem = ResolveJunction(session, probe.JunctionId, out _, out _);
+            if (problem != null)
+            {
+                return problem;
+            }
+        }
+        if (probe.PointsPerOctave is { } points && (points < 1 || points > AgentSampling.MaxPointsPerOctave))
+        {
+            return $"A series probe reads between 1 and {AgentSampling.MaxPointsPerOctave} points per " +
+                $"octave (limits.seriesPointsPerOctave); this one asks for {points}.";
+        }
+        if (probe.Rows is { } rows && (rows < 2 || rows > AgentSampling.MaxRows))
+        {
+            return $"A series probe reads between 2 and {AgentSampling.MaxRows} rows of a lag series " +
+                $"(limits.seriesRows); this one asks for {rows}.";
+        }
+
+        return session.Channels.Any(channel => channel.HasMeasurement)
+            ? null
+            : "No channel in this session has a measurement to read.";
+    }
+
     // A probe is held to what it can be computed from, and to nothing else: it
     // writes nothing, so there is no value to protect — only a question that
     // must be answerable. The settings a variant states are held to the very
@@ -989,6 +1081,10 @@ internal static class AgentProposalValidator
             return session.Channels.Any(channel => channel.HasMeasurement)
                 ? null
                 : "No channel in this session has a measurement to read.";
+        }
+        if (probe.Probe == AgentProtocol.SeriesProbe)
+        {
+            return CheckSeriesProbe(probe, session);
         }
 
         string? problem = ResolveJunction(
@@ -1390,6 +1486,12 @@ internal static class AgentProposalValidator
             "read what a delay search would find at this junction",
         AgentProtocol.ExcessGroupDelayProbe =>
             "read every measured channel's excess group delay",
+        AgentProtocol.SeriesProbe =>
+            $"read {string.Join(", ", probe.Series ?? [])} again" +
+            (probe.PointsPerOctave is { } points ? $" at {points} points per octave" : string.Empty) +
+            (probe.Rows is { } rows ? $", up to {rows} rows" : string.Empty) +
+            (probe.ChannelIds is { Count: > 0 } ids ? $" for {string.Join(", ", ids)}" : string.Empty) +
+            ", unthinned and with no size limit",
         _ => $"read '{probe.Probe}'"
     };
 

@@ -820,6 +820,18 @@ public partial class VirtualCrossoverPanel
             lastAgentPackageFingerprint == state;
         AgentProbeBuildResult result = AgentProbeBuilder.Build(
             reports, matches ? lastAgentPackageId : null, matches, steady, DateTimeOffset.UtcNow);
+        // "No size target" for a series probe means it is not thinned to fit a
+        // chat; it does not mean the clipboard grows without bound on an
+        // untrusted reply's say-so. Over the ceiling nothing is copied, and the
+        // summary says what to ask for instead.
+        if (result.JsonBytes > AgentProtocol.MaxProbeDocumentBytes)
+        {
+            summary.Add(
+                $"Probe: the reading came to {(result.JsonBytes + 1023) / 1024} KB, over the " +
+                $"{AgentProtocol.MaxProbeDocumentBytes / 1024} KB ceiling, and was not copied. " +
+                "Ask for fewer series, fewer channels or a lower density.");
+            return false;
+        }
         if (!AgentClipboard.TryWrite(result.Text, out string? error))
         {
             summary.Add($"Probe: the reading was computed but not copied ({error}).");
@@ -861,6 +873,17 @@ public partial class VirtualCrossoverPanel
 
         AgentProbeReport Unavailable(string reason) => new(
             probe.Id, probe.Probe, probe.JunctionId, null, null, reason, null, null, null, null);
+
+        if (probe.Probe == AgentProtocol.SeriesProbe)
+        {
+            // The package's own gather at the reply's density and under no size
+            // target: the same inputs Copy for AI reads, so every row lays beside
+            // the package's by channel and junction id.
+            AgentPackageInputs? inputs = await CaptureAgentPackageInputsAsync();
+            return inputs == null
+                ? Unavailable("the session changed while the reading was taken")
+                : AgentSeriesProbe.Build(probe, inputs);
+        }
 
         string? problem = AgentProposalValidator.ResolveJunction(
             BuildAgentSessionSnapshot(), probe.JunctionId ?? string.Empty,
@@ -2015,12 +2038,25 @@ public partial class VirtualCrossoverPanel
             {
                 loss = null;
             }
-            List<VirtualCrossoverMetric.Entry> entries = sideMetrics.BuildEntries(shown, loss);
+            // The rows go with the channels that SUM, exactly as the screen's
+            // UpdateMetric does: the loss was divided out of `summed`, and a
+            // drawn-but-unsummed centre — high-passed with no upper corner, so its
+            // band centre lands between the midrange's and the tweeter's — would,
+            // ordered with the front, invent junctions the sum never had and lose
+            // the real one (see ProcessedChannels.LossChainZone remarks and
+            // VirtualCrossoverMetricsTests.BuildEntries_ReadsJunctionsOffTheSummingSet).
+            List<VirtualCrossoverMetric.Entry> entries = sideMetrics.BuildEntries(summed, loss);
             // The junction phase block reads through the phase gate, placed over
             // the SUMMING channels with THIS side's pin — the same call the frame
             // makes for the active side (see RedrawMainPlotAsync), off the UI
             // thread, with only numbers crossing over.
             List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
+            // The direct-sound loss travels beside the full one whatever the panel's
+            // Sum loss selector shows — two families of numbers, labelled apart (see
+            // PROTOCOL §1.8) — read off the very spectra the junction phase block is
+            // built from, in the same task, exactly as RedrawMainPlotAsync does.
+            List<SignalPoint>? directLoss = null;
+            List<VirtualCrossoverMetric.Entry> directEntries = [];
             if (quotesJunctions)
             {
                 int phaseRate = summed[0].SampleRate;
@@ -2028,11 +2064,26 @@ public partial class VirtualCrossoverPanel
                 double gateLeftMs = gatePreview?.LeftMs ?? project.PhaseGateLeftMs;
                 double gatePlateauMs = gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs;
                 double gateRightMs = gatePreview?.RightMs ?? project.PhaseGateRightMs;
-                phaseEntries = await Task.Run(() => sideMetrics.BuildPhaseEntries(
-                    summed,
-                    ordered => JunctionPhaseSpectra.Build(
-                        ordered, phaseRate, pinnedOffsetMs,
-                        gateLeftMs, gatePlateauMs, gateRightMs)));
+                (phaseEntries, directLoss) = await Task.Run(() =>
+                {
+                    IReadOnlyList<ProcessedChannel>? orderedSet = null;
+                    IReadOnlyList<Complex[]>? spectra = null;
+                    List<VirtualCrossoverMetric.PhaseEntry> built = sideMetrics.BuildPhaseEntries(
+                        summed,
+                        ordered =>
+                        {
+                            orderedSet = ordered;
+                            spectra = JunctionPhaseSpectra.Build(
+                                ordered, phaseRate, pinnedOffsetMs,
+                                gateLeftMs, gatePlateauMs, gateRightMs);
+                            return spectra;
+                        });
+                    List<SignalPoint>? direct = spectra != null
+                        ? sideMetrics.BuildDirectLossCurve(orderedSet!, spectra, smoothing)
+                        : null;
+                    return (built, direct);
+                });
+                directEntries = sideMetrics.BuildEntries(summed, directLoss);
             }
             HybridMagnitudes? hybrid = hybridReferences != null
                 ? BuildHybridMagnitudes(shown, hybridReferences, rightSide, AgentHybridSmoothingInverseOctaves)
@@ -2118,7 +2169,9 @@ public partial class VirtualCrossoverPanel
                 junctions,
                 shown.Count == 0
                     ? $"no channels in {VirtualCrossoverGroupViews.DisplayName(groupView)} on this side"
-                    : null));
+                    : null,
+                directLoss,
+                directEntries));
 
             IReadOnlyList<SignalPoint>? MagnitudeOf(ProcessedChannel item) =>
                 curves.TryGetValue((item.Channel, rightSide), out var found) ? found.Processed : null;

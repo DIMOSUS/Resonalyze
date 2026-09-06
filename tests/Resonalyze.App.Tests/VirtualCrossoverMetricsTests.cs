@@ -40,6 +40,65 @@ public sealed class VirtualCrossoverMetricsTests
         return channel;
     }
 
+    // A full complex FFT whose every bin above DC is one phasor: the spectrum of
+    // a channel that is flat, at a gain and a phase, through whatever window built it.
+    private static Complex[] FlatSpectrum(double gain, double phaseRadians, int length = 4_096)
+    {
+        var spectrum = new Complex[length];
+        Complex value = Complex.FromPolarCoordinates(gain, phaseRadians);
+        for (int bin = 1; bin < length / 2; bin++)
+        {
+            spectrum[bin] = value;
+            spectrum[length - bin] = Complex.Conjugate(value);
+        }
+
+        return spectrum;
+    }
+
+    private static IEnumerable<SignalPoint> InBand(IReadOnlyList<SignalPoint> curve) =>
+        curve.Where(point => point.X is >= 100 and <= 10_000);
+
+    [Fact]
+    public void BuildDirectLossCurve_ReadsTheLossOutOfThePrebuiltSpectra()
+    {
+        // Two channels in phase sum to twice either: no loss. One at half the
+        // level and inverted against the other sums to 0.5 against a magnitude
+        // sum of 1.5: 20·log10(0.5 / 1.5) = −9.54 dB, everywhere. The windows are
+        // whatever built the spectra — the metric never touches the responses.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        ProcessedChannel a = Processed("A", Impulse(), 10, 48_000);
+        ProcessedChannel b = Processed("B", Impulse(), 10, 48_000);
+
+        List<SignalPoint>? coherent = metrics.BuildDirectLossCurve(
+            [a, b], [FlatSpectrum(1.0, 0.3), FlatSpectrum(1.0, 0.3)], smoothingInverseOctaves: 0);
+        List<SignalPoint>? cancelling = metrics.BuildDirectLossCurve(
+            [a, b], [FlatSpectrum(1.0, 0.0), FlatSpectrum(0.5, Math.PI)], smoothingInverseOctaves: 0);
+
+        Assert.NotNull(coherent);
+        Assert.NotNull(cancelling);
+        Assert.NotEmpty(InBand(coherent!));
+        Assert.All(InBand(coherent!), point => Assert.Equal(0.0, point.Y, 1e-6));
+        Assert.All(InBand(cancelling!), point =>
+            Assert.Equal(20 * Math.Log10(0.5 / 1.5), point.Y, 1e-6));
+    }
+
+    [Fact]
+    public void BuildDirectLossCurve_HasNoMetric_ForOneChannelOrMixedRates()
+    {
+        // The same rule as BuildCurves for one channel, and a rule of its own for
+        // rates: the spectra's bins only line up at one rate, and a sum across two
+        // would add unrelated frequencies.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        ProcessedChannel a = Processed("A", Impulse(), 10, 48_000);
+        ProcessedChannel b = Processed("B", Impulse(), 10, 96_000);
+
+        Assert.Null(metrics.BuildDirectLossCurve([a], [FlatSpectrum(1.0, 0.0)], 0));
+        Assert.Null(metrics.BuildDirectLossCurve(
+            [a, b], [FlatSpectrum(1.0, 0.0), FlatSpectrum(1.0, 0.0)], 0));
+    }
+
     [Fact]
     public void BuildCurves_ReadsTheSnapshotRate_NotTheLiveChannel()
     {
@@ -692,6 +751,36 @@ public sealed class VirtualCrossoverMetricsTests
             metrics.BuildEntries([brokenChain[0], brokenChain[1]], loss);
 
         Assert.Contains(whole, entry => entry.IsTotal);
+    }
+
+    [Fact]
+    public void BuildEntries_ReadsJunctionsOffTheSummingSet_ACentreBetweenTwoFrontDriversInventsNone()
+    {
+        // Front + Center draws a centre beside the front stage without summing it.
+        // High-passed with no upper corner, its band centre lands between the
+        // midrange's and the tweeter's, so ordered WITH the front it wedges into
+        // the chain: the rows would name two junctions the sum never had and lose
+        // the real mid/tweeter one. The screen's UpdateMetric and the AI package's
+        // capture both pass the SUMMING set for that reason; this pins what the
+        // drawn set would have produced instead.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        List<SignalPoint> loss =
+            [.. Enumerable.Range(0, 400).Select(i =>
+                new SignalPoint(20.0 * Math.Pow(1_000.0, i / 399.0), -1.0))];
+        ProcessedChannel mid = ProcessedThroughChain("B", CrossoverKind.HighPass, 290);
+        mid.Channel.Settings.CrossoverKind = CrossoverKind.BandPass;
+        mid.Channel.Settings.LowPassEdge =
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_500, 24);
+        ProcessedChannel tweeter = ProcessedThroughChain("C", CrossoverKind.HighPass, 3_500);
+        ProcessedChannel centre = ProcessedThroughChain("X", CrossoverKind.HighPass, 290);
+
+        List<VirtualCrossoverMetric.Entry> summed = metrics.BuildEntries([mid, tweeter], loss);
+        List<VirtualCrossoverMetric.Entry> drawn = metrics.BuildEntries([mid, centre, tweeter], loss);
+
+        Assert.Contains(summed, entry => entry.Junction == "B/C");
+        Assert.DoesNotContain(drawn, entry => entry.Junction == "B/C");
+        Assert.Contains(drawn, entry => entry.Junction == "B/X" || entry.Junction == "X/C");
     }
 
     [Fact]

@@ -7,6 +7,54 @@ namespace Resonalyze.Integration.AgentBridge;
 internal sealed record AgentLobe(double DelayMs, bool Invert, double ScoreDb);
 
 /// <summary>
+/// How densely a package — or a series probe — samples its curves: the two
+/// frequency grids in points per octave and the row caps of the two lag
+/// series. The package descends <see cref="Ladder"/> until it fits its size
+/// target, so a large installation is THINNED rather than stripped of whole
+/// series; a series probe reads at whatever density the reply asks for, up to
+/// <see cref="MaxPointsPerOctave"/> and <see cref="MaxRows"/>, with no size
+/// target at all.
+/// </summary>
+/// <remarks>
+/// Every figure in a package — sum loss, dips, phase read-outs, the target
+/// datum — is computed off the full-resolution curves before any sampling, so
+/// thinning changes what the rows show, never what the numbers say. What a
+/// thinned row set loses is the exact depth of a narrow feature; the guide
+/// tells a reader to judge depth on the figures and to ask for a series probe
+/// when the rows themselves matter.
+/// </remarks>
+internal sealed record AgentSampling(
+    int BroadbandPointsPerOctave,
+    int JunctionPointsPerOctave,
+    int SweepRows,
+    int CorrelationRows)
+{
+    /// <summary>The protocol's nominal densities — what every package is first tried at.</summary>
+    public static readonly AgentSampling Nominal = new(12, 24, 48, 48);
+
+    /// <summary>
+    /// Nominal first, then each step thinner. The junction grid and the lag
+    /// series go first (they are read for shape around one corner), the
+    /// broadband grid follows; the last step still resolves a third of an octave
+    /// and a dozen lags, which is where a curve stops being a curve.
+    /// </summary>
+    public static readonly IReadOnlyList<AgentSampling> Ladder =
+    [
+        Nominal,
+        new(12, 16, 32, 32),
+        new(8, 12, 24, 24),
+        new(6, 8, 16, 16),
+        new(4, 6, 12, 12)
+    ];
+
+    /// <summary>The densest grid a series probe may ask for.</summary>
+    public const int MaxPointsPerOctave = 48;
+
+    /// <summary>The most rows of a lag series a series probe may ask for.</summary>
+    public const int MaxRows = 192;
+}
+
+/// <summary>
 /// The protocol's sampling: fixed grids in points per octave, log-frequency
 /// interpolation off the analysis curves, and the thinning that keeps a series
 /// readable. None of it depends on a plot's width or zoom — a package copied at
@@ -50,11 +98,12 @@ internal static class AgentCurveSampling
     /// at <see cref="JunctionPointsPerOctave"/>, clipped to the given span, with
     /// the crossover frequency itself always a point.
     /// </summary>
-    public static List<double> JunctionGrid(double crossoverHz, double lowHz, double highHz)
+    public static List<double> JunctionGrid(
+        double crossoverHz, double lowHz, double highHz, int pointsPerOctave = JunctionPointsPerOctave)
     {
         double low = Math.Max(crossoverHz / 2, lowHz);
         double high = Math.Min(crossoverHz * 2, highHz);
-        List<double> grid = LogGrid(low, high, JunctionPointsPerOctave);
+        List<double> grid = LogGrid(low, high, pointsPerOctave);
         if (crossoverHz > low && crossoverHz < high &&
             !grid.Any(frequency => Math.Abs(frequency / crossoverHz - 1) < 1e-6))
         {

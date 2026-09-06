@@ -38,7 +38,30 @@ internal sealed record AgentProbeReport(
     double[]? SharedBandHz,
     IReadOnlyList<AgentProbeEntry>? Entries,
     IReadOnlyList<AgentProbeDelaySide>? Sides,
-    IReadOnlyList<AgentDiagnosticSeries>? Channels);
+    // The excess group delay probe's curves, and the series probe's broadband
+    // curves: one {id, series} per channel either way.
+    IReadOnlyList<AgentDiagnosticSeries>? Channels,
+    // The series probe's own blocks: what density it was read at, then the
+    // target curve, each side's sum and each junction's series, whichever the
+    // reply asked for.
+    AgentSampling? Sampling = null,
+    AgentSeries? Target = null,
+    IReadOnlyList<AgentProbeSumSeries>? Sums = null,
+    IReadOnlyList<AgentProbeJunctionSeries>? Junctions = null);
+
+/// <summary>One side's coherent sum for a series probe, on the requested grid.</summary>
+internal sealed record AgentProbeSumSeries(string Side, AgentSeries Series);
+
+/// <summary>
+/// One junction's series for a series probe: the fields a reply did not ask
+/// for are absent, as everywhere else in the protocol.
+/// </summary>
+internal sealed record AgentProbeJunctionSeries(
+    string Id,
+    AgentSeries? Curves,
+    AgentSeries? Sweep,
+    AgentSeries? Correlation,
+    AgentSeries? CoherenceLadder);
 
 /// <param name="Current">Whether this entry is the tune as it stands.</param>
 /// <param name="AffectedJunctions">
@@ -147,12 +170,14 @@ internal static class AgentProbeBuilder
                 "entries, since the delays in the tune were set for the tune as it stands; a " +
                 "reply that wants that delay applied asks for runAutoDelay",
             ["phase"] =
-                "the pair's cross-phase over the same window as the sums above: the phase at the " +
-                "corner, the consistency (below about 0.5 the phase cannot be read there), the " +
-                "score as the entry stands and the best any delay could reach, the delay that " +
-                "reaches it and whether it inverts. Compare these BETWEEN the probe's entries; " +
-                "the package's junctions[].phase is read through the panel's own gate and is not " +
-                "the same number",
+                "the pair's cross-phase read off the same processed responses and band as the sums " +
+                "above, through the phase analysis's own window (not the alignment window the sums " +
+                "use, not the panel's gate): the phase at the corner, the consistency (below about " +
+                "0.5 the phase cannot be read there), the score as the entry stands and the best any " +
+                "delay could reach, the delay that reaches it and whether it inverts. Compare these " +
+                "BETWEEN the probe's entries only; the package's junctions[].phase is read through " +
+                "the panel's own gate and is not the same number, and no phase score compares with " +
+                "a sum's dB figure",
             ["affectedJunctions"] =
                 "on an ENTRY: the other junctions that entry's own changed channels hand over at, " +
                 "which this reading does not cover. A channel meets a neighbour below it and " +
@@ -162,6 +187,12 @@ internal static class AgentProbeBuilder
             ["nothingWasChanged"] =
                 "the tune was not touched to produce any of this: the readings are computed on " +
                 "copies of the responses, and the session is exactly as it was",
+            ["series"] =
+                "a 'series' probe repeats the package's own rows at the density the reply asked " +
+                "for (sampling says which), unthinned and under no size target: channels[].series " +
+                "is the broadband table, target the target curve, sums[] each side's coherent " +
+                "sum, junctions[] the junction curves, sweep, correlation curve and coherence " +
+                "ladder — the same columns, units and conventions as in the package",
             ["sessionChangedWhileReading"] =
                 "present and true when the tune moved across any reading's boundary, so the " +
                 "readings below do not all describe one state — compare them with that in mind, " +

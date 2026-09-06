@@ -106,7 +106,7 @@ the catalog does not know it.
                  "tuneJunction", "runAutoDelay", "autoTunePeq"],
   "probes": ["junction", "junctionDelay", "excessGroupDelay", "series"],
   "probeVariantsPerImport": 24, "probeChanges": 2,
-  "seriesPointsPerOctave": 48, "seriesRows": 192 }
+  "seriesPointsPerOctave": 48, "seriesRows": 192, "seriesProbesPerImport": 1 }
 ```
 
 These are Virtual DSP's own limits, not the device's. A reply outside them is
@@ -592,7 +592,12 @@ and under no size target. It is the answer to a thinned package: when
 `sampling` sits below nominal, or `omitted` names a series, ask for exactly the
 rows the question needs — one junction's curves and sweep, two channels'
 broadband tables — rather than for everything, since the user pastes the
-answer. It writes nothing and names no variants.
+answer. It writes nothing and names no variants. An import reads **one**
+series probe (`limits.seriesProbesPerImport`); a second is refused, so put
+every series, channel and junction the question needs into that one. Its
+answer is not thinned, but it is not unbounded either: a document over 1 MB
+of JSON is not copied, and the import's summary says to ask for fewer series,
+fewer channels or a lower density.
 
 ```json
 { "id": "op-4", "op": "probe", "probe": "series", "junctionId": "left:C-D",

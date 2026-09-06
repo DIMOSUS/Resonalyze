@@ -754,6 +754,36 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
+    public void BuildEntries_ReadsJunctionsOffTheSummingSet_ACentreBetweenTwoFrontDriversInventsNone()
+    {
+        // Front + Center draws a centre beside the front stage without summing it.
+        // High-passed with no upper corner, its band centre lands between the
+        // midrange's and the tweeter's, so ordered WITH the front it wedges into
+        // the chain: the rows would name two junctions the sum never had and lose
+        // the real mid/tweeter one. The screen's UpdateMetric and the AI package's
+        // capture both pass the SUMMING set for that reason; this pins what the
+        // drawn set would have produced instead.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        List<SignalPoint> loss =
+            [.. Enumerable.Range(0, 400).Select(i =>
+                new SignalPoint(20.0 * Math.Pow(1_000.0, i / 399.0), -1.0))];
+        ProcessedChannel mid = ProcessedThroughChain("B", CrossoverKind.HighPass, 290);
+        mid.Channel.Settings.CrossoverKind = CrossoverKind.BandPass;
+        mid.Channel.Settings.LowPassEdge =
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_500, 24);
+        ProcessedChannel tweeter = ProcessedThroughChain("C", CrossoverKind.HighPass, 3_500);
+        ProcessedChannel centre = ProcessedThroughChain("X", CrossoverKind.HighPass, 290);
+
+        List<VirtualCrossoverMetric.Entry> summed = metrics.BuildEntries([mid, tweeter], loss);
+        List<VirtualCrossoverMetric.Entry> drawn = metrics.BuildEntries([mid, centre, tweeter], loss);
+
+        Assert.Contains(summed, entry => entry.Junction == "B/C");
+        Assert.DoesNotContain(drawn, entry => entry.Junction == "B/C");
+        Assert.Contains(drawn, entry => entry.Junction == "B/X" || entry.Junction == "X/C");
+    }
+
+    [Fact]
     public void BuildCurves_SumsOnlyTheSubsetItIsGiven_ButStillDrawsEveryChannel()
     {
         // The grouped views draw a centre beside the front stage without adding it

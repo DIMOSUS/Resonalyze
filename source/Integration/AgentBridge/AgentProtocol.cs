@@ -123,6 +123,21 @@ internal static class AgentProtocol
     public const int MaxProbeVariantsPerImport = 24;
     public const int MaxProbeChanges = 2;
 
+    /// <summary>
+    /// One <see cref="SeriesProbe"/> per import. One already reads every series,
+    /// every channel and every junction at the densest grid, so the cap costs a
+    /// reader nothing; without it a reply could ask for the whole package
+    /// re-gathered at full density once per operation slot.
+    /// </summary>
+    public const int MaxSeriesProbesPerImport = 1;
+
+    /// <summary>
+    /// The ceiling on a probe document's JSON. A series probe is not thinned to
+    /// fit a chat, which is not the same as the clipboard growing without bound:
+    /// over this nothing is copied and the summary says what to ask for instead.
+    /// </summary>
+    public const int MaxProbeDocumentBytes = 1024 * 1024;
+
     // Raw files, not the GitHub page around them: an assistant that can fetch a
     // URL gets the Markdown itself rather than a rendered page it has to scrape.
     public const string GuideUrl =

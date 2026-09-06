@@ -66,9 +66,11 @@ internal sealed record AgentPackageLimits(
     int ProbeVariantsPerImport,
     int ProbeChanges,
     // The densest a `series` probe may ask for: points per octave on the
-    // frequency grids, rows of the two lag series.
+    // frequency grids, rows of the two lag series — and how many such probes an
+    // import reads (one; it already covers everything it names).
     int SeriesPointsPerOctave,
-    int SeriesRows);
+    int SeriesRows,
+    int SeriesProbesPerImport);
 
 internal sealed record AgentPackageAnalysis(
     string GroupView,

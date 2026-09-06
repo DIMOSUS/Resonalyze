@@ -204,6 +204,7 @@ internal static class AgentProposalValidator
         RejectEngineRequestsOnAStaleSession(verdicts, stale);
         RejectRepeatedEngineRequests(verdicts);
         RejectProbesOverTheVariantBudget(verdicts);
+        RejectSeriesProbesBeyondOne(verdicts);
         RejectDisagreeingTargetLevels(verdicts);
         RejectJunctionTunesUnderTheWizard(verdicts);
         RejectOverwrittenSettings(verdicts, session);
@@ -402,6 +403,45 @@ internal static class AgentProposalValidator
             }
 
             spent += variants.Count;
+        }
+    }
+
+    /// <summary>
+    /// One series probe per import (<see cref="AgentProtocol.MaxSeriesProbesPerImport"/>).
+    /// The variant budget above cannot see it — it names no variants — and the
+    /// once-per-import rule exempts probes on purpose, so without a rule of its
+    /// own a reply could re-gather the whole package at the densest grid once
+    /// per operation slot, each a full gather and each added to one clipboard
+    /// text. One already reads every series, channel and junction it names, so
+    /// the first is kept and the rest are refused.
+    /// </summary>
+    private static void RejectSeriesProbesBeyondOne(List<AgentOperationVerdict> verdicts)
+    {
+        int seen = 0;
+        string? owner = null;
+        for (int index = 0; index < verdicts.Count; index++)
+        {
+            AgentOperationVerdict verdict = verdicts[index];
+            if (!verdict.Applicable ||
+                verdict.Operation is not ProbeOperation { Probe: AgentProtocol.SeriesProbe })
+            {
+                continue;
+            }
+
+            if (seen >= AgentProtocol.MaxSeriesProbesPerImport)
+            {
+                verdicts[index] = verdict with
+                {
+                    Status = AgentVerdictStatus.Rejected,
+                    Message = $"An import reads at most {AgentProtocol.MaxSeriesProbesPerImport} series " +
+                        $"probe and {owner} already asks for one; put every series, channel and " +
+                        "junction the question needs into that one."
+                };
+                continue;
+            }
+
+            seen++;
+            owner = verdict.Id;
         }
     }
 

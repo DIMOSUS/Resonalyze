@@ -820,6 +820,18 @@ public partial class VirtualCrossoverPanel
             lastAgentPackageFingerprint == state;
         AgentProbeBuildResult result = AgentProbeBuilder.Build(
             reports, matches ? lastAgentPackageId : null, matches, steady, DateTimeOffset.UtcNow);
+        // "No size target" for a series probe means it is not thinned to fit a
+        // chat; it does not mean the clipboard grows without bound on an
+        // untrusted reply's say-so. Over the ceiling nothing is copied, and the
+        // summary says what to ask for instead.
+        if (result.JsonBytes > AgentProtocol.MaxProbeDocumentBytes)
+        {
+            summary.Add(
+                $"Probe: the reading came to {(result.JsonBytes + 1023) / 1024} KB, over the " +
+                $"{AgentProtocol.MaxProbeDocumentBytes / 1024} KB ceiling, and was not copied. " +
+                "Ask for fewer series, fewer channels or a lower density.");
+            return false;
+        }
         if (!AgentClipboard.TryWrite(result.Text, out string? error))
         {
             summary.Add($"Probe: the reading was computed but not copied ({error}).");
@@ -2026,7 +2038,14 @@ public partial class VirtualCrossoverPanel
             {
                 loss = null;
             }
-            List<VirtualCrossoverMetric.Entry> entries = sideMetrics.BuildEntries(shown, loss);
+            // The rows go with the channels that SUM, exactly as the screen's
+            // UpdateMetric does: the loss was divided out of `summed`, and a
+            // drawn-but-unsummed centre — high-passed with no upper corner, so its
+            // band centre lands between the midrange's and the tweeter's — would,
+            // ordered with the front, invent junctions the sum never had and lose
+            // the real one (see ProcessedChannels.LossChainZone remarks and
+            // VirtualCrossoverMetricsTests.BuildEntries_ReadsJunctionsOffTheSummingSet).
+            List<VirtualCrossoverMetric.Entry> entries = sideMetrics.BuildEntries(summed, loss);
             // The junction phase block reads through the phase gate, placed over
             // the SUMMING channels with THIS side's pin — the same call the frame
             // makes for the active side (see RedrawMainPlotAsync), off the UI
@@ -2064,7 +2083,7 @@ public partial class VirtualCrossoverPanel
                         : null;
                     return (built, direct);
                 });
-                directEntries = sideMetrics.BuildEntries(shown, directLoss);
+                directEntries = sideMetrics.BuildEntries(summed, directLoss);
             }
             HybridMagnitudes? hybrid = hybridReferences != null
                 ? BuildHybridMagnitudes(shown, hybridReferences, rightSide, AgentHybridSmoothingInverseOctaves)

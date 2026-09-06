@@ -302,7 +302,9 @@ or all — at the density you ask (`pointsPerOctave` up to
 and under no size target. Use it when `sampling` is below nominal, when
 `omitted` names a series, or when a decision hangs on a row set's detail;
 name the one junction and the two or three series the question needs, since
-the user pastes the answer.
+the user pastes the answer. One series probe per reply — it already takes
+every series, channel and junction you name — and a document over 1 MB is not
+copied at all.
 
 **Probe first: it changes nothing.** `probe` asks what the tune WOULD measure
 under settings you name. Give a junction and its variants — as many probes as

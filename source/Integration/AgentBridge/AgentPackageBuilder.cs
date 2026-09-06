@@ -227,7 +227,8 @@ internal static class AgentPackageBuilder
             AgentProtocol.MaxProbeVariantsPerImport,
             AgentProtocol.MaxProbeChanges,
             AgentSampling.MaxPointsPerOctave,
-            AgentSampling.MaxRows);
+            AgentSampling.MaxRows,
+            AgentProtocol.MaxSeriesProbesPerImport);
 
     private static AgentPackageAnalysis BuildAnalysis(
         AgentAnalysisInputs analysis,

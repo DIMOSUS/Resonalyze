@@ -126,6 +126,30 @@ public sealed class AgentProbeReviewTests
     }
 
     [Fact]
+    public void Review_ReadsOneSeriesProbePerImport_AndRefusesTheRest()
+    {
+        // A series probe names no variants, so the variant budget cannot see it,
+        // and the once-per-import rule exempts probes on purpose. Without a rule
+        // of its own a reply could re-gather the whole package at the densest
+        // grid in every operation slot; one already covers everything it names.
+        ProbeOperation Series(string id, string? junctionId = null) => new(
+            id, "rows", AgentProtocol.SeriesProbe, junctionId, null,
+            [AgentProtocol.BroadbandSeries, AgentProtocol.SweepSeries], null,
+            AgentSampling.MaxPointsPerOctave, AgentSampling.MaxRows);
+
+        AgentProposalReview review = AgentProposalValidator.Review(
+            Proposal(Series("op-1"), Series("op-2", "left:B-C"), Junction("op-3"), Series("op-4")),
+            Session());
+
+        Assert.Equal(
+            [AgentVerdictStatus.Valid, AgentVerdictStatus.Rejected, AgentVerdictStatus.Valid, AgentVerdictStatus.Rejected],
+            review.Verdicts.Select(verdict => verdict.Status));
+        Assert.Contains("at most 1 series probe", review.Verdicts[1].Message);
+        Assert.Contains("op-1", review.Verdicts[1].Message);
+        Assert.Equal(1, AgentProtocol.MaxSeriesProbesPerImport);
+    }
+
+    [Fact]
     public void Review_OffersAProbeTicked_AndSaysItWritesNothing()
     {
         AgentProposalReview review = AgentProposalValidator.Review(

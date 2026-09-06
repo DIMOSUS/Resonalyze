@@ -707,6 +707,27 @@ internal sealed class VirtualCrossoverMetrics
     /// (the shared sub) has one response, so it reports that single arrival in
     /// its own band with "—" for the right side and the delta; a stereo pair
     /// needs both sides present and unbypassed.
+    ///
+    /// Which instant is "the arrival" follows the alignment engine's
+    /// cross-side link, because this row is that comparison on the final
+    /// chains — the selection RULE, applied to the row's own shared band;
+    /// the engine may read a narrower band of the same pair (a scene-locked
+    /// pair is timed on its part above the localization edge), so the two
+    /// share the rule, not always the figure. A pair whose shared band is
+    /// centred below
+    /// <see cref="AutoAlignmentEngine.EnergyOnsetBandCenterHz"/> is timed by
+    /// its bands' energy onsets, provided both sides clear
+    /// <see cref="AutoAlignmentEngine.EnergyOnsetMinimumSnrDb"/>; every other
+    /// pair, and a mono channel (no twin for the onset's bias to cancel
+    /// against), by the first envelope peak. On a slow low-frequency envelope
+    /// the first peak is a coin — whether the front's hump stands as a peak
+    /// or melts into the arrival behind it turns on a fraction of a dB — and
+    /// on one measured midbass pair the row read a 5.6 ms split (the right
+    /// side's peak sat 4.7 ms into the modal build-up, and its upper half sat
+    /// on the same mode, so the latch probe passed it) where the onsets
+    /// read 1.0 ms. The instrument is decided ONCE per pair from both sides'
+    /// full-band reads and applied to both sides and their latch probes, so
+    /// a Δ never subtracts a peak from an onset.
     /// </summary>
     /// <param name="channels">
     /// EVERY channel of the project, never a pre-filtered subset. A block's
@@ -738,6 +759,10 @@ internal sealed class VirtualCrossoverMetrics
         Func<VirtualCrossoverChannelPairSettings, bool>? includePair = null,
         Func<VirtualCrossoverChannel, double, double, double?>? hybridLevelDeltaDb = null)
     {
+        static bool Reliable(TimeAlignmentAnalysisResult arrival) =>
+            arrival.IsValid &&
+            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb;
+
         var jobs = new List<StereoDeltaJob>();
         int nextId = 0;
         for (int channelIndex = 0; channelIndex < channels.Count; channelIndex++)
@@ -865,7 +890,7 @@ internal sealed class VirtualCrossoverMetrics
                 {
                     side.Arrival = arrival.Result;
                     side.LevelDb = arrival.LevelDb;
-                    side.Latched = arrival.Latched;
+                    side.Probe = arrival.Probe;
                     side.ArrivalFromCache = true;
                 }
             }
@@ -900,8 +925,20 @@ internal sealed class VirtualCrossoverMetrics
                             side.LevelDb = VirtualCrossoverAnalysis.MeasureBandLevelDb(
                                 side.ProcessedIr!, side.SampleRate,
                                 job.LowHz, job.HighHz);
-                            side.Latched = IsModalLatched(
-                                side, job.LowHz, job.HighHz, side.Arrival.Value);
+                            // A full read too weak to be reported earns no
+                            // probe (the certificate would abstain anyway),
+                            // and a silent band costs no second Hilbert pass.
+                            // The probe is cached beside the full read, so
+                            // it drops its envelope on the way in: the
+                            // certificate reads validity, SNR and the two
+                            // instants, and a second full-length envelope
+                            // per side per redraw is memory for nothing.
+                            side.Probe = Reliable(side.Arrival.Value)
+                                ? ReadUpperHalf(side, job.LowHz, job.HighHz)
+                                    is { } probe
+                                    ? probe with { EnvelopeSamples = [] }
+                                    : null
+                                : null;
                         }
                     }
                 }
@@ -920,33 +957,42 @@ internal sealed class VirtualCrossoverMetrics
                     {
                         side.State.ArrivalCache =
                             (side.ProcessedIr!, job.LowHz, job.HighHz,
-                                side.Arrival!.Value, side.LevelDb, side.Latched);
+                                side.Arrival!.Value, side.LevelDb, side.Probe);
                     }
                 }
             }
         }
-
-        static bool Reliable(TimeAlignmentAnalysisResult arrival) =>
-            arrival.IsValid &&
-            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb;
 
         return jobs
             .Select(job =>
             {
                 TimeAlignmentAnalysisResult left = job.Left.Arrival!.Value;
                 bool leftReliable = Reliable(left);
-                double? leftMs = leftReliable
-                    ? left.FirstArrivalDelayMilliseconds
-                    : null;
                 if (job.Mono)
                 {
+                    // One response, nothing to cancel an onset's bias
+                    // against: the first peak, as the junction timelines read.
                     return new VirtualCrossoverMetric.StereoDelta(
-                        job.Channel, leftMs, null, job.LowHz, job.HighHz, null,
-                        LeftLatched: job.Left.Latched);
+                        job.Channel,
+                        leftReliable ? left.FirstArrivalDelayMilliseconds : null,
+                        null, job.LowHz, job.HighHz, null,
+                        LeftLatched: IsModalLatched(
+                            left, job.Left.Probe, job.LowHz, job.HighHz,
+                            energyOnset: false));
                 }
 
                 TimeAlignmentAnalysisResult right = job.Right.Arrival!.Value;
                 bool rightReliable = Reliable(right);
+                // The pair's instrument (see the summary): the link rule,
+                // from the band and BOTH full-band reads, applied to both
+                // sides and to their latch probes alike.
+                bool energyOnset = left.IsValid && right.IsValid &&
+                    AutoAlignmentEngine.LinkReadsEnergyOnset(
+                        job.LowHz, job.HighHz,
+                        left.SignalToNoiseDecibels, right.SignalToNoiseDecibels);
+                static double Arrival(TimeAlignmentAnalysisResult read, bool onset) =>
+                    (onset ? AutoAlignmentEngine.AsEnergyOnset(read) : read)
+                        .FirstArrivalDelayMilliseconds;
                 // The spatial averages' level, where the panel supplied one,
                 // outranks the point measurement AND its reliability gate: a
                 // capture is a measurement of its own, and a noisy impulse
@@ -959,58 +1005,78 @@ internal sealed class VirtualCrossoverMetrics
                         : null);
                 return new VirtualCrossoverMetric.StereoDelta(
                     job.Channel,
-                    leftMs,
-                    rightReliable ? right.FirstArrivalDelayMilliseconds : null,
+                    leftReliable ? Arrival(left, energyOnset) : null,
+                    rightReliable ? Arrival(right, energyOnset) : null,
                     job.LowHz,
                     job.HighHz,
                     levelDelta,
-                    LeftLatched: job.Left.Latched,
-                    RightLatched: job.Right.Latched,
-                    LevelFromSpatialAverage: job.HybridLevelDeltaDb.HasValue);
+                    LeftLatched: IsModalLatched(
+                        left, job.Left.Probe, job.LowHz, job.HighHz, energyOnset),
+                    RightLatched: IsModalLatched(
+                        right, job.Right.Probe, job.LowHz, job.HighHz, energyOnset),
+                    LevelFromSpatialAverage: job.HybridLevelDeltaDb.HasValue,
+                    EnergyOnset: energyOnset,
+                    // The band asked for onsets and both sides are on the
+                    // row, yet one is under the 30 dB the onset needs: the
+                    // row is back on the coin, and must say so.
+                    EnergyOnsetWithheld: !energyOnset && leftReliable && rightReliable &&
+                        AutoAlignmentEngine.LinkBandReadsEnergyOnset(job.LowHz, job.HighHz));
             })
             .ToList();
     }
 
-    // The alignment engine's modal-latch detection, applied to one side's
-    // read-out arrival: the SAME response measured in the band's upper half
-    // (from the geometric-mean frequency up) must agree with the full-band
-    // read to within the dispersion one direct wave packet can show — half a
-    // period at the probe's low edge. A full-band read landing far BEHIND its
-    // own upper-half read means the envelope latched onto the in-room modal
-    // build-up instead of the direct rise, and the row's L/R difference then
-    // compares different features. The probe only VOTES on the full band's
-    // honesty; its own number is never a substitute.
-    private static bool IsModalLatched(
+    // The latch probe of one side's read-out arrival: the SAME response
+    // measured in the band's upper half (from the geometric-mean frequency
+    // up), or null where the band is too narrow to cut one. Read once per
+    // processed response and cached beside the full read; the verdict is
+    // IsModalLatched, at assembly.
+    private static TimeAlignmentAnalysisResult? ReadUpperHalf(
         SideProcessJob side,
         double lowHz,
-        double highHz,
-        TimeAlignmentAnalysisResult fullBand)
+        double highHz)
     {
-        if (!fullBand.IsValid ||
-            fullBand.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        double probeLowHz = Math.Sqrt(lowHz * highHz);
+        if (highHz < probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+        {
+            return null;
+        }
+
+        return VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+            side.ProcessedIr!, side.SampleRate, probeLowHz, highHz,
+            side.ProcessedValidRange);
+    }
+
+    // The alignment engine's modal-latch detection, applied to one side's
+    // read-out arrival: the full-band read must agree with its upper-half
+    // probe to within the dispersion one direct wave packet can show — half
+    // a period at the probe's low edge, never under 1 ms (the link's own
+    // allowance). A full-band read landing far BEHIND its own upper-half
+    // read means the envelope latched onto the in-room modal build-up
+    // instead of the direct rise, and the row's L/R difference then compares
+    // different features. Both reads are taken with the PAIR's instrument
+    // (an onset is graded against an onset), and a probe too noisy to
+    // witness an onset abstains rather than judges — the link's
+    // certificate, verbatim. The probe only VOTES on the full band's
+    // honesty; its own number is never a substitute.
+    private static bool IsModalLatched(
+        TimeAlignmentAnalysisResult fullBand,
+        TimeAlignmentAnalysisResult? probe,
+        double lowHz,
+        double highHz,
+        bool energyOnset)
+    {
+        if (probe is not { } upperHalf)
         {
             return false;
         }
 
         double probeLowHz = Math.Sqrt(lowHz * highHz);
-        if (highHz < probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
-        {
-            return false;
-        }
-
-        TimeAlignmentAnalysisResult probe =
-            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                side.ProcessedIr!, side.SampleRate, probeLowHz, highHz,
-                side.ProcessedValidRange);
-        if (!probe.IsValid ||
-            probe.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
-        {
-            return false;
-        }
-
         double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-        return fullBand.FirstArrivalDelayMilliseconds
-            - probe.FirstArrivalDelayMilliseconds > toleranceMs;
+        return AutoAlignmentEngine.ClassifyLinkArrival(
+            energyOnset ? AutoAlignmentEngine.AsEnergyOnset(fullBand) : fullBand,
+            energyOnset ? AutoAlignmentEngine.AsEnergyOnset(upperHalf) : upperHalf,
+            toleranceMs,
+            energyOnset) == AutoAlignmentEngine.ArrivalCertificate.Latched;
     }
 
     /// <summary>
@@ -1146,7 +1212,7 @@ internal sealed class VirtualCrossoverMetrics
         public ValidSampleRange ProcessedValidRange { get; set; }
         public TimeAlignmentAnalysisResult? Arrival { get; set; }
         public double? LevelDb { get; set; }
-        public bool Latched { get; set; }
+        public TimeAlignmentAnalysisResult? Probe { get; set; }
         public bool ArrivalFromCache { get; set; }
     }
 

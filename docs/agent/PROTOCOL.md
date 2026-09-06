@@ -345,7 +345,14 @@ Every block is the panel's own read-out, unchanged. `id` is what a
 means the right side leads), `bandHz`, `levelDeltaDb` (left − right),
 `leftLatched` / `rightLatched` (the arrival timed the room's modal build-up
 rather than the direct rise — the number is real but overstates the skew),
-`levelFromSpatialAverage`.
+`energyOnset` (both arrivals are the bands' energy onsets — the instant a tenth
+of the band's energy has arrived — rather than first envelope peaks: the rule
+the stereo Auto delay's cross-side target follows for a pair whose shared band
+is centred below 300 Hz with 30 dB of SNR on both sides; false where the pair
+reads first peaks), `energyOnsetWithheld` (the band qualifies for onsets but a
+side is under the 30 dB an onset needs, so both sides read first peaks — the
+instrument that band is a coin on; treat such a `deltaMs` with the caution
+`latched` asks for), `levelFromSpatialAverage`.
 
 `groups[]`, per zone compared against the front stage: `delayMs` (the zone's
 arrival minus the front's), `levelDb` (the zone's level minus the front's),
@@ -362,7 +369,7 @@ same chat as a second text:
 RESONALYZE_AGENT_DIAGNOSTIC_V1
 …
 BEGIN_RESONALYZE_AGENT_DIAGNOSTIC_JSON
-{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.7",
+{ "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.8",
   "diagnostic": "excessGroupDelay", "packageId": "…", "createdAtUtc": "…",
   "conventions": { … },
   "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } }, … ] }
@@ -755,7 +762,7 @@ copied to the clipboard, pasted into the same chat:
 RESONALYZE_AGENT_PROBE_V1
 …
 BEGIN_RESONALYZE_AGENT_PROBE_JSON
-{ "kind": "resonalyze.agent-probe", "protocolVersion": 1, "guideVersion": "1.7",
+{ "kind": "resonalyze.agent-probe", "protocolVersion": 1, "guideVersion": "1.8",
   "packageId": "…", "sessionMatchesPackage": true, "createdAtUtc": "…",
   "conventions": { … },
   "probes": [

@@ -4723,7 +4723,13 @@ public static class AutoAlignmentEngine
     ///
     /// The LINK only, not the junction timelines: a link compares the two
     /// sides of ONE driver pair through near-identical chains, so whatever
-    /// bias the onset carries cancels in the split. The timeline machinery
+    /// bias the onset carries cancels in the split. The Virtual DSP arrival
+    /// read-out (its L / R / Δ block) is the same comparison on the final
+    /// processed sides and reads by the same rules with the same detector —
+    /// on its own analysis window rather than the reprocessor's crop, which
+    /// agrees to the thousandth of a millisecond on a clean record (the
+    /// pre-front stretch integrates nothing) and can drift apart from it
+    /// only as the SNR nears the admission floor. The timeline machinery
     /// instead predicts a processed read from the bypassed front plus a chain
     /// shift measured on a reference impulse, and an energy onset is a
     /// distribution statistic that no impulse-measured shift transfers: read
@@ -4731,7 +4737,7 @@ public static class AutoAlignmentEngine
     /// 2.4 ms and convicted a plain BW48 80 Hz low-pass as an 18 ms modal
     /// latch (its unit tests). The peaks stay the timeline's instrument.
     /// </summary>
-    internal const double EnergyOnsetBandCenterHz = 300;
+    public const double EnergyOnsetBandCenterHz = 300;
 
     /// <summary>
     /// The SNR both sides of a link must show before its band is read by the
@@ -4758,13 +4764,13 @@ public static class AutoAlignmentEngine
     /// Thirty sits above every measured break with the delta's margin left.
     /// Field records read 45-88 dB.
     /// </summary>
-    internal const double EnergyOnsetMinimumSnrDb = 30;
+    public const double EnergyOnsetMinimumSnrDb = 30;
 
     /// <summary>
     /// Whether a link band belongs to the energy onset by its centre alone
     /// (see <see cref="EnergyOnsetBandCenterHz"/>).
     /// </summary>
-    internal static bool LinkBandReadsEnergyOnset(double bandLowHz, double bandHighHz) =>
+    public static bool LinkBandReadsEnergyOnset(double bandLowHz, double bandHighHz) =>
         Math.Sqrt(bandLowHz * bandHighHz) < EnergyOnsetBandCenterHz;
 
     /// <summary>
@@ -4774,7 +4780,7 @@ public static class AutoAlignmentEngine
     /// read of that link — both sides, their upper-half probes included — so
     /// a split never subtracts a peak from an onset.
     /// </summary>
-    internal static bool LinkReadsEnergyOnset(
+    public static bool LinkReadsEnergyOnset(
         double bandLowHz,
         double bandHighHz,
         double leftSignalToNoiseDb,
@@ -4795,7 +4801,7 @@ public static class AutoAlignmentEngine
     /// latch nor certify it; the read stays usable as a lobe pin, without the
     /// certificate, as an unmeasurable half leaves it already.
     /// </summary>
-    internal static ArrivalCertificate ClassifyLinkArrival(
+    public static ArrivalCertificate ClassifyLinkArrival(
         TimeAlignmentAnalysisResult full,
         TimeAlignmentAnalysisResult probe,
         double toleranceMs,
@@ -4811,7 +4817,7 @@ public static class AutoAlignmentEngine
     /// peak, its separation, the SNR) keep their meaning: they describe the
     /// envelope's peaks and the record, not the onset.
     /// </summary>
-    internal static TimeAlignmentAnalysisResult AsEnergyOnset(
+    public static TimeAlignmentAnalysisResult AsEnergyOnset(
         TimeAlignmentAnalysisResult read) =>
         !read.IsValid
             ? read

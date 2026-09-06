@@ -112,7 +112,19 @@ internal static class VirtualCrossoverMetric
         // responses. Timing stays on the impulse responses either way (a
         // spatial average carries no phase); only the legend changes with
         // this flag.
-        bool LevelFromSpatialAverage = false)
+        bool LevelFromSpatialAverage = false,
+        // The pair's arrivals are its bands' ENERGY ONSETS (the instant a
+        // tenth of the band's energy has arrived), not first envelope peaks:
+        // the alignment engine's cross-side link rule for a pair whose shared
+        // band is centred below 300 Hz with 30 dB of SNR on both sides (see
+        // VirtualCrossoverMetrics.ComputeStereoDeltasAsync). Both sides and
+        // their latch probes read the same instrument; the legend names it.
+        bool EnergyOnset = false,
+        // The band qualifies for onsets but a side sits under the SNR the
+        // onset needs, so both sides read first peaks — the instrument the
+        // band is a coin on. The row names the fallback, so a low pair back
+        // on peaks is not mistaken for a pair the onset cleared.
+        bool EnergyOnsetWithheld = false)
     {
         public double? DeltaMs => LeftMs.HasValue && RightMs.HasValue
             ? LeftMs.Value - RightMs.Value
@@ -230,8 +242,27 @@ internal static class VirtualCrossoverMetric
                     $"R {Side(delta.RightMs, delta.RightLatched)} ms, " +
                     $"\u0394 {deltaText}{levelText} " +
                     $"({FrequencyText.Format(delta.LowHz)} \u2013 " +
-                    $"{FrequencyText.Format(delta.HighHz)})";
+                    $"{FrequencyText.Format(delta.HighHz)}" +
+                    (delta.EnergyOnset
+                        ? ", energy onsets"
+                        : delta.EnergyOnsetWithheld
+                            ? ", first peaks: a side is under the " +
+                                $"{AutoAlignmentEngine.EnergyOnsetMinimumSnrDb:0} dB " +
+                                "an energy onset needs"
+                            : string.Empty) + ")";
             })) +
+            (deltas.Any(delta => delta.EnergyOnset)
+                ? "\r\nEnergy onsets: a pair whose shared band is centred " +
+                    $"below {AutoAlignmentEngine.EnergyOnsetBandCenterHz:0} Hz is " +
+                    "timed by the instant a tenth\r\nof the band's energy has " +
+                    "arrived, not by its first envelope peak \u2014 a slow " +
+                    "low-frequency\r\nenvelope's first hump is a coin toss " +
+                    "(a fraction of a dB decides whether it peaks),\r\nand the " +
+                    "stereo Auto delay's cross-side target picks its instrument " +
+                    "by the same rule\r\n(on the band it reads, which may be " +
+                    $"narrower). Both sides need {AutoAlignmentEngine.EnergyOnsetMinimumSnrDb:0} dB " +
+                    "of SNR,\r\nor the pair reads first peaks."
+                : string.Empty) +
             (deltas.Any(delta => delta.AnyLatched)
                 ? "\r\n~: the full-band envelope timed the room's modal " +
                     "build-up, not the direct rise\r\n(its upper half reads " +

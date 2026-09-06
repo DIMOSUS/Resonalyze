@@ -1287,6 +1287,11 @@ public partial class VirtualCrossoverPanel
         }
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
+        // One edge, written onto both sides: the side lock takes the result as it
+        // stands. Read as a difference, a hidden side that already held the new
+        // edge would look untouched, and the shown side's whole crossover — its
+        // OTHER edge included — would be carried over the hidden side's own.
+        sideLock.Remember(channels.Select(channel => channel.Pair));
         ScheduleSave();
         RedrawAll();
 

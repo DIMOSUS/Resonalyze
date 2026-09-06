@@ -8705,6 +8705,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 sorted.Select(channel => channels.IndexOf(channel)).ToList());
         }
 
+        // The wizard wrote both sides itself, and a proposal can carry one edge
+        // only: the side lock takes the result as it stands rather than reading a
+        // hidden side that already held that edge as untouched and carrying the
+        // shown side's other edge over its own.
+        sideLock.Remember(channels.Select(channel => channel.Pair));
         ScheduleSave();
         RedrawAll();
         if (clearedRotations > 0)

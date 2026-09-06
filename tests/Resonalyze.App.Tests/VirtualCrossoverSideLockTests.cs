@@ -153,25 +153,47 @@ public sealed class VirtualCrossoverSideLockTests
     }
 
     [Fact]
-    public void BothSidesWrittenInOneStep_KeepTheirOwnAnswers()
+    public void AnEdgeWrittenOntoBothSides_IsRememberedNotCarriedWholesale()
     {
-        // A step that moved the hidden side too is an automatic run (the crossover
-        // wizard, a junction tune, an agent proposal addressing both sides), and its
-        // answer for the hidden side is not overwritten by the shown one.
+        // A junction tune (or the crossover wizard) writes ONE edge onto both sides.
+        // The hidden side already held that edge, so as a difference it looks
+        // untouched — and a difference would then carry the shown side's whole
+        // crossover, its OTHER edge included, over the hidden side's own. The panel
+        // hands such a run to Remember instead; here is what that keeps.
         VirtualCrossoverChannelPairSettings pair = StereoPair();
-        pair.Right.InvertPolarity = true;
+        pair.Right.HighPassEdge = Bw12At100;
+        pair.Right.LowPassEdge = Lr48At3000;
         var sideLock = new VirtualCrossoverSideLock();
         sideLock.Engage([pair]);
 
-        pair.Left.InvertPolarity = true;
-        pair.Right.InvertPolarity = false;
-        pair.Right.HighPassEdge = Bw12At100;
-        pair.Left.HighPassEdge = Lr48At3000;
+        pair.Left.LowPassEdge = Lr48At3000;
+        pair.Right.LowPassEdge = Lr48At3000;
+        sideLock.Remember([pair]);
         bool wrote = sideLock.Follow([pair], shownRight: false);
 
         Assert.False(wrote);
-        Assert.False(pair.Right.InvertPolarity);
         Assert.Equal(Bw12At100, pair.Right.HighPassEdge);
+        Assert.Equal(Lr24At80, pair.Left.HighPassEdge);
+    }
+
+    [Fact]
+    public void WithoutRemember_TheSameRunWouldBeReadAsAHandEdit()
+    {
+        // The reason the panel names every such run: read as a difference, the case
+        // above carries the whole crossover. Pinned so that a guard which "detects"
+        // automatic runs is not reintroduced in place of the explicit call.
+        VirtualCrossoverChannelPairSettings pair = StereoPair();
+        pair.Right.HighPassEdge = Bw12At100;
+        pair.Right.LowPassEdge = Lr48At3000;
+        var sideLock = new VirtualCrossoverSideLock();
+        sideLock.Engage([pair]);
+
+        pair.Left.LowPassEdge = Lr48At3000;
+        pair.Right.LowPassEdge = Lr48At3000;
+        bool wrote = sideLock.Follow([pair], shownRight: false);
+
+        Assert.True(wrote);
+        Assert.Equal(Lr24At80, pair.Right.HighPassEdge);
     }
 
     [Fact]

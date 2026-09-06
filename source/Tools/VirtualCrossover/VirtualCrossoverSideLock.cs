@@ -14,17 +14,19 @@ namespace Resonalyze;
 /// change through its autosave, and the lock keeps a snapshot of the locked group of
 /// BOTH sides of every pair as they stood at the previous <see cref="Follow"/> (or
 /// when the pair first came under the lock). A unit that differs from its snapshot on
-/// the shown side has moved since then and is copied across — unless the hidden side
-/// moved as well in the same step. That means an automatic run wrote both sides with
-/// an answer of its own (the crossover wizard and a junction tune write both sides
-/// alike) and that answer stands; the lock is for the hand on the knob, which only
-/// ever reaches the shown side. One such answer a difference cannot see is "keep":
-/// the auto-delay decides polarity per side and may flip the shown side while leaving
-/// the hidden one as it was, so the panel hands its result to <see cref="Remember"/>
-/// before the save, and nothing of it is carried. An AI import and its undo go the
-/// same way: their rows name their sides and the dialog showed exactly those, and an
-/// undo read as a difference could carry a restored value onto a side the import
-/// never touched.
+/// the shown side has moved since then and is copied across. The lock is for the
+/// hand on the knob, which only ever reaches the shown side; a run that writes both
+/// sides itself hands its result to <see cref="Remember"/> before the save, and
+/// nothing of it is carried. That is a rule, not a heuristic, because a difference
+/// cannot tell such a run from a hand edit: the auto-delay may flip the shown side's
+/// polarity and KEEP the hidden one; a junction tune or the crossover wizard writes
+/// one edge onto both sides, and a hidden side that already held it looks untouched
+/// while the shown side's whole crossover — its other edge included — would be
+/// carried over the hidden side's own; an AI import's rows name their sides and the
+/// dialog showed exactly those; and an undo read as a difference could carry a
+/// restored value onto a side the import never touched. (A guard that only carried
+/// when the hidden side had NOT moved in the same step was tried and failed exactly
+/// on the "already held it" case, so the panel names every such run instead.)
 /// </para>
 /// <para>
 /// Whatever differed between the sides when the lock was engaged keeps differing until
@@ -159,13 +161,11 @@ internal sealed class VirtualCrossoverSideLock
         VirtualCrossoverChannelSettings shown = pair.SideFor(shownRight);
         VirtualCrossoverChannelSettings hidden = pair.SideFor(!shownRight);
         Snapshot shownBefore = shownRight ? before.Right : before.Left;
-        Snapshot hiddenBefore = shownRight ? before.Left : before.Right;
         Snapshot shownNow = Snapshot.Of(shown);
         Snapshot hiddenNow = Snapshot.Of(hidden);
 
         bool wrote = false;
         if (shownNow.Crossover != shownBefore.Crossover &&
-            hiddenNow.Crossover == hiddenBefore.Crossover &&
             hiddenNow.Crossover != shownNow.Crossover)
         {
             shownNow.Crossover.WriteTo(hidden);
@@ -173,7 +173,6 @@ internal sealed class VirtualCrossoverSideLock
         }
 
         if (shownNow.Inverted != shownBefore.Inverted &&
-            hiddenNow.Inverted == hiddenBefore.Inverted &&
             hiddenNow.Inverted != shownNow.Inverted)
         {
             hidden.InvertPolarity = shownNow.Inverted;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -256,17 +256,172 @@ namespace Resonalyze.Dsp
             int FdwCycles,
             int FftLength);
 
-        private sealed record CachedPhaseSpectrum(Complex[] Spectrum, int ExtractionStart);
+        // TimeWeighted is null until a group-delay reader asks for it: the
+        // phase views only ever need the spectrum, and the twin doubles the
+        // FFT work and the memory held per gate.
+        private sealed record CachedPhaseSpectrum(
+            Complex[] Spectrum,
+            Complex[]? TimeWeighted,
+            int ExtractionStart);
 
         private sealed record FdwSpectrumEntry(
             double CenterFrequencyHz,
             int EffectiveGateSamples,
             Complex[] Spectrum,
+            Complex[]? TimeWeighted,
             int ExtractionStart);
+
+        // The FDW bank's window geometry in samples, resolved ONCE per
+        // (settings, rate) so the bank that builds the spectra and the
+        // smoothing floor that reads them cannot disagree about how long the
+        // window is at any frequency. Fixed mode is the degenerate bank whose
+        // every window is the full gate.
+        private readonly record struct FdwGateGeometry(
+            int Left,
+            int Right,
+            int MinimumGate,
+            int FixedGate,
+            int Cycles,
+            int SampleRate)
+        {
+            public static FdwGateGeometry Resolve(PhaseAnalysisSettings settings, int sampleRate)
+            {
+                int left = MillisecondsToSamples(settings.LeftMs, sampleRate);
+                int plateau = MillisecondsToSamples(settings.PlateauMs, sampleRate);
+                int right = MillisecondsToSamples(settings.RightMs, sampleRate);
+                int fixedGate = Math.Clamp(left + plateau + right, 1, GatedFftLength);
+                // The left shoulder is the immutable temporal anchor. The 0.8 ms
+                // floor therefore applies to analysis time after that shoulder;
+                // otherwise a long configured fade could consume the whole shortest
+                // window and zero the direct arrival at its endpoint.
+                int minimumGate = Math.Clamp(
+                    left + (int)Math.Round(FdwMinimumDurationSeconds * sampleRate),
+                    1,
+                    fixedGate);
+                return new FdwGateGeometry(
+                    left,
+                    right,
+                    minimumGate,
+                    fixedGate,
+                    settings.WindowMode == PhaseWindowMode.Fixed ? 0 : settings.ValidatedFdwCycles,
+                    sampleRate);
+            }
+
+            // cycles/frequency is the analysis time AFTER the left-shoulder
+            // anchor — the same convention as the minimum-gate floor above
+            // and the duration the docs promise. Counting the shoulder
+            // inside the cycles would silently shorten the post-arrival
+            // window by the configured fade, making FDW more aggressive
+            // than advertised whenever the fade is long.
+            public int EffectiveGate(double frequencyHz) => Cycles == 0 || frequencyHz <= 0.0
+                ? FixedGate
+                : Math.Clamp(
+                    Left + (int)Math.Round(Cycles * SampleRate / frequencyHz),
+                    MinimumGate,
+                    FixedGate);
+        }
+
+        /// <summary>
+        /// The length in samples of the window the analysis actually applies
+        /// at <paramref name="frequencyHz"/> under <paramref name="settings"/>:
+        /// the full gate in Fixed mode, and under FDW the left shoulder plus
+        /// <c>cycles / frequency</c>, held between the 0.8 ms floor and the
+        /// full gate. One function serves both the bank that builds the
+        /// spectra and the group-delay smoothing floor that reads them.
+        /// </summary>
+        internal static int FdwEffectiveGateSamples(
+            double frequencyHz,
+            PhaseAnalysisSettings settings,
+            int sampleRate) =>
+            FdwGateGeometry.Resolve(settings, sampleRate).EffectiveGate(frequencyHz);
+
+        /// <summary>
+        /// The bank's centre frequencies and the window length each one was
+        /// analysed through — after the merge of neighbouring centres whose
+        /// windows round to the same length, exactly as the bank builds it.
+        /// </summary>
+        internal static IReadOnlyList<(double CenterFrequencyHz, int EffectiveGateSamples)>
+            DescribeFdwBank(PhaseAnalysisSettings settings, int sampleRate)
+        {
+            var bank = new List<(double, int)>();
+            foreach ((double center, int gate) in FdwBankPlan(
+                FdwGateGeometry.Resolve(settings, sampleRate), sampleRate))
+            {
+                bank.Add((center, gate));
+            }
+
+            return bank;
+        }
+
+        // The bank's plan: (centre, window) pairs, three centres per octave
+        // from the first FFT bin to Nyquist, neighbours with one window length
+        // merged into the LAST centre that length is valid for (so the
+        // interpolation below starts at that boundary and never shortens the
+        // low-frequency window early), and a shortest-window entry at Nyquist
+        // when the walk stopped short of it.
+        private static IEnumerable<(double CenterFrequencyHz, int EffectiveGateSamples)>
+            FdwBankPlan(FdwGateGeometry geometry, int sampleRate)
+        {
+            double binWidth = sampleRate / (double)GatedFftLength;
+            double nyquist = sampleRate / 2.0;
+            double pendingCenter = double.NaN;
+            int pendingGate = -1;
+            for (double center = binWidth; center <= nyquist;
+                 center *= Math.Pow(2.0, 1.0 / FdwCentersPerOctave))
+            {
+                int effectiveGate = geometry.EffectiveGate(center);
+                if (effectiveGate == pendingGate)
+                {
+                    // The spectrum is unchanged, but this gate remains valid up
+                    // to the current center. Keep that upper boundary so the
+                    // following interpolation does not start at the first FFT
+                    // bin and prematurely shorten the low-frequency window.
+                    pendingCenter = center;
+                    continue;
+                }
+
+                if (pendingGate >= 0)
+                {
+                    yield return (pendingCenter, pendingGate);
+                }
+
+                pendingCenter = center;
+                pendingGate = effectiveGate;
+            }
+
+            if (pendingGate >= 0)
+            {
+                yield return (pendingCenter, pendingGate);
+            }
+
+            if (pendingGate < 0 || pendingCenter < nyquist)
+            {
+                if (pendingGate != geometry.MinimumGate)
+                {
+                    yield return (nyquist, geometry.MinimumGate);
+                }
+            }
+        }
 
         private static Complex[] BuildAnalysisSpectrum(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
+            out int extractionStart) =>
+            BuildAnalysisSpectra(measurement, settings, timeWeighted: false, out extractionStart)
+                .Spectrum;
+
+        // The cached gated analysis of one measurement under one gate. With
+        // timeWeighted the entry also carries FFT(t·w·h); a phase reader that
+        // finds an entry built for a group-delay reader simply takes its
+        // spectrum, and a group-delay reader that finds a phase-only entry
+        // rebuilds the pair (the spectrum comes out bit-identical: same
+        // extraction, same transform) and replaces it, so a redraw that
+        // toggles between the two views transforms each gate at most twice
+        // over the life of the impulse.
+        private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildAnalysisSpectra(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            bool timeWeighted,
             out int extractionStart)
         {
             Complex[] impulse = measurement.ImpulseResponse
@@ -283,121 +438,122 @@ namespace Resonalyze.Dsp
             PhaseSpectrumCache cache = PhaseSpectrumCaches.GetOrCreateValue(impulse);
             lock (cache.Entries)
             {
-                if (cache.Entries.TryGetValue(key, out CachedPhaseSpectrum? cached))
+                if (cache.Entries.TryGetValue(key, out CachedPhaseSpectrum? cached) &&
+                    (!timeWeighted || cached.TimeWeighted != null))
                 {
                     extractionStart = cached.ExtractionStart;
-                    return cached.Spectrum;
+                    return (cached.Spectrum, cached.TimeWeighted);
                 }
             }
 
             Complex[] spectrum;
+            Complex[]? weighted;
             if (settings.WindowMode == PhaseWindowMode.Fixed)
             {
-                spectrum = BuildPhaseSpectrum(
-                    measurement,
-                    settings.GateOffsetMs,
-                    settings.LeftMs,
-                    settings.PlateauMs,
-                    settings.RightMs,
-                    out extractionStart);
+                (spectrum, weighted) = BuildFixedSpectra(
+                    measurement, settings, timeWeighted, out extractionStart);
             }
             else
             {
-                spectrum = BuildFdwSpectrum(measurement, settings, out extractionStart);
+                (spectrum, weighted) = BuildFdwSpectra(
+                    measurement, settings, timeWeighted, out extractionStart);
             }
             lock (cache.Entries)
             {
-                cache.Entries[key] = new CachedPhaseSpectrum(spectrum, extractionStart);
+                cache.Entries[key] = new CachedPhaseSpectrum(spectrum, weighted, extractionStart);
             }
-            return spectrum;
+            return (spectrum, weighted);
         }
 
-        private static Complex[] BuildFdwSpectrum(
+        // The Fixed gate's analysis: one Tukey window, its FFT and — for a
+        // group-delay reader — the FFT of the same windowed impulse weighted
+        // by its time from the extraction start, the two operands of
+        // τ = Re[T·conj(H)] / |H|².
+        private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildFixedSpectra(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
+            bool timeWeighted,
+            out int extractionStart)
+        {
+            Complex[] windowedImpulse = ExtractGatedWindowedImpulse(
+                measurement,
+                settings.GateOffsetMs,
+                settings.LeftMs,
+                settings.PlateauMs,
+                settings.RightMs,
+                wrap: true,
+                out extractionStart);
+            Complex[]? weighted = timeWeighted
+                ? TimeWeightSpectrum(windowedImpulse, measurement.SampleRate)
+                : null;
+            Fourier.Forward(windowedImpulse, FourierOptions.Matlab);
+            return (windowedImpulse, weighted);
+        }
+
+        // FFT(t·x) for a windowed impulse x still in the time domain, t the
+        // time from the buffer start. The input is left untouched.
+        private static Complex[] TimeWeightSpectrum(Complex[] windowedImpulse, int sampleRate)
+        {
+            int n = windowedImpulse.Length;
+            double invSampleRate = 1.0 / sampleRate;
+            var weighted = new Complex[n];
+            for (int i = 0; i < n; i++)
+            {
+                weighted[i] = windowedImpulse[i] * (i * invSampleRate);
+            }
+
+            Fourier.Forward(weighted, FourierOptions.Matlab);
+            return weighted;
+        }
+
+        // The frequency-dependent window's analysis: a bank of Tukey windows
+        // whose length follows cycles/frequency, each transformed (twice, with
+        // the time-weighted twin, for a group-delay reader), re-referenced to
+        // one extraction start and stitched by complex-linear interpolation
+        // over log frequency — the SAME blend for both members of the pair,
+        // bin for bin, so the stitched pair is exactly the analysis of the
+        // impulse through the interpolated window and the group-delay
+        // identity still holds on it.
+        private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildFdwSpectra(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            bool timeWeighted,
             out int extractionStart)
         {
             int sampleRate = measurement.SampleRate;
-            int left = MillisecondsToSamples(settings.LeftMs, sampleRate);
-            int plateau = MillisecondsToSamples(settings.PlateauMs, sampleRate);
-            int right = MillisecondsToSamples(settings.RightMs, sampleRate);
-            int fixedGate = Math.Clamp(left + plateau + right, 1, GatedFftLength);
-            // The left shoulder is the immutable temporal anchor. The 0.8 ms
-            // floor therefore applies to analysis time after that shoulder;
-            // otherwise a long configured fade could consume the whole shortest
-            // window and zero the direct arrival at its endpoint.
-            int minimumGate = Math.Clamp(
-                left + (int)Math.Round(FdwMinimumDurationSeconds * sampleRate),
-                1,
-                fixedGate);
-            int cycles = settings.ValidatedFdwCycles;
+            FdwGateGeometry geometry = FdwGateGeometry.Resolve(settings, sampleRate);
             double binWidth = sampleRate / (double)GatedFftLength;
-            double nyquist = sampleRate / 2.0;
             var entries = new List<FdwSpectrumEntry>();
-            int previousGate = -1;
 
-            for (double center = binWidth; center <= nyquist;
-                 center *= Math.Pow(2.0, 1.0 / FdwCentersPerOctave))
+            foreach ((double center, int effectiveGate) in FdwBankPlan(geometry, sampleRate))
             {
-                // cycles/frequency is the analysis time AFTER the left-shoulder
-                // anchor — the same convention as the minimum-gate floor above
-                // and the duration the docs promise. Counting the shoulder
-                // inside the cycles would silently shorten the post-arrival
-                // window by the configured fade, making FDW more aggressive
-                // than advertised whenever the fade is long.
-                int effectiveGate = Math.Clamp(
-                    left + (int)Math.Round(cycles * sampleRate / center),
-                    minimumGate,
-                    fixedGate);
-                if (effectiveGate == previousGate)
-                {
-                    // The spectrum is unchanged, but this gate remains valid up
-                    // to the current center. Keep that upper boundary so the
-                    // following interpolation does not start at the first FFT
-                    // bin and prematurely shorten the low-frequency window.
-                    entries[^1] = entries[^1] with
-                    {
-                        CenterFrequencyHz = center
-                    };
-                    continue;
-                }
-
                 Complex[] spectrum = ExtractFdwWindowedImpulse(
                     measurement,
                     settings.GateOffsetMs,
-                    left,
-                    right,
+                    geometry.Left,
+                    geometry.Right,
                     effectiveGate,
                     out int start);
+                Complex[]? weighted = timeWeighted
+                    ? TimeWeightSpectrum(spectrum, sampleRate)
+                    : null;
                 Fourier.Forward(spectrum, FourierOptions.Matlab);
-                entries.Add(new FdwSpectrumEntry(center, effectiveGate, spectrum, start));
-                previousGate = effectiveGate;
-            }
-
-            if (entries.Count == 0 || entries[^1].CenterFrequencyHz < nyquist)
-            {
-                int effectiveGate = minimumGate;
-                Complex[] spectrum = ExtractFdwWindowedImpulse(
-                    measurement,
-                    settings.GateOffsetMs,
-                    left,
-                    right,
-                    effectiveGate,
-                    out int start);
-                Fourier.Forward(spectrum, FourierOptions.Matlab);
-                if (entries.Count == 0 || entries[^1].EffectiveGateSamples != effectiveGate)
-                {
-                    entries.Add(new FdwSpectrumEntry(nyquist, effectiveGate, spectrum, start));
-                }
+                entries.Add(new FdwSpectrumEntry(center, effectiveGate, spectrum, weighted, start));
             }
 
             extractionStart = entries[0].ExtractionStart;
             foreach (FdwSpectrumEntry entry in entries)
             {
-                ApplyTimeReference(entry.Spectrum, entry.ExtractionStart, extractionStart);
+                ReReferenceSpectra(
+                    entry.Spectrum,
+                    entry.TimeWeighted,
+                    entry.ExtractionStart,
+                    extractionStart,
+                    sampleRate);
             }
 
             var combined = new Complex[GatedFftLength];
+            Complex[]? combinedWeighted = timeWeighted ? new Complex[GatedFftLength] : null;
             int upperIndex = 0;
             for (int bin = 0; bin <= combined.Length / 2; bin++)
             {
@@ -411,23 +567,76 @@ namespace Resonalyze.Dsp
                 if (upperIndex == 0)
                 {
                     combined[bin] = entries[0].Spectrum[bin];
+                    if (combinedWeighted != null)
+                    {
+                        combinedWeighted[bin] = entries[0].TimeWeighted![bin];
+                    }
                     continue;
                 }
 
                 FdwSpectrumEntry lower = entries[upperIndex - 1];
                 FdwSpectrumEntry upper = entries[upperIndex];
                 double logFrequency = Math.Log(Math.Max(frequency, lower.CenterFrequencyHz));
-                double t = (logFrequency - Math.Log(lower.CenterFrequencyHz)) /
-                    (Math.Log(upper.CenterFrequencyHz) - Math.Log(lower.CenterFrequencyHz));
+                double t = Math.Clamp(
+                    (logFrequency - Math.Log(lower.CenterFrequencyHz)) /
+                        (Math.Log(upper.CenterFrequencyHz) - Math.Log(lower.CenterFrequencyHz)),
+                    0.0,
+                    1.0);
                 combined[bin] = InterpolateSpectrum(
-                    lower.Spectrum[bin], upper.Spectrum[bin], Math.Clamp(t, 0.0, 1.0));
+                    lower.Spectrum[bin], upper.Spectrum[bin], t);
+                if (combinedWeighted != null)
+                {
+                    combinedWeighted[bin] = InterpolateSpectrum(
+                        lower.TimeWeighted![bin], upper.TimeWeighted![bin], t);
+                }
             }
             for (int bin = 1; bin < combined.Length / 2; bin++)
             {
                 combined[combined.Length - bin] = Complex.Conjugate(combined[bin]);
+                if (combinedWeighted != null)
+                {
+                    combinedWeighted[combinedWeighted.Length - bin] =
+                        Complex.Conjugate(combinedWeighted[bin]);
+                }
             }
 
-            return combined;
+            return (combined, combinedWeighted);
+        }
+
+        // Moves a spectrum's time origin from its own extraction start to a
+        // reference start, in place. For the time-weighted twin the weight
+        // itself moves first: a sample at buffer index n of an extraction
+        // starting at s carries the time (s + n − s_ref) / fs in the reference
+        // frame, so T gains ((s − s_ref) / fs) · H BEFORE the rotation, which
+        // then re-addresses both members the way it re-addresses H alone.
+        // Today's bank happens to extract every window at one start (the
+        // minimum window still exceeds the left shoulder), which makes this a
+        // no-op there; the general form is kept so the identity does not rest
+        // on that coincidence, and SumGatedSpectraPairs relies on it outright.
+        private static void ReReferenceSpectra(
+            Complex[] spectrum,
+            Complex[]? timeWeighted,
+            int extractionStart,
+            int referenceStart,
+            int sampleRate)
+        {
+            if (extractionStart == referenceStart)
+            {
+                return;
+            }
+
+            if (timeWeighted != null)
+            {
+                double weightShift = (extractionStart - referenceStart) / (double)sampleRate;
+                for (int bin = 0; bin < timeWeighted.Length; bin++)
+                {
+                    timeWeighted[bin] += spectrum[bin] * weightShift;
+                }
+
+                ApplyTimeReference(timeWeighted, extractionStart, referenceStart);
+            }
+
+            ApplyTimeReference(spectrum, extractionStart, referenceStart);
         }
 
         private static Complex[] ExtractFdwWindowedImpulse(
@@ -770,6 +979,27 @@ namespace Resonalyze.Dsp
             return (Complex[])spectrum.Clone();
         }
 
+        /// <summary>
+        /// The gated analysis spectrum of <see cref="GetPhaseAnalysisSpectrum"/>
+        /// together with its time-weighted twin, under the same window
+        /// (Fixed or FDW) and in one time reference — the operands a
+        /// group-delay reader needs, for callers that add channels before
+        /// reading one (the Virtual DSP Sum, through
+        /// <see cref="SumGatedSpectraPairs"/>). Copies: the analysis is cached
+        /// per impulse and gate, and the caller may write into these.
+        /// </summary>
+        public static GroupDelaySpectra GetGroupDelayAnalysisSpectra(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            out int extractionStart)
+        {
+            (Complex[] spectrum, Complex[]? weighted) = BuildAnalysisSpectra(
+                measurement, settings, timeWeighted: true, out extractionStart);
+            return new GroupDelaySpectra(
+                (Complex[])spectrum.Clone(),
+                (Complex[])weighted!.Clone());
+        }
+
         public static List<SignalPoint> GetGatedPhaseData(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
@@ -871,6 +1101,56 @@ namespace Resonalyze.Dsp
             }
 
             return combined;
+        }
+
+        /// <summary>
+        /// <see cref="SumGatedSpectra"/> for group-delay operands: every
+        /// part's spectrum AND time-weighted twin are re-referenced to
+        /// <paramref name="targetExtractionStart"/> and accumulated. The twin
+        /// is not just rotated — its time weight is counted from the part's
+        /// own extraction start, so the offset between that start and the
+        /// target is added to it first (as <c>((s − s_ref) / fs) · H</c>);
+        /// only then does the same rotation re-address both. Both operators
+        /// are linear, so the group delay read off the sum is the group delay
+        /// of the summed channels as one signal would read through the same
+        /// windows. The inputs are not modified and must share one FFT length.
+        /// </summary>
+        public static GroupDelaySpectra SumGatedSpectraPairs(
+            IReadOnlyList<(GroupDelaySpectra Spectra, int ExtractionStart)> parts,
+            int targetExtractionStart,
+            int sampleRate)
+        {
+            ArgumentNullException.ThrowIfNull(parts);
+            if (parts.Count == 0)
+            {
+                throw new ArgumentException(
+                    "At least one spectrum pair is required.", nameof(parts));
+            }
+
+            int length = parts[0].Spectra.Spectrum.Length;
+            var spectrum = new Complex[length];
+            var weighted = new Complex[length];
+            foreach ((GroupDelaySpectra spectra, int extractionStart) in parts)
+            {
+                if (spectra.Spectrum.Length != length ||
+                    spectra.TimeWeighted.Length != length)
+                {
+                    throw new ArgumentException(
+                        "All spectra must share one FFT length.", nameof(parts));
+                }
+
+                var partSpectrum = (Complex[])spectra.Spectrum.Clone();
+                var partWeighted = (Complex[])spectra.TimeWeighted.Clone();
+                ReReferenceSpectra(
+                    partSpectrum, partWeighted, extractionStart, targetExtractionStart, sampleRate);
+                for (int bin = 0; bin < length; bin++)
+                {
+                    spectrum[bin] += partSpectrum[bin];
+                    weighted[bin] += partWeighted[bin];
+                }
+            }
+
+            return new GroupDelaySpectra(spectrum, weighted);
         }
 
         public static double ResolvePhaseDetrendMilliseconds(
@@ -1200,15 +1480,17 @@ namespace Resonalyze.Dsp
                 includeMinimumPhase: false).Measured;
 
         /// <summary>
-        /// The Group Delay mode's curve family over ONE gate extraction: the
-        /// measured group delay and, when requested, the minimum-phase group
+        /// The Group Delay mode's curve family over ONE Fixed gate extraction:
+        /// the measured group delay and, when requested, the minimum-phase group
         /// delay (from the gated magnitude via the Bode relation) plus the
         /// excess (measured − minimum). All curves run through the same
         /// energy-weighted τ evaluation and smoothing and share one validity
         /// gate, so the subtraction is bin-exact. The measured and excess
         /// curves are absolute (referenced to the IR start); the minimum-phase
         /// curve carries no bulk delay by construction, so the excess reads as
-        /// the frequency-dependent arrival time of the all-pass part.
+        /// the frequency-dependent arrival time of the all-pass part. The
+        /// Fixed-window form of the <see cref="PhaseAnalysisSettings"/>
+        /// overload, kept for the callers that never window per frequency.
         /// </summary>
         public static GroupDelayCurveSet GetGroupDelayCurves(
             IImpulseMeasurement measurement,
@@ -1218,38 +1500,136 @@ namespace Resonalyze.Dsp
             double rightMs,
             double smoothingInverseOctaves,
             double magnitudeGateDb = -30.0,
+            bool includeMinimumPhase = false) =>
+            GetGroupDelayCurves(
+                measurement,
+                new PhaseAnalysisSettings(
+                    PhaseWindowMode.Fixed,
+                    PhaseAnalysisSettings.DefaultFdwCycles,
+                    PhaseDetrendMode.Off,
+                    ManualDetrendMilliseconds: 0.0,
+                    gateOffsetMs,
+                    leftMs,
+                    plateauMs,
+                    rightMs,
+                    Unwrap: false,
+                    SmoothingInverseOctaves: 0.0),
+                smoothingInverseOctaves,
+                magnitudeGateDb,
+                includeMinimumPhase);
+
+        /// <summary>
+        /// The Group Delay mode's curve family through the window
+        /// <paramref name="settings"/> describes — the Fixed Tukey gate, or the
+        /// frequency-dependent bank the Phase mode analyses through. Under FDW
+        /// the group delay at a frequency is the energy-weighted arrival time
+        /// INSIDE the window applied at that frequency (the left shoulder plus
+        /// <c>cycles</c> periods after the gate offset): the direct sound's
+        /// arrival at mid and high frequencies, the full gate's reading where
+        /// the window is clamped to it at low frequencies. It is the same
+        /// identity τ = Re[T·conj(H)] / |H|² the Fixed curve uses, evaluated on
+        /// the stitched bank — NOT the derivative of the FDW phase curve, whose
+        /// slope also carries the window's own change with frequency. Only the
+        /// window fields of <paramref name="settings"/> are read (gate offset,
+        /// shoulders, mode, cycles); detrend, unwrap and its own smoothing
+        /// field belong to the phase display and are ignored here.
+        /// </summary>
+        public static GroupDelayCurveSet GetGroupDelayCurves(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            double smoothingInverseOctaves,
+            double magnitudeGateDb = -30.0,
             bool includeMinimumPhase = false)
         {
-            // Same gate as the phase mode: the left shoulder ends at the gate offset.
-            // Wrap handles a gate that runs into negative indices and must read the
-            // cyclic tail; the time correction downstream keeps the delay absolute.
-            Complex[] windowedImpulse = ExtractGatedWindowedImpulse(
-                measurement,
-                gateOffsetMs,
-                leftMs,
-                plateauMs,
-                rightMs,
-                wrap: true,
-                out int extractionStart);
+            (Complex[] spectrum, Complex[]? weighted) = BuildAnalysisSpectra(
+                measurement, settings, timeWeighted: true, out int extractionStart);
+            return BuildGroupDelayCurves(
+                spectrum,
+                weighted!,
+                extractionStart,
+                measurement.SampleRate,
+                settings,
+                smoothingInverseOctaves,
+                magnitudeGateDb,
+                includeMinimumPhase,
+                lowestMeasuredFrequencyHz: 0.0,
+                highestMeasuredFrequencyHz: double.PositiveInfinity);
+        }
 
-            int n = windowedImpulse.Length;
-            Complex[] spectrum = new Complex[n];
-            Complex[] timeWeightedSpectrum = new Complex[n];
-
-            double invSampleRate = 1.0 / measurement.SampleRate;
-
-            for (int i = 0; i < n; i++)
+        /// <summary>
+        /// The same curve family over an ALREADY BUILT operand pair
+        /// (<see cref="GetGroupDelayAnalysisSpectra"/> or
+        /// <see cref="SumGatedSpectraPairs"/>) whose time reference is
+        /// <paramref name="extractionStart"/>. <paramref name="settings"/>
+        /// supplies only the window geometry the smoothing floor is derived
+        /// from (the gate's own resolution at each frequency); it must be the
+        /// geometry the pair was analysed through, offset aside. Bins outside
+        /// the measured band are blanked, as the Virtual DSP magnitudes are.
+        /// </summary>
+        public static GroupDelayCurveSet GetGroupDelayCurves(
+            GroupDelaySpectra spectra,
+            int extractionStart,
+            int sampleRate,
+            PhaseAnalysisSettings settings,
+            double smoothingInverseOctaves,
+            double magnitudeGateDb = -30.0,
+            bool includeMinimumPhase = false,
+            double lowestMeasuredFrequencyHz = 0.0,
+            double highestMeasuredFrequencyHz = double.PositiveInfinity)
+        {
+            ArgumentNullException.ThrowIfNull(spectra);
+            if (spectra.Spectrum.Length != spectra.TimeWeighted.Length)
             {
-                Complex imp = windowedImpulse[i];
-                spectrum[i] = imp;
-                timeWeightedSpectrum[i] = imp * (i * invSampleRate);
+                throw new ArgumentException(
+                    "The spectrum and its time-weighted twin must share one FFT length.",
+                    nameof(spectra));
             }
 
-            Fourier.Forward(spectrum, FourierOptions.Matlab);
-            Fourier.Forward(timeWeightedSpectrum, FourierOptions.Matlab);
+            return BuildGroupDelayCurves(
+                spectra.Spectrum,
+                spectra.TimeWeighted,
+                extractionStart,
+                sampleRate,
+                settings,
+                smoothingInverseOctaves,
+                magnitudeGateDb,
+                includeMinimumPhase,
+                lowestMeasuredFrequencyHz,
+                highestMeasuredFrequencyHz);
+        }
 
+        /// <summary>
+        /// The narrowest half-width the group-delay smoothing may take at
+        /// <paramref name="frequencyHz"/>: half the spectral resolution of the
+        /// window the analysis applies there (<see cref="FdwEffectiveGateSamples"/>).
+        /// Constant under Fixed; under FDW it follows the shrinking window, so
+        /// at 8 cycles and no clamp it is <c>f / 16</c> — about a twelfth of an
+        /// octave either side, which is why display smoothing finer than that
+        /// changes nothing above the transition frequency.
+        /// </summary>
+        internal static double GroupDelayMinimumHalfWidthHz(
+            double frequencyHz,
+            PhaseAnalysisSettings settings,
+            int sampleRate) =>
+            GroupDelayResolutionHalfWidthFactor * sampleRate /
+                FdwEffectiveGateSamples(frequencyHz, settings, sampleRate);
+
+        private static GroupDelayCurveSet BuildGroupDelayCurves(
+            Complex[] spectrum,
+            Complex[] timeWeightedSpectrum,
+            int extractionStart,
+            int sampleRate,
+            PhaseAnalysisSettings settings,
+            double smoothingInverseOctaves,
+            double magnitudeGateDb,
+            bool includeMinimumPhase,
+            double lowestMeasuredFrequencyHz,
+            double highestMeasuredFrequencyHz)
+        {
+            int n = spectrum.Length;
+            double invSampleRate = 1.0 / sampleRate;
             int halfLength = n / 2;
-            double binWidthHz = measurement.SampleRate / (double)n;
+            double binWidthHz = sampleRate / (double)n;
 
             // Per-bin numerator and denominator of τg = Re[T·conj(H)] / |H|². Smoothing
             // them separately and dividing the averages makes the result energy-weighted:
@@ -1268,7 +1648,10 @@ namespace Resonalyze.Dsp
 
             // The minimum-phase reconstruction preserves |H| exactly, so the measured
             // energy array doubles as this curve's denominator and one validity gate
-            // covers every curve.
+            // covers every curve. Under FDW the magnitude it reads is the
+            // windowed one — the direct sound's at mid and high frequencies —
+            // so "minimum" there is what THAT magnitude dictates, not the
+            // steady-state response's.
             double[]? minimumNumerator = includeMinimumPhase
                 ? ComputeMinimumPhaseGroupDelayNumerator(spectrum, invSampleRate)
                 : null;
@@ -1278,23 +1661,42 @@ namespace Resonalyze.Dsp
             double smoothingOctaves = decodedOctaves > 0.0
                 ? decodedOctaves
                 : GroupDelayStabilizationOctaves;
-            int sampleRate = measurement.SampleRate;
-            int gateSamples = Math.Clamp(
-                MillisecondsToSamples(leftMs, sampleRate) +
-                MillisecondsToSamples(plateauMs, sampleRate) +
-                MillisecondsToSamples(rightMs, sampleRate),
-                1,
-                GatedFftLength);
-            double minHalfWidthHz =
-                GroupDelayResolutionHalfWidthFactor * sampleRate / gateSamples;
-            double[] smoothedNumerator =
-                SmoothBinsHann(numerator, smoothingOctaves, binWidthHz, minHalfWidthHz);
-            double[] smoothedEnergy =
-                SmoothBinsHann(energy, smoothingOctaves, binWidthHz, minHalfWidthHz);
-            double[]? smoothedMinimumNumerator = minimumNumerator == null
-                ? null
-                : SmoothBinsHann(
-                    minimumNumerator, smoothingOctaves, binWidthHz, minHalfWidthHz);
+
+            // The floor under the smoothing is the window's own resolution —
+            // one figure across the band for the Fixed gate, and under FDW a
+            // function of frequency that follows the window the bank applied
+            // there, from the one geometry the bank itself was built from.
+            FdwGateGeometry geometry = FdwGateGeometry.Resolve(settings, sampleRate);
+            double[] smoothedNumerator;
+            double[] smoothedEnergy;
+            double[]? smoothedMinimumNumerator;
+            if (settings.WindowMode == PhaseWindowMode.Fixed)
+            {
+                double minHalfWidthHz =
+                    GroupDelayResolutionHalfWidthFactor * sampleRate / geometry.FixedGate;
+                smoothedNumerator =
+                    SmoothBinsHann(numerator, smoothingOctaves, binWidthHz, minHalfWidthHz);
+                smoothedEnergy =
+                    SmoothBinsHann(energy, smoothingOctaves, binWidthHz, minHalfWidthHz);
+                smoothedMinimumNumerator = minimumNumerator == null
+                    ? null
+                    : SmoothBinsHann(
+                        minimumNumerator, smoothingOctaves, binWidthHz, minHalfWidthHz);
+            }
+            else
+            {
+                double MinHalfWidthAt(double frequencyHz) =>
+                    GroupDelayResolutionHalfWidthFactor * sampleRate /
+                        geometry.EffectiveGate(frequencyHz);
+                smoothedNumerator =
+                    SmoothBinsHann(numerator, smoothingOctaves, binWidthHz, MinHalfWidthAt);
+                smoothedEnergy =
+                    SmoothBinsHann(energy, smoothingOctaves, binWidthHz, MinHalfWidthAt);
+                smoothedMinimumNumerator = minimumNumerator == null
+                    ? null
+                    : SmoothBinsHann(
+                        minimumNumerator, smoothingOctaves, binWidthHz, MinHalfWidthAt);
+            }
 
             double maxEnergy = 0.0;
             for (int i = 1; i < halfLength; i++)
@@ -1340,11 +1742,13 @@ namespace Resonalyze.Dsp
 
                 // Regions with no coherent energy anywhere in the smoothing window
                 // (outside the sweep band, true silence, deep local notches) stay
-                // gated out.
+                // gated out — as does everything outside the measured band.
                 double minEnergy = Math.Max(
                     Math.Max(localEnvelope[i] * localGateRatio, globalGate),
                     absoluteGate);
-                if (smoothedEnergy[i] < minEnergy)
+                if (smoothedEnergy[i] < minEnergy ||
+                    f < lowestMeasuredFrequencyHz ||
+                    f > highestMeasuredFrequencyHz)
                 {
                     data.Add(new SignalPoint(f, double.NaN));
                     minimumData?.Add(new SignalPoint(f, double.NaN));
@@ -1492,6 +1896,31 @@ namespace Resonalyze.Dsp
             double binWidthHz,
             double minHalfWidthHz)
         {
+            double halfWidthFloor = Math.Max(minHalfWidthHz, binWidthHz * 2.0);
+            return SmoothBinsHann(
+                source, smoothingOctaves, binWidthHz, _ => halfWidthFloor, floored: true);
+        }
+
+        // The same average with a floor that varies along the band —
+        // minHalfWidthHzAt maps a bin's frequency to the narrowest half-width
+        // allowed there. The FDW group delay reads through a window whose
+        // resolution changes with frequency, so its floor must too; a floor
+        // that varies smoothly keeps the smoothed curve smooth, which the
+        // anchored walk below relies on.
+        internal static double[] SmoothBinsHann(
+            double[] source,
+            double smoothingOctaves,
+            double binWidthHz,
+            Func<double, double> minHalfWidthHzAt) =>
+            SmoothBinsHann(source, smoothingOctaves, binWidthHz, minHalfWidthHzAt, floored: false);
+
+        private static double[] SmoothBinsHann(
+            double[] source,
+            double smoothingOctaves,
+            double binWidthHz,
+            Func<double, double> minHalfWidthHzAt,
+            bool floored)
+        {
             int count = source.Length;
             double[] result = new double[count];
             if (count < 2)
@@ -1500,7 +1929,10 @@ namespace Resonalyze.Dsp
             }
 
             double frequencyRatio = Math.Pow(2.0, smoothingOctaves * 0.5);
-            double halfWidthFloor = Math.Max(minHalfWidthHz, binWidthHz * 2.0);
+            double twoBins = binWidthHz * 2.0;
+            Func<double, double> halfWidthFloor = floored
+                ? minHalfWidthHzAt
+                : frequency => Math.Max(minHalfWidthHzAt(frequency), twoBins);
 
             double peak = 0.0;
             for (int i = 1; i < count; i++)
@@ -1564,7 +1996,7 @@ namespace Resonalyze.Dsp
             double highValue,
             double binWidthHz,
             double frequencyRatio,
-            double halfWidthFloor,
+            Func<double, double> halfWidthFloor,
             double toleranceFloor)
         {
             result[low] = lowValue;
@@ -1613,12 +2045,12 @@ namespace Resonalyze.Dsp
             int index,
             double binWidthHz,
             double frequencyRatio,
-            double halfWidthFloor)
+            Func<double, double> halfWidthFloor)
         {
             double frequency = index * binWidthHz;
             double halfDelta = Math.Max(
                 frequency * (frequencyRatio - 1.0),
-                halfWidthFloor);
+                halfWidthFloor(frequency));
             int win = (int)Math.Ceiling(halfDelta / binWidthHz);
 
             double weightedSum = 0.0;

@@ -7364,10 +7364,13 @@ public partial class VirtualCrossoverPanel : UserControl
         // at — not as the psychoacoustic base width, which is for levels too.
         List<double> offsets = ResolvePhaseGateOffsets(
             gatedChannels, referenceOffsetMs, sampleRate);
+        // The CODE, not the stored width: the project persists the psychoacoustic
+        // choice as its base width plus a flag (so an older build still opens the
+        // file), and only SmoothingCode puts the two back together.
         double smoothingInverseOctaves =
-            SpectrumSmoothing.IsPsychoacoustic(project.SmoothingInverseOctaves)
+            SpectrumSmoothing.IsPsychoacoustic(project.SmoothingCode)
                 ? FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves
-                : project.SmoothingInverseOctaves;
+                : project.SmoothingCode;
         List<(ProcessedChannel Item, PhaseAnalysisSettings Settings)> inputs = gatedChannels
             .Select((item, index) => (item, CreateVirtualPhaseSettings(
                 offsets[index], PhaseDetrendMode.Off, manualDetrendMilliseconds: 0.0)))

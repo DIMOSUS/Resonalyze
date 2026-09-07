@@ -61,7 +61,11 @@ public sealed class VirtualCrossoverGroupDelayViewTests
         // as the psychoacoustic base width (1/6), which SmoothingPresetOptions
         // .Normalize hands back and which the first cut of this view read.
         // A reflection makes the width visible: the three reads must differ
-        // where they should and agree where they must.
+        // where they should and agree where they must. Set through the
+        // project's own setter, the way the selector sets it: the choice is
+        // persisted as the base width plus a flag, and a builder that read the
+        // stored width would see 1/6 — which is exactly what the first cut of
+        // this test hid by writing the field directly.
         using VirtualCrossoverPanel panel = Loaded();
         VirtualCrossoverProjectFile project = Project(panel);
         project.PhaseWindowMode = PhaseWindowMode.Fixed;
@@ -76,11 +80,12 @@ public sealed class VirtualCrossoverGroupDelayViewTests
             new ProcessedChannel(channels[0], reflected, FirstArrival, SampleRate, OxyColors.Red)
         ];
 
-        project.SmoothingInverseOctaves = SpectrumSmoothing.PsychoacousticCode;
+        project.SetSmoothingCode(SpectrumSmoothing.PsychoacousticCode);
+        Assert.Equal(SpectrumSmoothing.PsychoacousticBaseInverseOctaves, project.SmoothingInverseOctaves);
         List<AcousticCurve> psychoacoustic = Build(panel, processed);
-        project.SmoothingInverseOctaves = 12;
+        project.SetSmoothingCode(12);
         List<AcousticCurve> twelfth = Build(panel, processed);
-        project.SmoothingInverseOctaves = SpectrumSmoothing.PsychoacousticBaseInverseOctaves;
+        project.SetSmoothingCode(SpectrumSmoothing.PsychoacousticBaseInverseOctaves);
         List<AcousticCurve> sixth = Build(panel, processed);
 
         Assert.Equal(twelfth[0].Points, psychoacoustic[0].Points);

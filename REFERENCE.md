@@ -235,7 +235,8 @@ of the singularity. Under FDW the group delay at each frequency is the
 energy-weighted arrival time **inside the window applied there** — the window of
 `cycles` periods after the gate offset — so at mid and high frequencies it reads
 the direct sound's arrival and at low frequencies, where the window is the whole
-gate, it is the Fixed curve. It is the same identity the Fixed curve is computed
+gate, it is the Fixed curve (for a gate that fits the analysis FFT; a longer one
+is trimmed differently by the two paths). It is the same identity the Fixed curve is computed
 by, evaluated on the FDW bank; it is **not** the slope of the FDW phase curve,
 whose derivative also carries the window's own change with frequency, and the
 two tabs are the compatible pair when their window mode and cycle count agree,
@@ -243,8 +244,10 @@ not when one of them is Fixed. Two consequences of reading through a window
 that shortens with frequency: the **minimum-phase** and **excess** curves are
 taken against the windowed magnitude — the direct sound's, not the
 steady-state response's — and the resolution the window affords is the floor
-under the smoothing, about a twelfth of an octave either side at 8 cycles, so a
-finer **Smoothing** setting changes nothing above the frequency where FDW takes
+under the smoothing: half the window's resolution, which for a window of the
+left fade plus `cycles / f` is about a twelfth of an octave either side at
+8 cycles and an eighth at the default 6, narrowing a little with the fade, so a
+finer **Smoothing** setting changes little above the frequency where FDW takes
 over from the gate. The Compare overlay reads through the same mode and cycles.
 
 ## Audio Backends
@@ -2055,7 +2058,7 @@ and the **Sum loss** curve, with a **View** row — **Magnitude**, **Phase**,
 junction plus a total). **Phase** draws each processed channel's phase and the
 Sum's through the phase gate; **Impulse** promotes the gate dialog's preview to
 the main plot, every channel's processed response on one absolute timeline;
-**Group delay** draws each channel's MEASURED group delay and the Sum's through
+**Group delay** draws each processed channel's group delay and the Sum's through
 that same gate and window (Fixed, or FDW with the project's cycles), placed as
 the phase curves are placed and previewed by the open **Gate…** dialog the same
 way — so the phase and group-delay views are one window, and the group delay is
@@ -2067,7 +2070,8 @@ FDW-8 window cut by three to five times on the reference car (see the Sum loss
 selector below). The Sum is the sum of the individually gated channels' spectra,
 as on the phase view, and masked where no channel measured; a crossover's stop
 band blanks a channel's curve there, as it does in Group Delay mode. Only the
-measured curves are drawn — the excess stays the AI diagnostic's — and the Sum
+plain group delay is drawn, no minimum/excess split — the excess of the raw
+measurement stays the AI diagnostic's — and the Sum
 toggle keeps its own answer on this view, inheriting the phase view's until it
 is set. The Sum loss selector, the hybrid, the target and the spatial average
 are magnitude toggles and sit muted here, as on the phase view; the smoothing
@@ -2162,7 +2166,7 @@ describe the groups on one basis instead of two. A group whose members cannot
 produce one keeps its measured sum on its own line rather than vanishing from the
 view that exists to compare it. Groups is a
 magnitude view: it has no phase, group-delay or impulse form, so picking it moves the view
-to **Magnitude** and mutes the other two rather than quietly falling back to
+to **Magnitude** and mutes the other three rather than quietly falling back to
 per-driver curves under a selector that promises group sums.
 
 Junctions are read where drivers actually hand over, not merely where they are

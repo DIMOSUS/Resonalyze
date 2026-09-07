@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
 
@@ -133,19 +133,17 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
             "Shows the measurement coherence (\u03B3\u00B2) curve when the IR was captured with 2+ averaged runs.");
         toolTip.SetToolTip(
             comboWindowMode,
-            "Fixed reads the group delay through one time gate for the entire spectrum. " +
-            "FDW shortens the window as frequency rises, so mid and high frequencies " +
-            "read the direct arrival without the late reflections; the same " +
-            "mode and cycles as the Phase tab make the two views one window.");
+            "Fixed reads through one time gate for the entire spectrum. FDW shortens " +
+            "the window as frequency rises, so the treble reads the direct arrival " +
+            "without the late reflections. Match the Phase tab to read the two as a pair.");
         toolTip.SetToolTip(
             comboFdwCycles,
             "Periods kept by FDW after the gate offset: 4 suppresses reflections most, " +
-            "6 is recommended, and 8 retains more reflected detail. The window " +
-            "sets the resolution, so smoothing finer than 1/12 octave changes " +
-            "little above the frequency where FDW takes over from the gate.");
+            "6 is recommended, and 8 retains more reflected detail. The window sets " +
+            "the resolution, so finer smoothing changes little where FDW takes over.");
         toolTip.SetToolTip(
             irPlotView,
-            "Preview of the IR used for Group Delay together with the current gate window. " +
-            "Under FDW the gate is the window's outer limit; the window itself shortens with frequency.");
+            "Preview of the IR used for Group Delay together with the current gate " +
+            "window. Under FDW the gate is the outer limit of a window that shortens with frequency.");
     }
 }

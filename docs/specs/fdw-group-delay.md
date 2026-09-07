@@ -291,8 +291,11 @@ smoothing 0) и вызвать перегрузку §3.1.1. Compare-оверл�
   `ApplySumToggleForView`/`OnViewChanged` учитывают четвёртый вид.
 - Что глушится на этом виде, как на Phase: Sum loss селектор, Hybrid, Target,
   spatial average. Smoothing-комбо активен, но пункт «psychoacoustic» для GD
-  означает 1/12 (как в `BuildExcessGroupDelayCurve`, через
-  `SmoothingPresetOptions.Normalize(…, includePsychoacoustic: false)`).
+  означает 1/12 (`FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves`,
+  как в `BuildExcessGroupDelayCurve`). *Ревю:* НЕ через
+  `SmoothingPresetOptions.Normalize(…, includePsychoacoustic: false)` — тот
+  возвращает `PsychoacousticBaseInverseOctaves` = **6**, и первая реализация
+  так и читала 1/6; поймано враждебным ревью, исправлено на явную подмену.
 - Групповые виды (`VirtualCrossoverGroupViews.DrawsGroupSums`) глушат GD-радио
   так же, как Phase и Impulse (нет формы GD для группы).
 
@@ -317,6 +320,8 @@ smoothing 0) и вызвать перегрузку §3.1.1. Compare-оверл�
   фазы (1.8 канал, 2.4 Sum). Полоса `MeasuredBand` канала режет кривую; для Sum
   — объединение полос. Гейт валидности `GroupDelayMagnitudeGateDb` (−40 dB)
   режима GD; на стоп-полосах кроссоверов кривая обрывается — это желаемое.
+  *Реализация:* Sum маскируется `ProcessedChannels.MeasuredBySomeChannel`
+  (дыра между полосами двух каналов тоже режется), а не объединением полос.
 - Все данные проекта и гейта снимаются на UI-потоке до воркеров (правило
   `BuildPhaseCurves`).
 
@@ -397,7 +402,37 @@ smoothing 0) и вызвать перегрузку §3.1.1. Compare-оверл�
 5. **Minimum/excess в VDSP.** *Решено:* не рисовать; вид про относительный
    приход каналов, excess остаётся у пробы.
 
-## 8. Что осталось вне коммитов
+## 8. Враждебное ревью (2026-09-07, четвёртый коммит)
+
+Своя проверка плюс независимый ревьюер по дифу трёх коммитов. Принято и
+исправлено: психоакустика на GD-виде читалась как 1/6 (см. §5.1, тест
+`PsychoacousticSmoothing_ReadsAsTheGroupDelayModesDefault`); сумма пар
+клонировала четыре массива на канал за redraw — теперь на лету; порог
+сглаживания был написан дважды (продукт и тестовая функция) — теперь один
+`FdwGateGeometry.MinimumHalfWidthHz`; `BuildPhaseSpectrum` стал обёрткой над
+`BuildFixedSpectra`; `Func`-перегрузка `SmoothBinsHann` — private; план банка
+под Fixed — одна запись; BOM, дописанные скриптами в четыре файла без него,
+сняты; «MEASURED group delay» в REFERENCE/тултипе/комментарии → «processed»
+(цепочка применена, как у фазового вида); «mutes the other two» → three;
+формула пола `f/16` оговорена плечом и дефолтом 6 циклов; «на НЧ = Fixed»
+оговорено гейтом, влезающим в FFT (при гейте длиннее FFT два пути режут
+по-разному — довесок из фазового банка, не чинился); 2 px запаса у новой
+радиокнопки → 6; тултипы GDOpt ужаты. Поведенческое изменение, теперь
+записанное в conventions диагностики и PROTOCOL: строки excessGroupDelay вне
+измеренной полосы отсутствуют (старая перегрузка полосу на view игнорировала).
+
+Проверено сильнее допусков тестов: старое ядро (3516179) собрано в ворктри,
+и оба ядра прогнаны на одной синтетике (3 рейта × 3 цикла × 3 гейта, Fixed и
+FDW): спектры, фазовые кривые и все три кривые Fixed-GD при трёх сглаживаниях
+совпали побайтно (106 МБ). Тесты `…MatchesTheLegacySignatureBitForBit`
+тавтологичны по построению (legacy делегирует новой перегрузке) — это
+записано в их комментарии.
+
+Не чинилось, записано: рост кеша спектров без вытеснения (было и у фазы, теперь
+×2 из-за двойника и +режим GD); порядок Tab в GDOpt (плато/фейды идут раньше
+Window — было так же для gate offset).
+
+## 9. Что осталось вне коммитов
 
 - Батарея межсидельного разброса (§5.5, `SessionBatteryHarness` по архивным
   кабинам под Fixed и FDW-8) не прогонялась: это единственный способ проверить,

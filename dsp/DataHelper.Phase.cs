@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -222,19 +222,15 @@ namespace Resonalyze.Dsp
             double leftMs,
             double plateauMs,
             double rightMs,
-            out int extractionStart)
-        {
-            Complex[] spectrum = ExtractGatedWindowedImpulse(
+            out int extractionStart) =>
+            BuildFixedSpectra(
                 measurement,
                 gateOffsetMs,
                 leftMs,
                 plateauMs,
                 rightMs,
-                wrap: true,
-                out extractionStart);
-            Fourier.Forward(spectrum, FourierOptions.Matlab);
-            return spectrum;
-        }
+                timeWeighted: false,
+                out extractionStart).Spectrum;
 
         private const double FdwMinimumDurationSeconds = 0.0008;
         private const double FdwCentersPerOctave = 3.0;
@@ -319,6 +315,13 @@ namespace Resonalyze.Dsp
                     Left + (int)Math.Round(Cycles * SampleRate / frequencyHz),
                     MinimumGate,
                     FixedGate);
+
+            // The narrowest half-width the group-delay smoothing may take at a
+            // frequency: half the spectral resolution of the window applied
+            // there. The one place the floor is written — the curve builder
+            // and the test surface both read it from here.
+            public double MinimumHalfWidthHz(double frequencyHz) =>
+                GroupDelayResolutionHalfWidthFactor * SampleRate / EffectiveGate(frequencyHz);
         }
 
         /// <summary>
@@ -364,6 +367,13 @@ namespace Resonalyze.Dsp
         {
             double binWidth = sampleRate / (double)GatedFftLength;
             double nyquist = sampleRate / 2.0;
+            if (geometry.Cycles == 0)
+            {
+                // Fixed is the one-entry bank: the full gate up to Nyquist.
+                yield return (nyquist, geometry.FixedGate);
+                yield break;
+            }
+
             double pendingCenter = double.NaN;
             int pendingGate = -1;
             for (double center = binWidth; center <= nyquist;
@@ -451,7 +461,13 @@ namespace Resonalyze.Dsp
             if (settings.WindowMode == PhaseWindowMode.Fixed)
             {
                 (spectrum, weighted) = BuildFixedSpectra(
-                    measurement, settings, timeWeighted, out extractionStart);
+                    measurement,
+                    settings.GateOffsetMs,
+                    settings.LeftMs,
+                    settings.PlateauMs,
+                    settings.RightMs,
+                    timeWeighted,
+                    out extractionStart);
             }
             else
             {
@@ -471,16 +487,19 @@ namespace Resonalyze.Dsp
         // τ = Re[T·conj(H)] / |H|².
         private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildFixedSpectra(
             IImpulseMeasurement measurement,
-            PhaseAnalysisSettings settings,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs,
             bool timeWeighted,
             out int extractionStart)
         {
             Complex[] windowedImpulse = ExtractGatedWindowedImpulse(
                 measurement,
-                settings.GateOffsetMs,
-                settings.LeftMs,
-                settings.PlateauMs,
-                settings.RightMs,
+                gateOffsetMs,
+                leftMs,
+                plateauMs,
+                rightMs,
                 wrap: true,
                 out extractionStart);
             Complex[]? weighted = timeWeighted
@@ -985,8 +1004,10 @@ namespace Resonalyze.Dsp
         /// (Fixed or FDW) and in one time reference — the operands a
         /// group-delay reader needs, for callers that add channels before
         /// reading one (the Virtual DSP Sum, through
-        /// <see cref="SumGatedSpectraPairs"/>). Copies: the analysis is cached
-        /// per impulse and gate, and the caller may write into these.
+        /// <see cref="SumGatedSpectraPairs"/>). Copies, like
+        /// <see cref="GetPhaseAnalysisSpectrum"/>: the analysis is cached per
+        /// impulse and gate, and the cache must never be handed out to be
+        /// written into.
         /// </summary>
         public static GroupDelaySpectra GetGroupDelayAnalysisSpectra(
             IImpulseMeasurement measurement,
@@ -1139,14 +1160,26 @@ namespace Resonalyze.Dsp
                         "All spectra must share one FFT length.", nameof(parts));
                 }
 
-                var partSpectrum = (Complex[])spectra.Spectrum.Clone();
-                var partWeighted = (Complex[])spectra.TimeWeighted.Clone();
-                ReReferenceSpectra(
-                    partSpectrum, partWeighted, extractionStart, targetExtractionStart, sampleRate);
+                // The same move ReReferenceSpectra makes in place — the time
+                // weight first, then the rotation of both — applied on the fly
+                // so the caller's arrays stay untouched and nothing is cloned
+                // per channel per redraw.
+                double shift = targetExtractionStart - extractionStart;
+                double weightShift = (extractionStart - targetExtractionStart) / (double)sampleRate;
                 for (int bin = 0; bin < length; bin++)
                 {
-                    spectrum[bin] += partSpectrum[bin];
-                    weighted[bin] += partWeighted[bin];
+                    Complex h = spectra.Spectrum[bin];
+                    Complex t = spectra.TimeWeighted[bin] + h * weightShift;
+                    if (shift != 0.0)
+                    {
+                        Complex rotation = Complex.FromPolarCoordinates(
+                            1.0, Math.Tau * bin * shift / length);
+                        h *= rotation;
+                        t *= rotation;
+                    }
+
+                    spectrum[bin] += h;
+                    weighted[bin] += t;
                 }
             }
 
@@ -1611,8 +1644,7 @@ namespace Resonalyze.Dsp
             double frequencyHz,
             PhaseAnalysisSettings settings,
             int sampleRate) =>
-            GroupDelayResolutionHalfWidthFactor * sampleRate /
-                FdwEffectiveGateSamples(frequencyHz, settings, sampleRate);
+            FdwGateGeometry.Resolve(settings, sampleRate).MinimumHalfWidthHz(frequencyHz);
 
         private static GroupDelayCurveSet BuildGroupDelayCurves(
             Complex[] spectrum,
@@ -1672,8 +1704,9 @@ namespace Resonalyze.Dsp
             double[]? smoothedMinimumNumerator;
             if (settings.WindowMode == PhaseWindowMode.Fixed)
             {
-                double minHalfWidthHz =
-                    GroupDelayResolutionHalfWidthFactor * sampleRate / geometry.FixedGate;
+                // The full gate at every frequency: one scalar, and the scalar
+                // smoothing path the Fixed curve has always taken.
+                double minHalfWidthHz = geometry.MinimumHalfWidthHz(frequencyHz: 0.0);
                 smoothedNumerator =
                     SmoothBinsHann(numerator, smoothingOctaves, binWidthHz, minHalfWidthHz);
                 smoothedEnergy =
@@ -1685,17 +1718,15 @@ namespace Resonalyze.Dsp
             }
             else
             {
-                double MinHalfWidthAt(double frequencyHz) =>
-                    GroupDelayResolutionHalfWidthFactor * sampleRate /
-                        geometry.EffectiveGate(frequencyHz);
+                Func<double, double> minHalfWidthAt = geometry.MinimumHalfWidthHz;
                 smoothedNumerator =
-                    SmoothBinsHann(numerator, smoothingOctaves, binWidthHz, MinHalfWidthAt);
+                    SmoothBinsHann(numerator, smoothingOctaves, binWidthHz, minHalfWidthAt);
                 smoothedEnergy =
-                    SmoothBinsHann(energy, smoothingOctaves, binWidthHz, MinHalfWidthAt);
+                    SmoothBinsHann(energy, smoothingOctaves, binWidthHz, minHalfWidthAt);
                 smoothedMinimumNumerator = minimumNumerator == null
                     ? null
                     : SmoothBinsHann(
-                        minimumNumerator, smoothingOctaves, binWidthHz, MinHalfWidthAt);
+                        minimumNumerator, smoothingOctaves, binWidthHz, minHalfWidthAt);
             }
 
             double maxEnergy = 0.0;
@@ -1907,7 +1938,7 @@ namespace Resonalyze.Dsp
         // resolution changes with frequency, so its floor must too; a floor
         // that varies smoothly keeps the smoothed curve smooth, which the
         // anchored walk below relies on.
-        internal static double[] SmoothBinsHann(
+        private static double[] SmoothBinsHann(
             double[] source,
             double smoothingOctaves,
             double binWidthHz,

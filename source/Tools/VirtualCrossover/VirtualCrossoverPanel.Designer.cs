@@ -706,7 +706,7 @@ namespace Resonalyze
             panel1.CornerRadius = 4;
             panel1.Location = new Point(406, 443);
             panel1.Name = "panel1";
-            panel1.Size = new Size(327, 23);
+            panel1.Size = new Size(331, 23);
             panel1.TabIndex = 24;
             // 
             // panel2

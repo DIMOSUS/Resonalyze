@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Reflection;
 using System.Windows.Forms;
 using OxyPlot;
@@ -51,6 +51,40 @@ public sealed class VirtualCrossoverGroupDelayViewTests
         double e2 = SecondAmplitude * SecondAmplitude;
         double expected = (firstMs + e2 * secondMs) / (1.0 + e2);
         AssertFlat(sum, 4_000, 10_000, expected, 0.1);
+    }
+
+    [Fact]
+    public void PsychoacousticSmoothing_ReadsAsTheGroupDelayModesDefault()
+    {
+        // The plot's psychoacoustic width is a hearing model for levels; on a
+        // time curve it reads as the Group Delay mode's own 1/12 octave — not
+        // as the psychoacoustic base width (1/6), which SmoothingPresetOptions
+        // .Normalize hands back and which the first cut of this view read.
+        // A reflection makes the width visible: the three reads must differ
+        // where they should and agree where they must.
+        using VirtualCrossoverPanel panel = Loaded();
+        VirtualCrossoverProjectFile project = Project(panel);
+        project.PhaseWindowMode = PhaseWindowMode.Fixed;
+        ((CheckBox)Field(panel, "checkBoxShowSum")).Checked = false;
+        List<VirtualCrossoverChannel> channels = Channels(panel);
+        channels[0].Pair.ShowProcessedCurve = true;
+        channels[1].Pair.ShowProcessedCurve = false;
+        Complex[] reflected = Delta(FirstArrival, 1.0);
+        reflected[FirstArrival + 144] = new Complex(0.5, 0.0); // 3 ms late, inside the gate.
+        List<ProcessedChannel> processed =
+        [
+            new ProcessedChannel(channels[0], reflected, FirstArrival, SampleRate, OxyColors.Red)
+        ];
+
+        project.SmoothingInverseOctaves = SpectrumSmoothing.PsychoacousticCode;
+        List<AcousticCurve> psychoacoustic = Build(panel, processed);
+        project.SmoothingInverseOctaves = 12;
+        List<AcousticCurve> twelfth = Build(panel, processed);
+        project.SmoothingInverseOctaves = SpectrumSmoothing.PsychoacousticBaseInverseOctaves;
+        List<AcousticCurve> sixth = Build(panel, processed);
+
+        Assert.Equal(twelfth[0].Points, psychoacoustic[0].Points);
+        Assert.NotEqual(sixth[0].Points, psychoacoustic[0].Points);
     }
 
     [Fact]

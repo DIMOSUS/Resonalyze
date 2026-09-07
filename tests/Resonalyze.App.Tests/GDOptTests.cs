@@ -1,4 +1,4 @@
-﻿using Resonalyze.Dsp;
+using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;

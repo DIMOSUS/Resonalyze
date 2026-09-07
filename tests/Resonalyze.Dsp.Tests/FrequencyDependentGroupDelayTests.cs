@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -20,7 +20,13 @@ public sealed class FrequencyDependentGroupDelayTests
         // The app's typical geometry (a bulk delay ahead of a one-pole, the
         // gate on the arrival, a left shoulder): the settings overload under
         // Fixed must be the legacy signature, curve for curve and bit for
-        // bit — same extraction, same transforms, same smoothing floor.
+        // bit. The legacy signature now delegates to the settings overload,
+        // so this pins the CONTRACT between the two (the Fixed defaults it
+        // fills in), not the arithmetic against the pre-FDW build — that was
+        // held byte for byte against the pre-feature library once, by dumping
+        // both over 27 gate/rate/smoothing combinations (106 MB, identical),
+        // and BankPlan_IsTheOriginalWalk_CentreForCentre keeps the bank's
+        // half of it under test.
         var response = new Complex[TransformLength];
         for (int i = 0; i < 600; i++)
         {
@@ -432,6 +438,70 @@ public sealed class FrequencyDependentGroupDelayTests
         PhaseAnalysisSettings fixedSettings = settings with { WindowMode = PhaseWindowMode.Fixed };
         Assert.Equal(4_800, DataHelper.FdwEffectiveGateSamples(1_000.0, fixedSettings, SampleRate));
         Assert.Equal(4_800, DataHelper.FdwEffectiveGateSamples(20_000.0, fixedSettings, SampleRate));
+    }
+
+    [Theory]
+    [InlineData(44_100, 4, 1.0, 3.0, 12.0)]
+    [InlineData(48_000, 6, 1.0, 3.0, 12.0)]
+    [InlineData(48_000, 8, 0.0, 100.0, 0.0)]
+    [InlineData(96_000, 8, 0.5, 0.4, 0.1)]
+    [InlineData(96_000, 6, 2.0, 20.0, 5.0)]
+    [InlineData(192_000, 4, 2.0, 500.0, 180.0)]
+    public void BankPlan_IsTheOriginalWalk_CentreForCentre(
+        int sampleRate, int cycles, double leftMs, double plateauMs, double rightMs)
+    {
+        // The bank's plan was lifted out of the original BuildFdwSpectrum into
+        // FdwBankPlan so the smoothing floor could share its geometry. This is
+        // that original walk, kept verbatim: the same centres, the same merge
+        // of equal windows into the LAST centre they hold for, the same
+        // shortest-window entry at Nyquist — or the phase view's spectra would
+        // have moved without a test noticing.
+        PhaseAnalysisSettings settings = Settings(PhaseWindowMode.FrequencyDependent, cycles) with
+        {
+            LeftMs = leftMs,
+            PlateauMs = plateauMs,
+            RightMs = rightMs
+        };
+        int ToSamples(double ms) => (int)Math.Round(Math.Max(0.0, ms) * sampleRate / 1000.0);
+        int left = ToSamples(leftMs);
+        int fixedGate = Math.Clamp(
+            left + ToSamples(plateauMs) + ToSamples(rightMs), 1, DataHelper.GatedFftLength);
+        int minimumGate = Math.Clamp(
+            left + (int)Math.Round(0.0008 * sampleRate), 1, fixedGate);
+        double binWidth = sampleRate / (double)DataHelper.GatedFftLength;
+        double nyquist = sampleRate / 2.0;
+        var expected = new List<(double Center, int Gate)>();
+        int previousGate = -1;
+        for (double center = binWidth; center <= nyquist; center *= Math.Pow(2.0, 1.0 / 3.0))
+        {
+            int effectiveGate = Math.Clamp(
+                left + (int)Math.Round(cycles * sampleRate / center), minimumGate, fixedGate);
+            if (effectiveGate == previousGate)
+            {
+                expected[^1] = (center, effectiveGate);
+                continue;
+            }
+
+            expected.Add((center, effectiveGate));
+            previousGate = effectiveGate;
+        }
+        if (expected.Count == 0 || expected[^1].Center < nyquist)
+        {
+            if (expected.Count == 0 || expected[^1].Gate != minimumGate)
+            {
+                expected.Add((nyquist, minimumGate));
+            }
+        }
+
+        IReadOnlyList<(double CenterFrequencyHz, int EffectiveGateSamples)> actual =
+            DataHelper.DescribeFdwBank(settings, sampleRate);
+
+        Assert.Equal(expected.Count, actual.Count);
+        for (int i = 0; i < expected.Count; i++)
+        {
+            Assert.Equal(expected[i].Center, actual[i].CenterFrequencyHz);
+            Assert.Equal(expected[i].Gate, actual[i].EffectiveGateSamples);
+        }
     }
 
     [Theory]

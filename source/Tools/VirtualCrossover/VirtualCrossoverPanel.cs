@@ -3187,7 +3187,7 @@ public partial class VirtualCrossoverPanel : UserControl
             "Well-aligned drivers start together.");
         toolTip.SetToolTip(
             radioViewGroupDelay,
-            "Show each channel's measured group delay and the Sum's\r\n" +
+            "Show each processed channel's group delay and the Sum's\r\n" +
             "through the phase gate: the arrival time of the energy\r\n" +
             "inside the window, in ms from the record's start.\r\n" +
             "Well-aligned drivers meet through the crossover.");
@@ -7317,8 +7317,9 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
     }
 
-    // The group-delay view: each drawn channel's measured group delay and the
-    // Sum's, through the SAME window the phase view reads — the project's gate
+    // The group-delay view: each drawn channel's group delay (the processed
+    // response: crossover, PEQ, gain, delay and polarity applied, as on the
+    // phase view) and the Sum's, through the SAME window the phase view reads — the project's gate
     // and window mode (Fixed or FDW with its cycles), placed as the phase
     // curves are placed (pinned, or per curve on each channel's own arrival),
     // and previewed by the open Gate… dialog the same way. So the two views
@@ -7328,8 +7329,9 @@ public partial class VirtualCrossoverPanel : UserControl
     // Under FDW the curve reads the arrival of the energy inside the window
     // at each frequency: the direct sound at mid and high frequencies, which
     // is what cut the seat-to-seat scatter of this curve by three to five
-    // times on the reference car (see SumLossWindow). Measured and Sum only:
-    // the view is about relative arrival, and the excess stays the AI probe's.
+    // times on the reference car (see SumLossWindow). The plain group delay
+    // and the Sum only, no minimum/excess split: the view is about relative
+    // arrival, and the excess stays the AI probe's.
     private List<AcousticCurve> BuildGroupDelayCurves(
         List<ProcessedChannel> processed,
         IReadOnlyList<ProcessedChannel>? summed = null)
@@ -7357,11 +7359,15 @@ public partial class VirtualCrossoverPanel : UserControl
         // Read the gate and project state ONCE, here on the UI thread; the
         // workers below must not reach back into gatePreview or project. The
         // smoothing is the plot's own selector; its psychoacoustic width is a
-        // hearing model for levels, not for time, and reads as 1/12 here.
+        // hearing model for levels, not for time, and reads as the Group Delay
+        // mode's own default here — 1/12 octave, what the AI diagnostic reads
+        // at — not as the psychoacoustic base width, which is for levels too.
         List<double> offsets = ResolvePhaseGateOffsets(
             gatedChannels, referenceOffsetMs, sampleRate);
-        double smoothingInverseOctaves = SmoothingPresetOptions.Normalize(
-            project.SmoothingInverseOctaves, includePsychoacoustic: false);
+        double smoothingInverseOctaves =
+            SpectrumSmoothing.IsPsychoacoustic(project.SmoothingInverseOctaves)
+                ? FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves
+                : project.SmoothingInverseOctaves;
         List<(ProcessedChannel Item, PhaseAnalysisSettings Settings)> inputs = gatedChannels
             .Select((item, index) => (item, CreateVirtualPhaseSettings(
                 offsets[index], PhaseDetrendMode.Off, manualDetrendMilliseconds: 0.0)))

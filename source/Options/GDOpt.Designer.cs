@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class GDOpt
     {

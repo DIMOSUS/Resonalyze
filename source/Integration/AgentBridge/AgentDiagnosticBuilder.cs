@@ -107,7 +107,8 @@ internal static class AgentDiagnosticBuilder
                     "at the channel's own arrival (the chain does not " +
                     "enter it: the same with any PEQ bank in place or none), at the group-delay " +
                     "view's default 1/12-octave smoothing whatever the display shows; a row is " +
-                    "absent where the response is too weak to read"
+                    "absent where the response is too weak to read and outside the band the " +
+                    "channel measured"
             },
             series);
         string json = JsonSerializer.Serialize(diagnostic, Options);

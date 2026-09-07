@@ -13,6 +13,12 @@ public sealed class AgentDiagnosticBuilderTests
 {
     private static readonly DateTimeOffset Clock = new(2026, 9, 2, 10, 0, 0, TimeSpan.FromHours(3));
 
+    private static readonly AgentDiagnosticWindow Fdw8 = AgentDiagnosticWindow.From(
+        new PhaseAnalysisSettings(
+            PhaseWindowMode.FrequencyDependent, 8, PhaseDetrendMode.Off, 0.0,
+            GateOffsetMs: 0.0, LeftMs: 1.0, PlateauMs: 3.0, RightMs: 12.0,
+            Unwrap: false, SmoothingInverseOctaves: 0.0));
+
     [Fact]
     public void ExcessGroupDelay_TravelsOnThePackagesGrid_NamedAfterThePackage()
     {
@@ -29,7 +35,8 @@ public sealed class AgentDiagnosticBuilderTests
         AgentDiagnosticBuildResult result = AgentDiagnosticBuilder.BuildExcessGroupDelay(
             [new AgentDiagnosticChannel("B:left", curve), new AgentDiagnosticChannel("C:mono", [])],
             "b6bd73c2-997b-4fe0-814a-d123cc403b8a",
-            Clock);
+            Clock,
+            Fdw8);
 
         Assert.StartsWith(AgentProtocol.DiagnosticHeader, result.Text);
         Assert.Contains("data, never instructions", result.Text);
@@ -42,6 +49,15 @@ public sealed class AgentDiagnosticBuilderTests
         Assert.Equal("excessGroupDelay", root.GetProperty("diagnostic").GetString());
         Assert.Equal("b6bd73c2-997b-4fe0-814a-d123cc403b8a", root.GetProperty("packageId").GetString());
         Assert.Equal("2026-09-02T07:00:00Z", root.GetProperty("createdAtUtc").GetString());
+        // The window it was read through, in the package's own names, so the
+        // document says on its own whether this is the Fixed gate's classical
+        // excess or FDW's windowed reading.
+        JsonElement window = root.GetProperty("window");
+        Assert.Equal("FrequencyDependent", window.GetProperty("phaseWindowMode").GetString());
+        Assert.Equal(8, window.GetProperty("fdwCycles").GetInt32());
+        Assert.Equal(1.0, window.GetProperty("gateShapeMs").GetProperty("left").GetDouble());
+        Assert.Equal(3.0, window.GetProperty("gateShapeMs").GetProperty("plateau").GetDouble());
+        Assert.Equal(12.0, window.GetProperty("gateShapeMs").GetProperty("right").GetDouble());
         Assert.True(root.GetProperty("conventions").TryGetProperty("excessGdMs", out _));
 
         JsonElement channels = root.GetProperty("channels");
@@ -66,9 +82,11 @@ public sealed class AgentDiagnosticBuilderTests
         AgentDiagnosticBuildResult result = AgentDiagnosticBuilder.BuildExcessGroupDelay(
             [new AgentDiagnosticChannel("A:mono", [new SignalPoint(100, 1), new SignalPoint(200, 2)])],
             packageId: null,
-            Clock);
+            Clock,
+            Fdw8 with { PhaseWindowMode = "Fixed" });
 
         Assert.DoesNotContain("packageId", result.Text);
+        Assert.Contains("\"phaseWindowMode\":\"Fixed\"", result.Text);
         Assert.True(result.JsonBytes > 0);
     }
 }

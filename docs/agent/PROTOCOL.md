@@ -371,6 +371,8 @@ RESONALYZE_AGENT_DIAGNOSTIC_V1
 BEGIN_RESONALYZE_AGENT_DIAGNOSTIC_JSON
 { "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.8",
   "diagnostic": "excessGroupDelay", "packageId": "…", "createdAtUtc": "…",
+  "window": { "phaseWindowMode": "FrequencyDependent", "fdwCycles": 8,
+              "gateShapeMs": { "left": 1, "plateau": 3, "right": 12 } },
   "conventions": { … },
   "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } }, … ] }
 END_RESONALYZE_AGENT_DIAGNOSTIC_JSON
@@ -381,7 +383,11 @@ none was copied since the session opened, or when the session has changed
 since that copy — the same check the reply's review makes, §2.2 — so an id
 that is present vouches that the curves belong beside it); the channel ids and the
 broadband grid are the package's, so the two lay side by side. A row is left
-out where the reading could not be made.
+out where the reading could not be made. `window` is the gate and window the
+reading was made through, in the names `analysis` uses in the package
+(`phaseWindowMode`, `fdwCycles`, `gateShapeMs`) — so a document read on its own,
+or beside a package copied under another window, still says whether it holds
+the Fixed gate's classical excess or FDW's windowed reading (see the table).
 
 | `diagnostic` | What the series holds |
 | --- | --- |

@@ -1749,7 +1749,10 @@ public partial class VirtualCrossoverPanel
                         }
                     }
 
-                    return (AgentDiagnosticBuilder.BuildExcessGroupDelay(channels, packageId, now), channels.Count);
+                    return (
+                        AgentDiagnosticBuilder.BuildExcessGroupDelay(
+                            channels, packageId, now, AgentDiagnosticWindow.From(gate)),
+                        channels.Count);
                 }));
             if (IsDisposed)
             {

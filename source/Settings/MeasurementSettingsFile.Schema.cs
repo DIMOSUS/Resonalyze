@@ -499,6 +499,12 @@ internal sealed partial class MeasurementSettingsFile
         public double GroupDelayLeftMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayLeftMs;
         public double GroupDelayPlateauMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayPlateauMs;
         public double GroupDelayRightMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayRightMs;
+        // No initializer, deliberately: a file written before the Group Delay
+        // window existed has no field, reads back null and stays on the Fixed
+        // gate its owner has been looking at (ApplyTo). Only a fresh options
+        // object starts on FDW.
+        public PhaseWindowMode? GroupDelayWindowMode { get; set; }
+        public int GroupDelayFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
 
         public static FrequencyResponseSettings Capture(
             FrequencyResponseOptions options,
@@ -544,7 +550,9 @@ internal sealed partial class MeasurementSettingsFile
                 GroupDelayGateOffsetMs = options.GroupDelayGateOffsetMs,
                 GroupDelayLeftMs = options.GroupDelayLeftMs,
                 GroupDelayPlateauMs = options.GroupDelayPlateauMs,
-                GroupDelayRightMs = options.GroupDelayRightMs
+                GroupDelayRightMs = options.GroupDelayRightMs,
+                GroupDelayWindowMode = options.GroupDelayWindowMode,
+                GroupDelayFdwCycles = options.GroupDelayFdwCycles
             };
 
         public void ApplyTo(FrequencyResponseOptions options, CurveVisibilityOptions visibility)
@@ -619,6 +627,15 @@ internal sealed partial class MeasurementSettingsFile
             options.GroupDelayLeftMs = ClampMilliseconds(GroupDelayLeftMs, 0.0, 1000.0);
             options.GroupDelayPlateauMs = ClampMilliseconds(GroupDelayPlateauMs, 0.0, 1000.0);
             options.GroupDelayRightMs = ClampMilliseconds(GroupDelayRightMs, 0.0, 1000.0);
+            // Absent means a pre-window file: keep the Fixed gate it was
+            // written under rather than silently changing the curve.
+            options.GroupDelayWindowMode = GroupDelayWindowMode is { } groupDelayWindowMode &&
+                Enum.IsDefined(groupDelayWindowMode)
+                    ? groupDelayWindowMode
+                    : Resonalyze.Dsp.PhaseWindowMode.Fixed;
+            options.GroupDelayFdwCycles = GroupDelayFdwCycles is 4 or 6 or 8
+                ? GroupDelayFdwCycles
+                : PhaseAnalysisSettings.DefaultFdwCycles;
         }
 
         private static double ClampMilliseconds(double value, double min, double max) =>

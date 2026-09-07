@@ -133,6 +133,97 @@ public sealed class PlotModelFactoryTests
     }
 
     [Fact]
+    public void GroupDelay_ReadsThroughTheOptionsWindow()
+    {
+        // A direct arrival with a copy 6 ms later. Under Fixed the model's
+        // measured curve is the legacy fixed-gate read, point for point; under
+        // FDW the three curves are all there and the measured one no longer
+        // carries the reflection's ripple at the top of the band.
+        const int sampleRate = 48_000;
+        const int peakSample = 480;
+        var impulse = new Complex[4_096];
+        impulse[peakSample] = Complex.One;
+        impulse[peakSample + 288] = new Complex(0.5, 0.0);
+        using var measurement = CreateTransferMeasurement(impulse, peakSample, sampleRate);
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var options = new FrequencyResponseOptions
+        {
+            GroupDelayWindowMode = PhaseWindowMode.Fixed,
+            GroupDelayFdwCycles = 8,
+            GroupDelayLeftMs = 1.0,
+            GroupDelayPlateauMs = 10.0,
+            GroupDelayRightMs = 3.0,
+            SmoothingInverseOctaves = 0
+        };
+        var visibility = new CurveVisibilityOptions
+        {
+            ShowGroupDelay = true,
+            ShowMinimumPhaseGroupDelay = true,
+            ShowExcessGroupDelay = true
+        };
+        PlotModelFactory factory = CreateFactory(
+            measurement,
+            noiseMeasurement,
+            groupDelayOptions: options,
+            groupDelayVisibility: visibility);
+
+        LineSeries fixedMeasured = MeasuredGroupDelaySeries(factory);
+        // Auto snapped the offset while the model was built; the legacy read
+        // must use the same placement.
+        GroupDelayCurveSet legacy = DataHelper.GetGroupDelayCurves(
+            new MeasurementPlotContext(measurement).CreatePrimaryMeasurement(),
+            options.GroupDelayGateOffsetMs,
+            options.GroupDelayLeftMs,
+            options.GroupDelayPlateauMs,
+            options.GroupDelayRightMs,
+            options.SmoothingInverseOctaves,
+            PlotModelFactory.GroupDelayMagnitudeGateDb,
+            includeMinimumPhase: true);
+        Assert.Equal(legacy.Measured.Points.Count, fixedMeasured.Points.Count);
+        for (int i = 0; i < legacy.Measured.Points.Count; i++)
+        {
+            Assert.Equal(legacy.Measured.Points[i].X, fixedMeasured.Points[i].X);
+            Assert.Equal(legacy.Measured.Points[i].Y, fixedMeasured.Points[i].Y);
+        }
+
+        options.GroupDelayWindowMode = PhaseWindowMode.FrequencyDependent;
+        PlotModel fdwModel = factory.CreateGroupDelay(includeCurves: true);
+        List<CurveTag> tags = fdwModel.Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .ToList();
+        Assert.Contains(tags, tag => tag.Kind == AnalysisCurveKind.Primary);
+        Assert.Contains(tags, tag => tag.Kind == AnalysisCurveKind.MinimumPhaseGroupDelay);
+        Assert.Contains(tags, tag => tag.Kind == AnalysisCurveKind.ExcessGroupDelay);
+
+        LineSeries fdwMeasured = MeasuredGroupDelaySeries(factory);
+        double arrivalMs = peakSample * 1000.0 / sampleRate;
+        double fixedSwing = Swing(fixedMeasured, 2_000, 10_000);
+        double fdwSwing = Swing(fdwMeasured, 2_000, 10_000);
+        Assert.True(fixedSwing > 1.0, $"the fixed gate did not see the reflection ({fixedSwing:0.000} ms)");
+        Assert.True(fdwSwing < 0.2, $"FDW still carried the reflection ({fdwSwing:0.000} ms)");
+        Assert.All(
+            fdwMeasured.Points.Where(p => p.X is >= 2_000 and <= 10_000),
+            p => Assert.InRange(p.Y, arrivalMs - 0.1, arrivalMs + 0.1));
+    }
+
+    private static LineSeries MeasuredGroupDelaySeries(PlotModelFactory factory) =>
+        factory.CreateGroupDelay(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Single(series => series.Tag is CurveTag { Kind: AnalysisCurveKind.Primary });
+
+    private static double Swing(LineSeries series, double lowHz, double highHz)
+    {
+        List<double> values = series.Points
+            .Where(p => p.X >= lowHz && p.X <= highHz && double.IsFinite(p.Y))
+            .Select(p => p.Y)
+            .ToList();
+        Assert.NotEmpty(values);
+        return values.Max() - values.Min();
+    }
+
+    [Fact]
     public void GroupDelay_MinimumAndExcessCurves_FollowTheirFlags()
     {
         using var measurement = CreateTransferMeasurement();

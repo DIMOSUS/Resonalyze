@@ -10,7 +10,7 @@ namespace Resonalyze;
 
 internal sealed class PlotModelFactory
 {
-    private const double GroupDelayMagnitudeGateDb = -40.0;
+    internal const double GroupDelayMagnitudeGateDb = -40.0;
 
     public const string CoherenceAxisKey = "coherence";
     public const string DecibelAxisKey = "decibel";
@@ -999,13 +999,14 @@ internal sealed class PlotModelFactory
             {
                 // The gate is positioned by its Gate offset (left-shoulder-end) within the
                 // transfer IR; the group delay reads absolute, referenced to the IR start.
+                // Under FDW the gate is the window's outer limit: the cycles are
+                // counted after the left shoulder, as the Phase mode counts them.
                 IImpulseMeasurement measurement = measurementContext.CreatePrimaryMeasurement();
+                PhaseAnalysisSettings windowSettings =
+                    groupDelayOptions.CreateGroupDelayAnalysisSettings();
                 GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
                     measurement,
-                    groupDelayOptions.GroupDelayGateOffsetMs,
-                    groupDelayOptions.GroupDelayLeftMs,
-                    groupDelayOptions.GroupDelayPlateauMs,
-                    groupDelayOptions.GroupDelayRightMs,
+                    windowSettings,
                     groupDelayOptions.SmoothingInverseOctaves,
                     GroupDelayMagnitudeGateDb,
                     includeMinimumPhase);
@@ -1066,7 +1067,7 @@ internal sealed class PlotModelFactory
                 }
 
                 // Overlay the Compare measurement with the identical gate
-                // length / smoothing. Under Auto the gate PLACEMENT is
+                // length, window mode, cycles and smoothing. Under Auto the gate PLACEMENT is
                 // per-curve (each record's own IR start): group delay reads
                 // absolute from the IR start, so differently placed windows
                 // stay directly comparable while both direct arrivals survive.
@@ -1088,10 +1089,7 @@ internal sealed class PlotModelFactory
                             : groupDelayOptions.GroupDelayGateOffsetMs;
                     GroupDelayCurveSet compareCurves = DataHelper.GetGroupDelayCurves(
                         compare.Measurement,
-                        compareGateOffsetMs,
-                        groupDelayOptions.GroupDelayLeftMs,
-                        groupDelayOptions.GroupDelayPlateauMs,
-                        groupDelayOptions.GroupDelayRightMs,
+                        windowSettings with { GateOffsetMs = compareGateOffsetMs },
                         groupDelayOptions.SmoothingInverseOctaves,
                         GroupDelayMagnitudeGateDb,
                         includeMinimumPhase);

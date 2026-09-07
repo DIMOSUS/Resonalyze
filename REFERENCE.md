@@ -196,12 +196,16 @@ first-arrival front, not the peak — falling back to the transfer-IR peak when 
 detector cannot get a trustworthy reading. A read-only readout shows the gate's
 lowest reliable frequency (≈ 1 / gate length).
 
-Phase additionally offers **Window: Fixed / FDW**. Fixed is the single Tukey gate
-across the whole spectrum; **FDW** builds a bank of time-aligned spectra whose
-effective right-side duration follows `cycles / frequency`, so low frequencies
-retain the long window while mid and high frequencies progressively reject the
-late reflection tail. **FDW cycles** selects 4 (strongest suppression), 6 (the
-recommended balance), or 8 (more late detail).
+Phase and Group Delay both offer **Window: Fixed / FDW**. Fixed is the single
+Tukey gate across the whole spectrum; **FDW** builds a bank of time-aligned
+spectra whose effective right-side duration follows `cycles / frequency`, so low
+frequencies retain the long window while mid and high frequencies progressively
+reject the late reflection tail. **FDW cycles** selects 4 (strongest
+suppression), 6 (the recommended balance), or 8 (more late detail). The cycles
+are counted after the gate's left fade, and the gate stays the window's outer
+limit: where `cycles / frequency` would run past it, the window is the gate.
+Both tabs start on FDW with 6 cycles; a settings file written before the Group
+Delay tab had the choice opens on Fixed, the curve its owner has been looking at.
 
 The Phase view shows four independently toggled curves: **measured phase**,
 **minimum phase** (the part tied to the magnitude and correctable with EQ),
@@ -223,9 +227,21 @@ while a stretch too long to bridge honestly is blanked instead of guessed.
 Group Delay reads absolute delay referenced to the start of the transfer IR, so a
 peak well into the impulse response reports its true arrival time, and the curve
 is computed energy-weighted so near-null bins follow the dominant energy instead
-of the singularity. FDW is deliberately not applied here: an FDW phase curve is
-direct-sound-oriented and is not the exact integral of the displayed fixed-gate
-Group Delay, so selecting Fixed phase restores the compatible pair.
+of the singularity. Under FDW the group delay at each frequency is the
+energy-weighted arrival time **inside the window applied there** — the window of
+`cycles` periods after the gate offset — so at mid and high frequencies it reads
+the direct sound's arrival and at low frequencies, where the window is the whole
+gate, it is the Fixed curve. It is the same identity the Fixed curve is computed
+by, evaluated on the FDW bank; it is **not** the slope of the FDW phase curve,
+whose derivative also carries the window's own change with frequency, and the
+two tabs are the compatible pair when their window mode and cycle count agree,
+not when one of them is Fixed. Two consequences of reading through a window
+that shortens with frequency: the **minimum-phase** and **excess** curves are
+taken against the windowed magnitude — the direct sound's, not the
+steady-state response's — and the resolution the window affords is the floor
+under the smoothing, about a twelfth of an octave either side at 8 cycles, so a
+finer **Smoothing** setting changes nothing above the frequency where FDW takes
+over from the gate. The Compare overlay reads through the same mode and cycles.
 
 ## Audio Backends
 

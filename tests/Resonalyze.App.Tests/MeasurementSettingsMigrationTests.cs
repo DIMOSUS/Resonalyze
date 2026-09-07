@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
@@ -396,6 +396,57 @@ public sealed class MeasurementSettingsMigrationTests
 
         Assert.False(restored.ShowMinimumPhaseGroupDelay);
         Assert.False(restored.ShowExcessGroupDelay);
+    }
+
+    // A file written before the Group Delay window existed has no
+    // GroupDelayWindowMode field; it must keep reading through the Fixed gate
+    // its owner has been looking at (real JSON, for the missing-property
+    // reason above), while a fresh options object starts on FDW.
+    [Fact]
+    public void PreWindowGroupDelayFileStaysFixed()
+    {
+        MeasurementSettingsFile.FrequencyResponseSettings settings =
+            DeserializeFrequencyResponse("""{"GroupDelayPlateauMs": 8.0}""");
+        var options = new FrequencyResponseOptions();
+        Assert.Equal(PhaseWindowMode.FrequencyDependent, options.GroupDelayWindowMode);
+        Assert.Equal(PhaseAnalysisSettings.DefaultFdwCycles, options.GroupDelayFdwCycles);
+
+        settings.ApplyTo(options, new CurveVisibilityOptions());
+
+        Assert.Equal(PhaseWindowMode.Fixed, options.GroupDelayWindowMode);
+        Assert.Equal(PhaseAnalysisSettings.DefaultFdwCycles, options.GroupDelayFdwCycles);
+    }
+
+    [Fact]
+    public void GroupDelayWindowRoundTripsAndValidatesCycles()
+    {
+        var stored = new FrequencyResponseOptions
+        {
+            GroupDelayWindowMode = PhaseWindowMode.FrequencyDependent,
+            GroupDelayFdwCycles = 8
+        };
+        var restored = new FrequencyResponseOptions
+        {
+            GroupDelayWindowMode = PhaseWindowMode.Fixed,
+            GroupDelayFdwCycles = 4
+        };
+
+        MeasurementSettingsFile.FrequencyResponseSettings.Capture(
+                stored, new CurveVisibilityOptions())
+            .ApplyTo(restored, new CurveVisibilityOptions());
+
+        Assert.Equal(PhaseWindowMode.FrequencyDependent, restored.GroupDelayWindowMode);
+        Assert.Equal(8, restored.GroupDelayFdwCycles);
+
+        MeasurementSettingsFile.FrequencyResponseSettings settings =
+            DeserializeFrequencyResponse(
+                """{"GroupDelayWindowMode": 0, "GroupDelayFdwCycles": 123}""");
+        var options = new FrequencyResponseOptions();
+
+        settings.ApplyTo(options, new CurveVisibilityOptions());
+
+        Assert.Equal(PhaseWindowMode.Fixed, options.GroupDelayWindowMode);
+        Assert.Equal(PhaseAnalysisSettings.DefaultFdwCycles, options.GroupDelayFdwCycles);
     }
 
     private static MeasurementSettingsFile.FrequencyResponseSettings

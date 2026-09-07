@@ -135,7 +135,7 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
             comboWindowMode,
             "Fixed reads through one time gate for the entire spectrum. FDW shortens " +
             "the window as frequency rises, so the treble reads the direct arrival " +
-            "without the late reflections. Match the Phase tab to read the two as a pair.");
+            "without the late reflections. With the Phase tab's gate, mode and cycles the two read as a pair.");
         toolTip.SetToolTip(
             comboFdwCycles,
             "Periods kept by FDW after the gate offset: 4 suppresses reflections most, " +

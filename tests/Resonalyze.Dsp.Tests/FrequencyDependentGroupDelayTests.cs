@@ -360,6 +360,130 @@ public sealed class FrequencyDependentGroupDelayTests
         Assert.All(band, i => Assert.InRange(curves.Excess!.Points[i].Y, -0.01, 0.01));
     }
 
+    [Theory]
+    [InlineData(2.0, 6, 0.5, 4.0, 1.5)]
+    [InlineData(5.0, 6, 0.5, 4.0, 1.5)]
+    [InlineData(10.0, 6, 0.5, 4.0, 1.5)]
+    [InlineData(2.0, 8, 0.5, 10.0, 3.0)]
+    [InlineData(5.0, 8, 0.5, 10.0, 3.0)]
+    [InlineData(10.0, 8, 0.5, 10.0, 3.0)]
+    [InlineData(10.0, 4, 1.0, 3.0, 12.0)]
+    public void MinimumPhasePeqChain_ReadsNearZeroExcessUnderFdw(
+        double q, int cycles, double leftMs, double plateauMs, double rightMs)
+    {
+        // The FDW excess is NOT the classical all-pass group delay by
+        // construction: the arrival is read inside a window that changes with
+        // frequency, while the minimum-phase part is the classical group delay
+        // of the stitched magnitude's minimum-phase counterpart. Whether the
+        // difference matters is an empirical question, and this is the
+        // answer for the content a PEQ adds: three peaking bands at Q up to
+        // 10, a bulk delay in front, the Phase tab's, the Group Delay tab's
+        // and the Virtual DSP default gates with their Tukey fades, and every
+        // cycle count. The excess reads the bulk delay to within a twentieth
+        // of a millisecond across the band — the same order the Fixed gate
+        // reads it to — so what the diagnostic calls "what no PEQ can touch"
+        // stays true under FDW to that tolerance.
+        const int arrival = 480;
+        const int length = 16_384;
+        double[] impulse = new double[length];
+        impulse[arrival] = 1.0;
+        foreach (PeqBand peq in new[]
+        {
+            new PeqBand(100.0, q, 6.0),
+            new PeqBand(1_000.0, q, -6.0),
+            new PeqBand(5_000.0, q, 6.0)
+        })
+        {
+            impulse = FilterAdditiveFeedback(PeakingBiquad.Compute(peq, SampleRate), impulse);
+        }
+        var response = new Complex[length];
+        for (int i = 0; i < length; i++)
+        {
+            response[i] = new Complex(impulse[i], 0);
+        }
+        var measurement = new SyntheticMeasurement(response, SampleRate, arrival);
+        PhaseAnalysisSettings settings = Settings(PhaseWindowMode.FrequencyDependent, cycles) with
+        {
+            LeftMs = leftMs,
+            PlateauMs = plateauMs,
+            RightMs = rightMs
+        };
+
+        GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
+            measurement, settings, smoothingInverseOctaves: 12, includeMinimumPhase: true);
+
+        double bulkMs = arrival * 1000.0 / SampleRate;
+        List<int> band = BandIndices(curves.Excess!, 100, 15_000);
+        Assert.NotEmpty(band);
+        Assert.All(band, i => Assert.InRange(
+            curves.Excess!.Points[i].Y, bulkMs - 0.06, bulkMs + 0.06));
+    }
+
+    [Fact]
+    public void Crossover_ExcessUnderFdw_IsTheFixedGatesExcess()
+    {
+        // A steep high-pass rings for longer than any gate a junction uses,
+        // and the gate's truncation of that ringing reads as excess at the low
+        // edge under EVERY window — the FDW window is the whole gate there.
+        // What FDW must not do is add to it: wherever both windows read a
+        // value, the two excess curves agree to a few hundredths of a
+        // millisecond. (The validity gates differ by a few bins at the
+        // low-pass's stop-band edge, where FDW's wider smoothing floor keeps
+        // a bin the Fixed gate blanks — those bins are left out.)
+        const int arrival = 480;
+        const int length = 16_384;
+        double[] impulse = new double[length];
+        impulse[arrival] = 1.0;
+        var sections = new List<BiquadCoefficients>();
+        sections.AddRange(CrossoverFilter.BuildSections(
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80.0, 24), highPass: true, SampleRate));
+        sections.AddRange(CrossoverFilter.BuildSections(
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_000.0, 24), highPass: false, SampleRate));
+        foreach (BiquadCoefficients section in sections)
+        {
+            impulse = FilterAdditiveFeedback(section, impulse);
+        }
+        var response = new Complex[length];
+        for (int i = 0; i < length; i++)
+        {
+            response[i] = new Complex(impulse[i], 0);
+        }
+        var measurement = new SyntheticMeasurement(response, SampleRate, arrival);
+        PhaseAnalysisSettings fixedSettings = Settings(PhaseWindowMode.Fixed, 8) with
+        {
+            LeftMs = 0.5,
+            PlateauMs = 10.0,
+            RightMs = 3.0
+        };
+
+        GroupDelayCurveSet fixedCurves = DataHelper.GetGroupDelayCurves(
+            measurement, fixedSettings, smoothingInverseOctaves: 12, includeMinimumPhase: true);
+        GroupDelayCurveSet fdwCurves = DataHelper.GetGroupDelayCurves(
+            measurement,
+            fixedSettings with { WindowMode = PhaseWindowMode.FrequencyDependent },
+            smoothingInverseOctaves: 12,
+            includeMinimumPhase: true);
+
+        List<int> band = BandIndices(fixedCurves.Excess!, 100, 15_000);
+        Assert.NotEmpty(band);
+        List<int> both = band
+            .Where(i => double.IsFinite(fixedCurves.Excess!.Points[i].Y) &&
+                double.IsFinite(fdwCurves.Excess!.Points[i].Y))
+            .ToList();
+        int disagree = band.Count(i =>
+            double.IsFinite(fixedCurves.Excess!.Points[i].Y) !=
+            double.IsFinite(fdwCurves.Excess!.Points[i].Y));
+        Assert.NotEmpty(both);
+        Assert.True(disagree < band.Count * 0.02, $"the two windows blank different bands ({disagree} bins)");
+        Assert.All(both, i => Assert.InRange(
+            fdwCurves.Excess!.Points[i].Y - fixedCurves.Excess!.Points[i].Y, -0.05, 0.05));
+        // And the truncated ringing IS there to be seen under both: the low
+        // edge reads a millisecond of excess against the flat band above.
+        double lowEdge = NearestY(fixedCurves.Excess!, 101.0);
+        double midBand = NearestY(fixedCurves.Excess!, 1_000.0);
+        Assert.True(lowEdge - midBand > 0.5, $"no low-edge excess ({lowEdge - midBand:0.000} ms)");
+    }
+
     [Fact]
     public void AllPass_DispersionLandsInExcessNotMinimumUnderFdw()
     {

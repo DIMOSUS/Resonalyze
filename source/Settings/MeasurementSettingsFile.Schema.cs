@@ -499,11 +499,14 @@ internal sealed partial class MeasurementSettingsFile
         public double GroupDelayLeftMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayLeftMs;
         public double GroupDelayPlateauMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayPlateauMs;
         public double GroupDelayRightMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayRightMs;
-        // No initializer, deliberately: a file written before the Group Delay
-        // window existed has no field, reads back null and stays on the Fixed
-        // gate its owner has been looking at (ApplyTo). Only a fresh options
-        // object starts on FDW.
-        public PhaseWindowMode? GroupDelayWindowMode { get; set; }
+        // Starts on FDW like the Phase tab's field above: a first run builds
+        // this object and applies it, so the initializer IS the fresh-install
+        // default. A file written before the window existed is told apart by
+        // its schema version (below 13) in MeasurementSettingsFile.LoadOrDefault,
+        // which puts it on the Fixed gate its owner has been looking at; the
+        // null case in ApplyTo is a backstop for an explicit null only.
+        public PhaseWindowMode? GroupDelayWindowMode { get; set; } =
+            Resonalyze.Dsp.PhaseWindowMode.FrequencyDependent;
         public int GroupDelayFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
 
         public static FrequencyResponseSettings Capture(
@@ -627,8 +630,8 @@ internal sealed partial class MeasurementSettingsFile
             options.GroupDelayLeftMs = ClampMilliseconds(GroupDelayLeftMs, 0.0, 1000.0);
             options.GroupDelayPlateauMs = ClampMilliseconds(GroupDelayPlateauMs, 0.0, 1000.0);
             options.GroupDelayRightMs = ClampMilliseconds(GroupDelayRightMs, 0.0, 1000.0);
-            // Absent means a pre-window file: keep the Fixed gate it was
-            // written under rather than silently changing the curve.
+            // Null (an explicit null, or the version-13 migration's Fixed) keeps
+            // the Fixed gate rather than silently changing the curve.
             options.GroupDelayWindowMode = GroupDelayWindowMode is { } groupDelayWindowMode &&
                 Enum.IsDefined(groupDelayWindowMode)
                     ? groupDelayWindowMode

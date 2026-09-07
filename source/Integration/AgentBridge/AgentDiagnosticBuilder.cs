@@ -103,7 +103,13 @@ internal static class AgentDiagnosticBuilder
                     "straightens along with the magnitude); what remains is arrivals and " +
                     "reflections, which no PEQ can touch — read off the raw impulse response " +
                     "through the project's phase gate and window (Fixed, or FDW with its " +
-                    "cycles: under FDW the reflections the window drops leave the excess too) " +
+                    "cycles: under FDW the group delay is the arrival of the energy inside " +
+                    "the window at each frequency, the reflections the window drops leave " +
+                    "the excess too, and the minimum-phase part is taken from the windowed " +
+                    "magnitude — a windowed reading, which for minimum-phase content agrees " +
+                    "with the Fixed reading to a few hundredths of a millisecond; what the " +
+                    "gate cannot resolve, a steep high-pass's ringing at the low edge, reads " +
+                    "as excess under either window) " +
                     "at the channel's own arrival (the chain does not " +
                     "enter it: the same with any PEQ bank in place or none), at the group-delay " +
                     "view's default 1/12-octave smoothing whatever the display shows; a row is " +

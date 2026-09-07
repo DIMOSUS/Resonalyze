@@ -238,12 +238,20 @@ the direct sound's arrival and at low frequencies, where the window is the whole
 gate, it is the Fixed curve (for a gate that fits the analysis FFT; a longer one
 is trimmed differently by the two paths). It is the same identity the Fixed curve is computed
 by, evaluated on the FDW bank; it is **not** the slope of the FDW phase curve,
-whose derivative also carries the window's own change with frequency, and the
-two tabs are the compatible pair when their window mode and cycle count agree,
-not when one of them is Fixed. Two consequences of reading through a window
+whose derivative also carries the window's own change with frequency. The two
+tabs read as a pair when they read through one window — the same gate (offset,
+fades and plateau) as well as the same mode and cycle count; the tabs keep
+separate gates, and their defaults differ, so matching the mode alone is not
+enough — and not when one of them is Fixed. (The Virtual DSP phase and
+group-delay views share one gate by construction.) Two consequences of reading through a window
 that shortens with frequency: the **minimum-phase** and **excess** curves are
 taken against the windowed magnitude — the direct sound's, not the
-steady-state response's — and the resolution the window affords is the floor
+steady-state response's — so the excess is a windowed reading rather than the
+classical all-pass delay; for minimum-phase content (PEQ bands up to Q 10,
+crossovers) it agrees with the Fixed reading to a few hundredths of a
+millisecond in the tests, while what the gate itself cannot resolve — a steep
+high-pass ringing past the gate — reads as excess at the low edge under either
+window. And the resolution the window affords is the floor
 under the smoothing: half the window's resolution, which for a window of the
 left fade plus `cycles / f` is about a twelfth of an octave either side at
 8 cycles and an eighth at the default 6, narrowing a little with the fade, so a
@@ -3254,7 +3262,8 @@ this: the clipboard is the only transport, and you are the one who pastes.
   the project's phase gate and window, Fixed or FDW with its cycles, as the
   Virtual DSP group-delay view draws it, so the chain does not enter it and it
   is the same whatever the PEQ bank holds; under FDW the reflections the window
-  drops leave the excess too.
+  drops leave the excess too, and the reading is a windowed one — see the
+  [Phase and Group Delay](#phase-and-group-delay) note on what that changes.
 - **Import AI proposal…** reads the assistant's reply back off the clipboard —
   copy the whole reply, not just the JSON — and opens a review. The reply may
   address five things on one channel: gain, delay, polarity, the crossover, and

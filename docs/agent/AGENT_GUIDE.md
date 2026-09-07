@@ -216,7 +216,16 @@ The **minimum-phase** part follows its magnitude, so a PEQ that flattens a
 resonance straightens that phase with it — such a band helps the sum. The
 **excess** part does not: the arrival itself and later arrivals — reflections,
 a second path — which no PEQ touches. The **Excess group delay** diagnostic
-separates them. Two doors, and the cheaper one for the user decides: when the
+separates them — under a Fixed gate as the classical excess (all-pass) group
+delay; under FDW, the project's default, as a windowed reading: the arrival of
+the energy inside the frequency-dependent window less the minimum-phase part
+of the windowed magnitude. In the tested minimum-phase PEQ and crossover
+chains the two agree to a few hundredths of a millisecond, but the gate itself
+can show as excess: a steep high-pass rings past a junction's gate, and the
+truncated ringing reads as excess at the low band edge under either window.
+Treat excess that lives only at a band edge as a limit of the measurement
+window, not automatically as an arrival or reflection to correct. Two doors,
+and the cheaper one for the user decides: when the
 curve is all you need, name the menu path — *AI assistant… → Copy diagnostics
 for AI → Excess group delay* — which is a click and a paste, with no proposal
 to import. Ask for it as a probe (§6) when you are asking for junction readings

@@ -602,11 +602,17 @@ public partial class VirtualCrossoverPanel : UserControl
             checkBoxShowTarget.Checked = project.ShowTargetCurve;
             numericTargetLevel.Value =
                 numericTargetLevel.ClampValue(project.TargetLevelDb);
+            // Impulse over group delay over phase: each newer flag is written
+            // beside the older one it falls back to in a build without it.
             radioViewImpulse.Checked = project.ShowImpulseView;
+            radioViewGroupDelay.Checked =
+                !project.ShowImpulseView && project.ShowGroupDelayView;
             radioViewPhase.Checked =
-                !project.ShowImpulseView && project.ShowPhaseView;
+                !project.ShowImpulseView && !project.ShowGroupDelayView &&
+                project.ShowPhaseView;
             radioViewMagnitude.Checked =
-                !project.ShowImpulseView && !project.ShowPhaseView;
+                !project.ShowImpulseView && !project.ShowGroupDelayView &&
+                !project.ShowPhaseView;
             // After the radios: the Sum is remembered per view, so which answer
             // applies is decided by the view this project opens on.
             ApplySumToggleForView();
@@ -1024,6 +1030,10 @@ public partial class VirtualCrossoverPanel : UserControl
         radioViewImpulse.CheckedChanged += (_, _) =>
         {
             if (radioViewImpulse.Checked) OnViewModeChanged();
+        };
+        radioViewGroupDelay.CheckedChanged += (_, _) =>
+        {
+            if (radioViewGroupDelay.Checked) OnViewModeChanged();
         };
         comboBoxSmoothing.SelectedIndexChanged += (_, _) => OnViewChanged();
         comboBoxSumLoss.SelectedIndexChanged += (_, _) => OnViewChanged();
@@ -1868,8 +1878,8 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // Each curve toggle is muted on the views that cannot draw that curve: the
-    // Sum exists on the magnitude and phase plots but not among the impulse
-    // traces, the sum loss and the target are magnitude-only (a target is a dB
+    // Sum exists on the magnitude, phase and group-delay plots but not among
+    // the impulse traces, the sum loss and the target are magnitude-only (a target is a dB
     // shape — the same rule OverlayTargets.SupportsMode applies to overlay
     // targets). Fractional-octave smoothing shapes the frequency-domain curves,
     // so it is dead in the impulse view alone. The Target... button stays live
@@ -1896,9 +1906,9 @@ public partial class VirtualCrossoverPanel : UserControl
         comboBoxSumLoss.Enabled = lossQuoted;
         Ui.UiStyle.SetTextEnabledLook(labelSumLoss, lossQuoted);
         // Groups always draws its per-zone sums — they ARE its curves — so the Sum
-        // toggle has nothing to turn off there either. And the view has no phase or
-        // impulse form, so those radios are muted while it is selected rather than
-        // silently falling back to per-driver curves.
+        // toggle has nothing to turn off there either. And the view has no phase,
+        // group-delay or impulse form, so those radios are muted while it is
+        // selected rather than silently falling back to per-driver curves.
         bool groupSums = VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
         if (groupSums)
         {
@@ -1907,6 +1917,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         Ui.UiStyle.SetTextEnabledLook(radioViewPhase, !groupSums, interactive: true);
         Ui.UiStyle.SetTextEnabledLook(radioViewImpulse, !groupSums, interactive: true);
+        Ui.UiStyle.SetTextEnabledLook(radioViewGroupDelay, !groupSums, interactive: true);
         // Magnitude-only for the same reason the loss is, and it also carries the
         // coverage answer, so it owns its own refresh.
         RefreshHybridAvailability();
@@ -1943,7 +1954,9 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             checkBoxShowSum.Checked = radioViewPhase.Checked
                 ? project.ShowSumCurveOnPhase
-                : project.ShowSumCurve;
+                : radioViewGroupDelay.Checked
+                    ? project.ShowSumCurveOnGroupDelay
+                    : project.ShowSumCurve;
         }
         finally
         {
@@ -1962,6 +1975,10 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             project.ShowSumCurveOnPhase = checkBoxShowSum.Checked;
         }
+        else if (radioViewGroupDelay.Checked)
+        {
+            project.ShowSumCurveOnGroupDelay = checkBoxShowSum.Checked;
+        }
         else if (radioViewMagnitude.Checked)
         {
             project.ShowSumCurve = checkBoxShowSum.Checked;
@@ -1971,8 +1988,12 @@ public partial class VirtualCrossoverPanel : UserControl
         project.ShowHybridCurves = checkBoxHybrid.Checked;
         project.ShowTargetCurve = checkBoxShowTarget.Checked;
         project.TargetLevelDb = (double)numericTargetLevel.Value;
-        project.ShowPhaseView = radioViewPhase.Checked;
+        // The phase flag is written beside the group-delay one: a build that
+        // knows only the older flag opens the project on the phase view, the
+        // nearest thing it has to this one.
+        project.ShowPhaseView = radioViewPhase.Checked || radioViewGroupDelay.Checked;
         project.ShowImpulseView = radioViewImpulse.Checked;
+        project.ShowGroupDelayView = radioViewGroupDelay.Checked;
         project.SetSmoothingCode(comboBoxSmoothing.SelectedItem is int value
             ? value
             : 12);
@@ -3007,6 +3028,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private AcousticView CurrentAcousticView() =>
         radioViewImpulse.Checked ? AcousticView.Impulse
         : radioViewPhase.Checked ? AcousticView.Phase
+        : radioViewGroupDelay.Checked ? AcousticView.GroupDelay
         : AcousticView.Magnitude;
 
     private DspPlotMode CurrentDspPlotMode() =>
@@ -3163,6 +3185,12 @@ public partial class VirtualCrossoverPanel : UserControl
             "Show each channel's processed impulse response around\r\n" +
             "the phase gate, every trace normalized to its own peak.\r\n" +
             "Well-aligned drivers start together.");
+        toolTip.SetToolTip(
+            radioViewGroupDelay,
+            "Show each channel's measured group delay and the Sum's\r\n" +
+            "through the phase gate: the arrival time of the energy\r\n" +
+            "inside the window, in ms from the record's start.\r\n" +
+            "Well-aligned drivers meet through the crossover.");
         toolTip.SetToolTip(
             comboBoxGroupView,
             "Which part of the installation the plot shows; the curves, the\r\n" +
@@ -3845,6 +3873,10 @@ public partial class VirtualCrossoverPanel : UserControl
             // under the same selector, with a centre inside one Sum and not the
             // other.
             return new AcousticRender(hint, BuildPhaseCurves(processed, summed), null);
+        }
+        if (radioViewGroupDelay.Checked)
+        {
+            return new AcousticRender(hint, BuildGroupDelayCurves(processed, summed), null);
         }
         if (radioViewImpulse.Checked)
         {
@@ -7281,6 +7313,142 @@ public partial class VirtualCrossoverPanel : UserControl
                     job.Thickness,
                     LineStyle.Solid));
                 return curves;
+            })
+            .ToList();
+    }
+
+    // The group-delay view: each drawn channel's measured group delay and the
+    // Sum's, through the SAME window the phase view reads — the project's gate
+    // and window mode (Fixed or FDW with its cycles), placed as the phase
+    // curves are placed (pinned, or per curve on each channel's own arrival),
+    // and previewed by the open Gate… dialog the same way. So the two views
+    // are one window, and this one is the pair to the drawn phase. Absolute:
+    // ms from the record's start, the impulse view's clock, with no detrend —
+    // the phase view's common τ would only move every curve by one amount.
+    // Under FDW the curve reads the arrival of the energy inside the window
+    // at each frequency: the direct sound at mid and high frequencies, which
+    // is what cut the seat-to-seat scatter of this curve by three to five
+    // times on the reference car (see SumLossWindow). Measured and Sum only:
+    // the view is about relative arrival, and the excess stays the AI probe's.
+    private List<AcousticCurve> BuildGroupDelayCurves(
+        List<ProcessedChannel> processed,
+        IReadOnlyList<ProcessedChannel>? summed = null)
+    {
+        summed ??= processed;
+        using var _ = AppProfiler.Zone("VirtualDSP.BuildGroupDelayCurves");
+        int sampleRate = processed[0].SampleRate;
+        double referenceOffsetMs = gatePreview?.OffsetMs
+            ?? ResolveGateOffsetMs(processed, sampleRate);
+
+        // The same set the phase view gates: every drawn channel, plus every
+        // summing one while the Sum is on (hidden or not, so the Sum answers
+        // the magnitude view's question), the placements resolved over that
+        // set only, so hiding a curve cannot move the windows of the rest.
+        bool includeSum = summed.Count >= 2 && checkBoxShowSum.Checked;
+        List<ProcessedChannel> gatedChannels = processed
+            .Where(item => (includeSum && summed.Contains(item)) ||
+                item.Channel.Pair.ShowProcessedCurve)
+            .ToList();
+        if (gatedChannels.Count == 0)
+        {
+            return [];
+        }
+
+        // Read the gate and project state ONCE, here on the UI thread; the
+        // workers below must not reach back into gatePreview or project. The
+        // smoothing is the plot's own selector; its psychoacoustic width is a
+        // hearing model for levels, not for time, and reads as 1/12 here.
+        List<double> offsets = ResolvePhaseGateOffsets(
+            gatedChannels, referenceOffsetMs, sampleRate);
+        double smoothingInverseOctaves = SmoothingPresetOptions.Normalize(
+            project.SmoothingInverseOctaves, includePsychoacoustic: false);
+        List<(ProcessedChannel Item, PhaseAnalysisSettings Settings)> inputs = gatedChannels
+            .Select((item, index) => (item, CreateVirtualPhaseSettings(
+                offsets[index], PhaseDetrendMode.Off, manualDetrendMilliseconds: 0.0)))
+            .ToList();
+
+        // The operand pairs are built once per redraw — the bank and its
+        // time-weighted twin per channel — and feed both the drawn curves and
+        // the Sum, as the phase view's spectra do.
+        List<(ProcessedChannel Item, PhaseAnalysisSettings Settings,
+            GroupDelaySpectra Spectra, int ExtractionStart)> gated = inputs
+            .AsParallel()
+            .AsOrdered()
+            .Select(input =>
+            {
+                GroupDelaySpectra spectra = DataHelper.GetGroupDelayAnalysisSpectra(
+                    new ImpulseMeasurementView(input.Item.ImpulseResponse, 0, sampleRate),
+                    input.Settings,
+                    out int extractionStart);
+                return (input.Item, input.Settings, spectra, extractionStart);
+            })
+            .ToList();
+
+        var jobs = new List<(string Title, OxyColor Color, double Thickness,
+            GroupDelaySpectra Spectra, int ExtractionStart, PhaseAnalysisSettings Settings,
+            MeasuredBand Band, IReadOnlyList<ProcessedChannel>? MaskBy)>();
+        foreach ((ProcessedChannel item, PhaseAnalysisSettings settings,
+            GroupDelaySpectra spectra, int extractionStart) in gated)
+        {
+            if (item.Channel.Pair.ShowProcessedCurve)
+            {
+                jobs.Add((item.Channel.Name, item.Color, 1.8, spectra, extractionStart,
+                    settings, item.MeasuredBand, null));
+            }
+        }
+
+        if (includeSum)
+        {
+            // The Sum is the sum of the individually gated operand pairs, not a
+            // gate over the summed IR, for the phase view's reason: under Auto
+            // the windows follow each channel's own arrival, and no single
+            // window could hold every channel's treble at once. Both members
+            // are re-referenced to one extraction start, the time weight
+            // carried across, so the Sum's group delay is the group delay of
+            // the summed channels through those windows.
+            List<(ProcessedChannel Item, PhaseAnalysisSettings Settings,
+                GroupDelaySpectra Spectra, int ExtractionStart)> summedParts =
+                [.. gated.Where(part => summed.Contains(part.Item))];
+            if (summedParts.Count >= 2)
+            {
+                int targetExtractionStart =
+                    summedParts.Min(part => part.ExtractionStart);
+                GroupDelaySpectra combined = DataHelper.SumGatedSpectraPairs(
+                    [.. summedParts.Select(part => (part.Spectra, part.ExtractionStart))],
+                    targetExtractionStart,
+                    sampleRate);
+                // Masked where NO channel measured, like the magnitude Sum: a
+                // hole between two channels' bands is not something the outer
+                // edges can express.
+                jobs.Add(("Sum", SumColor, 2.4, combined, targetExtractionStart,
+                    summedParts[0].Settings, MeasuredBand.Everything,
+                    [.. summedParts.Select(part => part.Item)]));
+            }
+        }
+
+        // One group-delay read per curve over the pairs built above, across
+        // cores, order stable. The validity gate is the Group Delay mode's:
+        // a crossover's stop band blanks the curve there, which is the point.
+        return jobs
+            .AsParallel()
+            .AsOrdered()
+            .Select(job =>
+            {
+                GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
+                    job.Spectra,
+                    job.ExtractionStart,
+                    sampleRate,
+                    job.Settings,
+                    smoothingInverseOctaves,
+                    PlotModelFactory.GroupDelayMagnitudeGateDb,
+                    includeMinimumPhase: false,
+                    job.Band.LowEdgeHz,
+                    job.Band.HighEdgeHz);
+                IReadOnlyList<SignalPoint> points = job.MaskBy == null
+                    ? curves.Measured.Points
+                    : ProcessedChannels.MeasuredBySomeChannel(curves.Measured.Points, job.MaskBy);
+                return new AcousticCurve(
+                    job.Title, points, job.Color, job.Thickness, LineStyle.Solid);
             })
             .ToList();
     }

@@ -1402,6 +1402,63 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void GroupDelayView_RoundTripsWithItsOwnSumAnswer()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            // The panel writes the phase flag beside the group-delay one, so a
+            // build that knows only the older flag opens on the phase view.
+            var saved = new VirtualCrossoverProjectFile
+            {
+                ShowPhaseView = true,
+                ShowGroupDelayView = true,
+                ShowSumCurve = true,
+                ShowSumCurveOnPhase = false,
+                ShowSumCurveOnGroupDelay = true
+            };
+            saved.Save(root);
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.True(loaded.ShowGroupDelayView);
+            Assert.True(loaded.ShowPhaseView);
+            Assert.False(loaded.ShowImpulseView);
+            Assert.False(loaded.ShowSumCurveOnPhase);
+            Assert.True(loaded.ShowSumCurveOnGroupDelay);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void GroupDelayView_AbsentFromAnOlderFile_OpensThePriorView()
+    {
+        // A file written before the view existed carries neither flag: it opens
+        // on whatever it did — phase here — and the Sum on the group-delay view
+        // inherits the phase answer until it is set.
+        var project = new VirtualCrossoverProjectFile
+        {
+            ShowPhaseView = true,
+            ShowSumCurve = true,
+            ShowSumCurveOnPhase = false
+        };
+
+        Assert.False(project.ShowGroupDelayView);
+        Assert.Null(project.ShowSumCurveGroupDelay);
+        Assert.False(project.ShowSumCurveOnGroupDelay);
+
+        project.ShowSumCurveOnPhase = true;
+        Assert.True(project.ShowSumCurveOnGroupDelay);
+
+        project.ShowSumCurveOnGroupDelay = false;
+        project.ShowSumCurveOnPhase = true;
+        Assert.False(project.ShowSumCurveOnGroupDelay);
+    }
+
+    [Fact]
     public void ShowSumCurveOnPhase_OnceAnswered_StopsFollowingTheMagnitudeOne()
     {
         string root = CreateTemporaryDirectory();

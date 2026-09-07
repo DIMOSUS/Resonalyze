@@ -60,6 +60,7 @@ namespace Resonalyze
             radioViewMagnitude = new ReleaseClickRadioButton();
             radioViewPhase = new ReleaseClickRadioButton();
             radioViewImpulse = new ReleaseClickRadioButton();
+            radioViewGroupDelay = new ReleaseClickRadioButton();
             labelSmoothing = new Label();
             comboBoxSmoothing = new DarkComboBox();
             buttonAutoDelay = new ReleaseClickButton();
@@ -271,7 +272,7 @@ namespace Resonalyze
             labelGroupView.AutoSize = true;
             labelGroupView.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelGroupView.ForeColor = Color.FromArgb(210, 214, 222);
-            labelGroupView.Location = new Point(853, 447);
+            labelGroupView.Location = new Point(947, 447);
             labelGroupView.Name = "labelGroupView";
             labelGroupView.Size = new Size(40, 15);
             labelGroupView.TabIndex = 26;
@@ -281,7 +282,7 @@ namespace Resonalyze
             // 
             comboBoxGroupView.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxGroupView.ForeColor = Color.White;
-            comboBoxGroupView.Location = new Point(896, 445);
+            comboBoxGroupView.Location = new Point(990, 445);
             comboBoxGroupView.MinimumSize = new Size(36, 19);
             comboBoxGroupView.Name = "comboBoxGroupView";
             comboBoxGroupView.Size = new Size(130, 19);
@@ -434,13 +435,25 @@ namespace Resonalyze
             radioViewImpulse.TabIndex = 11;
             radioViewImpulse.Text = "Impulse";
             radioViewImpulse.UseVisualStyleBackColor = true;
+            //
+            // radioViewGroupDelay
+            //
+            radioViewGroupDelay.AutoSize = true;
+            radioViewGroupDelay.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            radioViewGroupDelay.ForeColor = Color.FromArgb(210, 214, 222);
+            radioViewGroupDelay.Location = new Point(236, 2);
+            radioViewGroupDelay.Name = "radioViewGroupDelay";
+            radioViewGroupDelay.Size = new Size(89, 19);
+            radioViewGroupDelay.TabIndex = 12;
+            radioViewGroupDelay.Text = "Group delay";
+            radioViewGroupDelay.UseVisualStyleBackColor = true;
             // 
             // labelSmoothing
             // 
             labelSmoothing.AutoSize = true;
             labelSmoothing.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelSmoothing.ForeColor = Color.FromArgb(210, 214, 222);
-            labelSmoothing.Location = new Point(656, 447);
+            labelSmoothing.Location = new Point(750, 447);
             labelSmoothing.Name = "labelSmoothing";
             labelSmoothing.Size = new Size(70, 15);
             labelSmoothing.TabIndex = 10;
@@ -450,7 +463,7 @@ namespace Resonalyze
             // 
             comboBoxSmoothing.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxSmoothing.ForeColor = Color.White;
-            comboBoxSmoothing.Location = new Point(730, 445);
+            comboBoxSmoothing.Location = new Point(824, 445);
             comboBoxSmoothing.MinimumSize = new Size(36, 19);
             comboBoxSmoothing.Name = "comboBoxSmoothing";
             comboBoxSmoothing.Size = new Size(100, 19);
@@ -688,11 +701,12 @@ namespace Resonalyze
             panel1.BackColor = Color.FromArgb(46, 50, 62);
             panel1.Controls.Add(radioViewMagnitude);
             panel1.Controls.Add(radioViewImpulse);
+            panel1.Controls.Add(radioViewGroupDelay);
             panel1.Controls.Add(radioViewPhase);
             panel1.CornerRadius = 4;
             panel1.Location = new Point(406, 443);
             panel1.Name = "panel1";
-            panel1.Size = new Size(233, 23);
+            panel1.Size = new Size(327, 23);
             panel1.TabIndex = 24;
             // 
             // panel2
@@ -834,6 +848,7 @@ namespace Resonalyze
         private ReleaseClickRadioButton radioViewMagnitude;
         private ReleaseClickRadioButton radioViewPhase;
         private ReleaseClickRadioButton radioViewImpulse;
+        private ReleaseClickRadioButton radioViewGroupDelay;
         private Label labelSmoothing;
         private DarkComboBox comboBoxSmoothing;
         private ReleaseClickButton buttonAutoDelay;

@@ -991,6 +991,26 @@ public sealed class VirtualCrossoverProjectFile
     // ShowPhaseView. Kept as a second flag so files written by this version
     // still open in older builds (which fall back to magnitude/phase).
     public bool ShowImpulseView { get; set; }
+    // The main plot's group-delay view: each channel's measured group delay
+    // and the Sum's through the phase gate. Additive in the same way: it wins
+    // over ShowPhaseView and loses to ShowImpulseView, and the panel writes
+    // ShowPhaseView beside it so a build without this flag opens the project
+    // on the nearest view it has, the phase.
+    public bool ShowGroupDelayView { get; set; }
+
+    /// <summary>
+    /// Whether the Sum is drawn on the GROUP-DELAY view. Its own answer, like the
+    /// phase view's; a file written before the view existed carries none and
+    /// inherits the phase answer, the nearest view's.
+    /// </summary>
+    public bool? ShowSumCurveGroupDelay { get; set; }
+
+    [JsonIgnore]
+    public bool ShowSumCurveOnGroupDelay
+    {
+        get => ShowSumCurveGroupDelay ?? ShowSumCurveOnPhase;
+        set => ShowSumCurveGroupDelay = value;
+    }
 
     // The EQ target curve drawn over the acoustic plot: whether it is shown, the
     // level (dB) it hangs at, and the target itself. Additive: older files lack

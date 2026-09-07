@@ -12,7 +12,8 @@ internal enum AcousticView
 {
     Magnitude,
     Phase,
-    Impulse
+    Impulse,
+    GroupDelay
 }
 
 /// <summary>
@@ -65,6 +66,10 @@ internal sealed class VirtualCrossoverAcousticPlot
     private const string SeriesTag = "virtual-crossover:curve";
     private const string LossAxisKey = "virtual-crossover:loss";
     private const string TrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00}";
+    private const string GroupDelayTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.000} ms";
+    // The tracker of the view on screen: the group-delay view names its unit,
+    // the others read the axis title.
+    private string curveTrackerFormat = TrackerFormat;
 
     // The sum-loss axis scale: a 6 dB step, the top just clear of the 0 dB
     // ceiling so the line at 0 reads as a line rather than as the frame, and
@@ -186,10 +191,10 @@ internal sealed class VirtualCrossoverAcousticPlot
         plotLabels = new PlotLabelsPanelController(view, () => Mode.VirtualCrossover);
     }
 
-    // Magnitude and phase reuse one value axis object so pan/zoom of the frequency
-    // axis survives the toggle; only the value scale and its zoom lock are
-    // re-armed. The impulse view additionally swaps the bottom axis to the linear
-    // ms one.
+    // Magnitude, phase and group delay reuse one value axis object so pan/zoom of
+    // the frequency axis survives the toggle; only the value scale and its zoom
+    // lock are re-armed. The impulse view additionally swaps the bottom axis to
+    // the linear ms one.
     public void ConfigureForView(AcousticView acousticView)
     {
         if (acousticView == AcousticView.Impulse)
@@ -211,6 +216,19 @@ internal sealed class VirtualCrossoverAcousticPlot
             valueAxis.Minimum = -180;
             valueAxis.Maximum = 180;
             valueAxis.MajorStep = 45;
+        }
+        else if (acousticView == AcousticView.GroupDelay)
+        {
+            // Absolute milliseconds from the record's start — the impulse view's
+            // scale — so the range depends on where the arrivals are, and the
+            // axis fits itself to the drawn curves like the dB axis does. No hard
+            // limits: a curve can sit anywhere on that clock.
+            valueAxis.Title = "ms";
+            valueAxis.AbsoluteMinimum = double.MinValue;
+            valueAxis.AbsoluteMaximum = double.MaxValue;
+            valueAxis.Minimum = double.NaN;
+            valueAxis.Maximum = double.NaN;
+            valueAxis.MajorStep = double.NaN;
         }
         else
         {
@@ -234,6 +252,13 @@ internal sealed class VirtualCrossoverAcousticPlot
         bool phase = acousticView == AcousticView.Phase;
         valueAxis.IsZoomEnabled = !phase;
         valueAxis.IsPanEnabled = !phase;
+        // A tenth of the range of headroom around the group-delay curves, so
+        // a flat channel does not sit on the frame; the others keep OxyPlot's
+        // own hundredth.
+        bool groupDelay = acousticView == AcousticView.GroupDelay;
+        valueAxis.MinimumPadding = groupDelay ? 0.1 : 0.01;
+        valueAxis.MaximumPadding = groupDelay ? 0.1 : 0.01;
+        curveTrackerFormat = groupDelay ? GroupDelayTrackerFormat : TrackerFormat;
 
         // The loss is magnitude-only (the panel mutes its toggle elsewhere);
         // the next Draw decides the axis for the magnitude view, the others
@@ -277,7 +302,7 @@ internal sealed class VirtualCrossoverAcousticPlot
             bool lossDrawn = false;
             foreach (AcousticCurve curve in render.Curves)
             {
-                AddCurve(model, curve);
+                AddCurve(model, curve, curveTrackerFormat);
                 lossDrawn |= curve.OnLossAxis;
             }
 
@@ -430,7 +455,7 @@ internal sealed class VirtualCrossoverAcousticPlot
         return (Math.Max(lower, LossAxisFloorDb), LossAxisTopDb);
     }
 
-    private static void AddCurve(PlotModel model, AcousticCurve curve)
+    private static void AddCurve(PlotModel model, AcousticCurve curve, string trackerFormat)
     {
         var series = new LineSeries
         {
@@ -439,7 +464,7 @@ internal sealed class VirtualCrossoverAcousticPlot
             LineStyle = curve.Style,
             Title = curve.Title,
             Tag = SeriesTag,
-            TrackerFormatString = TrackerFormat
+            TrackerFormatString = trackerFormat
         };
         if (curve.OnLossAxis)
         {

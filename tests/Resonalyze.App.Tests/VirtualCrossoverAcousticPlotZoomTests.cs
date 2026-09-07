@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
@@ -41,6 +41,43 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
 
         plot.ConfigureForView(AcousticView.Impulse);
         Assert.True(value.IsZoomEnabled);
+    }
+
+    [Fact]
+    public void GroupDelayView_FitsItselfAndZoomsFreely_AndThePhaseLockComesBack()
+    {
+        using var view = new PlotView();
+        var plot = new VirtualCrossoverAcousticPlot(view, "hint", AcousticView.Phase);
+        Axis value = ValueAxis(view);
+        Assert.False(value.IsZoomEnabled);
+
+        plot.ConfigureForView(AcousticView.GroupDelay);
+        Assert.Equal("ms", value.Title);
+        Assert.True(value.IsZoomEnabled);
+        Assert.True(value.IsPanEnabled);
+        Assert.True(double.IsNaN(value.Minimum));
+        Assert.True(double.IsNaN(value.Maximum));
+
+        // Two flat channels at 10 and 20 ms: the axis fits itself around them.
+        plot.Draw(GroupDelayRender(10, 20));
+        UpdateData(view);
+        Assert.True(value.ActualMinimum < 10 && value.ActualMinimum > 5);
+        Assert.True(value.ActualMaximum > 20 && value.ActualMaximum < 25);
+
+        // Every chain edit redraws this view; a zoom the user set survives it.
+        value.Zoom(12, 14);
+        Update(view);
+        plot.Draw(GroupDelayRender(10, 20));
+        Update(view);
+        Assert.Equal(12, value.ActualMinimum, 6);
+        Assert.Equal(14, value.ActualMaximum, 6);
+
+        // Back to the phase view: the ±180° lock, and its own range.
+        plot.ConfigureForView(AcousticView.Phase);
+        Assert.False(value.IsZoomEnabled);
+        Assert.False(value.IsPanEnabled);
+        Assert.Equal(-180, value.Minimum);
+        Assert.Equal(180, value.Maximum);
     }
 
     [Fact]
@@ -204,6 +241,26 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         return new AcousticRender(string.Empty, curves, null);
     }
 
+    // A group-delay frame: two flat channels at the given arrivals.
+    private static AcousticRender GroupDelayRender(double firstMs, double secondMs)
+    {
+        var first = new List<SignalPoint>();
+        var second = new List<SignalPoint>();
+        for (double hz = 20; hz <= 20_000; hz *= 1.1)
+        {
+            first.Add(new SignalPoint(hz, firstMs));
+            second.Add(new SignalPoint(hz, secondMs));
+        }
+
+        return new AcousticRender(
+            string.Empty,
+            [
+                new AcousticCurve("A", first, OxyColors.White, 1.8, LineStyle.Solid),
+                new AcousticCurve("B", second, OxyColors.Red, 1.8, LineStyle.Solid)
+            ],
+            null);
+    }
+
     private static AcousticRender Render(double gateOffsetMs)
     {
         var impulse = new AcousticImpulseRender(
@@ -237,4 +294,8 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
     // a headless test never triggers by painting.
     private static void Update(PlotView view) =>
         ((IPlotModel)view.Model!).Update(false);
+
+    // The auto-fit reads the series' own ranges, which only a data update fills.
+    private static void UpdateData(PlotView view) =>
+        ((IPlotModel)view.Model!).Update(true);
 }

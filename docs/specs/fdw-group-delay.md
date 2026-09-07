@@ -10,6 +10,11 @@
 
 Ветка: `claude/fdw-8-group-delay-plots-gvy765`.
 
+**Статус (2026-09-07): реализовано тремя коммитами на этой ветке** (часть A —
+ядро и тесты, часть B — режим Group Delay, часть C — вид VDSP и проба AI).
+Правки ТЗ по итогам ревью и реализации помечены «*Ревю:*» и «*Реализация:*»
+ниже; открытые вопросы §7 закрыты решениями, записанными там же.
+
 ## 1. Зачем
 
 Сегодня GD читается только через фиксированный Tukey-гейт
@@ -92,24 +97,30 @@ FDW-спектр (`BuildFdwSpectrum`) — это банк спектров че�
 ### 3.1 API
 
 1. `DataHelper.GetGroupDelayCurves(IImpulseMeasurement, PhaseAnalysisSettings settings, double smoothingInverseOctaves, double magnitudeGateDb, bool includeMinimumPhase)` —
-   новая основная перегрузка. `settings.WindowMode == Fixed` даёт результат,
+   новая основная перегрузка. *Реализация:* перегрузки по измерению НЕ режут
+   полосу (иначе побитная регрессия с сегодняшним чтением нарушилась бы на
+   записях с полосой); полосу принимает только перегрузка 4 (двумя `double`,
+   `MeasuredBand` живёт в `source/`), и VDSP передаёт её сам. `settings.WindowMode == Fixed` даёт результат,
    **побитно** равный сегодняшнему (регрессионный тест старая-vs-новая
    сигнатура). Существующая перегрузка с `leftMs/plateauMs/rightMs` остаётся как
    обёртка над Fixed, чтобы не трогать вызовы, которым FDW не нужен.
    `DetrendMode`/`Unwrap`/`Smoothing` внутри `settings` игнорируются
    (документировать).
 2. `DataHelper.GetGroupDelayAnalysisSpectra(IImpulseMeasurement, PhaseAnalysisSettings, out int extractionStart)`
-   → `(Complex[] Spectrum, Complex[] TimeWeighted)` — пара `(H, T)` для одного
-   канала в одной временной привязке. Нужна VDSP, которому надо складывать
+   → `GroupDelaySpectra(Spectrum, TimeWeighted)` (record в `AnalysisModels.cs`,
+   копии из кеша) — пара `(H, T)` для одного канала в одной временной привязке. Нужна VDSP, которому надо складывать
    каналы до вычисления τ.
-3. `DataHelper.SumGatedSpectraPairs(IReadOnlyList<(Complex[] H, Complex[] T, int Start)> parts, int targetStart)`
-   → `(H, T)` с поправкой временного веса из §2. Существующий
+3. `DataHelper.SumGatedSpectraPairs(IReadOnlyList<(GroupDelaySpectra, int Start)> parts, int targetStart, int sampleRate)`
+   → `GroupDelaySpectra` с поправкой временного веса из §2 (поправка — общий
+   приватный `ReReferenceSpectra`, им же пользуется банк). Существующий
    `SumGatedSpectra` не меняется.
-4. `DataHelper.GetGroupDelayCurves((Complex[] H, Complex[] T), int extractionStart, int sampleRate, PhaseAnalysisSettings settings, double smoothingInverseOctaves, double magnitudeGateDb, bool includeMinimumPhase, MeasuredBand? band)`
+4. `DataHelper.GetGroupDelayCurves(GroupDelaySpectra, int extractionStart, int sampleRate, PhaseAnalysisSettings settings, double smoothingInverseOctaves, double magnitudeGateDb, bool includeMinimumPhase, double lowestMeasuredFrequencyHz, double highestMeasuredFrequencyHz)`
    — построение кривых из готовой пары; `settings` нужны только для порога
    сглаживания (§2). Перегрузка 1 реализуется через 2 + 4.
-5. `internal static double FdwEffectiveGateSamples(double frequencyHz, PhaseAnalysisSettings settings, int sampleRate)` —
-   единая функция эффективного окна, используемая банком и порогом сглаживания.
+5. `internal static int FdwEffectiveGateSamples(double frequencyHz, PhaseAnalysisSettings settings, int sampleRate)` —
+   единая функция эффективного окна (`FdwGateGeometry`), используемая банком и
+   порогом сглаживания; рядом `DescribeFdwBank` (центры и окна банка после
+   слияния) и `GroupDelayMinimumHalfWidthHz`. Под Fixed возвращает полный гейт.
 6. `SmoothBinsHann` получает перегрузку с `Func<double, double> minHalfWidthHz`
    (или `double[]` по бинам); скалярная версия остаётся.
 
@@ -154,18 +165,29 @@ FDW-спектр (`BuildFdwSpectrum`) — это банк спектров че�
    (аналог `Fdw_WhenEveryWindowIsClamped_MatchesFixed`) → FDW-GD == Fixed-GD
    побиново.
 4. **Прямой звук + позднее отражение.** Импульс + копия через 6 мс на −6 dB,
-   гейт 1/10/3 мс. Fixed-GD выше ~1.3 кГц имеет размах ≥ 1 мс (интерференция),
-   FDW-8 там плоская на времени прямого прихода ±0.1 мс; ниже частоты, где
-   `cycles/f > 6 мс`, обе кривые совпадают в пределах допуска.
+   гейт 1/10/3 мс. *Ревю:* окно равно `left + 8/f` = `1 + 8/f` мс, отражение
+   полностью вне окна с `f ≥ 8/(6−1) = 1,6 кГц`; между 1,1 и 1,6 кГц оно сидит
+   в правом фейде с весом до половины, а интерполяция между центрами банка
+   доливает соседнее окно. Поэтому проверка «плоская на приходе ±0,1 мс»
+   идёт от **2 кГц** (Fixed там имеет размах ≥ 1 мс), а совпадение с Fixed —
+   ниже **500 Гц** (кламп на полный гейт до 615 Гц, последний клампнутый центр
+   595 Гц). Пороги считать из констант окна, а не писать числом.
 5. **Временная привязка.** Синтетический банк с двумя элементами разных
    `extractionStart` (через `internal` вход) даёт непрерывную τ без ступеньки;
    поправка `((s_k − s_ref)/fs)·H_k` протестирована отдельно на чистой
    задержке.
 6. **Суперпозиция.** Два канала с общим окном: GD из
    `SumGatedSpectraPairs` равна GD из гейта над суммарной IR (±1e-9 мс).
-   С разными окнами (Auto per-curve): GD суммы двух чистых задержек `d1, d2`
-   с энергиями `e1, e2` равна `(e1·d1 + e2·d2)/(e1+e2)` на частотах, где обе
-   попадают в окно.
+   С разными окнами (Auto per-curve): *Ревю:* побиново GD суммы двух чистых
+   задержек НЕ равна `(e1·d1 + e2·d2)/(e1+e2)` — числитель и энергия несут
+   член `√(e1·e2)·cos(ω·Δ)`, и отношение осциллирует между
+   амплитудно-взвешенным средним и уходом за обе задержки. Энергетическое
+   среднее — предел после сглаживания, когда ядро накрывает период `1/Δ`:
+   при FDW-8 (пол `f/16`) и `Δ = 8 мс` это от ~2 кГц, остаток боковых
+   лепестков Ханна — сотые доли мс. Тест: `Δ = 8 мс`, полоса 4–12 кГц, допуск
+   0,05 мс (ошибка веса сдвинула бы кривую на 8 мс). Отдельно —
+   перенос веса в обе стороны (`SumGatedSpectraPairs` с target до и после
+   старта извлечения, ±1e-9) и два размещения одного отклика в сумме.
 7. **Минимальная фаза.** Минимально-фазовая система (существующий генератор)
    через FDW-8: excess ≈ 0; all-pass: дисперсия в excess, minimum ≈ 0.
 8. **Порог сглаживания.** `FdwEffectiveGateSamples` на центрах банка равен
@@ -181,10 +203,14 @@ FDW-спектр (`BuildFdwSpectrum`) — это банк спектров че�
 `FrequencyResponseOptions` (`dsp/DataHelper.cs`) получает
 `GroupDelayWindowMode : PhaseWindowMode` и `GroupDelayFdwCycles : int`.
 
-Умолчания: **FDW, 8 циклов** для свежей установки. Файл настроек, записанный до
-появления полей, открывается на **Fixed** — та же миграция, что для фазы в
-`MeasurementSettingsFile.cs` (строки ~87–92): пользователь продолжает видеть
-ту кривую, которую видел. (Решение владельца; см. §7.)
+Умолчания: **FDW** для свежей установки, число циклов —
+`PhaseAnalysisSettings.DefaultFdwCycles` (**6**, умолчание фазы). *Ревю:* 8
+циклов по умолчанию при фазе на 6 давали бы свежей установке разные окна на
+двух вкладках — ровно то, против чего написан §4.6; совместимая пара по
+умолчанию важнее цифры. Файл настроек, записанный до появления полей,
+открывается на **Fixed** (поле `GroupDelayWindowMode` в схеме без
+инициализатора: отсутствует → null → Fixed в `ApplyTo`; версия схемы не
+меняется): пользователь продолжает видеть ту кривую, которую видел.
 
 `MeasurementSettingsFile.Schema.cs`, `FrequencyResponseSettings`:
 `PhaseWindowMode? GroupDelayWindowMode` (nullable, как `MagnitudeWindowMode`),
@@ -353,21 +379,32 @@ smoothing 0) и вызвать перегрузку §3.1.1. Compare-оверл�
 
 ## 7. Открытые вопросы (решает владелец)
 
-1. **Умолчание режима GD для свежей установки.** Предложено FDW-8 (старые
-   файлы — Fixed). Альтернатива: Fixed везде, FDW — по выбору.
-2. **AI-проба `excessGroupDelay`.** `PROTOCOL.md` описывает её как «через
-   фазовый гейт проекта», но код читает только длительности (Fixed). После
-   появления GD-вида, читающего режим проекта, расхождение станет видимым.
-   Предложено: перевести пробу на `project.PhaseWindowMode`/`PhaseFdwCycles` в
-   Части C и поправить строку таблицы в `docs/agent/PROTOCOL.md`; либо явно
-   записать в протокол, что проба читает Fixed.
-3. **Число циклов в VDSP GD-виде.** Предложено — селектор проекта (кривая для
-   глаза, единое окно с фазовым видом). Альтернатива — жёсткие 8, как у чисел
-   (`JunctionPhaseSpectra.FdwCycles`), тогда под 4/6 циклами фаза и GD читаются
-   через разные окна.
-4. **`MANUAL.md`.** Менять ли шаг проверки стыков (рекомендовать GD-вид VDSP
-   как проверку прихода после Auto delay)? По правилу `AGENTS.md` мануал
-   правится только когда меняется, что делает тюнер.
-5. **Minimum/excess в VDSP.** Предложено не рисовать. Если нужны — это два
-   дополнительных тоггла и `includeMinimumPhase: true` на каждом канале
-   (кепстральная реконструкция ×N каналов на redraw).
+1. **Умолчание режима GD для свежей установки.** *Решено:* FDW с числом
+   циклов фазы (6), старые файлы — Fixed. См. §4.1.
+2. **AI-проба `excessGroupDelay`.** *Решено:* проба и пункт меню читают
+   `project.PhaseWindowMode`/`PhaseFdwCycles` (`AgentGroupDelayWindow()` в
+   `VirtualCrossoverPanel.AgentBridge.cs`, снимок на UI-потоке); цепочка в
+   пробу не входит, поэтому довод «FDW-банки на каждый вариант дороги» здесь
+   не действует. Поправлены все копии контракта: строка таблицы
+   `docs/agent/PROTOCOL.md`, `conventions.excessGdMs` документа диагностики
+   (`AgentDiagnosticBuilder`), абзац REFERENCE про диагностику; в
+   `AGENT_GUIDE.md` окно не упоминалось.
+3. **Число циклов в VDSP GD-виде.** *Решено:* селектор проекта — кривая для
+   глаза обязана совпадать с окном фазового вида на той же оси частот.
+4. **`MANUAL.md`.** *Решено:* не трогать в этих PR. Рекомендацию «проверять
+   приход по GD-виду после Auto delay» писать после полевого прогона, а не по
+   ТЗ.
+5. **Minimum/excess в VDSP.** *Решено:* не рисовать; вид про относительный
+   приход каналов, excess остаётся у пробы.
+
+## 8. Что осталось вне коммитов
+
+- Батарея межсидельного разброса (§5.5, `SessionBatteryHarness` по архивным
+  кабинам под Fixed и FDW-8) не прогонялась: это единственный способ проверить,
+  что тождество даёт ту же цифру 3–5×, что numpy-эксперимент; до её прогона
+  цифра в REFERENCE ссылается на эксперимент, а не на этот код.
+- Фигуры доков: диалог Group Delay (`gd`) получил две строки сверху, строка
+  View в VDSP — четвёртую кнопку и сдвиг сглаживания/группы вправо; перегнать
+  тулом скриншотов у владельца.
+- Порог сглаживания `f/16` записан в тултип циклов и в REFERENCE; на глаз на
+  живой кабине не смотрели.

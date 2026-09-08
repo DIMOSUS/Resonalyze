@@ -1,4 +1,6 @@
-﻿namespace Resonalyze.Dsp;
+﻿using System.Numerics;
+
+namespace Resonalyze.Dsp;
 
 /// <summary>
 /// Represents a numeric sample without coupling DSP code to a plotting framework.
@@ -92,3 +94,18 @@ public sealed record GroupDelayCurveSet(
     AnalysisCurve Measured,
     AnalysisCurve? Minimum,
     AnalysisCurve? Excess);
+
+/// <summary>
+/// One channel's gated analysis spectrum together with its time-weighted twin,
+/// both in ONE time reference: <see cref="Spectrum"/> is FFT(w·h) and
+/// <see cref="TimeWeighted"/> is FFT(t·w·h) with t the time from the
+/// extraction start, so Re[T·conj(H)] / |H|² reads the group delay as the
+/// energy-weighted arrival time inside the window. Callers that add channels
+/// before reading a group delay (the Virtual DSP Sum) add both members
+/// through <c>DataHelper.SumGatedSpectraPairs</c>, which carries the time
+/// weight across differing extraction starts; adding them bin by bin
+/// themselves would not.
+/// </summary>
+public sealed record GroupDelaySpectra(
+    Complex[] Spectrum,
+    Complex[] TimeWeighted);

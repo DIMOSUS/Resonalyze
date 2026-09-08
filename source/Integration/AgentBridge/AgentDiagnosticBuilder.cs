@@ -18,8 +18,28 @@ internal sealed record AgentDiagnostic(
     string Diagnostic,
     string? PackageId,
     string CreatedAtUtc,
+    AgentDiagnosticWindow Window,
     IReadOnlyDictionary<string, string> Conventions,
     IReadOnlyList<AgentDiagnosticSeries> Channels);
+
+/// <summary>
+/// The window the diagnostic was read through, in the package's own names
+/// (<c>analysis.phaseWindowMode</c>, <c>fdwCycles</c>, <c>gateShapeMs</c>): a
+/// reader holding the document alone — no package beside it, or one copied
+/// under another window — still knows whether it is looking at the classical
+/// excess of a Fixed gate or the windowed reading of FDW, and how long the
+/// gate was.
+/// </summary>
+internal sealed record AgentDiagnosticWindow(
+    string PhaseWindowMode,
+    int FdwCycles,
+    AgentPackageGateShape GateShapeMs)
+{
+    public static AgentDiagnosticWindow From(PhaseAnalysisSettings window) => new(
+        window.WindowMode.ToString(),
+        window.ValidatedFdwCycles,
+        new AgentPackageGateShape(window.LeftMs, window.PlateauMs, window.RightMs));
+}
 
 internal sealed record AgentDiagnosticSeries(string Id, AgentSeries Series);
 
@@ -76,15 +96,21 @@ internal static class AgentDiagnosticBuilder
     /// The excess group delay of each measured channel on the package's
     /// broadband grid: the group delay less its minimum-phase part — what the
     /// magnitude dictates and a minimum-phase PEQ straightens along with it —
-    /// so what remains is what no PEQ can touch. <paramref name="packageId"/>
+    /// read through the project's gate and window: the classical excess under
+    /// Fixed, a windowed reading under FDW, and at a band edge possibly the
+    /// gate's own truncation of a steep filter (the conventions text the
+    /// document carries says what that changes). <paramref name="window"/>
+    /// is that gate and window, stamped on the document; <paramref name="packageId"/>
     /// names the package the curves belong beside, when one was copied.
     /// </summary>
     public static AgentDiagnosticBuildResult BuildExcessGroupDelay(
         IReadOnlyList<AgentDiagnosticChannel> channels,
         string? packageId,
-        DateTimeOffset createdAtUtc)
+        DateTimeOffset createdAtUtc,
+        AgentDiagnosticWindow window)
     {
         ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(window);
 
         IReadOnlyList<AgentDiagnosticSeries> series = ExcessGroupDelaySeries(channels);
         var diagnostic = new AgentDiagnostic(
@@ -95,6 +121,7 @@ internal static class AgentDiagnosticBuilder
             packageId,
             createdAtUtc.ToUniversalTime().ToString(
                 "yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture),
+            window,
             new Dictionary<string, string>
             {
                 ["excessGdMs"] =
@@ -102,10 +129,20 @@ internal static class AgentDiagnosticBuilder
                     "minimum-phase part the magnitude dictates (which a minimum-phase PEQ " +
                     "straightens along with the magnitude); what remains is arrivals and " +
                     "reflections, which no PEQ can touch — read off the raw impulse response " +
-                    "through the phase gate at the channel's own arrival (the chain does not " +
+                    "through the project's phase gate and window (Fixed, or FDW with its " +
+                    "cycles: under FDW the group delay is the arrival of the energy inside " +
+                    "the window at each frequency, the reflections the window drops leave " +
+                    "the excess too, and the minimum-phase part is taken from the windowed " +
+                    "magnitude; the mode, cycles and gate are stamped in `window`, in the " +
+                    "package's names) — a windowed reading, which for minimum-phase content agrees " +
+                    "with the Fixed reading to a few hundredths of a millisecond; what the " +
+                    "gate cannot resolve, a steep high-pass's ringing at the low edge, reads " +
+                    "as excess under either window) " +
+                    "at the channel's own arrival (the chain does not " +
                     "enter it: the same with any PEQ bank in place or none), at the group-delay " +
                     "view's default 1/12-octave smoothing whatever the display shows; a row is " +
-                    "absent where the response is too weak to read"
+                    "absent where the response is too weak to read and outside the band the " +
+                    "channel measured"
             },
             series);
         string json = JsonSerializer.Serialize(diagnostic, Options);

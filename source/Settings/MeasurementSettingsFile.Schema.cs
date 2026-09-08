@@ -499,6 +499,15 @@ internal sealed partial class MeasurementSettingsFile
         public double GroupDelayLeftMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayLeftMs;
         public double GroupDelayPlateauMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayPlateauMs;
         public double GroupDelayRightMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayRightMs;
+        // Starts on FDW like the Phase tab's field above: a first run builds
+        // this object and applies it, so the initializer IS the fresh-install
+        // default. A file written before the window existed is told apart by
+        // its schema version (below 13) in MeasurementSettingsFile.LoadOrDefault,
+        // which puts it on the Fixed gate its owner has been looking at; the
+        // null case in ApplyTo is a backstop for an explicit null only.
+        public PhaseWindowMode? GroupDelayWindowMode { get; set; } =
+            Resonalyze.Dsp.PhaseWindowMode.FrequencyDependent;
+        public int GroupDelayFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
 
         public static FrequencyResponseSettings Capture(
             FrequencyResponseOptions options,
@@ -544,7 +553,9 @@ internal sealed partial class MeasurementSettingsFile
                 GroupDelayGateOffsetMs = options.GroupDelayGateOffsetMs,
                 GroupDelayLeftMs = options.GroupDelayLeftMs,
                 GroupDelayPlateauMs = options.GroupDelayPlateauMs,
-                GroupDelayRightMs = options.GroupDelayRightMs
+                GroupDelayRightMs = options.GroupDelayRightMs,
+                GroupDelayWindowMode = options.GroupDelayWindowMode,
+                GroupDelayFdwCycles = options.GroupDelayFdwCycles
             };
 
         public void ApplyTo(FrequencyResponseOptions options, CurveVisibilityOptions visibility)
@@ -619,6 +630,15 @@ internal sealed partial class MeasurementSettingsFile
             options.GroupDelayLeftMs = ClampMilliseconds(GroupDelayLeftMs, 0.0, 1000.0);
             options.GroupDelayPlateauMs = ClampMilliseconds(GroupDelayPlateauMs, 0.0, 1000.0);
             options.GroupDelayRightMs = ClampMilliseconds(GroupDelayRightMs, 0.0, 1000.0);
+            // Null (an explicit null, or the version-13 migration's Fixed) keeps
+            // the Fixed gate rather than silently changing the curve.
+            options.GroupDelayWindowMode = GroupDelayWindowMode is { } groupDelayWindowMode &&
+                Enum.IsDefined(groupDelayWindowMode)
+                    ? groupDelayWindowMode
+                    : Resonalyze.Dsp.PhaseWindowMode.Fixed;
+            options.GroupDelayFdwCycles = GroupDelayFdwCycles is 4 or 6 or 8
+                ? GroupDelayFdwCycles
+                : PhaseAnalysisSettings.DefaultFdwCycles;
         }
 
         private static double ClampMilliseconds(double value, double min, double max) =>

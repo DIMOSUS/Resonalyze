@@ -247,6 +247,33 @@ namespace Resonalyze.Dsp
         public double GroupDelayPlateauMs { get; set; } = DefaultGroupDelayPlateauMs;
         public double GroupDelayRightMs { get; set; } = DefaultGroupDelayRightMs;
 
+        // The Group Delay mode's window, the same choice the Phase mode
+        // offers and with the same defaults, so a fresh install reads both
+        // tabs through one window — the pair that makes them comparable. A
+        // settings file written before these fields existed opens on Fixed
+        // (see MeasurementSettingsFile), the curve its owner has been seeing.
+        public PhaseWindowMode GroupDelayWindowMode { get; set; } =
+            PhaseWindowMode.FrequencyDependent;
+        public int GroupDelayFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
+
+        /// <summary>
+        /// The Group Delay mode's window as the analysis reads it: its own
+        /// gate and window mode; the phase-only fields (detrend, unwrap, the
+        /// phase display smoothing) at their neutral values, since the
+        /// group-delay analysis ignores them.
+        /// </summary>
+        public PhaseAnalysisSettings CreateGroupDelayAnalysisSettings() => new(
+            GroupDelayWindowMode,
+            GroupDelayFdwCycles,
+            PhaseDetrendMode.Off,
+            ManualDetrendMilliseconds: 0.0,
+            GroupDelayGateOffsetMs,
+            GroupDelayLeftMs,
+            GroupDelayPlateauMs,
+            GroupDelayRightMs,
+            Unwrap: false,
+            SmoothingInverseOctaves: 0.0);
+
         // The lowest frequency the gated window can resolve (~one period inside the
         // gate). Driven purely by the gate duration, not the sample rate or FFT size.
         public static double GateMinReliableFrequencyHz(

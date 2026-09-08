@@ -371,6 +371,8 @@ RESONALYZE_AGENT_DIAGNOSTIC_V1
 BEGIN_RESONALYZE_AGENT_DIAGNOSTIC_JSON
 { "kind": "resonalyze.agent-diagnostic", "protocolVersion": 1, "guideVersion": "1.8",
   "diagnostic": "excessGroupDelay", "packageId": "…", "createdAtUtc": "…",
+  "window": { "phaseWindowMode": "FrequencyDependent", "fdwCycles": 8,
+              "gateShapeMs": { "left": 1, "plateau": 3, "right": 12 } },
   "conventions": { … },
   "channels": [ { "id": "B:left", "series": { "columns": ["frequencyHz","excessGdMs"], "rows": [ … ] } }, … ] }
 END_RESONALYZE_AGENT_DIAGNOSTIC_JSON
@@ -381,11 +383,15 @@ none was copied since the session opened, or when the session has changed
 since that copy — the same check the reply's review makes, §2.2 — so an id
 that is present vouches that the curves belong beside it); the channel ids and the
 broadband grid are the package's, so the two lay side by side. A row is left
-out where the reading could not be made.
+out where the reading could not be made. `window` is the gate and window the
+reading was made through, in the names `analysis` uses in the package
+(`phaseWindowMode`, `fdwCycles`, `gateShapeMs`) — so a document read on its own,
+or beside a package copied under another window, still says whether it holds
+the Fixed gate's classical excess or FDW's windowed reading (see the table).
 
 | `diagnostic` | What the series holds |
 | --- | --- |
-| `excessGroupDelay` | Each measured channel's excess group delay in ms: its group delay less the minimum-phase part the magnitude dictates (which a minimum-phase PEQ straightens along with the magnitude), read off the raw impulse response through the project's phase gate at the channel's own arrival, at the group-delay view's own default smoothing, 1/12 octave, whatever the display shows — a group delay is a phase slope, and the package's psychoacoustic width is a hearing model for levels, not for time. What remains is arrivals and reflections — the part of a junction's phase mismatch that no PEQ can touch. The chain does not enter it: the curve is the same with any PEQ bank in place or none. |
+| `excessGroupDelay` | Each measured channel's excess group delay in ms: its group delay less the minimum-phase part the magnitude dictates (which a minimum-phase PEQ straightens along with the magnitude), read off the raw impulse response through the project's phase gate and its window — Fixed, or FDW with its cycles, as the Virtual DSP group-delay view draws it — at the channel's own arrival, at the group-delay view's own default smoothing, 1/12 octave, whatever the display shows — a group delay is a time, and the package's psychoacoustic width is a hearing model for levels, not for time. Under Fixed the group delay is the phase slope; under FDW it is the arrival of the energy inside the window applied at each frequency, the reflections the window drops leave the excess too, and the minimum-phase part is taken from the windowed magnitude — a windowed reading rather than the classical all-pass delay, which for minimum-phase content (PEQ up to Q 10, crossovers) agrees with the Fixed reading to a few hundredths of a millisecond in the tests. What remains is arrivals and reflections — the part of a junction's phase mismatch that no PEQ can touch — plus what the gate itself cannot resolve: a steep high-pass rings longer than a junction's gate, and its truncated ringing reads as excess at the low edge under either window. The chain does not enter it: the curve is the same with any PEQ bank in place or none. A row is absent where the response is too weak to read and outside the band the channel measured. |
 
 ## 2. The reply
 

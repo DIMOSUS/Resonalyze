@@ -126,7 +126,7 @@ remembers one range per mode, so Frequency Response and Impulse Response do not
 fight over a scale; the Time Alignment previews keep theirs across a
 reconfiguration, and the EQ Wizard and Virtual DSP graphs hold theirs until
 something changes what the axis means (loading a new wizard source, switching
-the Virtual DSP view between magnitude, phase and impulse).
+the Virtual DSP view between magnitude, phase, group delay and impulse).
 
 Axes you have **not** touched still scale themselves — the dB axis lifts its
 ceiling for a padded loopback, group delay fits its data — so the automatic
@@ -142,7 +142,11 @@ off screen. Its **Impulse** view zooms and pans in time — the millisecond arou
 each arrival is the part worth reading, and the gate window it opens on is far
 wider — within that window, which stays the hard limit because the traces hold
 nothing outside it. Editing the gate re-frames the axis, since that is a new
-timeline; an ordinary redraw leaves your zoom alone.
+timeline; an ordinary redraw leaves your zoom alone. Its **Group delay** view
+follows the general rule: the ms axis zooms and pans freely and fits itself to
+the drawn curves — the measured channels and the Sum, with a little headroom —
+until you take over, and an ordinary redraw leaves a zoom you set alone; only
+switching views hands the axis back to the fit.
 
 The EQ Wizard's right-hand **EQ (dB)** axis follows the impulse view's rule:
 it zooms and pans within its nominal range — the boost/cut budget plus the
@@ -196,12 +200,16 @@ first-arrival front, not the peak — falling back to the transfer-IR peak when 
 detector cannot get a trustworthy reading. A read-only readout shows the gate's
 lowest reliable frequency (≈ 1 / gate length).
 
-Phase additionally offers **Window: Fixed / FDW**. Fixed is the single Tukey gate
-across the whole spectrum; **FDW** builds a bank of time-aligned spectra whose
-effective right-side duration follows `cycles / frequency`, so low frequencies
-retain the long window while mid and high frequencies progressively reject the
-late reflection tail. **FDW cycles** selects 4 (strongest suppression), 6 (the
-recommended balance), or 8 (more late detail).
+Phase and Group Delay both offer **Window: Fixed / FDW**. Fixed is the single
+Tukey gate across the whole spectrum; **FDW** builds a bank of time-aligned
+spectra whose effective right-side duration follows `cycles / frequency`, so low
+frequencies retain the long window while mid and high frequencies progressively
+reject the late reflection tail. **FDW cycles** selects 4 (strongest
+suppression), 6 (the recommended balance), or 8 (more late detail). The cycles
+are counted after the gate's left fade, and the gate stays the window's outer
+limit: where `cycles / frequency` would run past it, the window is the gate.
+Both tabs start on FDW with 6 cycles; a settings file written before the Group
+Delay tab had the choice opens on Fixed, the curve its owner has been looking at.
 
 The Phase view shows four independently toggled curves: **measured phase**,
 **minimum phase** (the part tied to the magnitude and correctable with EQ),
@@ -223,9 +231,32 @@ while a stretch too long to bridge honestly is blanked instead of guessed.
 Group Delay reads absolute delay referenced to the start of the transfer IR, so a
 peak well into the impulse response reports its true arrival time, and the curve
 is computed energy-weighted so near-null bins follow the dominant energy instead
-of the singularity. FDW is deliberately not applied here: an FDW phase curve is
-direct-sound-oriented and is not the exact integral of the displayed fixed-gate
-Group Delay, so selecting Fixed phase restores the compatible pair.
+of the singularity. Under FDW the group delay at each frequency is the
+energy-weighted arrival time **inside the window applied there** — the window of
+`cycles` periods after the gate offset — so at mid and high frequencies it reads
+the direct sound's arrival and at low frequencies, where the window is the whole
+gate, it is the Fixed curve (for a gate that fits the analysis FFT; a longer one
+is trimmed differently by the two paths). It is the same identity the Fixed curve is computed
+by, evaluated on the FDW bank; it is **not** the slope of the FDW phase curve,
+whose derivative also carries the window's own change with frequency. The two
+tabs read as a pair when they read through one window — the same gate (offset,
+fades and plateau) as well as the same mode and cycle count; the tabs keep
+separate gates, and their defaults differ, so matching the mode alone is not
+enough — and not when one of them is Fixed. (The Virtual DSP phase and
+group-delay views share one gate by construction.) Two consequences of reading through a window
+that shortens with frequency: the **minimum-phase** and **excess** curves are
+taken against the windowed magnitude — the direct sound's, not the
+steady-state response's — so the excess is a windowed reading rather than the
+classical all-pass delay; for minimum-phase content (PEQ bands up to Q 10,
+crossovers) it agrees with the Fixed reading to a few hundredths of a
+millisecond in the tests, while what the gate itself cannot resolve — a steep
+high-pass ringing past the gate — reads as excess at the low edge under either
+window. And the resolution the window affords is the floor
+under the smoothing: half the window's resolution, which for a window of the
+left fade plus `cycles / f` is about a twelfth of an octave either side at
+8 cycles and an eighth at the default 6, narrowing a little with the fade, so a
+finer **Smoothing** setting changes little above the frequency where FDW takes
+over from the gate. The Compare overlay reads through the same mode and cycles.
 
 ## Audio Backends
 
@@ -2030,8 +2061,30 @@ The acoustic plot shows raw and processed curves per channel for the active side
 (the two per-channel curve checkboxes belong to the block, so a side switch
 redraws the same curves from the other side's measurement),
 the complex **Sum**, the **opposite side's Sum** as a dashed translucent curve,
-and the **Sum loss** curve, with a **Phase view** toggle and a **Sum loss**
-read-out (avg / dip per junction plus a total). The loss is a dB gap, not a
+and the **Sum loss** curve, with a **View** row — **Magnitude**, **Phase**,
+**Impulse** and **Group delay** — and a **Sum loss** read-out (avg / dip per
+junction plus a total). **Phase** draws each processed channel's phase and the
+Sum's through the phase gate; **Impulse** promotes the gate dialog's preview to
+the main plot, every channel's processed response on one absolute timeline;
+**Group delay** draws each processed channel's group delay and the Sum's through
+that same gate and window (Fixed, or FDW with the project's cycles), placed as
+the phase curves are placed and previewed by the open **Gate…** dialog the same
+way — so the phase and group-delay views are one window, and the group delay is
+the pair to the drawn phase. It reads absolute, in milliseconds from the
+record's start (the impulse view's clock, no detrend), and under FDW it is the
+arrival of the energy inside the window at each frequency: the direct sound at
+mid and high frequencies, which is the curve whose seat-to-seat scatter the
+FDW-8 window cut by three to five times on the reference car (see the Sum loss
+selector below). The Sum is the sum of the individually gated channels' spectra,
+as on the phase view, and masked where no channel measured; a crossover's stop
+band blanks a channel's curve there, as it does in Group Delay mode. Only the
+plain group delay is drawn, no minimum/excess split — the excess of the raw
+measurement stays the AI diagnostic's — and the Sum
+toggle keeps its own answer on this view, inheriting the phase view's until it
+is set. The Sum loss selector, the hybrid, the target and the spatial average
+are magnitude toggles and sit muted here, as on the phase view; the smoothing
+selector applies, its psychoacoustic width reading as 1/12 octave on a time
+curve. The loss is a dB gap, not a
 level, so it is drawn against its own amber **Sum loss (dB)** axis on the right
 (0 dB near the top, 6 dB steps, deepening to hold a notch) that appears only
 while the curve is shown; it zooms and pans on its own, separately from the
@@ -2120,8 +2173,8 @@ view, over that group's members alone, so the plot and the ΔdB rows beside it
 describe the groups on one basis instead of two. A group whose members cannot
 produce one keeps its measured sum on its own line rather than vanishing from the
 view that exists to compare it. Groups is a
-magnitude view: it has no phase or impulse form, so picking it moves the view
-to **Magnitude** and mutes the other two rather than quietly falling back to
+magnitude view: it has no phase, group-delay or impulse form, so picking it moves the view
+to **Magnitude** and mutes the other three rather than quietly falling back to
 per-driver curves under a selector that promises group sums.
 
 Junctions are read where drivers actually hand over, not merely where they are
@@ -2297,7 +2350,7 @@ L/R difference that is really a method difference. The two sides share ONE offse
 (the shown side's), because one analyzer session at one input gain produced every
 capture and giving each side its own would erase exactly the L/R level difference
 the captures measured. Like the target and the sum loss it
-is a magnitude toggle, greyed on the phase and impulse views — a spatial average
+is a magnitude toggle, greyed on the phase, group-delay and impulse views — a spatial average
 carries no phase. The tick itself survives all of that: it says what you want
 drawn, so re-attaching a capture brings the hybrid straight back instead of
 sending you to find the checkbox again.
@@ -2358,7 +2411,7 @@ reflection tail the long window would otherwise admit; its cycle count shortens 
 window with frequency and never lengthens it, so the gate stays the outer limit and
 8 cycles are not suddenly available at 24 Hz.
 
-The gate's durations shape the **phase and impulse views only**. The magnitude
+The gate's durations shape the **phase, group-delay and impulse views only**. The magnitude
 view — channels, Sum, Sum loss and the read-out built from them — deliberately
 reads a long fixed **steady-state window** (~680 ms, clamped to 32768 samples at
 high rates) that only takes the gate's OFFSET, saying where it opens. (The one
@@ -3206,8 +3259,11 @@ this: the clipboard is the only transport, and you are the one who pastes.
   belongs beside. **Excess group delay** is each measured channel's group delay
   less its minimum-phase part — the part of a junction's phase mismatch that no
   PEQ can touch, arrivals and reflections — read off the measurement through
-  the phase gate as the analyzer's group-delay view shows it, so the chain does
-  not enter it and it is the same whatever the PEQ bank holds.
+  the project's phase gate and window, Fixed or FDW with its cycles, as the
+  Virtual DSP group-delay view draws it, so the chain does not enter it and it
+  is the same whatever the PEQ bank holds; under FDW the reflections the window
+  drops leave the excess too, and the reading is a windowed one — see the
+  [Phase and Group Delay](#phase-and-group-delay) note on what that changes.
 - **Import AI proposal…** reads the assistant's reply back off the clipboard —
   copy the whole reply, not just the JSON — and opens a review. The reply may
   address five things on one channel: gain, delay, polarity, the crossover, and

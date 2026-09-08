@@ -201,9 +201,9 @@ public partial class VirtualCrossoverPanel
             async (_, _) => await CopyExcessGroupDelayForAiAsync())
         {
             ToolTipText = ToolTipTextWrapper.Wrap(
-                "Each measured channel's excess group delay — the part of its phase a " +
-                "PEQ cannot touch: arrivals and reflections — read through the phase gate " +
-                "as the analyzer shows it.")
+                "Each measured channel's excess group delay, read through the project's " +
+                "phase gate and window. Under FDW a windowed reading; excess that lives " +
+                "only at a band edge can be the gate truncating a steep filter's ringing.")
         });
         agentMenu.Items.Add(diagnostics);
         agentMenu.Items.Add(new ToolStripMenuItem(
@@ -1127,8 +1127,7 @@ public partial class VirtualCrossoverPanel
             return [];
         }
 
-        (double, double, double) gate =
-            (project.PhaseGateLeftMs, project.PhaseGatePlateauMs, project.PhaseGateRightMs);
+        PhaseAnalysisSettings gate = AgentGroupDelayWindow();
         return await Task.Run(() =>
         {
             var curves = new List<AgentDiagnosticChannel>(measured.Count);
@@ -1721,8 +1720,7 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
-            (double, double, double) gate =
-                (project.PhaseGateLeftMs, project.PhaseGatePlateauMs, project.PhaseGateRightMs);
+            PhaseAnalysisSettings gate = AgentGroupDelayWindow();
             // The package the curves belong beside — while this is still the
             // session it was copied from. Changed, the id would tie the curves to
             // channel ids and gates that no longer mean what they meant there.
@@ -1751,7 +1749,10 @@ public partial class VirtualCrossoverPanel
                         }
                     }
 
-                    return (AgentDiagnosticBuilder.BuildExcessGroupDelay(channels, packageId, now), channels.Count);
+                    return (
+                        AgentDiagnosticBuilder.BuildExcessGroupDelay(
+                            channels, packageId, now, AgentDiagnosticWindow.From(gate)),
+                        channels.Count);
                 }));
             if (IsDisposed)
             {
@@ -2335,36 +2336,54 @@ public partial class VirtualCrossoverPanel
             groups);
     }
 
-    // The measurement's excess group delay as the analyzer shows it for one
-    // impulse response: the raw transfer response through the project's phase
-    // gate, placed at the channel's OWN arrival (the handoff's rule for a
-    // measurement read without the chain), at the group-delay view's default
-    // smoothing. The
-    // minimum-phase part — what the magnitude dictates and a minimum-phase PEQ
-    // straightens along with it — is taken out; what remains is what no PEQ can
-    // touch, which is the question a junction that will not sum asks.
-    // Pure: a gated FFT, a minimum-phase reconstruction and the difference, so
-    // it runs off the UI thread on a snapshot of the channel and the gate shape.
+    // The window the excess group delay is read through: the project's phase
+    // gate AND its window mode with the cycles — what the protocol promises
+    // and what the group-delay view draws — with the offset left for the
+    // channel's own arrival. Read on the UI thread, once per diagnostic.
+    private PhaseAnalysisSettings AgentGroupDelayWindow() => new(
+        project.PhaseWindowMode,
+        project.PhaseFdwCycles,
+        PhaseDetrendMode.Off,
+        ManualDetrendMilliseconds: 0.0,
+        GateOffsetMs: 0.0,
+        project.PhaseGateLeftMs,
+        project.PhaseGatePlateauMs,
+        project.PhaseGateRightMs,
+        Unwrap: false,
+        SmoothingInverseOctaves: 0.0);
+
+    // The excess group delay of one measured channel, read through the phase
+    // gate and window, placed at the channel's OWN arrival (the handoff's rule
+    // for a measurement read without the chain), at the group-delay view's
+    // default smoothing. The minimum-phase part — what the magnitude dictates
+    // and a minimum-phase PEQ straightens along with it — is taken out; what
+    // remains is arrivals and reflections, the question a junction that will
+    // not sum asks — plus what the gate itself cannot resolve at a band edge.
+    // Under FDW both parts are read against the windowed magnitude, so the
+    // reflections the window drops leave the excess too.
+    // Pure: gated FFTs, a minimum-phase reconstruction and the difference, so
+    // it runs off the UI thread on a snapshot of the channel and the window.
     private static IReadOnlyList<SignalPoint>? BuildExcessGroupDelayCurve(
         Complex[] impulseResponse, int peakIndex, int sampleRate, MeasuredBand band,
-        (double LeftMs, double PlateauMs, double RightMs) gate)
+        PhaseAnalysisSettings window)
     {
         int anchorIndex = ProcessedChannels.StartAnchorIndex(impulseResponse, peakIndex, sampleRate);
+        GroupDelaySpectra spectra = DataHelper.GetGroupDelayAnalysisSpectra(
+            new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate),
+            window with { GateOffsetMs = anchorIndex * 1_000.0 / sampleRate },
+            out int extractionStart);
         GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
-            new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate)
-            {
-                LowestMeasuredFrequencyHz = band.LowEdgeHz,
-                HighestMeasuredFrequencyHz = band.HighEdgeHz
-            },
-            anchorIndex * 1_000.0 / sampleRate,
-            gate.LeftMs,
-            gate.PlateauMs,
-            gate.RightMs,
+            spectra,
+            extractionStart,
+            sampleRate,
+            window,
             // The group-delay view's own default (1/12 octave), not the magnitude
             // curves' psychoacoustic setting: a group delay is a phase slope, and
             // a psychoacoustic width is a hearing model for levels, not for time.
             FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves,
-            includeMinimumPhase: true);
+            includeMinimumPhase: true,
+            lowestMeasuredFrequencyHz: band.LowEdgeHz,
+            highestMeasuredFrequencyHz: band.HighEdgeHz);
         return curves.Excess?.Points;
     }
 

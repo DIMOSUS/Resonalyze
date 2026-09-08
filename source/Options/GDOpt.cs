@@ -11,6 +11,7 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
     public GDOpt()
     {
         InitializeComponent();
+        comboWindowMode.SelectedIndexChanged += (_, _) => UpdateWindowControlState();
 
         BindGateControls(
             numericGateOffset,
@@ -39,6 +40,11 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
             numericWindow.Value = numericWindow.ClampValue(opt.GroupDelayPlateauMs);
             numericLeftWindow.Value = numericLeftWindow.ClampValue(opt.GroupDelayLeftMs);
             numericRightWindow.Value = numericRightWindow.ClampValue(opt.GroupDelayRightMs);
+            comboWindowMode.SelectedIndex =
+                opt.GroupDelayWindowMode == PhaseWindowMode.Fixed ? 0 : 1;
+            comboFdwCycles.SelectedItem = opt.GroupDelayFdwCycles is 4 or 6 or 8
+                ? opt.GroupDelayFdwCycles
+                : PhaseAnalysisSettings.DefaultFdwCycles;
             comboSmoothingInverseOctaves.SelectedItem =
                 SmoothingPresetOptions.Normalize(
                     opt.SmoothingInverseOctaves, includePsychoacoustic: false);
@@ -50,6 +56,7 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
         });
 
         UpdateMinFrequencyLabel();
+        UpdateWindowControlState();
         SyncGateOffsetEnabled();
         UpdateIrPreview();
     }
@@ -61,6 +68,12 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
         opt.GroupDelayPlateauMs = (double)numericWindow.Value;
         opt.GroupDelayLeftMs = (double)numericLeftWindow.Value;
         opt.GroupDelayRightMs = (double)numericRightWindow.Value;
+        opt.GroupDelayWindowMode = comboWindowMode.SelectedIndex == 0
+            ? PhaseWindowMode.Fixed
+            : PhaseWindowMode.FrequencyDependent;
+        opt.GroupDelayFdwCycles = comboFdwCycles.SelectedItem is int cycles
+            ? cycles
+            : PhaseAnalysisSettings.DefaultFdwCycles;
         opt.SmoothingInverseOctaves =
             comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
                 ? inverseOctaves
@@ -73,10 +86,19 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
         UpdateIrPreview();
     }
 
+    // The cycle count only means something under FDW.
+    private void UpdateWindowControlState() =>
+        comboFdwCycles.Enabled = comboWindowMode.SelectedIndex == 1;
+
+    internal bool FdwCyclesEnabled => comboFdwCycles.Enabled;
+
     // Points each field's "R" reset button at the built-in defaults.
     private void ConfigureResetDefaults()
     {
         var defaults = new FrequencyResponseOptions();
+        comboWindowMode.DefaultSelectedItem =
+            defaults.GroupDelayWindowMode == PhaseWindowMode.Fixed ? "Fixed" : "FDW";
+        comboFdwCycles.DefaultSelectedItem = defaults.GroupDelayFdwCycles;
         numericLeftWindow.DefaultValue = (decimal)defaults.GroupDelayLeftMs;
         numericWindow.DefaultValue = (decimal)defaults.GroupDelayPlateauMs;
         numericRightWindow.DefaultValue = (decimal)defaults.GroupDelayRightMs;
@@ -110,7 +132,18 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
             checkBoxShowCoherence,
             "Shows the measurement coherence (\u03B3\u00B2) curve when the IR was captured with 2+ averaged runs.");
         toolTip.SetToolTip(
+            comboWindowMode,
+            "Fixed reads through one time gate for the entire spectrum. FDW shortens " +
+            "the window as frequency rises, so the treble reads the direct arrival " +
+            "without the late reflections. With the Phase tab's gate, mode and cycles the two read as a pair.");
+        toolTip.SetToolTip(
+            comboFdwCycles,
+            "Periods kept by FDW after the gate offset: 4 suppresses reflections most, " +
+            "6 is recommended, and 8 retains more reflected detail. The window sets " +
+            "the resolution, so finer smoothing changes little where FDW takes over.");
+        toolTip.SetToolTip(
             irPlotView,
-            "Preview of the IR used for Group Delay together with the current gate window.");
+            "Preview of the IR used for Group Delay together with the current gate " +
+            "window. Under FDW the gate is the outer limit of a window that shortens with frequency.");
     }
 }

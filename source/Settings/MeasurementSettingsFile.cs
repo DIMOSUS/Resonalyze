@@ -7,7 +7,7 @@ namespace Resonalyze;
 
 internal sealed partial class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 12;
+    private const int CurrentSchemaVersion = 13;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -120,6 +120,16 @@ internal sealed partial class MeasurementSettingsFile
             if (settings.SchemaVersion < 12)
             {
                 settings.MigrateMicrophoneCalibrationHome();
+            }
+
+            // Version 13 gave the Group Delay mode its window selector. A file
+            // from before it was written under the Fixed gate, and its owner
+            // keeps seeing that curve; a fresh install (no file, no migration)
+            // starts on FDW through the schema's own default.
+            if (settings.SchemaVersion < 13)
+            {
+                settings.GroupDelay.GroupDelayWindowMode =
+                    Resonalyze.Dsp.PhaseWindowMode.Fixed;
             }
 
             settings.SchemaVersion = CurrentSchemaVersion;

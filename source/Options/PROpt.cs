@@ -272,7 +272,7 @@ namespace Resonalyze.Options
                 "Shows the measurement coherence (\u03B3\u00B2) curve when the IR was captured with 2+ averaged runs.");
             toolTip.SetToolTip(
                 irPlotView,
-                "Preview of the impulse response and the gate window used for phase calculation. FDW phase uses shorter high-frequency windows; Group Delay remains fixed-gate and is not its exact integral.");
+                "Preview of the impulse response and the gate window used for phase calculation. FDW phase uses shorter high-frequency windows; the Group Delay tab offers the same choice, and the two read as a pair when their window mode and cycles agree.");
             toolTip.SetToolTip(
                 comboWindowMode,
                 "Fixed uses one time gate for the entire spectrum. FDW shortens the analysis window as frequency rises to suppress late cabin reflections.");

@@ -201,9 +201,9 @@ public partial class VirtualCrossoverPanel
             async (_, _) => await CopyExcessGroupDelayForAiAsync())
         {
             ToolTipText = ToolTipTextWrapper.Wrap(
-                "Each measured channel's excess group delay — the part of its phase a " +
-                "PEQ cannot touch: arrivals and reflections — read through the phase gate " +
-                "as the analyzer shows it.")
+                "Each measured channel's excess group delay, read through the project's " +
+                "phase gate and window. Under FDW a windowed reading; excess that lives " +
+                "only at a band edge can be the gate truncating a steep filter's ringing.")
         });
         agentMenu.Items.Add(diagnostics);
         agentMenu.Items.Add(new ToolStripMenuItem(
@@ -2357,9 +2357,10 @@ public partial class VirtualCrossoverPanel
     // for a measurement read without the chain), at the group-delay view's
     // default smoothing. The minimum-phase part — what the magnitude dictates
     // and a minimum-phase PEQ straightens along with it — is taken out; what
-    // remains is what no PEQ can touch, which is the question a junction that
-    // will not sum asks. Under FDW both parts are read against the windowed
-    // magnitude, so the reflections the window drops leave the excess too.
+    // remains is arrivals and reflections, the question a junction that will
+    // not sum asks — plus what the gate itself cannot resolve at a band edge.
+    // Under FDW both parts are read against the windowed magnitude, so the
+    // reflections the window drops leave the excess too.
     // Pure: gated FFTs, a minimum-phase reconstruction and the difference, so
     // it runs off the UI thread on a snapshot of the channel and the window.
     private static IReadOnlyList<SignalPoint>? BuildExcessGroupDelayCurve(

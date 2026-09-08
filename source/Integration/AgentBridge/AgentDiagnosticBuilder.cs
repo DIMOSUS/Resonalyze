@@ -96,10 +96,10 @@ internal static class AgentDiagnosticBuilder
     /// The excess group delay of each measured channel on the package's
     /// broadband grid: the group delay less its minimum-phase part — what the
     /// magnitude dictates and a minimum-phase PEQ straightens along with it —
-    /// so what remains is what no PEQ can touch, read through the project's
-    /// gate and window: the classical excess under Fixed, a windowed reading
-    /// under FDW (the conventions text the document carries says what that
-    /// changes, and where the gate itself shows as excess). <paramref name="window"/>
+    /// read through the project's gate and window: the classical excess under
+    /// Fixed, a windowed reading under FDW, and at a band edge possibly the
+    /// gate's own truncation of a steep filter (the conventions text the
+    /// document carries says what that changes). <paramref name="window"/>
     /// is that gate and window, stamped on the document; <paramref name="packageId"/>
     /// names the package the curves belong beside, when one was copied.
     /// </summary>

@@ -146,13 +146,48 @@ public sealed class VirtualCrossoverStepViewTests
     private static IrPreviewTrace Trace(string title, int sample, double amplitude) =>
         new(Delta(sample, amplitude), title, OxyColors.White);
 
+    [Fact]
+    public void TheOppositeSidesSum_RidesAlong_ThinDashedTranslucent_OnTheSameClock()
+    {
+        // As on the magnitude view: the other side's summed response beside this
+        // side's Sum, so the two tunes compare without flipping the selector. It
+        // needs the Sum on, and the shown side's sample rate.
+        using VirtualCrossoverPanel panel = Loaded();
+        var showSum = (CheckBox)Field(panel, "checkBoxShowSum");
+        List<ProcessedChannel> processed = Processed(panel);
+        VirtualCrossoverSideSum opposite = new(
+            Delta(SecondArrival + 48, 1.5), SecondArrival + 48, SampleRate, processed);
+
+        showSum.Checked = true;
+        // Named for the side it belongs to: the right side on screen, so the
+        // trace is the left's.
+        Project(panel).ActiveSideRight = true;
+        AcousticImpulseRender render = Build(panel, processed, processed, opposite)!;
+        Assert.Equal(4, render.Traces.Count);
+        IrPreviewTrace trace = render.Traces[3];
+        Assert.Equal("Sum L", trace.Title);
+        Assert.Same(opposite.ImpulseResponse, trace.Samples);
+        Assert.Equal(1.0, trace.Thickness);
+        Assert.Equal(LineStyle.Dash, trace.Style);
+        Assert.Equal(110, trace.Color.A);
+        Assert.Equal(OxyColors.White.R, trace.Color.R);
+
+        // Off with the Sum, and at another rate.
+        showSum.Checked = false;
+        Assert.Equal(2, Build(panel, processed, processed, opposite)!.Traces.Count);
+        showSum.Checked = true;
+        VirtualCrossoverSideSum otherRate = opposite with { SampleRate = 96_000 };
+        Assert.Equal(3, Build(panel, processed, processed, otherRate)!.Traces.Count);
+    }
+
     private static AcousticImpulseRender? Build(
         VirtualCrossoverPanel panel,
         List<ProcessedChannel> processed,
-        IReadOnlyList<ProcessedChannel> summed) =>
+        IReadOnlyList<ProcessedChannel> summed,
+        VirtualCrossoverSideSum? opposite = null) =>
         (AcousticImpulseRender?)panel.GetType()
             .GetMethod("BuildStepRender", Hidden)!
-            .Invoke(panel, [processed, summed]);
+            .Invoke(panel, [processed, summed, opposite]);
 
     private static List<ProcessedChannel> Processed(VirtualCrossoverPanel panel)
     {

@@ -2077,7 +2077,10 @@ add up to — its step is the sum of theirs, so a driver's share of the total ca
 be read off the plot. A driver in the wrong polarity steps the other way first;
 a junction whose halves arrive apart shows as a Sum that climbs in two moves.
 The Sum adds every summing channel, hidden or not, exactly the set the
-magnitude Sum adds. The running sum starts at the left edge of the drawn
+magnitude Sum adds, and the opposite side's Sum rides along beside it as a
+thin dashed translucent line on the same absolute clock, as on the magnitude
+view, so the two tunes' fronts compare without flipping the L/R selector. The
+running sum starts at the left edge of the drawn
 window, not at the record's start, so the noise before a channel's arrival does
 not float its curve; the gate is only drawn here, never applied, because a
 taper on the samples would read as a decay of the step. The Sum toggle keeps

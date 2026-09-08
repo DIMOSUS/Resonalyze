@@ -3718,8 +3718,11 @@ public partial class VirtualCrossoverPanel : UserControl
         // once the active side's hybrid (and therefore its offset) exists. The two
         // sides must be drawn by the same method or the comparison stops being about
         // the tunes.
+        // The step view draws it too, as the sum's step: the two tunes' fronts
+        // compare on one clock without flipping the L/R selector.
         VirtualCrossoverSideSum? oppositeSide = null;
-        if (checkBoxShowSum.Checked && radioViewMagnitude.Checked)
+        if (checkBoxShowSum.Checked &&
+            (radioViewMagnitude.Checked || radioViewStep.Checked))
         {
             oppositeSide = await metrics.ComputeSideSumAsync(
                 channels, !project.ActiveSideRight, revision, minimumChannels: 2,
@@ -3829,7 +3832,7 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             acousticRender = BuildAcousticRender(
                 shown, summedChannels, groupView, magnitudes, sumCurve, drawnLoss,
-                oppositeSum, hybrid, lossDirect);
+                oppositeSum, oppositeSide, hybrid, lossDirect);
         }
 
         using (AppProfiler.Zone("VirtualDSP.AcousticPlotDraw"))
@@ -3877,6 +3880,7 @@ public partial class VirtualCrossoverPanel : UserControl
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
         AnalysisCurve? oppositeSum,
+        VirtualCrossoverSideSum? oppositeSide,
         HybridMagnitudes? hybrid,
         bool lossDirect = false)
     {
@@ -3905,7 +3909,8 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         if (radioViewStep.Checked)
         {
-            return new AcousticRender(hint, [], BuildStepRender(processed, summed));
+            return new AcousticRender(
+                hint, [], BuildStepRender(processed, summed, oppositeSide));
         }
 
         if (VirtualCrossoverGroupViews.DrawsGroupSums(view))
@@ -7536,10 +7541,15 @@ public partial class VirtualCrossoverPanel : UserControl
     // linearity, which is what lets the eye read the drivers' contributions off
     // the total. Drawn on one common scale so the curves keep their sizes
     // relative to each other and to the Sum: every processed response is in the
-    // one calibrated level the magnitude Sum adds them in.
+    // one calibrated level the magnitude Sum adds them in. The opposite side's
+    // Sum rides along as on the magnitude view — thin, dashed, translucent — so
+    // the two tunes' fronts compare on the one absolute clock; it needs the
+    // shown side's sample rate, or its samples would land on the wrong
+    // milliseconds.
     private AcousticImpulseRender? BuildStepRender(
         List<ProcessedChannel> processed,
-        IReadOnlyList<ProcessedChannel> summed)
+        IReadOnlyList<ProcessedChannel> summed,
+        VirtualCrossoverSideSum? oppositeSide)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildStepRender");
         List<ProcessedChannel> shown = processed
@@ -7568,6 +7578,15 @@ public partial class VirtualCrossoverPanel : UserControl
                 "Sum",
                 SumColor,
                 2.4));
+            if (oppositeSide != null && oppositeSide.SampleRate == sampleRate)
+            {
+                traces.Add(new IrPreviewTrace(
+                    oppositeSide.ImpulseResponse,
+                    $"Sum {(project.ActiveSideRight ? "L" : "R")}",
+                    OxyColor.FromAColor(110, SumColor),
+                    1.0,
+                    LineStyle.Dash));
+            }
         }
 
         return new AcousticImpulseRender(

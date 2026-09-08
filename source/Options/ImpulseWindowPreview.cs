@@ -23,12 +23,13 @@ internal enum IrPreviewSource
 // One impulse response drawn on a gated preview: the samples on the absolute
 // timeline plus the color/title it is drawn with. The stroke defaults to the
 // preview's own; the Virtual DSP step view thickens its Sum the way the other
-// views do.
+// views do, and dashes the opposite side's.
 internal sealed record IrPreviewTrace(
     Complex[] Samples,
     string Title,
     OxyColor Color,
-    double Thickness = 1.2);
+    double Thickness = 1.2,
+    LineStyle Style = LineStyle.Solid);
 
 internal static class ImpulseWindowPreview
 {
@@ -227,6 +228,7 @@ internal static class ImpulseWindowPreview
         {
             Color = trace.Color,
             StrokeThickness = trace.Thickness,
+            LineStyle = trace.Style,
             Title = trace.Title,
             Tag = seriesTag,
             TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"

@@ -464,6 +464,57 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void StepResponse_OfAnImpulse_IsAUnitStepFromTheStretchsOwnStart()
+    {
+        // Summed from the stretch's start, not the record's: the samples before
+        // it do not enter, and a stretch running past the record reads silence.
+        Complex[] ir = UnitImpulse(64, 20);
+        ir[5] = new Complex(3.0, 0.0);
+
+        double[] step = VirtualCrossoverAnalysis.StepResponse(ir, 10, 70);
+
+        Assert.Equal(70, step.Length);
+        Assert.All(step.Take(10), value => Assert.Equal(0.0, value));
+        Assert.All(step.Skip(10), value => Assert.Equal(1.0, value));
+    }
+
+    [Fact]
+    public void StepResponse_OfASum_IsTheSumOfTheSteps()
+    {
+        Complex[] low = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(4_096, 200),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
+            SampleRate);
+        Complex[] high = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(4_096, 200),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate,
+            SampleRate);
+        Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses([low, high]);
+
+        double[] lowStep = VirtualCrossoverAnalysis.StepResponse(low, 150, 2_000);
+        double[] highStep = VirtualCrossoverAnalysis.StepResponse(high, 150, 2_000);
+        double[] sumStep = VirtualCrossoverAnalysis.StepResponse(sum, 150, 2_000);
+
+        for (int i = 0; i < sumStep.Length; i++)
+        {
+            Assert.Equal(lowStep[i] + highStep[i], sumStep[i], 12);
+        }
+
+        // The branches read as a step should: the high-pass steps up and
+        // returns to zero (it passes no DC), the low-pass climbs to the full
+        // step, and their sum is the all-pass reconstruction — a unit step.
+        Assert.Equal(0.0, highStep[^1], 3);
+        Assert.Equal(1.0, lowStep[^1], 3);
+        Assert.Equal(1.0, sumStep[^1], 3);
+    }
+
+    [Fact]
     public void LinkwitzRileySplit_SumsBackToTheOriginal()
     {
         // Splitting one impulse into LR24 low-pass and high-pass branches and

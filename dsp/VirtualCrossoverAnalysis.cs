@@ -312,6 +312,40 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
+    /// The step response of an impulse response over one stretch of it: the
+    /// running sum of the real samples from <paramref name="start"/>, for
+    /// <paramref name="count"/> samples, with the sum starting at zero there.
+    /// A sample past the end of the record counts as silence. Linear, so the
+    /// step of a summed response is the sum of the steps over the same stretch.
+    /// </summary>
+    /// <remarks>
+    /// Summed from the stretch's own start rather than from the record's: the
+    /// samples before a channel's arrival are noise, and their running sum would
+    /// put the whole curve on a floor that has nothing to do with the channel.
+    /// </remarks>
+    public static double[] StepResponse(Complex[] impulseResponse, int start, int count)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        ArgumentOutOfRangeException.ThrowIfNegative(start);
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+
+        var step = new double[count];
+        double running = 0.0;
+        for (int i = 0; i < count; i++)
+        {
+            int index = start + i;
+            if (index < impulseResponse.Length)
+            {
+                running += impulseResponse[index].Real;
+            }
+
+            step[i] = running;
+        }
+
+        return step;
+    }
+
+    /// <summary>
     /// Finds the extra delay (ms) for one channel that best aligns it with the
     /// already-processed remaining channels: the delay maximizing the energy of
     /// their complex sum inside the given frequency window (the crossover

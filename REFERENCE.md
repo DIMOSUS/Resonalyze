@@ -126,7 +126,8 @@ remembers one range per mode, so Frequency Response and Impulse Response do not
 fight over a scale; the Time Alignment previews keep theirs across a
 reconfiguration, and the EQ Wizard and Virtual DSP graphs hold theirs until
 something changes what the axis means (loading a new wizard source, switching
-the Virtual DSP view between magnitude, phase, group delay and impulse).
+the Virtual DSP view between magnitude, phase, group delay, impulse and step —
+impulse and step share one time axis, so a toggle between those two keeps it).
 
 Axes you have **not** touched still scale themselves — the dB axis lifts its
 ceiling for a padded loopback, group delay fits its data — so the automatic
@@ -2062,10 +2063,27 @@ The acoustic plot shows raw and processed curves per channel for the active side
 redraws the same curves from the other side's measurement),
 the complex **Sum**, the **opposite side's Sum** as a dashed translucent curve,
 and the **Sum loss** curve, with a **View** row — **Magnitude**, **Phase**,
-**Impulse** and **Group delay** — and a **Sum loss** read-out (avg / dip per
+**Impulse**, **Group delay** and **Step** — and a **Sum loss** read-out (avg / dip per
 junction plus a total). **Phase** draws each processed channel's phase and the
 Sum's through the phase gate; **Impulse** promotes the gate dialog's preview to
-the main plot, every channel's processed response on one absolute timeline;
+the main plot, every channel's processed response on one absolute timeline,
+each trace normalized to its own peak; **Step** draws the same responses as
+step responses — the running sum of each processed impulse response — and the
+Sum's, over the same window and around the same gate, every curve on ONE common
+scale (the largest excursion among them) rather than each to its own peak. The
+curves keep their sizes relative to each other and to the Sum: a woofer's step
+is the big slow one, a tweeter's the small fast one, and the Sum is what they
+add up to — its step is the sum of theirs, so a driver's share of the total can
+be read off the plot. A driver in the wrong polarity steps the other way first;
+a junction whose halves arrive apart shows as a Sum that climbs in two moves.
+The Sum adds every summing channel, hidden or not, exactly the set the
+magnitude Sum adds. The running sum starts at the left edge of the drawn
+window, not at the record's start, so the noise before a channel's arrival does
+not float its curve; the gate is only drawn here, never applied, because a
+taper on the samples would read as a decay of the step. The Sum toggle keeps
+its own answer on this view, inheriting the magnitude one until it is set; the
+smoothing selector, the Sum loss selector, the hybrid, the target and the
+spatial average sit muted, as on the impulse view.
 **Group delay** draws each processed channel's group delay and the Sum's through
 that same gate and window (Fixed, or FDW with the project's cycles), placed as
 the phase curves are placed and previewed by the open **Gate…** dialog the same
@@ -2350,7 +2368,7 @@ L/R difference that is really a method difference. The two sides share ONE offse
 (the shown side's), because one analyzer session at one input gain produced every
 capture and giving each side its own would erase exactly the L/R level difference
 the captures measured. Like the target and the sum loss it
-is a magnitude toggle, greyed on the phase, group-delay and impulse views — a spatial average
+is a magnitude toggle, greyed on the phase, group-delay, impulse and step views — a spatial average
 carries no phase. The tick itself survives all of that: it says what you want
 drawn, so re-attaching a capture brings the hybrid straight back instead of
 sending you to find the checkbox again.
@@ -2411,7 +2429,7 @@ reflection tail the long window would otherwise admit; its cycle count shortens 
 window with frequency and never lengthens it, so the gate stays the outer limit and
 8 cycles are not suddenly available at 24 Hz.
 
-The gate's durations shape the **phase, group-delay and impulse views only**. The magnitude
+The gate's durations shape the **phase, group-delay, impulse and step views only**. The magnitude
 view — channels, Sum, Sum loss and the read-out built from them — deliberately
 reads a long fixed **steady-state window** (~680 ms, clamped to 32768 samples at
 high rates) that only takes the gate's OFFSET, saying where it opens. (The one

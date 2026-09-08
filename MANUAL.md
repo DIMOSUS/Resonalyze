@@ -1120,8 +1120,10 @@ phase and group delay, run **Auto delay...** again after adding or changing one.
 The **virtual tune is complete**; what remains is transferring it and verifying it.
 Every setting stays editable — delays, polarity, crossovers, gains — with the
 prediction redrawn immediately, in the **Magnitude**, **Phase**, **Group Delay**,
-**Impulse** and **Correlation** views. Change a parameter, look, and keep it only if the
-system actually improves. **Load / Edit… → Edit in EQ Wizard** reopens any channel
+**Impulse**, **Step** and **Correlation** views. Change a parameter, look, and keep it only if the
+system actually improves. The **Step** view is the quick polarity check: every
+driver's step and the Sum's on one scale, so a driver stepping the other way
+first, or a Sum climbing in two moves, is visible at a glance. **Load / Edit… → Edit in EQ Wizard** reopens any channel
 against its current chain. After changing a crossover, re-check that channel's PEQ;
 after changing a crossover or a bank — an all-pass included — run **Auto delay...**
 again.

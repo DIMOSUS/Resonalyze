@@ -126,6 +126,53 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
     }
 
     [Fact]
+    public void StepView_SharesTheImpulseViewsAxes_AndTheZoomBetweenThem()
+    {
+        using var view = new PlotView();
+        var plot = new VirtualCrossoverAcousticPlot(view, "hint", AcousticView.Impulse);
+        plot.Draw(Render(gateOffsetMs: 10));
+        Axis time = TimeAxis(view);
+        Axis value = ValueAxis(view);
+        time.Zoom(9.8, 10.2);
+        Update(view);
+
+        // The step view draws on the impulse view's ms axis and unitless value
+        // axis; the window is the same one, so the zoom taken on it survives.
+        plot.ConfigureForView(AcousticView.Step);
+        plot.Draw(StepRender(gateOffsetMs: 10));
+        Update(view);
+
+        Assert.Same(time, TimeAxis(view));
+        Assert.DoesNotContain(view.Model!.Axes, axis => axis is LogarithmicAxis);
+        Assert.Equal(string.Empty, value.Title);
+        Assert.Equal(-1.05, value.AbsoluteMinimum);
+        Assert.Equal(1.05, value.AbsoluteMaximum);
+        Assert.True(value.IsZoomEnabled);
+        Assert.Equal(9.8, time.ActualMinimum, 6);
+        Assert.Equal(10.2, time.ActualMaximum, 6);
+
+        // Back on the frequency views, the ms axis leaves with the step view.
+        plot.ConfigureForView(AcousticView.Magnitude);
+        Assert.Contains(view.Model!.Axes, axis => axis is LogarithmicAxis);
+        Assert.DoesNotContain(view.Model!.Axes, axis => ReferenceEquals(axis, time));
+    }
+
+    [Fact]
+    public void LossAxis_HidesOnTheStepView()
+    {
+        using var view = new PlotView();
+        var plot = new VirtualCrossoverAcousticPlot(view, "hint", AcousticView.Magnitude);
+        plot.Draw(MagnitudeRender(lossDepthDb: -10));
+        Axis loss = LossAxis(view);
+        Assert.True(loss.IsAxisVisible);
+
+        plot.ConfigureForView(AcousticView.Step);
+        Assert.False(loss.IsAxisVisible);
+        plot.Draw(StepRender(gateOffsetMs: 10));
+        Assert.False(loss.IsAxisVisible);
+    }
+
+    [Fact]
     public void LossAxis_ShowsOnlyWhileALossCurveIsDrawn()
     {
         using var view = new PlotView();
@@ -271,6 +318,19 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
             PlateauMs: 15,
             RightMs: 5);
         return new AcousticRender(string.Empty, [], impulse);
+    }
+
+    private static AcousticRender StepRender(double gateOffsetMs)
+    {
+        var step = new AcousticImpulseRender(
+            [MakeTrace("A", peakSample: 480), MakeTrace("B", peakSample: 960)],
+            SampleRate,
+            gateOffsetMs,
+            LeftMs: 0.5,
+            PlateauMs: 15,
+            RightMs: 5,
+            Step: true);
+        return new AcousticRender(string.Empty, [], step);
     }
 
     private static IrPreviewTrace MakeTrace(string title, int peakSample)

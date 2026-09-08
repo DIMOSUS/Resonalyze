@@ -21,11 +21,14 @@ internal enum IrPreviewSource
 }
 
 // One impulse response drawn on a gated preview: the samples on the absolute
-// timeline plus the color/title it is drawn with.
+// timeline plus the color/title it is drawn with. The stroke defaults to the
+// preview's own; the Virtual DSP step view thickens its Sum the way the other
+// views do.
 internal sealed record IrPreviewTrace(
     Complex[] Samples,
     string Title,
-    OxyColor Color);
+    OxyColor Color,
+    double Thickness = 1.2);
 
 internal static class ImpulseWindowPreview
 {
@@ -73,50 +76,24 @@ internal static class ImpulseWindowPreview
         double rightMs,
         object? seriesTag = null)
     {
-        if (traces.Count == 0 || sampleRate <= 0)
+        if (GatedDisplay.Resolve(
+                traces, sampleRate, gateOffsetMs, leftMs, plateauMs, rightMs)
+            is not { } display)
         {
             return null;
-        }
-
-        int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
-        int left = MillisecondsToSamples(leftMs, sampleRate);
-        int plateau = MillisecondsToSamples(plateauMs, sampleRate);
-        int right = MillisecondsToSamples(rightMs, sampleRate);
-        int gate = Math.Max(1, left + plateau + right);
-        int gateStart = gateOffset - left;
-
-        double[] tukey = Windowing.TukeyWindow(
-            gate,
-            (double)left / gate * 2.0,
-            (double)right / gate * 2.0);
-
-        int longest = traces.Max(trace => trace.Samples.Length);
-        int context = Math.Max(gate / 8, MillisecondsToSamples(0.2, sampleRate));
-        int displayStart = Math.Max(0, gateStart - context);
-        int displayEnd = Math.Min(longest - 1, gateStart + gate + context);
-        if (displayEnd < displayStart)
-        {
-            displayEnd = displayStart;
         }
 
         foreach (IrPreviewTrace trace in traces)
         {
             double maxMagnitude = 0;
-            for (int s = displayStart; s <= displayEnd && s < trace.Samples.Length; s++)
+            for (int s = display.Start; s <= display.End && s < trace.Samples.Length; s++)
             {
                 maxMagnitude = Math.Max(maxMagnitude, Math.Abs(trace.Samples[s].Real));
             }
             double scale = maxMagnitude > 0 ? 1.0 / maxMagnitude : 1.0;
 
-            var series = new LineSeries
-            {
-                Color = trace.Color,
-                StrokeThickness = 1.2,
-                Title = trace.Title,
-                Tag = seriesTag,
-                TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
-            };
-            for (int s = displayStart; s <= displayEnd; s++)
+            LineSeries series = CreateTraceSeries(trace, seriesTag);
+            for (int s = display.Start; s <= display.End; s++)
             {
                 double value = s < trace.Samples.Length
                     ? trace.Samples[s].Real * scale
@@ -127,6 +104,143 @@ internal static class ImpulseWindowPreview
             model.Series.Add(series);
         }
 
+        AddGateOutline(model, display, sampleRate, gateOffsetMs, seriesTag);
+        return display.BoundsMs(sampleRate);
+    }
+
+    // The step view's body, the Virtual DSP's pair to the gated traces above:
+    // each trace's STEP response — the running sum of its samples from the start
+    // of the display window — over the same window, with the same gate outline.
+    // Unlike the impulse traces, every step is drawn on ONE common scale, the
+    // largest excursion among them: the curves keep their relative sizes, so a
+    // woofer's step is the big slow one, a tweeter's the small fast one, and a
+    // Sum among them is what the others add up to. Per-trace normalization
+    // would draw every driver as if it carried the whole band. The integration
+    // starts at the display window, not at the record (see
+    // VirtualCrossoverAnalysis.StepResponse), and the gate is only DRAWN: a
+    // Tukey taper applied to the samples would read as a decay of the step.
+    public static (double StartMs, double EndMs)? AddStepTraceSeries(
+        PlotModel model,
+        IReadOnlyList<IrPreviewTrace> traces,
+        int sampleRate,
+        double gateOffsetMs,
+        double leftMs,
+        double plateauMs,
+        double rightMs,
+        object? seriesTag = null)
+    {
+        if (GatedDisplay.Resolve(
+                traces, sampleRate, gateOffsetMs, leftMs, plateauMs, rightMs)
+            is not { } display)
+        {
+            return null;
+        }
+
+        int count = display.End - display.Start + 1;
+        var steps = new List<double[]>(traces.Count);
+        double largest = 0.0;
+        foreach (IrPreviewTrace trace in traces)
+        {
+            double[] step = VirtualCrossoverAnalysis.StepResponse(
+                trace.Samples, display.Start, count);
+            foreach (double value in step)
+            {
+                largest = Math.Max(largest, Math.Abs(value));
+            }
+
+            steps.Add(step);
+        }
+
+        double scale = largest > 0 ? 1.0 / largest : 1.0;
+        for (int index = 0; index < traces.Count; index++)
+        {
+            LineSeries series = CreateTraceSeries(traces[index], seriesTag);
+            double[] step = steps[index];
+            for (int i = 0; i < count; i++)
+            {
+                series.Points.Add(new DataPoint(
+                    (display.Start + i) * 1000.0 / sampleRate, step[i] * scale));
+            }
+
+            model.Series.Add(series);
+        }
+
+        AddGateOutline(model, display, sampleRate, gateOffsetMs, seriesTag);
+        return display.BoundsMs(sampleRate);
+    }
+
+    // The sample window a gated multi-trace view draws — the gate plus a
+    // context on either side — and the Tukey outline drawn inside it. One
+    // resolution for the impulse traces and the step traces, so the two views
+    // frame the same milliseconds and a toggle between them keeps the zoom.
+    private readonly record struct GatedDisplay(
+        int Start,
+        int End,
+        int GateStart,
+        int Gate,
+        double[] Tukey)
+    {
+        public static GatedDisplay? Resolve(
+            IReadOnlyList<IrPreviewTrace> traces,
+            int sampleRate,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs)
+        {
+            if (traces.Count == 0 || sampleRate <= 0)
+            {
+                return null;
+            }
+
+            int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
+            int left = MillisecondsToSamples(leftMs, sampleRate);
+            int plateau = MillisecondsToSamples(plateauMs, sampleRate);
+            int right = MillisecondsToSamples(rightMs, sampleRate);
+            int gate = Math.Max(1, left + plateau + right);
+            int gateStart = gateOffset - left;
+
+            double[] tukey = Windowing.TukeyWindow(
+                gate,
+                (double)left / gate * 2.0,
+                (double)right / gate * 2.0);
+
+            int longest = traces.Max(trace => trace.Samples.Length);
+            int context = Math.Max(gate / 8, MillisecondsToSamples(0.2, sampleRate));
+            int displayStart = Math.Max(0, gateStart - context);
+            int displayEnd = Math.Min(longest - 1, gateStart + gate + context);
+            if (displayEnd < displayStart)
+            {
+                displayEnd = displayStart;
+            }
+
+            return new GatedDisplay(displayStart, displayEnd, gateStart, gate, tukey);
+        }
+
+        public (double StartMs, double EndMs) BoundsMs(int sampleRate) => (
+            Start * 1000.0 / sampleRate,
+            End * 1000.0 / sampleRate);
+    }
+
+    private static LineSeries CreateTraceSeries(IrPreviewTrace trace, object? seriesTag) =>
+        new()
+        {
+            Color = trace.Color,
+            StrokeThickness = trace.Thickness,
+            Title = trace.Title,
+            Tag = seriesTag,
+            TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
+        };
+
+    // The Tukey gate drawn where it sits, and a vertical mark at the gate
+    // offset (the end of the left shoulder).
+    private static void AddGateOutline(
+        PlotModel model,
+        GatedDisplay display,
+        int sampleRate,
+        double gateOffsetMs,
+        object? seriesTag)
+    {
         var windowSeries = new LineSeries
         {
             Color = OxyColor.FromArgb(127, 50, 210, 120),
@@ -135,9 +249,11 @@ internal static class ImpulseWindowPreview
             Tag = seriesTag,
             TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
         };
-        for (int s = displayStart; s <= displayEnd; s++)
+        for (int s = display.Start; s <= display.End; s++)
         {
-            double w = s >= gateStart && s < gateStart + gate ? tukey[s - gateStart] : 0.0;
+            double w = s >= display.GateStart && s < display.GateStart + display.Gate
+                ? display.Tukey[s - display.GateStart]
+                : 0.0;
             windowSeries.Points.Add(new DataPoint(s * 1000.0 / sampleRate, w));
         }
         model.Series.Add(windowSeries);
@@ -151,10 +267,6 @@ internal static class ImpulseWindowPreview
             StrokeThickness = 1.0,
             Tag = seriesTag
         });
-
-        return (
-            displayStart * 1000.0 / sampleRate,
-            displayEnd * 1000.0 / sampleRate);
     }
 
     public static void Update(

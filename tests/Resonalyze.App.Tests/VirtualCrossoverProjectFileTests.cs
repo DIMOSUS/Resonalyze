@@ -1459,6 +1459,62 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void StepView_RoundTripsWithItsOwnSumAnswer()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            // The panel writes the impulse flag beside the step one, so a build
+            // that knows only the older flag opens on the impulse view.
+            var saved = new VirtualCrossoverProjectFile
+            {
+                ShowImpulseView = true,
+                ShowStepView = true,
+                ShowSumCurve = false,
+                ShowSumCurveOnStep = true
+            };
+            saved.Save(root);
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.True(loaded.ShowStepView);
+            Assert.True(loaded.ShowImpulseView);
+            Assert.False(loaded.ShowGroupDelayView);
+            Assert.False(loaded.ShowSumCurve);
+            Assert.True(loaded.ShowSumCurveOnStep);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void StepView_AbsentFromAnOlderFile_OpensThePriorView()
+    {
+        // A file written before the view existed carries no step flag: it opens
+        // on whatever it did — the impulse view here — and the Sum on the step
+        // view inherits the magnitude answer until it is set (the impulse view,
+        // its nearest, has no Sum to inherit from).
+        var project = new VirtualCrossoverProjectFile
+        {
+            ShowImpulseView = true,
+            ShowSumCurve = false
+        };
+
+        Assert.False(project.ShowStepView);
+        Assert.Null(project.ShowSumCurveStep);
+        Assert.False(project.ShowSumCurveOnStep);
+
+        project.ShowSumCurve = true;
+        Assert.True(project.ShowSumCurveOnStep);
+
+        project.ShowSumCurveOnStep = false;
+        project.ShowSumCurve = true;
+        Assert.False(project.ShowSumCurveOnStep);
+    }
+
+    [Fact]
     public void ShowSumCurveOnPhase_OnceAnswered_StopsFollowingTheMagnitudeOne()
     {
         string root = CreateTemporaryDirectory();

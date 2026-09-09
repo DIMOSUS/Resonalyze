@@ -13,7 +13,8 @@ internal enum AcousticView
     Magnitude,
     Phase,
     Impulse,
-    GroupDelay
+    GroupDelay,
+    Step
 }
 
 /// <summary>
@@ -30,9 +31,11 @@ internal sealed record AcousticCurve(
     bool OnLossAxis = false);
 
 /// <summary>
-/// The impulse view's payload: the processed traces to draw and the gate window
-/// they are gated to (the presenter draws the Tukey window and re-arms the static
-/// ms axis to the returned bounds).
+/// The payload of the two time-domain views: the processed traces to draw and
+/// the gate window they are framed by (the presenter draws the Tukey window and
+/// re-arms the static ms axis to the returned bounds). <paramref name="Step"/>
+/// draws the traces' step responses on one common scale instead of the impulse
+/// responses each on its own; the traces then include the Sum where it is on.
 /// </summary>
 internal sealed record AcousticImpulseRender(
     IReadOnlyList<IrPreviewTrace> Traces,
@@ -40,12 +43,14 @@ internal sealed record AcousticImpulseRender(
     double GateOffsetMs,
     double LeftMs,
     double PlateauMs,
-    double RightMs);
+    double RightMs,
+    bool Step = false);
 
 /// <summary>
 /// A ready-to-draw frame for the acoustic plot: the hint text plus either a set
-/// of curves (magnitude / phase) or the impulse payload. The panel prepares this
-/// from the processed channels; the presenter owns the OxyPlot mechanics.
+/// of curves (magnitude / phase / group delay) or the impulse or step payload.
+/// The panel prepares this from the processed channels; the presenter owns the
+/// OxyPlot mechanics.
 /// </summary>
 internal sealed record AcousticRender(
     string HintText,
@@ -53,13 +58,14 @@ internal sealed record AcousticRender(
     AcousticImpulseRender? Impulse);
 
 /// <summary>
-/// The Virtual DSP main (acoustic) plot: the raw/processed channel magnitudes or
-/// phases, their complex sum and the sum loss, or the gated impulse view. Owns
-/// the plot model, its four axes (the shared log-frequency axis, the magnitude/
-/// phase value axis, the right-hand sum-loss axis and the impulse-only linear ms
-/// axis), the watermark and hint annotations, the curve series and the
-/// axis-range preservation across view switches. The panel hands it a ready
-/// <see cref="AcousticRender"/>; it never builds a LineSeries itself.
+/// The Virtual DSP main (acoustic) plot: the raw/processed channel magnitudes,
+/// phases or group delays, their complex sum and the sum loss, or the gated
+/// impulse and step views. Owns the plot model, its four axes (the shared
+/// log-frequency axis, the magnitude/phase value axis, the right-hand sum-loss
+/// axis and the linear ms axis of the two time-domain views), the watermark and
+/// hint annotations, the curve series and the axis-range preservation across
+/// view switches. The panel hands it a ready <see cref="AcousticRender"/>; it
+/// never builds a LineSeries itself.
 /// </summary>
 internal sealed class VirtualCrossoverAcousticPlot
 {
@@ -193,14 +199,15 @@ internal sealed class VirtualCrossoverAcousticPlot
 
     // Magnitude, phase and group delay reuse one value axis object so pan/zoom of
     // the frequency axis survives the toggle; only the value scale and its zoom
-    // lock are re-armed. The impulse view additionally swaps the bottom axis to
-    // the linear ms one.
+    // lock are re-armed. The impulse and step views additionally swap the bottom
+    // axis to the linear ms one.
     public void ConfigureForView(AcousticView acousticView)
     {
-        if (acousticView == AcousticView.Impulse)
+        if (IsTimeDomain(acousticView))
         {
-            // Every trace is normalized to its own peak, exactly like the IR
-            // Gate preview, so the scale is unitless.
+            // The impulse traces are each normalized to their own peak, exactly
+            // like the IR Gate preview; the step traces to the largest among
+            // them. Either way the scale is unitless.
             valueAxis.Title = string.Empty;
             valueAxis.AbsoluteMinimum = -1.05;
             valueAxis.AbsoluteMaximum = 1.05;
@@ -319,10 +326,16 @@ internal sealed class VirtualCrossoverAcousticPlot
         model.InvalidatePlot(true);
     }
 
+    // The two views drawn on the ms axis: the processed impulse responses and
+    // their step responses. They share the axis object as well as the display
+    // window, so a toggle between them keeps the zoom.
+    private static bool IsTimeDomain(AcousticView acousticView) =>
+        acousticView is AcousticView.Impulse or AcousticView.Step;
+
     // Keeps exactly one bottom axis in the model: the log-frequency axis for the
-    // magnitude/phase views, the linear ms axis for the impulse view. Swapping
-    // whole axis objects (instead of reconfiguring one) preserves each view's own
-    // range across toggles.
+    // magnitude/phase/group-delay views, the linear ms axis for the impulse and
+    // step views. Swapping whole axis objects (instead of reconfiguring one)
+    // preserves each view's own range across toggles.
     private void ConfigureBottomAxis(AcousticView acousticView)
     {
         if (view.Model is not { } model)
@@ -330,9 +343,9 @@ internal sealed class VirtualCrossoverAcousticPlot
             return;
         }
 
-        bool impulse = acousticView == AcousticView.Impulse;
-        Axis wanted = impulse ? timeAxis : frequencyAxis;
-        Axis retired = impulse ? frequencyAxis : timeAxis;
+        bool timeDomain = IsTimeDomain(acousticView);
+        Axis wanted = timeDomain ? timeAxis : frequencyAxis;
+        Axis retired = timeDomain ? frequencyAxis : timeAxis;
         if (!model.Axes.Contains(wanted))
         {
             model.Axes.Remove(retired);
@@ -345,9 +358,19 @@ internal sealed class VirtualCrossoverAcousticPlot
         // The impulse view is the gate dialog's IR preview promoted to the main
         // plot: every processed channel IR on the shared absolute timeline, each
         // normalized to its own in-window peak, with the phase-gate Tukey window
-        // drawn where it sits.
-        (double StartMs, double EndMs)? window =
-            ImpulseWindowPreview.AddGatedTraceSeries(
+        // drawn where it sits. The step view draws the same traces' step
+        // responses over the same window, on one common scale.
+        (double StartMs, double EndMs)? window = impulse.Step
+            ? ImpulseWindowPreview.AddStepTraceSeries(
+                model,
+                impulse.Traces,
+                impulse.SampleRate,
+                impulse.GateOffsetMs,
+                impulse.LeftMs,
+                impulse.PlateauMs,
+                impulse.RightMs,
+                SeriesTag)
+            : ImpulseWindowPreview.AddGatedTraceSeries(
                 model,
                 impulse.Traces,
                 impulse.SampleRate,

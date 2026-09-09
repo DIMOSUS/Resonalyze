@@ -997,6 +997,12 @@ public sealed class VirtualCrossoverProjectFile
     // ShowPhaseView beside it so a build without this flag opens the project
     // on the nearest view it has, the phase.
     public bool ShowGroupDelayView { get; set; }
+    // The main plot's step view: each processed channel's step response and
+    // the Sum's on the impulse view's timeline, on one common scale. Additive
+    // in the same way: it wins over every older flag, and the panel writes
+    // ShowImpulseView beside it so a build without this flag opens the project
+    // on the nearest view it has, the impulse.
+    public bool ShowStepView { get; set; }
 
     /// <summary>
     /// Whether the Sum is drawn on the GROUP-DELAY view. Its own answer, like the
@@ -1010,6 +1016,20 @@ public sealed class VirtualCrossoverProjectFile
     {
         get => ShowSumCurveGroupDelay ?? ShowSumCurveOnPhase;
         set => ShowSumCurveGroupDelay = value;
+    }
+
+    /// <summary>
+    /// Whether the Sum is drawn on the STEP view. Its own answer, like the
+    /// others'; a file written before the view existed carries none and inherits
+    /// the magnitude answer — the impulse view, its nearest, draws no Sum.
+    /// </summary>
+    public bool? ShowSumCurveStep { get; set; }
+
+    [JsonIgnore]
+    public bool ShowSumCurveOnStep
+    {
+        get => ShowSumCurveStep ?? ShowSumCurve;
+        set => ShowSumCurveStep = value;
     }
 
     // The EQ target curve drawn over the acoustic plot: whether it is shown, the

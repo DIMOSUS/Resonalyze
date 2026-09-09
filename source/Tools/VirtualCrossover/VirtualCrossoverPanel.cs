@@ -602,17 +602,20 @@ public partial class VirtualCrossoverPanel : UserControl
             checkBoxShowTarget.Checked = project.ShowTargetCurve;
             numericTargetLevel.Value =
                 numericTargetLevel.ClampValue(project.TargetLevelDb);
-            // Impulse over group delay over phase: each newer flag is written
-            // beside the older one it falls back to in a build without it.
-            radioViewImpulse.Checked = project.ShowImpulseView;
+            // Step over impulse over group delay over phase: each newer flag is
+            // written beside the older one it falls back to in a build without it.
+            radioViewStep.Checked = project.ShowStepView;
+            radioViewImpulse.Checked =
+                !project.ShowStepView && project.ShowImpulseView;
             radioViewGroupDelay.Checked =
-                !project.ShowImpulseView && project.ShowGroupDelayView;
+                !project.ShowStepView && !project.ShowImpulseView &&
+                project.ShowGroupDelayView;
             radioViewPhase.Checked =
-                !project.ShowImpulseView && !project.ShowGroupDelayView &&
-                project.ShowPhaseView;
+                !project.ShowStepView && !project.ShowImpulseView &&
+                !project.ShowGroupDelayView && project.ShowPhaseView;
             radioViewMagnitude.Checked =
-                !project.ShowImpulseView && !project.ShowGroupDelayView &&
-                !project.ShowPhaseView;
+                !project.ShowStepView && !project.ShowImpulseView &&
+                !project.ShowGroupDelayView && !project.ShowPhaseView;
             // After the radios: the Sum is remembered per view, so which answer
             // applies is decided by the view this project opens on.
             ApplySumToggleForView();
@@ -1034,6 +1037,10 @@ public partial class VirtualCrossoverPanel : UserControl
         radioViewGroupDelay.CheckedChanged += (_, _) =>
         {
             if (radioViewGroupDelay.Checked) OnViewModeChanged();
+        };
+        radioViewStep.CheckedChanged += (_, _) =>
+        {
+            if (radioViewStep.Checked) OnViewModeChanged();
         };
         comboBoxSmoothing.SelectedIndexChanged += (_, _) => OnViewChanged();
         comboBoxSumLoss.SelectedIndexChanged += (_, _) => OnViewChanged();
@@ -1878,16 +1885,16 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // Each curve toggle is muted on the views that cannot draw that curve: the
-    // Sum exists on the magnitude, phase and group-delay plots but not among
-    // the impulse traces, the sum loss and the target are magnitude-only (a target is a dB
+    // Sum exists on the magnitude, phase, group-delay and step plots but not
+    // among the impulse traces, the sum loss and the target are magnitude-only (a target is a dB
     // shape — the same rule OverlayTargets.SupportsMode applies to overlay
     // targets). Fractional-octave smoothing shapes the frequency-domain curves,
-    // so it is dead in the impulse view alone. The Target... button stays live
+    // so it is dead in the impulse and step views. The Target... button stays live
     // everywhere: it switches to the view its dialog can preview on rather than
     // sitting there greyed.
     private void UpdateViewDependentControls()
     {
-        comboBoxSmoothing.Enabled = !radioViewImpulse.Checked;
+        comboBoxSmoothing.Enabled = !radioViewImpulse.Checked && !radioViewStep.Checked;
         // These two wear a fixed plot colour, so the shared helper — which
         // memorizes the colour it mutes — is safe for them.
         Ui.UiStyle.SetTextEnabledLook(
@@ -1918,6 +1925,7 @@ public partial class VirtualCrossoverPanel : UserControl
         Ui.UiStyle.SetTextEnabledLook(radioViewPhase, !groupSums, interactive: true);
         Ui.UiStyle.SetTextEnabledLook(radioViewImpulse, !groupSums, interactive: true);
         Ui.UiStyle.SetTextEnabledLook(radioViewGroupDelay, !groupSums, interactive: true);
+        Ui.UiStyle.SetTextEnabledLook(radioViewStep, !groupSums, interactive: true);
         // Magnitude-only for the same reason the loss is, and it also carries the
         // coverage answer, so it owns its own refresh.
         RefreshHybridAvailability();
@@ -1956,7 +1964,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 ? project.ShowSumCurveOnPhase
                 : radioViewGroupDelay.Checked
                     ? project.ShowSumCurveOnGroupDelay
-                    : project.ShowSumCurve;
+                    : radioViewStep.Checked
+                        ? project.ShowSumCurveOnStep
+                        : project.ShowSumCurve;
         }
         finally
         {
@@ -1979,6 +1989,10 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             project.ShowSumCurveOnGroupDelay = checkBoxShowSum.Checked;
         }
+        else if (radioViewStep.Checked)
+        {
+            project.ShowSumCurveOnStep = checkBoxShowSum.Checked;
+        }
         else if (radioViewMagnitude.Checked)
         {
             project.ShowSumCurve = checkBoxShowSum.Checked;
@@ -1988,12 +2002,13 @@ public partial class VirtualCrossoverPanel : UserControl
         project.ShowHybridCurves = checkBoxHybrid.Checked;
         project.ShowTargetCurve = checkBoxShowTarget.Checked;
         project.TargetLevelDb = (double)numericTargetLevel.Value;
-        // The phase flag is written beside the group-delay one: a build that
-        // knows only the older flag opens the project on the phase view, the
-        // nearest thing it has to this one.
+        // The phase flag is written beside the group-delay one, the impulse flag
+        // beside the step one: a build that knows only the older flag opens the
+        // project on the nearest view it has.
         project.ShowPhaseView = radioViewPhase.Checked || radioViewGroupDelay.Checked;
-        project.ShowImpulseView = radioViewImpulse.Checked;
+        project.ShowImpulseView = radioViewImpulse.Checked || radioViewStep.Checked;
         project.ShowGroupDelayView = radioViewGroupDelay.Checked;
+        project.ShowStepView = radioViewStep.Checked;
         project.SetSmoothingCode(comboBoxSmoothing.SelectedItem is int value
             ? value
             : 12);
@@ -3027,6 +3042,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private AcousticView CurrentAcousticView() =>
         radioViewImpulse.Checked ? AcousticView.Impulse
+        : radioViewStep.Checked ? AcousticView.Step
         : radioViewPhase.Checked ? AcousticView.Phase
         : radioViewGroupDelay.Checked ? AcousticView.GroupDelay
         : AcousticView.Magnitude;
@@ -3191,6 +3207,11 @@ public partial class VirtualCrossoverPanel : UserControl
             "through the phase gate: the arrival time of the energy\r\n" +
             "inside the window, in ms from the record's start.\r\n" +
             "Well-aligned drivers meet through the crossover.");
+        toolTip.SetToolTip(
+            radioViewStep,
+            "Show each processed channel's step response and the Sum's\r\n" +
+            "around the phase gate, all on one common scale.\r\n" +
+            "A driver in the wrong polarity steps the other way first.");
         toolTip.SetToolTip(
             comboBoxGroupView,
             "Which part of the installation the plot shows; the curves, the\r\n" +
@@ -3697,8 +3718,11 @@ public partial class VirtualCrossoverPanel : UserControl
         // once the active side's hybrid (and therefore its offset) exists. The two
         // sides must be drawn by the same method or the comparison stops being about
         // the tunes.
+        // The step view draws it too, as the sum's step: the two tunes' fronts
+        // compare on one clock without flipping the L/R selector.
         VirtualCrossoverSideSum? oppositeSide = null;
-        if (checkBoxShowSum.Checked && radioViewMagnitude.Checked)
+        if (checkBoxShowSum.Checked &&
+            (radioViewMagnitude.Checked || radioViewStep.Checked))
         {
             oppositeSide = await metrics.ComputeSideSumAsync(
                 channels, !project.ActiveSideRight, revision, minimumChannels: 2,
@@ -3808,7 +3832,7 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             acousticRender = BuildAcousticRender(
                 shown, summedChannels, groupView, magnitudes, sumCurve, drawnLoss,
-                oppositeSum, hybrid, lossDirect);
+                oppositeSum, oppositeSide, hybrid, lossDirect);
         }
 
         using (AppProfiler.Zone("VirtualDSP.AcousticPlotDraw"))
@@ -3856,6 +3880,7 @@ public partial class VirtualCrossoverPanel : UserControl
         AnalysisCurve? sumCurve,
         List<SignalPoint>? lossCurve,
         AnalysisCurve? oppositeSum,
+        VirtualCrossoverSideSum? oppositeSide,
         HybridMagnitudes? hybrid,
         bool lossDirect = false)
     {
@@ -3881,6 +3906,11 @@ public partial class VirtualCrossoverPanel : UserControl
         if (radioViewImpulse.Checked)
         {
             return new AcousticRender(hint, [], BuildImpulseRender(processed));
+        }
+        if (radioViewStep.Checked)
+        {
+            return new AcousticRender(
+                hint, [], BuildStepRender(processed, summed, oppositeSide));
         }
 
         if (VirtualCrossoverGroupViews.DrawsGroupSums(view))
@@ -7498,6 +7528,75 @@ public partial class VirtualCrossoverPanel : UserControl
             gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
             gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
             gatePreview?.RightMs ?? project.PhaseGateRightMs);
+    }
+
+    // The step view: the impulse view's traces as step responses, on the same
+    // timeline and around the same gate, plus the Sum's. The presenter
+    // integrates and scales (ImpulseWindowPreview.AddStepTraceSeries); this
+    // decides WHICH responses go in. The shown channels set the gate offset and
+    // the window, as on the impulse view. The Sum is the sample-wise sum of the
+    // SUMMING channels' impulse responses, hidden or not — the same set the
+    // magnitude Sum adds, so this view's Sum describes the same system under the
+    // same selector — and the step of that sum is the sum of the steps by
+    // linearity, which is what lets the eye read the drivers' contributions off
+    // the total. Drawn on one common scale so the curves keep their sizes
+    // relative to each other and to the Sum: every processed response is in the
+    // one calibrated level the magnitude Sum adds them in. The opposite side's
+    // Sum rides along as on the magnitude view — thin, dashed, translucent — so
+    // the two tunes' fronts compare on the one absolute clock; it needs the
+    // shown side's sample rate, or its samples would land on the wrong
+    // milliseconds.
+    private AcousticImpulseRender? BuildStepRender(
+        List<ProcessedChannel> processed,
+        IReadOnlyList<ProcessedChannel> summed,
+        VirtualCrossoverSideSum? oppositeSide)
+    {
+        using var _ = AppProfiler.Zone("VirtualDSP.BuildStepRender");
+        List<ProcessedChannel> shown = processed
+            .Where(item => item.Channel.Pair.ShowProcessedCurve)
+            .ToList();
+        if (shown.Count == 0)
+        {
+            return null;
+        }
+
+        int sampleRate = shown[0].SampleRate;
+        double gateOffsetMs = gatePreview?.OffsetMs
+            ?? ResolveGateOffsetMs(shown, sampleRate);
+
+        var traces = shown
+            .Select(item => new IrPreviewTrace(
+                item.ImpulseResponse,
+                item.Channel.Name,
+                item.Color))
+            .ToList();
+        if (summed.Count >= 2 && checkBoxShowSum.Checked)
+        {
+            traces.Add(new IrPreviewTrace(
+                VirtualCrossoverAnalysis.SumImpulseResponses(
+                    [.. summed.Select(item => item.ImpulseResponse)]),
+                "Sum",
+                SumColor,
+                2.4));
+            if (oppositeSide != null && oppositeSide.SampleRate == sampleRate)
+            {
+                traces.Add(new IrPreviewTrace(
+                    oppositeSide.ImpulseResponse,
+                    $"Sum {(project.ActiveSideRight ? "L" : "R")}",
+                    OxyColor.FromAColor(110, SumColor),
+                    1.0,
+                    LineStyle.Dash));
+            }
+        }
+
+        return new AcousticImpulseRender(
+            traces,
+            sampleRate,
+            gateOffsetMs,
+            gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
+            gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
+            gatePreview?.RightMs ?? project.PhaseGateRightMs,
+            Step: true);
     }
 
     // The gate of the side on screen. The view draws one side at a time and the two

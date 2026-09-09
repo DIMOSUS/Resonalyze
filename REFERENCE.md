@@ -126,7 +126,8 @@ remembers one range per mode, so Frequency Response and Impulse Response do not
 fight over a scale; the Time Alignment previews keep theirs across a
 reconfiguration, and the EQ Wizard and Virtual DSP graphs hold theirs until
 something changes what the axis means (loading a new wizard source, switching
-the Virtual DSP view between magnitude, phase, group delay and impulse).
+the Virtual DSP view between magnitude, phase, group delay, impulse and step —
+impulse and step share one time axis, so a toggle between those two keeps it).
 
 Axes you have **not** touched still scale themselves — the dB axis lifts its
 ceiling for a padded loopback, group delay fits its data — so the automatic
@@ -2062,10 +2063,34 @@ The acoustic plot shows raw and processed curves per channel for the active side
 redraws the same curves from the other side's measurement),
 the complex **Sum**, the **opposite side's Sum** as a dashed translucent curve,
 and the **Sum loss** curve, with a **View** row — **Magnitude**, **Phase**,
-**Impulse** and **Group delay** — and a **Sum loss** read-out (avg / dip per
+**Impulse**, **Group delay** and **Step** — and a **Sum loss** read-out (avg / dip per
 junction plus a total). **Phase** draws each processed channel's phase and the
 Sum's through the phase gate; **Impulse** promotes the gate dialog's preview to
-the main plot, every channel's processed response on one absolute timeline;
+the main plot, every channel's processed response on one absolute timeline,
+each trace normalized to its own peak; **Step** draws the same responses as
+step responses — the running sum of each processed impulse response — and the
+Sum's, over the same window and around the same gate, every curve on ONE common
+scale (the largest excursion among them inside the window) rather than each to
+its own peak. The common scale preserves the relative transient amplitudes of
+the channel responses and their Sum: the Sum's step is the sum of theirs, so
+what each channel puts into the total's front can be seen — though a step's
+size is a matter of the channel's band and filters as much as of its level: a
+high-passed driver's step returns to zero, and it is no measure of that
+driver's share of the sound. A driver in the wrong polarity steps the other
+way first; a junction whose halves arrive apart shows as a Sum that climbs in
+two moves. The Sum adds every summing channel, hidden or not, exactly the set
+the magnitude Sum adds, and the opposite side's Sum rides along beside it as
+a thin dashed translucent line on the same absolute clock, as on the magnitude
+view, so the two tunes' fronts compare without flipping the L/R selector. The
+running sum runs from the record's start whatever the gate is: the gate only
+frames the view and never enters the curve — the same sample reads the same
+under every gate, up to the window's scale — because a taper on the samples
+would read as a decay of the step. The Sum toggle keeps
+its own answer on this view, inheriting the magnitude one until it is set. No
+loss curve is drawn here, but the Sum loss selector stays live, as on the
+impulse view: it picks the window of the read-out column, which is still
+quoted. The smoothing selector, the hybrid, the target and the spatial average
+sit muted, as on the impulse view.
 **Group delay** draws each processed channel's group delay and the Sum's through
 that same gate and window (Fixed, or FDW with the project's cycles), placed as
 the phase curves are placed and previewed by the open **Gate…** dialog the same
@@ -2081,9 +2106,11 @@ band blanks a channel's curve there, as it does in Group Delay mode. Only the
 plain group delay is drawn, no minimum/excess split — the excess of the raw
 measurement stays the AI diagnostic's — and the Sum
 toggle keeps its own answer on this view, inheriting the phase view's until it
-is set. The Sum loss selector, the hybrid, the target and the spatial average
-are magnitude toggles and sit muted here, as on the phase view; the smoothing
-selector applies, its psychoacoustic width reading as 1/12 octave on a time
+is set. The hybrid, the target and the spatial average are magnitude toggles
+and sit muted here, as on the phase view; the Sum loss selector stays live
+there and here, since the read-out column it picks the window for is still
+quoted, only its curve is magnitude-only; the smoothing selector applies, its
+psychoacoustic width reading as 1/12 octave on a time
 curve. The loss is a dB gap, not a
 level, so it is drawn against its own amber **Sum loss (dB)** axis on the right
 (0 dB near the top, 6 dB steps, deepening to hold a notch) that appears only
@@ -2350,7 +2377,7 @@ L/R difference that is really a method difference. The two sides share ONE offse
 (the shown side's), because one analyzer session at one input gain produced every
 capture and giving each side its own would erase exactly the L/R level difference
 the captures measured. Like the target and the sum loss it
-is a magnitude toggle, greyed on the phase, group-delay and impulse views — a spatial average
+is a magnitude toggle, greyed on the phase, group-delay, impulse and step views — a spatial average
 carries no phase. The tick itself survives all of that: it says what you want
 drawn, so re-attaching a capture brings the hybrid straight back instead of
 sending you to find the checkbox again.
@@ -2411,7 +2438,7 @@ reflection tail the long window would otherwise admit; its cycle count shortens 
 window with frequency and never lengthens it, so the gate stays the outer limit and
 8 cycles are not suddenly available at 24 Hz.
 
-The gate's durations shape the **phase, group-delay and impulse views only**. The magnitude
+The gate's durations shape the **phase, group-delay, impulse and step views only**. The magnitude
 view — channels, Sum, Sum loss and the read-out built from them — deliberately
 reads a long fixed **steady-state window** (~680 ms, clamped to 32768 samples at
 high rates) that only takes the gate's OFFSET, saying where it opens. (The one

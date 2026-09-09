@@ -2084,9 +2084,11 @@ running sum starts at the left edge of the drawn
 window, not at the record's start, so the noise before a channel's arrival does
 not float its curve; the gate is only drawn here, never applied, because a
 taper on the samples would read as a decay of the step. The Sum toggle keeps
-its own answer on this view, inheriting the magnitude one until it is set; the
-smoothing selector, the Sum loss selector, the hybrid, the target and the
-spatial average sit muted, as on the impulse view.
+its own answer on this view, inheriting the magnitude one until it is set. No
+loss curve is drawn here, but the Sum loss selector stays live, as on the
+impulse view: it picks the window of the read-out column, which is still
+quoted. The smoothing selector, the hybrid, the target and the spatial average
+sit muted, as on the impulse view.
 **Group delay** draws each processed channel's group delay and the Sum's through
 that same gate and window (Fixed, or FDW with the project's cycles), placed as
 the phase curves are placed and previewed by the open **Gate…** dialog the same
@@ -2102,9 +2104,11 @@ band blanks a channel's curve there, as it does in Group Delay mode. Only the
 plain group delay is drawn, no minimum/excess split — the excess of the raw
 measurement stays the AI diagnostic's — and the Sum
 toggle keeps its own answer on this view, inheriting the phase view's until it
-is set. The Sum loss selector, the hybrid, the target and the spatial average
-are magnitude toggles and sit muted here, as on the phase view; the smoothing
-selector applies, its psychoacoustic width reading as 1/12 octave on a time
+is set. The hybrid, the target and the spatial average are magnitude toggles
+and sit muted here, as on the phase view; the Sum loss selector stays live
+there and here, since the read-out column it picks the window for is still
+quoted, only its curve is magnitude-only; the smoothing selector applies, its
+psychoacoustic width reading as 1/12 octave on a time
 curve. The loss is a dB gap, not a
 level, so it is drawn against its own amber **Sum loss (dB)** axis on the right
 (0 dB near the top, 6 dB steps, deepening to hold a notch) that appears only

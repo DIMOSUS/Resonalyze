@@ -110,16 +110,17 @@ internal static class ImpulseWindowPreview
     }
 
     // The step view's body, the Virtual DSP's pair to the gated traces above:
-    // each trace's STEP response — the running sum of its samples from the start
-    // of the display window — over the same window, with the same gate outline.
+    // each trace's STEP response — the running sum of its samples from the
+    // record's start — shown over the same window, with the same gate outline.
     // Unlike the impulse traces, every step is drawn on ONE common scale, the
-    // largest excursion among them: the curves keep their relative sizes, so a
-    // woofer's step is the big slow one, a tweeter's the small fast one, and a
-    // Sum among them is what the others add up to. Per-trace normalization
-    // would draw every driver as if it carried the whole band. The integration
-    // starts at the display window, not at the record (see
-    // VirtualCrossoverAnalysis.StepResponse), and the gate is only DRAWN: a
-    // Tukey taper applied to the samples would read as a decay of the step.
+    // largest excursion among them inside the window: the curves keep their
+    // relative transient amplitudes, and a Sum among them is what the others
+    // add up to. Per-trace normalization would draw every driver as if it
+    // carried the whole band. The gate only frames the view: the sum runs from
+    // the record whatever the gate is (VirtualCrossoverAnalysis.StepResponse),
+    // and a Tukey taper applied to the samples would read as a decay of the
+    // step — so the same sample reads the same under every gate, up to the
+    // window's scale.
     public static (double StartMs, double EndMs)? AddStepTraceSeries(
         PlotModel model,
         IReadOnlyList<IrPreviewTrace> traces,

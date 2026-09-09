@@ -2070,20 +2070,22 @@ the main plot, every channel's processed response on one absolute timeline,
 each trace normalized to its own peak; **Step** draws the same responses as
 step responses — the running sum of each processed impulse response — and the
 Sum's, over the same window and around the same gate, every curve on ONE common
-scale (the largest excursion among them) rather than each to its own peak. The
-curves keep their sizes relative to each other and to the Sum: a woofer's step
-is the big slow one, a tweeter's the small fast one, and the Sum is what they
-add up to — its step is the sum of theirs, so a driver's share of the total can
-be read off the plot. A driver in the wrong polarity steps the other way first;
-a junction whose halves arrive apart shows as a Sum that climbs in two moves.
-The Sum adds every summing channel, hidden or not, exactly the set the
-magnitude Sum adds, and the opposite side's Sum rides along beside it as a
-thin dashed translucent line on the same absolute clock, as on the magnitude
+scale (the largest excursion among them inside the window) rather than each to
+its own peak. The common scale preserves the relative transient amplitudes of
+the channel responses and their Sum: the Sum's step is the sum of theirs, so
+what each channel puts into the total's front can be seen — though a step's
+size is a matter of the channel's band and filters as much as of its level: a
+high-passed driver's step returns to zero, and it is no measure of that
+driver's share of the sound. A driver in the wrong polarity steps the other
+way first; a junction whose halves arrive apart shows as a Sum that climbs in
+two moves. The Sum adds every summing channel, hidden or not, exactly the set
+the magnitude Sum adds, and the opposite side's Sum rides along beside it as
+a thin dashed translucent line on the same absolute clock, as on the magnitude
 view, so the two tunes' fronts compare without flipping the L/R selector. The
-running sum starts at the left edge of the drawn
-window, not at the record's start, so the noise before a channel's arrival does
-not float its curve; the gate is only drawn here, never applied, because a
-taper on the samples would read as a decay of the step. The Sum toggle keeps
+running sum runs from the record's start whatever the gate is: the gate only
+frames the view and never enters the curve — the same sample reads the same
+under every gate, up to the window's scale — because a taper on the samples
+would read as a decay of the step. The Sum toggle keeps
 its own answer on this view, inheriting the magnitude one until it is set. No
 loss curve is drawn here, but the Sum loss selector stays live, as on the
 impulse view: it picks the window of the read-out column, which is still

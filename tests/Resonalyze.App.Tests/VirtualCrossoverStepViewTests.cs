@@ -125,13 +125,47 @@ public sealed class VirtualCrossoverStepViewTests
         Assert.Equal(1.0, LastOf(stepModel, "Sum"), 9);
         Assert.Equal(2.4, Series(stepModel, "Sum").StrokeThickness);
 
-        // Before its arrival a step is flat at zero — the integration starts at
-        // the window, not at the record, and nothing before the front enters.
+        // Before its arrival a step is flat at zero: nothing before the front
+        // has entered the running sum.
         LineSeries late = Series(stepModel, "B");
         double secondMs = SecondArrival * 1_000.0 / SampleRate;
         Assert.All(
             late.Points.Where(point => point.X < secondMs - 0.05),
             point => Assert.Equal(0.0, point.Y));
+    }
+
+    [Fact]
+    public void TheGate_FramesTheView_AndNeverEntersTheCurve()
+    {
+        // The window follows the phase gate, so a gate edit moves the window;
+        // the step is a property of the response and must read the same at the
+        // same absolute time under any gate. A sum that started at the window's
+        // edge would not. Both windows hold the arrivals, so the common scale
+        // (the largest excursion inside the window) is the same too and the
+        // values compare exactly.
+        IrPreviewTrace first = Trace("A", FirstArrival, 1.0);
+        IrPreviewTrace second = Trace("B", SecondArrival, SecondAmplitude);
+        IrPreviewTrace[] traces = [first, second];
+
+        var wide = new PlotModel();
+        ImpulseWindowPreview.AddStepTraceSeries(
+            wide, traces, SampleRate, gateOffsetMs: 9, leftMs: 2, plateauMs: 30, rightMs: 10);
+        var narrow = new PlotModel();
+        ImpulseWindowPreview.AddStepTraceSeries(
+            narrow, traces, SampleRate, gateOffsetMs: 12, leftMs: 0.5, plateauMs: 12, rightMs: 3);
+
+        foreach (string title in new[] { "A", "B" })
+        {
+            Dictionary<double, double> wideByMs = Series(wide, title).Points
+                .ToDictionary(point => point.X, point => point.Y);
+            List<DataPoint> narrowPoints = Series(narrow, title).Points;
+            Assert.NotEmpty(narrowPoints);
+            Assert.All(narrowPoints, point =>
+            {
+                Assert.True(wideByMs.ContainsKey(point.X));
+                Assert.Equal(wideByMs[point.X], point.Y, 12);
+            });
+        }
     }
 
     private static double PeakOf(PlotModel model, string title) =>

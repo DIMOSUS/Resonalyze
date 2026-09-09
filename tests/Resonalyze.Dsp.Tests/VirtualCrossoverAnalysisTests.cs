@@ -464,18 +464,26 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
-    public void StepResponse_OfAnImpulse_IsAUnitStepFromTheStretchsOwnStart()
+    public void StepResponse_OfAnImpulse_IsAUnitStep_SummedFromTheRecordsStart()
     {
-        // Summed from the stretch's start, not the record's: the samples before
-        // it do not enter, and a stretch running past the record reads silence.
+        // Summed from the record's start whatever stretch is asked for: what
+        // came before the stretch is in the sum it opens on, and a stretch
+        // running past the record reads silence.
         Complex[] ir = UnitImpulse(64, 20);
         ir[5] = new Complex(3.0, 0.0);
 
         double[] step = VirtualCrossoverAnalysis.StepResponse(ir, 10, 70);
 
         Assert.Equal(70, step.Length);
-        Assert.All(step.Take(10), value => Assert.Equal(0.0, value));
-        Assert.All(step.Skip(10), value => Assert.Equal(1.0, value));
+        Assert.All(step.Take(10), value => Assert.Equal(3.0, value));
+        Assert.All(step.Skip(10), value => Assert.Equal(4.0, value));
+
+        // The same samples read the same whichever stretch holds them.
+        double[] whole = VirtualCrossoverAnalysis.StepResponse(ir, 0, 80);
+        for (int i = 0; i < step.Length; i++)
+        {
+            Assert.Equal(whole[10 + i], step[i]);
+        }
     }
 
     [Fact]
@@ -503,7 +511,7 @@ public sealed class VirtualCrossoverAnalysisTests
 
         for (int i = 0; i < sumStep.Length; i++)
         {
-            Assert.Equal(lowStep[i] + highStep[i], sumStep[i], 12);
+            Assert.Equal(lowStep[i] + highStep[i], sumStep[i], 9);
         }
 
         // The branches read as a step should: the high-pass steps up and

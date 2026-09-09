@@ -312,16 +312,19 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
-    /// The step response of an impulse response over one stretch of it: the
-    /// running sum of the real samples from <paramref name="start"/>, for
-    /// <paramref name="count"/> samples, with the sum starting at zero there.
-    /// A sample past the end of the record counts as silence. Linear, so the
-    /// step of a summed response is the sum of the steps over the same stretch.
+    /// The step response of an impulse response — the running sum of its real
+    /// samples from the record's start — returned for one stretch of it:
+    /// <paramref name="count"/> samples from <paramref name="start"/>. A sample
+    /// past the end of the record counts as silence. Linear, so the step of a
+    /// summed response is the sum of the steps.
     /// </summary>
     /// <remarks>
-    /// Summed from the stretch's own start rather than from the record's: the
-    /// samples before a channel's arrival are noise, and their running sum would
-    /// put the whole curve on a floor that has nothing to do with the channel.
+    /// The sum always runs from the record's start, whatever stretch is asked
+    /// for: the step is a property of the response, and a reader that only
+    /// shows part of it must see the same values at the same samples whichever
+    /// part it shows. (The Virtual DSP step view's window follows the phase
+    /// gate; a sum that started at the window would change shape with a gate
+    /// that is never applied.)
     /// </remarks>
     public static double[] StepResponse(Complex[] impulseResponse, int start, int count)
     {
@@ -329,8 +332,13 @@ public static class VirtualCrossoverAnalysis
         ArgumentOutOfRangeException.ThrowIfNegative(start);
         ArgumentOutOfRangeException.ThrowIfNegative(count);
 
-        var step = new double[count];
         double running = 0.0;
+        for (int index = 0; index < start && index < impulseResponse.Length; index++)
+        {
+            running += impulseResponse[index].Real;
+        }
+
+        var step = new double[count];
         for (int i = 0; i < count; i++)
         {
             int index = start + i;

@@ -788,9 +788,41 @@ internal static class AgentProposalValidator
         }
 
         (AgentVerdictStatus status, string message) = EngineNote(operation, session);
+        if (operation is TuneJunctionOperation junction && FirCutJunctionNote(junction, session) is { } firNote)
+        {
+            message += " " + firNote;
+        }
+
         return new AgentOperationVerdict(
             operation.Id, LabelFor(operation, channel), operation.Parameter, current, proposed,
             status, message, operation.Reason, operation, channel);
+    }
+
+    // The setCrossover note's twin for the junction tune, which writes IIR edges onto
+    // BOTH sides of the two blocks: a side already cut by a linear-phase FIR crossover
+    // on the edge the tune writes would be filtered twice afterwards. Allowed, as the
+    // single-channel edit is, but said — the red FIR button the panel shows next is
+    // easier to read with the reason already in the review.
+    private static string? FirCutJunctionNote(TuneJunctionOperation junction, AgentSessionSnapshot session)
+    {
+        if (ResolveJunction(session, junction.JunctionId, out AgentChannelSnapshot? lower, out AgentChannelSnapshot? upper) != null)
+        {
+            return null;
+        }
+
+        // Both physical sides of each block: the tune writes the pair of edges on both.
+        var cut = session.Channels
+            .Where(channel =>
+                (channel.Block == lower!.Block || channel.Block == upper!.Block) &&
+                channel.Settings.HasFirCrossover)
+            .Select(channel => $"{channel.Label} ({FirCrossoverDescription.Short(channel.Settings.FirDesign!)})")
+            .Distinct()
+            .ToList();
+        return cut.Count == 0
+            ? null
+            : $"{string.Join(", ", cut)} {(cut.Count == 1 ? "is" : "are")} already cut by a " +
+              "linear-phase FIR crossover; the IIR edges this tune writes filter " +
+              (cut.Count == 1 ? "it" : "them") + " twice.";
     }
 
     // What the engine will write over, in the row's own words. A warning rather

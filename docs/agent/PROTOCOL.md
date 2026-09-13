@@ -256,8 +256,9 @@ else in a reply touches it.
   `processor.sampleRateHz / designedAtHz`, and adds its delay scaled by the
   inverse; the junctions are read at the scaled corners. Where `dsp.crossover.kind` is `Off`,
   these are the corners the channel is cut at, and the junctions are read at them.
-  Read-only like the rest of `dsp.fir`: a `setCrossover` on such a side is allowed
-  but ADDS an IIR crossover on top of the kernel, and the review says so.
+  Read-only like the rest of `dsp.fir`: a `setCrossover` on such a side, or a
+  `tuneJunction` whose blocks include one, is allowed but ADDS IIR edges on top of
+  the kernel, and the review says so.
 - `peq.hash` is twelve hex digits of SHA-256 over the bands in order (type,
   frequency, Q, gain in round-trip form) and the preamp. A `replacePeqBank`
   reply echoes it instead of the whole current bank.

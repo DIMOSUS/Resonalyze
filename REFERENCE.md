@@ -2127,7 +2127,8 @@ Each channel runs through:
   low-pass, high-pass or band-pass. A kernel designed there is stored with its
   **design** beside the taps, so it opens again as the crossover it is; the read-out
   names it by its corners (`HP 80 Hz`, `BP 250 Hz–3 kHz`) and states its
-  latency, and the tuning sheet prints the design in full. An import or a **Clear**
+  latency at the processor's rate (for a design made at another rate that is not
+  the design's own figure, which the tooltip gives beside it), and the tuning sheet prints the design in full. An import or a **Clear**
   replaces the kernel and drops the design with it. The button turns **red**, with
   the reason in its tooltip, in two cases only: a designed kernel whose rate is no
   longer the processor's (it waits for a rebuild — open it in the constructor and

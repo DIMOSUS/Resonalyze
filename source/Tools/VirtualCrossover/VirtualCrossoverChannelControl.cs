@@ -1152,12 +1152,19 @@ public partial class VirtualCrossoverChannelControl : UserControl
                     : string.Empty);
             if (firDesign is { } design)
             {
-                // A designed kernel reads as its crossover and its latency. Its rate
-                // mismatch is the red conflict below, not the amber file warning.
-                info = $"{firKernel.Length} taps · {design.LatencyMs:0.0} ms";
+                // A designed kernel reads as its crossover and its latency — the latency
+                // it has HERE: the taps run at the processor's rate, so a design made at
+                // another one delays the channel by the same half-length in samples,
+                // which is a different time. Its rate mismatch is the red conflict below,
+                // not the amber file warning.
+                double runLatencyMs = design.LatencySamples * 1_000.0 / processorSampleRateHz;
+                info = $"{firKernel.Length} taps · {runLatencyMs:0.0} ms";
                 infoColor = UiPalette.TextSecondary;
                 infoTip = FirCrossoverDescription.Long(design) + "." + Environment.NewLine +
-                    $"Linear-phase: the channel is delayed by {design.LatencyMs:0.00} ms, half the kernel.";
+                    $"Linear-phase: the channel is delayed by {runLatencyMs:0.00} ms, half the kernel" +
+                    (design.SampleRateHz == processorSampleRateHz
+                        ? "."
+                        : $" ({design.LatencyMs:0.00} ms as designed at {FormatRate(design.SampleRateHz)}).");
             }
             else
             {

@@ -28,11 +28,14 @@ public sealed class FirCrossoverAlignmentTests
 {
     private const int SampleRate = 48_000;
 
-    private sealed class Channel(string name) : IAlignmentChannel
+    private sealed class Channel(
+        string name,
+        int sampleRate = FirCrossoverAlignmentTests.SampleRate,
+        int processorSampleRate = FirCrossoverAlignmentTests.SampleRate) : IAlignmentChannel
     {
         public string Name { get; } = name;
-        public int SampleRate => FirCrossoverAlignmentTests.SampleRate;
-        public int ProcessorSampleRate => FirCrossoverAlignmentTests.SampleRate;
+        public int SampleRate { get; } = sampleRate;
+        public int ProcessorSampleRate { get; } = processorSampleRate;
     }
 
     [Theory]
@@ -118,6 +121,117 @@ public sealed class FirCrossoverAlignmentTests
                 Math.Abs(relative - reference) <= 0.3,
                 $"{name}: {relative:0.000} ms against the sub with FIR crossovers, {reference:0.000} ms without");
         }
+    }
+
+    [Theory]
+    [InlineData(2_000.0, 1_023, 1.0, 480)]
+    [InlineData(80.0, 4_095, 1.5, 480)]
+    [InlineData(80.0, 4_095, -1.5, 2_880)]
+    public void AMeasurementAtAnotherRate_StillMeetsTheBranchesWhereTheirLatenciesSay(
+        double cornerHz, int taps, double upperEarlyMs, int basePosition)
+    {
+        // Measured at 44.1 kHz, run by a 48 kHz processor: the kernel's delay is counted
+        // at the PROCESSOR's rate while every record the engine reads is on the
+        // measurement's grid, so a mix-up between the two would land the answer off
+        // by the kernel's latency times 48/44.1 − 1 (3.9 ms at 4095 taps).
+        const int Measurement = 44_100;
+        const int Processor = 48_000;
+        FirCrossoverDesign lowDesign = Design(CrossoverKind.LowPass, cornerHz, cornerHz, taps) with { SampleRateHz = Processor };
+        FirCrossoverDesign highDesign = Design(CrossoverKind.HighPass, cornerHz, cornerHz, taps) with { SampleRateHz = Processor };
+        var lowChain = new DspChannelChain(Fir: lowDesign.Build());
+        var highChain = new DspChannelChain(Fir: highDesign.Build());
+        int length = RecordLength(basePosition, taps);
+        int earlySamples = (int)Math.Round(upperEarlyMs * Measurement / 1_000);
+
+        AlignmentSnapshot lower = Snapshot(
+            new Channel("W", Measurement, Processor),
+            Impulse(length, basePosition + Math.Max(0, earlySamples)),
+            lowChain);
+        AlignmentSnapshot upper = Snapshot(
+            new Channel("T", Measurement, Processor),
+            Impulse(length, basePosition + Math.Max(0, -earlySamples)),
+            highChain);
+
+        double relativeMs = RelativeDelayMs(lower, upper, cornerHz);
+
+        double expectedMs = earlySamples * 1_000.0 / Measurement;
+        Assert.True(
+            Math.Abs(relativeMs - expectedMs) <= Tolerance(cornerHz),
+            $"expected {expectedMs:0.000} ms, got {relativeMs:0.000} ms");
+    }
+
+    [Theory]
+    [InlineData(2_000.0, 2_047)]
+    [InlineData(150.0, 4_095)]
+    public void AnImportedSymmetricCorrection_OverAnIirCrossover_AddsExactlyItsDelay(
+        double cornerHz, int taps)
+    {
+        // Not a crossover from the constructor: a zero-phase room correction with a
+        // 5 dB bump over the octave above the corner, imported beside an ordinary IIR
+        // Linkwitz-Riley split. The special path takes ANY symmetric kernel, so this is
+        // the case that proves the kernel is only a delay to the arrival read and not
+        // a shape the fit should have followed: with the correction on the upper
+        // channel, the proposal moves by exactly its latency and nothing else.
+        var edge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, cornerHz, 24);
+        var lowChain = new DspChannelChain(Crossover: new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: edge));
+        var highChain = new DspChannelChain(Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge));
+        FirFilter correction = BumpCorrection(cornerHz, taps);
+        Assert.True(correction.IsSymmetric);
+        Assert.True(correction.Response(cornerHz * 1.4, SampleRate).Magnitude > 1.6);
+
+        double RunWith(DspChannelChain upperChain)
+        {
+            int length = RecordLength(480, taps);
+            AlignmentSnapshot lower = Snapshot(new Channel("W"), Impulse(length, 480), lowChain);
+            AlignmentSnapshot upper = Snapshot(new Channel("T"), Impulse(length, 480), upperChain);
+            return RelativeDelayMs(lower, upper, cornerHz);
+        }
+
+        double without = RunWith(highChain);
+        double with = RunWith(highChain with { Fir = correction });
+
+        double latencyMs = correction.LinearPhaseDelaySamples * 1_000.0 / SampleRate;
+        Assert.True(
+            Math.Abs(with - (without - latencyMs)) <= Tolerance(cornerHz),
+            $"without the correction {without:0.000} ms, with it {with:0.000} ms; expected {without - latencyMs:0.000} ms");
+    }
+
+    // A zero-phase peaking correction: a unit impulse plus a windowed band-pass over
+    // [corner, 2·corner] at 0.8, so the band sits about 5 dB up with the window's
+    // ripple at its edges — uneven, as a measured correction is.
+    private static FirFilter BumpCorrection(double cornerHz, int taps)
+    {
+        FirFilter band = Design(CrossoverKind.BandPass, 2 * cornerHz, cornerHz, taps) with
+        {
+            Method = FirCrossoverMethod.WindowedSinc,
+            Window = FirWindow.Blackman
+        } is { } design
+            ? design.Build()
+            : throw new InvalidOperationException();
+        var kernel = new double[taps];
+        for (int i = 0; i < taps; i++)
+        {
+            kernel[i] = 0.8 * band.Taps[i];
+        }
+
+        kernel[(taps - 1) / 2] += 1.0;
+        return new FirFilter(kernel, SampleRate);
+    }
+
+    // Runs Compute on one junction and answers how much later the upper channel is
+    // proposed than the lower.
+    private static double RelativeDelayMs(AlignmentSnapshot lower, AlignmentSnapshot upper, double cornerHz)
+    {
+        var junction = new AlignmentJunction(lower, upper, cornerHz, cornerHz / 2, cornerHz * 2);
+
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            [Apply(lower, overrides), Apply(upper, overrides)];
+
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        AutoAlignmentEngine.Compute([lower, upper], [junction], Reprocess, alignment, new StringBuilder());
+        return alignment.GetValueOrDefault(upper.Channel).DelayMs -
+            alignment.GetValueOrDefault(lower.Channel).DelayMs;
     }
 
     [Fact]
@@ -237,7 +351,7 @@ public sealed class FirCrossoverAlignmentTests
     private static AlignmentSnapshot Snapshot(Channel channel, Complex[] bypassed, DspChannelChain chain)
     {
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            bypassed, chain, SampleRate, SampleRate, out ValidSampleRange range);
+            bypassed, chain, channel.SampleRate, channel.ProcessorSampleRate, out ValidSampleRange range);
         return new AlignmentSnapshot(
             channel,
             processed,
@@ -256,8 +370,8 @@ public sealed class FirCrossoverAlignmentTests
         Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
             snapshot.BypassedImpulseResponse!,
             chain with { DelayMs = applied.DelayMs, InvertPolarity = applied.InvertPolarity },
-            SampleRate,
-            SampleRate,
+            snapshot.Channel.SampleRate,
+            snapshot.Channel.ProcessorSampleRate,
             out ValidSampleRange range);
         return new AlignmentSnapshot(
             snapshot.Channel,

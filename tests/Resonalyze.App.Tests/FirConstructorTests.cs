@@ -115,6 +115,33 @@ public sealed class FirConstructorTests
     }
 
     [Fact]
+    public void AWindowedSincDesign_LoadsWhateverFamilyAndSlopeItsUnusedBoxesHeld()
+    {
+        // Problem() does not read a sinc's family or slope, so the session may not
+        // either: the constructor keeps whatever the greyed-out boxes held.
+        string root = CreateTemporaryDirectory();
+        string path = Path.Combine(root, "session.json");
+        try
+        {
+            FirCrossoverDesign design = HighPassDesign() with
+            {
+                Method = FirCrossoverMethod.WindowedSinc,
+                HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.Chebyshev, 80, 18)
+            };
+            Assert.Null(design.Problem());
+            var original = new VirtualCrossoverProjectFile { DspProcessorFirFilters = true };
+            WithDesignedKernel(original.Pairs[0].Left, design);
+            original.SaveTo(path);
+
+            Assert.Equal(design, VirtualCrossoverProjectFile.LoadFrom(path).Pairs[0].Left.FirDesign);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ADeviceWithoutTheStage_TakesTheDesignWithTheKernel()
     {
         var project = new VirtualCrossoverProjectFile { DspProcessorFirFilters = false };
@@ -315,10 +342,14 @@ public sealed class FirConstructorTests
         Assert.Null(control.FirConflict);
         Assert.NotEqual(Resonalyze.Ui.UiPalette.WarningRed, control.FirButton.ForeColor);
 
-        // The processor moved: the kernel waits for a rebuild.
+        Assert.Contains($"{511 * 1_000.0 / 48_000:0.0} ms", control.FirInfoLabel.Text);
+
+        // The processor moved: the kernel waits for a rebuild, and meanwhile the latency
+        // read out is the one the same taps have at the new rate, not the design's.
         control.ProcessorSampleRateHz = 96_000;
         Assert.Contains("rebuild", control.FirConflict);
         Assert.Equal(Resonalyze.Ui.UiPalette.WarningRed, control.FirButton.ForeColor);
+        Assert.Contains($"{511 * 1_000.0 / 96_000:0.0} ms", control.FirInfoLabel.Text);
 
         // Back at its rate, but beside an IIR crossover: cut twice.
         control.ProcessorSampleRateHz = 48_000;

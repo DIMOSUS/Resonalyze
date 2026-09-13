@@ -538,15 +538,20 @@ public sealed class VirtualCrossoverChannelSettings
             // The corners against the session's own range; the slopes against the
             // constructor's list, which runs steeper than a hardware crossover's — the
             // IIR edge check would refuse every kernel designed past 48 dB/oct.
-            ValidateDesignEdge(design.LowPassEdge);
-            ValidateDesignEdge(design.HighPassEdge);
+            ValidateDesignEdge(design.LowPassEdge, design.Method);
+            ValidateDesignEdge(design.HighPassEdge, design.Method);
         }
     }
 
-    private static void ValidateDesignEdge(CrossoverEdge edge)
+    // The same contract as FirCrossoverDesign.Problem: a family and slope are part of
+    // a design only where its method reads them. A windowed sinc carries whatever the
+    // boxes held and is built without them, so the session may not refuse a design the
+    // constructor built.
+    private static void ValidateDesignEdge(CrossoverEdge edge, FirCrossoverMethod method)
     {
         if (!Enum.IsDefined(edge.Family) ||
-            !FirCrossoverDesign.SupportedSlopes(edge.Family).Contains(edge.SlopeDbPerOctave))
+            (method == FirCrossoverMethod.IirMagnitude &&
+             !FirCrossoverDesign.SupportedSlopes(edge.Family).Contains(edge.SlopeDbPerOctave)))
         {
             throw new InvalidDataException("The FIR crossover design's slope is invalid.");
         }

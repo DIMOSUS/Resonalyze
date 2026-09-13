@@ -2198,8 +2198,12 @@ the other side's second corner where it was, and the two crossovers unequal afte
 an edit meant to equalize them. Polarity travels on its own, so moving a corner
 never flips the other side. The FIR stage — the kernel, the file name it came under
 and the design it was built from — travels as a third unit, because a FIR crossover
-is a crossover too: an import, a Clear or a kernel returned from the FIR Constructor
-on the side shown lands on the other side as well. Gain, delay, the phase angle and the PEQ are not
+is a crossover too — but only as a CROSSOVER: a kernel designed in the FIR
+Constructor lands on the other side as well, and a Clear of one removes it from
+both. A kernel **imported from a file** never travels, and is never written over:
+a room or driver correction is the one filter the two sides of a car do not share,
+so an import on the side shown stays on that side, and a side holding an imported
+correction keeps it whatever is designed, imported or cleared on the other. Gain, delay, the phase angle and the PEQ are not
 locked, for the reason they start unticked in the copy dialog; mono pairs have one
 settings set and need no lock. A run that writes both sides itself — **Auto
 delay**, which decides polarity per side, or the crossover wizard — keeps its own

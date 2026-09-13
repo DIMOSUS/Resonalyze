@@ -49,6 +49,16 @@ namespace Resonalyze;
 /// aligns a driver against its own side's level and geometry, the same reason the L→R
 /// dialog leaves them unticked by default.
 /// </para>
+/// <para>
+/// The FIR unit carries only CROSSOVERS — kernels with a design (see
+/// <see cref="VirtualCrossoverChannelSettings.HasFirCrossover"/>). A kernel imported
+/// from a file is taps and nothing more, and a room or driver correction is exactly
+/// the thing the two sides of a car do not share: carrying left-correction.wav over
+/// the right side's own correction would lose it without a word. So an import on the
+/// shown side stays there; a designed kernel, or a Clear, is carried only onto a hidden
+/// side that holds no kernel or a designed one, never over an imported kernel; and a
+/// Clear is carried only where it removes a crossover, not onto a side that has none.
+/// </para>
 /// </remarks>
 internal sealed class VirtualCrossoverSideLock
 {
@@ -204,13 +214,31 @@ internal sealed class VirtualCrossoverSideLock
         }
 
         if (shownNow.Fir != shownBefore.Fir &&
-            hiddenNow.Fir != shownNow.Fir)
+            hiddenNow.Fir != shownNow.Fir &&
+            CarriesFir(shownNow.Fir, hiddenNow.Fir))
         {
             shownNow.Fir.WriteTo(hidden);
             wrote = true;
         }
 
         return wrote;
+    }
+
+    // Whether the FIR stage the shown side moved to may be written over the hidden
+    // side's: only a crossover travels, and only onto a side whose kernel, if any, is
+    // one too (see the class remarks).
+    private static bool CarriesFir(FirStage shown, FirStage hidden)
+    {
+        bool hiddenIsImported = hidden.Kernel != null && hidden.Design == null;
+        if (hiddenIsImported)
+        {
+            return false;
+        }
+
+        bool shownIsCrossover = shown.Kernel != null && shown.Design != null;
+        bool shownIsCleared = shown.Kernel == null;
+        bool hiddenIsCrossover = hidden.Kernel != null && hidden.Design != null;
+        return shownIsCrossover || (shownIsCleared && hiddenIsCrossover);
     }
 
     // The PHYSICAL sides, mono routing ignored, for the same reason the channel keeps

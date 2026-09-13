@@ -316,16 +316,68 @@ public sealed class FirConstructorTests
         // Polarity is its own unit and was not touched.
         Assert.True(pair.Right.InvertPolarity);
 
-        // An import on the shown side replaces the kernel AND drops the design, and
-        // the hidden side follows both.
-        pair.Left.Fir = new FirFilter([1.0]);
-        pair.Left.FirSourceName = "room.wav";
+        // A Clear on the shown side removes the crossover from both.
+        pair.Left.Fir = null;
         pair.Left.FirDesign = null;
 
         Assert.True(sideLock.Follow([pair], shownRight: false));
-        Assert.Same(pair.Left.Fir, pair.Right.Fir);
-        Assert.Equal("room.wav", pair.Right.FirSourceName);
+        Assert.Null(pair.Right.Fir);
         Assert.Null(pair.Right.FirDesign);
+    }
+
+    [Fact]
+    public void TheLock_NeverCarriesAnImportedKernel_NorWritesOverOne()
+    {
+        // Room or driver corrections differ between the sides of a car: the lock keeps
+        // crossovers in step and leaves corrections exactly where they were imported.
+        var pair = new VirtualCrossoverChannelPairSettings();
+        var sideLock = new VirtualCrossoverSideLock();
+        sideLock.Engage([pair]);
+
+        // An import on the shown side stays there.
+        var leftCorrection = new FirFilter([0.2, 1.0, 0.2]);
+        pair.Left.Fir = leftCorrection;
+        pair.Left.FirSourceName = "left-correction.wav";
+        Assert.False(sideLock.Follow([pair], shownRight: false));
+        Assert.Null(pair.Right.Fir);
+
+        // The hidden side has its own correction: a new import on the shown side, a
+        // designed crossover there, and a Clear there all leave it alone.
+        var rightCorrection = new FirFilter([0.3, 1.0, 0.3]);
+        pair.Right.Fir = rightCorrection;
+        pair.Right.FirSourceName = "right-correction.wav";
+        sideLock.Remember([pair]);
+
+        pair.Left.Fir = new FirFilter([0.1, 1.0, 0.1]);
+        Assert.False(sideLock.Follow([pair], shownRight: false));
+        Assert.Same(rightCorrection, pair.Right.Fir);
+
+        WithDesignedKernel(pair.Left, HighPassDesign());
+        Assert.False(sideLock.Follow([pair], shownRight: false));
+        Assert.Same(rightCorrection, pair.Right.Fir);
+        Assert.Null(pair.Right.FirDesign);
+
+        pair.Left.Fir = null;
+        pair.Left.FirDesign = null;
+        Assert.False(sideLock.Follow([pair], shownRight: false));
+        Assert.Same(rightCorrection, pair.Right.Fir);
+        Assert.Equal("right-correction.wav", pair.Right.FirSourceName);
+    }
+
+    [Fact]
+    public void TheLock_DoesNotCarryAClear_OntoASideWithoutACrossover()
+    {
+        // The shown side's imported correction is cleared; the hidden side never had a
+        // kernel, and there is no crossover to remove — nothing is written.
+        var pair = new VirtualCrossoverChannelPairSettings();
+        pair.Left.Fir = new FirFilter([0.2, 1.0, 0.2]);
+        var sideLock = new VirtualCrossoverSideLock();
+        sideLock.Engage([pair]);
+
+        pair.Left.Fir = null;
+
+        Assert.False(sideLock.Follow([pair], shownRight: false));
+        Assert.Null(pair.Right.Fir);
     }
 
     // ------------------------------------------------------------------- block

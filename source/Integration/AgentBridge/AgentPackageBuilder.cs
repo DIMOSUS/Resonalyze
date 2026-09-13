@@ -347,7 +347,7 @@ internal static class AgentPackageBuilder
             settings.PhaseRotationDegrees > 0 ? settings.PhaseRotationDegrees : null,
             settings.Fir is { } fir
                 ? new AgentPackageFir(
-                    Path.GetFileName(settings.FirPath) ?? string.Empty,
+                    settings.FirSourceName ?? string.Empty,
                     fir.Length,
                     Math.Round(fir.PeakIndex * 1_000.0 / channel.ProcessorSampleRateHz, 2))
                 : null);

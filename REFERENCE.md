@@ -1987,13 +1987,19 @@ Each channel runs through:
   per channel type nor its step size is enforced against the device, the same way
   the crossover slope list and the manual delay range are not
 - **FIR** — the channel's FIR filter, on the processors that convolve, shown only
-  when [DSP processor](#dsp-processor) says the device does. The button loads a
+  when [DSP processor](#dsp-processor) says the device does. The kernel is
+  **part of the session**, stored with the tune the way the PEQ bands are (the
+  taps themselves, as 64-bit floats, up to 131072 of them), so a session travels
+  with its kernels and nothing has to be found again. The button **imports** a
   kernel from a `.wav` (the first channel of a multichannel file), a `.fir` or a
   `.txt` — the text forms hold one coefficient per line, first tap first, with
   any header lines above them skipped; once the coefficients begin, a line that
   is neither a number nor a comment (`*`, `//`, `#`, `;`, `%`) refuses the whole
-  file, because a skipped tap would shift every later one in time — or clears
-  it, and then names the file;
+  file, because a skipped tap would shift every later one in time — **exports**
+  the kernel the session carries to a 32-bit float WAV or a text file at the
+  processor's rate (float rather than 24-bit PCM, because a kernel with gain has
+  taps past ±1), or clears it; the button then names the file the kernel was
+  imported from, and
   the read-out beside it states the kernel's length in taps and where its peak
   sits in time — roughly the bulk delay a conventional linear-phase kernel adds,
   and no delay at all for a minimum-phase one, whose peak sits near the front;
@@ -2005,16 +2011,9 @@ Each channel runs through:
   filters. The taps are convolved **at the processor's rate**, whatever rate the
   file states — that is what the device does with them — so a kernel designed for
   another rate is a different filter here, and the read-out turns amber and names
-  both rates when a WAV's header disagrees with the processor. A session stores
-  the kernel's path the way it stores each channel's measurement (absolute, plus a
-  path relative to an exported session's own folder) and finds it the same way on
-  load; an imported session whose kernels were not found offers to relink them
-  by folder, as it does the measurements, and a kernel whose file stays missing
-  — or is there but does not read as a kernel, which the read-out tells apart
-  with the reader's reason — leaves the channel playing WITHOUT it, with the
-  button warning rather than a filter quietly gone. The text forms take a
-  decimal comma as well as a point (`0,5` and `0.5` are the same tap), and refuse
-  a file that mixes the two. The kernel is a stage
+  both rates when a WAV's header disagrees with the processor. The text forms
+  take a decimal comma as well as a point (`0,5` and `0.5` are the same tap), and
+  refuse a file that mixes the two. The kernel is a stage
   beside the IIR crossover, not in place of it: a kernel that already contains
   the channel's crossover runs on top of whatever the Crossover row says, exactly
   as it would on a device with both blocks, so switch that row **Off** when the
@@ -2736,9 +2735,10 @@ have. The same check runs on load, so a session cannot open in that state
 either.
 
 **FIR filters** is the fourth property. Ticking it gives every block a **FIR**
-button (see [the block's fields](#virtual-dsp)); unticking it **detaches every
-kernel loaded**, and says how many, and so does opening a session that carries
-kernels without the tick. The tick differs from the phase control in one way:
+button (see [the block's fields](#virtual-dsp)); unticking it **removes every
+kernel from the session**, and says how many, and so does opening a session
+that carries kernels without the tick — export a kernel first if it is the only
+copy. The tick differs from the phase control in one way:
 the catalog proposes it in ONE direction only. Naming a model the catalog credits
 with a FIR stage turns the tick on; naming any other model leaves it as it
 stands, because the catalog's silence means "not known to take a kernel", not

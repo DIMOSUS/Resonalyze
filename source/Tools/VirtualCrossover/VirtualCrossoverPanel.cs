@@ -1259,14 +1259,11 @@ public partial class VirtualCrossoverPanel : UserControl
             to.PhaseRotationDegrees = from.PhaseRotationDegrees;
         }
 
-        // The kernel by reference: it is immutable, and the file it came from is the
-        // same file for both sides.
+        // The kernel by reference: it is immutable, so both sides can share it.
         if (scope.Fir)
         {
-            to.FirPath = from.FirPath;
-            to.FirRelativePath = from.FirRelativePath;
             to.Fir = from.Fir;
-            to.FirLoadError = from.FirLoadError;
+            to.FirSourceName = from.FirSourceName;
         }
 
         // The all-pass filters live inside the PEQ bank as bands, but they answer a
@@ -2509,17 +2506,6 @@ public partial class VirtualCrossoverPanel : UserControl
         // either way. Synchronous — a capture is under a megabyte of curve, not an
         // impulse response.
         ResolveSpatialAverage(settings, state);
-        // And the kernel, for the same reason: it is this side's, and it has to come
-        // back whether or not the measurement does. The block was bound BEFORE this
-        // (ApplySettingsToControl runs ahead of the restore, while the kernel is still
-        // null), and the restore's own callback refreshes only the source button — so
-        // the FIR row is told here, or a side whose curves are already convolved would
-        // go on showing "file not found" until something else rebound the block.
-        ResolveFir(settings);
-        if (channelControls.ContainsKey(channel))
-        {
-            UpdateFirReadout(channel);
-        }
         if (!settings.HasSource)
         {
             return;
@@ -3072,16 +3058,28 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // -------------------------------------------------------------------- FIR
 
-    // The FIR button's action menu: load (or replace) the kernel file, or clear it.
-    // Rebuilt on every click, like the PEQ menu, so Clear follows the channel's state.
+    // The FIR button's action menu: import a kernel file (replacing the kernel the
+    // side carries), export the kernel to a file, or clear it. Rebuilt on every
+    // click, like the PEQ menu, so Export and Clear follow the channel's state. The
+    // kernel lives in the session; the files are its way in and out.
     private void ShowFirMenu(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
         var menu = new ContextMenuStrip();
         menu.Items.Add(
-            settings.HasFir ? "Replace FIR filter…" : "Load FIR filter…",
+            settings.HasFir ? "Import FIR filter (replace)…" : "Import FIR filter…",
             null,
-            (_, _) => LoadFir(channel));
+            (_, _) => ImportFir(channel));
+        var exportItem = new ToolStripMenuItem("Export FIR filter…", null, (_, _) => ExportFir(channel))
+        {
+            Enabled = settings.HasFir,
+            ToolTipText =
+                "Write this channel's kernel out as a 32-bit float WAV or a text file\r\n" +
+                "(one coefficient per line), at the processor's rate — the kernel is\r\n" +
+                "kept in the session, so this is where it leaves for the hardware."
+        };
+        menu.Items.Add(exportItem);
+        menu.Items.Add(new ToolStripSeparator());
         var clearItem = new ToolStripMenuItem("Clear", null, (_, _) => ClearFir(channel))
         {
             Enabled = settings.HasFir
@@ -3090,13 +3088,13 @@ public partial class VirtualCrossoverPanel : UserControl
         DropDownMenu.ShowUnder(ControlFor(channel).FirButton, menu);
     }
 
-    private void LoadFir(VirtualCrossoverChannel channel)
+    private void ImportFir(VirtualCrossoverChannel channel)
     {
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
-            Filter = FirFilterFiles.FileDialogFilter,
-            Title = $"Load channel {channel.Name} FIR filter"
+            Filter = FirFilterFiles.ImportFileDialogFilter,
+            Title = $"Import channel {channel.Name} FIR filter"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
@@ -3108,118 +3106,74 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             // A file that is not a kernel must not reach the channel: the assignment
             // below replaces the kernel outright, so a wrong pick would silently
-            // detach the one that was there.
+            // drop the one that was there.
             kernel = FirFilterFiles.Load(dialog.FileName);
         }
         catch (Exception exception)
         {
-            ShowError("FIR filter could not be loaded.", exception.Message);
+            ShowError("FIR filter could not be imported.", exception.Message);
             return;
         }
 
         VirtualCrossoverChannelSettings settings = channel.Settings;
-        settings.FirPath = dialog.FileName;
-        // A relative path is the EXPORT's to write (see WriteWithExportRelativePaths);
-        // one left over from an import would point at the previous file.
-        settings.FirRelativePath = null;
         settings.Fir = kernel;
-        settings.FirLoadError = null;
+        settings.FirSourceName = Path.GetFileName(dialog.FileName);
         UpdateFirReadout(channel);
         ScheduleSave();
         RedrawAll();
     }
 
-    private void ClearFir(VirtualCrossoverChannel channel)
+    private void ExportFir(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
-        settings.FirPath = null;
-        settings.FirRelativePath = null;
-        settings.Fir = null;
-        settings.FirLoadError = null;
-        UpdateFirReadout(channel);
-        ScheduleSave();
-        RedrawAll();
-    }
-
-    // The block's FIR row reads the ACTIVE side's kernel: the file it names, the
-    // kernel behind it when it resolved, and the reader's reason when it did not.
-    private void UpdateFirReadout(VirtualCrossoverChannel channel)
-    {
-        VirtualCrossoverChannelSettings settings = channel.Settings;
-        ControlFor(channel).SetFir(settings.FirPath, settings.Fir, settings.FirLoadError);
-    }
-
-    // Every side that names a kernel FILE but has none behind it because the file
-    // was not found — the ones a folder can answer for. A file that exists but does
-    // not read as a kernel is not among them: no folder fixes that, and the block
-    // says so itself.
-    private IEnumerable<(VirtualCrossoverChannel Channel, bool RightSide)> MissingFirSides()
-    {
-        foreach (VirtualCrossoverChannel channel in channels)
-        {
-            foreach (bool rightSide in new[] { false, true })
-            {
-                if (channel.Pair.Mono && rightSide)
-                {
-                    continue;
-                }
-
-                VirtualCrossoverChannelSettings side = channel.SideSettings(rightSide);
-                if (side.HasFir && side.Fir == null && side.FirLoadError == null)
-                {
-                    yield return (channel, rightSide);
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Re-attaches one side's persisted kernel: the stored path, then the same file
-    /// beside the session it was imported from, then beside the folder the user
-    /// pointed at when relinking — the ladder the measurements climb, because the
-    /// kernel travels with the tune. Synchronous: a kernel is a few hundred kilobytes
-    /// at most.
-    /// </summary>
-    /// <remarks>
-    /// A kernel that no longer resolves degrades to a channel WITHOUT it rather than
-    /// failing the load, and the stored path is left standing: it is the only hint a
-    /// later relink has, and it is what tells the button to warn instead of showing a
-    /// channel that never had one.
-    /// </remarks>
-    private void ResolveFir(VirtualCrossoverChannelSettings settings)
-    {
-        settings.Fir = null;
-        settings.FirLoadError = null;
-        if (!settings.HasFir)
+        if (settings.Fir is not { } kernel)
         {
             return;
         }
 
-        string? path =
-            VirtualCrossoverSourceLocator.Locate(
-                settings.FirPath, settings.FirRelativePath, project.ProjectDirectory)
-            ?? VirtualCrossoverSourceLocator.Locate(
-                settings.FirPath, settings.FirRelativePath, relinkDirectory);
-        if (path == null)
+        using var dialog = new SaveFileDialog
+        {
+            AddExtension = true,
+            DefaultExt = "wav",
+            Filter = FirFilterFiles.ExportFileDialogFilter,
+            FileName = Path.GetFileNameWithoutExtension(settings.FirSourceName) is { Length: > 0 } stem
+                ? stem
+                : $"{channel.Name} FIR",
+            OverwritePrompt = true,
+            Title = $"Export channel {channel.Name} FIR filter"
+        };
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
             return;
         }
 
         try
         {
-            settings.Fir = FirFilterFiles.Load(path);
-            // Pin where it was actually read from, the same rule the source path
-            // follows: this project becomes the internal autosave right after the
-            // import, and that copy has no session file beside it to search from.
-            settings.FirPath = path;
+            // At the processor's rate: that is the rate the taps mean in this
+            // session, whatever the file they were imported from said.
+            FirFilterFiles.Save(dialog.FileName, kernel, ProcessorSampleRateHz, settings.FirSourceName);
         }
         catch (Exception exception)
         {
-            // A file that exists but is not a kernel is a channel without one, not a
-            // failed load — and the block shows the reader's reason, so nobody goes
-            // looking for a file that never moved.
-            settings.FirLoadError = exception.Message;
+            ShowError("FIR filter could not be exported.", exception.Message);
         }
+    }
+
+    private void ClearFir(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        settings.Fir = null;
+        settings.FirSourceName = null;
+        UpdateFirReadout(channel);
+        ScheduleSave();
+        RedrawAll();
+    }
+
+    // The block's FIR row reads the ACTIVE side's kernel and the file it came from.
+    private void UpdateFirReadout(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        ControlFor(channel).SetFir(settings.Fir, settings.FirSourceName);
     }
 
     private void UpdatePeqReadouts(VirtualCrossoverChannel channel)
@@ -9260,22 +9214,16 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         List<(VirtualCrossoverChannel Channel, bool RightSide)> missing =
             MissingSourceSides().ToList();
-        // The kernels are files of this session too, and a session whose
-        // measurements all came back can still have left them behind: the offer is
-        // made for them alike, because otherwise the only word of a tune predicted
-        // without its FIR stage is an amber button on a block that may be folded.
-        List<(VirtualCrossoverChannel Channel, bool RightSide)> missingFir =
-            MissingFirSides().ToList();
-        if ((missing.Count == 0 && missingFir.Count == 0) || IsDisposed)
+        if (missing.Count == 0 || IsDisposed)
         {
             return;
         }
 
         if (MessageBox.Show(
                 FindForm(),
-                $"{DescribeMissingFiles(missing, missingFir)}\r\n\r\nThey were saved " +
-                "with this session's own paths, which do not exist on this computer. " +
-                "Point at the folder holding them?",
+                $"{DescribeMissingSources(missing)}\r\n\r\nThey were saved with this " +
+                "session's own paths, which do not exist on this computer. Point at " +
+                "the folder holding the measurements?",
                 "Virtual DSP",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question) != DialogResult.Yes)
@@ -9285,7 +9233,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         using var dialog = new FolderBrowserDialog
         {
-            Description = "Select the folder holding this session's measurements and FIR filters",
+            Description = "Select the folder holding this session's measurements",
             UseDescriptionForTitle = true,
             SelectedPath = project.ProjectDirectory ?? string.Empty
         };
@@ -9309,23 +9257,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 UpdateSourceButton(channel);
             }
 
-            // The kernels climb the same ladder, and a side whose measurement was
-            // found may still have lost its kernel to the move — so every side that
-            // names one and has none asks the new folder too.
-            foreach (VirtualCrossoverChannel channel in channels)
-            {
-                foreach (bool rightSide in new[] { false, true })
-                {
-                    VirtualCrossoverChannelSettings side = channel.SideSettings(rightSide);
-                    if (side.HasFir && side.Fir == null)
-                    {
-                        ResolveFir(side);
-                    }
-                }
-
-                UpdateFirReadout(channel);
-            }
-
             UpdateSideRadioTexts();
         }
         finally
@@ -9341,16 +9272,14 @@ public partial class VirtualCrossoverPanel : UserControl
 
         List<(VirtualCrossoverChannel Channel, bool RightSide)> remaining =
             MissingSourceSides().ToList();
-        List<(VirtualCrossoverChannel Channel, bool RightSide)> remainingFir =
-            MissingFirSides().ToList();
-        if ((remaining.Count > 0 || remainingFir.Count > 0) && !IsDisposed)
+        if (remaining.Count > 0 && !IsDisposed)
         {
             MessageBox.Show(
                 FindForm(),
-                $"{DescribeMissingFiles(remaining, remainingFir)}\r\n\r\nThe folder holds " +
-                "no file under the name each channel was saved with. Pick those files " +
-                "with the channel's Source or FIR button, or import the session again " +
-                "to choose a different folder.",
+                $"{DescribeMissingSources(remaining)}\r\n\r\nThe folder holds no file " +
+                "under the name each channel was saved with. Pick those measurements " +
+                "with the channel's Source button, or import the session again to " +
+                "choose a different folder.",
                 "Virtual DSP",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -9392,35 +9321,6 @@ public partial class VirtualCrossoverPanel : UserControl
         return missing.Count == 1
             ? $"The measurement of channel {sides} was not found."
             : $"{missing.Count} measurements were not found: {sides}.";
-    }
-
-    private static string DescribeMissingFirFilters(
-        IReadOnlyList<(VirtualCrossoverChannel Channel, bool RightSide)> missing)
-    {
-        string sides = string.Join(
-            ", ",
-            missing.Select(item => SideLabel(item.Channel, item.RightSide)));
-        return missing.Count == 1
-            ? $"The FIR filter of channel {sides} was not found."
-            : $"{missing.Count} FIR filters were not found: {sides}.";
-    }
-
-    // Both kinds in one message, each sentence only where it has something to name.
-    private static string DescribeMissingFiles(
-        IReadOnlyList<(VirtualCrossoverChannel Channel, bool RightSide)> missingSources,
-        IReadOnlyList<(VirtualCrossoverChannel Channel, bool RightSide)> missingFirFilters)
-    {
-        var sentences = new List<string>();
-        if (missingSources.Count > 0)
-        {
-            sentences.Add(DescribeMissingSources(missingSources));
-        }
-        if (missingFirFilters.Count > 0)
-        {
-            sentences.Add(DescribeMissingFirFilters(missingFirFilters));
-        }
-
-        return string.Join(" ", sentences);
     }
 
     // One sentence, once, about the calibration an imported session arrived with.

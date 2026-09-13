@@ -22,11 +22,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private bool phaseControlShown;
     private bool firControlShown;
     private int processorSampleRateHz = 48_000;
-    // What the FIR row shows, pushed by the host (SetFir): the kernel's file and the
-    // kernel itself, or null for either when there is none / it could not be read.
-    private string? firPath;
+    // What the FIR row shows, pushed by the host (SetFir): the kernel and the name of
+    // the file it was imported from, both null when the side carries none.
+    private string? firSourceName;
     private FirFilter? firKernel;
-    private string? firLoadError;
 
     public VirtualCrossoverChannelControl()
     {
@@ -352,17 +351,15 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     /// <summary>
-    /// What the FIR row shows: the kernel file this side names (null for none), the
-    /// kernel read from it (null while the file is missing or unreadable), and the
-    /// reader's message when the file was there but was not a kernel (null otherwise).
-    /// The row's readout — taps, delay, and a warning when the file's own rate is not
-    /// the processor's — is derived here, so the host pushes the facts and nothing else.
+    /// What the FIR row shows: the kernel this side carries (null for none) and the
+    /// name of the file it was imported from (null when unknown). The row's readout
+    /// — taps, peak time, and a warning when the file's own rate is not the
+    /// processor's — is derived here, so the host pushes the facts and nothing else.
     /// </summary>
-    internal void SetFir(string? path, FirFilter? kernel, string? loadError = null)
+    internal void SetFir(FirFilter? kernel, string? sourceName)
     {
-        firPath = string.IsNullOrWhiteSpace(path) ? null : path;
         firKernel = kernel;
-        firLoadError = kernel == null && !string.IsNullOrWhiteSpace(loadError) ? loadError : null;
+        firSourceName = kernel == null || string.IsNullOrWhiteSpace(sourceName) ? null : sourceName;
         UpdateFirReadout();
     }
 
@@ -1070,38 +1067,22 @@ public partial class VirtualCrossoverChannelControl : UserControl
     // that kernel is a different filter from the one its designer drew.
     private void UpdateFirReadout()
     {
-        string? fileName = firPath == null ? null : Path.GetFileName(firPath);
         string buttonText;
-        Color buttonColor = Color.White;
         string info;
         Color infoColor = UiPalette.TextSecondary;
         string infoTip;
-        if (fileName == null)
+        if (firKernel == null)
         {
-            buttonText = "Load…";
+            buttonText = "Import…";
             info = "off";
             infoColor = UiPalette.TextDisabled;
             infoTip = "No FIR filter on this channel.";
         }
-        else if (firKernel == null)
-        {
-            // Two different warnings, because they call for different fixes: a file
-            // that is not where the session said is found by pointing at a folder; a
-            // file that is there but is not a kernel is fixed in the file.
-            buttonText = $"⚠ {fileName}";
-            buttonColor = UiPalette.WarningAmber;
-            info = firLoadError == null ? "file not found" : "file not a kernel";
-            infoColor = UiPalette.WarningAmber;
-            infoTip = firLoadError == null
-                ? "The session names this kernel file, but it was not found." +
-                    Environment.NewLine + "The channel plays WITHOUT it until it is found again."
-                : "The file is there, but it did not read as a FIR kernel:" +
-                    Environment.NewLine + firLoadError +
-                    Environment.NewLine + "The channel plays WITHOUT it.";
-        }
         else
         {
-            buttonText = fileName;
+            // The kernel is in the session; the name is where it came from, and a
+            // kernel that arrived without one (a hand-edited file) is still a kernel.
+            buttonText = firSourceName ?? "FIR";
             double peakMs = firKernel.PeakIndex * 1_000.0 / processorSampleRateHz;
             double lengthMs = firKernel.Length * 1_000.0 / processorSampleRateHz;
             bool rateMismatch = firKernel.DeclaredSampleRateHz is { } declared &&
@@ -1127,7 +1108,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
 
         buttonFir.Text = buttonText;
-        buttonFir.ForeColor = buttonColor;
         labelFirInfo.Text = info;
         labelFirInfo.ForeColor = infoColor;
         if (tooltipHost is { } host)
@@ -1141,10 +1121,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     private string FirButtonTooltipText() =>
         "The channel's FIR filter — a kernel the processor convolves the" + "\r\n" +
-        "channel with, loaded from a .wav, .fir or .txt file (one coefficient" + "\r\n" +
-        "per line) and run AT THE PROCESSOR'S RATE whatever the file says." + "\r\n" +
-        "Click to load, replace or clear it." +
-        (firPath == null ? string.Empty : "\r\n" + firPath);
+        "channel with, imported from a .wav, .fir or .txt file (one coefficient" + "\r\n" +
+        "per line), kept in the session, and run AT THE PROCESSOR'S RATE." + "\r\n" +
+        "Click to import, export or clear it.";
 
     // What the angle actually builds, beside the field: the all-pass corner the
     // device would place for it. Worth the space because the angle alone does not

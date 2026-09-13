@@ -284,41 +284,40 @@ public sealed class VirtualCrossoverChannelSettings
     public string? PeqSourceName { get; set; }
 
     /// <summary>
-    /// The FIR kernel file this side convolves with (schema v11), or null for none.
-    /// Stored the way <see cref="SourceFilePath"/> is — the absolute path here, an
-    /// export-relative one beside it — and found the same way on load (see
-    /// <see cref="VirtualCrossoverSourceLocator"/>). Absent from the file when null,
-    /// so a project without FIR serializes as it did before the stage existed.
-    /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? FirPath { get; set; }
-
-    /// <inheritdoc cref="SourceRelativePath"/>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? FirRelativePath { get; set; }
-
-    /// <summary>
-    /// The kernel READ from <see cref="FirPath"/>, or null while the file has not been
-    /// resolved (or could not be). Runtime state, never serialized: the file is the
-    /// record, this is what the simulation runs. Null with a path set is the "missing
-    /// file" state the block's button warns about.
+    /// The FIR kernel this side convolves with (schema v11), or null for none. Stored
+    /// IN the session — the taps themselves, through <see cref="FirWire"/> — the way
+    /// the PEQ bands are, not as a path: a kernel is part of the tune, and the tune
+    /// has to travel whole. The file it came from is only an import (see
+    /// <see cref="FirSourceName"/>), and a file is where it goes on export.
     /// </summary>
     [JsonIgnore]
     public FirFilter? Fir { get; set; }
 
     /// <summary>
-    /// Why <see cref="Fir"/> is null while <see cref="FirPath"/> names a file that
-    /// EXISTS: the reader's message for a file that is not a kernel. Null when the
-    /// kernel loaded, and null when the file was not found at all — the two states
-    /// the block's warning tells apart, because one is fixed by pointing at a folder
-    /// and the other by fixing the file. Runtime state like the kernel.
+    /// <see cref="Fir"/> as the file carries it (see <see cref="FirKernelWire"/>). Absent
+    /// from the file when there is no kernel, so a project without FIR serializes as
+    /// it did before the stage existed. The serializer's property; code reads
+    /// <see cref="Fir"/>.
     /// </summary>
-    [JsonIgnore]
-    public string? FirLoadError { get; set; }
+    [JsonPropertyName("fir")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FirKernelWire? FirWire
+    {
+        get => Fir == null ? null : FirKernelWire.From(Fir);
+        set => Fir = value?.ToFilter();
+    }
 
-    /// <summary>True when this side names a FIR file, resolved or not.</summary>
+    /// <summary>
+    /// The file the kernel was imported from, by name; display only, like
+    /// <see cref="PeqSourceName"/>. Null for none, and meaningless without
+    /// <see cref="Fir"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FirSourceName { get; set; }
+
+    /// <summary>True when this side carries a FIR kernel.</summary>
     [JsonIgnore]
-    public bool HasFir => !string.IsNullOrWhiteSpace(FirPath);
+    public bool HasFir => Fir != null;
 
     public bool HasSource =>
         HistoryEntryId.HasValue || !string.IsNullOrWhiteSpace(SourceFilePath);
@@ -894,10 +893,8 @@ public sealed class VirtualCrossoverProjectFile
             {
                 if (side.HasFir)
                 {
-                    side.FirPath = null;
-                    side.FirRelativePath = null;
                     side.Fir = null;
-                    side.FirLoadError = null;
+                    side.FirSourceName = null;
                     cleared++;
                 }
             }
@@ -1438,15 +1435,14 @@ public sealed class VirtualCrossoverProjectFile
     // restate the arrangement it was imported with.
     private void WriteWithExportRelativePaths(string? exportDirectory, Action write)
     {
-        List<(VirtualCrossoverChannelSettings Side, string? Source, string? Average, string? Fir)>
+        List<(VirtualCrossoverChannelSettings Side, string? Source, string? Average)>
             restore = [];
         foreach (VirtualCrossoverChannelPairSettings pair in Pairs)
         {
             foreach (VirtualCrossoverChannelSettings side in new[] { pair.Left, pair.Right })
             {
                 restore.Add((
-                    side, side.SourceRelativePath, side.SpatialAverageRelativePath,
-                    side.FirRelativePath));
+                    side, side.SourceRelativePath, side.SpatialAverageRelativePath));
                 side.SourceRelativePath = exportDirectory == null
                     ? null
                     : VirtualCrossoverSourceLocator.Relativize(
@@ -1457,11 +1453,6 @@ public sealed class VirtualCrossoverProjectFile
                     ? null
                     : VirtualCrossoverSourceLocator.Relativize(
                         side.SpatialAveragePath, exportDirectory);
-                // And the FIR kernel, which travels with the tune.
-                side.FirRelativePath = exportDirectory == null
-                    ? null
-                    : VirtualCrossoverSourceLocator.Relativize(
-                        side.FirPath, exportDirectory);
             }
         }
 
@@ -1471,12 +1462,11 @@ public sealed class VirtualCrossoverProjectFile
         }
         finally
         {
-            foreach ((VirtualCrossoverChannelSettings side, string? source, string? average,
-                string? fir) in restore)
+            foreach ((VirtualCrossoverChannelSettings side, string? source, string? average)
+                in restore)
             {
                 side.SourceRelativePath = source;
                 side.SpatialAverageRelativePath = average;
-                side.FirRelativePath = fir;
             }
         }
     }
@@ -1737,10 +1727,10 @@ public sealed class VirtualCrossoverProjectFile
         }
         if (file.Version == 10)
         {
-            // v11 adds the channel FIR stage (a kernel file per side, and the
-            // project-wide switch that offers it). Additive like v10, and bumped for
-            // the same reason: an older build would open a convolved tune and draw it
-            // without the kernel.
+            // v11 adds the channel FIR stage (the kernel's taps per side, stored in
+            // the file, and the project-wide switch that offers it). Additive like
+            // v10, and bumped for the same reason: an older build would open a
+            // convolved tune and draw it without the kernel.
             file.Version = 11;
         }
 
@@ -1808,9 +1798,9 @@ public sealed class VirtualCrossoverProjectFile
                 (clearedFirFilters == 1 ? " carried" : "s carried") +
                 " a FIR filter, and the processor this session names has no FIR " +
                 "stage. The kernel" + (clearedFirFilters == 1 ? " was" : "s were") +
-                " detached rather than left shaping a curve no button on screen " +
-                "explains. Name a device that convolves — or tick FIR filters " +
-                "yourself in the DSP processor dialog — and load them again.";
+                " removed from the session rather than left shaping a curve no " +
+                "button on screen explains. Name a device that convolves — or tick " +
+                "FIR filters yourself in the DSP processor dialog — and import them again.";
 
     private string? PhaseRotationNotice =>
         clearedPhaseRotations == 0

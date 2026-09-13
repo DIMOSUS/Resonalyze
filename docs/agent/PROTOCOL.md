@@ -231,10 +231,12 @@ else in a reply touches it.
   a different filter, exactly as it would on the device.
 - `dsp.fir` appears only where the channel has a FIR kernel loaded — the
   per-channel FIR stage of the processors that convolve:
-  `{ "file": "left mid.wav", "taps": 4096, "peakMs": 21.33 }`. The kernel is
-  convolved at `processor.sampleRateHz` whatever rate its file stated, it is part
-  of the chain every curve and engine already account for, and it is read-only: no
-  operation writes it. `peakMs` is where the kernel's largest tap sits: a peak
+  `{ "file": "left mid.wav", "taps": 4096, "peakMs": 21.33 }`. `file` is the name
+  the kernel was imported under (the kernel itself lives in the session, and the
+  package does not carry the taps). The kernel is convolved at
+  `processor.sampleRateHz` whatever rate its file stated, it is part of the chain
+  every curve and engine already account for, and it is read-only: no operation
+  writes it. `peakMs` is where the kernel's largest tap sits: a peak
   position, not a group delay. For a conventional linear-phase kernel it is
   approximately the bulk delay the kernel adds, and that delay is ALREADY inside
   the channel's arrival and every curve; for a minimum-phase kernel it says

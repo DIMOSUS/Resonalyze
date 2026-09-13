@@ -185,19 +185,16 @@ internal static class VirtualCrossoverSheet
     public const string OffText = "Off";
 
     /// <summary>
-    /// The FIR kernel as the sheet names it: the file, and its length when the file
-    /// was read — or why it was not, which is worth printing rather than hiding,
-    /// because the tune on the sheet was predicted without it.
+    /// The FIR kernel as the sheet names it: the file it was imported from and its
+    /// length — the file is what the installer loads into the device, and the length
+    /// is how they check it is the same one. Empty for a side without a kernel.
     /// </summary>
     public static string DescribeFir(VirtualCrossoverChannelSettings channel)
     {
         ArgumentNullException.ThrowIfNull(channel);
-        string name = Path.GetFileName(channel.FirPath) ?? string.Empty;
         return channel.Fir is { } fir
-            ? $"{name} ({fir.Length} taps)"
-            : channel.FirLoadError != null
-                ? $"{name} (could not be read)"
-                : $"{name} (file not found)";
+            ? $"{channel.FirSourceName ?? "FIR"} ({fir.Length} taps)"
+            : string.Empty;
     }
 
     /// <summary>

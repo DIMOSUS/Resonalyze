@@ -450,7 +450,7 @@
             buttonFir.Name = "buttonFir";
             buttonFir.Size = new Size(110, 19);
             buttonFir.TabIndex = 42;
-            buttonFir.Text = "Load…";
+            buttonFir.Text = "Import…";
             buttonFir.TextAlign = ContentAlignment.MiddleLeft;
             buttonFir.UseCompatibleTextRendering = true;
             buttonFir.UseVisualStyleBackColor = true;

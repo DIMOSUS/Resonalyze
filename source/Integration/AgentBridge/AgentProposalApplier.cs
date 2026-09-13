@@ -187,9 +187,7 @@ internal static class AgentProposalApplier
         to.PeqSourceName = from.PeqSourceName;
         // The FIR stage too, for the same reason as the rotation: nothing writes it,
         // and the undo must not drop it.
-        to.FirPath = from.FirPath;
-        to.FirRelativePath = from.FirRelativePath;
         to.Fir = from.Fir;
-        to.FirLoadError = from.FirLoadError;
+        to.FirSourceName = from.FirSourceName;
     }
 }

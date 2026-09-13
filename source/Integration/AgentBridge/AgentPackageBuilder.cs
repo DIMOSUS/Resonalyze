@@ -349,7 +349,8 @@ internal static class AgentPackageBuilder
                 ? new AgentPackageFir(
                     settings.FirSourceName ?? string.Empty,
                     fir.Length,
-                    Math.Round(fir.PeakIndex * 1_000.0 / channel.ProcessorSampleRateHz, 2))
+                    Math.Round(fir.PeakIndex * 1_000.0 / channel.ProcessorSampleRateHz, 2),
+                    settings.FirDesign is { } design ? FirCrossover(design) : null)
                 : null);
 
         var packageSource = new AgentPackageSource(
@@ -376,6 +377,18 @@ internal static class AgentPackageBuilder
 
     private static AgentPackageEdge Edge(CrossoverEdge edge) =>
         new(edge.Family.ToString(), edge.FrequencyHz, edge.SlopeDbPerOctave, edge.RippleDb);
+
+    private static AgentPackageFirCrossover FirCrossover(FirCrossoverDesign design) =>
+        new(
+            design.Kind.ToString(),
+            design.Kind is CrossoverKind.HighPass or CrossoverKind.BandPass ? Edge(design.HighPassEdge) : null,
+            design.Kind is CrossoverKind.LowPass or CrossoverKind.BandPass ? Edge(design.LowPassEdge) : null,
+            design.Method.ToString(),
+            design.Window == FirWindow.Kaiser
+                ? $"Kaiser (beta {design.KaiserBeta.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)})"
+                : design.Window.ToString(),
+            design.SampleRateHz,
+            Math.Round(design.LatencyMs, 2));
 
     // One row per grid point: the acoustic columns from the screen's curves, the
     // chain columns from the filters alone (built at the PROCESSOR's rate, as the

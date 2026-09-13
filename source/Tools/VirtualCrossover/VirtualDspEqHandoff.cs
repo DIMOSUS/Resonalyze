@@ -632,18 +632,16 @@ internal static class VirtualDspEqHandoff
     /// </summary>
     /// <remarks>
     /// Beyond the corners the chain is rolling the driver off on purpose, so a fit
-    /// there would chase the slope rather than the driver.
+    /// there would chase the slope rather than the driver. The corners are the IIR
+    /// crossover's, or a FIR crossover's when the IIR one is off (see
+    /// <see cref="VirtualCrossoverChannelSettings.EffectiveCrossover"/>): a kernel rolls
+    /// the driver off just as surely.
     /// </remarks>
     internal static (double MinHz, double MaxHz)? PassbandFor(
         VirtualCrossoverChannelSettings settings) =>
-        settings.CrossoverKind switch
-        {
-            CrossoverKind.BandPass =>
-                (settings.HighPassEdge.FrequencyHz, settings.LowPassEdge.FrequencyHz),
-            CrossoverKind.HighPass => (settings.HighPassEdge.FrequencyHz, 20_000),
-            CrossoverKind.LowPass => (20, settings.LowPassEdge.FrequencyHz),
-            _ => null
-        };
+        settings.EffectiveHighPassHz is null && settings.EffectiveLowPassHz is null
+            ? null
+            : (settings.EffectiveHighPassHz ?? 20, settings.EffectiveLowPassHz ?? 20_000);
 
     private static string SideDescription(VirtualCrossoverChannel channel, bool rightSide) =>
         channel.Pair.Mono ? "mono" : rightSide ? "right side" : "left side";

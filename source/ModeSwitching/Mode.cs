@@ -26,5 +26,6 @@ public enum Mode : int
     TimeAlignment,
     EqWizard,
     SignalGenerator,
-    VirtualCrossover
+    VirtualCrossover,
+    FirConstructor
 }

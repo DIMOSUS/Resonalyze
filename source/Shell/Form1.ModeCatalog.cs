@@ -174,6 +174,16 @@ public partial class Form1
                 HasDockedSettings: false,
                 ShowOverlayCurves: false,
                 CreatePlotModel: null,
+                OpenSettings: null),
+            [ModeTab.ToolsFirConstructor] = new(
+                ModeTab.ToolsFirConstructor,
+                Mode.FirConstructor,
+                SupportsCurveDrawing: false,
+                MainContent: MainContentKind.FirConstructor,
+                HasOverlayPanel: false,
+                HasDockedSettings: false,
+                ShowOverlayCurves: false,
+                CreatePlotModel: null,
                 OpenSettings: null)
         };
 
@@ -183,7 +193,8 @@ public partial class Form1
         TimeAlignment,
         EqWizard,
         SignalGenerator,
-        VirtualCrossover
+        VirtualCrossover,
+        FirConstructor
     }
 
     private sealed record ModeDescriptor(
@@ -207,8 +218,10 @@ public partial class Form1
 
         public bool ShowsVirtualCrossoverPanel => MainContent == MainContentKind.VirtualCrossover;
 
+        public bool ShowsFirConstructorPanel => MainContent == MainContentKind.FirConstructor;
+
         /// <summary>
-        /// The Tools modes (EQ Wizard, Signal Generator, Virtual DSP) do not measure:
+        /// The Tools modes (EQ Wizard, Signal Generator, Virtual DSP, FIR Constructor) do not measure:
         /// they own their sources and their own controls. The shell's capture block —
         /// input meters, Start, Record Settings, Save/Load/Compare, History and Mode
         /// Settings — has nothing to act on there, so it is hidden rather than left
@@ -217,7 +230,8 @@ public partial class Form1
         public bool HasCaptureControls => MainContent
             is not MainContentKind.EqWizard
             and not MainContentKind.SignalGenerator
-            and not MainContentKind.VirtualCrossover;
+            and not MainContentKind.VirtualCrossover
+            and not MainContentKind.FirConstructor;
 
         /// <summary>
         /// Whether the mode draws the measurement that is loaded — true of every

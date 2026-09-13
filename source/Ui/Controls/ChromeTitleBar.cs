@@ -370,6 +370,7 @@ internal sealed class ChromeTitleBar : Panel
         modeTabButtons.Add(ModeTab.ToolsEqWizard, mainButton);
         modeTabButtons.Add(ModeTab.ToolsSignalGenerator, mainButton);
         modeTabButtons.Add(ModeTab.ToolsVirtualCrossover, mainButton);
+        modeTabButtons.Add(ModeTab.ToolsFirConstructor, mainButton);
         host.Controls.Add(mainButton);
         host.Controls.Add(toolsDropDownButton);
         targetTabBar.Controls.Add(host);
@@ -400,6 +401,7 @@ internal sealed class ChromeTitleBar : Panel
         };
         AddToolsMenuItem(menu, "Virtual DSP", ModeTab.ToolsVirtualCrossover, tabActions);
         AddToolsMenuItem(menu, "EQ Wizard", ModeTab.ToolsEqWizard, tabActions);
+        AddToolsMenuItem(menu, "FIR Constructor", ModeTab.ToolsFirConstructor, tabActions);
         AddToolsMenuItem(menu, "Signal Generator", ModeTab.ToolsSignalGenerator, tabActions);
         return menu;
     }
@@ -794,7 +796,8 @@ internal sealed class ChromeTitleBar : Panel
     private static bool IsToolsTab(ModeTab tab) =>
         tab is ModeTab.ToolsEqWizard
             or ModeTab.ToolsSignalGenerator
-            or ModeTab.ToolsVirtualCrossover;
+            or ModeTab.ToolsVirtualCrossover
+            or ModeTab.ToolsFirConstructor;
 
     private float GetDpiScale()
     {

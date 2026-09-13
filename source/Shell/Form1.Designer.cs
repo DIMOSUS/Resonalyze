@@ -56,6 +56,7 @@
             eqWizardPanel = new EqWizardPanel();
             signalGeneratorPanel = new SignalGeneratorPanel();
             virtualCrossoverPanel = new VirtualCrossoverPanel();
+            firConstructorPanel = new FirConstructorPanel();
             eqResultsPanel = new EqResultsPanel();
             virtualDspMetricLabel = new Label();
             virtualDspWarningLabel = new Label();
@@ -409,6 +410,20 @@
             virtualCrossoverPanel.Size = new Size(1246, 768);
             virtualCrossoverPanel.TabIndex = 31;
             virtualCrossoverPanel.Visible = false;
+            //
+            // firConstructorPanel
+            //
+            firConstructorPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            firConstructorPanel.AutoScroll = true;
+            firConstructorPanel.BackColor = Color.FromArgb(40, 44, 54);
+            firConstructorPanel.BorderStyle = BorderStyle.FixedSingle;
+            firConstructorPanel.Font = new Font("Segoe UI", 9F);
+            firConstructorPanel.ForeColor = Color.White;
+            firConstructorPanel.Location = new Point(12, 52);
+            firConstructorPanel.Name = "firConstructorPanel";
+            firConstructorPanel.Size = new Size(1246, 768);
+            firConstructorPanel.TabIndex = 32;
+            firConstructorPanel.Visible = false;
             // 
             // eqResultsPanel
             // 
@@ -473,6 +488,7 @@
             Controls.Add(virtualDspWarningLabel);
             Controls.Add(virtualDspMetricLabel);
             Controls.Add(virtualCrossoverPanel);
+            Controls.Add(firConstructorPanel);
             Controls.Add(signalGeneratorPanel);
             Controls.Add(eqWizardPanel);
             Controls.Add(timeAlignmentPanel);
@@ -523,6 +539,7 @@
         private EqWizardPanel eqWizardPanel;
         private SignalGeneratorPanel signalGeneratorPanel;
         private VirtualCrossoverPanel virtualCrossoverPanel;
+        private FirConstructorPanel firConstructorPanel;
         private EqResultsPanel eqResultsPanel;
         private Label virtualDspMetricLabel;
         private Label virtualDspWarningLabel;

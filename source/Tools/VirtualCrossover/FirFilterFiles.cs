@@ -87,7 +87,12 @@ internal static class FirFilterFiles
     /// becomes the kernel's declared rate). <paramref name="sampleRateHz"/> is the
     /// rate the taps are stated at — the processor's.
     /// </summary>
-    public static void Save(string path, FirFilter fir, int sampleRateHz, string? sourceName)
+    public static void Save(
+        string path,
+        FirFilter fir,
+        int sampleRateHz,
+        string? sourceName,
+        string? designDescription = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(fir);
@@ -113,6 +118,12 @@ internal static class FirFilterFiles
             text.Append(" (imported from ").Append(sourceName).Append(')');
         }
         text.Append("\r\n");
+        if (!string.IsNullOrWhiteSpace(designDescription))
+        {
+            // A designed kernel says what it was designed as — the only record of it
+            // once the file has left the session. A comment line, so the import skips it.
+            text.Append("* ").Append(designDescription).Append("\r\n");
+        }
         text.Append("* Sample rate: ").Append(sampleRateHz.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
         text.Append("* ").Append(fir.Length.ToString(CultureInfo.InvariantCulture))
             .Append(" taps, one coefficient per line, first tap first\r\n");

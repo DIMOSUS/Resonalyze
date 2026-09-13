@@ -216,6 +216,41 @@ namespace Resonalyze
                     _ = OpenVirtualDspSourceInAnalyzersAsync(entryId, filePath);
             eqWizardPanel.BackToVirtualDspRequested = () =>
                 _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
+            // The FIR handoff, both directions, on the PEQ handoff's pattern: a channel
+            // side's FIR stage goes into the constructor, and the designed kernel comes
+            // back. A refused return leaves the constructor open with its design.
+            virtualCrossoverPanel.EditFirInConstructorRequested = request =>
+            {
+                firConstructorPanel.BeginVirtualDspHandoff(request);
+                _ = modeController.SelectAsync(ModeTab.ToolsFirConstructor);
+            };
+            firConstructorPanel.BackToVirtualDspRequested = () =>
+                _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
+            firConstructorPanel.ReturnFirRequested = (token, kernel, design) =>
+            {
+                if (virtualCrossoverPanel.TryApplyFirFromConstructor(token, kernel, design))
+                {
+                    // Landed: the session is over. Its token names the kernel the side
+                    // held before, so a second return would only be refused.
+                    firConstructorPanel.EndVirtualDspHandoff();
+                    _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
+                    return;
+                }
+
+                MessageBox.Show(
+                    this,
+                    "This FIR filter cannot be returned: the channel side it was opened for " +
+                    "has changed since. The channel may have been removed or replaced by " +
+                    "another project, switched between stereo and mono, had its FIR filter " +
+                    "imported, cleared or copied over, or the DSP processor may have changed " +
+                    "its rate or stopped taking FIR filters." +
+                    Environment.NewLine + Environment.NewLine +
+                    "The design stays here: export it, or open the channel's FIR menu again " +
+                    "to design against what it holds now.",
+                    "FIR Constructor",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            };
             eqWizardPanel.ReturnPeqRequested = (token, curve, targetLevelDb) =>
             {
                 if (virtualCrossoverPanel.TryApplyPeqFromWizard(

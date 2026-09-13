@@ -673,6 +673,21 @@ Two rules are worth knowing before you import one:
   says, exactly as it would on a device with both blocks. Switch that row Off when the
   kernel is meant to be the whole filter.
 
+To build a **linear-phase crossover** instead of importing one, pick **Design in FIR
+Constructor…** from the same button. The constructor opens on that channel side at the
+processor's rate, starting from the channel's IIR corners if it has any: choose the
+type, the corners, the method and the length, watch the latency and the deviation
+from the target slope, and press **Return FIR to Virtual DSP**. Then switch the
+channel's Crossover row **Off** — a red FIR button is the reminder that both are
+cutting the channel — and design the neighbouring channel's kernel with the same
+corner, the same length and the same window, so the pair sums to a pure delay.
+Run **Auto delay** afterwards as usual: it absorbs the kernels' latency like any
+other delay. Below 300 Hz keep the kernels short (about 1000 taps at 48 kHz) or
+check its result by eye, because a long kernel's pre-ringing can mislead it there;
+the constructor warns when a design is in that range. If you change the DSP
+processor's rate later, designed kernels turn their buttons red: open each in the
+constructor and return it to rebuild it at the new rate.
+
 ### Set the display correctly
 
 Both selectors sit directly below the main graph.

@@ -269,6 +269,10 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   overlay slot, a text curve or a Virtual DSP channel handed over for editing
   (and returned with one click), with Auto Tune, cross-tool import/export and a
   printable tuning-sheet PDF
+- **FIR Constructor** — linear-phase low-pass, high-pass and band-pass kernels
+  from an IIR slope's magnitude or a windowed sinc, with the latency and the
+  deviation from the target stated, exported to a file or returned to a Virtual
+  DSP channel
 - **Signal Generator**, **Measurement History** with per-entry working state, a
   compact Mic/Loop level meter, and four audio backends (MME Compatibility, ASIO,
   WASAPI Shared and Exclusive) with backend-specific channel routing
@@ -514,7 +518,7 @@ Resonalyze/
 |   |-- Settings/           Settings file, schema migrations, update checking
 |   |-- Shell/              Main form, title bar, commands, and docked settings
 |   |-- TimeAlignment/      Loopback delay measurement UI and orchestration
-|   |-- Tools/              EQ Wizard, Signal Generator, Virtual DSP, PEQ import/export
+|   |-- Tools/              EQ Wizard, Signal Generator, Virtual DSP, FIR Constructor, PEQ import/export
 |   `-- Ui/                 Reusable WinForms controls and dialogs
 |-- dsp/                    Reusable signal-processing library (no UI, no audio)
 |-- audio/                  Audio drivers and device access (NAudio lives here)

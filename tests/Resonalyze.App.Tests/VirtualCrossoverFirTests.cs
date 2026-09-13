@@ -474,7 +474,7 @@ public sealed class VirtualCrossoverFirTests
         using var control = new VirtualCrossoverChannelControl { FirControlShown = true };
         control.ProcessorSampleRateHz = 96_000;
 
-        Assert.Equal("Import…", control.FirButton.Text);
+        Assert.Equal("Add…", control.FirButton.Text);
         Assert.Equal("off", control.FirInfoLabel.Text);
 
         // 4096 taps peaking at tap 2048: 21.3 ms at 96 kHz.
@@ -503,7 +503,7 @@ public sealed class VirtualCrossoverFirTests
 
         control.SetFir(null, "stale name");
 
-        Assert.Equal("Import…", control.FirButton.Text);
+        Assert.Equal("Add…", control.FirButton.Text);
         Assert.Equal("off", control.FirInfoLabel.Text);
     }
 

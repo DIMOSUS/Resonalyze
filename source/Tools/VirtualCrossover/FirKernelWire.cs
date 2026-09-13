@@ -28,18 +28,42 @@ namespace Resonalyze;
 /// the block's warning only; absent when the file declared none. The taps are
 /// convolved at the processor's rate regardless — see <see cref="FirFilter"/>.
 /// </para>
+/// <para>
+/// The session is rewritten by the debounced autosave on every knob turn, and the
+/// spatial average was deliberately kept OUT of it for that reason (see
+/// <see cref="VirtualCrossoverChannelSettings.SpatialAveragePath"/>). The kernel is
+/// in, by decision — it is the tune, not a measurement of it — so its cost is kept
+/// to the write itself: the wire form is built ONCE per kernel and reused for every
+/// save after, which an immutable kernel makes safe. What remains is the file's
+/// size, 1.4 MB per side at the tap ceiling and a few hundred kilobytes for the
+/// kernels car processors actually run.
+/// </para>
 /// </remarks>
 public sealed class FirKernelWire
 {
+    // One wire form per kernel instance, for as long as the kernel lives: the
+    // base64 of a long kernel is a megabyte, and the autosave asks for it on every
+    // knob turn.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<FirFilter, FirKernelWire>
+        WireForms = new();
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? SampleRateHz { get; set; }
 
     public string? Taps { get; set; }
 
-    /// <summary>The wire form of <paramref name="fir"/>.</summary>
+    /// <summary>
+    /// The wire form of <paramref name="fir"/> — the same instance for the same kernel
+    /// every time, built on the first call.
+    /// </summary>
     public static FirKernelWire From(FirFilter fir)
     {
         ArgumentNullException.ThrowIfNull(fir);
+        return WireForms.GetValue(fir, Encode);
+    }
+
+    private static FirKernelWire Encode(FirFilter fir)
+    {
         ReadOnlySpan<double> taps = fir.Taps;
         var bytes = new byte[taps.Length * sizeof(double)];
         for (int index = 0; index < taps.Length; index++)
@@ -66,6 +90,11 @@ public sealed class FirKernelWire
         {
             throw new JsonException("The FIR kernel carries no taps.");
         }
+        if (SampleRateHz is <= 0)
+        {
+            // A rate the file could not have declared: a damaged block, not "none".
+            throw new JsonException($"The FIR kernel declares an impossible sample rate ({SampleRateHz}).");
+        }
 
         byte[] bytes;
         try
@@ -90,7 +119,7 @@ public sealed class FirKernelWire
 
         try
         {
-            return new FirFilter(taps, SampleRateHz is > 0 ? SampleRateHz : null);
+            return new FirFilter(taps, SampleRateHz);
         }
         catch (ArgumentException exception)
         {

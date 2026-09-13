@@ -103,6 +103,30 @@ public sealed class VirtualCrossoverFirTests
             """{"fir":{"sampleRateHz":48000}}""", options));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<VirtualCrossoverChannelSettings>(
             """{"fir":{"taps":""}}""", options));
+        // A rate no file could have declared is damage, not "none".
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<VirtualCrossoverChannelSettings>(
+            """{"fir":{"sampleRateHz":0,"taps":"AAAAAAAA4D8="}}""", options));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<VirtualCrossoverChannelSettings>(
+            """{"fir":{"sampleRateHz":-1,"taps":"AAAAAAAA4D8="}}""", options));
+    }
+
+    [Fact]
+    public void TheWireForm_IsBuiltOncePerKernel_AndReusedByEverySave()
+    {
+        // The autosave serializes the session on every knob turn; a megabyte of
+        // base64 per side must not be rebuilt each time. The kernel is immutable, so
+        // one wire form per instance is exact.
+        var kernel = new FirFilter([0.5, -0.25], 96_000);
+        var settings = new VirtualCrossoverChannelSettings { Fir = kernel };
+
+        FirKernelWire first = settings.FirWire!;
+        FirKernelWire second = settings.FirWire!;
+
+        Assert.Same(first, second);
+        Assert.Same(first, FirKernelWire.From(kernel));
+        // Another instance with the same taps is another wire form — nothing keys on
+        // content here, only on the kernel that is actually loaded.
+        Assert.NotSame(first, FirKernelWire.From(new FirFilter([0.5, -0.25], 96_000)));
     }
 
     [Fact]

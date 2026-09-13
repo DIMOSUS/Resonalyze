@@ -196,6 +196,94 @@ public sealed class FirCrossoverAlignmentTests
             $"without the correction {without:0.000} ms, with it {with:0.000} ms; expected {without - latencyMs:0.000} ms");
     }
 
+    [Theory]
+    [InlineData(1_023, 4.0, true)]
+    [InlineData(1_023, 4.0, false)]
+    [InlineData(2_047, -4.0, false)]
+    public void ASymmetricCorrectionOverADispersiveDriver_IsTimedTheSameWhereverTheDriverSitsInTheRecord(
+        int taps, double lagMs, bool attenuateLow)
+    {
+        // The review's worry, as a fixture: the arrival read drops the kernel and with
+        // it the kernel's spectral weighting, and a DISPERSIVE driver — its 80 Hz half
+        // at 0 ms, its 160 Hz half 4 ms away — arrives at a different time in each half,
+        // so a zero-phase tilt across a 120 Hz junction could in principle pull the
+        // honest answer. It does not: the seed only places the window, and the answer
+        // comes from the sum of the real processed responses, weighting and all. The
+        // read before the fix agreed with this one to 0.01 ms in 47 of 48 such cases
+        // and missed by 12.5 ms in the 48th — at 1023 taps, attenuating the low half,
+        // with the driver 60 ms into the record — which is the placement dependence the
+        // fix removed and what this test pins.
+        const double Corner = 120;
+        double near = DispersiveJunctionRelativeMs(480, taps, lagMs, attenuateLow);
+        double far = DispersiveJunctionRelativeMs(2_880, taps, lagMs, attenuateLow);
+
+        Assert.True(
+            Math.Abs(near - far) <= Tolerance(Corner),
+            $"{near:0.000} ms with the driver 10 ms into the record, {far:0.000} ms at 60 ms");
+
+        // And the weighting moves the answer by no more than a fraction of a period: the
+        // same kernel tilted the other way lands beside it.
+        double flipped = DispersiveJunctionRelativeMs(480, taps, lagMs, !attenuateLow);
+        Assert.True(
+            Math.Abs(near - flipped) <= 1_000.0 / Corner / 24,
+            $"{near:0.000} ms with the tilt one way, {flipped:0.000} ms the other");
+    }
+
+    // A two-way-like upper driver (its content below 115 Hz at the base, above it lagMs
+    // later) behind an IIR LR24 high-pass at 120 Hz, carrying an imported symmetric tilt
+    // correction with no design; the lower channel is an ideal impulse behind the
+    // matching low-pass. Answers the proposal's upper-minus-lower delay.
+    private static double DispersiveJunctionRelativeMs(
+        int basePosition, int taps, double lagMs, bool attenuateLow)
+    {
+        const double Corner = 120;
+        int length = DspMath.NextPowerOfTwo(basePosition + 2_000 + 3 * taps);
+        int start = basePosition + 400;
+        int lag = (int)Math.Round(lagMs * SampleRate / 1_000);
+        var split = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 115, 24);
+        Complex[] lowHalf = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(length, start + Math.Max(0, -lag)),
+            new DspChannelChain(Crossover: new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: split)),
+            SampleRate,
+            SampleRate);
+        Complex[] highHalf = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(length, start + Math.Max(0, lag)),
+            new DspChannelChain(Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: split)),
+            SampleRate,
+            SampleRate);
+        var driver = new Complex[length];
+        for (int i = 0; i < length; i++)
+        {
+            driver[i] = lowHalf[i] + highHalf[i];
+        }
+
+        // 90 % of a Butterworth-12 tilt at 120 Hz plus 10 % straight through: a correction
+        // that leaves one side of the junction some 20 dB below the other.
+        var tiltEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, Corner, 12);
+        FirFilter tilt = new FirCrossoverDesign(
+            attenuateLow ? CrossoverKind.HighPass : CrossoverKind.LowPass, tiltEdge, tiltEdge,
+            FirCrossoverMethod.IirMagnitude, FirWindow.Kaiser, 8, taps, SampleRate).Build();
+        var correction = new double[taps];
+        for (int i = 0; i < taps; i++)
+        {
+            correction[i] = 0.9 * tilt.Taps[i];
+        }
+
+        correction[(taps - 1) / 2] += 0.1;
+        var kernel = new FirFilter(correction, SampleRate);
+
+        var edge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, Corner, 24);
+        AlignmentSnapshot lower = Snapshot(
+            new Channel("W"),
+            Impulse(length, start),
+            new DspChannelChain(Crossover: new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: edge)));
+        AlignmentSnapshot upper = Snapshot(
+            new Channel("T"),
+            driver,
+            new DspChannelChain(Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge), Fir: kernel));
+        return RelativeDelayMs(lower, upper, Corner);
+    }
+
     // A zero-phase peaking correction: a unit impulse plus a windowed band-pass over
     // [corner, 2·corner] at 0.8, so the band sits about 5 dB up with the window's
     // ripple at its edges — uneven, as a measured correction is.

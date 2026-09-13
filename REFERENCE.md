@@ -3178,6 +3178,13 @@ Linkwitz-Riley branches at 48 kHz, four corners from 40 to 300 Hz, lengths from
 1023 to 8191 taps and two placements in the record now all land within 0.5 ms
 (a few degrees of a 40 Hz period), and a full stereo system cut entirely by
 such kernels gets the proposal the same drivers get unfiltered to within 0.3 ms.
+The rule covers an imported symmetric kernel too, not only a designed crossover:
+leaving the kernel out of the ARRIVAL read also leaves out its spectral weighting,
+but the arrival only places the search window, and the answer comes from the sum
+of the real processed responses. Checked on a dispersive driver (its low half
+4 ms from its high half) under a symmetric correction that tilts a 120 Hz junction
+by 20 dB either way, the new read and the old one agreed to 0.01 ms in 47 of 48
+cases; the 48th was the old read's placement error, 12.5 ms.
 An asymmetric kernel (a minimum-phase correction) is read as before. Past that
 correction the check has one exception: an arrival
 picked deep below its own band's energy. A subwoofer's direct front can sit

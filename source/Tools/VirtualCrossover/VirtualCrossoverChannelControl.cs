@@ -1063,7 +1063,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     // The FIR row's two texts: the button names the file (or asks for one), the label
     // says what the kernel is — its length in taps and in time at the processor's
-    // rate, read at the kernel's peak, which is a linear-phase kernel's delay. Amber
+    // rate, read at the kernel's peak — roughly a linear-phase kernel's bulk delay,
+    // and no delay at all for a minimum-phase one; the tip says which it is. Amber
     // where the file is named but not found, and where the file states a rate the
     // processor does not run at: the taps are used as they are (see FirFilter), so
     // that kernel is a different filter from the one its designer drew.
@@ -1111,7 +1112,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
             infoColor = rateMismatch ? UiPalette.WarningAmber : UiPalette.TextSecondary;
             infoTip =
                 $"{firKernel.Length} taps, {lengthMs:0.0} ms at {FormatRate(processorSampleRateHz)}; " +
-                $"peak at {peakMs:0.00} ms." +
+                $"peak at {peakMs:0.00} ms — roughly the bulk delay of a linear-phase kernel," +
+                Environment.NewLine + "no delay at all for a minimum-phase one." +
                 (firKernel.IsSilent
                     ? Environment.NewLine + "Every tap is zero: the kernel MUTES the channel."
                     : string.Empty) +

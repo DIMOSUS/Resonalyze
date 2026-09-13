@@ -34,6 +34,9 @@ public sealed class FirFilter
     public const int MaximumTaps = 131_072;
 
     private readonly double[] taps;
+    // Σ|h[n]|: the largest |H| the kernel can reach anywhere on the circle, which is
+    // the scale a "true zero" of H has to be judged against (see GroupDelaySamples).
+    private readonly double tapMagnitudeSum;
 
     /// <param name="taps">The kernel, first tap first. Copied.</param>
     /// <param name="declaredSampleRateHz">
@@ -62,6 +65,7 @@ public sealed class FirFilter
         int peak = 0;
         int leadingZeros = 0;
         bool seenNonZero = false;
+        double magnitudeSum = 0;
         for (int index = 0; index < taps.Count; index++)
         {
             double tap = taps[index];
@@ -72,6 +76,7 @@ public sealed class FirFilter
             }
 
             this.taps[index] = tap;
+            magnitudeSum += Math.Abs(tap);
             if (tap != 0 && !seenNonZero)
             {
                 seenNonZero = true;
@@ -86,6 +91,7 @@ public sealed class FirFilter
         DeclaredSampleRateHz = declaredSampleRateHz;
         LeadingZeroCount = seenNonZero ? leadingZeros : taps.Count;
         PeakIndex = peak;
+        tapMagnitudeSum = magnitudeSum;
     }
 
     /// <summary>The kernel, first tap first.</summary>
@@ -108,9 +114,12 @@ public sealed class FirFilter
     public int LeadingZeroCount { get; }
 
     /// <summary>
-    /// The tap of largest magnitude. For a linear-phase kernel this is its centre and
-    /// its group delay; for a minimum-phase one it sits near the front. Shown as the
-    /// kernel's delay in the editors because it is the one figure both kinds share.
+    /// The tap of largest magnitude — WHERE THE PEAK SITS, not a group delay. For a
+    /// conventional linear-phase kernel it is at or beside the centre and so roughly
+    /// the bulk delay the kernel adds (an even-length one peaks half a sample off its
+    /// true (N−1)/2); for a minimum-phase kernel it sits near the front and says
+    /// nothing about the delay at any frequency. The editors show it as the peak's
+    /// time; the exact delay per frequency is <see cref="GroupDelaySamples"/>.
     /// </summary>
     public int PeakIndex { get; }
 
@@ -144,7 +153,10 @@ public sealed class FirFilter
     /// samples. Closed form: with H = Σ h[n]·e^{-jωn} the derivative is
     /// -j·Σ n·h[n]·e^{-jωn}, so τ_g = Re(Σ n·h[n]·e^{-jωn} / H) — exact, and never
     /// wrapped, the same way the biquad cascade's is. Undefined (NaN) where the kernel
-    /// has a true zero, which is the honest answer at a null.
+    /// has a true zero, which is the honest answer at a null. "True" is judged against
+    /// the kernel's own scale, Σ|h|: on the unit circle a zero of H lands in floating
+    /// point as some 1e-17 of that, never as an exact (0, 0), and dividing by it would
+    /// answer with a number the size of 1e17 rather than the NaN promised.
     /// </summary>
     public double GroupDelaySamples(Complex z1)
     {
@@ -157,10 +169,15 @@ public sealed class FirFilter
             weighted = weighted * z1 + index * taps[index];
         }
 
-        return response == Complex.Zero
+        return response.Magnitude <= NullRelativeMagnitude * tapMagnitudeSum
             ? double.NaN
             : (weighted / response).Real;
     }
+
+    // |H| below this fraction of Σ|h| is a zero of the kernel that floating point
+    // did not quite reach: 1e-12 is a hundred thousand times the rounding of a
+    // 131072-tap Horner sum, and 240 dB below anything a plot draws.
+    private const double NullRelativeMagnitude = 1e-12;
 
     /// <summary>
     /// The kernel's spectrum on an <paramref name="length"/>-point DFT grid: bin k is
@@ -185,5 +202,83 @@ public sealed class FirFilter
         MathNet.Numerics.IntegralTransforms.Fourier.Forward(
             spectrum, MathNet.Numerics.IntegralTransforms.FourierOptions.Matlab);
         return spectrum;
+    }
+
+    /// <summary>
+    /// The kernel's response at <paramref name="count"/> evenly spaced points
+    /// ω_k = k·<paramref name="omegaStep"/>, k = 0…count−1, on ANY grid — the one a
+    /// record's bins land on when its rate and the processor's share no DFT length
+    /// (44.1 kHz against 48 kHz). By the chirp-z transform (Bluestein): with
+    /// W = e^{-j·omegaStep}, nk = (n² + k² − (k−n)²)/2 turns Σ h[n]·W^{nk} into a
+    /// convolution of h[n]·W^{n²/2} with W^{−m²/2}, run through three FFTs of the
+    /// next power of two above N + count − 1. O((N + count)·log) instead of the
+    /// N·count of evaluating the kernel at every point — for a 131072-tap kernel
+    /// over a 131073-bin half-spectrum that is three 262144-point FFTs against
+    /// seventeen billion complex multiplies. Exact to rounding: the chirps' angles
+    /// grow as n², so the result is a few 1e-11 of Σ|h| off the direct sum, far
+    /// under anything a plot or a render resolves.
+    /// </summary>
+    public Complex[] ChirpSpectrum(int count, double omegaStep)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
+        if (!double.IsFinite(omegaStep))
+        {
+            throw new ArgumentOutOfRangeException(nameof(omegaStep));
+        }
+
+        int n = taps.Length;
+        // Long enough that the negative half of the chirp, wrapped to the buffer's
+        // far end, never reaches the positive half: indices 0…count−1 and
+        // L−(N−1)…L−1 are disjoint when L ≥ N + count − 1.
+        int convolutionLength = DspMath.NextPowerOfTwo(n + count - 1);
+        var weighted = new Complex[convolutionLength];
+        var chirp = new Complex[convolutionLength];
+        for (int index = 0; index < n; index++)
+        {
+            weighted[index] = taps[index] * Chirp(index, omegaStep);
+        }
+
+        int farthest = Math.Max(n, count) - 1;
+        for (int m = 0; m <= farthest; m++)
+        {
+            Complex inverse = Complex.Conjugate(Chirp(m, omegaStep));
+            if (m < count)
+            {
+                chirp[m] = inverse;
+            }
+            if (m > 0 && m < n)
+            {
+                chirp[convolutionLength - m] = inverse;
+            }
+        }
+
+        MathNet.Numerics.IntegralTransforms.Fourier.Forward(
+            weighted, MathNet.Numerics.IntegralTransforms.FourierOptions.Matlab);
+        MathNet.Numerics.IntegralTransforms.Fourier.Forward(
+            chirp, MathNet.Numerics.IntegralTransforms.FourierOptions.Matlab);
+        for (int index = 0; index < convolutionLength; index++)
+        {
+            weighted[index] *= chirp[index];
+        }
+
+        MathNet.Numerics.IntegralTransforms.Fourier.Inverse(
+            weighted, MathNet.Numerics.IntegralTransforms.FourierOptions.Matlab);
+
+        var result = new Complex[count];
+        for (int k = 0; k < count; k++)
+        {
+            result[k] = weighted[k] * Chirp(k, omegaStep);
+        }
+
+        return result;
+    }
+
+    // e^{-j·omegaStep·m²/2}. m² is exact in a double up to 2^26 (m < 67 million),
+    // and the angle's rounding is its ulp — 1e-11 rad at the largest m the tap
+    // ceiling and a 262144-point render can produce.
+    private static Complex Chirp(int m, double omegaStep)
+    {
+        double square = (double)m * m;
+        return Complex.FromPolarCoordinates(1.0, -omegaStep * square / 2.0);
     }
 }

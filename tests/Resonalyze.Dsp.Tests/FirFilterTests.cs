@@ -93,6 +93,44 @@ public sealed class FirFilterTests
         Assert.Throws<ArgumentOutOfRangeException>(() => fir.Spectrum(2));
     }
 
+    [Fact]
+    public void ChirpSpectrum_MatchesTheDirectSum_OnAGridNoDftLandsOn()
+    {
+        // A 44.1 kHz record's bins on a 48 kHz processor: ω_k = k·2π·(44100/48000)/4096.
+        // The chirp-z answer has to be the direct sum to rounding, at every bin.
+        var random = new Random(1234);
+        double[] taps = Enumerable.Range(0, 1_000).Select(_ => random.NextDouble() * 2 - 1).ToArray();
+        var fir = new FirFilter(taps);
+        double scale = taps.Sum(Math.Abs);
+        double omegaStep = Math.Tau * (44_100.0 / 48_000.0) / 4_096;
+
+        Complex[] chirp = fir.ChirpSpectrum(2_049, omegaStep);
+
+        Assert.Equal(2_049, chirp.Length);
+        double worst = 0;
+        for (int k = 0; k < chirp.Length; k++)
+        {
+            Complex direct = fir.Response(Complex.Exp(new Complex(0, -omegaStep * k)));
+            worst = Math.Max(worst, (chirp[k] - direct).Magnitude);
+        }
+
+        Assert.True(worst < 1e-10 * scale, $"chirp-z off the direct sum by {worst / scale:E2} of Σ|h|");
+    }
+
+    [Fact]
+    public void GroupDelay_IsUndefinedAtAKernelsNull_EvenWhereRoundingLeavesADust()
+    {
+        // h = [0.5, 0.5] has H(π) = 0 exactly; in floating point e^{-jπ} is not quite
+        // −1, so H lands at some 1e-17 rather than (0, 0). The answer is still NaN,
+        // not the 1e17 a literal zero test would let through.
+        var fir = new FirFilter([0.5, 0.5]);
+        Complex z1 = Complex.Exp(new Complex(0, -Math.PI));
+
+        Assert.NotEqual(Complex.Zero, fir.Response(z1));
+        Assert.True(double.IsNaN(fir.GroupDelaySamples(z1)));
+        Assert.Equal(0.5, fir.GroupDelaySamples(Complex.Exp(new Complex(0, -0.3))), 9);
+    }
+
     // ------------------------------------------------------------- text file
 
     [Fact]
@@ -156,6 +194,27 @@ public sealed class FirFilterTests
         InvalidDataException mixed = Assert.Throws<InvalidDataException>(
             () => FirFilterTextFile.Parse("0.5\n0,25\n0.125\n"));
         Assert.Contains("decimal comma", mixed.Message);
+    }
+
+    [Fact]
+    public void TextFile_RefusesAMalformedLineInsideTheKernel_ButTakesAComment()
+    {
+        // A skipped tap would shift every later one by a sample: a different filter
+        // under the same file name. So a line inside the coefficients that is not one
+        // number refuses the file, and the refusal names the line.
+        InvalidDataException columns = Assert.Throws<InvalidDataException>(
+            () => FirFilterTextFile.Parse("0.1\n0.2\n0.3 0.4\n0.5\n"));
+        Assert.Contains("Line 3", columns.Message);
+        Assert.Contains("0.3 0.4", columns.Message);
+
+        InvalidDataException garbage = Assert.Throws<InvalidDataException>(
+            () => FirFilterTextFile.Parse("* header\r\n\r\n0.1\r\n0.25 garbage\r\n0.5\r\n"));
+        Assert.Contains("Line 4", garbage.Message);
+
+        // Comments and blank lines inside the kernel are fine; headers above it too.
+        FirFilter fir = FirFilterTextFile.Parse(
+            "// rePhase\n0.1\n\n# the centre tap\n0.2\n; and a trailing remark\n0.3\n");
+        Assert.Equal(new[] { 0.1, 0.2, 0.3 }, fir.Taps.ToArray());
     }
 
     [Fact]
@@ -294,6 +353,22 @@ public sealed class FirFilterTests
         Assert.Equal(8_192, bareTail);
         Assert.Equal(8_192 + 500, firTail);
         Assert.False(withFir.IsTimeDomainScaleOnly);
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(2, 1)]
+    [InlineData(1_000, 999)]
+    public void TailPadding_IsTheKernelsLengthLessOne_AtEqualRates(int taps, int expectedExtra)
+    {
+        // An N-tap convolution is N − 1 samples longer, not N: a one-tap kernel is a
+        // gain and needs no room. One sample too many matters here because the caller
+        // rounds the render up to a power of two, and a sample past the boundary
+        // doubles it.
+        PreparedDspResponse withFir = PreparedDspResponse.Create(
+            new DspChannelChain(Fir: new FirFilter(new double[taps])), 48_000);
+
+        Assert.Equal(8_192 + expectedExtra, withFir.RequiredTailSamples(120, 8_192, 262_144, 48_000));
     }
 
     [Fact]

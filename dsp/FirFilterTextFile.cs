@@ -10,14 +10,22 @@ namespace Resonalyze.Dsp;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every line that parses as one number is a tap, in file order. Every other line is
-/// a header or a comment and is skipped wherever it stands — the designers differ in
-/// what they write above the data (<c>* Impulse Response data saved by REW</c>,
-/// <c>// rePhase</c>, nothing at all) and a reader that pinned one dialect would
-/// refuse the next. A line with several numbers on it is skipped too, not read as
-/// its first or last column: a two-column file is another format, and guessing the
-/// column would load a kernel nobody designed. The message for a file with no taps
-/// says what the reader wanted.
+/// Every line that parses as one number is a tap, in file order. ABOVE the first
+/// tap anything goes: the designers differ in what they write there (<c>* Impulse
+/// Response data saved by REW</c>, <c>// rePhase</c>, nothing at all) and a reader
+/// that pinned one dialect would refuse the next. A line with several numbers on it
+/// up there is skipped, not read as its first or last column: a two-column file is
+/// another format, and guessing the column would load a kernel nobody designed. The
+/// message for a file with no taps says what the reader wanted.
+/// </para>
+/// <para>
+/// ONCE THE TAPS BEGIN the reader is strict: a line that is not a number, and not a
+/// comment by its first character (<c>*</c>, <c>//</c>, <c>#</c>, <c>;</c>,
+/// <c>%</c>), refuses the whole file and names the line. Skipping it would be far
+/// worse than refusing: a tap that goes missing shifts every tap after it by one
+/// sample, which is a different filter with the same file name — and <c>0.3 0.4</c>
+/// or <c>0.25 garbage</c> in the middle of a kernel is exactly the line a reader
+/// must not guess about.
 /// </para>
 /// <para>
 /// A decimal COMMA is a decimal separator, not a column separator: a tool run under
@@ -39,8 +47,6 @@ namespace Resonalyze.Dsp;
 /// </remarks>
 public static partial class FirFilterTextFile
 {
-    private static readonly char[] LineSeparators = ['\n', '\r'];
-
     /// <summary>Parses the file's text. Throws <see cref="InvalidDataException"/> when it holds no kernel.</summary>
     public static FirFilter Parse(string text)
     {
@@ -50,8 +56,12 @@ public static partial class FirFilterTextFile
         int skippedNumeric = 0;
         bool sawDecimalPoint = false;
         bool sawDecimalComma = false;
-        foreach (string rawLine in text.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries))
+        // Line numbers count every line of the file, blank ones included, so the
+        // refusal names the line an editor shows.
+        int lineNumber = 0;
+        foreach (string rawLine in text.Split('\n'))
         {
+            lineNumber++;
             string line = rawLine.Trim();
             if (line.Length == 0)
             {
@@ -74,6 +84,20 @@ public static partial class FirFilterTextFile
                 continue;
             }
 
+            if (taps.Count > 0)
+            {
+                if (IsComment(line))
+                {
+                    continue;
+                }
+
+                throw new InvalidDataException(
+                    $"Line {lineNumber} of the file, inside the coefficients, is not one " +
+                    $"number: \"{Abbreviate(line)}\". This reader expects ONE coefficient " +
+                    "per line, first tap first; a line it skipped would shift every tap " +
+                    "after it in time, so it refuses instead.");
+            }
+
             if (declaredRate == null && SampleRatePattern().Match(line) is { Success: true } match &&
                 int.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int rate) &&
                 rate > 0)
@@ -82,7 +106,8 @@ public static partial class FirFilterTextFile
                 continue;
             }
 
-            // A line of several numbers: counted so the refusal can name the shape it saw.
+            // A header line of several numbers: counted so the refusal can name the
+            // shape it saw.
             if (LooksLikeNumberColumns(line))
             {
                 skippedNumeric++;
@@ -121,6 +146,13 @@ public static partial class FirFilterTextFile
 
         taps.Add(tap);
     }
+
+    // The comment markers the designers' exports and hand-edited files use.
+    private static bool IsComment(string line) =>
+        line[0] is '*' or '#' or ';' or '%' || line.StartsWith("//", StringComparison.Ordinal);
+
+    private static string Abbreviate(string line) =>
+        line.Length <= 40 ? line : line[..37] + "...";
 
     private static bool LooksLikeNumberColumns(string line)
     {

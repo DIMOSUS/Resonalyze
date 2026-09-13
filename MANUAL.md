@@ -651,7 +651,9 @@ them — and from then on the kernel is a full stage of the simulated chain: eve
 processed curve, the Sum, the loss, the metrics, Auto Delay and the audition run
 through it, and the DSP chain plot draws it with the rest of the filters. The
 read-out beside the button gives the kernel's length and where its peak sits in
-time, which for a linear-phase kernel is the delay it adds to that channel.
+time. For the usual linear-phase kernel that is roughly the delay it adds to the
+channel; a minimum-phase kernel peaks near its start and adds no such delay. The
+chain plot's Group delay mode draws the exact figure per frequency.
 
 Two rules are worth knowing before you load one:
 

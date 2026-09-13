@@ -128,10 +128,10 @@ public sealed class PreparedDspResponse
     /// and it is the record's own samples that have to hold it.
     /// </para>
     /// <para>
-    /// A FIR stage adds its whole kernel length on top, OUTSIDE the clamp: the
-    /// convolution of a record with an N-tap kernel is exactly N − 1 samples longer,
-    /// there is no decay to wait for, and a cap here would wrap the kernel's tail
-    /// into the record's head. The kernel is bounded at load instead (see
+    /// A FIR stage adds N − 1 record samples for an N-tap kernel on top, OUTSIDE the
+    /// clamp: that is exactly how much longer the convolution is, there is no decay
+    /// to wait for, and a cap here would wrap the kernel's tail into the record's
+    /// head. The kernel is bounded at load instead (see
     /// <see cref="FirFilter.MaximumTaps"/>).
     /// </para>
     /// </summary>
@@ -189,12 +189,15 @@ public sealed class PreparedDspResponse
         return (int)Math.Clamp(Math.Ceiling(required), minSamples, maxSamples) + firTail;
     }
 
-    // The kernel's length in the RECORD's samples — the room a linear convolution
-    // needs past the input's end. Zero without a FIR stage.
+    // The room a linear convolution needs past the input's end, in the RECORD's
+    // samples: N − 1 for an N-tap kernel (a one-tap kernel is a gain and needs none).
+    // Zero without a FIR stage. Not rounded up by a sample for safety: the caller
+    // rounds the whole length to a power of two, and one sample past a boundary
+    // doubles the render.
     private int FirTailSamples(int signalSampleRate) =>
         fir == null
             ? 0
-            : (int)Math.Ceiling((double)fir.Length * signalSampleRate / processorRate);
+            : (int)Math.Ceiling((double)(fir.Length - 1) * signalSampleRate / processorRate);
 
     public Complex[] ApplyTimeDomainScale(Complex[] impulseResponse, int length)
     {
@@ -370,17 +373,18 @@ public sealed class PreparedDspResponse
     /// </para>
     /// <para>
     /// Otherwise (44.1 kHz against 48 kHz, say) no DFT grid lands on the record's
-    /// bins, and the kernel is evaluated at each of them by Horner's rule — one
-    /// complex multiply per tap per bin, which is slow for a long kernel over a long
-    /// record but still the same exact number. Bins past the processor's Nyquist are
-    /// left zero on both paths; the caller silences them regardless.
+    /// bins, and the kernel is read at each of them by the chirp-z transform
+    /// (<see cref="FirFilter.ChirpSpectrum"/>): three FFTs, whatever the kernel's
+    /// length, against the tap-times-bin count of evaluating it point by point —
+    /// which for the longest kernel over the longest render was seventeen billion
+    /// multiplies. Bins past the processor's Nyquist are left zero on both paths;
+    /// the caller silences them regardless.
     /// </para>
     /// <para>
     /// CACHED on the kernel: the bins depend on the kernel, the record length and the
     /// rate pair alone — not on the gain, delay or biquads beside it — and every knob
-    /// turn on the channel re-renders it through the same bins. So the slow path's
-    /// seconds (a 16k-tap kernel over a 128k-point render is a billion multiplies)
-    /// are paid once per kernel and rate pair, not once per edit. A kernel that is
+    /// turn on the channel re-renders it through the same bins, so the transform is
+    /// paid once per kernel and rate pair, not once per edit. A kernel that is
     /// unloaded takes its bins with it; the table is weakly keyed.
     /// </para>
     /// </summary>
@@ -459,19 +463,8 @@ public sealed class PreparedDspResponse
             return bins;
         }
 
-        Complex zStep = Complex.Exp(new Complex(0, -Math.Tau * rateRatio / length));
-        Complex z1 = Complex.One;
-        for (int i = 0; i <= lastBin; i++)
-        {
-            if (i % PhaseRefreshInterval == 0)
-            {
-                z1 = UnitPhasor(-Math.Tau * i * rateRatio / length);
-            }
-
-            bins[i] = fir.Response(z1);
-            z1 *= zStep;
-        }
-
+        Complex[] chirp = fir.ChirpSpectrum(lastBin + 1, Math.Tau * rateRatio / length);
+        Array.Copy(chirp, bins, lastBin + 1);
         return bins;
     }
 

@@ -234,9 +234,12 @@ else in a reply touches it.
   `{ "file": "left mid.wav", "taps": 4096, "peakMs": 21.33 }`. The kernel is
   convolved at `processor.sampleRateHz` whatever rate its file stated, it is part
   of the chain every curve and engine already account for, and it is read-only: no
-  operation writes it. `peakMs` is where the kernel's largest tap sits — a
-  linear-phase kernel's delay, already inside that channel's arrival — so a delay
-  you propose is ON TOP of it, not instead of it.
+  operation writes it. `peakMs` is where the kernel's largest tap sits: a peak
+  position, not a group delay. For a conventional linear-phase kernel it is
+  approximately the bulk delay the kernel adds, and that delay is ALREADY inside
+  the channel's arrival and every curve; for a minimum-phase kernel it says
+  nothing about delay. Never subtract it from, or add it to, a delay you propose
+  — propose against the curves as they stand.
 - `peq.hash` is twelve hex digits of SHA-256 over the bands in order (type,
   frequency, Q, gain in round-trip form) and the preamp. A `replacePeqBank`
   reply echoes it instead of the whole current bank.

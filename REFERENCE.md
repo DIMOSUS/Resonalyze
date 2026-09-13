@@ -1990,9 +1990,15 @@ Each channel runs through:
   when [DSP processor](#dsp-processor) says the device does. The button loads a
   kernel from a `.wav` (the first channel of a multichannel file), a `.fir` or a
   `.txt` — the text forms hold one coefficient per line, first tap first, with
-  any header lines above them skipped — or clears it, and then names the file;
+  any header lines above them skipped; once the coefficients begin, a line that
+  is neither a number nor a comment (`*`, `//`, `#`, `;`, `%`) refuses the whole
+  file, because a skipped tap would shift every later one in time — or clears
+  it, and then names the file;
   the read-out beside it states the kernel's length in taps and where its peak
-  sits in time, which for a linear-phase kernel is the delay it adds. Once loaded
+  sits in time — roughly the bulk delay a conventional linear-phase kernel adds,
+  and no delay at all for a minimum-phase one, whose peak sits near the front;
+  the exact delay per frequency is what the chain plot's Group delay mode draws.
+  Once loaded
   the kernel is a full stage of the simulated chain: every processed curve, the
   Sum, the loss, the metrics, [Auto delay](#auto-delay) and the audition run
   through it, and the [chain plot](#the-panel-gates-plots-and-read-outs) draws it with the rest of the

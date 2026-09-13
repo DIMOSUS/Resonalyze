@@ -482,7 +482,9 @@ public sealed class VirtualCrossoverFirTests
         taps[2_048] = 1.0;
         control.SetFir(new FirFilter(taps, 96_000), "left mid.wav");
 
-        Assert.Equal("left mid.wav", control.FirButton.Text);
+        // The button carries the action, like the PEQ row's; the label names the file.
+        Assert.Equal("Edit…", control.FirButton.Text);
+        Assert.StartsWith("left mid.wav: ", control.FirInfoLabel.Text);
         Assert.Contains("4096 taps", control.FirInfoLabel.Text);
         Assert.Contains("21", control.FirInfoLabel.Text);
         Assert.NotEqual(Resonalyze.Ui.UiPalette.WarningAmber, control.FirInfoLabel.ForeColor);
@@ -498,13 +500,25 @@ public sealed class VirtualCrossoverFirTests
         // A kernel without a source name is still shown as a kernel.
         control.SetFir(new FirFilter(taps), null);
 
-        Assert.Equal("FIR", control.FirButton.Text);
+        Assert.Equal("Edit…", control.FirButton.Text);
+        Assert.StartsWith("FIR: ", control.FirInfoLabel.Text);
         Assert.Contains("4096 taps", control.FirInfoLabel.Text);
 
         control.SetFir(null, "stale name");
 
         Assert.Equal("Add…", control.FirButton.Text);
         Assert.Equal("off", control.FirInfoLabel.Text);
+    }
+
+    [Fact]
+    public void TheFirRow_LinesUpWithThePeqRow()
+    {
+        using var control = new VirtualCrossoverChannelControl { FirControlShown = true };
+
+        Assert.Equal(control.PeqMenuButton.Left, control.FirButton.Left);
+        Assert.Equal(control.PeqMenuButton.Width, control.FirButton.Width);
+        Assert.Equal(control.PeqInfoLabel.Left, control.FirInfoLabel.Left);
+        Assert.Equal(control.PeqInfoLabel.Width, control.FirInfoLabel.Width);
     }
 
     [Fact]

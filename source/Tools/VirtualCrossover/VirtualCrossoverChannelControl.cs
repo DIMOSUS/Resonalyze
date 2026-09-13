@@ -1098,8 +1098,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
         UpdateFirReadout();
     }
 
-    // The FIR row's two texts: the button names the file (or asks for one), the label
-    // says what the kernel is — its length in taps and in time at the processor's
+    // The FIR row's two texts, laid out like the PEQ row above it: the button is the
+    // same width with a fixed action on it, and the label beside it names the kernel —
+    // the crossover it was designed as, or the file it came from — and says what it is — its length in taps and in time at the processor's
     // rate, read at the kernel's peak — roughly a linear-phase kernel's bulk delay,
     // and no delay at all for a minimum-phase one; the tip says which it is. Amber
     // where the file is named but not found, and where the file states a rate the
@@ -1123,7 +1124,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
             // The kernel is in the session; the name is where it came from, and a
             // kernel that arrived without one (a hand-edited file) is still a kernel.
             // A designed kernel has no file: its crossover is its name.
-            buttonText = firDesign is { } named
+            buttonText = "Edit…";
+            string name = firDesign is { } named
                 ? FirCrossoverDescription.Short(named)
                 : firSourceName ?? "FIR";
             double peakMs = firKernel.PeakIndex * 1_000.0 / processorSampleRateHz;
@@ -1157,6 +1159,13 @@ public partial class VirtualCrossoverChannelControl : UserControl
                 infoTip = FirCrossoverDescription.Long(design) + "." + Environment.NewLine +
                     $"Linear-phase: the channel is delayed by {design.LatencyMs:0.00} ms, half the kernel.";
             }
+            else
+            {
+                // The label clips a long file name; its tooltip starts with the name whole.
+                infoTip = name + ": " + infoTip;
+            }
+
+            info = $"{name}: {info}";
         }
 
         string? conflict = FirConflict;

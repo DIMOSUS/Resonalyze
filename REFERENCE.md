@@ -2091,9 +2091,10 @@ Each channel runs through:
   file, because a skipped tap would shift every later one in time — **exports**
   the kernel the session carries to a 32-bit float WAV or a text file at the
   processor's rate (float rather than 24-bit PCM, because a kernel with gain has
-  taps past ±1), or clears it; the button then names the file the kernel was
-  imported from, and
-  the read-out beside it states the kernel's length in taps and where its peak
+  taps past ±1), or clears it. The button reads **Add…** on a side without a
+  kernel and **Edit…** on one with it, and sits where the PEQ row's button does;
+  the read-out beside it names the file the kernel was imported from and
+  states the kernel's length in taps and where its peak
   sits in time — roughly the bulk delay a conventional linear-phase kernel adds,
   and no delay at all for a minimum-phase one, whose peak sits near the front;
   the exact delay per frequency is what the chain plot's Group delay mode draws.
@@ -2114,8 +2115,8 @@ Each channel runs through:
   The button's menu also **designs** a kernel: **Design in FIR Constructor…** hands
   the side to the [FIR Constructor](#fir-constructor), which returns a linear-phase
   low-pass, high-pass or band-pass. A kernel designed there is stored with its
-  **design** beside the taps, so it opens again as the crossover it is; the button
-  names it by its corners (`HP 80 Hz`, `BP 250 Hz–3 kHz`), the read-out states its
+  **design** beside the taps, so it opens again as the crossover it is; the read-out
+  names it by its corners (`HP 80 Hz`, `BP 250 Hz–3 kHz`) and states its
   latency, and the tuning sheet prints the design in full. An import or a **Clear**
   replaces the kernel and drops the design with it. The button turns **red**, with
   the reason in its tooltip, in two cases only: a designed kernel whose rate is no

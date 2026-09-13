@@ -295,7 +295,7 @@ public sealed class FirConstructorTests
         FirCrossoverDesign design = HighPassDesign();
 
         control.SetFir(design.Build(), null, design);
-        Assert.Equal("HP 80 Hz", control.FirButton.Text);
+        Assert.StartsWith("HP 80 Hz: ", control.FirInfoLabel.Text);
         Assert.Null(control.FirConflict);
         Assert.NotEqual(Resonalyze.Ui.UiPalette.WarningRed, control.FirButton.ForeColor);
 

@@ -375,6 +375,50 @@ public static class AudioFileCodec
         }
     }
 
+    /// <summary>
+    /// Writes deinterleaved float PCM as a 32-bit IEEE float WAV file — every sample
+    /// as it is, no scaling and no clipping. For data that is not a recording: a FIR
+    /// kernel's taps run past ±1 whenever the filter has gain, and 24-bit integer PCM
+    /// would clip them into another filter.
+    /// </summary>
+    public static void WriteWavFloat32(string path, AudioFileContent content)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(content);
+        if (content.ChannelCount == 0 || content.FrameCount == 0)
+        {
+            throw new ArgumentException("There is nothing to write.", nameof(content));
+        }
+        if (content.SampleRate <= 0)
+        {
+            throw new ArgumentException("The sample rate is invalid.", nameof(content));
+        }
+        foreach (float[] channel in content.Channels)
+        {
+            if (channel.Length != content.FrameCount)
+            {
+                throw new ArgumentException(
+                    "All channels must have the same length.", nameof(content));
+            }
+        }
+
+        int channelCount = content.ChannelCount;
+        int frameCount = content.FrameCount;
+        var format = WaveFormat.CreateIeeeFloatWaveFormat(content.SampleRate, channelCount);
+        using var writer = new WaveFileWriter(path, format);
+        var interleaved = new float[frameCount * channelCount];
+        int offset = 0;
+        for (int frame = 0; frame < frameCount; frame++)
+        {
+            for (int channel = 0; channel < channelCount; channel++)
+            {
+                interleaved[offset++] = content.Channels[channel][frame];
+            }
+        }
+
+        writer.WriteSamples(interleaved, 0, interleaved.Length);
+    }
+
     private const int Int24Maximum = 0x7FFFFF;
 
     private static int ToInt24(float sample)

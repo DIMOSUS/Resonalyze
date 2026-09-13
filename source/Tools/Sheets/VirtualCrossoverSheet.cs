@@ -104,6 +104,12 @@ internal static class VirtualCrossoverSheet
                 builder.AppendLine(
                     $"  Phase      {Number(channel.PhaseRotationDegrees, "0.###")}°");
             }
+            // The kernel by file name, only where one is loaded, for the same reason
+            // as the phase line: it is the file to load into the device.
+            if (channel.HasFir)
+            {
+                builder.AppendLine($"  FIR        {DescribeFir(channel)}");
+            }
             if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
             {
                 builder.AppendLine(
@@ -177,6 +183,19 @@ internal static class VirtualCrossoverSheet
 
     /// <summary>The value printed where a channel does not use that edge at all.</summary>
     public const string OffText = "Off";
+
+    /// <summary>
+    /// The FIR kernel as the sheet names it: the file it was imported from and its
+    /// length — the file is what the installer loads into the device, and the length
+    /// is how they check it is the same one. Empty for a side without a kernel.
+    /// </summary>
+    public static string DescribeFir(VirtualCrossoverChannelSettings channel)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+        return channel.Fir is { } fir
+            ? $"{channel.FirSourceName ?? "FIR"} ({fir.Length} taps)"
+            : string.Empty;
+    }
 
     /// <summary>
     /// The high-pass (resp. low-pass) edge as a value of its own — family, slope and

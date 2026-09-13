@@ -515,6 +515,8 @@ The same controls repeat on every block:
 7. **Phase** — the channel phase control, on the processors that have one. It is
    absent above because that session's device does not; see
    [the phase control](#the-phase-control-helix-and-relatives) below.
+8. **FIR** — a FIR kernel the channel is convolved with, on the processors that take
+   one; absent above for the same reason. See [FIR filters](#fir-filters) below.
 
 ### Assign channel groups
 
@@ -634,6 +636,42 @@ use it:
 
 The behaviour was measured on a HELIX DSP ULTRA S rather than taken from a manual, and
 the model reproduces those measurements to about 0.2 %.
+
+#### FIR filters
+
+The dialog's fourth setting, **FIR filters**, adds a **FIR** button to every channel
+card. Tick it when your processor convolves each channel with a kernel you load into
+it; the catalog does not yet claim the stage for any model, so the tick is yours to
+give, and picking another model in the list leaves it as it is. Unticking it
+removes every kernel from the session and tells you how many, so export a kernel
+first if the session holds the only copy.
+
+The button **imports** a kernel from a `.wav`, a `.fir` or a `.txt` file — the text
+forms are one coefficient per line, the way rePhase, REW and the miniDSP tools
+export them. The kernel is then stored in the session itself, like the PEQ bands,
+not as a path to the file: the session travels with it, and the same button
+**exports** it again as a 32-bit float WAV or a text file, at the processor's rate,
+for the device or another tool. From the import on the kernel is a full stage of the
+simulated chain: every
+processed curve, the Sum, the loss, the metrics, Auto Delay and the audition run
+through it, and the DSP chain plot draws it with the rest of the filters. The
+read-out beside the button gives the kernel's length and where its peak sits in
+time. For the usual linear-phase kernel that is roughly the delay it adds to the
+channel; a minimum-phase kernel peaks near its start and adds no such delay. The
+chain plot's Group delay mode draws the exact figure per frequency.
+
+Two rules are worth knowing before you import one:
+
+- **The kernel runs at the processor's rate, whatever the file says.** That is what
+  the device does with the taps, so design the kernel for the rate named in the DSP
+  processor dialog. A WAV whose header states another rate is still loaded — the
+  read-out turns amber and names both rates — but it is then a different filter from
+  the one you drew. An export writes the processor's rate into the file, because
+  that is the rate the taps mean here.
+- **The kernel sits beside the IIR crossover, not in place of it.** A kernel that
+  already contains the channel's crossover runs on top of whatever the Crossover row
+  says, exactly as it would on a device with both blocks. Switch that row Off when the
+  kernel is meant to be the whole filter.
 
 ### Set the display correctly
 

@@ -128,7 +128,10 @@ public partial class VirtualCrossoverPanel
                 Number(settings.GainDb), Number(settings.DelayMs), settings.InvertPolarity,
                 settings.CrossoverKind, Edge(settings.HighPassEdge), Edge(settings.LowPassEdge),
                 Number(settings.PhaseRotationDegrees),
-                AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands)));
+                AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands),
+                // The FIR kernel by its content: the taps are the tune's, and the name
+                // they were imported under is only a label.
+                Digest(settings.Fir?.Taps.ToArray())));
         }
 
         return AgentSessionFingerprint.Compute(lines);

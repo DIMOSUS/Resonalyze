@@ -189,6 +189,62 @@ public sealed class DspProcessorDialogTests
         });
     }
 
+    [Fact]
+    public void TheFirTick_IsOffUntilGiven_AndNotTakenAwayByNamingAModel()
+    {
+        StaTest.Run(() =>
+        {
+            // No catalog line claims a FIR stage yet, so a project that has never
+            // been asked opens with the tick off. Once given, the tick is the user's
+            // across every model: the catalog's "false" means "not known to take a
+            // kernel", not "cannot", and an untick detaches every loaded kernel — not
+            // something a look at another device may do on no information.
+            using Form dialog = Open(followsMeasurements: false, firFilters: null);
+            Assert.False(FirFilters(dialog));
+
+            SetFirFilters(dialog, true);
+            Assert.True(FirFilters(dialog));
+
+            SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
+            Assert.True(FirFilters(dialog));
+
+            SelectModel(dialog, DspProcessorCatalog.Preset("amp-panacea-v1-v2")!);
+            Assert.True(FirFilters(dialog));
+
+            SelectCustom(dialog);
+            Assert.True(FirFilters(dialog));
+        });
+    }
+
+    [Fact]
+    public void TheStoredFirAnswer_SurvivesTheModelList_AndOnlyTheUserUnticksIt()
+    {
+        StaTest.Run(() =>
+        {
+            using Form dialog = Open(followsMeasurements: false, firFilters: true);
+            SelectRate(dialog, 96_000);
+            Assert.True(FirFilters(dialog));
+
+            SelectModel(dialog, DspProcessorCatalog.Preset("amp-panacea-v1-v2")!);
+            Assert.True(FirFilters(dialog));
+
+            SetFirFilters(dialog, false);
+            SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
+            Assert.False(FirFilters(dialog));
+
+            // And a stored "no" opens as no.
+            using Form off = Open(followsMeasurements: false, firFilters: false);
+            Assert.False(FirFilters(off));
+        });
+    }
+
+    private static bool FirFilters(Form dialog) => (bool)Property(dialog, "FirFilters")!;
+
+    private static void SetFirFilters(Form dialog, bool value) =>
+        ((CheckBox)dialog.GetType()
+            .GetField("checkBoxFirFilters", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(dialog)!).Checked = value;
+
     private static bool PhaseControl(Form dialog) => (bool)Property(dialog, "PhaseControl")!;
 
     private static void SetPhaseControl(Form dialog, bool value) =>
@@ -199,7 +255,8 @@ public sealed class DspProcessorDialogTests
     private static Form Open(
         bool followsMeasurements,
         int measurementRateHz = MeasurementRate,
-        bool? phaseControl = null)
+        bool? phaseControl = null,
+        bool? firFilters = null)
     {
         Type type = typeof(VirtualCrossoverPanel).Assembly
             .GetType("Resonalyze.DspProcessorDialog")!;
@@ -212,7 +269,8 @@ public sealed class DspProcessorDialogTests
                     PeqQConvention.Rbj),
                 followsMeasurements,
                 measurementRateHz,
-                phaseControl
+                phaseControl,
+                firFilters
             ],
             culture: null)!;
     }

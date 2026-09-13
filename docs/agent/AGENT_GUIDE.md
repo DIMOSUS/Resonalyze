@@ -100,7 +100,12 @@ that channel's Phase control on a device that has one: an angle the hardware
 turns into an all-pass at the channel's OWN crossover, already inside every
 curve. You cannot set it, and moving that crossover leaves the same angle
 building a different filter — so say so when you propose a corner on a channel
-that carries one. Two sample rates matter: the measurement's
+that carries one. `dsp.fir`, where present, is a FIR kernel the processor
+convolves that channel with, likewise already inside every curve and read-only;
+its `peakMs` is where the kernel peaks — roughly a linear-phase kernel's bulk
+delay, which the curves already include, and not a delay at all for a
+minimum-phase one — so never compensate for it: propose against the curves as
+they stand. Two sample rates matter: the measurement's
 and `processor.sampleRateHz`, and every corner and band you propose must sit
 below half the processor's. Per channel, `preDspDb` is the measurement before
 the chain, `processedDb` through it, `chainDb` and `peqDb` the chain and the

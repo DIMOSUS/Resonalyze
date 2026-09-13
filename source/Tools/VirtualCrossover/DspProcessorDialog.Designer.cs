@@ -31,6 +31,7 @@ namespace Resonalyze
             comboBoxQConvention = new DarkComboBox();
             labelStatus = new Label();
             checkBoxPhaseControl = new ReleaseClickCheckBox();
+            checkBoxFirFilters = new ReleaseClickCheckBox();
             labelHint = new Label();
             labelNotes = new Label();
             labelNotesHint = new Label();
@@ -123,11 +124,22 @@ namespace Resonalyze
             checkBoxPhaseControl.Text = "Channel phase control";
             checkBoxPhaseControl.UseVisualStyleBackColor = true;
             //
+            // checkBoxFirFilters
+            //
+            checkBoxFirFilters.AutoSize = true;
+            checkBoxFirFilters.ForeColor = Color.White;
+            checkBoxFirFilters.Location = new Point(148, 178);
+            checkBoxFirFilters.Name = "checkBoxFirFilters";
+            checkBoxFirFilters.Size = new Size(320, 19);
+            checkBoxFirFilters.TabIndex = 8;
+            checkBoxFirFilters.Text = "FIR filters";
+            checkBoxFirFilters.UseVisualStyleBackColor = true;
+            //
             // labelStatus
             //
             labelStatus.AutoSize = true;
             labelStatus.ForeColor = Color.FromArgb(185, 190, 200);
-            labelStatus.Location = new Point(12, 194);
+            labelStatus.Location = new Point(12, 216);
             labelStatus.MaximumSize = new Size(456, 0);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(456, 60);
@@ -138,7 +150,7 @@ namespace Resonalyze
             //
             labelHint.AutoSize = true;
             labelHint.ForeColor = Color.FromArgb(150, 156, 168);
-            labelHint.Location = new Point(12, 323);
+            labelHint.Location = new Point(12, 345);
             labelHint.MaximumSize = new Size(456, 0);
             labelHint.Name = "labelHint";
             labelHint.Size = new Size(456, 30);
@@ -150,7 +162,7 @@ namespace Resonalyze
             //
             labelNotes.AutoSize = true;
             labelNotes.ForeColor = Color.FromArgb(185, 190, 200);
-            labelNotes.Location = new Point(12, 367);
+            labelNotes.Location = new Point(12, 389);
             labelNotes.Name = "labelNotes";
             labelNotes.Size = new Size(78, 15);
             labelNotes.TabIndex = 9;
@@ -160,7 +172,7 @@ namespace Resonalyze
             //
             labelNotesHint.AutoSize = true;
             labelNotesHint.ForeColor = Color.FromArgb(150, 156, 168);
-            labelNotesHint.Location = new Point(12, 385);
+            labelNotesHint.Location = new Point(12, 407);
             labelNotesHint.MaximumSize = new Size(456, 0);
             labelNotesHint.Name = "labelNotesHint";
             labelNotesHint.Size = new Size(456, 45);
@@ -175,7 +187,7 @@ namespace Resonalyze
             textBoxNotes.BackColor = Color.FromArgb(33, 36, 45);
             textBoxNotes.BorderStyle = BorderStyle.FixedSingle;
             textBoxNotes.ForeColor = Color.FromArgb(210, 214, 222);
-            textBoxNotes.Location = new Point(12, 437);
+            textBoxNotes.Location = new Point(12, 459);
             textBoxNotes.MaxLength = MaximumNotesLength;
             textBoxNotes.Multiline = true;
             textBoxNotes.Name = "textBoxNotes";
@@ -189,7 +201,7 @@ namespace Resonalyze
             buttonOk.DialogResult = DialogResult.OK;
             buttonOk.FlatStyle = FlatStyle.Popup;
             buttonOk.ForeColor = Color.White;
-            buttonOk.Location = new Point(292, 551);
+            buttonOk.Location = new Point(292, 573);
             buttonOk.Name = "buttonOk";
             buttonOk.Size = new Size(84, 26);
             buttonOk.TabIndex = 12;
@@ -201,7 +213,7 @@ namespace Resonalyze
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
             buttonCancel.ForeColor = Color.White;
-            buttonCancel.Location = new Point(384, 551);
+            buttonCancel.Location = new Point(384, 573);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
             buttonCancel.TabIndex = 13;
@@ -213,7 +225,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.FromArgb(40, 44, 54);
-            ClientSize = new Size(480, 589);
+            ClientSize = new Size(480, 611);
             Controls.Add(labelCaption);
             Controls.Add(labelModel);
             Controls.Add(comboBoxModel);
@@ -222,6 +234,7 @@ namespace Resonalyze
             Controls.Add(labelQConvention);
             Controls.Add(comboBoxQConvention);
             Controls.Add(checkBoxPhaseControl);
+            Controls.Add(checkBoxFirFilters);
             Controls.Add(labelStatus);
             Controls.Add(labelHint);
             Controls.Add(labelNotes);
@@ -253,6 +266,7 @@ namespace Resonalyze
         private DarkComboBox comboBoxQConvention;
         private Label labelStatus;
         private ReleaseClickCheckBox checkBoxPhaseControl;
+        private ReleaseClickCheckBox checkBoxFirFilters;
         private Label labelHint;
         private Label labelNotes;
         private Label labelNotesHint;

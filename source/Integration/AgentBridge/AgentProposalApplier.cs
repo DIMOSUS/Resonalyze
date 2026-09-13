@@ -185,5 +185,9 @@ internal static class AgentProposalApplier
         to.PeqPreampDb = from.PeqPreampDb;
         to.PeqBands = new List<PeqBand>(from.PeqBands);
         to.PeqSourceName = from.PeqSourceName;
+        // The FIR stage too, for the same reason as the rotation: nothing writes it,
+        // and the undo must not drop it.
+        to.Fir = from.Fir;
+        to.FirSourceName = from.FirSourceName;
     }
 }

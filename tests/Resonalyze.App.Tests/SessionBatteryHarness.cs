@@ -477,6 +477,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     state.ProcessingSource.SampleCount,
                     chain,
                     state.SampleRate,
+                    channel.ProcessorSampleRate,
                     response.Length)));
         }
 

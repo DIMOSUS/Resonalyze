@@ -652,7 +652,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
             // Before the blocks are filled in: it re-pins their height, and doing it
             // per block afterwards would reflow the list once per channel.
-            RefreshPhaseControlAvailability();
+            RefreshProcessorRowAvailability();
             for (int i = 0; i < channels.Count; i++)
             {
                 channels[i].Pair = project.Pairs[i];
@@ -713,7 +713,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // at THAT rate. Nothing the simulation computes was ever wrong — the chain is
         // realized against the live rate — but the block would have gone on naming a
         // corner solved at the fallback.
-        RefreshPhaseControlAvailability();
+        RefreshProcessorRowAvailability();
         // The final redraw is issued by ApplyProjectAsync after the loading
         // state clears, so it draws the real plot instead of the loading note.
     }
@@ -1259,6 +1259,13 @@ public partial class VirtualCrossoverPanel : UserControl
             to.PhaseRotationDegrees = from.PhaseRotationDegrees;
         }
 
+        // The kernel by reference: it is immutable, so both sides can share it.
+        if (scope.Fir)
+        {
+            to.Fir = from.Fir;
+            to.FirSourceName = from.FirSourceName;
+        }
+
         // The all-pass filters live inside the PEQ bank as bands, but they answer a
         // different question than the EQ (they align this side rather than voice the
         // pair), so the two scopes split ONE list by band type: Peq moves the
@@ -1335,6 +1342,7 @@ public partial class VirtualCrossoverPanel : UserControl
             // and a block measured at one height and re-pinned at another makes the
             // whole list jump.
             PhaseControlShown = project.ResolveDspPhaseControl(),
+            FirControlShown = project.ResolveDspFirFilters(),
             ProcessorSampleRateHz = ProcessorSampleRateHz
         };
 
@@ -1359,6 +1367,7 @@ public partial class VirtualCrossoverPanel : UserControl
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
         control.SpatialAverageClicked += (_, _) => ShowSpatialAverageMenu(channel);
         control.PeqMenuClicked += (_, _) => ShowPeqMenu(channel);
+        control.FirClicked += (_, _) => ShowFirMenu(channel);
         control.CollapsedChanged += (_, _) => OnChannelCollapsedChanged(channel);
         control.MoveUpClicked += (_, _) => MoveChannel(channel, -1);
         control.MoveDownClicked += (_, _) => MoveChannel(channel, +1);
@@ -1516,7 +1525,8 @@ public partial class VirtualCrossoverPanel : UserControl
             ProcessorProfile,
             ProcessorRateFollowsMeasurements,
             MeasuredSampleRateHz ?? 0,
-            project.DspProcessorPhaseControl)
+            project.DspProcessorPhaseControl,
+            project.DspProcessorFirFilters)
         {
             Notes = project.AiNotes
         };
@@ -1548,20 +1558,25 @@ public partial class VirtualCrossoverPanel : UserControl
         // away from a tune that is using it.
         bool phaseControl = dialog.PhaseControl;
         bool phaseControlChanged = project.DspProcessorPhaseControl != phaseControl;
+        bool firFilters = dialog.FirFilters;
+        bool firFiltersChanged = project.DspProcessorFirFilters != firFilters;
         if (profile == ProcessorProfile && follows == ProcessorRateFollowsMeasurements &&
-            !phaseControlChanged)
+            !phaseControlChanged && !firFiltersChanged)
         {
             return;
         }
 
         project.DspProcessorPhaseControl = phaseControl;
+        project.DspProcessorFirFilters = firFilters;
         project.SetDspProcessor(profile, follows);
         // A device with no phase control means the rotations are not part of the
         // tune, not that they are merely off screen: left in place they would go on
         // bending every curve with no field on screen to explain them, and the tuning
-        // sheet would go on naming a knob this device does not have.
+        // sheet would go on naming a knob this device does not have. The kernels of a
+        // device with no FIR stage go the same way.
         int clearedRotations = project.ClearUnavailablePhaseRotations();
-        if (clearedRotations > 0)
+        int clearedFirFilters = project.ClearUnavailableFirFilters();
+        if (clearedRotations > 0 || clearedFirFilters > 0)
         {
             foreach (VirtualCrossoverChannel channel in channels)
             {
@@ -1569,14 +1584,14 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        RefreshPhaseControlAvailability();
+        RefreshProcessorRowAvailability();
 
         ScheduleSave();
         RedrawAll();
+        var notices = new List<string>();
         if (clearedRotations > 0)
         {
-            MessageBox.Show(
-                this,
+            notices.Add(
                 $"{clearedRotations} channel side" +
                 (clearedRotations == 1 ? " had" : "s had") +
                 " a phase rotation dialled in, and this processor has no such " +
@@ -1584,7 +1599,24 @@ public partial class VirtualCrossoverPanel : UserControl
                 (clearedRotations == 1 ? " was" : "s were") +
                 " cleared: left in place it would go on bending the curves with " +
                 "nothing on screen to explain it, and the tuning sheet would go on " +
-                "naming a control this device does not have.",
+                "naming a control this device does not have.");
+        }
+        if (clearedFirFilters > 0)
+        {
+            notices.Add(
+                $"{clearedFirFilters} channel side" +
+                (clearedFirFilters == 1 ? " had" : "s had") +
+                " a FIR filter loaded, and this processor has no FIR stage.\r\n\r\n" +
+                "The kernel" + (clearedFirFilters == 1 ? " was" : "s were") +
+                " detached: left in place it would go on shaping the curves with " +
+                "nothing on screen to explain it, and the tuning sheet would go on " +
+                "naming a file this device cannot take.");
+        }
+        if (notices.Count > 0)
+        {
+            MessageBox.Show(
+                this,
+                string.Join("\r\n\r\n", notices),
                 "Virtual DSP",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -2058,21 +2090,26 @@ public partial class VirtualCrossoverPanel : UserControl
 
         UpdateSourceButton(channel);
         UpdatePeqReadouts(channel);
+        UpdateFirReadout(channel);
     }
 
-    // Shows or hides the phase row on every block, and hands each the rate its
-    // all-pass corner is solved at. Both answers come from the processor and the
-    // project, so this runs wherever either can have moved — including the redraw,
-    // which is what catches a project whose rate FOLLOWS measurements that were
-    // replaced. Nothing happens when nothing changed: the loop below is a pair of
-    // comparisons per block, and only a real difference reaches the flow list, which
-    // would otherwise be asked for a layout pass on every knob turn.
-    private void RefreshPhaseControlAvailability()
+    // Shows or hides the processor-dependent rows (phase, FIR) on every block, and
+    // hands each the rate its all-pass corner is solved at and its kernel is timed
+    // at. All three answers come from the processor and the project, so this runs
+    // wherever either can have moved — including the redraw, which is what catches a
+    // project whose rate FOLLOWS measurements that were replaced. Nothing happens
+    // when nothing changed: the loop below is three comparisons per block, and only
+    // a real difference reaches the flow list, which would otherwise be asked for a
+    // layout pass on every knob turn.
+    private void RefreshProcessorRowAvailability()
     {
-        bool shown = project.ResolveDspPhaseControl();
+        bool phaseShown = project.ResolveDspPhaseControl();
+        bool firShown = project.ResolveDspFirFilters();
         int rate = ProcessorSampleRateHz;
         bool changed = channelControls.Values.Any(control =>
-            control.PhaseControlShown != shown || control.ProcessorSampleRateHz != rate);
+            control.PhaseControlShown != phaseShown ||
+            control.FirControlShown != firShown ||
+            control.ProcessorSampleRateHz != rate);
         if (!changed)
         {
             return;
@@ -2082,7 +2119,8 @@ public partial class VirtualCrossoverPanel : UserControl
         foreach (VirtualCrossoverChannelControl control in channelControls.Values)
         {
             control.ProcessorSampleRateHz = rate;
-            control.PhaseControlShown = shown;
+            control.PhaseControlShown = phaseShown;
+            control.FirControlShown = firShown;
         }
 
         channelListPanel.ResumeLayout(performLayout: true);
@@ -3018,6 +3056,126 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
+    // -------------------------------------------------------------------- FIR
+
+    // The FIR button's action menu: import a kernel file (replacing the kernel the
+    // side carries), export the kernel to a file, or clear it. Rebuilt on every
+    // click, like the PEQ menu, so Export and Clear follow the channel's state. The
+    // kernel lives in the session; the files are its way in and out.
+    private void ShowFirMenu(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        var menu = new ContextMenuStrip();
+        menu.Items.Add(
+            settings.HasFir ? "Import FIR filter (replace)…" : "Import FIR filter…",
+            null,
+            (_, _) => ImportFir(channel));
+        var exportItem = new ToolStripMenuItem("Export FIR filter…", null, (_, _) => ExportFir(channel))
+        {
+            Enabled = settings.HasFir,
+            ToolTipText =
+                "Write this channel's kernel out as a 32-bit float WAV or a text file\r\n" +
+                "(one coefficient per line), at the processor's rate — the kernel is\r\n" +
+                "kept in the session, so this is where it leaves for the hardware."
+        };
+        menu.Items.Add(exportItem);
+        menu.Items.Add(new ToolStripSeparator());
+        var clearItem = new ToolStripMenuItem("Clear", null, (_, _) => ClearFir(channel))
+        {
+            Enabled = settings.HasFir
+        };
+        menu.Items.Add(clearItem);
+        DropDownMenu.ShowUnder(ControlFor(channel).FirButton, menu);
+    }
+
+    private void ImportFir(VirtualCrossoverChannel channel)
+    {
+        using var dialog = new OpenFileDialog
+        {
+            CheckFileExists = true,
+            Filter = FirFilterFiles.ImportFileDialogFilter,
+            Title = $"Import channel {channel.Name} FIR filter"
+        };
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        {
+            return;
+        }
+
+        FirFilter kernel;
+        try
+        {
+            // A file that is not a kernel must not reach the channel: the assignment
+            // below replaces the kernel outright, so a wrong pick would silently
+            // drop the one that was there.
+            kernel = FirFilterFiles.Load(dialog.FileName);
+        }
+        catch (Exception exception)
+        {
+            ShowError("FIR filter could not be imported.", exception.Message);
+            return;
+        }
+
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        settings.Fir = kernel;
+        settings.FirSourceName = Path.GetFileName(dialog.FileName);
+        UpdateFirReadout(channel);
+        ScheduleSave();
+        RedrawAll();
+    }
+
+    private void ExportFir(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        if (settings.Fir is not { } kernel)
+        {
+            return;
+        }
+
+        using var dialog = new SaveFileDialog
+        {
+            AddExtension = true,
+            DefaultExt = "wav",
+            Filter = FirFilterFiles.ExportFileDialogFilter,
+            FileName = Path.GetFileNameWithoutExtension(settings.FirSourceName) is { Length: > 0 } stem
+                ? stem
+                : $"{channel.Name} FIR",
+            OverwritePrompt = true,
+            Title = $"Export channel {channel.Name} FIR filter"
+        };
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            // At the processor's rate: that is the rate the taps mean in this
+            // session, whatever the file they were imported from said.
+            FirFilterFiles.Save(dialog.FileName, kernel, ProcessorSampleRateHz, settings.FirSourceName);
+        }
+        catch (Exception exception)
+        {
+            ShowError("FIR filter could not be exported.", exception.Message);
+        }
+    }
+
+    private void ClearFir(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        settings.Fir = null;
+        settings.FirSourceName = null;
+        UpdateFirReadout(channel);
+        ScheduleSave();
+        RedrawAll();
+    }
+
+    // The block's FIR row reads the ACTIVE side's kernel and the file it came from.
+    private void UpdateFirReadout(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        ControlFor(channel).SetFir(settings.Fir, settings.FirSourceName);
+    }
+
     private void UpdatePeqReadouts(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
@@ -3348,7 +3506,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // Cheap and idempotent (see the method): here so a rate that moved with the
         // measurements reaches the blocks' phase read-outs without every source path
         // having to remember them.
-        RefreshPhaseControlAvailability();
+        RefreshProcessorRowAvailability();
         RequestRedraw();
     }
 

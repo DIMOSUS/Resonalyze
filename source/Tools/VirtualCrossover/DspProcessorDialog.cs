@@ -40,6 +40,8 @@ internal sealed partial class DspProcessorDialog : Form
     // the project's stored one when the dialog opens, or the user's own tick. Naming
     // another model clears it, because that answer was about another device.
     private bool phaseControlChosen;
+    // The same, for the FIR tick.
+    private bool firFiltersChosen;
 
     /// <param name="profile">The project's current processor.</param>
     /// <param name="followsMeasurements">
@@ -55,11 +57,16 @@ internal sealed partial class DspProcessorDialog : Form
     /// The project's stored answer to "do the blocks show a phase control", or null
     /// where it has never been asked - in which case the selected model answers it.
     /// </param>
+    /// <param name="firFilters">
+    /// The project's stored answer to "do the blocks offer a FIR filter", or null where
+    /// it has never been asked — the same contract as <paramref name="phaseControl"/>.
+    /// </param>
     public DspProcessorDialog(
         DspProcessorProfile profile,
         bool followsMeasurements,
         int measurementSampleRateHz,
-        bool? phaseControl)
+        bool? phaseControl,
+        bool? firFilters)
     {
         ArgumentNullException.ThrowIfNull(profile);
         InitializeComponent();
@@ -75,6 +82,7 @@ internal sealed partial class DspProcessorDialog : Form
         // deliberate "no" on a device that offers the control.
         phaseControlChosen = phaseControl.HasValue;
         customPhaseControl = phaseControl ?? false;
+        firFiltersChosen = firFilters.HasValue;
 
         AcceptButton = buttonOk;
         CancelButton = buttonCancel;
@@ -92,6 +100,7 @@ internal sealed partial class DspProcessorDialog : Form
                 customFollowsMeasurements ? FollowItem : customSampleRateHz;
             comboBoxQConvention.SelectedItem = customQConvention;
             checkBoxPhaseControl.Checked = phaseControl ?? false;
+            checkBoxFirFilters.Checked = firFilters ?? false;
         }
         finally
         {
@@ -113,6 +122,17 @@ internal sealed partial class DspProcessorDialog : Form
                 {
                     customPhaseControl = checkBoxPhaseControl.Checked;
                 }
+            }
+
+            UpdateStatus();
+        };
+        // No per-Custom copy of the FIR tick: the tick is the user's across every
+        // model (see ApplySelectedModel), so what is on screen IS the answer.
+        checkBoxFirFilters.CheckedChanged += (_, _) =>
+        {
+            if (!suppressEvents)
+            {
+                firFiltersChosen = true;
             }
 
             UpdateStatus();
@@ -145,6 +165,12 @@ internal sealed partial class DspProcessorDialog : Form
     /// does — so the model list only proposes an answer until the user gives one.
     /// </summary>
     public bool PhaseControl => checkBoxPhaseControl.Checked;
+
+    /// <summary>
+    /// Whether the blocks should offer a FIR filter. Proposed by the model list and
+    /// owned by the user afterwards, exactly like <see cref="PhaseControl"/>.
+    /// </summary>
+    public bool FirFilters => checkBoxFirFilters.Checked;
 
     /// <summary>
     /// The user's description of the installation for an AI assistant (see
@@ -273,6 +299,7 @@ internal sealed partial class DspProcessorDialog : Form
         // that cannot dial one. The user can tick it back in the same breath; what
         // they cannot do is carry the old device's answer over by not looking.
         phaseControlChosen = false;
+        firFiltersChosen = false;
         ApplySelectedModel();
     }
 
@@ -309,6 +336,16 @@ internal sealed partial class DspProcessorDialog : Form
             if (!phaseControlChosen)
             {
                 checkBoxPhaseControl.Checked = preset?.PhaseControl ?? customPhaseControl;
+            }
+            // The FIR tick is proposed only ONE way. The catalog's false means "not
+            // known to take a kernel", not "cannot": no maker's tool has been checked
+            // for the stage yet, so naming another device may give the tick where the
+            // catalog credits the device, and never takes a tick the user gave away —
+            // an untick here detaches every loaded kernel, and a model change is not
+            // the place to do that on no information.
+            if (!firFiltersChosen && preset is { FirFilters: true })
+            {
+                checkBoxFirFilters.Checked = true;
             }
         }
         finally
@@ -367,6 +404,10 @@ internal sealed partial class DspProcessorDialog : Form
             ? "\r\nEach block gets a Phase field, stated at that channel's own " +
               "crossover: move the crossover and the same angle builds another filter."
             : string.Empty;
-        labelStatus.Text = band + "\r\n" + convention + follow + phase;
+        string fir = checkBoxFirFilters.Checked
+            ? $"\r\nEach block gets a FIR button. A kernel is convolved at {processorRate / 1000.0:0.###} kHz " +
+              "whatever rate its file states, so design it for this processor."
+            : string.Empty;
+        labelStatus.Text = band + "\r\n" + convention + follow + phase + fir;
     }
 }

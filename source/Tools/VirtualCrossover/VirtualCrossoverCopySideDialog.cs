@@ -31,6 +31,9 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
     // the two sides are not at the same distance from the microphone.
     private readonly CheckBox phaseBox = CreateScopeBox("Phase", checkedByDefault: false);
     private readonly CheckBox peqBox = CreateScopeBox("PEQ", checkedByDefault: true);
+    // Off by default: a kernel is usually designed against one side's own response,
+    // and the two sides' drivers rarely share one.
+    private readonly CheckBox firBox = CreateScopeBox("FIR", checkedByDefault: false);
     private readonly Button copyButton =
         UiStyle.CreateDialogButton("Copy", DialogResult.OK, accent: true);
 
@@ -108,7 +111,10 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         scopeTable.Controls.Add(delayBox, 0, 1);
         scopeTable.Controls.Add(peqBox, 1, 1);
         scopeTable.Controls.Add(invertBox, 0, 2);
+        scopeTable.Controls.Add(firBox, 1, 2);
         scopeTable.Controls.Add(allPassBox, 0, 3);
+        // The phase control is a timing scope like the all-pass, so it sits with it.
+        scopeTable.Controls.Add(phaseBox, 0, 4);
         foreach (CheckBox box in ScopeBoxes)
         {
             box.CheckedChanged += (_, _) => UpdateCopyEnabled();
@@ -156,10 +162,11 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         Crossover: crossoverBox.Checked,
         AllPass: allPassBox.Checked,
         Phase: phaseBox.Checked,
-        Peq: peqBox.Checked);
+        Peq: peqBox.Checked,
+        Fir: firBox.Checked);
 
     private IEnumerable<CheckBox> ScopeBoxes =>
-        [gainBox, delayBox, invertBox, crossoverBox, allPassBox, phaseBox, peqBox];
+        [gainBox, delayBox, invertBox, crossoverBox, allPassBox, phaseBox, peqBox, firBox];
 
     private static CheckBox CreateScopeBox(string text, bool checkedByDefault)
     {
@@ -203,9 +210,10 @@ internal readonly record struct VirtualCrossoverCopyScope(
     bool Crossover,
     bool AllPass,
     bool Phase,
-    bool Peq)
+    bool Peq,
+    bool Fir = false)
 {
     /// <summary>True when the copy would carry nothing.</summary>
     public bool IsEmpty =>
-        !Gain && !Delay && !InvertPolarity && !Crossover && !AllPass && !Phase && !Peq;
+        !Gain && !Delay && !InvertPolarity && !Crossover && !AllPass && !Phase && !Peq && !Fir;
 }

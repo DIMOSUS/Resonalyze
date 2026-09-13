@@ -67,6 +67,9 @@
             labelPhase = new Label();
             numericPhase = new DarkNumericUpDown();
             labelPhaseInfo = new Label();
+            labelFir = new Label();
+            buttonFir = new ReleaseClickButton();
+            labelFirInfo = new Label();
             (numericGain).BeginInit();
             (numericDelay).BeginInit();
             (numericHighPassHz).BeginInit();
@@ -428,6 +431,40 @@
             labelPhaseInfo.TabIndex = 40;
             labelPhaseInfo.Text = "off";
             //
+            // labelFir
+            //
+            labelFir.AutoSize = true;
+            labelFir.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelFir.ForeColor = Color.FromArgb(210, 214, 222);
+            labelFir.Location = new Point(8, 235);
+            labelFir.Name = "labelFir";
+            labelFir.Size = new Size(25, 15);
+            labelFir.TabIndex = 41;
+            labelFir.Text = "FIR";
+            //
+            // buttonFir
+            //
+            buttonFir.FlatStyle = FlatStyle.Popup;
+            buttonFir.ForeColor = Color.White;
+            buttonFir.Location = new Point(70, 233);
+            buttonFir.Name = "buttonFir";
+            buttonFir.Size = new Size(110, 19);
+            buttonFir.TabIndex = 42;
+            buttonFir.Text = "Import…";
+            buttonFir.TextAlign = ContentAlignment.MiddleLeft;
+            buttonFir.UseCompatibleTextRendering = true;
+            buttonFir.UseVisualStyleBackColor = true;
+            //
+            // labelFirInfo
+            //
+            labelFirInfo.AutoEllipsis = true;
+            labelFirInfo.ForeColor = Color.FromArgb(170, 176, 190);
+            labelFirInfo.Location = new Point(186, 233);
+            labelFirInfo.Name = "labelFirInfo";
+            labelFirInfo.Size = new Size(133, 19);
+            labelFirInfo.TabIndex = 43;
+            labelFirInfo.Text = "off";
+            //
             // labelCurves
             //
             labelCurves.AutoSize = true;
@@ -584,6 +621,9 @@
             Controls.Add(labelPhase);
             Controls.Add(numericPhase);
             Controls.Add(labelPhaseInfo);
+            Controls.Add(labelFir);
+            Controls.Add(buttonFir);
+            Controls.Add(labelFirInfo);
             Controls.Add(labelPeq);
             Controls.Add(buttonPeqMenu);
             Controls.Add(labelPeqInfo);
@@ -593,10 +633,10 @@
             Controls.Add(checkBoxBypass);
             Font = new Font("Segoe UI", 9F);
             ForeColor = Color.White;
-            MaximumSize = new Size(324, 232);
-            MinimumSize = new Size(324, 232);
+            MaximumSize = new Size(324, 258);
+            MinimumSize = new Size(324, 258);
             Name = "VirtualCrossoverChannelControl";
-            Size = new Size(322, 230);
+            Size = new Size(322, 256);
             (numericGain).EndInit();
             (numericDelay).EndInit();
             (numericHighPassHz).EndInit();
@@ -640,6 +680,9 @@
         private Label labelPhase;
         private DarkNumericUpDown numericPhase;
         private Label labelPhaseInfo;
+        private Label labelFir;
+        private ReleaseClickButton buttonFir;
+        private Label labelFirInfo;
         private Label labelCurves;
         private ReleaseClickCheckBox checkBoxShowRaw;
         private ReleaseClickCheckBox checkBoxShowProcessed;

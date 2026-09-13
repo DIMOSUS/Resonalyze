@@ -111,6 +111,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                             channel.Source.SampleCount,
                             channel.Chain,
                             channel.SampleRate,
+                            channel.ProcessorSampleRate,
                             entry.ImpulseResponse.Length));
                 }
                 else
@@ -178,6 +179,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                                     pending.Channel.Source.SampleCount,
                                     pending.Channel.Chain,
                                     pending.Channel.SampleRate,
+                                    pending.Channel.ProcessorSampleRate,
                                     response.Length));
                         });
                 });
@@ -407,6 +409,9 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
     private readonly double peqPreampDb;
     private readonly PeqBand[] peqBands;
     private readonly PhaseRotationSpec phaseRotation;
+    // By reference, which is the kernel's own equality: the same loaded instance is
+    // the same filter, a re-read file is a new one (see FirFilter).
+    private readonly FirFilter? fir;
 
     // Every stage of the chain must be represented here. This key exists only because
     // EqualizationCurve is a plain class with reference equality, so it cannot simply
@@ -423,6 +428,7 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
         peqPreampDb = chain.Peq?.PreampDb ?? 0;
         peqBands = chain.Peq?.Bands.ToArray() ?? Array.Empty<PeqBand>();
         phaseRotation = chain.PhaseRotation;
+        fir = chain.Fir;
     }
 
     public bool Equals(DspChannelChainCacheKey? other) =>
@@ -433,6 +439,7 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
         EqualityComparer<CrossoverSpec?>.Default.Equals(crossover, other.crossover) &&
         peqPreampDb == other.peqPreampDb &&
         phaseRotation == other.phaseRotation &&
+        ReferenceEquals(fir, other.fir) &&
         peqBands.SequenceEqual(other.peqBands);
 
     public override bool Equals(object? obj) =>
@@ -447,6 +454,7 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
         hash.Add(crossover);
         hash.Add(peqPreampDb);
         hash.Add(phaseRotation);
+        hash.Add(fir);
         foreach (PeqBand band in peqBands)
         {
             hash.Add(band);

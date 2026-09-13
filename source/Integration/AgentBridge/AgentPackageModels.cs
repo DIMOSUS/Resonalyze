@@ -162,7 +162,25 @@ internal sealed record AgentPackageDsp(
     // most devices have no such control and every channel would carry a zero. It
     // is stated at the channel's own crossover (the low-pass on a subwoofer, the
     // high-pass otherwise), so it cannot be read without the crossover above it.
-    double? PhaseRotationDeg = null);
+    double? PhaseRotationDeg = null,
+    // The channel's FIR kernel where one is loaded, and absent otherwise. Read-only
+    // like the phase control: no operation writes it, and it is already inside every
+    // curve the package carries.
+    AgentPackageFir? Fir = null);
+
+/// <summary>
+/// A loaded FIR kernel as the package describes it: the file by name (the path is
+/// the user's machine's business), its length, and where its peak sits in time at
+/// the processor's rate. A peak position, NOT a group delay: for a conventional
+/// linear-phase kernel it is roughly the bulk delay the kernel adds, and already
+/// inside every curve; for a minimum-phase kernel it says nothing about delay. The
+/// protocol tells the assistant exactly that, so it never "compensates" a delay
+/// the kernel does not have.
+/// </summary>
+internal sealed record AgentPackageFir(
+    string File,
+    int Taps,
+    double PeakMs);
 
 internal sealed record AgentPackageCrossover(
     string Kind,

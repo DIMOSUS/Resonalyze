@@ -566,8 +566,11 @@ internal static class Shots
         Dsp.DspProcessorProfile profile,
         bool follows,
         int measurementRateHz,
-        bool? phaseControl = null)
+        bool? phaseControl = null,
+        bool? firFilters = null)
     {
+        // Reflection hides a constructor change from the build: the argument list
+        // below has to follow DspProcessorDialog's constructor by hand.
         Type type = typeof(VirtualCrossoverPanel).Assembly
             .GetType("Resonalyze.DspProcessorDialog")
             ?? throw new InvalidOperationException("No Resonalyze.DspProcessorDialog type.");
@@ -577,7 +580,7 @@ internal static class Shots
             System.Reflection.BindingFlags.NonPublic |
             System.Reflection.BindingFlags.Public,
             binder: null,
-            [profile, follows, measurementRateHz, phaseControl],
+            [profile, follows, measurementRateHz, phaseControl, firFilters],
             culture: null)!;
     }
 

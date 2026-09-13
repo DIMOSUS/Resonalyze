@@ -53,6 +53,24 @@ public sealed class AudioFileCodecTests : IDisposable
     }
 
     [Fact]
+    public void WriteWavFloat32_ReadBack_IsExact_AndKeepsSamplesPastFullScale()
+    {
+        // The float writer exists for data that is not a recording — a FIR kernel
+        // whose taps run past ±1 — so nothing may be scaled or clipped.
+        float[] left = [0f, 1.5f, -2.25f, 0.125f, 1e-7f, -1f];
+        float[] right = [3f, 0f, 0f, 0f, 0f, 0f];
+        string path = PathFor("float.wav");
+
+        AudioFileCodec.WriteWavFloat32(path, new AudioFileContent([left, right], 96_000));
+        AudioFileContent back = AudioFileCodec.Read(path, TimeSpan.FromSeconds(1));
+
+        Assert.Equal(96_000, back.SampleRate);
+        Assert.Equal(2, back.ChannelCount);
+        Assert.Equal(left, back.Channels[0]);
+        Assert.Equal(right, back.Channels[1]);
+    }
+
+    [Fact]
     public void WriteWav_ClipsOutOfRangeSamplesInsteadOfWrapping()
     {
         float[] channel = [2.0f, -3.0f, 0.5f];

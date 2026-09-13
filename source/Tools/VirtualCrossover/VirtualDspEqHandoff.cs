@@ -259,6 +259,7 @@ internal static class VirtualDspEqHandoff
                     state.ProcessingSource.SampleCount,
                     chain,
                     sampleRate,
+                    processorSampleRate,
                     response.Length));
             gateOffsetMs = pinnedGateOffsetMs ?? anchorIndex * 1_000.0 / sampleRate;
         }

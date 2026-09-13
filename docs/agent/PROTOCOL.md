@@ -229,6 +229,19 @@ else in a reply touches it.
   curves and every engine already account for, and read-only: no operation writes
   it. Note that a `setCrossover` moving the corner leaves the SAME angle building
   a different filter, exactly as it would on the device.
+- `dsp.fir` appears only where the channel has a FIR kernel loaded — the
+  per-channel FIR stage of the processors that convolve:
+  `{ "file": "left mid.wav", "taps": 4096, "peakMs": 21.33 }`. `file` is the name
+  the kernel was imported under (the kernel itself lives in the session, and the
+  package does not carry the taps). The kernel is convolved at
+  `processor.sampleRateHz` whatever rate its file stated, it is part of the chain
+  every curve and engine already account for, and it is read-only: no operation
+  writes it. `peakMs` is where the kernel's largest tap sits: a peak
+  position, not a group delay. For a conventional linear-phase kernel it is
+  approximately the bulk delay the kernel adds, and that delay is ALREADY inside
+  the channel's arrival and every curve; for a minimum-phase kernel it says
+  nothing about delay. Never subtract it from, or add it to, a delay you propose
+  — propose against the curves as they stand.
 - `peq.hash` is twelve hex digits of SHA-256 over the bands in order (type,
   frequency, Q, gain in round-trip form) and the preamp. A `replacePeqBank`
   reply echoes it instead of the whole current bank.

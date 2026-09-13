@@ -39,13 +39,20 @@ namespace Resonalyze.Dsp;
 /// False is the safe default: it is not a filter a device can be assumed to have,
 /// and a line claims it only where the maker's tool is known to show one.
 /// </param>
+/// <param name="FirFilters">
+/// Whether the device convolves each channel with a user-loaded FIR kernel — see
+/// <see cref="FirFilter"/>. Off until a maker's tool is known to take one; like the
+/// phase control it is a proposal the project's own answer outranks, so a device
+/// the catalog does not credit with FIR can still be simulated with one.
+/// </param>
 public sealed record DspProcessorPreset(
     string Manufacturer,
     string ModelName,
     int SampleRateHz,
     PeqQConvention QConvention,
     double? MaxDelayMs = null,
-    bool PhaseControl = false)
+    bool PhaseControl = false,
+    bool FirFilters = false)
 {
     /// <summary>Stable file identity, e.g. <c>helix-dsp-ultra-s</c>.</summary>
     public string Id { get; } = MakeId(Manufacturer, ModelName);

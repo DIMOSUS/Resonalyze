@@ -258,6 +258,10 @@ internal static class VirtualCrossoverSheetPdf
         {
             AddPairRow(table, "Phase", PhaseText(left), PhaseText(right));
         }
+        if (left.HasFir || right.HasFir)
+        {
+            AddPairRow(table, "FIR", FirText(left), FirText(right));
+        }
         if (HasPeq(left) || HasPeq(right))
         {
             AddPairRow(table, "PEQ", PeqSummary(left), PeqSummary(right));
@@ -289,6 +293,10 @@ internal static class VirtualCrossoverSheetPdf
         HasPhaseRotation(channel)
             ? $"{Number(channel.PhaseRotationDegrees, "0.###")} deg"
             : "0 deg";
+
+    // The kernel file to load, or a dash for the side without one.
+    private static string FirText(VirtualCrossoverChannelSettings channel) =>
+        channel.HasFir ? VirtualCrossoverSheet.DescribeFir(channel) : "—";
 
     private static Color PolarityColor(VirtualCrossoverChannelSettings channel) =>
         channel.InvertPolarity
@@ -414,6 +422,10 @@ internal static class VirtualCrossoverSheetPdf
         if (HasPhaseRotation(channel))
         {
             AddRow(table, "Phase", PhaseText(channel));
+        }
+        if (channel.HasFir)
+        {
+            AddRow(table, "FIR", FirText(channel));
         }
         if (HasPeq(channel))
         {

@@ -5,8 +5,8 @@ namespace Resonalyze.Dsp;
 /// <summary>
 /// The linear DSP chain of one virtual-crossover channel, mirroring what a DSP
 /// applies before the driver: gain, delay, a polarity switch, the crossover
-/// filters, the channel phase control of the devices that have one, and a PEQ
-/// stage. Phase-only all-pass filters live inside the PEQ bank
+/// filters, the channel phase control of the devices that have one, a PEQ stage,
+/// and the FIR stage of the devices that convolve. Phase-only all-pass filters live inside the PEQ bank
 /// as bands (<see cref="PeqBandType.AllPassFirstOrder"/> /
 /// <see cref="PeqBandType.AllPassSecondOrder"/>), the way Audiotec-style hardware
 /// holds them in its EQ slot table. Because every stage is LTI, multiplying a
@@ -21,13 +21,20 @@ namespace Resonalyze.Dsp;
 /// user types (see <see cref="PhaseRotationControl"/>). Default is no rotation, so
 /// every chain built before the control existed is unchanged.
 /// </param>
+/// <param name="Fir">
+/// The channel's FIR stage, where the device being designed for has one and a
+/// kernel is loaded: a convolution the processor runs at ITS rate (see
+/// <see cref="FirFilter"/>). Null is no FIR, so every chain built before the stage
+/// existed is unchanged. Compared by reference, like the kernel itself.
+/// </param>
 public sealed record DspChannelChain(
     double GainDb = 0,
     double DelayMs = 0,
     bool InvertPolarity = false,
     CrossoverSpec? Crossover = null,
     EqualizationCurve? Peq = null,
-    PhaseRotationSpec PhaseRotation = default)
+    PhaseRotationSpec PhaseRotation = default,
+    FirFilter? Fir = null)
 {
     /// <summary>
     /// The supported |GainDb| range of a channel chain — the ONE figure the
@@ -41,9 +48,10 @@ public sealed record DspChannelChain(
 
     /// <summary>
     /// Complex response of the whole chain at the given frequency:
-    /// gain · (±1) · e^{-jw·tau} · H_crossover · H_phase · H_peq. The delay term realizes an
-    /// exact fractional-sample delay; the filters are evaluated as the digital
-    /// biquads a DSP would run at this sample rate.
+    /// gain · (±1) · e^{-jw·tau} · H_crossover · H_phase · H_fir · H_peq. The delay term
+    /// realizes an exact fractional-sample delay; the filters are evaluated as the
+    /// digital biquads — and the FIR as the convolution — a DSP would run at this
+    /// sample rate.
     /// </summary>
     public Complex Response(double frequencyHz, double sampleRateHz)
     {
@@ -59,6 +67,11 @@ public sealed record DspChannelChain(
         if (PhaseRotationControl.Realize(PhaseRotation, sampleRateHz) is { } rotation)
         {
             response *= AllPassFilter.Response(rotation, frequencyHz, sampleRateHz);
+        }
+
+        if (Fir is { } fir)
+        {
+            response *= fir.Response(frequencyHz, sampleRateHz);
         }
 
         if (Peq is { } peq)

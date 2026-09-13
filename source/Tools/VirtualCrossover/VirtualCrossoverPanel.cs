@@ -652,7 +652,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
             // Before the blocks are filled in: it re-pins their height, and doing it
             // per block afterwards would reflow the list once per channel.
-            RefreshPhaseControlAvailability();
+            RefreshProcessorRowAvailability();
             for (int i = 0; i < channels.Count; i++)
             {
                 channels[i].Pair = project.Pairs[i];
@@ -713,7 +713,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // at THAT rate. Nothing the simulation computes was ever wrong — the chain is
         // realized against the live rate — but the block would have gone on naming a
         // corner solved at the fallback.
-        RefreshPhaseControlAvailability();
+        RefreshProcessorRowAvailability();
         // The final redraw is issued by ApplyProjectAsync after the loading
         // state clears, so it draws the real plot instead of the loading note.
     }
@@ -1259,6 +1259,16 @@ public partial class VirtualCrossoverPanel : UserControl
             to.PhaseRotationDegrees = from.PhaseRotationDegrees;
         }
 
+        // The kernel by reference: it is immutable, and the file it came from is the
+        // same file for both sides.
+        if (scope.Fir)
+        {
+            to.FirPath = from.FirPath;
+            to.FirRelativePath = from.FirRelativePath;
+            to.Fir = from.Fir;
+            to.FirLoadError = from.FirLoadError;
+        }
+
         // The all-pass filters live inside the PEQ bank as bands, but they answer a
         // different question than the EQ (they align this side rather than voice the
         // pair), so the two scopes split ONE list by band type: Peq moves the
@@ -1335,6 +1345,7 @@ public partial class VirtualCrossoverPanel : UserControl
             // and a block measured at one height and re-pinned at another makes the
             // whole list jump.
             PhaseControlShown = project.ResolveDspPhaseControl(),
+            FirControlShown = project.ResolveDspFirFilters(),
             ProcessorSampleRateHz = ProcessorSampleRateHz
         };
 
@@ -1359,6 +1370,7 @@ public partial class VirtualCrossoverPanel : UserControl
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
         control.SpatialAverageClicked += (_, _) => ShowSpatialAverageMenu(channel);
         control.PeqMenuClicked += (_, _) => ShowPeqMenu(channel);
+        control.FirClicked += (_, _) => ShowFirMenu(channel);
         control.CollapsedChanged += (_, _) => OnChannelCollapsedChanged(channel);
         control.MoveUpClicked += (_, _) => MoveChannel(channel, -1);
         control.MoveDownClicked += (_, _) => MoveChannel(channel, +1);
@@ -1516,7 +1528,8 @@ public partial class VirtualCrossoverPanel : UserControl
             ProcessorProfile,
             ProcessorRateFollowsMeasurements,
             MeasuredSampleRateHz ?? 0,
-            project.DspProcessorPhaseControl)
+            project.DspProcessorPhaseControl,
+            project.DspProcessorFirFilters)
         {
             Notes = project.AiNotes
         };
@@ -1548,20 +1561,25 @@ public partial class VirtualCrossoverPanel : UserControl
         // away from a tune that is using it.
         bool phaseControl = dialog.PhaseControl;
         bool phaseControlChanged = project.DspProcessorPhaseControl != phaseControl;
+        bool firFilters = dialog.FirFilters;
+        bool firFiltersChanged = project.DspProcessorFirFilters != firFilters;
         if (profile == ProcessorProfile && follows == ProcessorRateFollowsMeasurements &&
-            !phaseControlChanged)
+            !phaseControlChanged && !firFiltersChanged)
         {
             return;
         }
 
         project.DspProcessorPhaseControl = phaseControl;
+        project.DspProcessorFirFilters = firFilters;
         project.SetDspProcessor(profile, follows);
         // A device with no phase control means the rotations are not part of the
         // tune, not that they are merely off screen: left in place they would go on
         // bending every curve with no field on screen to explain them, and the tuning
-        // sheet would go on naming a knob this device does not have.
+        // sheet would go on naming a knob this device does not have. The kernels of a
+        // device with no FIR stage go the same way.
         int clearedRotations = project.ClearUnavailablePhaseRotations();
-        if (clearedRotations > 0)
+        int clearedFirFilters = project.ClearUnavailableFirFilters();
+        if (clearedRotations > 0 || clearedFirFilters > 0)
         {
             foreach (VirtualCrossoverChannel channel in channels)
             {
@@ -1569,14 +1587,14 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        RefreshPhaseControlAvailability();
+        RefreshProcessorRowAvailability();
 
         ScheduleSave();
         RedrawAll();
+        var notices = new List<string>();
         if (clearedRotations > 0)
         {
-            MessageBox.Show(
-                this,
+            notices.Add(
                 $"{clearedRotations} channel side" +
                 (clearedRotations == 1 ? " had" : "s had") +
                 " a phase rotation dialled in, and this processor has no such " +
@@ -1584,7 +1602,24 @@ public partial class VirtualCrossoverPanel : UserControl
                 (clearedRotations == 1 ? " was" : "s were") +
                 " cleared: left in place it would go on bending the curves with " +
                 "nothing on screen to explain it, and the tuning sheet would go on " +
-                "naming a control this device does not have.",
+                "naming a control this device does not have.");
+        }
+        if (clearedFirFilters > 0)
+        {
+            notices.Add(
+                $"{clearedFirFilters} channel side" +
+                (clearedFirFilters == 1 ? " had" : "s had") +
+                " a FIR filter loaded, and this processor has no FIR stage.\r\n\r\n" +
+                "The kernel" + (clearedFirFilters == 1 ? " was" : "s were") +
+                " detached: left in place it would go on shaping the curves with " +
+                "nothing on screen to explain it, and the tuning sheet would go on " +
+                "naming a file this device cannot take.");
+        }
+        if (notices.Count > 0)
+        {
+            MessageBox.Show(
+                this,
+                string.Join("\r\n\r\n", notices),
                 "Virtual DSP",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -2058,21 +2093,26 @@ public partial class VirtualCrossoverPanel : UserControl
 
         UpdateSourceButton(channel);
         UpdatePeqReadouts(channel);
+        UpdateFirReadout(channel);
     }
 
-    // Shows or hides the phase row on every block, and hands each the rate its
-    // all-pass corner is solved at. Both answers come from the processor and the
-    // project, so this runs wherever either can have moved — including the redraw,
-    // which is what catches a project whose rate FOLLOWS measurements that were
-    // replaced. Nothing happens when nothing changed: the loop below is a pair of
-    // comparisons per block, and only a real difference reaches the flow list, which
-    // would otherwise be asked for a layout pass on every knob turn.
-    private void RefreshPhaseControlAvailability()
+    // Shows or hides the processor-dependent rows (phase, FIR) on every block, and
+    // hands each the rate its all-pass corner is solved at and its kernel is timed
+    // at. All three answers come from the processor and the project, so this runs
+    // wherever either can have moved — including the redraw, which is what catches a
+    // project whose rate FOLLOWS measurements that were replaced. Nothing happens
+    // when nothing changed: the loop below is three comparisons per block, and only
+    // a real difference reaches the flow list, which would otherwise be asked for a
+    // layout pass on every knob turn.
+    private void RefreshProcessorRowAvailability()
     {
-        bool shown = project.ResolveDspPhaseControl();
+        bool phaseShown = project.ResolveDspPhaseControl();
+        bool firShown = project.ResolveDspFirFilters();
         int rate = ProcessorSampleRateHz;
         bool changed = channelControls.Values.Any(control =>
-            control.PhaseControlShown != shown || control.ProcessorSampleRateHz != rate);
+            control.PhaseControlShown != phaseShown ||
+            control.FirControlShown != firShown ||
+            control.ProcessorSampleRateHz != rate);
         if (!changed)
         {
             return;
@@ -2082,7 +2122,8 @@ public partial class VirtualCrossoverPanel : UserControl
         foreach (VirtualCrossoverChannelControl control in channelControls.Values)
         {
             control.ProcessorSampleRateHz = rate;
-            control.PhaseControlShown = shown;
+            control.PhaseControlShown = phaseShown;
+            control.FirControlShown = firShown;
         }
 
         channelListPanel.ResumeLayout(performLayout: true);
@@ -2468,6 +2509,9 @@ public partial class VirtualCrossoverPanel : UserControl
         // either way. Synchronous — a capture is under a megabyte of curve, not an
         // impulse response.
         ResolveSpatialAverage(settings, state);
+        // And the kernel, for the same reason: it is this side's, and it has to come
+        // back whether or not the measurement does.
+        ResolveFir(settings);
         if (!settings.HasSource)
         {
             return;
@@ -3018,6 +3062,158 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
+    // -------------------------------------------------------------------- FIR
+
+    // The FIR button's action menu: load (or replace) the kernel file, or clear it.
+    // Rebuilt on every click, like the PEQ menu, so Clear follows the channel's state.
+    private void ShowFirMenu(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        var menu = new ContextMenuStrip();
+        menu.Items.Add(
+            settings.HasFir ? "Replace FIR filter…" : "Load FIR filter…",
+            null,
+            (_, _) => LoadFir(channel));
+        var clearItem = new ToolStripMenuItem("Clear", null, (_, _) => ClearFir(channel))
+        {
+            Enabled = settings.HasFir
+        };
+        menu.Items.Add(clearItem);
+        DropDownMenu.ShowUnder(ControlFor(channel).FirButton, menu);
+    }
+
+    private void LoadFir(VirtualCrossoverChannel channel)
+    {
+        using var dialog = new OpenFileDialog
+        {
+            CheckFileExists = true,
+            Filter = FirFilterFiles.FileDialogFilter,
+            Title = $"Load channel {channel.Name} FIR filter"
+        };
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        {
+            return;
+        }
+
+        FirFilter kernel;
+        try
+        {
+            // A file that is not a kernel must not reach the channel: the assignment
+            // below replaces the kernel outright, so a wrong pick would silently
+            // detach the one that was there.
+            kernel = FirFilterFiles.Load(dialog.FileName);
+        }
+        catch (Exception exception)
+        {
+            ShowError("FIR filter could not be loaded.", exception.Message);
+            return;
+        }
+
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        settings.FirPath = dialog.FileName;
+        // A relative path is the EXPORT's to write (see WriteWithExportRelativePaths);
+        // one left over from an import would point at the previous file.
+        settings.FirRelativePath = null;
+        settings.Fir = kernel;
+        settings.FirLoadError = null;
+        UpdateFirReadout(channel);
+        ScheduleSave();
+        RedrawAll();
+    }
+
+    private void ClearFir(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        settings.FirPath = null;
+        settings.FirRelativePath = null;
+        settings.Fir = null;
+        settings.FirLoadError = null;
+        UpdateFirReadout(channel);
+        ScheduleSave();
+        RedrawAll();
+    }
+
+    // The block's FIR row reads the ACTIVE side's kernel: the file it names, the
+    // kernel behind it when it resolved, and the reader's reason when it did not.
+    private void UpdateFirReadout(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        ControlFor(channel).SetFir(settings.FirPath, settings.Fir, settings.FirLoadError);
+    }
+
+    // Every side that names a kernel FILE but has none behind it because the file
+    // was not found — the ones a folder can answer for. A file that exists but does
+    // not read as a kernel is not among them: no folder fixes that, and the block
+    // says so itself.
+    private IEnumerable<(VirtualCrossoverChannel Channel, bool RightSide)> MissingFirSides()
+    {
+        foreach (VirtualCrossoverChannel channel in channels)
+        {
+            foreach (bool rightSide in new[] { false, true })
+            {
+                if (channel.Pair.Mono && rightSide)
+                {
+                    continue;
+                }
+
+                VirtualCrossoverChannelSettings side = channel.SideSettings(rightSide);
+                if (side.HasFir && side.Fir == null && side.FirLoadError == null)
+                {
+                    yield return (channel, rightSide);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Re-attaches one side's persisted kernel: the stored path, then the same file
+    /// beside the session it was imported from, then beside the folder the user
+    /// pointed at when relinking — the ladder the measurements climb, because the
+    /// kernel travels with the tune. Synchronous: a kernel is a few hundred kilobytes
+    /// at most.
+    /// </summary>
+    /// <remarks>
+    /// A kernel that no longer resolves degrades to a channel WITHOUT it rather than
+    /// failing the load, and the stored path is left standing: it is the only hint a
+    /// later relink has, and it is what tells the button to warn instead of showing a
+    /// channel that never had one.
+    /// </remarks>
+    private void ResolveFir(VirtualCrossoverChannelSettings settings)
+    {
+        settings.Fir = null;
+        settings.FirLoadError = null;
+        if (!settings.HasFir)
+        {
+            return;
+        }
+
+        string? path =
+            VirtualCrossoverSourceLocator.Locate(
+                settings.FirPath, settings.FirRelativePath, project.ProjectDirectory)
+            ?? VirtualCrossoverSourceLocator.Locate(
+                settings.FirPath, settings.FirRelativePath, relinkDirectory);
+        if (path == null)
+        {
+            return;
+        }
+
+        try
+        {
+            settings.Fir = FirFilterFiles.Load(path);
+            // Pin where it was actually read from, the same rule the source path
+            // follows: this project becomes the internal autosave right after the
+            // import, and that copy has no session file beside it to search from.
+            settings.FirPath = path;
+        }
+        catch (Exception exception)
+        {
+            // A file that exists but is not a kernel is a channel without one, not a
+            // failed load — and the block shows the reader's reason, so nobody goes
+            // looking for a file that never moved.
+            settings.FirLoadError = exception.Message;
+        }
+    }
+
     private void UpdatePeqReadouts(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
@@ -3348,7 +3544,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // Cheap and idempotent (see the method): here so a rate that moved with the
         // measurements reaches the blocks' phase read-outs without every source path
         // having to remember them.
-        RefreshPhaseControlAvailability();
+        RefreshProcessorRowAvailability();
         RequestRedraw();
     }
 
@@ -9056,16 +9252,22 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         List<(VirtualCrossoverChannel Channel, bool RightSide)> missing =
             MissingSourceSides().ToList();
-        if (missing.Count == 0 || IsDisposed)
+        // The kernels are files of this session too, and a session whose
+        // measurements all came back can still have left them behind: the offer is
+        // made for them alike, because otherwise the only word of a tune predicted
+        // without its FIR stage is an amber button on a block that may be folded.
+        List<(VirtualCrossoverChannel Channel, bool RightSide)> missingFir =
+            MissingFirSides().ToList();
+        if ((missing.Count == 0 && missingFir.Count == 0) || IsDisposed)
         {
             return;
         }
 
         if (MessageBox.Show(
                 FindForm(),
-                $"{DescribeMissingSources(missing)}\r\n\r\nThey were saved with this " +
-                "session's own paths, which do not exist on this computer. Point at " +
-                "the folder holding the measurements?",
+                $"{DescribeMissingFiles(missing, missingFir)}\r\n\r\nThey were saved " +
+                "with this session's own paths, which do not exist on this computer. " +
+                "Point at the folder holding them?",
                 "Virtual DSP",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question) != DialogResult.Yes)
@@ -9075,7 +9277,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         using var dialog = new FolderBrowserDialog
         {
-            Description = "Select the folder holding this session's measurements",
+            Description = "Select the folder holding this session's measurements and FIR filters",
             UseDescriptionForTitle = true,
             SelectedPath = project.ProjectDirectory ?? string.Empty
         };
@@ -9099,6 +9301,23 @@ public partial class VirtualCrossoverPanel : UserControl
                 UpdateSourceButton(channel);
             }
 
+            // The kernels climb the same ladder, and a side whose measurement was
+            // found may still have lost its kernel to the move — so every side that
+            // names one and has none asks the new folder too.
+            foreach (VirtualCrossoverChannel channel in channels)
+            {
+                foreach (bool rightSide in new[] { false, true })
+                {
+                    VirtualCrossoverChannelSettings side = channel.SideSettings(rightSide);
+                    if (side.HasFir && side.Fir == null)
+                    {
+                        ResolveFir(side);
+                    }
+                }
+
+                UpdateFirReadout(channel);
+            }
+
             UpdateSideRadioTexts();
         }
         finally
@@ -9114,14 +9333,16 @@ public partial class VirtualCrossoverPanel : UserControl
 
         List<(VirtualCrossoverChannel Channel, bool RightSide)> remaining =
             MissingSourceSides().ToList();
-        if (remaining.Count > 0 && !IsDisposed)
+        List<(VirtualCrossoverChannel Channel, bool RightSide)> remainingFir =
+            MissingFirSides().ToList();
+        if ((remaining.Count > 0 || remainingFir.Count > 0) && !IsDisposed)
         {
             MessageBox.Show(
                 FindForm(),
-                $"{DescribeMissingSources(remaining)}\r\n\r\nThe folder holds no file " +
-                "under the name each channel was saved with. Pick those measurements " +
-                "with the channel's Source button, or import the session again to " +
-                "choose a different folder.",
+                $"{DescribeMissingFiles(remaining, remainingFir)}\r\n\r\nThe folder holds " +
+                "no file under the name each channel was saved with. Pick those files " +
+                "with the channel's Source or FIR button, or import the session again " +
+                "to choose a different folder.",
                 "Virtual DSP",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -9163,6 +9384,35 @@ public partial class VirtualCrossoverPanel : UserControl
         return missing.Count == 1
             ? $"The measurement of channel {sides} was not found."
             : $"{missing.Count} measurements were not found: {sides}.";
+    }
+
+    private static string DescribeMissingFirFilters(
+        IReadOnlyList<(VirtualCrossoverChannel Channel, bool RightSide)> missing)
+    {
+        string sides = string.Join(
+            ", ",
+            missing.Select(item => SideLabel(item.Channel, item.RightSide)));
+        return missing.Count == 1
+            ? $"The FIR filter of channel {sides} was not found."
+            : $"{missing.Count} FIR filters were not found: {sides}.";
+    }
+
+    // Both kinds in one message, each sentence only where it has something to name.
+    private static string DescribeMissingFiles(
+        IReadOnlyList<(VirtualCrossoverChannel Channel, bool RightSide)> missingSources,
+        IReadOnlyList<(VirtualCrossoverChannel Channel, bool RightSide)> missingFirFilters)
+    {
+        var sentences = new List<string>();
+        if (missingSources.Count > 0)
+        {
+            sentences.Add(DescribeMissingSources(missingSources));
+        }
+        if (missingFirFilters.Count > 0)
+        {
+            sentences.Add(DescribeMissingFirFilters(missingFirFilters));
+        }
+
+        return string.Join(" ", sentences);
     }
 
     // One sentence, once, about the calibration an imported session arrived with.

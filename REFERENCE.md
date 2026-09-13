@@ -1986,6 +1986,33 @@ Each channel runs through:
   11.25°, which nothing here has checked. Neither the availability of the control
   per channel type nor its step size is enforced against the device, the same way
   the crossover slope list and the manual delay range are not
+- **FIR** — the channel's FIR filter, on the processors that convolve, shown only
+  when [DSP processor](#dsp-processor) says the device does. The button loads a
+  kernel from a `.wav` (the first channel of a multichannel file), a `.fir` or a
+  `.txt` — the text forms hold one coefficient per line, first tap first, with
+  any header lines above them skipped — or clears it, and then names the file;
+  the read-out beside it states the kernel's length in taps and where its peak
+  sits in time, which for a linear-phase kernel is the delay it adds. Once loaded
+  the kernel is a full stage of the simulated chain: every processed curve, the
+  Sum, the loss, the metrics, [Auto delay](#auto-delay) and the audition run
+  through it, and the [chain plot](#the-panel-gates-plots-and-read-outs) draws it with the rest of the
+  filters. The taps are convolved **at the processor's rate**, whatever rate the
+  file states — that is what the device does with them — so a kernel designed for
+  another rate is a different filter here, and the read-out turns amber and names
+  both rates when a WAV's header disagrees with the processor. A session stores
+  the kernel's path the way it stores each channel's measurement (absolute, plus a
+  path relative to an exported session's own folder) and finds it the same way on
+  load; an imported session whose kernels were not found offers to relink them
+  by folder, as it does the measurements, and a kernel whose file stays missing
+  — or is there but does not read as a kernel, which the read-out tells apart
+  with the reader's reason — leaves the channel playing WITHOUT it, with the
+  button warning rather than a filter quietly gone. The text forms take a
+  decimal comma as well as a point (`0,5` and `0.5` are the same tap), and refuse
+  a file that mixes the two. The kernel is a stage
+  beside the IIR crossover, not in place of it: a kernel that already contains
+  the channel's crossover runs on top of whatever the Crossover row says, exactly
+  as it would on a device with both blocks, so switch that row **Off** when the
+  kernel is meant to be the whole filter
 - **PEQ** — the channel's whole filter bank, bells and shelves and **all-pass
   bands (AP1 / AP2)** alike. An all-pass moves phase only, which makes it the
   tool for lining drivers up where a delay and a polarity flip are both too
@@ -2701,6 +2728,19 @@ Left in place they would go on bending the curves with no field on screen to
 explain them, and the tuning sheet would go on naming a knob the device does not
 have. The same check runs on load, so a session cannot open in that state
 either.
+
+**FIR filters** is the fourth property. Ticking it gives every block a **FIR**
+button (see [the block's fields](#virtual-dsp)); unticking it **detaches every
+kernel loaded**, and says how many, and so does opening a session that carries
+kernels without the tick. The tick differs from the phase control in one way:
+the catalog proposes it in ONE direction only. Naming a model the catalog credits
+with a FIR stage turns the tick on; naming any other model leaves it as it
+stands, because the catalog's silence means "not known to take a kernel", not
+"cannot" — no maker's tool has been checked for the stage yet — and a look at
+another device is not the place to detach a tune's kernels on no information.
+Only your own untick does that. No catalog line claims the stage yet, so the tick
+is off until you give it. The kernels are run at the processing rate stated
+above, and the dialog says so under the tick.
 
 A catalog line may also state the model's **per-channel delay ceiling**, read
 from its manual. Automatic delay proposals are judged against it — a spread the

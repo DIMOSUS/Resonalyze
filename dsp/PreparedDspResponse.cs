@@ -26,19 +26,24 @@ public sealed class PreparedDspResponse
     private readonly double delayProcessorSamples;
     private readonly int processorRate;
     private readonly BiquadCoefficients[] sections;
+    // The chain's FIR stage, at the processor's rate like the sections; null when
+    // the chain has none.
+    private readonly FirFilter? fir;
 
     private PreparedDspResponse(
         double linearGain,
         double delayMs,
         double delayProcessorSamples,
         int processorRate,
-        BiquadCoefficients[] sections)
+        BiquadCoefficients[] sections,
+        FirFilter? fir)
     {
         this.linearGain = linearGain;
         this.delayMs = delayMs;
         this.delayProcessorSamples = delayProcessorSamples;
         this.processorRate = processorRate;
         this.sections = sections;
+        this.fir = fir;
     }
 
     /// <summary>
@@ -86,7 +91,8 @@ public sealed class PreparedDspResponse
             chain.DelayMs,
             chain.DelayMs * sampleRate / 1_000.0,
             sampleRate,
-            sections.ToArray());
+            sections.ToArray(),
+            chain.Fir);
     }
 
     /// <summary>
@@ -94,7 +100,7 @@ public sealed class PreparedDspResponse
     /// multiply the record and skip the FFT entirely.
     /// </summary>
     public bool IsTimeDomainScaleOnly =>
-        delayMs == 0 && sections.Length == 0;
+        delayMs == 0 && sections.Length == 0 && fir == null;
 
     /// <summary>
     /// <see cref="IsTimeDomainScaleOnly"/>, and the record holds nothing the processor
@@ -120,6 +126,13 @@ public sealed class PreparedDspResponse
     /// count it yields is converted to <paramref name="signalSampleRate"/>
     /// before it is clamped: the ringing lasts a fixed number of milliseconds,
     /// and it is the record's own samples that have to hold it.
+    /// </para>
+    /// <para>
+    /// A FIR stage adds its whole kernel length on top, OUTSIDE the clamp: the
+    /// convolution of a record with an N-tap kernel is exactly N − 1 samples longer,
+    /// there is no decay to wait for, and a cap here would wrap the kernel's tail
+    /// into the record's head. The kernel is bounded at load instead (see
+    /// <see cref="FirFilter.MaximumTaps"/>).
     /// </para>
     /// </summary>
     public int RequiredTailSamples(
@@ -160,20 +173,28 @@ public sealed class PreparedDspResponse
             maxRadius = Math.Max(maxRadius, radius);
         }
 
+        int firTail = FirTailSamples(signalSampleRate);
         if (maxRadius >= 1.0)
         {
-            return maxSamples;
+            return maxSamples + firTail;
         }
         if (maxRadius <= 0.0)
         {
-            return minSamples;
+            return minSamples + firTail;
         }
 
         double required = Math.Log(
             Math.Pow(10.0, -Math.Abs(targetDecayDb) / 20.0)) / Math.Log(maxRadius);
         required *= (double)signalSampleRate / processorRate;
-        return (int)Math.Clamp(Math.Ceiling(required), minSamples, maxSamples);
+        return (int)Math.Clamp(Math.Ceiling(required), minSamples, maxSamples) + firTail;
     }
+
+    // The kernel's length in the RECORD's samples — the room a linear convolution
+    // needs past the input's end. Zero without a FIR stage.
+    private int FirTailSamples(int signalSampleRate) =>
+        fir == null
+            ? 0
+            : (int)Math.Ceiling((double)fir.Length * signalSampleRate / processorRate);
 
     public Complex[] ApplyTimeDomainScale(Complex[] impulseResponse, int length)
     {
@@ -199,7 +220,8 @@ public sealed class PreparedDspResponse
         Complex delay = delayMs == 0
             ? Complex.One
             : UnitPhasor(radians * delayProcessorSamples);
-        return Response(z1, delay);
+        Complex response = Response(z1, delay);
+        return fir == null ? response : response * fir.Response(z1);
     }
 
     /// <summary>
@@ -215,6 +237,11 @@ public sealed class PreparedDspResponse
     /// against a true 127 ms. It would also be free to disagree with the readouts
     /// that share the helper.
     /// </para>
+    /// <para>
+    /// The FIR stage adds its own closed form (<see cref="FirFilter.GroupDelaySamples"/>),
+    /// which is NaN at a kernel's true null — the honest answer there, and one the
+    /// plot draws as a gap rather than a spike.
+    /// </para>
     /// </summary>
     public double GroupDelayMs(double frequencyHz)
     {
@@ -223,6 +250,12 @@ public sealed class PreparedDspResponse
         {
             samples += BiquadResponse.GroupDelaySamples(
                 section, frequencyHz, processorRate);
+        }
+
+        if (fir != null)
+        {
+            samples += fir.GroupDelaySamples(
+                UnitPhasor(-Math.Tau * frequencyHz / processorRate));
         }
 
         return (samples / processorRate * 1_000.0) + delayMs;
@@ -251,6 +284,12 @@ public sealed class PreparedDspResponse
     /// The processor reconstructs nothing up there, and zeroing is also what makes
     /// the same setup measured at 96 and at 192 kHz simulate alike.
     /// </para>
+    /// <para>
+    /// A FIR stage is read the same way, as a response on the processor's circle
+    /// (see <see cref="FirSpectrumBins"/>): the kernel's DFT on the grid that puts
+    /// its bins exactly under the record's, or the kernel evaluated bin by bin where
+    /// no such grid exists.
+    /// </para>
     /// </summary>
     public void ApplyToSpectrum(Complex[] spectrum, int signalSampleRate)
     {
@@ -270,18 +309,19 @@ public sealed class PreparedDspResponse
         // RECORD's samples — that is the grid the phase ramp runs on.
         double delaySamples = delayMs * signalSampleRate / 1_000.0;
 
-        if (sections.Length == 0)
+        if (sections.Length == 0 && fir == null)
         {
             ApplyGainAndDelayToSpectrum(spectrum, delaySamples);
         }
         else
         {
+            Complex[]? firBins = fir == null ? null : FirSpectrumBins(fir, length, rateRatio);
             Complex zStep = Complex.Exp(new Complex(0, -Math.Tau * rateRatio / length));
             Complex delayStep = GetDelayStep(length, delaySamples);
             Complex z1 = Complex.One;
             Complex delay = Complex.One;
 
-            spectrum[0] *= Response(z1, delay);
+            spectrum[0] *= Response(z1, delay) * (firBins?[0] ?? Complex.One);
             for (int i = 1; i < half; i++)
             {
                 if (i % PhaseRefreshInterval == 0)
@@ -296,6 +336,11 @@ public sealed class PreparedDspResponse
                 }
 
                 Complex response = Response(z1, delay);
+                if (firBins != null)
+                {
+                    response *= firBins[i];
+                }
+
                 spectrum[i] *= response;
                 spectrum[length - i] *= Complex.Conjugate(response);
             }
@@ -307,10 +352,127 @@ public sealed class PreparedDspResponse
             // artifact). Below the processor's Nyquist the chain's response there is
             // genuinely complex, so this drops a fraction of one bin — the record's
             // top edge, 24 kHz for a 48 kHz measurement.
-            spectrum[half] *= Response(z1, delay).Real;
+            spectrum[half] *= (Response(z1, delay) * (firBins?[half] ?? Complex.One)).Real;
         }
 
         SilenceAboveProcessorNyquist(spectrum, rateRatio);
+    }
+
+    /// <summary>
+    /// The FIR stage's response at every record bin 0…length/2, on the processor's
+    /// unit circle: bin <c>i</c> sits at ω = 2π·i·rateRatio/length.
+    /// <para>
+    /// FAST PATH: when <c>length / rateRatio</c> is a whole number M — the rates agree
+    /// (M = length), a 48 kHz record through a 96 kHz processor (M = 2·length), or
+    /// the reverse (M = length/2) — the kernel's M-point DFT has its bin <c>i</c> at
+    /// exactly that ω, so one FFT of the zero-padded kernel answers every bin. Exact,
+    /// not interpolated: a DFT bin IS the kernel's response at its own frequency.
+    /// </para>
+    /// <para>
+    /// Otherwise (44.1 kHz against 48 kHz, say) no DFT grid lands on the record's
+    /// bins, and the kernel is evaluated at each of them by Horner's rule — one
+    /// complex multiply per tap per bin, which is slow for a long kernel over a long
+    /// record but still the same exact number. Bins past the processor's Nyquist are
+    /// left zero on both paths; the caller silences them regardless.
+    /// </para>
+    /// <para>
+    /// CACHED on the kernel: the bins depend on the kernel, the record length and the
+    /// rate pair alone — not on the gain, delay or biquads beside it — and every knob
+    /// turn on the channel re-renders it through the same bins. So the slow path's
+    /// seconds (a 16k-tap kernel over a 128k-point render is a billion multiplies)
+    /// are paid once per kernel and rate pair, not once per edit. A kernel that is
+    /// unloaded takes its bins with it; the table is weakly keyed.
+    /// </para>
+    /// </summary>
+    private static Complex[] FirSpectrumBins(FirFilter fir, int length, double rateRatio)
+    {
+        FirBinsCache cache = FirBinsCaches.GetOrCreateValue(fir);
+        // One lock per kernel: two channels rendering the same kernel in parallel
+        // wait for one computation rather than each running their own.
+        lock (cache)
+        {
+            if (cache.Find(length, rateRatio) is { } cached)
+            {
+                return cached;
+            }
+
+            Complex[] bins = ComputeFirSpectrumBins(fir, length, rateRatio);
+            cache.Add(length, rateRatio, bins);
+            return bins;
+        }
+    }
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<FirFilter, FirBinsCache>
+        FirBinsCaches = new();
+
+    // A kernel's last few bin sets, one per (record length, rate pair) it was
+    // rendered at. A few rather than one because the same kernel can sit on two
+    // channels whose records differ in length; the cap keeps a kernel from hoarding
+    // every length it was ever tried at.
+    private sealed class FirBinsCache
+    {
+        private const int Capacity = 4;
+        private readonly List<(int Length, double RateRatio, Complex[] Bins)> entries = [];
+
+        public Complex[]? Find(int length, double rateRatio)
+        {
+            foreach ((int cachedLength, double cachedRatio, Complex[] bins) in entries)
+            {
+                if (cachedLength == length && cachedRatio == rateRatio)
+                {
+                    return bins;
+                }
+            }
+
+            return null;
+        }
+
+        public void Add(int length, double rateRatio, Complex[] bins)
+        {
+            if (entries.Count == Capacity)
+            {
+                entries.RemoveAt(0);
+            }
+
+            entries.Add((length, rateRatio, bins));
+        }
+    }
+
+    private static Complex[] ComputeFirSpectrumBins(FirFilter fir, int length, double rateRatio)
+    {
+        int half = length / 2;
+        var bins = new Complex[half + 1];
+        // Bins the processor reconstructs at all: at or below its own Nyquist.
+        int lastBin = Math.Min(half, (int)Math.Floor(half / rateRatio));
+
+        double grid = length / rateRatio;
+        long gridLength = (long)Math.Round(grid);
+        if (Math.Abs(grid - gridLength) < 1e-6 && gridLength >= fir.Length &&
+            gridLength <= int.MaxValue)
+        {
+            Complex[] spectrum = fir.Spectrum((int)gridLength);
+            for (int i = 0; i <= lastBin; i++)
+            {
+                bins[i] = spectrum[i];
+            }
+
+            return bins;
+        }
+
+        Complex zStep = Complex.Exp(new Complex(0, -Math.Tau * rateRatio / length));
+        Complex z1 = Complex.One;
+        for (int i = 0; i <= lastBin; i++)
+        {
+            if (i % PhaseRefreshInterval == 0)
+            {
+                z1 = UnitPhasor(-Math.Tau * i * rateRatio / length);
+            }
+
+            bins[i] = fir.Response(z1);
+            z1 *= zStep;
+        }
+
+        return bins;
     }
 
     // Everything the processor cannot reconstruct. Only a record sampled above the

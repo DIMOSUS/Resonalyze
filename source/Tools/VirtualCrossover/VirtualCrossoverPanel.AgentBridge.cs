@@ -128,7 +128,10 @@ public partial class VirtualCrossoverPanel
                 Number(settings.GainDb), Number(settings.DelayMs), settings.InvertPolarity,
                 settings.CrossoverKind, Edge(settings.HighPassEdge), Edge(settings.LowPassEdge),
                 Number(settings.PhaseRotationDegrees),
-                AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands)));
+                AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands),
+                // The FIR kernel by its file AND its content, like the measurement: a
+                // kernel re-designed and saved over its own name is another filter.
+                settings.FirPath, Digest(settings.Fir?.Taps.ToArray())));
         }
 
         return AgentSessionFingerprint.Compute(lines);

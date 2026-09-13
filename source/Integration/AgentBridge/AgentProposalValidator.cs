@@ -1830,7 +1830,13 @@ internal static class AgentOperations
             PhaseRotationDegrees = settings.PhaseRotationDegrees,
             PeqPreampDb = settings.PeqPreampDb,
             PeqBands = new List<PeqBand>(settings.PeqBands),
-            PeqSourceName = settings.PeqSourceName
+            PeqSourceName = settings.PeqSourceName,
+            // The kernel likewise: a variant chain built without it would judge the
+            // junction without a filter the tune is running.
+            FirPath = settings.FirPath,
+            FirRelativePath = settings.FirRelativePath,
+            Fir = settings.Fir,
+            FirLoadError = settings.FirLoadError
         };
     }
 

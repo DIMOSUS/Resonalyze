@@ -283,6 +283,43 @@ public sealed class VirtualCrossoverChannelSettings
     /// <summary>The PEQ file the bands came from; display only.</summary>
     public string? PeqSourceName { get; set; }
 
+    /// <summary>
+    /// The FIR kernel file this side convolves with (schema v11), or null for none.
+    /// Stored the way <see cref="SourceFilePath"/> is — the absolute path here, an
+    /// export-relative one beside it — and found the same way on load (see
+    /// <see cref="VirtualCrossoverSourceLocator"/>). Absent from the file when null,
+    /// so a project without FIR serializes as it did before the stage existed.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FirPath { get; set; }
+
+    /// <inheritdoc cref="SourceRelativePath"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FirRelativePath { get; set; }
+
+    /// <summary>
+    /// The kernel READ from <see cref="FirPath"/>, or null while the file has not been
+    /// resolved (or could not be). Runtime state, never serialized: the file is the
+    /// record, this is what the simulation runs. Null with a path set is the "missing
+    /// file" state the block's button warns about.
+    /// </summary>
+    [JsonIgnore]
+    public FirFilter? Fir { get; set; }
+
+    /// <summary>
+    /// Why <see cref="Fir"/> is null while <see cref="FirPath"/> names a file that
+    /// EXISTS: the reader's message for a file that is not a kernel. Null when the
+    /// kernel loaded, and null when the file was not found at all — the two states
+    /// the block's warning tells apart, because one is fixed by pointing at a folder
+    /// and the other by fixing the file. Runtime state like the kernel.
+    /// </summary>
+    [JsonIgnore]
+    public string? FirLoadError { get; set; }
+
+    /// <summary>True when this side names a FIR file, resolved or not.</summary>
+    [JsonIgnore]
+    public bool HasFir => !string.IsNullOrWhiteSpace(FirPath);
+
     public bool HasSource =>
         HistoryEntryId.HasValue || !string.IsNullOrWhiteSpace(SourceFilePath);
 
@@ -314,7 +351,8 @@ public sealed class VirtualCrossoverChannelSettings
             InvertPolarity,
             crossover,
             peq,
-            PhaseRotation(zone));
+            PhaseRotation(zone),
+            Fir);
     }
 
     /// <summary>
@@ -605,7 +643,7 @@ public sealed class VirtualCrossoverProjectFile
     // step in Migrate below. Files from a NEWER version (a downgraded app)
     // are never migrated: LoadOrDefault backs them up and starts fresh,
     // LoadFrom rejects them with an explicit error.
-    public const int CurrentVersion = 10;
+    public const int CurrentVersion = 11;
 
     // Raised from 8 for complex installs: a front three-way plus a rear pair, a
     // centre and two subwoofers already fills seven blocks, and splitting the
@@ -709,6 +747,18 @@ public sealed class VirtualCrossoverProjectFile
     public bool? DspProcessorPhaseControl { get; set; }
 
     /// <summary>
+    /// Whether the blocks offer a FIR filter, or null while the user has not said —
+    /// in which case the catalog answers for the model (see
+    /// <see cref="ResolveDspFirFilters"/>). The same shape as
+    /// <see cref="DspProcessorPhaseControl"/>, for the same reasons, including that
+    /// it is not a view switch: a device without a FIR stage cannot run the kernel,
+    /// so <see cref="ClearUnavailableFirFilters"/> takes the kernels out of the tune
+    /// where the user can see it happen.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? DspProcessorFirFilters { get; set; }
+
+    /// <summary>
     /// What the user tells an AI assistant about the installation that no
     /// measurement can say: the car and the seat, which driver sits where, the
     /// amplifiers and the processor, and what the tune is for. Edited in the DSP
@@ -807,6 +857,54 @@ public sealed class VirtualCrossoverProjectFile
         DspProcessorPhaseControl ??
         DspProcessorCatalog.Preset(DspProcessorModelId)?.PhaseControl ??
         false;
+
+    /// <summary>
+    /// Whether this project offers a FIR filter per channel: the user's own answer
+    /// where they have given one, otherwise the catalog's for the named model, and
+    /// off for a Custom profile until asked.
+    /// </summary>
+    public bool ResolveDspFirFilters() =>
+        DspProcessorFirFilters ??
+        DspProcessorCatalog.Preset(DspProcessorModelId)?.FirFilters ??
+        false;
+
+    /// <summary>
+    /// Detaches every channel FIR kernel when the processor this project names has
+    /// no FIR stage, and answers how many it detached. Nothing to do — and nothing
+    /// returned — for a project whose device HAS one.
+    /// </summary>
+    /// <remarks>
+    /// The same invariant as <see cref="ClearUnavailablePhaseRotations"/>: a kernel in
+    /// this file means a device that can convolve with it. Left in place it would go
+    /// on shaping every curve with no button on screen to explain it, and the tuning
+    /// sheet would name a file the device cannot take. Run on load and whenever the
+    /// processor changes.
+    /// </remarks>
+    public int ClearUnavailableFirFilters()
+    {
+        if (ResolveDspFirFilters())
+        {
+            return 0;
+        }
+
+        int cleared = 0;
+        foreach (VirtualCrossoverChannelPairSettings pair in Pairs)
+        {
+            foreach (VirtualCrossoverChannelSettings side in new[] { pair.Left, pair.Right })
+            {
+                if (side.HasFir)
+                {
+                    side.FirPath = null;
+                    side.FirRelativePath = null;
+                    side.Fir = null;
+                    side.FirLoadError = null;
+                    cleared++;
+                }
+            }
+        }
+
+        return cleared;
+    }
 
     /// <summary>
     /// Records a processor choice. <paramref name="followsMeasurements"/> stores the
@@ -1340,14 +1438,15 @@ public sealed class VirtualCrossoverProjectFile
     // restate the arrangement it was imported with.
     private void WriteWithExportRelativePaths(string? exportDirectory, Action write)
     {
-        List<(VirtualCrossoverChannelSettings Side, string? Source, string? Average)>
+        List<(VirtualCrossoverChannelSettings Side, string? Source, string? Average, string? Fir)>
             restore = [];
         foreach (VirtualCrossoverChannelPairSettings pair in Pairs)
         {
             foreach (VirtualCrossoverChannelSettings side in new[] { pair.Left, pair.Right })
             {
                 restore.Add((
-                    side, side.SourceRelativePath, side.SpatialAverageRelativePath));
+                    side, side.SourceRelativePath, side.SpatialAverageRelativePath,
+                    side.FirRelativePath));
                 side.SourceRelativePath = exportDirectory == null
                     ? null
                     : VirtualCrossoverSourceLocator.Relativize(
@@ -1358,6 +1457,11 @@ public sealed class VirtualCrossoverProjectFile
                     ? null
                     : VirtualCrossoverSourceLocator.Relativize(
                         side.SpatialAveragePath, exportDirectory);
+                // And the FIR kernel, which travels with the tune.
+                side.FirRelativePath = exportDirectory == null
+                    ? null
+                    : VirtualCrossoverSourceLocator.Relativize(
+                        side.FirPath, exportDirectory);
             }
         }
 
@@ -1367,11 +1471,12 @@ public sealed class VirtualCrossoverProjectFile
         }
         finally
         {
-            foreach ((VirtualCrossoverChannelSettings side, string? source, string? average)
-                in restore)
+            foreach ((VirtualCrossoverChannelSettings side, string? source, string? average,
+                string? fir) in restore)
             {
                 side.SourceRelativePath = source;
                 side.SpatialAverageRelativePath = average;
+                side.FirRelativePath = fir;
             }
         }
     }
@@ -1396,6 +1501,7 @@ public sealed class VirtualCrossoverProjectFile
         Migrate(file);
         file.Validate();
         file.clearedPhaseRotations = file.ClearUnavailablePhaseRotations();
+        file.clearedFirFilters = file.ClearUnavailableFirFilters();
         file.ProjectDirectory = SafeDirectoryOf(path);
         return file;
     }
@@ -1629,6 +1735,14 @@ public sealed class VirtualCrossoverProjectFile
             // file is how it says so.
             file.Version = 10;
         }
+        if (file.Version == 10)
+        {
+            // v11 adds the channel FIR stage (a kernel file per side, and the
+            // project-wide switch that offers it). Additive like v10, and bumped for
+            // the same reason: an older build would open a convolved tune and draw it
+            // without the kernel.
+            file.Version = 11;
+        }
 
         // The scene offset's wire SIGN and the layout flag state one fact
         // (see the properties): re-align them here for files that carry only
@@ -1668,6 +1782,11 @@ public sealed class VirtualCrossoverProjectFile
     // filter is exactly what the notice below exists to prevent.
     private int clearedPhaseRotations;
 
+    // How many channel sides named a FIR kernel this project's processor has no
+    // stage for — the FIR counterpart of clearedPhaseRotations, and reachable the
+    // same way (a hand-edited file).
+    private int clearedFirFilters;
+
     /// <summary>
     /// What this load had to change beyond restating it, or null when nothing was
     /// lost. A migration that silently drops a filter is how a tune quietly stops
@@ -1676,10 +1795,22 @@ public sealed class VirtualCrossoverProjectFile
     [JsonIgnore]
     public string? MigrationNoticeText => string.Join(
         Environment.NewLine + Environment.NewLine,
-        new[] { FullBankNotice, PhaseRotationNotice }.Where(notice => notice != null))
+        new[] { FullBankNotice, PhaseRotationNotice, FirFilterNotice }
+            .Where(notice => notice != null))
         is { Length: > 0 } text
         ? text
         : null;
+
+    private string? FirFilterNotice =>
+        clearedFirFilters == 0
+            ? null
+            : $"{clearedFirFilters} channel side" +
+                (clearedFirFilters == 1 ? " carried" : "s carried") +
+                " a FIR filter, and the processor this session names has no FIR " +
+                "stage. The kernel" + (clearedFirFilters == 1 ? " was" : "s were") +
+                " detached rather than left shaping a curve no button on screen " +
+                "explains. Name a device that convolves — or tick FIR filters " +
+                "yourself in the DSP processor dialog — and load them again.";
 
     private string? PhaseRotationNotice =>
         clearedPhaseRotations == 0
@@ -1736,6 +1867,7 @@ public sealed class VirtualCrossoverProjectFile
             Migrate(file);
             file.Validate();
             file.clearedPhaseRotations = file.ClearUnavailablePhaseRotations();
+            file.clearedFirFilters = file.ClearUnavailableFirFilters();
             return file;
         }
         catch

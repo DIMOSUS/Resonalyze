@@ -205,6 +205,7 @@ public static class VirtualCrossoverAnalysis
         int inputLength,
         DspChannelChain chain,
         int sampleRate,
+        int processorSampleRate,
         int outputLength)
     {
         ArgumentNullException.ThrowIfNull(chain);
@@ -215,12 +216,27 @@ public static class VirtualCrossoverAnalysis
         // samples the shift pushes past zero wrap to the buffer's far end,
         // outside the range either way.
         double delaySamplesExact = chain.DelayMs / 1_000.0 * sampleRate;
+        // A FIR stage shifts the content by its leading EXACT zeros — those samples
+        // are manufactured silence exactly like the delay's prefix — and extends it
+        // by the kernel's length: everything the convolution writes after the input's
+        // end is the filter's own output, so it is content, not padding. Both in the
+        // record's samples; the kernel is stated in the processor's.
+        double firShiftSamples = 0;
+        double firTailSamples = 0;
+        if (chain.Fir is { } fir && processorSampleRate > 0)
+        {
+            double perProcessorSample = (double)sampleRate / processorSampleRate;
+            firShiftSamples = fir.LeadingZeroCount * perProcessorSample;
+            firTailSamples = (fir.Length - 1) * perProcessorSample;
+        }
+
         int startSample = Math.Clamp(
-            (int)Math.Floor(Math.Max(0.0, delaySamplesExact)),
+            (int)Math.Floor(Math.Max(0.0, delaySamplesExact) + firShiftSamples),
             0,
             Math.Max(0, outputLength - 1));
         int endSample = Math.Min(
-            outputLength, inputLength + (int)Math.Ceiling(delaySamplesExact));
+            outputLength,
+            inputLength + (int)Math.Ceiling(delaySamplesExact + firTailSamples));
         // A delay that shifts the whole input out of the record leaves no
         // contiguous measured range: report unknown rather than an empty lie.
         return endSample > startSample
@@ -270,7 +286,7 @@ public static class VirtualCrossoverAnalysis
         int length = DspMath.NextPowerOfTwo(
             impulseResponse.Length + delaySamples + tailPadding);
         validRange = ChainValidRange(
-            impulseResponse.Length, chain, sampleRate, length);
+            impulseResponse.Length, chain, sampleRate, processorSampleRate, length);
         if (preparedChain.CanScaleInTimeDomain(sampleRate))
         {
             return preparedChain.ApplyTimeDomainScale(impulseResponse, length);

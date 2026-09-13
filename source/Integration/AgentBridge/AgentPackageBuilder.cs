@@ -344,7 +344,13 @@ internal static class AgentPackageBuilder
                     .Select(band => new AgentPackageBand(
                         band.Type.ToString(), band.FrequencyHz, band.Q, band.GainDb))
                     .ToList()),
-            settings.PhaseRotationDegrees > 0 ? settings.PhaseRotationDegrees : null);
+            settings.PhaseRotationDegrees > 0 ? settings.PhaseRotationDegrees : null,
+            settings.Fir is { } fir
+                ? new AgentPackageFir(
+                    Path.GetFileName(settings.FirPath) ?? string.Empty,
+                    fir.Length,
+                    Math.Round(fir.PeakIndex * 1_000.0 / channel.ProcessorSampleRateHz, 2))
+                : null);
 
         var packageSource = new AgentPackageSource(
             source != null,
@@ -396,7 +402,7 @@ internal static class AgentPackageBuilder
         bool hasChain = !channel.Bypass &&
             (channel.Settings.CrossoverKind != CrossoverKind.Off ||
              channel.Settings.PeqBands.Count > 0 || channel.Settings.PeqPreampDb != 0 ||
-             channel.Settings.GainDb != 0);
+             channel.Settings.GainDb != 0 || channel.Settings.Fir != null);
         bool hasPeq = !channel.Bypass &&
             (channel.Settings.PeqBands.Count > 0 || channel.Settings.PeqPreampDb != 0);
         PreparedDspResponse? chainResponse = hasChain

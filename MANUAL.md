@@ -515,6 +515,8 @@ The same controls repeat on every block:
 7. **Phase** — the channel phase control, on the processors that have one. It is
    absent above because that session's device does not; see
    [the phase control](#the-phase-control-helix-and-relatives) below.
+8. **FIR** — a FIR kernel the channel is convolved with, on the processors that take
+   one; absent above for the same reason. See [FIR filters](#fir-filters) below.
 
 ### Assign channel groups
 
@@ -634,6 +636,41 @@ use it:
 
 The behaviour was measured on a HELIX DSP ULTRA S rather than taken from a manual, and
 the model reproduces those measurements to about 0.2 %.
+
+#### FIR filters
+
+The dialog's fourth setting, **FIR filters**, adds a **FIR** button to every channel
+card. Tick it when your processor convolves each channel with a kernel you load into
+it; the catalog does not yet claim the stage for any model, so the tick is yours to
+give, and picking another model in the list leaves it as it is. Unticking it
+detaches every kernel loaded and tells you how many.
+
+The button loads a kernel from a `.wav`, a `.fir` or a `.txt` file — the text forms
+are one coefficient per line, the way rePhase, REW and the miniDSP tools export
+them — and from then on the kernel is a full stage of the simulated chain: every
+processed curve, the Sum, the loss, the metrics, Auto Delay and the audition run
+through it, and the DSP chain plot draws it with the rest of the filters. The
+read-out beside the button gives the kernel's length and where its peak sits in
+time, which for a linear-phase kernel is the delay it adds to that channel.
+
+Two rules are worth knowing before you load one:
+
+- **The kernel runs at the processor's rate, whatever the file says.** That is what
+  the device does with the taps, so design the kernel for the rate named in the DSP
+  processor dialog. A WAV whose header states another rate is still loaded — the
+  read-out turns amber and names both rates — but it is then a different filter from
+  the one you drew.
+- **The kernel sits beside the IIR crossover, not in place of it.** A kernel that
+  already contains the channel's crossover runs on top of whatever the Crossover row
+  says, exactly as it would on a device with both blocks. Switch that row Off when the
+  kernel is meant to be the whole filter.
+
+A saved session stores the kernel's path the way it stores each channel's
+measurement, and finds it the same way when the session travels; an imported
+session whose kernels did not come along offers to relink them by folder, as it
+does the measurements. A kernel whose file cannot be found — or is there but is not
+a kernel, which the read-out says with the reader's reason — leaves the channel
+playing without it, with the button warning rather than a filter quietly gone.
 
 ### Set the display correctly
 

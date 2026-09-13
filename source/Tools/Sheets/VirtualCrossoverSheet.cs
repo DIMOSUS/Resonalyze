@@ -104,6 +104,12 @@ internal static class VirtualCrossoverSheet
                 builder.AppendLine(
                     $"  Phase      {Number(channel.PhaseRotationDegrees, "0.###")}°");
             }
+            // The kernel by file name, only where one is loaded, for the same reason
+            // as the phase line: it is the file to load into the device.
+            if (channel.HasFir)
+            {
+                builder.AppendLine($"  FIR        {DescribeFir(channel)}");
+            }
             if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
             {
                 builder.AppendLine(
@@ -177,6 +183,22 @@ internal static class VirtualCrossoverSheet
 
     /// <summary>The value printed where a channel does not use that edge at all.</summary>
     public const string OffText = "Off";
+
+    /// <summary>
+    /// The FIR kernel as the sheet names it: the file, and its length when the file
+    /// was read — or why it was not, which is worth printing rather than hiding,
+    /// because the tune on the sheet was predicted without it.
+    /// </summary>
+    public static string DescribeFir(VirtualCrossoverChannelSettings channel)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+        string name = Path.GetFileName(channel.FirPath) ?? string.Empty;
+        return channel.Fir is { } fir
+            ? $"{name} ({fir.Length} taps)"
+            : channel.FirLoadError != null
+                ? $"{name} (could not be read)"
+                : $"{name} (file not found)";
+    }
 
     /// <summary>
     /// The high-pass (resp. low-pass) edge as a value of its own — family, slope and

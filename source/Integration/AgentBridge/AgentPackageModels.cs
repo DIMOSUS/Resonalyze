@@ -162,7 +162,22 @@ internal sealed record AgentPackageDsp(
     // most devices have no such control and every channel would carry a zero. It
     // is stated at the channel's own crossover (the low-pass on a subwoofer, the
     // high-pass otherwise), so it cannot be read without the crossover above it.
-    double? PhaseRotationDeg = null);
+    double? PhaseRotationDeg = null,
+    // The channel's FIR kernel where one is loaded, and absent otherwise. Read-only
+    // like the phase control: no operation writes it, and it is already inside every
+    // curve the package carries.
+    AgentPackageFir? Fir = null);
+
+/// <summary>
+/// A loaded FIR kernel as the package describes it: the file by name (the path is
+/// the user's machine's business), its length, and where its peak sits in time at
+/// the processor's rate — a linear-phase kernel's delay, which the assistant has to
+/// know is already in the channel's arrival.
+/// </summary>
+internal sealed record AgentPackageFir(
+    string File,
+    int Taps,
+    double PeakMs);
 
 internal sealed record AgentPackageCrossover(
     string Kind,

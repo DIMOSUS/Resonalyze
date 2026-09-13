@@ -1910,7 +1910,7 @@ kernel imported into Virtual DSP may still be up to 131072 taps long.
   Virtual DSP crossover also offers, the numbers are its own), and **Bessel** up to
   48 dB/oct, where its prototype table ends. A steep slope needs a long kernel to
   follow it, and the deviation read-out below says when it does not. The plot draws that magnitude dashed behind the kernel, and
-  **Worst deviation from the target** states how far the kernel strays from it
+  **Worst deviation from the target** (the read-out says "above −30 dB") states how far the kernel strays from it
   wherever the target is above −30 dB: a slope the length cannot resolve says so
   here, in dB, instead of being delivered as a gentler filter without a word.
   A Linkwitz-Riley low-pass and high-pass of the same corner, length and window

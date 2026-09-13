@@ -819,7 +819,7 @@ public partial class FirConstructorPanel : UserControl
                 ? "A brick wall has no slope to compare with: read the plot."
                 : string.Create(
                     CultureInfo.InvariantCulture,
-                    $"Worst deviation from the target: {deviation:0.00} dB (where it is above −30 dB)");
+                    $"Worst deviation from the target: {deviation:0.00} dB above −30 dB");
         }
         else
         {

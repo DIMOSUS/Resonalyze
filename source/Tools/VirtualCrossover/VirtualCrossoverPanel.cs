@@ -422,6 +422,16 @@ public partial class VirtualCrossoverPanel : UserControl
     internal Action<VirtualDspEqHandoffRequest>? EditPeqInWizardRequested { get; set; }
 
     /// <summary>
+    /// Raised when the user opens a channel side's FIR stage in the FIR Constructor.
+    /// The host installs the request there and switches the mode; the designed kernel
+    /// comes back through <see cref="TryApplyFirFromConstructor"/>.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<FirConstructorHandoffRequest>? EditFirInConstructorRequested { get; set; }
+
+    /// <summary>
     /// Raised when the user picks "Open in analyzers" on a channel's source menu:
     /// the host loads this side's measurement into the analysis modes and lands on
     /// Frequency Response. The arguments mirror the persisted source reference in
@@ -1264,6 +1274,7 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             to.Fir = from.Fir;
             to.FirSourceName = from.FirSourceName;
+            to.FirDesign = from.FirDesign;
         }
 
         // The all-pass filters live inside the PEQ bank as bands, but they answer a
@@ -2106,6 +2117,16 @@ public partial class VirtualCrossoverPanel : UserControl
         bool phaseShown = project.ResolveDspPhaseControl();
         bool firShown = project.ResolveDspFirFilters();
         int rate = ProcessorSampleRateHz;
+        // Every side learns the rate its FIR stage runs at, both physical sides of every
+        // pair: a FIR crossover's corners are read through it (see
+        // VirtualCrossoverChannelSettings.EffectiveCrossover). Before the early return,
+        // so a pair added or loaded since the last change is stamped too.
+        foreach (VirtualCrossoverChannel channel in channels)
+        {
+            channel.Pair.Left.FirRunSampleRateHz = rate;
+            channel.Pair.Right.FirRunSampleRateHz = rate;
+        }
+
         bool changed = channelControls.Values.Any(control =>
             control.PhaseControlShown != phaseShown ||
             control.FirControlShown != firShown ||
@@ -3058,14 +3079,27 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // -------------------------------------------------------------------- FIR
 
-    // The FIR button's action menu: import a kernel file (replacing the kernel the
-    // side carries), export the kernel to a file, or clear it. Rebuilt on every
-    // click, like the PEQ menu, so Export and Clear follow the channel's state. The
-    // kernel lives in the session; the files are its way in and out.
+    // The FIR button's action menu: design a crossover kernel in the FIR Constructor,
+    // import a kernel file (either replacing the kernel the side carries), export the
+    // kernel to a file, or clear it. Rebuilt on every click, like the PEQ menu, so
+    // Export and Clear follow the channel's state. The kernel lives in the session;
+    // the constructor and the files are its ways in and out.
     private void ShowFirMenu(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
         var menu = new ContextMenuStrip();
+        menu.Items.Add(new ToolStripMenuItem(
+            settings.HasFir ? "Open in FIR Constructor…" : "Design in FIR Constructor…",
+            null,
+            (_, _) => RequestFirHandoff(channel))
+        {
+            Enabled = EditFirInConstructorRequested != null,
+            ToolTipText =
+                "Design a linear-phase low-pass, high-pass or band-pass kernel for this\r\n" +
+                "side and return it here. A kernel imported from a file opens as it is;\r\n" +
+                "any change in the constructor replaces it with a designed one."
+        });
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(
             settings.HasFir ? "Import FIR filter (replace)…" : "Import FIR filter…",
             null,
@@ -3118,6 +3152,9 @@ public partial class VirtualCrossoverPanel : UserControl
         VirtualCrossoverChannelSettings settings = channel.Settings;
         settings.Fir = kernel;
         settings.FirSourceName = Path.GetFileName(dialog.FileName);
+        // A file is taps and nothing more: whatever crossover the side's previous
+        // kernel was designed as, this one is not it.
+        settings.FirDesign = null;
         UpdateFirReadout(channel);
         ScheduleSave();
         RedrawAll();
@@ -3136,9 +3173,11 @@ public partial class VirtualCrossoverPanel : UserControl
             AddExtension = true,
             DefaultExt = "wav",
             Filter = FirFilterFiles.ExportFileDialogFilter,
-            FileName = Path.GetFileNameWithoutExtension(settings.FirSourceName) is { Length: > 0 } stem
-                ? stem
-                : $"{channel.Name} FIR",
+            FileName = settings.FirDesign is { } design
+                ? $"{channel.Name} FIR {FirCrossoverDescription.Short(design)}"
+                : Path.GetFileNameWithoutExtension(settings.FirSourceName) is { Length: > 0 } stem
+                    ? stem
+                    : $"{channel.Name} FIR",
             OverwritePrompt = true,
             Title = $"Export channel {channel.Name} FIR filter"
         };
@@ -3151,7 +3190,12 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             // At the processor's rate: that is the rate the taps mean in this
             // session, whatever the file they were imported from said.
-            FirFilterFiles.Save(dialog.FileName, kernel, ProcessorSampleRateHz, settings.FirSourceName);
+            FirFilterFiles.Save(
+                dialog.FileName,
+                kernel,
+                ProcessorSampleRateHz,
+                settings.FirSourceName,
+                settings.FirDesign is { } designed ? FirCrossoverDescription.Long(designed) : null);
         }
         catch (Exception exception)
         {
@@ -3164,16 +3208,59 @@ public partial class VirtualCrossoverPanel : UserControl
         VirtualCrossoverChannelSettings settings = channel.Settings;
         settings.Fir = null;
         settings.FirSourceName = null;
+        settings.FirDesign = null;
         UpdateFirReadout(channel);
         ScheduleSave();
         RedrawAll();
     }
 
-    // The block's FIR row reads the ACTIVE side's kernel and the file it came from.
+    // The block's FIR row reads the ACTIVE side's kernel, the file it came from and
+    // the crossover it was designed as.
     private void UpdateFirReadout(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
-        ControlFor(channel).SetFir(settings.Fir, settings.FirSourceName);
+        ControlFor(channel).SetFir(settings.Fir, settings.FirSourceName, settings.FirDesign);
+    }
+
+    // Sends the ACTIVE side's FIR stage to the constructor.
+    private void RequestFirHandoff(VirtualCrossoverChannel channel)
+    {
+        if (EditFirInConstructorRequested is not { } requested)
+        {
+            return;
+        }
+
+        requested(FirConstructorHandoff.Build(
+            channel, channel.ActiveRight, projectGeneration, ProcessorSampleRateHz));
+    }
+
+    /// <summary>
+    /// Lands a kernel designed in the FIR Constructor on the side it was taken from.
+    /// False — and nothing written — when that side is no longer the one the session
+    /// opened on (see <see cref="FirConstructorReturnToken"/>); the host says so and
+    /// leaves the constructor open, so the design is not lost.
+    /// </summary>
+    internal bool TryApplyFirFromConstructor(
+        FirConstructorReturnToken token,
+        FirFilter kernel,
+        FirCrossoverDesign design)
+    {
+        if (!FirConstructorHandoff.TryApplyReturn(
+                channels,
+                token,
+                kernel,
+                design,
+                projectGeneration,
+                ProcessorSampleRateHz,
+                project.ResolveDspFirFilters()))
+        {
+            return false;
+        }
+
+        UpdateFirReadout(token.Channel);
+        ScheduleSave();
+        RedrawAll();
+        return true;
     }
 
     private void UpdatePeqReadouts(VirtualCrossoverChannel channel)
@@ -5341,7 +5428,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // the result will shift once the filters are configured — the alignment
         // only matters (and is only well-defined) in the overlap region.
         bool anyCrossover = participants.Any(
-            channel => channel.Settings.CrossoverKind != CrossoverKind.Off);
+            channel => channel.Settings.EffectiveCrossover.Kind != CrossoverKind.Off);
         if (!anyCrossover && !interactive)
         {
             return (null, "no channel has a crossover configured; set the crossovers first");
@@ -6307,7 +6394,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     item.Settings.GainDb,
                     lowHz,
                     highHz,
-                    item.Settings.CrossoverKind != CrossoverKind.Off,
+                    item.Settings.EffectiveCrossover.Kind != CrossoverKind.Off,
                     item.Mono,
                     item.RightSide,
                     item.LeftPeer);
@@ -6676,7 +6763,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         bool anyCrossover = union.Any(
-            item => item.Settings.CrossoverKind != CrossoverKind.Off);
+            item => item.Settings.EffectiveCrossover.Kind != CrossoverKind.Off);
         if (!anyCrossover && !interactive)
         {
             return (null, "no channel has a crossover configured; set the crossovers first");
@@ -8961,12 +9048,10 @@ public partial class VirtualCrossoverPanel : UserControl
                     coherence,
                     distortion,
                     CrossoverAutoSetup.EstimateBand(curve.Points, coherence, distortion),
-                    settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
-                        ? settings.HighPassEdge.FrequencyHz
-                        : null,
-                    settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
-                        ? settings.LowPassEdge.FrequencyHz
-                        : null,
+                    // A FIR crossover's corners where the IIR one is off: the
+                    // kernel cuts the band just the same.
+                    settings.EffectiveHighPassHz,
+                    settings.EffectiveLowPassHz,
                     channel.TransferImpulseResponse));
             }
         }

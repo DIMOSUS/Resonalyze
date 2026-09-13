@@ -187,13 +187,16 @@ internal static class VirtualCrossoverSheet
     /// <summary>
     /// The FIR kernel as the sheet names it: the file it was imported from and its
     /// length — the file is what the installer loads into the device, and the length
-    /// is how they check it is the same one. Empty for a side without a kernel.
+    /// is how they check it is the same one — or, for a kernel designed in the FIR
+    /// Constructor, the crossover it was designed as. Empty for a side without a kernel.
     /// </summary>
     public static string DescribeFir(VirtualCrossoverChannelSettings channel)
     {
         ArgumentNullException.ThrowIfNull(channel);
         return channel.Fir is { } fir
-            ? $"{channel.FirSourceName ?? "FIR"} ({fir.Length} taps)"
+            ? channel.FirDesign is { } design
+                ? FirCrossoverDescription.Long(design)
+                : $"{channel.FirSourceName ?? "FIR"} ({fir.Length} taps)"
             : string.Empty;
     }
 

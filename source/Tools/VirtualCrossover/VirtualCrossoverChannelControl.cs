@@ -26,6 +26,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     // the file it was imported from, both null when the side carries none.
     private string? firSourceName;
     private FirFilter? firKernel;
+    private FirCrossoverDesign? firDesign;
 
     public VirtualCrossoverChannelControl()
     {
@@ -351,16 +352,53 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     /// <summary>
-    /// What the FIR row shows: the kernel this side carries (null for none) and the
-    /// name of the file it was imported from (null when unknown). The row's readout
-    /// — taps, peak time, and a warning when the file's own rate is not the
-    /// processor's — is derived here, so the host pushes the facts and nothing else.
+    /// What the FIR row shows: the kernel this side carries (null for none), the name
+    /// of the file it was imported from (null when unknown) and the crossover design
+    /// it was built from in the FIR Constructor (null for an imported kernel). The
+    /// row's readout — taps, peak time, the warnings — is derived here, so the host
+    /// pushes the facts and nothing else.
     /// </summary>
-    internal void SetFir(FirFilter? kernel, string? sourceName)
+    internal void SetFir(FirFilter? kernel, string? sourceName, FirCrossoverDesign? design = null)
     {
         firKernel = kernel;
         firSourceName = kernel == null || string.IsNullOrWhiteSpace(sourceName) ? null : sourceName;
+        firDesign = kernel == null ? null : design;
         UpdateFirReadout();
+    }
+
+    /// <summary>
+    /// Why the FIR button is red, or null when it is not: a FIR crossover designed at
+    /// another rate than the processor runs (it waits for a rebuild), or one running
+    /// beside an IIR crossover on the same side. An imported kernel is never a
+    /// crossover here, so it never turns the button red — a correction kernel beside
+    /// an IIR crossover is an ordinary chain.
+    /// </summary>
+    internal string? FirConflict
+    {
+        get
+        {
+            if (firKernel == null || firDesign is not { } design)
+            {
+                return null;
+            }
+
+            if (design.SampleRateHz != processorSampleRateHz)
+            {
+                return $"This FIR crossover was designed at {FormatRate(design.SampleRateHz)}, and the " +
+                    $"processor runs at {FormatRate(processorSampleRateHz)}:" + Environment.NewLine +
+                    "the taps are convolved as they are, so it cuts somewhere else. Open it in the" +
+                    Environment.NewLine + "FIR Constructor and return it to rebuild it at the processor's rate.";
+            }
+
+            if (SelectedCrossoverKind != CrossoverKind.Off)
+            {
+                return "This side runs a FIR crossover AND an IIR crossover: both filter the channel," +
+                    Environment.NewLine + "so it is cut twice. Legitimate, but rarely meant — turn one of them off" +
+                    Environment.NewLine + "unless the two are designed to work together.";
+            }
+
+            return null;
+        }
     }
 
     /// <summary>
@@ -928,6 +966,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
         comboBoxCrossoverKind.SelectedIndexChanged += (_, _) =>
         {
             UpdateCrossoverAvailability();
+            // A FIR crossover beside an IIR one turns the FIR button red.
+            UpdateFirReadout();
             RaiseSettingsChanged();
         };
         WireEdgeEvents(
@@ -1058,8 +1098,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
         UpdateFirReadout();
     }
 
-    // The FIR row's two texts: the button names the file (or asks for one), the label
-    // says what the kernel is — its length in taps and in time at the processor's
+    // The FIR row's two texts, laid out like the PEQ row above it: the button is the
+    // same width with a fixed action on it, and the label beside it names the kernel —
+    // the crossover it was designed as, or the file it came from — and says what it is — its length in taps and in time at the processor's
     // rate, read at the kernel's peak — roughly a linear-phase kernel's bulk delay,
     // and no delay at all for a minimum-phase one; the tip says which it is. Amber
     // where the file is named but not found, and where the file states a rate the
@@ -1073,7 +1114,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         string infoTip;
         if (firKernel == null)
         {
-            buttonText = "Import…";
+            buttonText = "Add…";
             info = "off";
             infoColor = UiPalette.TextDisabled;
             infoTip = "No FIR filter on this channel.";
@@ -1082,7 +1123,11 @@ public partial class VirtualCrossoverChannelControl : UserControl
         {
             // The kernel is in the session; the name is where it came from, and a
             // kernel that arrived without one (a hand-edited file) is still a kernel.
-            buttonText = firSourceName ?? "FIR";
+            // A designed kernel has no file: its crossover is its name.
+            buttonText = "Edit…";
+            string name = firDesign is { } named
+                ? FirCrossoverDescription.Short(named)
+                : firSourceName ?? "FIR";
             double peakMs = firKernel.PeakIndex * 1_000.0 / processorSampleRateHz;
             double lengthMs = firKernel.Length * 1_000.0 / processorSampleRateHz;
             bool rateMismatch = firKernel.DeclaredSampleRateHz is { } declared &&
@@ -1105,25 +1150,54 @@ public partial class VirtualCrossoverChannelControl : UserControl
                       Environment.NewLine +
                       "processor's rate — so this is not the filter its designer drew."
                     : string.Empty);
+            if (firDesign is { } design)
+            {
+                // A designed kernel reads as its crossover and its latency — the latency
+                // it has HERE: the taps run at the processor's rate, so a design made at
+                // another one delays the channel by the same half-length in samples,
+                // which is a different time. Its rate mismatch is the red conflict below,
+                // not the amber file warning.
+                double runLatencyMs = design.LatencySamples * 1_000.0 / processorSampleRateHz;
+                info = $"{firKernel.Length} taps · {runLatencyMs:0.0} ms";
+                infoColor = UiPalette.TextSecondary;
+                infoTip = FirCrossoverDescription.Long(design) + "." + Environment.NewLine +
+                    $"Linear-phase: the channel is delayed by {runLatencyMs:0.00} ms, half the kernel" +
+                    (design.SampleRateHz == processorSampleRateHz
+                        ? "."
+                        : $" ({design.LatencyMs:0.00} ms as designed at {FormatRate(design.SampleRateHz)}).");
+            }
+            else
+            {
+                // The label clips a long file name; its tooltip starts with the name whole.
+                infoTip = name + ": " + infoTip;
+            }
+
+            info = $"{name}: {info}";
         }
 
+        string? conflict = FirConflict;
         buttonFir.Text = buttonText;
+        buttonFir.ForeColor = conflict != null ? UiPalette.WarningRed : Color.White;
         labelFirInfo.Text = info;
-        labelFirInfo.ForeColor = infoColor;
+        labelFirInfo.ForeColor = conflict != null ? UiPalette.ErrorSoft : infoColor;
         if (tooltipHost is { } host)
         {
-            host.SetToolTip(buttonFir, FirButtonTooltipText());
-            host.SetToolTip(labelFirInfo, infoTip);
+            host.SetToolTip(
+                buttonFir,
+                conflict == null
+                    ? FirButtonTooltipText()
+                    : conflict + Environment.NewLine + Environment.NewLine + FirButtonTooltipText());
+            host.SetToolTip(labelFirInfo, conflict ?? infoTip);
         }
     }
 
     private static string FormatRate(int sampleRateHz) => $"{sampleRateHz / 1_000.0:0.###} kHz";
 
     private string FirButtonTooltipText() =>
-        "The channel's FIR filter — a kernel the processor convolves the" + "\r\n" +
-        "channel with, imported from a .wav, .fir or .txt file (one coefficient" + "\r\n" +
-        "per line), kept in the session, and run AT THE PROCESSOR'S RATE." + "\r\n" +
-        "Click to import, export or clear it.";
+        "The channel's FIR filter — a kernel the processor convolves the channel" + "\r\n" +
+        "with, designed in the FIR Constructor or imported from a file, kept in" + "\r\n" +
+        "the session, and run AT THE PROCESSOR'S RATE." + "\r\n" +
+        "Click to design, import, export or clear it.";
 
     // What the angle actually builds, beside the field: the all-pass corner the
     // device would place for it. Worth the space because the angle alone does not

@@ -4,8 +4,8 @@ namespace Resonalyze;
 
 /// <summary>
 /// The <b>Lock</b> beside the side radios of the Virtual DSP: while it is on, a
-/// crossover or polarity edit made on the side the controls show is written onto the
-/// other side of the same pair, so a symmetric tune stays symmetric without an L→R
+/// crossover, polarity or FIR edit made on the side the controls show is written onto
+/// the other side of the same pair, so a symmetric tune stays symmetric without an L→R
 /// after every corner moved.
 /// </summary>
 /// <remarks>
@@ -35,13 +35,30 @@ namespace Resonalyze;
 /// disagreeing before deciding which one to type over.
 /// </para>
 /// <para>
-/// Two units, deliberately. The crossover — its kind and both edges — moves as ONE: a
+/// Three units, deliberately. The crossover — its kind and both edges — moves as ONE: a
 /// lock that carried only the corner the user turned would leave the hidden side's
 /// other corner, or its kind, where it was, and the two crossovers unequal after an
 /// edit meant to equalize them. Polarity moves on its own, so moving a corner does not
-/// flip the other side. Gain, delay, the phase angle and the PEQ are not locked: each
+/// flip the other side. The FIR stage — the kernel, the name it came under and the
+/// crossover design it was built from — is the third, one unit for the same reason as
+/// the crossover: a FIR crossover IS a crossover, only built as a kernel, and a lock
+/// that kept the IIR corners in step while the kernels drifted apart would be keeping
+/// half of one. The kernel is compared by reference (it is immutable and shared, like
+/// the L→R copy shares it), so an import, a Clear or a return from the constructor
+/// each read as a move. Gain, delay, the phase angle and the PEQ are not locked: each
 /// aligns a driver against its own side's level and geometry, the same reason the L→R
 /// dialog leaves them unticked by default.
+/// </para>
+/// <para>
+/// The FIR unit carries only CROSSOVERS — kernels with a design (see
+/// <see cref="VirtualCrossoverChannelSettings.HasFirCrossover"/>). A kernel imported
+/// from a file is taps and nothing more, and a room or driver correction is exactly
+/// the thing the two sides of a car do not share: carrying left-correction.wav over
+/// the right side's own correction would lose it without a word. So an import on the
+/// shown side stays there; a designed kernel is carried only onto a hidden side that
+/// holds no kernel or a designed one, never over an imported kernel; and a Clear is
+/// carried only when what it removed on the shown side WAS a crossover and the hidden
+/// side holds one too — clearing an imported correction touches nothing else.
 /// </para>
 /// </remarks>
 internal sealed class VirtualCrossoverSideLock
@@ -64,10 +81,28 @@ internal sealed class VirtualCrossoverSideLock
         }
     }
 
-    private readonly record struct Snapshot(Crossover Crossover, bool Inverted)
+    // The FIR stage as one value. FirFilter has no value equality, so the kernel
+    // compares by instance — which is what "the same kernel" means here.
+    private readonly record struct FirStage(
+        FirFilter? Kernel,
+        string? SourceName,
+        FirCrossoverDesign? Design)
+    {
+        public static FirStage Of(VirtualCrossoverChannelSettings settings) =>
+            new(settings.Fir, settings.FirSourceName, settings.FirDesign);
+
+        public void WriteTo(VirtualCrossoverChannelSettings settings)
+        {
+            settings.Fir = Kernel;
+            settings.FirSourceName = SourceName;
+            settings.FirDesign = Design;
+        }
+    }
+
+    private readonly record struct Snapshot(Crossover Crossover, bool Inverted, FirStage Fir)
     {
         public static Snapshot Of(VirtualCrossoverChannelSettings settings) =>
-            new(Crossover.Of(settings), settings.InvertPolarity);
+            new(Crossover.Of(settings), settings.InvertPolarity, FirStage.Of(settings));
     }
 
     // Keyed by the pair OBJECT: a loaded session binds new pair objects, which is
@@ -179,7 +214,40 @@ internal sealed class VirtualCrossoverSideLock
             wrote = true;
         }
 
+        if (shownNow.Fir != shownBefore.Fir &&
+            hiddenNow.Fir != shownNow.Fir &&
+            CarriesFir(shownBefore.Fir, shownNow.Fir, hiddenNow.Fir))
+        {
+            shownNow.Fir.WriteTo(hidden);
+            wrote = true;
+        }
+
         return wrote;
+    }
+
+    // Whether the shown side's move from `before` to `now` may be written over the
+    // hidden side's FIR stage (see the class remarks):
+    //   anything -> designed : carried, unless the hidden side holds an imported kernel;
+    //   designed -> cleared  : carried, onto a hidden side holding a crossover;
+    //   imported -> cleared  : not carried — the removed kernel was a correction;
+    //   anything -> imported : not carried.
+    private static bool CarriesFir(FirStage before, FirStage now, FirStage hidden)
+    {
+        if (IsImported(hidden))
+        {
+            return false;
+        }
+
+        if (IsCrossover(now))
+        {
+            return true;
+        }
+
+        return now.Kernel == null && IsCrossover(before) && IsCrossover(hidden);
+
+        static bool IsCrossover(FirStage stage) => stage.Kernel != null && stage.Design != null;
+
+        static bool IsImported(FirStage stage) => stage.Kernel != null && stage.Design == null;
     }
 
     // The PHYSICAL sides, mono routing ignored, for the same reason the channel keeps

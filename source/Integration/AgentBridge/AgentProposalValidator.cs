@@ -121,12 +121,12 @@ internal static class AgentProposalValidator
             return null;
         }
 
-        bool usesHigh = settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass;
-        bool usesLow = settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass;
+        // A FIR crossover's corners count where the IIR crossover is off: the bell
+        // fights the kernel's slope just as it would a biquad's.
         foreach (double cornerHz in new[]
         {
-            usesHigh ? settings.HighPassEdge.FrequencyHz : double.NaN,
-            usesLow ? settings.LowPassEdge.FrequencyHz : double.NaN
+            settings.EffectiveHighPassHz ?? double.NaN,
+            settings.EffectiveLowPassHz ?? double.NaN
         })
         {
             if (double.IsFinite(cornerHz) &&
@@ -788,9 +788,41 @@ internal static class AgentProposalValidator
         }
 
         (AgentVerdictStatus status, string message) = EngineNote(operation, session);
+        if (operation is TuneJunctionOperation junction && FirCutJunctionNote(junction, session) is { } firNote)
+        {
+            message += " " + firNote;
+        }
+
         return new AgentOperationVerdict(
             operation.Id, LabelFor(operation, channel), operation.Parameter, current, proposed,
             status, message, operation.Reason, operation, channel);
+    }
+
+    // The setCrossover note's twin for the junction tune, which writes IIR edges onto
+    // BOTH sides of the two blocks: a side already cut by a linear-phase FIR crossover
+    // on the edge the tune writes would be filtered twice afterwards. Allowed, as the
+    // single-channel edit is, but said — the red FIR button the panel shows next is
+    // easier to read with the reason already in the review.
+    private static string? FirCutJunctionNote(TuneJunctionOperation junction, AgentSessionSnapshot session)
+    {
+        if (ResolveJunction(session, junction.JunctionId, out AgentChannelSnapshot? lower, out AgentChannelSnapshot? upper) != null)
+        {
+            return null;
+        }
+
+        // Both physical sides of each block: the tune writes the pair of edges on both.
+        var cut = session.Channels
+            .Where(channel =>
+                (channel.Block == lower!.Block || channel.Block == upper!.Block) &&
+                channel.Settings.HasFirCrossover)
+            .Select(channel => $"{channel.Label} ({FirCrossoverDescription.Short(channel.Settings.FirDesign!)})")
+            .Distinct()
+            .ToList();
+        return cut.Count == 0
+            ? null
+            : $"{string.Join(", ", cut)} {(cut.Count == 1 ? "is" : "are")} already cut by a " +
+              "linear-phase FIR crossover; the IIR edges this tune writes filter " +
+              (cut.Count == 1 ? "it" : "them") + " twice.";
     }
 
     // What the engine will write over, in the row's own words. A warning rather
@@ -1096,8 +1128,8 @@ internal static class AgentProposalValidator
         }
         if (probe.Probe == AgentProtocol.JunctionDelayProbe)
         {
-            return lower!.Settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass ||
-                upper!.Settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
+            return lower!.Settings.EffectiveLowPassHz != null ||
+                upper!.Settings.EffectiveHighPassHz != null
                 ? null
                 : $"{lower.Label} and {upper!.Label} have no crossover between them, so there is " +
                     "no junction band to search a delay in.";
@@ -1679,6 +1711,15 @@ internal static class AgentProposalValidator
                 {
                     return $"A crossover corner must sit below the processor's Nyquist of {Hz(nyquistHz)}.";
                 }
+                // Allowed — two crossovers on one side are a legitimate chain — but said:
+                // the side is already cut by the kernel, and the red FIR button the panel
+                // will show is easier to understand with the reason in the review.
+                if (kind != CrossoverKind.Off && copy.HasFirCrossover)
+                {
+                    notes.Add(
+                        "This side is already cut by a linear-phase FIR crossover " +
+                        $"({FirCrossoverDescription.Short(copy.FirDesign!)}); an IIR crossover here filters it twice.");
+                }
                 notes.Add(DeviceLimitsUnknown);
                 break;
 
@@ -1834,7 +1875,13 @@ internal static class AgentOperations
             // The kernel likewise: a variant chain built without it would judge the
             // junction without a filter the tune is running.
             Fir = settings.Fir,
-            FirSourceName = settings.FirSourceName
+            FirSourceName = settings.FirSourceName,
+            // And its design, which is where a variant's junction reads the corners of
+            // a side cut by a FIR crossover alone (see EffectiveCrossover).
+            FirDesign = settings.FirDesign,
+            // And the rate that kernel runs at, which moves those corners when it is not
+            // the design's.
+            FirRunSampleRateHz = settings.FirRunSampleRateHz
         };
     }
 

@@ -44,6 +44,7 @@ read-out refuses rather than guesses, what a number was measured against.
   - [Import, export, and tuning sheet](#import-export-and-tuning-sheet)
   - [DSP Q convention](#dsp-q-convention)
 - [Signal Generator](#signal-generator)
+- [FIR Constructor](#fir-constructor)
 - [Virtual DSP](#virtual-dsp)
   - [Hybrid: spatial averages under the prediction](#hybrid-spatial-averages-under-the-prediction)
   - [The panel: gates, plots and read-outs](#the-panel-gates-plots-and-read-outs)
@@ -182,7 +183,7 @@ you zoomed to (see [Graph Zoom and Limits](#graph-zoom-and-limits)), and the
 Frequency Response, Phase, Group Delay, Waterfall and Burst panels include a
 compact impulse-window preview.
 
-The **Tools** modes (EQ Wizard, Signal Generator, Virtual DSP) do not measure and
+The **Tools** modes (EQ Wizard, Signal Generator, Virtual DSP, FIR Constructor) do not measure and
 do not draw the shell's curves: they bring their own sources and controls, so the
 measurement block on the right — input meters, **Start**, **Record Settings**,
 **Save** / **Load** / **Compare**, **History** and **Mode Settings...** — is
@@ -1875,6 +1876,119 @@ level here transfers to the measurement. The generator reuses the audio
 configuration from **Record Settings** and displays the resolved settings before
 you press **Play**.
 
+## FIR Constructor
+
+<img src="assets/images/fir_constructor.png" alt="FIR Constructor designing a linear-phase band-pass">
+
+The **FIR Constructor** (under the **Tools** tab) designs **linear-phase crossover
+kernels** — a **Low pass**, a **High pass** or a **Band pass** — and draws what the
+kernel does. The upper plot carries its magnitude on the left axis and its phase
+on the right axis in the phase curve's own colour, referenced to the kernel's delay —
+the exact centre, (N − 1) / 2 samples, of a symmetric kernel of either length, and
+the largest tap of any other;
+the phase is drawn only where the magnitude stands within 60 dB of the kernel's
+loudest point, because below that the angle belongs to rounding and would flip
+between ±180° over the slope. For a linear-phase kernel it is a flat 0° (180° past a
+zero). The lower plot is the **impulse response** against time from the kernel's
+peak, so everything at negative time is the ringing ahead of the peak — the price a
+linear-phase crossover pays, and at a low corner a long one. **Impulse: in dB** shows
+each tap's level under the largest instead of the taps themselves, down to −120 dB,
+which is where the length of that ringing can actually be read. There is no
+measurement behind either plot; the constructor shows the filter alone. It works
+on its own, at a **Sample rate** of its own, with **Export file…** writing the kernel
+as a 32-bit float WAV or a text file (the same formats and the same header the
+Virtual DSP FIR button writes, plus a comment line naming the design), or it edits
+one [Virtual DSP](#virtual-dsp) channel side and sends the kernel back.
+
+The kernel is always **symmetric and of odd length**, which is what makes it
+linear-phase: the whole filter is a pure delay of half its length times a
+response with no phase turn at all. The length is odd by rule, not preference — an
+even-length symmetric kernel has a forced zero at Nyquist, so no high-pass can be
+built from one — so a typed even count steps to the odd one beside it. The price is
+that delay, stated under the controls as **Latency** in milliseconds and samples:
+the constructor designs up to **16383 taps**, 171 ms at 48 kHz, and the limit is
+there for the latency rather than the arithmetic. It binds the constructor only; a
+kernel imported into Virtual DSP may still be up to 131072 taps long.
+
+**Method** picks where the magnitude comes from:
+
+- **IIR magnitude** takes the magnitude of the IIR crossover slope named beside
+  each corner, built at the kernel's rate the way Virtual DSP builds its crossovers,
+  and throws its phase away. The slopes run steeper than a hardware crossover's
+  list, because a kernel needs only the magnitude and no sections to run it:
+  **Linkwitz-Riley** from 12 to **96 dB/oct** in 12 dB steps and **Butterworth**
+  from 6 to 96 dB/oct in 6 dB steps, both read in closed form (at every slope a
+  Virtual DSP crossover also offers, the numbers are its own), and **Bessel** up to
+  48 dB/oct, where its prototype table ends. A steep slope needs a long kernel to
+  follow it, and the deviation read-out below says when it does not. The plot draws that magnitude dashed behind the kernel, and
+  **Worst deviation from the target** (the read-out says "above −30 dB") states how far the kernel strays from it
+  wherever the target is above −30 dB: a slope the length cannot resolve says so
+  here, in dB, instead of being delivered as a gentler filter without a word.
+  A Linkwitz-Riley low-pass and high-pass of the same corner, length and window
+  **sum to a pure delay**, exactly: their two magnitudes add to one. A Butterworth
+  pair adds in power, not in magnitude, and sums with a bump at the corner.
+  Chebyshev is not offered — its ripple is a parameter of its own, and a rippled
+  passband is not what a linear-phase crossover is for.
+- **Windowed sinc** is the classic brick wall truncated by the window. It reads
+  only the corners (the family and slope boxes grey out), passes half the level at
+  each corner, and its slope is set by the length and the window alone, so there is
+  no target to compare with. A low-pass and a high-pass of one corner, length and
+  window also sum to a pure delay.
+
+**Window** is the taper the kernel is truncated with — **Rectangular**, **Hann**,
+**Hamming**, **Blackman** or **Kaiser** with its **β** (8 by default). Every window
+here is exactly 1 at the kernel's centre, which is what keeps the pairs above
+complementary, and each is stretched so its ends stop just short of zero rather
+than spending the outermost taps on nothing. A gentler window keeps a slope closer
+to its target in a short kernel; a steeper one buys a deeper stopband.
+
+A design that cannot be built — a band-pass whose high-pass corner is not below
+its low-pass corner, a corner at or past Nyquist — says why in red, and nothing is
+drawn or exported until it is fixed.
+
+The kernel and its curves are rebuilt in the background a moment after each edit,
+so a long kernel does not hold the window up while a value is scrolled: a burst of
+edits builds only the last one, the plots keep the previous kernel until it lands,
+and **Export file…** and **Return FIR to Virtual DSP** wait for it.
+
+**Auto delay and the kernel's latency.** [Auto delay](#auto-delay) absorbs the
+delay a kernel adds like any other delay in the chain, and it reads a linear-phase
+kernel's pre-ringing correctly at every corner and length — see the note on
+symmetric FIR kernels under [The search](#the-search).
+
+**Import file…** opens a kernel from a `.wav`, `.fir` or `.txt` file and draws it
+**as it is**, at the selected rate: there is no design in a file to edit. The first
+touch of any control replaces it with a kernel designed from the controls.
+
+### Editing a Virtual DSP channel's FIR
+
+The Virtual DSP FIR button's **Design in FIR Constructor…** (**Open in FIR
+Constructor…** once the side has a kernel) brings that side here. The rate is then
+the **processor's** and cannot be changed in the constructor, and the note under the
+title names the side being edited. What arrives depends on the side:
+
+- A kernel **designed here** opens as its design. One designed at another rate —
+  the processor has changed since, which turns the block's FIR button red — is
+  **rebuilt at the processor's rate** on the way in, and the note says so.
+- A kernel **imported from a file** opens as it is, with nothing to return until a
+  control is touched and a design replaces it.
+- A side with **no kernel** starts from its IIR crossover's kind and corners when
+  one is on, so a FIR crossover begins where the channel is already cut.
+
+**Return FIR to Virtual DSP** writes the kernel and its design onto the side and
+switches back; **Back without applying** switches back and writes nothing, keeping
+the design here. The return is refused, with the reason, when the side is no longer
+the one the session opened on: the channel was removed or a project loaded over it,
+the pair switched between stereo and mono, the side's kernel was imported, cleared,
+copied over or mirrored by **Lock** in the meantime, or the DSP processor changed its
+rate or stopped taking FIR filters. The design stays in the constructor either way,
+so it can be exported or returned to a fresh session.
+
+Whatever the constructor held on its own when the first session began — its
+controls, its rate, a kernel opened from a file — is kept aside, however many
+channels are opened after it, and comes back when a session ends with a return.
+Opening a channel never costs an unexported standalone design.
+
 ## Virtual DSP
 
 The **Virtual DSP** (under the **Tools** tab) is the summation-prediction
@@ -1883,7 +1997,7 @@ DSP setup virtually. Channels (A, B, C, …) are stereo **L/R pairs**, each side
 picking its own measurement and running its own chain. **L / R** radios switch
 which side the controls edit, **L→R** / **R→L** copy chain settings across sides
 (a dialog picks the channels and which parts travel — see below), **Lock** keeps
-the two sides' crossovers and polarity in step while it is on (also below),
+the two sides' crossovers, polarity and FIR filters in step while it is on (also below),
 and a **Mono** checkbox turns a pair into a single shared driver — the typical
 one-subwoofer car layout — feeding both sides' sums. The setup grows from two up
 to twelve pairs with **Add** and **Remove** under the block list, and **+/−**
@@ -1998,9 +2112,10 @@ Each channel runs through:
   file, because a skipped tap would shift every later one in time — **exports**
   the kernel the session carries to a 32-bit float WAV or a text file at the
   processor's rate (float rather than 24-bit PCM, because a kernel with gain has
-  taps past ±1), or clears it; the button then names the file the kernel was
-  imported from, and
-  the read-out beside it states the kernel's length in taps and where its peak
+  taps past ±1), or clears it. The button reads **Add…** on a side without a
+  kernel and **Edit…** on one with it, and sits where the PEQ row's button does;
+  the read-out beside it names the file the kernel was imported from and
+  states the kernel's length in taps and where its peak
   sits in time — roughly the bulk delay a conventional linear-phase kernel adds,
   and no delay at all for a minimum-phase one, whose peak sits near the front;
   the exact delay per frequency is what the chain plot's Group delay mode draws.
@@ -2017,7 +2132,27 @@ Each channel runs through:
   beside the IIR crossover, not in place of it: a kernel that already contains
   the channel's crossover runs on top of whatever the Crossover row says, exactly
   as it would on a device with both blocks, so switch that row **Off** when the
-  kernel is meant to be the whole filter
+  kernel is meant to be the whole filter.
+  The button's menu also **designs** a kernel: **Design in FIR Constructor…** hands
+  the side to the [FIR Constructor](#fir-constructor), which returns a linear-phase
+  low-pass, high-pass or band-pass. A kernel designed there is stored with its
+  **design** beside the taps, so it opens again as the crossover it is; the read-out
+  names it by its corners (`HP 80 Hz`, `BP 250 Hz–3 kHz`) and states its
+  latency at the processor's rate (for a design made at another rate that is not
+  the design's own figure, which the tooltip gives beside it), and the tuning sheet prints the design in full. An import or a **Clear**
+  replaces the kernel and drops the design with it. The button turns **red**, with
+  the reason in its tooltip, in two cases only: a designed kernel whose rate is no
+  longer the processor's (it waits for a rebuild — open it in the constructor and
+  return it), and a designed kernel on a side whose IIR crossover is also on (the
+  channel is cut twice — legitimate, but rarely meant). A kernel imported from a
+  file is never a crossover here, so it never turns the button red. Where the IIR
+  crossover is **Off**, a designed kernel's corners stand in for it wherever a
+  corner is read rather than filtered — the corners it actually CUTS at, which for
+  a kernel designed at another rate than the processor runs are its design's
+  corners scaled by the ratio of the two (a 48 kHz design on a 96 kHz processor cuts
+  an octave higher until it is rebuilt): the order of the channels along the
+  spectrum, the junction frequencies, Auto delay's overlap bands, the EQ Wizard's
+  Auto Tune window and the AI assistant's junction checks
 - **PEQ** — the channel's whole filter bank, bells and shelves and **all-pass
   bands (AP1 / AP2)** alike. An all-pass moves phase only, which makes it the
   tool for lining drivers up where a delay and a polarity flip are both too
@@ -2063,16 +2198,24 @@ its own measurement.
 they are shared by the two sides already — there is nothing to copy.
 
 **Lock**, beside them, is for the tune that is meant to be symmetric: while it is
-ticked, a crossover or polarity change made on the side shown is written onto the
-other side of the same pair as it is made, so the crossovers stay equal without an
-**L→R** after every corner moved. It reads by difference at every autosave, and
+ticked, a crossover, polarity or FIR change made on the side shown is written onto
+the other side of the same pair as it is made, so the crossovers stay equal without
+an **L→R** after every corner moved. It reads by difference at every autosave, and
 that sets its boundaries. Ticking it copies nothing — whatever already differed
 between the sides stays until that setting is next touched, so the two sides can
 be compared before deciding which one to type over. The crossover travels as one
 (kind and both corners): a lock that carried only the corner turned would leave
 the other side's second corner where it was, and the two crossovers unequal after
 an edit meant to equalize them. Polarity travels on its own, so moving a corner
-never flips the other side. Gain, delay, the phase angle and the PEQ are not
+never flips the other side. The FIR stage — the kernel, the file name it came under
+and the design it was built from — travels as a third unit, because a FIR crossover
+is a crossover too — but only as a CROSSOVER: a kernel designed in the FIR
+Constructor lands on the other side as well, and a Clear of one removes it from
+both. A kernel **imported from a file** never travels, and is never written over:
+a room or driver correction is the one filter the two sides of a car do not share,
+so an import on the side shown stays on that side, clearing it touches nothing on
+the other side (even a crossover still standing there), and a side holding an
+imported correction keeps it whatever is designed, imported or cleared on the other. Gain, delay, the phase angle and the PEQ are not
 locked, for the reason they start unticked in the copy dialog; mono pairs have one
 settings set and need no lock. A run that writes both sides itself — **Auto
 delay**, which decides polarity per side, or the crossover wizard — keeps its own
@@ -2746,7 +2889,10 @@ stands, because the catalog's silence means "not known to take a kernel", not
 another device is not the place to detach a tune's kernels on no information.
 Only your own untick does that. No catalog line claims the stage yet, so the tick
 is off until you give it. The kernels are run at the processing rate stated
-above, and the dialog says so under the tick.
+above, and the dialog says so under the tick. A rate change keeps every kernel:
+an imported one simply runs as the other filter it now is, and one designed in the
+[FIR Constructor](#fir-constructor) turns its block's FIR button red until it is
+rebuilt at the new rate.
 
 A catalog line may also state the model's **per-channel delay ceiling**, read
 from its manual. Automatic delay proposals are judged against it — a spread the
@@ -3030,7 +3176,32 @@ its own known error — and the check then stands down the same way it does for
 a deep-picked arrival (below), to the extremum's own strength rather than to
 the disqualification alone. Junctions whose band lies inside both passbands
 see microsecond skews and are untouched, and a pair with one side the
-estimator cannot read gets no correction rather than a guess. Past that
+estimator cannot read gets no correction rather than a guess.
+A **symmetric FIR kernel** — every kernel the [FIR Constructor](#fir-constructor)
+designs, and any imported linear-phase one — is the exception to "measured by
+running a reference impulse through the real chain". Such a kernel is exactly a
+delay of half its length times a filter with no phase at all, and that filter rings
+before its peak as long as after it; the band-limited arrival reader cannot time
+that ringing honestly, and read the same 4095-tap kernel at an 80 Hz corner
+anywhere from 27 to 56 ms late (the true delay is 42.65 ms) depending only on where
+the sound sat in the record. At 40 to 150 Hz junctions that put the seed 9 to 46 ms
+off. So a symmetric kernel is not read but known: every arrival Auto delay times
+on such a channel is read on the response without the kernel and moved later by
+the kernel's exact delay, and the chain's shift is the rest of the chain's measured
+shift plus that delay. A filter with no phase does not move an arrival, so only
+the unreadable ringing is left out. Measured on matched linear-phase
+Linkwitz-Riley branches at 48 kHz, four corners from 40 to 300 Hz, lengths from
+1023 to 8191 taps and two placements in the record now all land within 0.5 ms
+(a few degrees of a 40 Hz period), and a full stereo system cut entirely by
+such kernels gets the proposal the same drivers get unfiltered to within 0.3 ms.
+The rule covers an imported symmetric kernel too, not only a designed crossover:
+leaving the kernel out of the ARRIVAL read also leaves out its spectral weighting,
+but the arrival only places the search window, and the answer comes from the sum
+of the real processed responses. Checked on a dispersive driver (its low half
+4 ms from its high half) under a symmetric correction that tilts a 120 Hz junction
+by 20 dB either way, the new read and the old one agreed to 0.01 ms in 47 of 48
+cases; the 48th was the old read's placement error, 12.5 ms.
+An asymmetric kernel (a minimum-phase correction) is read as before. Past that
 correction the check has one exception: an arrival
 picked deep below its own band's energy. A subwoofer's direct front can sit
 20-odd dB under the cabin build-up arriving behind it — a real front, and the

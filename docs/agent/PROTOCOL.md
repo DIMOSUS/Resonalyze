@@ -242,6 +242,23 @@ else in a reply touches it.
   the channel's arrival and every curve; for a minimum-phase kernel it says
   nothing about delay. Never subtract it from, or add it to, a delay you propose
   — propose against the curves as they stand.
+- `dsp.fir.crossover` appears only where that kernel was designed in the FIR
+  Constructor as a linear-phase crossover:
+  `{ "kind": "HighPass", "highPass": { … }, "method": "IirMagnitude", "window":
+  "Kaiser (beta 8)", "designedAtHz": 48000, "latencyMs": 42.63 }` (`file` is then
+  empty). `highPass` / `lowPass` are present for the edges the kind uses, in the
+  shape of `dsp.crossover`'s; their family and slope describe the magnitude only
+  for `"IirMagnitude"` (a `"WindowedSinc"` kernel has a corner and no slope).
+  `latencyMs` is the exact delay the kernel adds, half its length, at
+  `designedAtHz`, and like `peakMs` it is already inside every curve. Where
+  `designedAtHz` is not `processor.sampleRateHz` the kernel is convolved at the
+  processor's rate anyway, so it cuts at the stated corners scaled by
+  `processor.sampleRateHz / designedAtHz`, and adds its delay scaled by the
+  inverse; the junctions are read at the scaled corners. Where `dsp.crossover.kind` is `Off`,
+  these are the corners the channel is cut at, and the junctions are read at them.
+  Read-only like the rest of `dsp.fir`: a `setCrossover` on such a side, or a
+  `tuneJunction` whose blocks include one, is allowed but ADDS IIR edges on top of
+  the kernel, and the review says so.
 - `peq.hash` is twelve hex digits of SHA-256 over the bands in order (type,
   frequency, Q, gain in round-trip form) and the preamp. A `replacePeqBank`
   reply echoes it instead of the whole current bank.

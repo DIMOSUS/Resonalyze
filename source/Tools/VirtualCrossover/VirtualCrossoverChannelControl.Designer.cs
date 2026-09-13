@@ -448,10 +448,9 @@
             buttonFir.ForeColor = Color.White;
             buttonFir.Location = new Point(70, 233);
             buttonFir.Name = "buttonFir";
-            buttonFir.Size = new Size(110, 19);
+            buttonFir.Size = new Size(80, 19);
             buttonFir.TabIndex = 42;
-            buttonFir.Text = "Import…";
-            buttonFir.TextAlign = ContentAlignment.MiddleLeft;
+            buttonFir.Text = "Add…";
             buttonFir.UseCompatibleTextRendering = true;
             buttonFir.UseVisualStyleBackColor = true;
             //
@@ -459,9 +458,9 @@
             //
             labelFirInfo.AutoEllipsis = true;
             labelFirInfo.ForeColor = Color.FromArgb(170, 176, 190);
-            labelFirInfo.Location = new Point(186, 233);
+            labelFirInfo.Location = new Point(152, 233);
             labelFirInfo.Name = "labelFirInfo";
-            labelFirInfo.Size = new Size(133, 19);
+            labelFirInfo.Size = new Size(167, 19);
             labelFirInfo.TabIndex = 43;
             labelFirInfo.Text = "off";
             //

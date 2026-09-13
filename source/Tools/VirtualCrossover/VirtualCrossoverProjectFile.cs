@@ -315,9 +315,96 @@ public sealed class VirtualCrossoverChannelSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? FirSourceName { get; set; }
 
+    /// <summary>
+    /// The linear-phase crossover <see cref="Fir"/> was designed from in the FIR
+    /// Constructor, or null for a kernel that was imported (or has no design to show).
+    /// Kept beside the taps so the kernel opens again as the crossover it is, and so
+    /// the corners it cuts at can stand in for an IIR crossover this side does not
+    /// have (see <see cref="EffectiveCrossover"/>). Never meaningful alone: an import
+    /// or a Clear replaces the kernel and takes the design with it.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FirCrossoverDesign? FirDesign { get; set; }
+
     /// <summary>True when this side carries a FIR kernel.</summary>
     [JsonIgnore]
     public bool HasFir => Fir != null;
+
+    /// <summary>
+    /// The rate the project's processor runs this side's FIR stage at, as the Virtual
+    /// DSP panel last resolved it, or null before it has. Not stored: the rate follows
+    /// the processor dialog and, for a profile that follows the measurements, the
+    /// measurements themselves, so it is context the panel stamps (see
+    /// <see cref="EffectiveCrossover"/>), not part of the tune.
+    /// </summary>
+    [JsonIgnore]
+    public int? FirRunSampleRateHz { get; set; }
+
+    /// <summary>True when this side's kernel is a crossover designed in the constructor.</summary>
+    [JsonIgnore]
+    public bool HasFirCrossover => Fir != null && FirDesign != null;
+
+    /// <summary>
+    /// The crossover the side's CORNERS are read from by everything that asks where a
+    /// channel is cut — the junction list, the Auto Tune window, the phase control's
+    /// reference: the IIR crossover when it is on, and the FIR crossover's corners
+    /// when it is not. Never the chain itself: <see cref="ToChain"/> builds the IIR
+    /// stage from <see cref="CrossoverKind"/> alone, and the kernel is already the FIR
+    /// stage, so a FIR crossover read here is not filtered twice.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A FIR crossover's corners are where the kernel CUTS, not where it was designed
+    /// to: taps designed at one rate and run at another scale every frequency by the
+    /// ratio of the two, so a 48 kHz design on a 96 kHz processor cuts an octave
+    /// higher until it is rebuilt (the block's FIR button is red meanwhile). The
+    /// corners are scaled by <see cref="FirRunSampleRateHz"/> over the design's rate;
+    /// before the panel has stamped a rate they are the design's own. Only the corner
+    /// frequencies are meaningful in the result — the spec is read, never built.
+    /// </para>
+    /// <para>
+    /// The edges of the returned spec are the IIR edges when the IIR crossover is off
+    /// and there is no FIR crossover either — the kind is Off then, and nothing reads
+    /// them; they are returned only so a caller never has to handle a null.
+    /// </para>
+    /// </remarks>
+    [JsonIgnore]
+    public CrossoverSpec EffectiveCrossover
+    {
+        get
+        {
+            if (CrossoverKind != CrossoverKind.Off || !HasFirCrossover)
+            {
+                return new CrossoverSpec(CrossoverKind, LowPassEdge, HighPassEdge);
+            }
+
+            FirCrossoverDesign design = FirDesign!;
+            double scale = FirRunSampleRateHz is { } runHz && runHz != design.SampleRateHz
+                ? (double)runHz / design.SampleRateHz
+                : 1.0;
+            return new CrossoverSpec(
+                design.Kind,
+                design.LowPassEdge with { FrequencyHz = design.LowPassEdge.FrequencyHz * scale },
+                design.HighPassEdge with { FrequencyHz = design.HighPassEdge.FrequencyHz * scale });
+        }
+    }
+
+    /// <summary>
+    /// The corner the side is high-passed at, IIR first and the FIR crossover second
+    /// (see <see cref="EffectiveCrossover"/>), or null when neither cuts it there.
+    /// </summary>
+    [JsonIgnore]
+    public double? EffectiveHighPassHz =>
+        EffectiveCrossover is { Kind: CrossoverKind.HighPass or CrossoverKind.BandPass, HighPassEdge: { } edge }
+            ? edge.FrequencyHz
+            : null;
+
+    /// <summary>The low-pass counterpart of <see cref="EffectiveHighPassHz"/>.</summary>
+    [JsonIgnore]
+    public double? EffectiveLowPassHz =>
+        EffectiveCrossover is { Kind: CrossoverKind.LowPass or CrossoverKind.BandPass, LowPassEdge: { } edge }
+            ? edge.FrequencyHz
+            : null;
 
     public bool HasSource =>
         HistoryEntryId.HasValue || !string.IsNullOrWhiteSpace(SourceFilePath);
@@ -431,6 +518,46 @@ public sealed class VirtualCrossoverChannelSettings
             {
                 throw new InvalidDataException("A PEQ band is invalid.");
             }
+        }
+        if (FirDesign is { } design)
+        {
+            // A design is the description of a kernel, so one without its kernel — or
+            // beside a kernel of another length — describes nothing in this file.
+            // Refused rather than dropped: the file was written by something other than
+            // this program, and the block would otherwise name a crossover it does not
+            // run.
+            if (Fir is not { } kernel || kernel.Length != design.TapCount)
+            {
+                throw new InvalidDataException(
+                    "The FIR crossover design does not describe the channel's FIR kernel.");
+            }
+            if (design.Problem() is { } problem)
+            {
+                throw new InvalidDataException($"The FIR crossover design is invalid: {problem}");
+            }
+            // The corners against the session's own range; the slopes against the
+            // constructor's list, which runs steeper than a hardware crossover's — the
+            // IIR edge check would refuse every kernel designed past 48 dB/oct.
+            ValidateDesignEdge(design.LowPassEdge, design.Method);
+            ValidateDesignEdge(design.HighPassEdge, design.Method);
+        }
+    }
+
+    // The same contract as FirCrossoverDesign.Problem: a family and slope are part of
+    // a design only where its method reads them. A windowed sinc carries whatever the
+    // boxes held and is built without them, so the session may not refuse a design the
+    // constructor built.
+    private static void ValidateDesignEdge(CrossoverEdge edge, FirCrossoverMethod method)
+    {
+        if (!Enum.IsDefined(edge.Family) ||
+            (method == FirCrossoverMethod.IirMagnitude &&
+             !FirCrossoverDesign.SupportedSlopes(edge.Family).Contains(edge.SlopeDbPerOctave)))
+        {
+            throw new InvalidDataException("The FIR crossover design's slope is invalid.");
+        }
+        if (!double.IsFinite(edge.FrequencyHz) || edge.FrequencyHz is < 10 or > 24_000)
+        {
+            throw new InvalidDataException("The FIR crossover design's corner frequency is invalid.");
         }
     }
 
@@ -895,6 +1022,7 @@ public sealed class VirtualCrossoverProjectFile
                 {
                     side.Fir = null;
                     side.FirSourceName = null;
+                    side.FirDesign = null;
                     cleared++;
                 }
             }

@@ -29,6 +29,7 @@ public partial class Form1
         eqWizardPanel.Bounds = bounds;
         signalGeneratorPanel.Bounds = bounds;
         virtualCrossoverPanel.Bounds = bounds;
+        firConstructorPanel.Bounds = bounds;
     }
 
     private int GetCentralContentRightEdge(int margin)

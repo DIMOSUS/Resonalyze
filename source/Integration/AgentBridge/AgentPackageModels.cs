@@ -177,10 +177,30 @@ internal sealed record AgentPackageDsp(
 /// protocol tells the assistant exactly that, so it never "compensates" a delay
 /// the kernel does not have.
 /// </summary>
+/// <remarks>
+/// <see cref="Crossover"/> is present only for a kernel designed in the FIR
+/// Constructor, and read-only like the rest: the assistant sees where a side is cut
+/// by a kernel, and no operation designs one.
+/// </remarks>
 internal sealed record AgentPackageFir(
     string File,
     int Taps,
-    double PeakMs);
+    double PeakMs,
+    AgentPackageFirCrossover? Crossover = null);
+
+/// <summary>
+/// The linear-phase crossover a FIR kernel was designed as: its kind and the edges
+/// it uses (the family and slope matter only for the IIR-magnitude method), the
+/// method and window, the rate it was designed at, and the delay it adds there.
+/// </summary>
+internal sealed record AgentPackageFirCrossover(
+    string Kind,
+    AgentPackageEdge? HighPass,
+    AgentPackageEdge? LowPass,
+    string Method,
+    string Window,
+    int DesignedAtHz,
+    double LatencyMs);
 
 internal sealed record AgentPackageCrossover(
     string Kind,

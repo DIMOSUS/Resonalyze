@@ -189,5 +189,6 @@ internal static class AgentProposalApplier
         // and the undo must not drop it.
         to.Fir = from.Fir;
         to.FirSourceName = from.FirSourceName;
+        to.FirDesign = from.FirDesign;
     }
 }

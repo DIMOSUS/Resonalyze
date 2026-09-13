@@ -183,7 +183,8 @@ public partial class Form1
             [ModeTab.TimeAlignment] = () => _ = SelectModeAsync(ModeTab.TimeAlignment),
             [ModeTab.ToolsEqWizard] = () => _ = SelectModeAsync(ModeTab.ToolsEqWizard),
             [ModeTab.ToolsSignalGenerator] = () => _ = SelectModeAsync(ModeTab.ToolsSignalGenerator),
-            [ModeTab.ToolsVirtualCrossover] = () => _ = SelectModeAsync(ModeTab.ToolsVirtualCrossover)
+            [ModeTab.ToolsVirtualCrossover] = () => _ = SelectModeAsync(ModeTab.ToolsVirtualCrossover),
+            [ModeTab.ToolsFirConstructor] = () => _ = SelectModeAsync(ModeTab.ToolsFirConstructor)
         };
 
     private void SetActiveModeTab(ModeTab activeTab)
@@ -206,6 +207,7 @@ public partial class Form1
             signalGeneratorPanel.RefreshAudioSettings();
         }
         virtualCrossoverPanel.Visible = descriptor.ShowsVirtualCrossoverPanel;
+        firConstructorPanel.Visible = descriptor.ShowsFirConstructorPanel;
         virtualDspMetricLabel.Visible = descriptor.ShowsVirtualCrossoverPanel;
         // The warning box only claims its corner when the panel has something to
         // warn about; its text survives the mode switch that hid it.

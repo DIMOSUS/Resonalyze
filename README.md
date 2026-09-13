@@ -81,8 +81,8 @@ API key, no network request: the clipboard is the whole transport.
 
 <p align="center">
   <strong>Virtual DSP</strong> — combine measured drivers through gain, delay,
-  polarity, crossover filters, and PEQ (bells, shelves and all-pass alike)
-  before touching the hardware DSP.
+  polarity, crossover filters, PEQ (bells, shelves and all-pass alike) and FIR
+  filters before touching the hardware DSP.
 </p>
 
 <p align="center">
@@ -237,7 +237,9 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   delay/polarity controls, plus a **sum-loss** curve
 - **Virtual DSP** — up to twelve L/R driver pairs (plus mono channels) through
   virtual chains: gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel /
-  Chebyshev crossovers and PEQ (all-pass bands included), with the complex sum,
+  Chebyshev crossovers, PEQ (all-pass bands included) and a per-channel FIR stage
+  (kernels imported from `.wav` / `.fir` / `.txt` or designed in the FIR
+  Constructor, run at the processor's rate), with the complex sum,
   sum loss, phase tracking, junction read-outs, Δ L−R timing, **Auto crossover**,
   a stereo-aware **Auto delay**, a headphone audition, sessions, tuning-sheet
   export
@@ -269,6 +271,10 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   overlay slot, a text curve or a Virtual DSP channel handed over for editing
   (and returned with one click), with Auto Tune, cross-tool import/export and a
   printable tuning-sheet PDF
+- **FIR Constructor** — linear-phase low-pass, high-pass and band-pass kernels
+  from an IIR slope's magnitude or a windowed sinc, with the latency and the
+  deviation from the target stated, exported to a file or returned to a Virtual
+  DSP channel
 - **Signal Generator**, **Measurement History** with per-entry working state, a
   compact Mic/Loop level meter, and four audio backends (MME Compatibility, ASIO,
   WASAPI Shared and Exclusive) with backend-specific channel routing
@@ -514,7 +520,7 @@ Resonalyze/
 |   |-- Settings/           Settings file, schema migrations, update checking
 |   |-- Shell/              Main form, title bar, commands, and docked settings
 |   |-- TimeAlignment/      Loopback delay measurement UI and orchestration
-|   |-- Tools/              EQ Wizard, Signal Generator, Virtual DSP, PEQ import/export
+|   |-- Tools/              EQ Wizard, Signal Generator, Virtual DSP, FIR Constructor, PEQ import/export
 |   `-- Ui/                 Reusable WinForms controls and dialogs
 |-- dsp/                    Reusable signal-processing library (no UI, no audio)
 |-- audio/                  Audio drivers and device access (NAudio lives here)

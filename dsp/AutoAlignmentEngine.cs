@@ -915,6 +915,10 @@ public static class AutoAlignmentEngine
     // polarity: the snapshots the timeline reads are the override-free
     // reprocess, where both are neutral, and neither moves an envelope
     // arrival anyway.
+    //
+    // A SYMMETRIC FIR stage is the one part of a chain this measurement cannot
+    // take: see LinearPhaseKernelOf. Its shift is the kernel's exact delay, added
+    // to the measured shift of the rest of the chain.
     private static double ChainArrivalShiftMs(
         DspChannelChain chain,
         int sampleRate,
@@ -924,6 +928,19 @@ public static class AutoAlignmentEngine
         int length,
         int peakIndex)
     {
+        if (LinearPhaseKernelOf(chain) is { } kernel)
+        {
+            return ChainArrivalShiftMs(
+                    chain with { Fir = null },
+                    sampleRate,
+                    processorSampleRate,
+                    bandLowHz,
+                    bandHighHz,
+                    length,
+                    peakIndex) +
+                LinearPhaseDelayMs(kernel, processorSampleRate);
+        }
+
         var impulse = new Complex[length];
         impulse[Math.Clamp(peakIndex, 0, length - 1)] = Complex.One;
         // BOTH reads go through ApplyChain and carry the ValidSampleRange it
@@ -948,6 +965,106 @@ public static class AutoAlignmentEngine
             filteredResponse, sampleRate, bandLowHz, bandHighHz, filteredRange)
             .FirstArrivalDelayMilliseconds;
         return filtered - bare;
+    }
+
+    /// <summary>
+    /// The chain's FIR kernel when it is symmetric (linear-phase), or null.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A symmetric kernel is exactly a delay of half its length times a real,
+    /// zero-phase filter, and a zero-phase filter rings BEFORE its peak as long as
+    /// after it. The band-limited arrival detector cannot read that ringing
+    /// honestly: it takes its noise floor from the record's quietest quarter and
+    /// its first credible arrival from the envelope's rise, and a long pre-ring at
+    /// a low corner puts both at the mercy of where the content happens to sit in
+    /// the record. Measured on a unit impulse through a 4095-tap linear-phase
+    /// LR24 at 80 Hz (latency 42.65 ms), the detector's shift read 27.1, 35.1,
+    /// 38.3, 42.6 or 55.6 ms depending only on the impulse's position; through
+    /// 1023 taps, 9.6 to 23.6 ms against 10.65. Every predicted front and every
+    /// timeline anchor took that scatter, and at 40-150 Hz junctions the seed
+    /// window landed 9 to 46 ms off.
+    /// </para>
+    /// <para>
+    /// So such a stage is not read, it is KNOWN: its delay is added exactly, and
+    /// the arrival is read on the response without it (see
+    /// <see cref="ReadProcessedArrival"/>). A zero-phase filter does not move an
+    /// arrival — its group delay is zero at every frequency — so nothing honest is
+    /// lost; only the pre-ringing that could not be read. An asymmetric kernel (a
+    /// minimum-phase correction) has no such split and is read as before, and a
+    /// chain without a FIR stage takes none of this path.
+    /// </para>
+    /// </remarks>
+    private static FirFilter? LinearPhaseKernelOf(DspChannelChain chain) =>
+        chain.Fir is { IsSymmetric: true } kernel ? kernel : null;
+
+    // The symmetric kernel's delay in milliseconds: its taps are at the processor's
+    // rate, whatever the measurement's.
+    private static double LinearPhaseDelayMs(FirFilter kernel, int processorSampleRate) =>
+        kernel.LinearPhaseDelaySamples * 1_000.0 / processorSampleRate;
+
+    /// <summary>
+    /// A side's processed arrival in a band, as the arrival timeline reads it: the
+    /// band-limited read of its processed response — or, for a chain carrying a
+    /// symmetric FIR kernel, the read of the same measurement through the chain
+    /// WITHOUT that kernel, moved later by the kernel's exact delay (see
+    /// <see cref="LinearPhaseKernelOf"/> for why).
+    /// </summary>
+    /// <remarks>
+    /// The re-render assumes what the chain-shift term already assumes: the
+    /// timeline reads the override-free reprocess, where the bulk delay and the
+    /// polarity are neutral. It is built from the MEASURED content — the bypassed
+    /// response without the padding ApplyChain added after it — which is what the
+    /// processed response was built from, so the record the detector sees differs
+    /// from the processed one by the kernel alone.
+    /// </remarks>
+    private static TimeAlignmentAnalysisResult ReadProcessedArrival(
+        AlignmentSnapshot side,
+        double bandLowHz,
+        double bandHighHz)
+    {
+        int sampleRate = side.Channel.SampleRate;
+        if (side.ProcessingChain is not { } chain ||
+            LinearPhaseKernelOf(chain) is not { } kernel ||
+            side.BypassedImpulseResponse is not { } bypassed)
+        {
+            return VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                side.ImpulseResponse, sampleRate, bandLowHz, bandHighHz, side.ValidRange);
+        }
+
+        // Cut at the END only: the start stays the record's origin, so the re-render's
+        // times are the processed response's times.
+        Complex[] content = side.BypassedValidRange.IsKnown
+            ? bypassed[..side.BypassedValidRange.EndSample]
+            : bypassed;
+        int processorSampleRate = side.Channel.ProcessorSampleRate;
+        Complex[] withoutKernel = VirtualCrossoverAnalysis.ApplyChain(
+            content,
+            chain with { DelayMs = 0, InvertPolarity = false, Fir = null },
+            sampleRate,
+            processorSampleRate,
+            out ValidSampleRange range);
+        TimeAlignmentAnalysisResult read = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+            withoutKernel, sampleRate, bandLowHz, bandHighHz, range);
+        if (!read.IsValid)
+        {
+            return read;
+        }
+
+        // Moved the way AnalyzeBandLimitedArrival moves a windowed read into record
+        // coordinates: the times and the record sample indices, never the envelope's
+        // own indices.
+        double delayMs = LinearPhaseDelayMs(kernel, processorSampleRate);
+        int delaySamples = (int)Math.Round(delayMs * sampleRate / 1_000.0);
+        return read with
+        {
+            FirstArrivalPeakSample = read.FirstArrivalPeakSample + delaySamples,
+            FirstArrivalDelayMilliseconds = read.FirstArrivalDelayMilliseconds + delayMs,
+            StrongestPeakSample = read.StrongestPeakSample + delaySamples,
+            StrongestDelayMilliseconds = read.StrongestDelayMilliseconds + delayMs,
+            EnergyOnsetSample = read.EnergyOnsetSample + delaySamples,
+            EnergyOnsetDelayMilliseconds = read.EnergyOnsetDelayMilliseconds + delayMs
+        };
     }
 
     // The NON-COMMON part of the two sides' chain shifts in the pair band —
@@ -1634,19 +1751,9 @@ public static class AutoAlignmentEngine
         foreach (AlignmentJunction pair in pairs)
         {
             TimeAlignmentAnalysisResult lowerRead =
-                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                    pair.Lower.ImpulseResponse,
-                    pair.Lower.Channel.SampleRate,
-                    pair.BandLowHz,
-                    pair.BandHighHz,
-                    pair.Lower.ValidRange);
+                ReadProcessedArrival(pair.Lower, pair.BandLowHz, pair.BandHighHz);
             TimeAlignmentAnalysisResult upperRead =
-                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                    pair.Upper.ImpulseResponse,
-                    pair.Upper.Channel.SampleRate,
-                    pair.BandLowHz,
-                    pair.BandHighHz,
-                    pair.Upper.ValidRange);
+                ReadProcessedArrival(pair.Upper, pair.BandLowHz, pair.BandHighHz);
 
             // An invalid or near-noise arrival is NOT a time — and, unlike a
             // mis-TIMED one, it is not rescuable either: the envelope SNR
@@ -1886,19 +1993,9 @@ public static class AutoAlignmentEngine
                 probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
             {
                 TimeAlignmentAnalysisResult lowerProbe =
-                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                        pair.Lower.ImpulseResponse,
-                        pair.Lower.Channel.SampleRate,
-                        probeLowHz,
-                        pair.BandHighHz,
-                        pair.Lower.ValidRange);
+                    ReadProcessedArrival(pair.Lower, probeLowHz, pair.BandHighHz);
                 TimeAlignmentAnalysisResult upperProbe =
-                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                        pair.Upper.ImpulseResponse,
-                        pair.Upper.Channel.SampleRate,
-                        probeLowHz,
-                        pair.BandHighHz,
-                        pair.Upper.ValidRange);
+                    ReadProcessedArrival(pair.Upper, probeLowHz, pair.BandHighHz);
                 // Per channel, not per junction: the two sides of a junction
                 // run different filters, so the smear each one's own chain
                 // explains differs (see ArrivalProbeToleranceMs).

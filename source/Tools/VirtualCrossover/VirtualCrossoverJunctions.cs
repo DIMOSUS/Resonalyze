@@ -11,19 +11,16 @@ internal static class VirtualCrossoverJunctions
 {
     /// <summary>
     /// The band a channel actually plays in: its crossover corners when set, the
-    /// full range otherwise. Used to order the channels along the spectrum.
+    /// full range otherwise. Used to order the channels along the spectrum. The
+    /// corners are the IIR crossover's, or a FIR crossover's where the IIR one is off
+    /// (see <see cref="VirtualCrossoverChannelSettings.EffectiveCrossover"/>) — every
+    /// reading in this class goes through that one rule.
     /// </summary>
     public static (double LowHz, double HighHz) GetChannelBand(
         VirtualCrossoverChannelSettings settings)
     {
-        double lowHz =
-            settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
-                ? settings.HighPassEdge.FrequencyHz
-                : 20;
-        double highHz =
-            settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
-                ? settings.LowPassEdge.FrequencyHz
-                : 20_000;
+        double lowHz = settings.EffectiveHighPassHz ?? 20;
+        double highHz = settings.EffectiveLowPassHz ?? 20_000;
         return highHz > lowHz ? (lowHz, highHz) : (20, 20_000);
     }
 
@@ -36,13 +33,13 @@ internal static class VirtualCrossoverJunctions
         VirtualCrossoverChannelSettings lower,
         VirtualCrossoverChannelSettings upper)
     {
-        if (lower.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass)
+        if (lower.EffectiveLowPassHz is { } lowerLowPass)
         {
-            return lower.LowPassEdge.FrequencyHz;
+            return lowerLowPass;
         }
-        if (upper.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass)
+        if (upper.EffectiveHighPassHz is { } upperHighPass)
         {
-            return upper.HighPassEdge.FrequencyHz;
+            return upperHighPass;
         }
 
         (double lowerLow, double lowerHigh) = GetChannelBand(lower);
@@ -79,13 +76,13 @@ internal static class VirtualCrossoverJunctions
         var corners = new List<double>();
         foreach (VirtualCrossoverChannelSettings settings in channels)
         {
-            if (settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass)
+            if (settings.EffectiveLowPassHz is { } lowPass)
             {
-                corners.Add(settings.LowPassEdge.FrequencyHz);
+                corners.Add(lowPass);
             }
-            if (settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass)
+            if (settings.EffectiveHighPassHz is { } highPass)
             {
-                corners.Add(settings.HighPassEdge.FrequencyHz);
+                corners.Add(highPass);
             }
         }
 

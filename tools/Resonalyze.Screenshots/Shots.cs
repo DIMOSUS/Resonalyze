@@ -37,6 +37,9 @@ internal static class Shots
         new("virtual-dsp", ShotSession.AssetWindowSize, ["visual_dsp"], VirtualDspAsset),
         new("eq-wizard", ShotSession.AssetWindowSize,
             ["eq_wizard", "eq_wizard_phase"], EqWizardAssets),
+        // Standalone, from nothing but its own controls: the constructor draws a
+        // kernel, not a measurement, so the figure needs no file from the config.
+        new("fir-constructor", ShotSession.AssetWindowSize, ["fir_constructor"], FirConstructorAsset),
         // Skipped in a sweep rather than failed without a measurement recorded
         // through an array: the figures need one and not every rig has one, and a
         // config that cannot take them must not report the sweep as broken. Asked for
@@ -196,6 +199,20 @@ internal static class Shots
             session.Pump(6_000);
             session.CaptureScreen("eq_wizard_phase");
         }
+    }
+
+    // A band-pass for a midrange — the kind whose two slopes and latency the figure is
+    // there to show — at the processor rate most car units run.
+    private static void FirConstructorAsset(ShotSession session, Func<string, bool> wanted)
+    {
+        session.SelectTab("ToolsFirConstructor");
+        var panel = Reflect.Field<FirConstructorPanel>(session.Shell, "firConstructorPanel");
+        Reflect.Field<DarkComboBox>(panel, "comboBoxType").SelectedIndex = 2;
+        Reflect.Field<DarkNumericUpDown>(panel, "numericHighPassHz").Value = 250;
+        Reflect.Field<DarkNumericUpDown>(panel, "numericLowPassHz").Value = 3_000;
+        Reflect.Field<DarkNumericUpDown>(panel, "numericTaps").Value = 4_095;
+        session.Pump(3_000);
+        session.CaptureScreen("fir_constructor");
     }
 
     // -------------------------------------------------------- the microphone array

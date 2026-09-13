@@ -13,5 +13,6 @@ internal enum ModeTab
     TimeAlignment,
     ToolsEqWizard,
     ToolsSignalGenerator,
-    ToolsVirtualCrossover
+    ToolsVirtualCrossover,
+    ToolsFirConstructor
 }

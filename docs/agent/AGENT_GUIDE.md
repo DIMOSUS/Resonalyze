@@ -105,7 +105,11 @@ convolves that channel with, likewise already inside every curve and read-only;
 its `peakMs` is where the kernel peaks — roughly a linear-phase kernel's bulk
 delay, which the curves already include, and not a delay at all for a
 minimum-phase one — so never compensate for it: propose against the curves as
-they stand. Two sample rates matter: the measurement's
+they stand. `dsp.fir.crossover`, where present, says that kernel IS a linear-phase
+crossover designed in the FIR Constructor; where `dsp.crossover.kind` is `Off`
+its corners are where the channel is cut. You cannot redesign it: describe the
+corner you would want and let the user rebuild it there, and do not propose an IIR
+crossover on the same side unless you mean it to filter a second time. Two sample rates matter: the measurement's
 and `processor.sampleRateHz`, and every corner and band you propose must sit
 below half the processor's. Per channel, `preDspDb` is the measurement before
 the chain, `processedDb` through it, `chainDb` and `peqDb` the chain and the

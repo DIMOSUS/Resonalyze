@@ -131,7 +131,10 @@ public partial class VirtualCrossoverPanel
                 AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands),
                 // The FIR kernel by its content: the taps are the tune's, and the name
                 // they were imported under is only a label.
-                Digest(settings.Fir?.Taps.ToArray())));
+                Digest(settings.Fir?.Taps.ToArray()),
+                // And the crossover it was designed as: the package describes it, and a
+                // side with no IIR crossover is cut where the design says.
+                FirDesign(settings.FirDesign)));
         }
 
         return AgentSessionFingerprint.Compute(lines);
@@ -154,6 +157,13 @@ public partial class VirtualCrossoverPanel
 
         static string Edge(CrossoverEdge edge) =>
             $"{edge.Family}/{Number(edge.FrequencyHz)}/{edge.SlopeDbPerOctave}/{Number(edge.RippleDb)}";
+
+        static string FirDesign(FirCrossoverDesign? design) =>
+            design == null
+                ? string.Empty
+                : $"{design.Kind}/{Edge(design.HighPassEdge)}/{Edge(design.LowPassEdge)}/" +
+                  $"{design.Method}/{design.Window}/{Number(design.KaiserBeta)}/" +
+                  $"{design.TapCount}/{design.SampleRateHz}";
 
         static string TargetShape(VirtualCrossoverTargetSettings? target) =>
             target == null

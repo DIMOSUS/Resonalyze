@@ -92,6 +92,7 @@ public sealed class FirFilter
         LeadingZeroCount = seenNonZero ? leadingZeros : taps.Count;
         PeakIndex = peak;
         tapMagnitudeSum = magnitudeSum;
+        IsSymmetric = seenNonZero && MirrorsItself(this.taps, Math.Abs(this.taps[peak]) * SymmetryTolerance);
     }
 
     /// <summary>The kernel, first tap first.</summary>
@@ -99,6 +100,19 @@ public sealed class FirFilter
 
     /// <summary>How many taps the kernel has.</summary>
     public int Length => taps.Length;
+
+    private static bool MirrorsItself(double[] kernel, double tolerance)
+    {
+        for (int index = 0, mirror = kernel.Length - 1; index < mirror; index++, mirror--)
+        {
+            if (Math.Abs(kernel[index] - kernel[mirror]) > tolerance)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>The rate the source file stated, or null (see the type remarks).</summary>
     public int? DeclaredSampleRateHz { get; }
@@ -125,6 +139,28 @@ public sealed class FirFilter
 
     /// <summary>The whole kernel's energy is in its zeros: a filter that mutes the channel.</summary>
     public bool IsSilent => LeadingZeroCount == taps.Length;
+
+    /// <summary>
+    /// Whether the kernel is SYMMETRIC — h[n] = h[N−1−n] to within
+    /// <see cref="SymmetryTolerance"/> of its largest tap, and not silent. Such a kernel
+    /// is linear-phase: exactly a delay of <see cref="LinearPhaseDelaySamples"/> times a
+    /// real, zero-phase response, at every frequency. Antisymmetric kernels are
+    /// linear-phase too, but with a 90° turn on top, and do not count here.
+    /// </summary>
+    public bool IsSymmetric { get; }
+
+    /// <summary>
+    /// The pure delay a symmetric kernel adds, (N − 1) / 2 samples — half a sample off
+    /// the grid for an even length. Meaningful only where <see cref="IsSymmetric"/>.
+    /// </summary>
+    public double LinearPhaseDelaySamples => (taps.Length - 1) / 2.0;
+
+    /// <summary>
+    /// How far two mirrored taps may differ, relative to the largest tap, and still be
+    /// called equal: far above the rounding a designed kernel carries through an FFT
+    /// (about 1e-16), far below any asymmetry a real filter could hear.
+    /// </summary>
+    public const double SymmetryTolerance = 1e-9;
 
     /// <summary>
     /// The kernel's response at <paramref name="z1"/> = e^{-jω}: Σ h[n]·z1^n, evaluated

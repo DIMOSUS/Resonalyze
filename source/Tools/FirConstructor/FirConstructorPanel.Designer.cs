@@ -302,7 +302,7 @@ namespace Resonalyze
             numericTaps.ForeColor = Color.White;
             numericTaps.Increment = new decimal(new int[] { 2, 0, 0, 0 });
             numericTaps.Location = new Point(118, 248);
-            numericTaps.Maximum = new decimal(new int[] { 15999, 0, 0, 0 });
+            numericTaps.Maximum = new decimal(new int[] { 16383, 0, 0, 0 });
             numericTaps.Minimum = new decimal(new int[] { 3, 0, 0, 0 });
             numericTaps.MinimumSize = new Size(36, 19);
             numericTaps.Name = "numericTaps";
@@ -319,7 +319,7 @@ namespace Resonalyze
             labelTapsHint.Location = new Point(214, 252);
             labelTapsHint.Name = "labelTapsHint";
             labelTapsHint.Size = new Size(96, 15);
-            labelTapsHint.Text = "odd, up to 15999";
+            labelTapsHint.Text = "odd, up to 16383";
             labelTapsHint.TabIndex = 20;
             // 
             // labelSampleRate

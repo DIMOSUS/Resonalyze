@@ -350,20 +350,13 @@ public partial class FirConstructorPanel : UserControl
         {
             design = null;
             kernel = null;
-            labelProblem.ForeColor = Ui.UiPalette.ErrorSoft;
             labelProblem.Text = problem;
         }
         else
         {
             design = candidate;
             kernel = candidate.Build();
-            // Buildable, but measured to fool Auto delay at a low junction: said here,
-            // where the length is chosen, rather than discovered as a wrong delay.
-            labelProblem.ForeColor = Ui.UiPalette.WarningAmber;
-            labelProblem.Text = candidate.MayMisleadAutoDelay
-                ? $"Below {FirCrossoverDesign.AutoDelayLowCornerHz:0} Hz a kernel this long can mislead Auto delay " +
-                  $"by tens of ms: check its result, or keep the latency under {FirCrossoverDesign.AutoDelaySafeLatencyMs:0} ms."
-                : string.Empty;
+            labelProblem.Text = string.Empty;
         }
 
         Redraw();
@@ -451,7 +444,7 @@ public partial class FirConstructorPanel : UserControl
     // The slopes a family offers, with the nearest one to the slope asked for selected.
     private static void FillSlopes(DarkComboBox slope, CrossoverFilterFamily family, int preferred)
     {
-        IReadOnlyList<int> slopes = CrossoverFilter.SupportedSlopes(family);
+        IReadOnlyList<int> slopes = FirCrossoverDesign.SupportedSlopes(family);
         slope.Items.Clear();
         foreach (int value in slopes)
         {

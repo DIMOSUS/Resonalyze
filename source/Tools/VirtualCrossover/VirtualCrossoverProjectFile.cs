@@ -499,8 +499,24 @@ public sealed class VirtualCrossoverChannelSettings
             {
                 throw new InvalidDataException($"The FIR crossover design is invalid: {problem}");
             }
-            ValidateEdge(design.LowPassEdge);
-            ValidateEdge(design.HighPassEdge);
+            // The corners against the session's own range; the slopes against the
+            // constructor's list, which runs steeper than a hardware crossover's — the
+            // IIR edge check would refuse every kernel designed past 48 dB/oct.
+            ValidateDesignEdge(design.LowPassEdge);
+            ValidateDesignEdge(design.HighPassEdge);
+        }
+    }
+
+    private static void ValidateDesignEdge(CrossoverEdge edge)
+    {
+        if (!Enum.IsDefined(edge.Family) ||
+            !FirCrossoverDesign.SupportedSlopes(edge.Family).Contains(edge.SlopeDbPerOctave))
+        {
+            throw new InvalidDataException("The FIR crossover design's slope is invalid.");
+        }
+        if (!double.IsFinite(edge.FrequencyHz) || edge.FrequencyHz is < 10 or > 24_000)
+        {
+            throw new InvalidDataException("The FIR crossover design's corner frequency is invalid.");
         }
     }
 

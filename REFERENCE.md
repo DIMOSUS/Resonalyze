@@ -1895,16 +1895,21 @@ response with no phase turn at all. The length is odd by rule, not preference �
 even-length symmetric kernel has a forced zero at Nyquist, so no high-pass can be
 built from one — so a typed even count steps to the odd one beside it. The price is
 that delay, stated under the controls as **Latency** in milliseconds and samples:
-the constructor designs up to **15999 taps**, 167 ms at 48 kHz, and the limit is
+the constructor designs up to **16383 taps**, 171 ms at 48 kHz, and the limit is
 there for the latency rather than the arithmetic. It binds the constructor only; a
 kernel imported into Virtual DSP may still be up to 131072 taps long.
 
 **Method** picks where the magnitude comes from:
 
 - **IIR magnitude** takes the magnitude of the IIR crossover slope named beside
-  each corner — the **Linkwitz-Riley**, **Butterworth** or **Bessel** families and
-  the slopes Virtual DSP offers for them, built at the kernel's rate — and throws
-  its phase away. The plot draws that magnitude dashed behind the kernel, and
+  each corner, built at the kernel's rate the way Virtual DSP builds its crossovers,
+  and throws its phase away. The slopes run steeper than a hardware crossover's
+  list, because a kernel needs only the magnitude and no sections to run it:
+  **Linkwitz-Riley** from 12 to **96 dB/oct** in 12 dB steps and **Butterworth**
+  from 6 to 96 dB/oct in 6 dB steps, both read in closed form (at every slope a
+  Virtual DSP crossover also offers, the numbers are its own), and **Bessel** up to
+  48 dB/oct, where its prototype table ends. A steep slope needs a long kernel to
+  follow it, and the deviation read-out below says when it does not. The plot draws that magnitude dashed behind the kernel, and
   **Worst deviation from the target** states how far the kernel strays from it
   wherever the target is above −30 dB: a slope the length cannot resolve says so
   here, in dB, instead of being delivered as a gentler filter without a word.
@@ -1930,17 +1935,10 @@ A design that cannot be built — a band-pass whose high-pass corner is not belo
 its low-pass corner, a corner at or past Nyquist — says why in red, and nothing is
 drawn or exported until it is fixed.
 
-**Auto delay and a long kernel at a low corner.** A symmetric kernel rings before
-its peak as long as after it, and at a low corner that ringing is long enough to
-move the arrival [Auto delay](#auto-delay) seeds its search from. Measured on
-matched linear-phase Linkwitz-Riley branches through the real engine at 48 kHz:
-at 300 Hz and above every length up to 15999 taps was aligned to within 0.05 ms,
-and at 40, 80 and 150 Hz 1023 taps (10.6 ms) held within 0.15 ms — but 2047 to 8191
-taps landed 9 to 46 ms off for some placements of the arrival in the record and
-not for others. Because it depends on where the arrival sits, the constructor
-**warns** rather than refuses: a design with a corner below 300 Hz and more than
-11 ms of latency says so in amber. Check Auto delay's result on such a junction,
-or keep the kernel short.
+**Auto delay and the kernel's latency.** [Auto delay](#auto-delay) absorbs the
+delay a kernel adds like any other delay in the chain, and it reads a linear-phase
+kernel's pre-ringing correctly at every corner and length — see the note on
+symmetric FIR kernels under [The search](#the-search).
 
 **Import file…** opens a kernel from a `.wav`, `.fir` or `.txt` file and draws it
 **as it is**, at the selected rate: there is no design in a file to edit. The first
@@ -3147,7 +3145,25 @@ its own known error — and the check then stands down the same way it does for
 a deep-picked arrival (below), to the extremum's own strength rather than to
 the disqualification alone. Junctions whose band lies inside both passbands
 see microsecond skews and are untouched, and a pair with one side the
-estimator cannot read gets no correction rather than a guess. Past that
+estimator cannot read gets no correction rather than a guess.
+A **symmetric FIR kernel** — every kernel the [FIR Constructor](#fir-constructor)
+designs, and any imported linear-phase one — is the exception to "measured by
+running a reference impulse through the real chain". Such a kernel is exactly a
+delay of half its length times a filter with no phase at all, and that filter rings
+before its peak as long as after it; the band-limited arrival reader cannot time
+that ringing honestly, and read the same 4095-tap kernel at an 80 Hz corner
+anywhere from 27 to 56 ms late (the true delay is 42.65 ms) depending only on where
+the sound sat in the record. At 40 to 150 Hz junctions that put the seed 9 to 46 ms
+off. So a symmetric kernel is not read but known: every arrival Auto delay times
+on such a channel is read on the response without the kernel and moved later by
+the kernel's exact delay, and the chain's shift is the rest of the chain's measured
+shift plus that delay. A filter with no phase does not move an arrival, so only
+the unreadable ringing is left out. Measured on matched linear-phase
+Linkwitz-Riley branches at 48 kHz, four corners from 40 to 300 Hz, lengths from
+1023 to 8191 taps and two placements in the record now all land within 0.5 ms
+(a few degrees of a 40 Hz period), and a full stereo system cut entirely by
+such kernels gets the proposal the same drivers get unfiltered to within 0.3 ms.
+An asymmetric kernel (a minimum-phase correction) is read as before. Past that
 correction the check has one exception: an arrival
 picked deep below its own band's energy. A subwoofer's direct front can sit
 20-odd dB under the cabin build-up arriving behind it — a real front, and the

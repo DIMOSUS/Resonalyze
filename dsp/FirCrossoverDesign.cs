@@ -87,12 +87,13 @@ public sealed record FirCrossoverDesign(
     int SampleRateHz)
 {
     /// <summary>
-    /// The longest kernel the constructor designs: 16k taps, the largest odd count
-    /// under it. The limit is on latency, not on arithmetic — a linear-phase kernel
-    /// delays the channel by half its length, 167 ms at 48 kHz here — and it binds the
-    /// constructor only: an imported kernel is held to <see cref="FirFilter.MaximumTaps"/>.
+    /// The longest kernel the constructor designs: 16383 taps, 2^14 − 1, the largest odd
+    /// count a 16k-tap stage holds. The limit is on latency, not on arithmetic — a
+    /// linear-phase kernel delays the channel by half its length, 171 ms at 48 kHz here
+    /// — and it binds the constructor only: an imported kernel is held to
+    /// <see cref="FirFilter.MaximumTaps"/>.
     /// </summary>
-    public const int MaximumTapCount = 15_999;
+    public const int MaximumTapCount = 16_383;
 
     /// <summary>The shortest kernel that still has a centre and two sides.</summary>
     public const int MinimumTapCount = 3;
@@ -112,6 +113,31 @@ public sealed record FirCrossoverDesign(
         CrossoverFilterFamily.Bessel
     ];
 
+    /// <summary>The steepest slope the constructor offers, in dB per octave.</summary>
+    public const int MaximumSlopeDbPerOctave = 96;
+
+    /// <summary>
+    /// The slopes the constructor offers for an IIR family — steeper than a hardware
+    /// crossover's list (see <see cref="CrossoverFilter.SupportedSlopes"/>), because a
+    /// kernel only takes the slope's MAGNITUDE and has no sections to run:
+    /// Linkwitz-Riley in 12 dB steps and Butterworth in 6 dB steps up to
+    /// <see cref="MaximumSlopeDbPerOctave"/>. Bessel keeps the hardware list: its
+    /// prototype is a table that ends at 48 dB per octave.
+    /// </summary>
+    public static IReadOnlyList<int> SupportedSlopes(CrossoverFilterFamily family) => family switch
+    {
+        CrossoverFilterFamily.LinkwitzRiley => LinkwitzRileySlopes,
+        CrossoverFilterFamily.Butterworth => ButterworthSlopes,
+        CrossoverFilterFamily.Bessel => CrossoverFilter.SupportedSlopes(family),
+        _ => []
+    };
+
+    private static readonly int[] LinkwitzRileySlopes =
+        Enumerable.Range(1, MaximumSlopeDbPerOctave / 12).Select(step => step * 12).ToArray();
+
+    private static readonly int[] ButterworthSlopes =
+        Enumerable.Range(1, MaximumSlopeDbPerOctave / 6).Select(step => step * 6).ToArray();
+
     /// <summary>
     /// The delay the kernel adds, in samples: its centre, (N − 1) / 2 — a whole
     /// number, since the length is odd.
@@ -120,41 +146,6 @@ public sealed record FirCrossoverDesign(
 
     /// <summary>The same delay in milliseconds at <see cref="SampleRateHz"/>.</summary>
     public double LatencyMs => LatencySamples * 1_000.0 / SampleRateHz;
-
-    /// <summary>
-    /// The corner below which a long kernel's pre-ringing was measured to mislead Auto
-    /// delay, and the latency up to which it did not — see <see cref="MayMisleadAutoDelay"/>.
-    /// </summary>
-    public const double AutoDelayLowCornerHz = 300;
-
-    /// <inheritdoc cref="AutoDelayLowCornerHz"/>
-    public const double AutoDelaySafeLatencyMs = 11;
-
-    /// <summary>
-    /// Whether Auto delay may misread a junction cut by this kernel: a corner below
-    /// <see cref="AutoDelayLowCornerHz"/> with more than
-    /// <see cref="AutoDelaySafeLatencyMs"/> of latency.
-    /// </summary>
-    /// <remarks>
-    /// Measured, not derived, on matched linear-phase LR24 branches through the real
-    /// engine at 48 kHz (FirCrossoverAlignmentTests, and a map of four corners, four
-    /// lengths and two arrival placements behind it). At 300 Hz and above every length
-    /// up to the tap ceiling was read to within 0.05 ms. At 40, 80 and 150 Hz, 1023 taps
-    /// (10.6 ms) held within 0.15 ms, while 2047 to 8191 taps landed 9 to 46 ms off for
-    /// SOME placements of the arrival in the record and not for others: the low-pass
-    /// kernel rings long enough before its peak to move the arrival the seed reads.
-    /// Because it depends on the placement, the rule warns rather than refuses.
-    /// </remarks>
-    public bool MayMisleadAutoDelay
-    {
-        get
-        {
-            double lowestCorner = Math.Min(
-                UsesHighPass ? HighPassEdge.FrequencyHz : double.PositiveInfinity,
-                UsesLowPass ? LowPassEdge.FrequencyHz : double.PositiveInfinity);
-            return lowestCorner < AutoDelayLowCornerHz && LatencyMs > AutoDelaySafeLatencyMs;
-        }
-    }
 
     /// <summary>
     /// Whether the design names a response a kernel of finite length approximates —
@@ -234,7 +225,7 @@ public sealed record FirCrossoverDesign(
         {
             return $"The {name} family must be Linkwitz-Riley, Butterworth or Bessel.";
         }
-        if (!CrossoverFilter.SupportedSlopes(edge.Family).Contains(edge.SlopeDbPerOctave))
+        if (!SupportedSlopes(edge.Family).Contains(edge.SlopeDbPerOctave))
         {
             return $"The {name} slope is not one {edge.Family} offers.";
         }
@@ -295,7 +286,61 @@ public sealed record FirCrossoverDesign(
             return passes ? 1.0 : 0.0;
         }
 
-        return CrossoverFilter.Response(Spec, frequencyHz, SampleRateHz).Magnitude;
+        double magnitude = 1.0;
+        if (UsesLowPass)
+        {
+            magnitude *= EdgeMagnitude(LowPassEdge, highPass: false, frequencyHz, bessel: null);
+        }
+        if (UsesHighPass)
+        {
+            magnitude *= EdgeMagnitude(HighPassEdge, highPass: true, frequencyHz, bessel: null);
+        }
+
+        return magnitude;
+    }
+
+    /// <summary>
+    /// One edge's digital magnitude at <see cref="SampleRateHz"/>.
+    /// </summary>
+    /// <remarks>
+    /// Butterworth and Linkwitz-Riley in closed form. The crossover's biquads are the
+    /// bilinear transform of the analog prototype prewarped at the corner, so the
+    /// magnitude is exactly |B|² = 1 / (1 + r^(2n)) with r = tan(πf/fs) / tan(πfc/fs)
+    /// (inverted for a high-pass), and a Linkwitz-Riley of order 2n is that Butterworth
+    /// squared: |LR| = 1 / (1 + r^(2n)). That is what lets the constructor offer orders
+    /// no section list carries. The high-pass is written with the inverted ratio rather
+    /// than as r^(2n) / (1 + r^(2n)), which would divide infinity by infinity once a
+    /// 96 dB/oct slope's ratio overflows. Bessel has no closed form here and is read off
+    /// its sections, which the caller builds once and passes in (or null to build them).
+    /// </remarks>
+    private double EdgeMagnitude(
+        CrossoverEdge edge,
+        bool highPass,
+        double frequencyHz,
+        IReadOnlyList<BiquadCoefficients>? bessel)
+    {
+        if (edge.Family == CrossoverFilterFamily.Bessel)
+        {
+            Complex response = Complex.One;
+            foreach (BiquadCoefficients section in
+                     bessel ?? CrossoverFilter.BuildSections(edge, highPass, SampleRateHz))
+            {
+                response *= BiquadResponse.Evaluate(section, frequencyHz, SampleRateHz);
+            }
+
+            return response.Magnitude;
+        }
+
+        double ratio = Math.Tan(Math.PI * frequencyHz / SampleRateHz) /
+            Math.Tan(Math.PI * edge.FrequencyHz / SampleRateHz);
+        double stopbandRatio = highPass ? 1.0 / ratio : ratio;
+        int order = edge.SlopeDbPerOctave / 6;
+        if (edge.Family == CrossoverFilterFamily.LinkwitzRiley)
+        {
+            return 1.0 / (1.0 + Math.Pow(stopbandRatio, order));
+        }
+
+        return 1.0 / Math.Sqrt(1.0 + Math.Pow(stopbandRatio, 2 * order));
     }
 
     /// <summary>
@@ -343,8 +388,6 @@ public sealed record FirCrossoverDesign(
     /// </summary>
     public int MagnitudeGridLength => DspMath.NextPowerOfTwo(Math.Max(16 * TapCount, 1 << 18));
 
-    private CrossoverSpec Spec => new(Kind, LowPassEdge, HighPassEdge);
-
     private double[] IdealSinc()
     {
         int centre = LatencySamples;
@@ -385,28 +428,27 @@ public sealed record FirCrossoverDesign(
         int length = MagnitudeGridLength;
         int half = length / 2;
         var spectrum = new Complex[length];
-        // The sections are built once per edge, not per bin: a quarter of a million
-        // bins through CrossoverFilter.Response would rebuild them every time.
-        IReadOnlyList<BiquadCoefficients> lowSections = UsesLowPass
+        // A Bessel edge's sections are built once, not per bin: a quarter of a million
+        // bins would rebuild them every time. The other families need none.
+        IReadOnlyList<BiquadCoefficients>? lowBessel = UsesLowPass && LowPassEdge.Family == CrossoverFilterFamily.Bessel
             ? CrossoverFilter.BuildSections(LowPassEdge, highPass: false, SampleRateHz)
-            : [];
-        IReadOnlyList<BiquadCoefficients> highSections = UsesHighPass
+            : null;
+        IReadOnlyList<BiquadCoefficients>? highBessel = UsesHighPass && HighPassEdge.Family == CrossoverFilterFamily.Bessel
             ? CrossoverFilter.BuildSections(HighPassEdge, highPass: true, SampleRateHz)
-            : [];
+            : null;
         for (int k = 0; k <= half; k++)
         {
             double frequency = (double)k * SampleRateHz / length;
-            Complex response = Complex.One;
-            foreach (BiquadCoefficients section in lowSections)
+            double magnitude = 1.0;
+            if (UsesLowPass)
             {
-                response *= BiquadResponse.Evaluate(section, frequency, SampleRateHz);
+                magnitude *= EdgeMagnitude(LowPassEdge, highPass: false, frequency, lowBessel);
             }
-            foreach (BiquadCoefficients section in highSections)
+            if (UsesHighPass)
             {
-                response *= BiquadResponse.Evaluate(section, frequency, SampleRateHz);
+                magnitude *= EdgeMagnitude(HighPassEdge, highPass: true, frequency, highBessel);
             }
 
-            double magnitude = response.Magnitude;
             spectrum[k] = magnitude;
             if (k > 0 && k < half)
             {

@@ -136,6 +136,67 @@ public sealed class FirCrossoverDesignTests
         Assert.True(design.WorstDeviationDb(kernel) < 0.25, design.WorstDeviationDb(kernel).ToString());
     }
 
+    [Theory]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley)]
+    [InlineData(CrossoverFilterFamily.Butterworth)]
+    [InlineData(CrossoverFilterFamily.Bessel)]
+    public void TheClosedFormMagnitude_IsTheCrossoversOwn_AtEverySlopeTheHardwareHas(
+        CrossoverFilterFamily family)
+    {
+        // The constructor reads Linkwitz-Riley and Butterworth magnitudes in closed
+        // form so it can go past the section lists; at every slope a section list
+        // does carry, the two must be the same numbers.
+        foreach (int slope in CrossoverFilter.SupportedSlopes(family))
+        {
+            foreach (CrossoverKind kind in new[] { CrossoverKind.LowPass, CrossoverKind.HighPass })
+            {
+                FirCrossoverDesign design = Design(kind, lowPassHz: 1_500, highPassHz: 1_500, family: family, slope: slope);
+                var edge = new CrossoverEdge(family, 1_500, slope);
+                var spec = kind == CrossoverKind.LowPass
+                    ? new CrossoverSpec(kind, LowPassEdge: edge)
+                    : new CrossoverSpec(kind, HighPassEdge: edge);
+                foreach (double frequency in new[] { 0.0, 20.0, 700.0, 1_500.0, 3_100.0, 15_000.0, 24_000.0 })
+                {
+                    double expected = CrossoverFilter.Response(spec, frequency, Rate).Magnitude;
+                    Assert.Equal(expected, design.TargetMagnitude(frequency), 1e-9);
+                }
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 96)]
+    [InlineData(CrossoverFilterFamily.Butterworth, 96)]
+    [InlineData(CrossoverFilterFamily.Butterworth, 66)]
+    public void SlopesPastTheHardwareList_AreDesigned_AndSteep(CrossoverFilterFamily family, int slope)
+    {
+        FirCrossoverDesign low = Design(CrossoverKind.LowPass, family: family, slope: slope, taps: 4_095);
+        FirFilter kernel = low.Build();
+
+        // −3 dB (Butterworth) or −6 dB (Linkwitz-Riley) at the corner, and the kernel
+        // follows the slope to within half a dB wherever it stands above −30 dB.
+        double atCorner = 20 * Math.Log10(kernel.Response(2_000, Rate).Magnitude);
+        Assert.Equal(family == CrossoverFilterFamily.LinkwitzRiley ? -6.02 : -3.01, atCorner, 1);
+        Assert.True(low.WorstDeviationDb(kernel) < 0.5, low.WorstDeviationDb(kernel).ToString());
+        // An octave up, the target sits at least the slope's own figure down — a few dB
+        // more at 4 kHz, where the bilinear transform the crossover is built with
+        // compresses the octave (measured 2.8 dB at 48 kHz).
+        double octaveUpDb = 20 * Math.Log10(low.TargetMagnitude(4_000));
+        Assert.InRange(octaveUpDb, -slope - 4, -slope);
+    }
+
+    [Fact]
+    public void ALinkwitzRileyPair_SumsToADelay_AtTheSteepestSlopeToo()
+    {
+        FirFilter low = Design(CrossoverKind.LowPass, slope: 96, taps: 1_023).Build();
+        FirFilter high = Design(CrossoverKind.HighPass, slope: 96, taps: 1_023).Build();
+
+        for (int i = 0; i < low.Length; i++)
+        {
+            Assert.Equal(i == 511 ? 1.0 : 0.0, low.Taps[i] + high.Taps[i], 1e-9);
+        }
+    }
+
     [Fact]
     public void ADesignThatCannotBeBuilt_SaysWhy()
     {
@@ -148,6 +209,10 @@ public sealed class FirCrossoverDesignTests
         Assert.NotNull(Design(CrossoverKind.BandPass, lowPassHz: 200, highPassHz: 2_000).Problem());
         Assert.NotNull(Design(family: CrossoverFilterFamily.Chebyshev).Problem());
         Assert.NotNull(Design(family: CrossoverFilterFamily.LinkwitzRiley, slope: 18).Problem());
+        Assert.NotNull(Design(family: CrossoverFilterFamily.LinkwitzRiley, slope: 108).Problem());
+        // Bessel's prototype table ends at 48 dB/oct.
+        Assert.NotNull(Design(family: CrossoverFilterFamily.Bessel, slope: 96).Problem());
+        Assert.Null(Design(family: CrossoverFilterFamily.Butterworth, slope: 90).Problem());
         Assert.NotNull(Design(beta: 25).Problem());
         Assert.NotNull(Design(rate: 0).Problem());
 

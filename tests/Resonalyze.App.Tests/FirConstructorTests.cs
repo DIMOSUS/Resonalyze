@@ -44,10 +44,12 @@ public sealed class FirConstructorTests
         string path = Path.Combine(root, "session.json");
         try
         {
+            // A slope no hardware crossover carries: the session checks the design's
+            // slopes against the constructor's list, not the IIR row's.
             FirCrossoverDesign design = HighPassDesign() with
             {
                 Kind = CrossoverKind.BandPass,
-                Method = FirCrossoverMethod.WindowedSinc,
+                LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_500, 96),
                 Window = FirWindow.Blackman
             };
             var original = new VirtualCrossoverProjectFile { DspProcessorFirFilters = true };
